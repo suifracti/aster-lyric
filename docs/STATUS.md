@@ -1,6 +1,6 @@
 # Spotify Lyrics Current Status
 
-状态页最后更新：2026-09-22。
+状态页最后更新：2026-09-25。
 这是 repository 的唯一滚动工程状态入口；详细运行证据保留在 `docs/evidence/`，不在本页复制完整审计。
 
 文档链：`README.md` → `docs/STATUS.md` → 具体 evidence / batch report / 已授权计划。
@@ -8,10 +8,11 @@
 ## Source Identity
 
 - repo root：`/Users/apple/backup/sptifylyrics`
-- branch：`main`
-- source HEAD（A0 已验证 production commit）：`e775f39702361dff9dba7894e746927c660c257b` (`fix: bind capture handoff to active source generation`)
+- branch：`codex/a0-capture-source-verification`（从包含 A0 的本地 `main` 后续核对分支建立；未配置 upstream、未推送）
+- A0 follow-up production commit：`1f5389854dc63907cc79cf24ec46c4d549a787f3` (`fix: clarify automatic capture source and audio handling`)
+- A0 原验证 production commit：`e775f39702361dff9dba7894e746927c660c257b` (`fix: bind capture handoff to active source generation`)
 - release identity：正式 GitHub Release `v0.1.2`，release commit `6528be3103f75fd4f63757855b9d61cd30f757d8`
-- status last updated：`2026-09-22`
+- status last updated：`2026-09-25`
 - tracked/staged 状态：A0 production 与定向 contracts 已在本地提交；A0 evidence/STATUS 文档提交后 tracked/staged diff 应为零。三份既有 `PROJECT_FULL_AUDIT_*.md` 保持 untracked，不纳入 A0 提交。精确 checkout 仍以 `git rev-parse HEAD` 为准；文档提交不改变上述已验证 production commit 身份。
 
 ## Product Boundary
@@ -72,6 +73,7 @@
 - Automatic alignment requires a newly advanced coordinator generation and an exactly generation-matched handoff; it cannot reuse an older `lastPartialReport`.
 - Local-file alignment remains independent of live capture and is not disabled by an active Music source.
 - The automatic switch remains opt-in and Release-reachable. Real ScreenCaptureKit/Spotify/Music capture was not run; user verification remains `USER_VERIFICATION_REQUIRED / NOT_RUN`.
+- Release 的自动对齐链会调用 partial-alignment 与 speech engine；已修正误称其为 Debug-only 的源码注释。实时捕获会临时写入本机 WAV 分段，正常任务结束时清理并在启动时尝试清理残留；设置仍默认关闭。真实捕获、权限流程和外部播放器均未运行。
 
 详见 [A0 evidence](evidence/core-integrity/A0-capture-source-containment.md)；本页不复制完整运行输出。
 
