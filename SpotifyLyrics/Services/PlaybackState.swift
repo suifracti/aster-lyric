@@ -1660,7 +1660,7 @@ public final class PlaybackState: ObservableObject {
     /// Known plain lyrics + local audio -> line-level forced alignment preview.
     public func alignCurrentLyricsWithLocalAudio() {
         guard hasLiveTrack, let identity = currentTrackIdentity, !isMockPreviewMode else {
-            songSearchSelectionMessage = "需要当前 Spotify 歌曲"
+            songSearchSelectionMessage = "需要当前播放歌曲"
             return
         }
         guard let plain = lyricsSession.state.plainDocument ?? lyricsSession.state.document else {
@@ -1699,7 +1699,7 @@ public final class PlaybackState: ObservableObject {
                 UTType(filenameExtension: "flac")
             ].compactMap { $0 }
             panel.title = "选择本地音频（逐行自动排轴）"
-            panel.message = "不会修改原音频，也不会从 Spotify 取流。确认前不会覆盖当前歌词。"
+            panel.message = "不会修改原音频，也不会从播放器取流。确认前不会覆盖当前歌词。"
             guard panel.runModal() == .OK, let picked = panel.url else { return }
             url = picked
         }
@@ -1834,7 +1834,7 @@ public final class PlaybackState: ObservableObject {
         let embeddedTitle = metadata.embeddedTitle ?? "未标注"
         let embeddedArtist = metadata.embeddedArtist ?? "未标注"
         alert.informativeText = String(
-            format: "文件：%@\n当前歌曲：%@ / %@\n音频标签：%@ / %@\n时长 %.1f 秒 · %.0f Hz · %d 声道\nSHA-256 %@…\n请确认这是完整、对应当前 Spotify 录音的本地音频。",
+            format: "文件：%@\n当前歌曲：%@ / %@\n音频标签：%@ / %@\n时长 %.1f 秒 · %.0f Hz · %d 声道\nSHA-256 %@…\n请确认这是完整、对应当前歌曲的录音版本的本地音频。",
             fileName,
             track.title,
             track.artist,

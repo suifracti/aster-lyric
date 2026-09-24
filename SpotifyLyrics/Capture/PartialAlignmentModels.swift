@@ -59,7 +59,7 @@ public struct CapturedTimeRange: Codable, Equatable, Sendable {
     }
 }
 
-/// Debug-only alignment candidate. Never written to formal SQLite.
+/// Transient alignment candidate. Any formal save is owned by the consuming alignment job.
 public struct PartialAlignmentCandidate: Codable, Equatable, Sendable {
     public let trackIdentityDigest: String
     public let captureSessionID: UUID

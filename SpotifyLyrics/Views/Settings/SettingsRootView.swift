@@ -263,7 +263,7 @@ private struct GeneralSettingsView: View {
 
             Section("自动排轴") {
                 Toggle("自动为未排轴歌词生成时间轴", isOn: $settings.automaticAlignmentEnabled)
-                Text("播放未排轴歌曲时，Lyric Island 会在后台尝试生成时间轴。默认关闭；开启后无需点击「边听边排轴」。")
+                Text("自动实时捕获仅支持 Spotify Desktop 播放源；Apple Music、未知来源不会启动。捕获音频会临时写入本机 WAV 分段，任务结束后清理。默认关闭。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
