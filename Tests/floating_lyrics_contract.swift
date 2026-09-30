@@ -3,6 +3,90 @@ import Foundation
 @main
 struct FloatingLyricsContract {
     static func main() {
+        func widthKey(
+            text: String? = "生", rubyTokens: [LyricRubyToken]? = nil,
+            hasRuby: Bool = true, fontSize: Double = 34, outlineWidth: Double = 0
+        ) -> FloatingEstimatedLineWidthCacheKey {
+            FloatingEstimatedLineWidthCacheKey(
+                text: text, rubyTokens: rubyTokens, hasRuby: hasRuby,
+                fontSize: fontSize, outlineWidth: outlineWidth
+            )
+        }
+        func fitKey(
+            requested: Double = 34, height: Double = 160, doubleLine: Bool = false,
+            hasRuby: Bool = true, outlineWidth: Double = 0, width: Double? = 180,
+            text: String? = "生", rubyTokens: [LyricRubyToken]? = nil,
+            companionText: String? = nil, minFontSize: Double = 14
+        ) -> FloatingFittedFontSizeCacheKey {
+            FloatingFittedFontSizeCacheKey(
+                requested: requested, height: height, doubleLine: doubleLine,
+                hasRuby: hasRuby, outlineWidth: outlineWidth, width: width,
+                text: text, rubyTokens: rubyTokens, companionText: companionText,
+                minFontSize: minFontSize
+            )
+        }
+
+        let shortTokens = [LyricRubyToken(id: 0, surface: "生", ruby: "せい")]
+        let longTokens = [LyricRubyToken(id: 0, surface: "生", ruby: String(repeating: "せい", count: 20))]
+        let changedSurface = [LyricRubyToken(id: 0, surface: "生命", ruby: "せい")]
+        let changedGrouping = [LyricRubyToken(id: 10_000, surface: "生", ruby: "せい")]
+        let shortWidthKey = widthKey(rubyTokens: shortTokens)
+        let shortFitKey = fitKey(rubyTokens: shortTokens)
+        precondition(shortWidthKey == widthKey(rubyTokens: shortTokens))
+        precondition(shortFitKey == fitKey(rubyTokens: shortTokens))
+        for tokens in [longTokens, changedSurface, changedGrouping] {
+            precondition(shortWidthKey != widthKey(rubyTokens: tokens), "width cache must compare full Ruby token contents, not token count")
+            precondition(shortFitKey != fitKey(rubyTokens: tokens), "fit cache must compare full Ruby token contents, not token count")
+        }
+        for key in [widthKey(text: "生命"), widthKey(text: nil), widthKey(rubyTokens: []),
+                    widthKey(hasRuby: false), widthKey(fontSize: 35), widthKey(outlineWidth: 1)] {
+            precondition(widthKey() != key, "every width argument participates in cache identity")
+        }
+        for key in [fitKey(requested: 35), fitKey(height: 161), fitKey(doubleLine: true),
+                    fitKey(hasRuby: false), fitKey(outlineWidth: 1), fitKey(width: 181),
+                    fitKey(width: nil), fitKey(text: "生命"), fitKey(text: nil),
+                    fitKey(rubyTokens: []), fitKey(companionText: "translation"),
+                    fitKey(companionText: ""), fitKey(minFontSize: 15)] {
+            precondition(fitKey() != key, "every fit argument participates in cache identity")
+        }
+        precondition(
+            fitKey(doubleLine: true, text: "ABC-DE", companionText: "F")
+                != fitKey(doubleLine: true, text: "ABC", companionText: "DE-F"),
+            "primary and companion strings must not alias through a delimiter"
+        )
+
+        let widthProbe = NSCache<FloatingEstimatedLineWidthCacheKey, NSNumber>()
+        widthProbe.setObject(NSNumber(value: 1), forKey: shortWidthKey)
+        precondition(widthProbe.object(forKey: widthKey(rubyTokens: longTokens)) == nil)
+        widthProbe.setObject(NSNumber(value: 2), forKey: widthKey(rubyTokens: longTokens))
+        precondition(widthProbe.object(forKey: widthKey(rubyTokens: shortTokens))?.intValue == 1, "A-to-B-to-A width key reuse must restore A")
+        let fitProbe = NSCache<FloatingFittedFontSizeCacheKey, NSNumber>()
+        fitProbe.setObject(NSNumber(value: 34), forKey: shortFitKey)
+        precondition(fitProbe.object(forKey: fitKey(rubyTokens: longTokens)) == nil)
+        fitProbe.setObject(NSNumber(value: 14), forKey: fitKey(rubyTokens: longTokens))
+        precondition(fitProbe.object(forKey: fitKey(rubyTokens: shortTokens))?.intValue == 34, "A-to-B-to-A fit key reuse must restore A")
+
+        #if canImport(AppKit)
+        let shortRubyWidth = FloatingDesktopTypography.estimatedLineWidth(
+            text: "生", rubyTokens: shortTokens, hasRuby: true, fontSize: 34
+        )
+        let longRubyWidth = FloatingDesktopTypography.estimatedLineWidth(
+            text: "生", rubyTokens: longTokens, hasRuby: true, fontSize: 34
+        )
+        precondition(longRubyWidth > shortRubyWidth, "same-count reading correction must invalidate real font width")
+        precondition(FloatingDesktopTypography.estimatedLineWidth(text: "生", rubyTokens: shortTokens, hasRuby: true, fontSize: 34) == shortRubyWidth)
+        let shortRubySize = FloatingDesktopTypography.fittedFontSize(
+            requested: 34, height: 160, doubleLine: false, hasRuby: true,
+            width: 180, text: "生", rubyTokens: shortTokens
+        )
+        let longRubySize = FloatingDesktopTypography.fittedFontSize(
+            requested: 34, height: 160, doubleLine: false, hasRuby: true,
+            width: 180, text: "生", rubyTokens: longTokens
+        )
+        precondition(longRubySize < shortRubySize, "same-count reading correction must invalidate font fit")
+        precondition(FloatingDesktopTypography.fittedFontSize(requested: 34, height: 160, doubleLine: false, hasRuby: true, width: 180, text: "生", rubyTokens: shortTokens) == shortRubySize)
+        #endif
+
         let lines = (0..<7).map { index in
             LyricLine(timestamp: TimeInterval(index * 10), originalText: "line \(index)")
         }
