@@ -220,7 +220,13 @@ struct LyricsCanvasView: View {
     }
 
     private var lyricsScroll: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let seekDocumentTrack = state.displayedTrack
+        let seekDocumentIdentity = TrackIdentity(track: seekDocumentTrack)
+        let seekDocumentRevision = state.lyricsSessionRevision
+        let seekDocumentSource: PlaybackState.LyricsSeekDocumentSource = state.isShowingSearchPreview ? .searchPreview : .live
+        let seekLines = state.lyrics
+        let seekIsSynchronized = state.lyricsAreSynchronized
+        return VStack(alignment: .leading, spacing: 6) {
             translationControls
             GeometryReader { geometry in
                 ScrollViewReader { proxy in
@@ -235,15 +241,18 @@ struct LyricsCanvasView: View {
                                 visibleLayerCount: visibleLayerCount
                             )
                         ) {
-                            ForEach(Array(state.lyrics.enumerated()), id: \.element.id) { index, line in
+                            ForEach(Array(seekLines.enumerated()), id: \.element.id) { index, line in
                                 if let seekTimestamp = LyricsTimeline.validSeekTimestamp(
                                     for: line,
-                                    isSynchronized: state.lyricsAreSynchronized,
-                                    duration: state.displayedTrack.duration
+                                    isSynchronized: seekIsSynchronized,
+                                    duration: seekDocumentTrack.duration
                                 ) {
                                     Button {
                                         state.seekFromDisplayedLyrics(
                                             to: seekTimestamp,
+                                            documentIdentity: seekDocumentIdentity,
+                                            documentRevision: seekDocumentRevision,
+                                            documentSource: seekDocumentSource,
                                             source: "lyric-line"
                                         )
                                     } label: {

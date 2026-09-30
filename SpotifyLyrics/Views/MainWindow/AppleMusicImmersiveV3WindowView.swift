@@ -1663,6 +1663,9 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
             ? TrackIdentity(track: documentTrack).stableKey
             : state.currentTrackIdentity?.stableKey
         let artistDisplay = documentTrack.artist
+        let seekDocumentIdentity = TrackIdentity(track: documentTrack)
+        let seekDocumentRevision = documentRevision
+        let seekDocumentSource: PlaybackState.LyricsSeekDocumentSource = isPreview ? .searchPreview : .live
 
         return VStack(alignment: .leading, spacing: LyricsDesignTokens.Spacing.xs) {
             if lines.isEmpty {
@@ -1684,7 +1687,10 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                     currentIndex: currentIndex,
                     language: language,
                     trackStableKey: trackStableKey,
-                    artistDisplay: artistDisplay
+                    artistDisplay: artistDisplay,
+                    seekDocumentIdentity: seekDocumentIdentity,
+                    seekDocumentRevision: seekDocumentRevision,
+                    seekDocumentSource: seekDocumentSource
                 )
             }
         }
@@ -1755,7 +1761,10 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
         currentIndex: Int?,
         language: String?,
         trackStableKey: String?,
-        artistDisplay: String
+        artistDisplay: String,
+        seekDocumentIdentity: TrackIdentity,
+        seekDocumentRevision: UInt64,
+        seekDocumentSource: PlaybackState.LyricsSeekDocumentSource
     ) -> some View {
         GeometryReader { geometry in
             ScrollViewReader { proxy in
@@ -1792,6 +1801,9 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
                         onSeek: { timestamp in
                             state.seekFromDisplayedLyrics(
                                 to: timestamp,
+                                documentIdentity: seekDocumentIdentity,
+                                documentRevision: seekDocumentRevision,
+                                documentSource: seekDocumentSource,
                                 source: "v3-lyric-line"
                             )
                         },

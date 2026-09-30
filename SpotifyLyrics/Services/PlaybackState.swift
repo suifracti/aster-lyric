@@ -534,14 +534,43 @@ public final class PlaybackState: ObservableObject {
         return TrackIdentity(track: displayedTrack) == liveTrackIdentity
     }
 
-    /// Shared lyric-row seek boundary for V3 and the classic canvas. Ordinary
-    /// transport controls continue to use `seek(to:source:)` directly.
+    /// Revisions belong to separate live and search-preview sessions. The
+    /// origin selects which session to check, never bypassing the preview gate.
+    public enum LyricsSeekDocumentSource {
+        case live
+        case searchPreview
+    }
+
+    /// Shared lyric-row seek boundary for V3 and the classic canvas. A row
+    /// carries the identity/revision captured when its document was rendered.
+    /// Ordinary transport controls still use `seek(to:source:)` directly.
     @discardableResult
     public func seekFromDisplayedLyrics(
         to position: TimeInterval,
+        documentIdentity: TrackIdentity,
+        documentRevision: UInt64,
+        documentSource: LyricsSeekDocumentSource,
         source: String
     ) -> Bool {
-        guard canSeekDisplayedLyrics else { return false }
+        guard canSeekDisplayedLyrics,
+              documentIdentity == TrackIdentity(track: currentTrack) else { return false }
+        let activeIdentity: TrackIdentity?
+        let currentRevision: UInt64
+        switch documentSource {
+        case .live:
+            // Explicit Mock Preview has no session identity, but retains its
+            // existing local row-seeking capability and revision boundary.
+            activeIdentity = isMockPreviewMode
+                ? TrackIdentity(track: currentTrack)
+                : lyricsSession.activeIdentity
+            currentRevision = lyricsSession.revision
+        case .searchPreview:
+            guard isShowingSearchPreview else { return false }
+            activeIdentity = searchPreviewSession.activeIdentity
+            currentRevision = searchPreviewSession.revision
+        }
+        guard activeIdentity == documentIdentity,
+              currentRevision == documentRevision else { return false }
         seek(to: position, source: source)
         return true
     }
