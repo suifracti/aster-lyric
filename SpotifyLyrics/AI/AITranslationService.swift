@@ -608,13 +608,38 @@ private final class CodexAppServerClient: @unchecked Sendable {
 
 public enum TranslationEngineRegistry {
     public static func make(stableID: String) -> any TranslationEngine {
-        if stableID == TranslationEngineID.appleSystem.rawValue {
+        switch TranslationEngineID(rawValue:stableID) {
+        case .appleSystem:
             return AppleSystemTranslationEngine()
-        }
-        if stableID == TranslationEngineID.codexChatGPT.rawValue {
+        case .codexChatGPT:
             return CodexAppServerTranslationService()
+        case .grokBuild, .geminiCLI, .antigravityCLI, .deepSeekAPI:
+            let catalog=TranslationEngineCatalog.metadata(for:stableID)
+            let metadata=TranslationEngineMetadata(
+                stableID:stableID,
+                displayName:catalog?.displayName ?? "未接线的翻译服务",
+                availability:.unavailable,
+                requiresAPIKey:catalog?.requiresAPIKey ?? false,
+                supportsModelDirectory:catalog?.supportsModelDirectory ?? false
+            )
+            return UnavailableProviderTranslationEngine(metadata:metadata)
+        case .openAICompatible, .none:
+            return OpenAICompatibleTranslationService()
         }
-        return OpenAICompatibleTranslationService()
+    }
+}
+
+private struct UnavailableProviderTranslationEngine: TranslationEngine, Sendable {
+    let metadata:TranslationEngineMetadata
+    private static let reason="此 Provider 的翻译执行尚未接线。"
+
+    func translate(context:AITranslationContext,sourceContentHash:String,
+                   configuration:AITranslationConfiguration) async throws -> AITranslationDraft {
+        throw AITranslationError.engineUnavailable(Self.reason)
+    }
+
+    func testConnection(configuration:AITranslationConfiguration) async throws {
+        throw AITranslationError.engineUnavailable(Self.reason)
     }
 }
 

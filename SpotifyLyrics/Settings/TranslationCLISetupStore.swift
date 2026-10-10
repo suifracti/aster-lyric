@@ -86,7 +86,7 @@ public final class TranslationCLISetupStore: ObservableObject {
                 self.messages[id]=install == nil ? "" : (result.version == nil ? "安装步骤结束，但未能确认 CLI 版本。" : "安装完成；下一步可读取模型列表。登录与模型权限尚未验证。")
             } catch {
                 guard let self,self.generations[id]==token,!Task.isCancelled else { return }
-                self.busy[id]=nil;self.tasks[id]=nil;self.messages[id]=error.localizedDescription
+                self.busy[id]=nil;self.tasks[id]=nil;self.messages[id]=TranslationCLISetupFailure.userMessage(for:error)
             }
         }
     }
@@ -116,13 +116,19 @@ struct TranslationCLISetupBackend: Sendable {
         guard let path=resolver(id) else { return .init(reason:id == TranslationEngineID.antigravityCLI.rawValue ? "未找到 agy；Antigravity 桌面 App 不包含此 CLI。" : "未找到 \(TranslationCLIInstallPlan.forProvider(id)?.title ?? "本机 CLI") 可执行文件。") }
         do {
             let output=try await run(path,["--version"],timeout:probeTimeout)
-            let regex=try NSRegularExpression(pattern:#"(?:^|\s)v?\d+\.\d+(?:\.\d+)?(?:$|[\s-])"#)
-            guard let version=output.split(whereSeparator:\.isNewline).map(String.init).first(where:{regex.firstMatch(in:$0,range:NSRange($0.startIndex...,in:$0)) != nil}) else {
+            let regex=try NSRegularExpression(pattern:#"(?:^|\s)v?(\d+\.\d+(?:\.\d+)?)(?:$|[\s-])"#)
+            let version=output.split(whereSeparator:\.isNewline).compactMap { line -> String? in
+                let value=String(line)
+                guard let match=regex.firstMatch(in:value,range:NSRange(value.startIndex...,in:value)),
+                      let range=Range(match.range(at:1),in:value) else { return nil }
+                return String(value[range])
+            }.first
+            guard let version else {
                 return .init(path:path,reason:"已找到可执行文件，但无法识别版本输出；请查看官方安装说明。")
             }
-            return .init(path:path,version:String(version.prefix(200)))
+            return .init(path:path,version:version)
         } catch AITranslationError.cancelled { throw AITranslationError.cancelled }
-        catch { return .init(path:path,reason:"已找到CLI，版本检测失败："+error.localizedDescription) }
+        catch { return .init(path:path,reason:"已找到CLI，版本检测失败："+TranslationCLISetupFailure.userMessage(for:error)) }
     }
     func install(_ plan:TranslationCLIInstallPlan,progress:TranslationCLISetupStore.Progress) async throws {
         progress("正在检查 Node.js 与 npm…")
@@ -174,7 +180,7 @@ struct TranslationCLISetupBackend: Sendable {
                     }
                 }
                 try pipe.fileHandleForWriting.close()
-                guard error==0 else { throw NSError(domain:NSPOSIXErrorDomain,code:Int(error)) }
+                guard error==0 else { throw TranslationCLISetupProcessFailure.launchFailed }
                 owner.install(pid)
                 let timer=DispatchWorkItem { owner.stop(timeout:true) }
                 DispatchQueue.global().asyncAfter(deadline:.now()+timeout,execute:timer)
@@ -190,12 +196,39 @@ struct TranslationCLISetupBackend: Sendable {
                 timer.cancel();owner.finished()
                 if owner.cancelled { throw AITranslationError.cancelled }
                 if owner.timedOut { throw AITranslationError.timedOut }
-                let text=String(decoding:tail,as:UTF8.self)
                 let code=(status & 0x7f)==0 ? (status>>8)&0xff : 128+(status & 0x7f)
-                guard code==0 else { throw AITranslationError.engineUnavailable("CLI 操作失败（退出码 \(code)）：\(text)") }
-                return text
+                guard code==0 else { throw TranslationCLISetupProcessFailure.commandFailed(exitCode:code) }
+                return String(decoding:tail,as:UTF8.self)
             }.value
         },onCancel:{owner.stop(timeout:false)})
+    }
+}
+
+enum TranslationCLISetupFailure {
+    static func userMessage(for error:Error) -> String {
+        if let failure=error as? TranslationCLISetupProcessFailure {
+            return failure.localizedDescription
+        }
+        if let translationError=error as? AITranslationError {
+            switch translationError {
+            case .cancelled: return "操作已取消。"
+            case .timedOut: return "CLI 操作超时；请重新检测或查看官方安装说明。"
+            default: break
+            }
+        }
+        return "CLI 操作失败；请查看官方安装说明并重试。"
+    }
+}
+
+enum TranslationCLISetupProcessFailure: Error, Sendable, LocalizedError {
+    case commandFailed(exitCode:Int32)
+    case launchFailed
+
+    var errorDescription:String? {
+        switch self {
+        case .commandFailed(let exitCode): return "命令失败（退出码 \(exitCode)）；原始输出已隐藏。"
+        case .launchFailed: return "无法启动 CLI 命令；原始系统错误已隐藏。"
+        }
     }
 }
 
