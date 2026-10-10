@@ -6,15 +6,25 @@ import Foundation
 public final class AppleMusicDesktopProvider: PlaybackProvider {
     public let displayName = "Apple Music"
 
-    private let applicationPath = "/System/Applications/Music.app"
-    private let bundleIdentifier = "com.apple.Music"
+    private static let applicationPath = "/System/Applications/Music.app"
+    private static let bundleIdentifier = "com.apple.Music"
     private let fieldSeparator = String(UnicodeScalar(30))
     private let scriptRunner: @Sendable (String, TimeInterval) async throws -> String?
+    private let applicationIsInstalled: @MainActor () -> Bool
+    private let applicationIsRunning: @MainActor () -> Bool
 
     private static let refreshScriptTimeout: TimeInterval = 3
     private static let commandScriptTimeout: TimeInterval = 5
 
     public init() {
+        self.applicationIsInstalled = {
+            FileManager.default.fileExists(atPath: Self.applicationPath)
+        }
+        self.applicationIsRunning = {
+            !NSRunningApplication.runningApplications(
+                withBundleIdentifier: Self.bundleIdentifier
+            ).isEmpty
+        }
         self.scriptRunner = { script, timeout in
             try await AppleMusicAppleScriptProcessRunner.shared.run(
                 script: script,
@@ -24,12 +34,18 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
     }
 
     /// Test seam for parser and connection tests.
-    init(scriptRunner: @escaping @Sendable (String, TimeInterval) async throws -> String?) {
+    init(
+        scriptRunner: @escaping @Sendable (String, TimeInterval) async throws -> String?,
+        applicationIsInstalled: @escaping @MainActor () -> Bool,
+        applicationIsRunning: @escaping @MainActor () -> Bool
+    ) {
         self.scriptRunner = scriptRunner
+        self.applicationIsInstalled = applicationIsInstalled
+        self.applicationIsRunning = applicationIsRunning
     }
 
     public func refresh() async -> PlaybackSnapshot {
-        guard FileManager.default.fileExists(atPath: applicationPath) else {
+        guard applicationIsInstalled() else {
             return PlaybackSnapshot(
                 status: .notInstalled,
                 track: nil,
@@ -39,7 +55,7 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
             )
         }
 
-        guard isRunning else {
+        guard applicationIsRunning() else {
             return PlaybackSnapshot(
                 status: .notRunning,
                 track: nil,
@@ -100,10 +116,6 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
         try await executeCommand(
             "tell application \"Music\" to set player position to \(Self.appleScriptNumber(seconds))"
         )
-    }
-
-    private var isRunning: Bool {
-        !NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).isEmpty
     }
 
     private var readScript: String {

@@ -14,10 +14,66 @@ final class AutomaticAlignmentJobController {
     func notifyPlaybackSourceChanged(previous: PlaybackSourceIdentity, next: PlaybackSourceIdentity) {}
 }
 
+/// The playback contract does not exercise audio capture. Keep its unrelated
+/// Assist collaborator isolated so this focused slice does not compile or run
+/// the ScreenCaptureKit pipeline.
+struct PartialAlignmentReport {
+    struct Candidate {
+        let captureSessionID: UUID
+    }
+
+    let candidate: Candidate
+}
+
+@MainActor
+final class LiveCaptureCoordinator {
+    enum State { case idle, running, stopping, failed }
+    enum PartialAlignmentFailureKind: String {
+        case startIgnored, unsupportedSource, captureFailed, noCompletedSession
+        case noWavSegments, noLyrics, noPlayback, speechFailed, alignmentFailed
+        case cancelled, emptyTranscript, insufficientSuggestions, unknown
+    }
+    enum StopReason { case userStop, trackChanged }
+
+    struct PartialAlignmentHandoff {
+        let generation: UInt64
+        let report: PartialAlignmentReport?
+        let failureKind: PartialAlignmentFailureKind?
+        let message: String?
+    }
+
+    static let shared = LiveCaptureCoordinator()
+    var state: State = .idle
+    var lastError: String?
+    var lastStartedGeneration: UInt64 = 0
+    var lastAlignmentHandoff: PartialAlignmentHandoff?
+    var lastPartialReport: PartialAlignmentReport?
+
+    func bind(playback: PlaybackState) {}
+    func start(autoStopAfter: TimeInterval, runPartialAlignment: Bool) async {}
+    func waitUntilIdle(timeoutSeconds: TimeInterval) async {}
+    func stop(reason: StopReason) async {}
+}
+
+enum AssistedCandidateMerger {
+    static func merge(report: PartialAlignmentReport, plainLines: [LyricLine]) -> AssistedAlignmentDraft {
+        AssistedAlignmentDraft(
+            trackIdentityDigest: "",
+            captureSessionID: report.candidate.captureSessionID,
+            plainLineCount: plainLines.count,
+            lines: [],
+            usedConstrainedAlignment: false,
+            s3bFallbackReason: nil,
+            judgment: "not exercised by playback state contract"
+        )
+    }
+}
+
 @MainActor
 private final class ScriptedPlaybackProvider: PlaybackProvider {
     let displayName = "scripted-playback"
     private(set) var commandLog: [String] = []
+    private(set) var refreshCalls = 0
     var snapshot: PlaybackSnapshot
 
     init(snapshot: PlaybackSnapshot) {
@@ -25,7 +81,8 @@ private final class ScriptedPlaybackProvider: PlaybackProvider {
     }
 
     func refresh() async -> PlaybackSnapshot {
-        snapshot
+        refreshCalls += 1
+        return snapshot
     }
 
     func play() async throws {
@@ -64,6 +121,50 @@ private final class ScriptedPlaybackProvider: PlaybackProvider {
             position: position,
             isPlaying: snapshot.isPlaying
         )
+    }
+}
+
+private actor CountingLyricsProvider: LyricsProvider {
+    nonisolated let name = "counting-lyrics-test"
+    private(set) var lookupCalls = 0
+    private let lookupStartedStream: AsyncStream<Void>
+    private let lookupStartedContinuation: AsyncStream<Void>.Continuation
+
+    init() {
+        let lookupStarted = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        self.lookupStartedStream = lookupStarted.stream
+        self.lookupStartedContinuation = lookupStarted.continuation
+    }
+
+    func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult {
+        lookupCalls += 1
+        lookupStartedContinuation.yield(())
+        lookupStartedContinuation.finish()
+        return .noLyrics
+    }
+
+    func waitForLookup(timeoutNanoseconds: UInt64) async -> Bool {
+        let stream = lookupStartedStream
+        return await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                for await _ in stream {
+                    return true
+                }
+                return false
+            }
+            group.addTask {
+                do {
+                    try await Task.sleep(nanoseconds: timeoutNanoseconds)
+                    return false
+                } catch {
+                    return false
+                }
+            }
+
+            let didLookupStart = await group.next() ?? false
+            group.cancelAll()
+            return didLookupStart
+        }
     }
 }
 
@@ -131,6 +232,93 @@ struct PlaybackStateContract {
             duration: 300,
             artworkURL: URL(string: "https://example.test/b.jpg")
         )
+
+        let startupSuite = ProcessInfo.processInfo.environment["LYRICSQ_PLAYBACK_CONTRACT_SUITE"]
+            ?? "LyricsQPlaybackStateContract-\(UUID().uuidString)"
+        let startupDefaults = UserDefaults(suiteName: startupSuite)!
+        let startupSettings = AppSettingsStore(defaults: startupDefaults)
+        startupSettings.playbackSourceMode = .spotify
+        startupSettings.autoSearchLyricsOnTrackChange = true
+        let startupLyricsProvider = CountingLyricsProvider()
+        let startupProvider = ScriptedPlaybackProvider(
+            snapshot: PlaybackSnapshot(status: .ready, track: trackA, position: 12, isPlaying: true)
+        )
+        let startupState = PlaybackState(
+            provider: startupProvider,
+            lyricsProvider: startupLyricsProvider,
+            settings: startupSettings
+        )
+        startupState.startProvider(connectSpotify: false)
+        try? await Task.sleep(nanoseconds: 1_300_000_000)
+        precondition(startupProvider.refreshCalls == 0, "disabled Spotify startup must not refresh on timer ticks")
+        precondition(!startupState.hasLiveTrack, "disabled Spotify startup must not adopt a live track")
+        precondition(startupState.currentTrackIdentity == nil, "disabled Spotify startup must not create a live identity")
+        let startupLookupCalls = await startupLyricsProvider.lookupCalls
+        precondition(startupLookupCalls == 0, "disabled Spotify startup must not query lyrics")
+
+        startupState.reconnectSpotify()
+        for _ in 0..<50 {
+            if startupProvider.refreshCalls > 0, startupState.hasLiveTrack {
+                break
+            }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        precondition(startupProvider.refreshCalls > 0, "explicit reconnect must refresh the provider")
+        precondition(startupState.hasLiveTrack, "explicit reconnect must adopt the authorized track")
+        precondition(startupState.currentTrack.title == "Track A")
+        precondition(
+            startupState.currentTrackIdentity?.stableKey.contains("spotify-id:a") == true,
+            "explicit reconnect must adopt Track A identity"
+        )
+        let lookupStarted = await startupLyricsProvider.waitForLookup(timeoutNanoseconds: 3_000_000_000)
+        let reconnectLookupCalls = await startupLyricsProvider.lookupCalls
+        let reconnectIdentity = startupState.currentTrackIdentity?.stableKey ?? "none"
+        precondition(
+            lookupStarted,
+            "stage=explicit-reconnect.await-fake-lookup-entry timeout=3s lookupCalls=\(reconnectLookupCalls) " +
+                "refreshCalls=\(startupProvider.refreshCalls) hasLiveTrack=\(startupState.hasLiveTrack) " +
+                "track=\(startupState.currentTrack.title) identity=\(reconnectIdentity) " +
+                "sessionRevision=\(startupState.lyricsSession.revision) " +
+                "sessionState=\(String(describing: startupState.lyricsSession.state)) " +
+                "autoSearch=\(startupSettings.autoSearchLyricsOnTrackChange) " +
+                "activeLyricsDocument=\(startupState.lyricsSession.activeDocument != nil) " +
+                "database=isolated-fresh-SQLite generation=not-publicly-exposed"
+        )
+        precondition(reconnectLookupCalls > 0, "explicit reconnect must preserve automatic lyrics search")
+        startupDefaults.removePersistentDomain(forName: startupSuite)
+
+        for sourceMode in [PlaybackSourceMode.auto, .appleMusic] {
+            let suite = "LyricsQPlaybackStateContract-\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            let settings = AppSettingsStore(defaults: defaults)
+            settings.playbackSourceMode = sourceMode
+            let sourceIdentity: PlaybackSourceIdentity = sourceMode == .appleMusic ? .appleMusic : .spotifyDesktop
+            let modeProvider = ScriptedPlaybackProvider(
+                snapshot: PlaybackSnapshot(
+                    status: .ready,
+                    track: trackA,
+                    position: 12,
+                    isPlaying: true,
+                    sourceIdentity: sourceIdentity
+                )
+            )
+            let modeState = PlaybackState(
+                provider: modeProvider,
+                lyricsProvider: NoLyricsProvider(),
+                settings: settings
+            )
+            modeState.startProvider(connectSpotify: false)
+            for _ in 0..<90 {
+                if modeProvider.refreshCalls > 0, modeState.hasLiveTrack {
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 20_000_000)
+            }
+            precondition(modeProvider.refreshCalls > 0, "\(sourceMode.rawValue) startup must retain provider discovery")
+            precondition(modeState.hasLiveTrack, "\(sourceMode.rawValue) startup must retain track adoption")
+            defaults.removePersistentDomain(forName: suite)
+        }
+
         let provider = ScriptedPlaybackProvider(
             snapshot: PlaybackSnapshot(status: .ready, track: trackA, position: 12, isPlaying: true)
         )

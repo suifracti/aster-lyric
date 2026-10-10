@@ -75,6 +75,11 @@ public final class PlaybackState: ObservableObject {
     private var timer: Timer?
     private var isProviderStarted = false
     private var automaticSpotifyConnectionEnabled = true
+    /// The launch toggle gates only explicitly selected Spotify. `.auto`
+    /// retains its existing player discovery path, including Apple Music.
+    private var canRefreshSelectedProvider: Bool {
+        settingsStore.playbackSourceMode != .spotify || automaticSpotifyConnectionEnabled
+    }
     private var isRefreshingProvider = false
     private var providerRefreshGeneration: UInt64 = 0
     private var refreshRequestedWhileBusy = false
@@ -2304,7 +2309,7 @@ public final class PlaybackState: ObservableObject {
     }
 
     private func refreshProvider() async {
-        guard !isMockPreviewMode else { return }
+        guard !isMockPreviewMode, canRefreshSelectedProvider else { return }
         guard !isRefreshingProvider else {
             refreshRequestedWhileBusy = true
             return
@@ -2329,14 +2334,17 @@ public final class PlaybackState: ObservableObject {
         // while a previous Apple Events request is unwinding.
         lastProviderRefreshDate = Date()
 
-        let shouldApply = !Task.isCancelled && generation == providerRefreshGeneration && !isMockPreviewMode
+        let shouldApply = !Task.isCancelled &&
+            generation == providerRefreshGeneration &&
+            !isMockPreviewMode &&
+            canRefreshSelectedProvider
         if shouldApply {
             synchronize(with: snapshot, observedAtMonotonic: latencyCompensatedMonotonic)
         }
 
         let shouldQueueRefresh = refreshRequestedWhileBusy
         refreshRequestedWhileBusy = false
-        if shouldQueueRefresh && !isMockPreviewMode {
+        if shouldQueueRefresh && !isMockPreviewMode && canRefreshSelectedProvider {
             providerRefreshTask = Task { @MainActor [weak self] in
                 await self?.refreshProvider()
             }
@@ -2652,6 +2660,7 @@ public final class PlaybackState: ObservableObject {
         }
 
         let shouldRefreshProvider = !isMockPreviewMode &&
+            canRefreshSelectedProvider &&
             Date().timeIntervalSince(lastProviderRefreshDate) >= calibrationInterval
         if shouldRefreshProvider && !isRefreshingProvider {
             providerRefreshTask = Task { @MainActor [weak self] in
