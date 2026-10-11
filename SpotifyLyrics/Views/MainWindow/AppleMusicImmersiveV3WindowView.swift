@@ -842,11 +842,13 @@ struct AppleMusicImmersiveV3WindowView: View {
                 iconLabel("books.vertical", description: "歌词库")
             }
             .toolbarTooltip("歌词库", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
-            CurrentSongOperationsView(state: state, versionShortcutOnly: true, iconOnly: true,
-                onVersionPickerPresentationChange: { isVersionPickerPresented = $0 },
-                onOpenEditor: liveOnly ? { MenuBarLyricsController.shared.openEditor() } : nil)
-                .environmentObject(settings)
-                .toolbarTooltip("歌词版本", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
+            if liveOnly || !state.isShowingSearchPreview {
+                CurrentSongOperationsView(state: state, versionShortcutOnly: true, iconOnly: true,
+                    onVersionPickerPresentationChange: { isVersionPickerPresented = $0 },
+                    onOpenEditor: liveOnly ? { MenuBarLyricsController.shared.openEditor() } : nil)
+                    .environmentObject(settings)
+                    .toolbarTooltip("歌词版本", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
+            }
             Button { isLyricsTimePresented.toggle() } label: {
                 iconLabel("clock.arrow.2.circlepath", description: lyricsTimeToolbarLabel)
             }
