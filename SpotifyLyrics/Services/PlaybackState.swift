@@ -186,7 +186,8 @@ public final class PlaybackState: ObservableObject {
         let translationRepository = (resolvedRepository as? any TranslationRepository)
             ?? UnavailableTranslationRepository()
         let translation = TranslationSessionController(
-            repository: translationRepository
+            repository: translationRepository,
+            selectionDefaults: resolvedSettings.translationSelectionDefaults
         )
         let readingRepository = (resolvedRepository as? any ReadingRepository)
             ?? UnavailableReadingRepository()

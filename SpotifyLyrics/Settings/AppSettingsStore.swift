@@ -199,6 +199,9 @@ public final class AppSettingsStore: ObservableObject {
     public static let currentSettingsVersion = 1
 
     private let defaults: UserDefaults
+
+    /// Translation choices use the same injected preferences scope as settings.
+    var translationSelectionDefaults: UserDefaults { defaults }
     private var v3BlurByPresentation: [V3ArtworkPresentation: Double] = [:]
     private var isApplyingStoredV3Blur = false
 

@@ -215,6 +215,84 @@ private struct NetworkFailureLyricsProvider: LyricsProvider {
 @main
 @MainActor
 struct PlaybackStateContract {
+    static func selectionDefaultsContract(root: URL, providerTrack: ProviderTrack) async throws {
+        let suite = "LyricsQPlaybackSelection-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        precondition(defaults.persistentDomain(forName: suite) == nil)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        precondition(settings.translationSelectionDefaults === defaults, "must reuse injected defaults object")
+        settings.playbackSourceMode = .spotify
+        settings.autoSearchLyricsOnTrackChange = false
+        precondition(!settings.aiTranslationConfiguration.autoTranslateNewLyrics && !settings.aiTranslationConfiguration.isConfigured)
+        let url = root.appendingPathComponent("selection.sqlite3")
+        precondition(!FileManager.default.fileExists(atPath: url.path))
+        let provenance = root.appendingPathComponent("selection-provenance")
+        let repo = SQLiteLyricsRepository(databaseURL: url, alignmentProvenanceDirectory: provenance)
+        try await repo.prepare()
+        func makeState(_ repository: SQLiteLyricsRepository, _ store: AppSettingsStore) async throws -> PlaybackState {
+            let provider = ScriptedPlaybackProvider(snapshot: PlaybackSnapshot(status: .ready,
+                track: providerTrack, position: 0, isPlaying: false))
+            let state = PlaybackState(provider: provider, lyricsProvider: NoLyricsProvider(), lyricsRepository: repository, settings: store)
+            state.startProvider(connectSpotify: false)
+            state.reconnectSpotify()
+            let deadline = Date().addingTimeInterval(2)
+            while !state.hasLiveTrack && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+            precondition(state.hasLiveTrack && state.currentTrackIdentity != nil)
+            return state
+        }
+        let first = try await makeState(repo, settings)
+        let track = first.currentTrack, identity = first.currentTrackIdentity!
+        let document = LyricsDocument(identity: identity, title: track.title, artist: track.artist,
+            album: track.album, duration: track.duration, lines: [LyricLine(timestamp: 0, originalText: "synthetic original")],
+            isSynchronized: true, source: .lrclib, confidence: 1, providerSourceID: "selection-fixture")
+        let source = try await repo.save(track: track, identity: identity, document: document)
+        let versionID = source.versionID!, hash = source.sourceContentHash!
+        let language = settings.aiTranslationConfiguration.targetLanguage
+        func save(_ text: String, manual: Bool) async throws -> StoredTranslationVersion {
+            let draft = AITranslationDraft(lines: [AITranslationLine(index: 0, translation: text)],
+                targetLanguage: language, model: "fixture", baseURLHost: "fixture", promptHash: text,
+                sourceContentHash: hash, sourceKind: manual ? .manualEdit : .ai,
+                isMachineGenerated: !manual, isManuallyEdited: manual)
+            let value = try await repo.saveTranslation(lyricsVersionID: versionID, sourceContentHash: hash,
+                originalLines: document.lines.map(\.originalText), draft: draft, forceNewVersion: true)
+            try await repo.adoptTranslation(versionID: value.record.id)
+            return value
+        }
+        let protected = try await save("protected manual", manual: true)
+        try await repo.markTranslationLocked(versionID: protected.record.id, locked: true)
+        let alternate = try await save("alternate", manual: false)
+        func load(_ state: PlaybackState) async throws {
+            state.lyricsSession.adoptPersisted(document: document, versionID: versionID, sourceContentHash: hash)
+            let deadline = Date().addingTimeInterval(2)
+            while state.translationVersions.count != 2 && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+            precondition(state.translationVersions.count == 2)
+        }
+        try await load(first)
+        precondition(first.selectedTranslation?.record.id == protected.record.id)
+        let key = TranslationSessionController.selectionPreferenceKey(trackStableKey: identity.stableKey,
+            versionID: versionID, sourceHash: hash, targetLanguage: language)
+        first.selectNoTranslationVersion()
+        precondition(first.isTranslationSelectionEmpty && defaults.string(forKey: key) == "none")
+        let reopened = SQLiteLyricsRepository(databaseURL: url, alignmentProvenanceDirectory: provenance)
+        try await reopened.prepare()
+        let secondSettings = AppSettingsStore(defaults: UserDefaults(suiteName: suite)!)
+        let second = try await makeState(reopened, secondSettings)
+        try await load(second)
+        precondition(second.isTranslationSelectionEmpty && second.selectedTranslation == nil, "formal controller reconstruction lost none")
+        second.selectTranslation(versionID: alternate.record.id)
+        precondition(second.selectedTranslation?.record.id == alternate.record.id)
+        precondition(defaults.string(forKey: key) == alternate.record.id.uuidString, "formal selection did not persist in injected suite")
+        second.restoreRecommendedTranslation()
+        let deadline = Date().addingTimeInterval(2)
+        while second.selectedTranslation?.record.id != protected.record.id && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        precondition(second.selectedTranslation?.record.id == protected.record.id && !second.isTranslationSelectionEmpty)
+        precondition(defaults.object(forKey: key) == nil && defaults.object(forKey: "ai.libraryTranslationSelection.v1." + identity.stableKey) == nil)
+        precondition(second.translationVersions.contains { $0.record.id == protected.record.id && $0.record.isLocked && $0.record.isManuallyEdited })
+        first.cancelTranslation(); second.cancelTranslation()
+        print("PASS formal PlaybackState defaults injection: same settings suite; two instances; none/explicit version/recommended clearing; synthetic SQLite/manual locked retained; unconfigured auto=false")
+    }
+
     static func main() async {
         guard let rootPath = ProcessInfo.processInfo.environment["LYRICSQ_M1_PLAYBACK_ROOT"] else {
             fatalError("task-private playback root required")
@@ -261,6 +339,8 @@ struct PlaybackStateContract {
             duration: 300,
             artworkURL: URL(string: "https://example.test/b.jpg")
         )
+
+        try! await selectionDefaultsContract(root: root, providerTrack: trackA)
 
         let startupSuite = ProcessInfo.processInfo.environment["LYRICSQ_PLAYBACK_CONTRACT_SUITE"]
             ?? "LyricsQPlaybackStateContract-\(UUID().uuidString)"
