@@ -1,5 +1,10 @@
 #!/bin/zsh
 set -euo pipefail
+umask 077
+# Ignore task-external debug controls; all data and defaults belong to this run.
+for name in ${(k)parameters}; do
+  if [[ "$name" == SPOTIFYLYRICS_* || "$name" == LYRICSQ_* || "$name" == SPOTIFY_CLIENT_ID ]]; then unset "$name"; fi
+done
 ROOT="${0:A:h}/.."
 BUILD="$(mktemp -d /tmp/spotifylyrics-translation-session-contract.XXXXXX)"
 export SPOTIFYLYRICS_CONTRACT_ROOT="$BUILD/fixtures"

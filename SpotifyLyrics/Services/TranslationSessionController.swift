@@ -452,6 +452,14 @@ public final class TranslationSessionController: ObservableObject {
         return project(onto: lines)
     }
 
+    nonisolated private static func completionContext(_ context: TranslationContext) -> TranslationCompletionContext {
+        TranslationCompletionContext(identity: context.identity, lyricsVersionID: context.lyricsVersionID,
+            sourceContentHash: context.sourceContentHash, originalLines: context.document.lines.map(\.originalText),
+            targetLanguage: context.configuration.targetLanguage, providerCacheIdentity: context.configuration.providerCacheIdentity,
+            configurationPromptHash: context.configuration.promptHash, engineID: context.configuration.engineID,
+            allowsAppleFallback: context.configuration.fallbackStrategy == .automaticSystem)
+    }
+
     private func loadExistingOrAutoTranslate(_ context: TranslationContext, allowAutomaticRequest: Bool = true) {
         requestTask?.cancel()
         requestTask = nil
@@ -476,24 +484,12 @@ public final class TranslationSessionController: ObservableObject {
                     sourceHash: context.sourceContentHash, context: context.aiContext, configuration: context.configuration)
                 var previousRequest = try await repository.loadTranslationRequest(key: durableKey)
                 guard !Task.isCancelled, self?.context?.key == key, self?.requestGeneration == loadGeneration else { return }
-                if var request = previousRequest, request.phase == .received, let draft = request.result {
-                    try AITranslationRequestExecution.validate(draft, context: context.aiContext, sourceHash: context.sourceContentHash, configuration: context.configuration)
-                    // A crash between version commit and ledger completion must
-                    // not insert a second copy. Compare the complete payload.
-                    let alreadySaved = versions.contains {
-                        $0.record.createdAt >= request.updatedAt && $0.record.promptHash == draft.promptHash &&
-                        $0.record.model == draft.model && $0.lines.map(\.translatedText) == draft.lines.map(\.translation)
-                    }
-                    if !alreadySaved {
-                        let saved = try await repository.saveTranslation(lyricsVersionID: context.lyricsVersionID,
-                            sourceContentHash: context.sourceContentHash, originalLines: context.document.lines.map(\.originalText),
-                            draft: draft.with(isDraft: self?.canUseAutomatically(context) != true, isArchived: false,
-                                providerCacheIdentity: context.configuration.providerCacheIdentity), forceNewVersion: false)
-                        versions.insert(saved, at: 0)
-                    }
-                    request.phase = .saved; request.result = nil; request.updatedAt = Date()
-                    try await repository.updateTranslationRequest(request)
-                    previousRequest = request
+                if let request = previousRequest, request.phase == .received || request.phase == .saved {
+                    let saved = try await repository.completeTranslationRequest(key: durableKey, attemptID: request.attemptID,
+                        context: Self.completionContext(context))
+                    versions.removeAll { $0.record.id == saved.record.id }
+                    versions.insert(saved, at: 0)
+                    previousRequest = try await repository.loadTranslationRequest(key: durableKey)
                 }
                 guard !Task.isCancelled else { return }
                 let interrupted = previousRequest?.phase == .dispatching
@@ -662,7 +658,6 @@ public final class TranslationSessionController: ObservableObject {
             : (engine?.metadata.stableID == TranslationEngineID.codexChatGPT.rawValue
                 ? "正在通过 Codex 会话准备整首歌词翻译…"
                 : "正在请求整首歌词翻译…")
-        let originalLines = context.document.lines.map(\.originalText)
         let engine = self.engine
         let acceptanceBudget = self.acceptanceBudget
         requestTask = Task { [weak self, repository] in
@@ -672,22 +667,21 @@ public final class TranslationSessionController: ObservableObject {
                 try Task.checkCancellation()
                 let durableKey = try AITranslationRequestExecution.key(identity: context.identity, versionID: context.lyricsVersionID,
                     sourceHash: context.sourceContentHash, context: aiContext, configuration: context.configuration)
-                var request = try await AITranslationRequestExecution.run(engine: engine, repository: repository, key: durableKey,
+                let request = try await AITranslationRequestExecution.run(engine: engine, repository: repository, key: durableKey,
                     explicitRetry: explicitRequest, context: aiContext, sourceHash: context.sourceContentHash,
                     configuration: context.configuration, budget: acceptanceBudget, trackKey: context.identity.stableKey)
-                guard let draft = request.result else { throw AITranslationError.invalidResponse("完整结果缺失") }
+                guard request.result != nil else { throw AITranslationError.invalidResponse("完整结果缺失") }
                 guard !Task.isCancelled, self?.context?.requestKey == context.requestKey,
                       self?.requestGeneration == translationGeneration else { throw AITranslationError.cancelled }
                 let automaticallyUse = self?.canUseAutomatically(context) == true
-                let saved = try await repository.saveTranslation(
-                    lyricsVersionID: context.lyricsVersionID,
-                    sourceContentHash: context.sourceContentHash,
-                    originalLines: originalLines,
-                    draft: draft.with(isDraft: !automaticallyUse, isArchived: false, providerCacheIdentity: context.configuration.providerCacheIdentity),
-                    forceNewVersion: forceNewVersion
-                )
-                request.phase = .saved; request.result = nil; request.updatedAt = Date()
-                try await repository.updateTranslationRequest(request)
+                var saved = try await repository.completeTranslationRequest(key: durableKey, attemptID: request.attemptID,
+                    context: Self.completionContext(context))
+                guard !Task.isCancelled, self?.context?.requestKey == context.requestKey,
+                      self?.requestGeneration == translationGeneration else { return }
+                if automaticallyUse && self?.canUseAutomatically(context) == true {
+                    try await repository.adoptTranslation(versionID: saved.record.id)
+                    saved = saved.with(record: saved.record.with(isDraft: false))
+                }
                 guard !Task.isCancelled else { return }
                 await MainActor.run { [weak self] in
                     guard let self,

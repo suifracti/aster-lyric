@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Independent of translation_versions: an uncertain request is never a usable
 /// translation. `dispatching` is conservative (the engine may have sent data).
@@ -6,11 +7,42 @@ public enum TranslationRequestPhase: String, Codable, Sendable { case prepared, 
 public struct StoredTranslationRequest: Codable, Sendable {
     public let key: String
     public let attemptID: UUID
+    public let completionVersionID: UUID?
     public var phase: TranslationRequestPhase
     public var result: AITranslationDraft?
     public var updatedAt: Date
-    public init(key: String, attemptID: UUID = UUID(), phase: TranslationRequestPhase = .prepared, result: AITranslationDraft? = nil, updatedAt: Date = Date()) {
-        self.key = key; self.attemptID = attemptID; self.phase = phase; self.result = result; self.updatedAt = updatedAt
+    public init(key: String, attemptID: UUID = UUID(), phase: TranslationRequestPhase = .prepared, result: AITranslationDraft? = nil, updatedAt: Date = Date(), completionVersionID: UUID? = nil) {
+        self.key = key; self.attemptID = attemptID; self.completionVersionID = completionVersionID; self.phase = phase; self.result = result; self.updatedAt = updatedAt
+    }
+}
+
+/// Immutable completion evidence. The key uses the same ordered source/configuration
+/// fields as dispatch; no transport or caller-supplied result is trusted here.
+public struct TranslationCompletionContext: Sendable {
+    public let identity: TrackIdentity
+    public let lyricsVersionID: UUID
+    public let sourceContentHash: String
+    public let originalLines: [String]
+    public let targetLanguage: String
+    public let providerCacheIdentity: String
+    public let configurationPromptHash: String
+    public let engineID: String
+    public let allowsAppleFallback: Bool
+
+    public init(identity: TrackIdentity, lyricsVersionID: UUID, sourceContentHash: String,
+                originalLines: [String], targetLanguage: String, providerCacheIdentity: String,
+                configurationPromptHash: String, engineID: String, allowsAppleFallback: Bool) {
+        self.identity = identity; self.lyricsVersionID = lyricsVersionID; self.sourceContentHash = sourceContentHash
+        self.originalLines = originalLines; self.targetLanguage = targetLanguage; self.providerCacheIdentity = providerCacheIdentity
+        self.configurationPromptHash = configurationPromptHash; self.engineID = engineID; self.allowsAppleFallback = allowsAppleFallback
+    }
+    public func requestKey() throws -> String {
+        let fields = ["translation-request-v1", identity.stableKey, lyricsVersionID.uuidString, sourceContentHash,
+                      targetLanguage, providerCacheIdentity, configurationPromptHash] + originalLines
+        return SHA256.hash(data: try JSONEncoder().encode(fields)).map { String(format: "%02x", $0) }.joined()
+    }
+    public func accepts(engine: String) -> Bool {
+        engine == engineID || (allowsAppleFallback && engineID == TranslationEngineID.openAICompatible.rawValue && engine == TranslationEngineID.appleSystem.rawValue)
     }
 }
 
@@ -62,6 +94,7 @@ public protocol TranslationRepository: Sendable {
     func loadTranslationRequest(key: String) async throws -> StoredTranslationRequest?
     func beginTranslationRequest(key: String, explicitRetry: Bool) async throws -> StoredTranslationRequest
     func updateTranslationRequest(_ request: StoredTranslationRequest) async throws
+    func completeTranslationRequest(key: String, attemptID: UUID, context: TranslationCompletionContext) async throws -> StoredTranslationVersion
     func loadTranslationVersions(
         lyricsVersionID: UUID,
         targetLanguage: String,
@@ -92,6 +125,10 @@ public extension TranslationRepository {
     func updateTranslationRequest(_ request: StoredTranslationRequest) async throws {
         throw TranslationRepositoryError.database("请求状态无法可靠保存")
     }
+    func completeTranslationRequest(key: String, attemptID: UUID, context: TranslationCompletionContext) async throws -> StoredTranslationVersion {
+        throw TranslationRepositoryError.database("当前仓库不支持原子完成；未保存或重发翻译")
+    }
+
 }
 
 public actor UnavailableTranslationRepository: TranslationRepository {

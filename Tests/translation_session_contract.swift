@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 
 private func makeTrack(_ id: String, title: String) -> Track {
     Track(
@@ -34,11 +35,26 @@ private actor MemoryTranslationRepository: TranslationRepository {
     func loadTranslationRequest(key: String) async throws -> StoredTranslationRequest? { requests[key] }
     func beginTranslationRequest(key: String, explicitRetry: Bool) async throws -> StoredTranslationRequest {
         if let prior = requests[key], prior.phase != .prepared, !explicitRetry { throw TranslationRepositoryError.database("interrupted") }
-        let request = StoredTranslationRequest(key: key); requests[key] = request; return request
+        let request = StoredTranslationRequest(key: key, completionVersionID: UUID()); requests[key] = request; return request
     }
     func updateTranslationRequest(_ request: StoredTranslationRequest) async throws {
         guard requests[request.key]?.attemptID == request.attemptID else { throw TranslationRepositoryError.database("stale attempt") }
         requests[request.key] = request
+    }
+
+    func completeTranslationRequest(key: String, attemptID: UUID, context: TranslationCompletionContext) async throws -> StoredTranslationVersion {
+        guard var request = requests[key], request.attemptID == attemptID,
+              try context.requestKey() == key, let output = request.completionVersionID else { throw TranslationRepositoryError.database("unsafe completion") }
+        if request.phase == .saved {
+            guard let exact = versions.first(where: { $0.record.id == output }) else { throw TranslationRepositoryError.versionNotFound }
+            return exact
+        }
+        guard request.phase == .received, let draft = request.result else { throw TranslationRepositoryError.database("missing result") }
+        let saved = try await saveTranslation(lyricsVersionID: context.lyricsVersionID, sourceContentHash: context.sourceContentHash,
+            originalLines: context.originalLines, draft: draft.with(isDraft: true, providerCacheIdentity: context.providerCacheIdentity),
+            forceNewVersion: false, outputID: output)
+        request.phase = .saved; request.result = nil; requests[key] = request
+        return saved
     }
 
     struct Save: Sendable {
@@ -65,16 +81,23 @@ private actor MemoryTranslationRepository: TranslationRepository {
         return versions.filter { $0.record.lyricsVersionID == lyricsVersionID && $0.record.targetLanguage == targetLanguage && $0.record.sourceContentHash == sourceContentHash }
     }
 
+    func saveTranslation(lyricsVersionID: UUID, sourceContentHash: String, originalLines: [String],
+                         draft: AITranslationDraft, forceNewVersion: Bool) async throws -> StoredTranslationVersion {
+        try await saveTranslation(lyricsVersionID: lyricsVersionID, sourceContentHash: sourceContentHash,
+            originalLines: originalLines, draft: draft, forceNewVersion: forceNewVersion, outputID: nil)
+    }
+
     func saveTranslation(
         lyricsVersionID: UUID,
         sourceContentHash: String,
         originalLines: [String],
         draft: AITranslationDraft,
-        forceNewVersion: Bool
+        forceNewVersion: Bool,
+        outputID: UUID?
     ) async throws -> StoredTranslationVersion {
         _ = originalLines
         _ = forceNewVersion
-        let id = UUID()
+        let id = outputID ?? UUID()
         saves.append(Save(lyricsVersionID: lyricsVersionID, sourceContentHash: sourceContentHash, model: draft.model, promptHash: draft.promptHash))
         let now = Date()
         let record = DatabaseTranslationVersionRecord(
@@ -216,7 +239,7 @@ struct TranslationSessionContract {
         precondition(root.deletingLastPathComponent().path == URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().path)
         precondition(!FileManager.default.fileExists(atPath: root.path))
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        for scenario in ["dispatching", "received", "saved-gap"] {
+        for scenario in ["dispatching", "received", "saved", "legacy-received", "legacy-saved"] {
             let url = root.appendingPathComponent(scenario + ".sqlite3")
             let provenance = root.appendingPathComponent(scenario + "-provenance")
             let repository = SQLiteLyricsRepository(databaseURL: url, alignmentProvenanceDirectory: provenance)
@@ -248,9 +271,24 @@ struct TranslationSessionContract {
             if scenario != "dispatching" {
                 request.phase = .received; request.result = draft
                 try await repository.updateTranslationRequest(request)
-                if scenario == "saved-gap" {
-                    _ = try await repository.saveTranslation(lyricsVersionID: versionID, sourceContentHash: hash,
-                        originalLines: document.lines.map(\.originalText), draft: draft, forceNewVersion: false)
+                if scenario == "saved" {
+                    _ = try await repository.completeTranslationRequest(key: key, attemptID: request.attemptID,
+                        context: TranslationCompletionContext(identity: identity, lyricsVersionID: versionID, sourceContentHash: hash,
+                            originalLines: document.lines.map(\.originalText), targetLanguage: config.targetLanguage,
+                            providerCacheIdentity: config.providerCacheIdentity, configurationPromptHash: config.promptHash,
+                            engineID: config.engineID, allowsAppleFallback: false))
+                }
+                if scenario.hasPrefix("legacy-") {
+                    if scenario == "legacy-saved" {
+                        _ = try await repository.saveTranslation(lyricsVersionID: versionID, sourceContentHash: hash,
+                            originalLines: document.lines.map(\.originalText), draft: draft.with(isDraft: true), forceNewVersion: false)
+                    }
+                    var db: OpaquePointer?; precondition(sqlite3_open(url.path, &db) == SQLITE_OK)
+                    defer { sqlite3_close(db) }
+                    precondition(sqlite3_exec(db, "UPDATE translation_requests SET completion_version_id=NULL;", nil, nil, nil) == SQLITE_OK)
+                    if scenario == "legacy-saved" {
+                        precondition(sqlite3_exec(db, "UPDATE translation_requests SET phase='saved',result_json=NULL;", nil, nil, nil) == SQLITE_OK)
+                    }
                 }
             }
             let reopened = SQLiteLyricsRepository(databaseURL: url, alignmentProvenanceDirectory: provenance)
@@ -260,8 +298,8 @@ struct TranslationSessionContract {
             controller.synchronize(document: document, lyricsVersionID: versionID, sourceContentHash: hash, configuration: config)
             let deadline = Date().addingTimeInterval(2)
             while Date() < deadline {
-                if scenario == "dispatching", case .failed = controller.state { break }
-                if scenario != "dispatching", controller.selectedVersion != nil { break }
+                if scenario == "dispatching" || scenario.hasPrefix("legacy-"), case .failed = controller.state { break }
+                if scenario == "received" || scenario == "saved", controller.selectedVersion != nil { break }
                 try await Task.sleep(nanoseconds: 10_000_000)
             }
             let calls = await fake.calls()
@@ -273,8 +311,14 @@ struct TranslationSessionContract {
                 guard case .failed = controller.state else { fatalError("unknown dispatch must be explicit") }
                 precondition(journal?.phase == .dispatching && journal?.attemptID == request.attemptID)
                 precondition(versions.isEmpty && controller.selectedVersion == nil)
+            } else if scenario.hasPrefix("legacy-") {
+                guard case .failed = controller.state else { fatalError("legacy NULL must fail closed") }
+                precondition(journal?.completionVersionID == nil && journal?.attemptID == request.attemptID)
+                precondition(versions.count == (scenario == "legacy-saved" ? 1 : 0))
+                precondition(controller.selectedVersion == nil, "legacy unlinked draft cannot be adopted")
             } else {
-                precondition(journal?.phase == .saved && versions.count == 1, "received/save gap duplicated or lost version")
+                precondition(journal?.phase == .saved && versions.count == 1, "atomic completion duplicated or lost version")
+                precondition(versions[0].record.id == journal?.completionVersionID)
                 precondition(controller.selectedVersion?.record.lyricsVersionID == versionID)
                 precondition(controller.selectedVersion?.lines.map(\.translatedText) == draft.lines.map(\.translation))
             }

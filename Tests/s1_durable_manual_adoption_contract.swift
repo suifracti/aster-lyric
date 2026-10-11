@@ -396,7 +396,7 @@ struct S1DurableManualAdoptionContract {
             let saved = try await original.save(track: track, identity: identity, document: candidate.makeDocument())
             let id = saved.versionID!
             let before = try await original.loadEditableVersion(versionID: id, track: track, identity: identity)
-            try installTrigger(databaseURL: original.databaseURL, sql: "DROP TABLE lyrics_selection_revocations; DELETE FROM schema_migrations WHERE version=12; PRAGMA user_version=11;")
+            try installTrigger(databaseURL: original.databaseURL, sql: "DROP INDEX translation_requests_completion_id; ALTER TABLE translation_requests DROP COLUMN completion_version_id; DELETE FROM schema_migrations WHERE version>11; DROP TABLE lyrics_selection_revocations; PRAGMA user_version=11;")
             let migrated = makeRepository(root: root)
             try await migrated.prepare()
             let after = try await migrated.loadEditableVersion(versionID: id, track: track, identity: identity)
