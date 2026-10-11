@@ -141,7 +141,7 @@ public enum SpeechEngineRegistry {
 
     public static func resolve(
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .lyricsQ
     ) -> any LyricsSpeechEngine {
         let raw = (environment[environmentKey] ?? defaults.string(forKey: userDefaultsKey) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)

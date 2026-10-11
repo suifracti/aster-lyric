@@ -29,6 +29,11 @@ public enum AutomaticAlignmentProgressStore {
     }
 
     private static var rootDirectory: URL {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested {
+            return DebugAcceptanceDataIsolation.configuration.root.appendingPathComponent("alignment-progress", isDirectory: true)
+        }
+#endif
         let base: URL
         if let override = ProcessInfo.processInfo.environment["SPOTIFYLYRICS_AUTO_ALIGN_PROGRESS_DIR"],
            !override.isEmpty {

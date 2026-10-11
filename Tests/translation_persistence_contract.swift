@@ -103,8 +103,18 @@ struct TranslationPersistenceContract {
         try await r1.markTranslationLocked(versionID: old.record.id, locked: true)
         let manualDraft = AITranslationDraft(lines: draft.lines, targetLanguage: draft.targetLanguage, model: "manual", baseURLHost: "",
             promptHash: "manual", sourceContentHash: hash, sourceKind: .manualEdit, isMachineGenerated: false, isManuallyEdited: true)
-        let manual = try await r1.saveTranslation(lyricsVersionID: id, sourceContentHash: hash,
+        let manualInserted = try await r1.saveTranslation(lyricsVersionID: id, sourceContentHash: hash,
             originalLines: context.originalLines, draft: manualDraft, forceNewVersion: true)
+        // Protection compares the actual persisted baseline, not an in-memory
+        // Date before SQLite REAL conversion. All version/line fields remain in
+        // the final exact equality assertion below.
+        let manual = try await r1.loadTranslationVersions(lyricsVersionID: id, targetLanguage: configuration.targetLanguage, sourceContentHash: hash).first(where: { $0.record.id == manualInserted.record.id })!
+        precondition(manual.lines == manualInserted.lines)
+        precondition(manual.record.sourceContentHash == manualInserted.record.sourceContentHash)
+        precondition(manual.record.sourceKind == .manualEdit && manual.record.isManuallyEdited)
+        if manual != manualInserted {
+            print("FIXTURE SQLite roundtrip createdAt=\(manualInserted.record.createdAt.timeIntervalSince1970)/\(manual.record.createdAt.timeIntervalSince1970) updatedAt=\(manualInserted.record.updatedAt.timeIntervalSince1970)/\(manual.record.updatedAt.timeIntervalSince1970)")
+        }
         let protected = try await r1.loadTranslationVersions(lyricsVersionID: id, targetLanguage: configuration.targetLanguage, sourceContentHash: hash).first(where: { $0.record.id == old.record.id })!
         func received(_ repository: SQLiteLyricsRepository) async throws -> StoredTranslationRequest {
             var request = try await repository.beginTranslationRequest(key: key, explicitRetry: true)

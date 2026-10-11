@@ -927,8 +927,8 @@ struct LibraryVersionLabel: View {
     init(kind: String, id: UUID, originalTitle: String) {
         self.originalTitle = originalTitle
         let key = "personalLibrary.versionLabel.\(kind).\(id.uuidString)"
-        _customTitle = AppStorage(wrappedValue: "", key + ".title")
-        _note = AppStorage(wrappedValue: "", key + ".note")
+        _customTitle = AppStorage(wrappedValue: "", key + ".title", store: UserDefaults.lyricsQ)
+        _note = AppStorage(wrappedValue: "", key + ".note", store: UserDefaults.lyricsQ)
     }
 
     var body: some View {

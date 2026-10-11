@@ -71,6 +71,9 @@ public final class KeychainSpotifyTokenStore: SpotifyTokenStore, @unchecked Send
     }
 
     public func load() throws -> SpotifyTokenRecord? {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return nil }
+#endif
         var query = baseQuery()
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -119,6 +122,9 @@ public final class KeychainSpotifyTokenStore: SpotifyTokenStore, @unchecked Send
     }
 
     public func save(_ record: SpotifyTokenRecord) throws {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { throw SpotifyTokenStoreError.keychain(errSecInteractionNotAllowed) }
+#endif
         guard let data = try? JSONEncoder().encode(record) else {
             throw SpotifyTokenStoreError.encodingFailed
         }
@@ -146,6 +152,9 @@ public final class KeychainSpotifyTokenStore: SpotifyTokenStore, @unchecked Send
     }
 
     public func delete() throws {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return }
+#endif
         let status = SecItemDelete(baseQuery() as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound || status == errSecMissingEntitlement else {
             throw SpotifyTokenStoreError.keychain(status)

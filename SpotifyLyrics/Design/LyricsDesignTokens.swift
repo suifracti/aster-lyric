@@ -9,7 +9,7 @@ enum LyricsTransitionStyle: String, CaseIterable, Identifiable, Sendable {
     case noneV1 = "lyricsTransition.none.v1"
 
     static var active: LyricsTransitionStyle {
-        guard let raw = UserDefaults.standard.string(
+        guard let raw = UserDefaults.lyricsQ.string(
             forKey: PresentationSelectionStore.runtimeKey(for: .lyricsTransition)
         ), let selected = LyricsTransitionStyle(rawValue: raw) else {
             return .smoothRelayoutV1
@@ -334,7 +334,7 @@ enum LyricsStatePresentation: String, CaseIterable, Identifiable, Sendable {
     case contentFirstV1 = "lyricsStatePresentation.contentFirst.v1"
 
     static var active: LyricsStatePresentation {
-        guard let raw = UserDefaults.standard.string(
+        guard let raw = UserDefaults.lyricsQ.string(
             forKey: PresentationSelectionStore.runtimeKey(for: .lyricsState)
         ), let selected = LyricsStatePresentation(rawValue: raw) else {
             return .contentFirstV1

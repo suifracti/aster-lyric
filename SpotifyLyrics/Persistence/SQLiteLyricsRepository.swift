@@ -40,6 +40,10 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         databaseURL: URL = SQLiteLyricsRepository.defaultDatabaseURL,
         alignmentProvenanceDirectory: URL = AlignmentProvenanceStore.defaultDirectory
     ) {
+#if DEBUG
+        DebugAcceptanceDataIsolation.requireStorage(databaseURL)
+        DebugAcceptanceDataIsolation.requireStorage(alignmentProvenanceDirectory)
+#endif
         self.databaseURL = databaseURL
         self.alignmentProvenanceStore = AlignmentProvenanceStore(directory: alignmentProvenanceDirectory)
     }

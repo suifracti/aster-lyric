@@ -68,7 +68,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
 
     public init(
         repository: SQLiteLyricsRepository = SQLiteLyricsRepository(),
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .lyricsQ
     ) {
         self.repository = repository
         self.defaults = defaults

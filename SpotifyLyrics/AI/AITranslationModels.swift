@@ -264,7 +264,7 @@ public final class TranslationProfileStore: ObservableObject, @unchecked Sendabl
     private let key = "ai.translationProfiles.v1"
     @Published public private(set) var revision: Int = 0
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .lyricsQ) {
         self.defaults = defaults
     }
 

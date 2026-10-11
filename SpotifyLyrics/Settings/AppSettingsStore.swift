@@ -457,7 +457,7 @@ public final class AppSettingsStore: ObservableObject {
     @Published public private(set) var aiModelDirectoryStatus: TranslationModelDirectoryStatus
     @Published public private(set) var aiCachedModels: [TranslationModelDescriptor]
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .lyricsQ) {
         self.defaults = defaults
         self.lyricsOffsetStore = ScopedLyricsOffsetStore(defaults: defaults)
         self.v3LyricsPositions = (defaults.dictionary(forKey: Key.v3LyricsPositions) as? [String: String] ?? [:])

@@ -21,6 +21,7 @@ struct SpotifyLyricsApp: App {
         // This must run before any StateObject can construct a repository.
         // A command-line v4 run without a temporary database exits here,
         // before the formal Application Support database can be opened.
+        DebugAcceptanceDataIsolation.prepareBeforeStateObjectsIfNeeded()
         DebugDatabaseSafety.failClosedForCommandLineV4IfNeeded()
 #endif
         let settings = AppSettingsStore.shared
@@ -69,9 +70,11 @@ struct SpotifyLyricsApp: App {
                         )
                     }
                     // Diagnostic harness only — env-driven SCK spikes.
-                    LiveCaptureCoordinator.shared.bind(playback: playbackState)
-                    let spike = SpotifyScreenCaptureAudioSpike.shared
-                    spike.bind(playback: playbackState)
+                    if !DebugAcceptanceDataIsolation.isRequested {
+                        LiveCaptureCoordinator.shared.bind(playback: playbackState)
+                        let spike = SpotifyScreenCaptureAudioSpike.shared
+                        spike.bind(playback: playbackState)
+                    }
 #endif
                 }
 #if DEBUG
@@ -268,7 +271,7 @@ struct SpotifyLyricsApp: App {
     static var shouldShowDebugMenus: Bool {
         ProcessInfo.processInfo.arguments.contains("--debug-menus")
             || ProcessInfo.processInfo.environment["SHOW_DEBUG_MENUS"] == "1"
-            || UserDefaults.standard.bool(forKey: "debug.showMenus")
+            || UserDefaults.lyricsQ.bool(forKey: "debug.showMenus")
     }
 
     private func activateDebugCapsuleV4() {

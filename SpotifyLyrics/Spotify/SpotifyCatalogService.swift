@@ -55,7 +55,7 @@ public struct SpotifyOAuthConfiguration: Equatable, Sendable {
     }
 
     public static func resolved() -> SpotifyOAuthConfiguration {
-        let defaults = UserDefaults.standard.string(forKey: "spotify.clientID")
+        let defaults = UserDefaults.lyricsQ.string(forKey: "spotify.clientID")
         let environment = ProcessInfo.processInfo.environment["SPOTIFY_CLIENT_ID"]
         return SpotifyOAuthConfiguration(clientID: defaults ?? environment)
     }

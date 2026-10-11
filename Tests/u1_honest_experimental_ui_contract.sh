@@ -152,6 +152,7 @@ PY
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 swiftc \
+  "$ROOT/SpotifyLyrics/DebugDatabaseSafety.swift" \
   "$ROOT/SpotifyLyrics/Design/DirectionD/DirectionDDesignTokens.swift" \
   "$ROOT/SpotifyLyrics/Design/DirectionD/DirectionDProductStateModel.swift" \
   "$ROOT/SpotifyLyrics/Design/DirectionD/DirectionDActionRouter.swift" \

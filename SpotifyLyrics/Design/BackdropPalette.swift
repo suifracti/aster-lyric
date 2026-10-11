@@ -184,7 +184,7 @@ public enum BackdropPresentationID: String, CaseIterable, Sendable {
 #endif
 
     private static var persistedSelection: BackdropPresentationID {
-        guard let raw = UserDefaults.standard.string(
+        guard let raw = UserDefaults.lyricsQ.string(
             forKey: PresentationSelectionStore.runtimeKey(for: .backdrop)
         ), let selected = BackdropPresentationID(rawValue: raw), selected.isRunnableInPhase2_3D else {
             return .defaultV1
