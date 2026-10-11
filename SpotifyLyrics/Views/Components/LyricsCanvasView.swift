@@ -227,7 +227,7 @@ struct LyricsCanvasView: View {
         let seekLines = state.lyrics
         let seekIsSynchronized = state.lyricsAreSynchronized
         return VStack(alignment: .leading, spacing: 6) {
-            translationControls
+            lyricsScopeControls
             GeometryReader { geometry in
                 ScrollViewReader { proxy in
                     ScrollView(.vertical) {
@@ -335,6 +335,37 @@ struct LyricsCanvasView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var lyricsScopeControls: some View {
+        if state.isShowingSearchPreview {
+            searchPreviewReadOnlyCue
+        } else {
+            translationControls
+        }
+    }
+
+    private var searchPreviewReadOnlyCue: some View {
+        HStack(spacing: 8) {
+            Label("搜索预览 · 只读", systemImage: "eye")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(LyricsDesignTokens.accent)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(LyricsDesignTokens.accent.opacity(0.12), in: Capsule())
+
+            Text(state.displayedTrack.title.isEmpty ? "候选歌词" : state.displayedTrack.title)
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(LyricsDesignTokens.mutedText)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, LyricsDesignTokens.canvasHorizontalPadding)
+        .padding(.top, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("lyrics.search-preview.read-only")
     }
 
     private var translationControls: some View {
@@ -884,13 +915,21 @@ struct LyricsStateContentFirstView: View {
                     candidateRow(candidate, isRecommended: candidate.id == recommendedID)
                 }
 
-                Button("不使用任何歌词版本") {
-                    state.selectNoLyricsVersion()
+                if state.isShowingSearchPreview {
+                    Label("预览中不会更改当前播放歌曲歌词版本", systemImage: "eye")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(LyricsDesignTokens.mutedText)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 4)
+                } else {
+                    Button("不使用任何歌词版本") {
+                        state.selectNoLyricsVersion()
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(LyricsDesignTokens.mutedText)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 4)
                 }
-                .buttonStyle(.borderless)
-                .foregroundStyle(LyricsDesignTokens.mutedText)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, 4)
 
                 if state.canCreateManualLyrics {
                     ManualLyricsActionsView(
