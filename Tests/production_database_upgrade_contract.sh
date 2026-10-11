@@ -6,7 +6,11 @@ cd "$ROOT_DIR"
 TMP_DIR="$(mktemp -d /tmp/spotifylyrics-production-upgrade.XXXXXX)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-swiftc -parse-as-library \
+cat > "$TMP_DIR/logger.swift" <<'SWIFT'
+import Foundation
+enum LyricsE2ELog { static func log(_ message: String) { print(message) } }
+SWIFT
+swiftc -D DEBUG -parse-as-library \
   SpotifyLyrics/Models/Models.swift \
   SpotifyLyrics/Lyrics/TrackIdentity.swift \
   SpotifyLyrics/Lyrics/LyricsModels.swift \
@@ -21,7 +25,7 @@ swiftc -parse-as-library \
   SpotifyLyrics/Lyrics/LyricsSafeMatcher.swift \
   SpotifyLyrics/Lyrics/LyricsQueryPlanner.swift \
   SpotifyLyrics/Lyrics/LyricsRecoveryModels.swift \
-  SpotifyLyrics/Lyrics/LyricsE2ELog.swift \
+  "$TMP_DIR/logger.swift" \
   SpotifyLyrics/Lyrics/LyricsSearchManager.swift \
   SpotifyLyrics/Lyrics/CompositeLyricsProvider.swift \
   SpotifyLyrics/Lyrics/LRCParser.swift \
@@ -46,6 +50,7 @@ swiftc -parse-as-library \
   SpotifyLyrics/Persistence/TranslationRepository.swift \
   SpotifyLyrics/Persistence/LyricsEditingRepository.swift \
   SpotifyLyrics/Persistence/SQLiteLyricsRepository.swift \
+  SpotifyLyrics/DebugDatabaseSafety.swift \
   Tests/production_database_upgrade_contract.swift \
   -o "$TMP_DIR/production-upgrade-contract"
 
@@ -53,4 +58,4 @@ CFFIXED_USER_HOME="$TMP_DIR/home" UPGRADE_FIXTURE_EXPORT="$TMP_DIR/v5.sqlite3" "
 
 if [[ -n "${UPGRADE_AUDIT_BINARY:-}" ]]; then cp "$TMP_DIR/production-upgrade-contract" "$UPGRADE_AUDIT_BINARY"; fi
 
-python3 Tests/production_database_upgrade_matrix.py "$TMP_DIR/production-upgrade-contract" "$TMP_DIR/v5.sqlite3" "$TMP_DIR/matrix"
+CFFIXED_USER_HOME="$TMP_DIR/m1-home" "$TMP_DIR/production-upgrade-contract" --m1-migrations

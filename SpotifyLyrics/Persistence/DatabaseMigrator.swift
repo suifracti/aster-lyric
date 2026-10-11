@@ -4,7 +4,7 @@ import SQLite3
 /// Forward-only SQLite schema migrations. The repository calls this from its
 /// actor, so no migration work runs on MainActor.
 public enum DatabaseMigrator {
-    public static let currentVersion = 9
+    public static let currentVersion = 12
     public static let v4MigrationID = "track-identity-v4-initial"
     private static let waterSourceStableKey = "spotify-id:spotify:track:5mqkkcsrujqyakvolven0w|metadata:水曜日の約束|kawasakirio|水曜日の約束|171"
     private static let waterCanonicalStableKey = "spotify-id:5mqkkcsrujqyakvolven0w|metadata:水曜日の約束|kawasakirio|水曜日の約束|171"
@@ -85,6 +85,58 @@ public enum DatabaseMigrator {
                     try execute(database, sql: "ALTER TABLE lyrics_versions ADD COLUMN is_preferred INTEGER NOT NULL DEFAULT 0;")
                     try execute(database, sql: "CREATE UNIQUE INDEX lyrics_versions_one_preferred ON lyrics_versions(track_stable_key) WHERE is_preferred = 1;")
                     try execute(database, sql: "INSERT INTO schema_migrations(version, applied_at) VALUES (9, strftime('%s','now')); PRAGMA user_version = 9;")
+                    try execute(database, sql: "COMMIT;")
+                } catch {
+                    _ = try? execute(database, sql: "ROLLBACK;")
+                    throw error
+                }
+                version = 9
+            }
+            if version >= 9, version < 10,
+               try hasTable(database, name: "translation_versions") {
+                try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
+                do {
+                    try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN provider_execution_metadata_json TEXT NOT NULL DEFAULT '';" )
+                    try execute(database, sql: "INSERT INTO schema_migrations(version, applied_at) VALUES (10, strftime('%s','now')); PRAGMA user_version = 10;")
+                    try execute(database, sql: "COMMIT;")
+                } catch {
+                    _ = try? execute(database, sql: "ROLLBACK;")
+                    throw error
+                }
+                version = 10
+            }
+            if version == 10 {
+                try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
+                do {
+                    try execute(database, sql: """
+                        CREATE TABLE translation_requests (
+                            request_key TEXT PRIMARY KEY,
+                            attempt_id TEXT NOT NULL,
+                            phase TEXT NOT NULL CHECK(phase IN ('prepared','dispatching','received','saved')),
+                            result_json TEXT,
+                            updated_at REAL NOT NULL
+                        );
+                        INSERT INTO schema_migrations(version, applied_at) VALUES (11, strftime('%s','now'));
+                        PRAGMA user_version = 11;
+                        """)
+                    try execute(database, sql: "COMMIT;")
+                } catch {
+                    _ = try? execute(database, sql: "ROLLBACK;")
+                    throw error
+                }
+            }
+            if try integerValue(database, sql: "PRAGMA user_version;") == 11 {
+                try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
+                do {
+                    try execute(database, sql: """
+                        CREATE TABLE lyrics_selection_revocations (
+                            track_stable_key TEXT PRIMARY KEY REFERENCES tracks(stable_key) ON DELETE CASCADE,
+                            revoked_version_id TEXT REFERENCES lyrics_versions(id) ON DELETE SET NULL,
+                            updated_at REAL NOT NULL
+                        );
+                        INSERT INTO schema_migrations(version, applied_at) VALUES (12, strftime('%s','now'));
+                        PRAGMA user_version = 12;
+                        """)
                     try execute(database, sql: "COMMIT;")
                 } catch {
                     _ = try? execute(database, sql: "ROLLBACK;")

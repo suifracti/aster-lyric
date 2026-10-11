@@ -216,6 +216,35 @@ private struct NetworkFailureLyricsProvider: LyricsProvider {
 @MainActor
 struct PlaybackStateContract {
     static func main() async {
+        guard let rootPath = ProcessInfo.processInfo.environment["LYRICSQ_M1_PLAYBACK_ROOT"] else {
+            fatalError("task-private playback root required")
+        }
+        let root = URL(fileURLWithPath: rootPath).resolvingSymlinksInPath()
+        let home = FileManager.default.homeDirectoryForCurrentUser.resolvingSymlinksInPath()
+        precondition(root.lastPathComponent.hasPrefix("lyricsq-m1-playback-"))
+        precondition(FileManager.default.fileExists(atPath: root.path))
+        precondition(home == root.appendingPathComponent("home"), "preferences must be task isolated")
+        let actualDatabase = SQLiteLyricsRepository.defaultDatabaseURL
+        let actualParent = actualDatabase.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
+        let normalizedDatabase = actualParent.appendingPathComponent(actualDatabase.lastPathComponent, isDirectory: false)
+        let expectedDatabase = root.appendingPathComponent("contract.sqlite3", isDirectory: false)
+        let rootAttributes = try! FileManager.default.attributesOfItem(atPath: root.path)
+        let homeAttributes = try! FileManager.default.attributesOfItem(atPath: home.path)
+#if DEBUG
+        print("PREFLIGHT DEBUG=true overrideSet=\(ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DATABASE_PATH"] != nil)")
+#else
+        fatalError("playback isolation requires DEBUG")
+#endif
+        print("PREFLIGHT actualRaw=\(actualDatabase.path) actualNormalized=\(normalizedDatabase.path) expectedNormalized=\(expectedDatabase.path) home=\(home.path) rootUID=\(rootAttributes[.ownerAccountID]!)")
+        precondition((rootAttributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid())
+        precondition((homeAttributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid())
+        precondition((rootAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
+        precondition((homeAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
+        precondition(actualParent.pathComponents == root.pathComponents && normalizedDatabase.pathComponents == expectedDatabase.pathComponents)
+        precondition(!FileManager.default.fileExists(atPath: actualDatabase.path), "contract requires a fresh task database")
+        precondition(normalizedDatabase.pathComponents != DebugDatabaseSafety.status().formalDatabaseURL.standardizedFileURL.pathComponents)
+        precondition(SpotifyOAuthConfiguration.resolved().clientID == nil, "OAuth must be unconfigured before auth initialization")
+        print("PASS playback isolation preflight: private home/database; OAuth unconfigured, no token loading")
         let trackA = ProviderTrack(
             id: "spotify:track:a",
             title: "Track A",

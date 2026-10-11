@@ -243,6 +243,12 @@ struct S1DurableManualAdoptionContract {
 
     private static func run(_ scenario: String) async throws {
         switch scenario {
+        case "bilingual-auto-cache": try await bilingualAutomaticCacheContract()
+        case "selection-read-fails": try await failedSelectionReadStopsSearch()
+        case "revoke-schema": try await revocationSchemaCompatibility()
+        case "revoke-progress": try await previewProgressSession()
+        case "revoke-selection": try await revocationSelectionContract()
+        case "revoke-rollback": try await revocationRollbackContract()
         case "lyrics-ovh-zero": try await lowConfidenceAdoption(source: .lyricsOVH, confidence: 0, suffix: "ovh", isSynchronized: false)
         case "kugou-half": try await lowConfidenceAdoption(source: .kugouExperimental, confidence: 0.5, suffix: "kugou")
         case "timed-spans": try await lowConfidenceAdoption(source: .amll, confidence: 0.5, suffix: "timed", hasTiming: true)
@@ -253,9 +259,198 @@ struct S1DurableManualAdoptionContract {
         case "timing-throws": try await timingAttachmentFailureRollsBack()
         case "invalid-content": try await invalidIdentityAndContentAreRejected()
         case "failed-results": try await rejectedAndSkippedResultsPreserveCurrent()
+        case "track-return": try await lateAdoptionStaysBoundToItsTrack(returnToA: true)
         case "track-switch": try await lateAdoptionStaysBoundToItsTrack()
         case "same-track-order": try await newerSameTrackRequestWins()
         default: throw ContractFailure(description: "unknown scenario \(scenario)")
+        }
+    }
+
+    private static func bilingualAutomaticCacheContract() async throws {
+        try await withTemporaryRoot { root in
+            let a = Track(title: "GIJIKOI", artist: "Haruki Hamano", album: "GIJIKOI (Korean ver.)", duration: 216.875, spotifyId: "0ZLWH8kZv299eRlEoMelAD")
+            let b = makeTrack("protected-B")
+            let aIdentity = TrackIdentity(track: a), bIdentity = TrackIdentity(track: b)
+            let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("contract.sqlite3"))
+            try await repository.prepare()
+            let bDocument = makeCandidate(track: b, source: .local, confidence: 1, providerID: "existing-B").makeDocument()
+            let bSaved = try await repository.save(track: b, identity: bIdentity, document: bDocument)
+            guard let bID = bSaved.versionID else { throw ContractFailure(description: "seed B missing") }
+            try await repository.setPersonalLibraryActiveLyrics(trackStableKey: bIdentity.stableKey, lyricsVersionID: bID)
+            let candidate = LyricsCandidate(id: "isolated:gijikoi", identity: aIdentity, title: "ギジコイ - GIJIKOI", artist: "Haruki Hamano", album: "GIJIKOI", duration: 217,
+                lines: [LyricLine(timestamp: 1, originalText: "Self-authored line one"), LyricLine(timestamp: 3, originalText: "Self-authored line two")], isSynchronized: true, source: .lrclib, confidence: 0.46, providerSourceID: "isolated:gijikoi")
+            let counter = LyricsProviderCallCounter()
+            let provider = CountingLyricsProvider(name: "LRCLIB isolated", counter: counter, result: .candidates([candidate]))
+            let session = LyricsSessionController(providers: [provider], repository: repository)
+            session.begin(track: a, identity: aIdentity, automaticallySearch: true)
+            for _ in 0..<400 where session.isSearchInProgress { try await Task.sleep(nanoseconds: 5_000_000) }
+            try check(!session.isSearchInProgress, "isolated session did not settle")
+            guard let aID = session.activeLyricsVersionID else { throw ContractFailure(description: "bilingual search stopped before automatic adoption/save") }
+            try check(session.activeDocument?.lines.map(\.originalText) == candidate.lines.map(\.originalText), "automatic display changed original")
+            try check(session.activeDocument?.lines.map(\.timestamp) == [1, 3], "automatic display changed timing")
+            try check(await counter.value() == 1, "unexpected repeated lookup")
+            session.begin(track: b, identity: bIdentity, automaticallySearch: true); for _ in 0..<400 where session.isSearchInProgress { try await Task.sleep(nanoseconds: 5_000_000) }
+            try check(!session.isSearchInProgress, "isolated session did not settle")
+            try check(session.activeLyricsVersionID == bID, "manual preferred B was overwritten")
+            session.begin(track: a, identity: aIdentity, automaticallySearch: true); for _ in 0..<400 where session.isSearchInProgress { try await Task.sleep(nanoseconds: 5_000_000) }
+            try check(!session.isSearchInProgress, "isolated session did not settle")
+            try check(session.activeLyricsVersionID == aID, "A-B-A changed cached selected version")
+            try check(await counter.value() == 1, "return to A failed cache reuse")
+            let reopened = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("contract.sqlite3"))
+            let restored = LyricsSessionController(providers: [provider], repository: reopened)
+            restored.begin(track: a, identity: aIdentity, automaticallySearch: true); for _ in 0..<400 where restored.isSearchInProgress { try await Task.sleep(nanoseconds: 5_000_000) }
+            try check(!restored.isSearchInProgress, "isolated reopen did not settle")
+            try check(restored.activeLyricsVersionID == aID && restored.activeDocument?.lines.map(\.timestamp) == [1, 3], "reopen did not restore exact original and timing")
+            try check(await counter.value() == 1, "reopen dispatched a provider instead of reading cache")
+            print("PASS bilingual automatic search/display/save, protected B, A-B-A and normal repository reopen cache zero additional lookup")
+        }
+    }
+
+    private static func failedSelectionReadStopsSearch() async throws {
+        try await withTemporaryRoot { root in
+            let repo = makeRepository(root: root);try await repo.prepare()
+            try installTrigger(databaseURL: repo.databaseURL, sql: "DROP TABLE lyrics_selection_revocations;")
+            let track = makeTrack("unreadable-selection");let counter = LyricsProviderCallCounter()
+            let session = LyricsSessionController(providers: [CountingLyricsProvider(name: "must not search", counter: counter, result: .noMatch)], repository: repo)
+            session.begin(track: track, identity: TrackIdentity(track: track))
+            for _ in 0..<200 { if case .failed = session.state { break }; try await Task.sleep(nanoseconds: 5_000_000) }
+            guard case .failed = session.state else { throw ContractFailure(description: "selection read failure must stop automatic search") }
+            try check(await counter.value() == 0 && session.activeLyricsVersionID == nil, "cannot bypass unreadable persisted choice")
+        }
+    }
+
+    private static func revocationSchemaCompatibility() async throws {
+        try await withTemporaryRoot { root in
+            let track = makeTrack("old-schema")
+            let identity = TrackIdentity(track: track)
+            let original = makeRepository(root: root)
+            try await original.prepare()
+            let candidate = makeCandidate(track: track, source: .neteaseExperimental, confidence: 1, providerID: "fixture:old-schema")
+            let saved = try await original.save(track: track, identity: identity, document: candidate.makeDocument())
+            let id = saved.versionID!
+            let before = try await original.loadEditableVersion(versionID: id, track: track, identity: identity)
+            try installTrigger(databaseURL: original.databaseURL, sql: "DROP TABLE lyrics_selection_revocations; DELETE FROM schema_migrations WHERE version=12; PRAGMA user_version=11;")
+            let migrated = makeRepository(root: root)
+            try await migrated.prepare()
+            let after = try await migrated.loadEditableVersion(versionID: id, track: track, identity: identity)
+            try check(before?.record == after?.record && before?.lines == after?.lines, "v11 assets unchanged after additive v12 migration")
+            try check(!(try await migrated.isLyricsSelectionRevoked(identity: identity)), "old selection not implicitly revoked")
+            try await migrated.revokeLyricsVersionSelection(trackStableKey: identity.stableKey, lyricsVersionID: id)
+            let again = makeRepository(root: root);try await again.prepare()
+            try check(try await again.isLyricsSelectionRevoked(identity: identity), "v12 repeated prepare retains revocation")
+        }
+    }
+
+    private static func previewProgressSession() async throws {
+        let track = Track(title: "アーカイブ - Sped Up Ver.", artist: "stb", album: "アーカイブ", duration: 211.327, spotifyId: "fixture:sped-progress")
+        let identity = TrackIdentity(track: track)
+        let candidate = LyricsCandidate(id: "preview:normal", identity: identity, title: "アーカイブ", artist: "stb", album: "アーカイブ", duration: 238.977,
+            lines: [LyricLine(timestamp: 8, originalText: "自写测试")], source: .neteaseExperimental, confidence: 1)
+        struct DelayedFailure: LyricsProvider {
+            let name = "slow500"
+            var executionLane: LyricsProviderExecutionLane { .network }
+            func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult {
+                do { try await Task.sleep(nanoseconds: 300_000_000) } catch { return .failed(.cancelled) }
+                return .failed(.serverError(500))
+            }
+        }
+        let session = LyricsSessionController(providers: [DelayedFailure(), FixedLyricsProvider(name: "preview", result: .candidates([candidate]))])
+        session.begin(track: track, identity: identity)
+        for _ in 0..<40 { if case .candidates = session.state { break }; try await Task.sleep(nanoseconds: 5_000_000) }
+        guard case .candidates(_, let previews) = session.state else { throw ContractFailure(description: "preview must publish while search remains active") }
+        try check(session.isSearchInProgress && previews.count == 1 && !previews[0].isSynchronized && previews[0].lines[0].timestamp == 0, "preview available before 500, with incompatible timing stripped")
+        let other = makeTrack("progress-other")
+        session.begin(track: other, identity: TrackIdentity(track: other), automaticallySearch: false)
+        try await Task.sleep(nanoseconds: 400_000_000)
+        try check(session.activeIdentity == TrackIdentity(track: other) && session.lyrics.isEmpty && session.availableCandidates.isEmpty, "late progress/final cannot enter next song")
+    }
+
+    private static func revocationSelectionContract() async throws {
+        try await withTemporaryRoot { root in
+            let track = makeTrack("revocation")
+            let identity = TrackIdentity(track: track)
+            let repo = makeRepository(root: root)
+            try await repo.prepare()
+            let request = UUID()
+            let candidate = makeCandidate(track: track, source: .neteaseExperimental, confidence: 0.95, providerID: "netease:fixture", isSynchronized: false)
+            try await repo.registerManualAdoptionRequest(identity: identity, requestID: request)
+            let saved = try await repo.saveAndAdoptManually(track: track, identity: identity, document: candidate.makeDocument(), requestID: request, confirmedLockedVersionIDs: nil)
+            guard let id = saved.versionID else { throw ContractFailure(description: "adoption setup") }
+            try await repo.markLocked(versionID: id, locked: true)
+            let translationID = UUID()
+            try installTrigger(databaseURL: repo.databaseURL, sql: """
+                INSERT INTO translation_versions(id, lyrics_version_id, source_kind, target_language, source_content_hash, created_at, updated_at, status, is_manually_edited, is_locked)
+                VALUES ('\(translationID.uuidString)', '\(id.uuidString)', 'manual', 'zh-Hans', '\(saved.sourceContentHash ?? "fixture")', 1, 1, 'complete', 1, 1);
+                INSERT INTO translation_lines VALUES ('\(translationID.uuidString)', 0, '自写人工译文');
+                INSERT INTO lyric_reading_layers VALUES ('\(id.uuidString)', 0, 'じしゃ', 'jisha', 'manual', 1, 1, 1);
+                CREATE TRIGGER protect_translation BEFORE DELETE ON translation_versions BEGIN SELECT RAISE(ABORT, 'protected translation touched'); END;
+                CREATE TRIGGER protect_translation_update BEFORE UPDATE ON translation_versions BEGIN SELECT RAISE(ABORT, 'protected translation changed'); END;
+                CREATE TRIGGER protect_translation_line BEFORE DELETE ON translation_lines BEGIN SELECT RAISE(ABORT, 'protected translation line touched'); END;
+                CREATE TRIGGER protect_translation_line_update BEFORE UPDATE ON translation_lines BEGIN SELECT RAISE(ABORT, 'protected translation line changed'); END;
+                """)
+            let before = try await repo.loadEditableVersion(versionID: id, track: track, identity: identity)
+            let other = makeTrack("unrelated")
+            let otherIdentity = TrackIdentity(track: other)
+            let otherDocument = makeCandidate(track: other, source: .lrclib, confidence: 1, providerID: "other").makeDocument()
+            _ = try await repo.save(track: other, identity: otherIdentity, document: otherDocument)
+            let pending = UUID()
+            try await repo.registerManualAdoptionRequest(identity: identity, requestID: pending)
+            try await repo.revokeLyricsVersionSelection(trackStableKey: identity.stableKey, lyricsVersionID: id)
+            try check(try preferredVersionID(databaseURL: repo.databaseURL, stableKey: identity.stableKey) == nil, "preferred binding removed")
+            try check(try await repo.loadBestStored(track: track, identity: identity) == nil, "locked/high confidence cannot restore revoked selection")
+            let after = try await repo.loadEditableVersion(versionID: id, track: track, identity: identity)
+            // Runtime projection UUIDs are regenerated on read; compare the
+            // actual persisted rows, not those ephemeral projection identities.
+            try check(after?.record == before?.record && after?.lines == before?.lines && after?.lockedReadingLayers == before?.lockedReadingLayers, "all persisted source rows and lock unchanged")
+            try check(try await repo.loadBestStored(track: other, identity: otherIdentity) != nil, "other song unaffected")
+            let late = try await repo.saveAndAdoptManually(track: track, identity: identity, document: candidate.makeDocument(), requestID: pending, confirmedLockedVersionIDs: [])
+            try check(late.versionID == nil, "pending manual adoption invalidated")
+            let lateAutomatic = try await repo.save(track: track, identity: identity, document: candidate.makeDocument())
+            try check(lateAutomatic.versionID == nil, "old automatic save cannot revive selection")
+            let reopened = makeRepository(root: root)
+            try await reopened.prepare()
+            try check(try await reopened.loadBestStored(track: track, identity: identity) == nil, "new repository retains no-selection")
+            let counter = LyricsProviderCallCounter()
+            let provider = CountingLyricsProvider(name: "fixture", counter: counter, result: .candidates([candidate]))
+            let session = LyricsSessionController(providers: [provider], repository: reopened)
+            session.begin(track: track, identity: identity)
+            for _ in 0..<200 { if session.isNoSelection { break }; try await Task.sleep(nanoseconds: 5_000_000) }
+            try check(session.isNoSelection && session.lyrics.isEmpty, "session reopen does not auto search/adopt")
+            try check(await counter.value() == 0, "revoked reopen sends zero provider requests")
+            session.retry(track: track, identity: identity)
+            for _ in 0..<200 { if case .candidates = session.state { break }; try await Task.sleep(nanoseconds: 5_000_000) }
+            guard case .candidates(_, let previews) = session.state else { throw ContractFailure(description: "explicit search must show previews") }
+            try check(session.lyrics.isEmpty && session.activeLyricsVersionID == nil && !previews.isEmpty, "explicit search stays preview-only after cancellation")
+            try check(try await reopened.loadBestStored(track: track, identity: identity) == nil, "manual search does not resurrect cached preferred")
+            try await reopened.adoptLyricsVersion(trackStableKey: identity.stableKey, lyricsVersionID: id)
+            session.begin(track: track, identity: identity)
+            for _ in 0..<200 { if session.activeLyricsVersionID == id { break }; try await Task.sleep(nanoseconds: 5_000_000) }
+            try check(session.activeLyricsVersionID == id, "explicit re-adoption clears persistent cancellation")
+            session.selectNoVersion(identity: identity)
+            try check(try await reopened.loadBestStored(track: track, identity: identity)?.versionID == id, "temporary hide keeps persistent choice")
+            session.begin(track: other, identity: otherIdentity)
+            try check(!(try await session.revokeCurrentVersion(identity: identity, versionID: id)), "stale song revoke rejected")
+            try check(try await reopened.loadBestStored(track: track, identity: identity)?.versionID == id, "stale revoke cannot clear previous explicit choice")
+        }
+    }
+
+    private static func revocationRollbackContract() async throws {
+        try await withTemporaryRoot { root in
+            let track = makeTrack("rollback-revoke")
+            let identity = TrackIdentity(track: track)
+            let repo = makeRepository(root: root)
+            try await repo.prepare()
+            let request = UUID()
+            let candidate = makeCandidate(track: track, source: .neteaseExperimental, confidence: 0.95, providerID: "fixture:rollback")
+            try await repo.registerManualAdoptionRequest(identity: identity, requestID: request)
+            let saved = try await repo.saveAndAdoptManually(track: track, identity: identity, document: candidate.makeDocument(), requestID: request, confirmedLockedVersionIDs: nil)
+            let id = saved.versionID!
+            try installTrigger(databaseURL: repo.databaseURL, sql: "CREATE TRIGGER revoke_fail BEFORE INSERT ON lyrics_selection_revocations BEGIN SELECT RAISE(ABORT, 'fixture failure'); END;")
+            do { try await repo.revokeLyricsVersionSelection(trackStableKey: identity.stableKey, lyricsVersionID: id); throw ContractFailure(description: "must fail") }
+            catch let error as ContractFailure { throw error }
+            catch { }
+            try check(try preferredVersionID(databaseURL: repo.databaseURL, stableKey: identity.stableKey) == id, "failed revocation rolls back preferred binding")
+            try check(try await repo.loadBestStored(track: track, identity: identity)?.versionID == id, "original asset still loads after failed revoke")
         }
     }
 
@@ -835,7 +1030,7 @@ struct S1DurableManualAdoptionContract {
         }
     }
 
-    private static func lateAdoptionStaysBoundToItsTrack() async throws {
+    private static func lateAdoptionStaysBoundToItsTrack(returnToA: Bool = false) async throws {
         try await withTemporaryRoot { root in
             let base = makeRepository(root: root)
             try await base.prepare()
@@ -855,14 +1050,19 @@ struct S1DurableManualAdoptionContract {
             }
             try await gate.waitUntilBlocked()
             session.begin(track: trackB, identity: identityB, automaticallySearch: false)
+            if returnToA {
+                session.begin(track: trackA, identity: identityA, automaticallySearch: false)
+                for _ in 0..<200 { if case .idle = session.state { break }; try await Task.sleep(nanoseconds: 5_000_000) }
+                try check(session.activeDocument == nil, "returned A starts without old pending result")
+            }
             await gate.release()
             let resultA = try await saveA.value
             try check(resultA.versionID != nil, "late A persistence did not complete for its captured song: \(resultA.disposition)")
-            try check(session.activeIdentity == identityB, "late A completion changed the active identity")
-            try check(session.activeDocument == nil && session.activeLyricsVersionID == nil, "late A completion contaminated B's live document or current tag")
+            try check(session.activeIdentity == (returnToA ? identityA : identityB), "late A completion changed the active identity")
+            try check(session.activeDocument == nil && session.activeLyricsVersionID == nil, "late A completion contaminated the new playback session")
             try check(try await base.loadBestStored(track: trackA, identity: identityA)?.versionID == resultA.versionID, "late A version was not durably selected for A")
             try check(try await base.loadBestStored(track: trackB, identity: identityB) == nil, "late A completion wrote lyrics under B")
-            print("A→B late completion persisted only to A and left B's live state untouched")
+            print(returnToA ? "A→B→A old completion persisted only its asset; new revision remained untouched" : "A→B late completion persisted only to A and left B's live state untouched")
         }
     }
 

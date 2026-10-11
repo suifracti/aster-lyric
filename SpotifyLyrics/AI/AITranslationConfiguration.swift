@@ -16,6 +16,7 @@ public struct AITranslationConfiguration: Equatable, Sendable {
     public var profileSnapshot: String
     public var fallbackStrategy: TranslationFallbackStrategy
     public var workflowID: String
+    public var codexReasoningEffort: String
 
     public init(
         baseURL: String = "",
@@ -31,7 +32,8 @@ public struct AITranslationConfiguration: Equatable, Sendable {
         profileID: UUID? = nil,
         profileSnapshot: String = "",
         fallbackStrategy: TranslationFallbackStrategy = .none,
-        workflowID: String = TranslationWorkflowID.contextualV2.rawValue
+        workflowID: String = TranslationWorkflowID.contextualV2.rawValue,
+        codexReasoningEffort: String = ""
     ) {
         self.baseURL = baseURL
         self.model = model
@@ -47,23 +49,44 @@ public struct AITranslationConfiguration: Equatable, Sendable {
         self.profileSnapshot = profileSnapshot
         self.fallbackStrategy = fallbackStrategy
         self.workflowID = workflowID
+        self.codexReasoningEffort = codexReasoningEffort.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     public var isConfigured: Bool {
-        if TranslationEngineID(rawValue: engineID) == .appleSystem
-            || TranslationEngineID(rawValue: engineID) == .codexChatGPT {
+        if TranslationEngineID(rawValue: engineID) == .appleSystem {
             return true
         }
+        if TranslationEngineID(rawValue: engineID) == .codexChatGPT { return !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         return !baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    public var providerReasoningSetting: String {
+        engineID == TranslationEngineID.codexChatGPT.rawValue
+            ? "effort=" + (codexReasoningEffort.isEmpty ? "model-default" : codexReasoningEffort) : ""
+    }
+    public var providerCacheIdentity: String {
+        let usesAPI = TranslationEngineID(rawValue: engineID) == .openAICompatible
+        let fields = ["provider-cache-v1", engineID,
+            engineID == TranslationEngineID.appleSystem.rawValue ? "" : model,
+            usesAPI ? AITranslationEndpoint(baseURL: baseURL).chatCompletionsURL.absoluteString : "",
+            usesAPI ? "default" : "", providerReasoningSetting, usesAPI ? String(temperature) : ""]
+        return SHA256.hash(data: try! JSONEncoder().encode(fields)).map { String(format: "%02x", $0) }.joined()
+    }
+    public var requestIdentity: AITranslationConfigurationIdentity {
+        let usesAPI = engineID == TranslationEngineID.openAICompatible.rawValue
+        return AITranslationConfigurationIdentity(engineID: engineID, model: model, endpoint: usesAPI ? baseURL : "",
+            targetLanguage: targetLanguage, style: style, presetID: promptPresetID, customRules: customSystemPrompt,
+            profileID: profileID, profileSnapshot: profileSnapshot, workflowID: workflowID,
+            temperature: usesAPI ? temperature : 0, timeout: timeout, fallback: fallbackStrategy.rawValue,
+            codexReasoningEffort: engineID == TranslationEngineID.codexChatGPT.rawValue ? codexReasoningEffort : "",
+            grokReasoningEffort: "", geminiThinkingLevel: "", geminiThinkingBudget: nil,
+            antigravityEffort: "", deepSeekThinkingMode: "", deepSeekReasoningEffort: "")
+    }
     public var promptHash: String {
-        let payload = [style, targetLanguage, customSystemPrompt]
-            .joined(separator: "\u{1f}")
-        return SHA256.hash(data: Data(payload.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
+        var fields = [style, targetLanguage, customSystemPrompt, promptPresetID, profileSnapshot, workflowID]
+        if engineID == TranslationEngineID.codexChatGPT.rawValue { fields += ["codex", codexReasoningEffort] }
+        return SHA256.hash(data: try! JSONEncoder().encode(fields)).map { String(format: "%02x", $0) }.joined()
     }
 }
 

@@ -314,9 +314,9 @@ public final class PlaybackState: ObservableObject {
             .store(in: &self.settingsCancellables)
         resolvedSettings.$aiTranslationConfiguration
             .dropFirst()
-            .sink { [weak self] _ in
+            .sink { [weak self] configuration in
                 guard let self else { return }
-                self.syncTranslationSession()
+                self.syncTranslationSession(configuration: configuration)
             }
             .store(in: &self.settingsCancellables)
         resolvedSettings.$readingPreferences
@@ -639,13 +639,14 @@ public final class PlaybackState: ObservableObject {
         }
 
         let track = currentTrack
+        let revision = lyricsSession.revision
         guard let stored = try await repository.loadEditableVersion(
             versionID: versionID,
             track: track,
             identity: identity
         ),
         stored.document.identity == identity,
-        currentTrackIdentity == identity else {
+        currentTrackIdentity == identity, lyricsSession.revision == revision else {
             return false
         }
 
@@ -654,7 +655,7 @@ public final class PlaybackState: ObservableObject {
             lyricsVersionID: stored.record.id
         )
 
-        guard currentTrackIdentity == identity else { return false }
+        guard currentTrackIdentity == identity, lyricsSession.revision == revision else { return false }
         applyLyricsEditorResult(
             LyricsEditSaveResult(lyricsVersion: stored, translationVersion: nil),
             identity: identity
@@ -823,6 +824,12 @@ public final class PlaybackState: ObservableObject {
     public func retranslateCurrentLyrics() { translationSession.retranslateCurrentLyrics() }
     public func selectTranslation(versionID: UUID) { translationSession.select(versionID: versionID) }
     public func selectNoTranslationVersion() { translationSession.selectNone() }
+    public var liveLyricsCandidates: [LyricsCandidate] {
+        liveLyricsDocumentMatchesCurrentTrack ? lyricsSession.availableCandidates : []
+    }
+    public var originalLiveLyrics: [LyricLine] {
+        liveLyricsDocumentMatchesCurrentTrack ? (lyricsSession.activeDocument?.lines ?? []) : []
+    }
     public func lockSelectedTranslation() { translationSession.lockSelected() }
     public func deleteSelectedTranslation() { translationSession.deleteSelected() }
     public func adoptTranslation(versionID: UUID) { translationSession.adoptTranslation(versionID: versionID) }
@@ -832,6 +839,12 @@ public final class PlaybackState: ObservableObject {
 
     /// Explicitly clears the live lyric projection for this session without
     /// deleting any stored LyricsVersion.
+    @discardableResult
+    public func revokeCurrentLyricsVersion(versionID: UUID) async throws -> Bool {
+        guard let identity = currentTrackIdentity, liveTrackIdentity == identity else { return false }
+        return try await lyricsSession.revokeCurrentVersion(identity: identity, versionID: versionID)
+    }
+
     public func selectNoLyricsVersion() {
         guard let identity = currentTrackIdentity else { return }
         lyricsSession.selectNoVersion(identity: identity)
@@ -853,15 +866,16 @@ public final class PlaybackState: ObservableObject {
     public func deleteReading(versionID: UUID) { readingSession.delete(versionID: versionID) }
     public func restoreRecommendedReading() { readingSession.restoreRecommended() }
 
-    private func syncTranslationSession() {
+    private func syncTranslationSession(configuration incoming: AITranslationConfiguration? = nil) {
+        let configuration = incoming ?? settingsStore.aiTranslationConfiguration
         translationSession.setEngine(
-            TranslationEngineRegistry.make(stableID: settingsStore.aiTranslationConfiguration.engineID)
+            TranslationEngineRegistry.make(stableID: configuration.engineID)
         )
         translationSession.synchronize(
             document: lyricsSession.activeDocument,
             lyricsVersionID: lyricsSession.activeLyricsVersionID,
             sourceContentHash: lyricsSession.activeSourceContentHash,
-            configuration: settingsStore.aiTranslationConfiguration
+            configuration: configuration
         )
         syncReadingSession()
     }

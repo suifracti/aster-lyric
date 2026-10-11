@@ -30,12 +30,26 @@ private func makeDocument(track: Track, identity: TrackIdentity) -> LyricsDocume
 }
 
 private actor MemoryTranslationRepository: TranslationRepository {
+    private var requests: [String: StoredTranslationRequest] = [:]
+    func loadTranslationRequest(key: String) async throws -> StoredTranslationRequest? { requests[key] }
+    func beginTranslationRequest(key: String, explicitRetry: Bool) async throws -> StoredTranslationRequest {
+        if let prior = requests[key], prior.phase != .prepared, !explicitRetry { throw TranslationRepositoryError.database("interrupted") }
+        let request = StoredTranslationRequest(key: key); requests[key] = request; return request
+    }
+    func updateTranslationRequest(_ request: StoredTranslationRequest) async throws {
+        guard requests[request.key]?.attemptID == request.attemptID else { throw TranslationRepositoryError.database("stale attempt") }
+        requests[request.key] = request
+    }
+
     struct Save: Sendable {
         let lyricsVersionID: UUID
         let sourceContentHash: String
+        let model: String
+        let promptHash: String
     }
 
     private(set) var saves: [Save] = []
+    private var versions: [StoredTranslationVersion] = []
 
     func loadTranslationVersions(
         lyricsVersionID: UUID,
@@ -45,7 +59,7 @@ private actor MemoryTranslationRepository: TranslationRepository {
         _ = lyricsVersionID
         _ = targetLanguage
         _ = sourceContentHash
-        return []
+        return versions.filter { $0.record.lyricsVersionID == lyricsVersionID && $0.record.targetLanguage == targetLanguage && $0.record.sourceContentHash == sourceContentHash }
     }
 
     func saveTranslation(
@@ -58,7 +72,7 @@ private actor MemoryTranslationRepository: TranslationRepository {
         _ = originalLines
         _ = forceNewVersion
         let id = UUID()
-        saves.append(Save(lyricsVersionID: lyricsVersionID, sourceContentHash: sourceContentHash))
+        saves.append(Save(lyricsVersionID: lyricsVersionID, sourceContentHash: sourceContentHash, model: draft.model, promptHash: draft.promptHash))
         let now = Date()
         let record = DatabaseTranslationVersionRecord(
             id: id,
@@ -75,7 +89,19 @@ private actor MemoryTranslationRepository: TranslationRepository {
             isManuallyEdited: false,
             isLocked: false,
             status: .complete,
-            confidence: draft.confidence
+            confidence: draft.confidence,
+            engineID: draft.engineID,
+            promptPresetID: draft.promptPresetID,
+            profileID: draft.profileID,
+            profileSnapshot: draft.profileSnapshot,
+            temperature: draft.temperature,
+            workflowID: draft.workflowID,
+            fallbackStrategy: draft.fallbackStrategy,
+            providerExecutionMetadata: AITranslationProviderExecutionMetadata(
+                reasoningSetting: draft.providerReasoningSetting, tokenUsage: draft.tokenUsage, cacheIdentity: draft.providerCacheIdentity
+            ),
+            isDraft: draft.isDraft,
+            isArchived: draft.isArchived
         )
         let lines = draft.lines.map {
             DatabaseTranslationLineRecord(
@@ -84,7 +110,9 @@ private actor MemoryTranslationRepository: TranslationRepository {
                 translatedText: $0.translation
             )
         }
-        return StoredTranslationVersion(record: record, lines: lines)
+        let result = StoredTranslationVersion(record: record, lines: lines)
+        versions.insert(result, at: 0)
+        return result
     }
 
     func markTranslationLocked(versionID: UUID, locked: Bool) async throws {
@@ -96,6 +124,13 @@ private actor MemoryTranslationRepository: TranslationRepository {
         _ = versionID
     }
 
+    func adoptTranslation(versionID: UUID) async throws {
+        versions = versions.map { $0.record.id == versionID ? $0.with(record: $0.record.with(isDraft: false)) : $0 }
+    }
+    func archiveTranslation(versionID: UUID, archived: Bool) async throws {
+        versions = versions.map { $0.record.id == versionID ? $0.with(record: $0.record.with(isArchived: archived)) : $0 }
+    }
+    func seed(_ version: StoredTranslationVersion) { versions.insert(version, at: 0) }
     func saveSnapshot() -> [Save] { saves }
 }
 
@@ -123,8 +158,11 @@ private final class SlowTranslationService: AITranslationService, @unchecked Sen
             targetLanguage: configuration.targetLanguage,
             model: configuration.model,
             baseURLHost: "contract.test",
-            promptHash: "session-contract",
-            sourceContentHash: sourceContentHash
+            promptHash: try AITranslationPromptBuilder().build(context: context, configuration: configuration).promptHash,
+            sourceContentHash: sourceContentHash,
+            engineID: configuration.engineID,
+            workflowID: configuration.workflowID,
+            providerReasoningSetting: configuration.providerReasoningSetting
         )
     }
 
@@ -168,6 +206,80 @@ private final class SlowAppleTranslationEngine: TranslationEngine, @unchecked Se
 
 @main
 struct TranslationSessionContract {
+    @MainActor
+    static func recoveryContract() async throws {
+        guard let path = ProcessInfo.processInfo.environment["SPOTIFYLYRICS_CONTRACT_ROOT"] else { fatalError("private root required") }
+        let root = URL(fileURLWithPath: path, isDirectory: true)
+        precondition(root.deletingLastPathComponent().path == URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().path)
+        precondition(!FileManager.default.fileExists(atPath: root.path))
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for scenario in ["dispatching", "received", "saved-gap"] {
+            let url = root.appendingPathComponent(scenario + ".sqlite3")
+            let provenance = root.appendingPathComponent(scenario + "-provenance")
+            let repository = SQLiteLyricsRepository(databaseURL: url, alignmentProvenanceDirectory: provenance)
+            try await repository.prepare()
+            let track = makeTrack(scenario, title: "Synthetic Recovery")
+            let identity = TrackIdentity(track: track)
+            let document = makeDocument(track: track, identity: identity)
+            let source = try await repository.save(track: track, identity: identity, document: document)
+            guard let versionID = source.versionID, let hash = source.sourceContentHash else { fatalError("source missing") }
+            let config = AITranslationConfiguration(model: "synthetic-model", autoTranslateNewLyrics: true,
+                engineID: TranslationEngineID.codexChatGPT.rawValue)
+            let context = AITranslationContext(title: document.title ?? "", artist: document.artist ?? "",
+                album: document.album ?? "", sourceLanguage: "ja", targetLanguage: config.targetLanguage,
+                style: config.style, lines: document.lines.enumerated().map {
+                    AITranslationSourceLine(index: $0.offset, original: $0.element.originalText,
+                        lineID: $0.element.id, timestamp: $0.element.timestamp)
+                })
+            let key = try AITranslationRequestExecution.key(identity: identity, versionID: versionID,
+                sourceHash: hash, context: context, configuration: config)
+            var request = try await repository.beginTranslationRequest(key: key, explicitRetry: false)
+            request.phase = .dispatching
+            try await repository.updateTranslationRequest(request)
+            let draft = AITranslationDraft(lines: context.lines.map {
+                    AITranslationLine(index: $0.index, translation: "synthetic translation \($0.index)")
+                }, targetLanguage: config.targetLanguage, model: config.model, baseURLHost: "synthetic",
+                promptHash: try AITranslationPromptBuilder().build(context: context, configuration: config).promptHash,
+                sourceContentHash: hash, engineID: config.engineID,
+                providerReasoningSetting: config.providerReasoningSetting)
+            if scenario != "dispatching" {
+                request.phase = .received; request.result = draft
+                try await repository.updateTranslationRequest(request)
+                if scenario == "saved-gap" {
+                    _ = try await repository.saveTranslation(lyricsVersionID: versionID, sourceContentHash: hash,
+                        originalLines: document.lines.map(\.originalText), draft: draft, forceNewVersion: false)
+                }
+            }
+            let reopened = SQLiteLyricsRepository(databaseURL: url, alignmentProvenanceDirectory: provenance)
+            try await reopened.prepare()
+            let fake = SlowTranslationService()
+            let controller = TranslationSessionController(repository: reopened, service: fake, acceptanceBudget: nil)
+            controller.synchronize(document: document, lyricsVersionID: versionID, sourceContentHash: hash, configuration: config)
+            let deadline = Date().addingTimeInterval(2)
+            while Date() < deadline {
+                if scenario == "dispatching", case .failed = controller.state { break }
+                if scenario != "dispatching", controller.selectedVersion != nil { break }
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+            let calls = await fake.calls()
+            precondition(calls == 0, "recovery must never redispatch unknown or received work")
+            let journal = try await reopened.loadTranslationRequest(key: key)
+            let versions = try await reopened.loadTranslationVersions(lyricsVersionID: versionID,
+                targetLanguage: config.targetLanguage, sourceContentHash: hash)
+            if scenario == "dispatching" {
+                guard case .failed = controller.state else { fatalError("unknown dispatch must be explicit") }
+                precondition(journal?.phase == .dispatching && journal?.attemptID == request.attemptID)
+                precondition(versions.isEmpty && controller.selectedVersion == nil)
+            } else {
+                precondition(journal?.phase == .saved && versions.count == 1, "received/save gap duplicated or lost version")
+                precondition(controller.selectedVersion?.record.lyricsVersionID == versionID)
+                precondition(controller.selectedVersion?.lines.map(\.translatedText) == draft.lines.map(\.translation))
+            }
+            controller.cancel()
+            print("PASS synthetic controller recovery \(scenario): zero fake dispatch; durable journal/parent/version assertions")
+        }
+    }
+
     static func main() async {
         let repository = MemoryTranslationRepository()
         let service = SlowTranslationService()
@@ -248,6 +360,7 @@ struct TranslationSessionContract {
             )
             appleController.cancel()
         }
+        try! await recoveryContract()
         print("translation session contracts passed")
     }
 }

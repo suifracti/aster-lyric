@@ -1,5 +1,19 @@
 import Foundation
 
+/// Independent of translation_versions: an uncertain request is never a usable
+/// translation. `dispatching` is conservative (the engine may have sent data).
+public enum TranslationRequestPhase: String, Codable, Sendable { case prepared, dispatching, received, saved }
+public struct StoredTranslationRequest: Codable, Sendable {
+    public let key: String
+    public let attemptID: UUID
+    public var phase: TranslationRequestPhase
+    public var result: AITranslationDraft?
+    public var updatedAt: Date
+    public init(key: String, attemptID: UUID = UUID(), phase: TranslationRequestPhase = .prepared, result: AITranslationDraft? = nil, updatedAt: Date = Date()) {
+        self.key = key; self.attemptID = attemptID; self.phase = phase; self.result = result; self.updatedAt = updatedAt
+    }
+}
+
 public struct StoredTranslationVersion: Equatable, Sendable {
     public let record: DatabaseTranslationVersionRecord
     public let lines: [DatabaseTranslationLineRecord]
@@ -43,8 +57,11 @@ public enum TranslationRepositoryError: Error, Equatable, Sendable, LocalizedErr
 
 /// Translation storage remains separate from the legacy lyric_lines column.
 /// Implementations must write only complete, validated versions in one
-/// transaction and must never persist an in-flight or failed request.
+/// transaction. Request phases are separate records, never translation versions.
 public protocol TranslationRepository: Sendable {
+    func loadTranslationRequest(key: String) async throws -> StoredTranslationRequest?
+    func beginTranslationRequest(key: String, explicitRetry: Bool) async throws -> StoredTranslationRequest
+    func updateTranslationRequest(_ request: StoredTranslationRequest) async throws
     func loadTranslationVersions(
         lyricsVersionID: UUID,
         targetLanguage: String,
@@ -63,6 +80,18 @@ public protocol TranslationRepository: Sendable {
     func deleteTranslation(versionID: UUID) async throws
     func adoptTranslation(versionID: UUID) async throws
     func archiveTranslation(versionID: UUID, archived: Bool) async throws
+}
+
+// Repositories without a durable request store may still show cached versions,
+// but must fail closed before a new dispatch. Tests opt in with their own store.
+public extension TranslationRepository {
+    func loadTranslationRequest(key: String) async throws -> StoredTranslationRequest? { nil }
+    func beginTranslationRequest(key: String, explicitRetry: Bool) async throws -> StoredTranslationRequest {
+        throw TranslationRepositoryError.database("请求状态无法可靠保存；未发送翻译")
+    }
+    func updateTranslationRequest(_ request: StoredTranslationRequest) async throws {
+        throw TranslationRepositoryError.database("请求状态无法可靠保存")
+    }
 }
 
 public actor UnavailableTranslationRepository: TranslationRepository {

@@ -5,6 +5,32 @@ public enum AITranslationResponseError: Error, Equatable, Sendable {
 }
 
 public enum AITranslationResponseParser {
+    public static func parseCodex(_ data: Data, request: CodexTranslationWireRequest) throws -> [AITranslationLine] {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["requestID", "lines"],
+              let requestID = object["requestID"] as? String,
+              requestID == request.requestID.uuidString,
+              let rows = object["lines"] as? [[String: Any]], rows.count == request.sourceLines.count else {
+            throw AITranslationResponseError.validationFailed("GPT 请求 ID 或响应结构不匹配")
+        }
+        let mapping = request.sourcesByWireID
+        var seen = Set<String>()
+        var restored: [[String: Any]] = []
+        for row in rows {
+            guard Set(row.keys) == ["lineID", "translation"],
+                  let wireID = row["lineID"] as? String,
+                  let source = mapping[wireID], seen.insert(wireID).inserted,
+                  let translation = row["translation"] as? String else {
+                throw AITranslationResponseError.validationFailed("GPT 短行 ID 或字段不严格")
+            }
+            restored.append(["lineID": source.lineID.uuidString, "translation": translation])
+        }
+        guard seen == Set(mapping.keys) else {
+            throw AITranslationResponseError.validationFailed("GPT 短行 ID 集合不完整")
+        }
+        return try parseStable(JSONSerialization.data(withJSONObject: restored), expectedLines: request.sourceLines)
+    }
+
     public static func parse(_ data: Data, expectedLineCount: Int) throws -> [AITranslationLine] {
         guard expectedLineCount >= 0 else {
             throw AITranslationResponseError.validationFailed("行数无效")

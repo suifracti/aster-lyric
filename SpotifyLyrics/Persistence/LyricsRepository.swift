@@ -63,17 +63,20 @@ public struct StoredLyricsDocument: Equatable, Sendable {
     public let versionID: UUID?
     public let sourceContentHash: String?
     public let alignmentProvenanceAvailability: AlignmentProvenanceAvailability
+    public let isUserProtected: Bool
 
     public init(
         document: LyricsDocument,
         versionID: UUID?,
         sourceContentHash: String?,
-        alignmentProvenanceAvailability: AlignmentProvenanceAvailability = .unavailable
+        alignmentProvenanceAvailability: AlignmentProvenanceAvailability = .unavailable,
+        isUserProtected: Bool = false
     ) {
         self.document = document
         self.versionID = versionID
         self.sourceContentHash = sourceContentHash
         self.alignmentProvenanceAvailability = alignmentProvenanceAvailability
+        self.isUserProtected = isUserProtected
     }
 }
 
@@ -167,6 +170,8 @@ public protocol LyricsRepository: Sendable, LyricsOffsetScopeResolving {
     /// LyricsVersion. Implementations may use the default no-op for tests or
     /// repositories that do not persist track metadata yet.
     func saveTrackMetadata(_ metadata: TrackMetadata) async throws
+    func isLyricsSelectionRevoked(identity: TrackIdentity) async throws -> Bool
+    func revokeLyricsVersionSelection(trackStableKey: String, lyricsVersionID: UUID) async throws
     func loadBest(track: Track, identity: TrackIdentity) async throws -> LyricsDocument?
     func loadBestStored(track: Track, identity: TrackIdentity) async throws -> StoredLyricsDocument?
     func upsertListeningHistory(_ entry: ListeningHistoryEntry) async throws
@@ -178,6 +183,9 @@ public protocol LyricsRepository: Sendable, LyricsOffsetScopeResolving {
         identity: TrackIdentity,
         document: LyricsDocument
     ) async throws -> LyricsPersistenceSaveResult
+    /// A SafeMatcher automatic decision is separate from provider confidence.
+    /// Keeps ordinary cache-save thresholds unchanged.
+    func saveAutomaticallySelected(track: Track, identity: TrackIdentity, document: LyricsDocument, decision: LyricsAutomaticSelectionEvidence) async throws -> LyricsPersistenceSaveResult
     /// Persists a user-confirmed candidate and makes it the preferred version
     /// in the same transaction. Passing confirmed lock IDs is an explicit
     /// approval to select over those versions; newly appearing locks are
@@ -200,6 +208,13 @@ public protocol LyricsRepository: Sendable, LyricsOffsetScopeResolving {
 }
 
 public extension LyricsRepository {
+    func isLyricsSelectionRevoked(identity: TrackIdentity) async throws -> Bool { false }
+    func revokeLyricsVersionSelection(trackStableKey: String, lyricsVersionID: UUID) async throws {
+        throw LyricsRepositoryError.unavailable("当前仓库不支持持久取消采用")
+    }
+    func saveAutomaticallySelected(track: Track, identity: TrackIdentity, document: LyricsDocument, decision: LyricsAutomaticSelectionEvidence) async throws -> LyricsPersistenceSaveResult {
+        try await save(track: track, identity: identity, document: document)
+    }
     func loadAliases(stableKey: String) async throws -> [TrackAlias] {
         _ = stableKey
         return []

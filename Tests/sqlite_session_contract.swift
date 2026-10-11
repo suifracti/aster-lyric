@@ -173,6 +173,25 @@ struct SQLiteSessionContract {
         precondition(aVersionCount == 0)
         precondition(bVersionCount == 1)
 
+        // Round 1: an unprotected plain cache is provisional; a selected
+        // original is stable even when a synchronized source later exists.
+        let upgradeTrack=Track(title:"Self-written plain",artist:"Fixture",album:"Fixture",duration:30,spotifyId:"round1-plain")
+        let upgradeIdentity=TrackIdentity(track:upgradeTrack)
+        let plainCache=try await repository.save(track:upgradeTrack,identity:upgradeIdentity,document:makeDocument(track:upgradeTrack,identity:upgradeIdentity,source:.lrclib,synced:false))
+        let unprotected=try await repository.loadBestStored(track:upgradeTrack,identity:upgradeIdentity)!
+        precondition(!unprotected.isUserProtected)
+        let upgradeCounter=Counter()
+        let upgrade=LyricsSessionController(providers:[CountingProvider(counter:upgradeCounter,resultBuilder:{track,identity in .match(makeDocument(track:track,identity:identity,source:.lrclib,synced:true))})],repository:repository)
+        upgrade.begin(track:upgradeTrack,identity:upgradeIdentity,automaticallySearch:true)
+        try await Task.sleep(nanoseconds:200_000_000)
+        precondition(upgrade.isSynchronized && upgradeCounter.value==1,"plain cache permanently blocked synchronized search")
+        try await repository.setPersonalLibraryActiveLyrics(trackStableKey:upgradeIdentity.stableKey,lyricsVersionID:plainCache.versionID!)
+        let protectedCounter=Counter()
+        let protected=LyricsSessionController(providers:[CountingProvider(counter:protectedCounter,resultBuilder:{track,identity in .match(makeDocument(track:track,identity:identity,source:.lrclib,synced:true))})],repository:repository)
+        protected.begin(track:upgradeTrack,identity:upgradeIdentity,automaticallySearch:true)
+        try await Task.sleep(nanoseconds:200_000_000)
+        precondition(!protected.isSynchronized && protectedCounter.value==0 && protected.activeLyricsVersionID==plainCache.versionID,"user-selected original silently replaced")
+        print("PASS unprotected plain cache upgrades; explicit original choice skips source replacement")
         print("sqlite session contract passed")
     }
 }

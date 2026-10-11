@@ -56,6 +56,59 @@ struct QueryIdentityContract {
         require(TrackTextNormalizer.extractVersionTags(fromTitle: "夜の歌 (Instrumental)").contains(.instrumental), "instrumental trait")
         require(TrackTextNormalizer.extractVersionTags(fromTitle: "夜の歌 (Cover)").contains(.cover), "cover trait")
 
+        let featuredTitleTrack = Track(title: "sentiment (feat. inkya)", artist: "SHAGZ", album: "sentiment", duration: 180)
+        let featuredTitleMetadata = TrackMetadata.bootstrap(from: featuredTitleTrack)
+        let completeFeatured = candidate(identity: TrackIdentity(track: featuredTitleTrack),
+            title: featuredTitleTrack.title, artist: "SHAGZ, inkya", album: "sentiment", duration: 180)
+        let featuredTitleDecision = LyricsSafeMatcher.decide(candidate: completeFeatured, metadata: featuredTitleMetadata)
+        require(featuredTitleDecision.tier == .autoHigh || featuredTitleDecision.tier == .autoMedium,
+            "explicit title featured artist must not force manual choice when primary/title/album/time match")
+        require(!featuredTitleDecision.reasons.contains("extraFeaturedArtist"), "declared featured artist is not extra")
+        let undeclaredFeatured = candidate(identity: TrackIdentity(track: featuredTitleTrack),
+            title: featuredTitleTrack.title, artist: "SHAGZ, someone else", album: "sentiment", duration: 180)
+        let undeclaredDecision = LyricsSafeMatcher.decide(candidate: undeclaredFeatured, metadata: featuredTitleMetadata)
+        require(undeclaredDecision.tier == .candidates, "undeclared featured artist remains unsafe for automatic adoption")
+        let wrongFeaturedRecording = candidate(identity: TrackIdentity(track: featuredTitleTrack),
+            title: featuredTitleTrack.title + " - Live", artist: "SHAGZ, inkya", album: "sentiment", duration: 180)
+        let wrongFeaturedDecision = LyricsSafeMatcher.decide(candidate: wrongFeaturedRecording, metadata: featuredTitleMetadata)
+        require(wrongFeaturedDecision.tier == .candidates, "title feat recognition must not bypass recording conflict")
+
+        let localizedGuestTrack = Track(title: "0 (feat. haku)", artist: "hisui", album: "", duration: 136)
+        let localizedGuestCandidate = candidate(identity: TrackIdentity(track: localizedGuestTrack), title: "0 (feat. 柏)", artist: "hisui, 柏", album: "", duration: 136)
+        let localizedGuestDecision = LyricsSafeMatcher.decide(candidate: localizedGuestCandidate, metadata: TrackMetadata.bootstrap(from: localizedGuestTrack))
+        require(localizedGuestDecision.tier == .autoMedium, "featured-title spelling variation should automatically choose a provisional matching version")
+        require(localizedGuestDecision.reasons.contains("featuredNameUnverified"), "automatic provisional choice must retain uncertainty")
+        // Spotify's localized display can be Latin while the source has the Japanese title.
+        // Provider query echoes remain insufficient: prove the complete reading and primary artist.
+        let romanizedTrack = Track(title: "Uta o Oshietekureta Anata e", artist: "ミセカイ", album: "Artrium", duration: 253.677, spotifyId: "7eqgj3zza04nswadcvqnyk")
+        let romanizedMeta = TrackMetadata.bootstrap(from: romanizedTrack)
+        let japaneseTitle = candidate(identity: romanizedMeta.identity, title: "唄を教えてくれたあなたへ", artist: "ミセカイ", album: "Artrium", duration: 254)
+        let romanizedDecision = LyricsSafeMatcher.decide(candidate: japaneseTitle, metadata: romanizedMeta)
+        require(romanizedDecision.tier == .autoMedium, "complete Japanese reading matching localized Latin title must auto-select instead of titleMismatch")
+        require(romanizedDecision.reasons.contains("titleReadingExact") && !romanizedDecision.reasons.contains("titleMismatch"), "retain observed transliteration evidence without pretending literal title equality")
+        let reverseTrack = Track(title: "唄を教えてくれたあなたへ", artist: "ミセカイ", album: "Artrium", duration: 254)
+        require(LyricsSafeMatcher.decide(candidate: candidate(identity: TrackIdentity(track: reverseTrack), title: "Uta o Oshietekureta Anata e", artist: "ミセカイ", album: "Artrium", duration: 254), metadata: TrackMetadata.bootstrap(from: reverseTrack)).tier == .autoMedium, "title reading works in both localization directions")
+        let kanaTrack = Track(title: "Aoiharu", artist: "ミセカイ", album: "Artrium", duration: 180)
+        require(LyricsSafeMatcher.decide(candidate: candidate(identity: TrackIdentity(track: kanaTrack), title: "アオイハル", artist: "ミセカイ", album: "Artrium", duration: 180), metadata: TrackMetadata.bootstrap(from: kanaTrack)).tier == .autoMedium, "kana title must match Latin display without needing a stored alias")
+        let unrelated = LyricsSafeMatcher.decide(candidate: candidate(identity: romanizedMeta.identity, title: "アオイハル", artist: "ミセカイ", album: "Artrium", duration: 254), metadata: romanizedMeta)
+        require(unrelated.tier != .autoHigh && unrelated.tier != .autoMedium, "same artist/album/duration alone must not invent a title match")
+        let wrongRomanizedID = LyricsSafeMatcher.decide(candidate: candidate(identity: romanizedMeta.identity, title: japaneseTitle.title, artist: "ミセカイ", album: "Artrium", duration: 254, spotifyTrackID: "different-song"), metadata: romanizedMeta)
+        require(wrongRomanizedID.tier == .reject && wrongRomanizedID.hardReject, "reading equivalence cannot override independent track ID conflict")
+        let liveJapanese = LyricsSafeMatcher.decide(candidate: candidate(identity: romanizedMeta.identity, title: japaneseTitle.title + " - Live", artist: "ミセカイ", album: "Artrium", duration: 254), metadata: romanizedMeta)
+        require(liveJapanese.tier != .autoHigh && liveJapanese.tier != .autoMedium && liveJapanese.versionConflict, "reading equivalence cannot override a different recording")
+        let typographyTrack = Track(title: "Something without form - Another ver.", artist: "Nemo_Suzumi", album: "Something without form (Another ver.)", duration: 183.913, spotifyId: "5M2kd1tO6wlFp7uDtn3YKG")
+        let typographyMeta = TrackMetadata.bootstrap(from: typographyTrack)
+        let typographyCandidate = candidate(identity: typographyMeta.identity, title: "Something Without Form (Another ver.)", artist: "Nemo_Suzumi", album: typographyTrack.album, duration: 184)
+        let typographyDecision = LyricsSafeMatcher.decide(candidate: typographyCandidate, metadata: typographyMeta)
+        require(typographyDecision.tier == .autoMedium && typographyDecision.reasons.contains("titleTypographyExact"), "whole title and version words match despite spaced dash versus parentheses; must auto-select")
+        for changedTitle in ["Something Without Form", "Something Without Form (Original ver.)", "Something Without Form (Another ver.) - Live"] {
+            let decision = LyricsSafeMatcher.decide(candidate: candidate(identity: typographyMeta.identity, title: changedTitle, artist: typographyTrack.artist, album: typographyTrack.album, duration: 184), metadata: typographyMeta)
+            require(decision.tier != .autoHigh && decision.tier != .autoMedium, "typography equivalence must preserve version words and recording barriers")
+        }
+        let wordBoundaryTrack = Track(title: "Re-cover - Another ver.", artist: "Nemo_Suzumi", album: "", duration: 184)
+        let boundaryDecision = LyricsSafeMatcher.decide(candidate: candidate(identity: TrackIdentity(track: wordBoundaryTrack), title: "Recover (Another ver.)", artist: wordBoundaryTrack.artist, album: "", duration: 184), metadata: TrackMetadata.bootstrap(from: wordBoundaryTrack))
+        require(boundaryDecision.tier != .autoHigh && boundaryDecision.tier != .autoMedium, "embedded lexical hyphens must not be removed as a spaced separator")
+        require(LyricsSafeMatcher.decide(candidate: candidate(identity: typographyMeta.identity, title: typographyCandidate.title, artist: typographyTrack.artist, album: typographyTrack.album, duration: 184, spotifyTrackID: "other-song"), metadata: typographyMeta).hardReject, "typography equivalence cannot override track ID conflicts")
         let firstTakeTrack = Track(
             title: "春を告げる - From THE FIRST TAKE",
             artist: "yama",

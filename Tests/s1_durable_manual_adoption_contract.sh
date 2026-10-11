@@ -6,6 +6,10 @@ TMP_DIR="$(mktemp -d /tmp/spotifylyrics-s1-adoption.XXXXXX)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 cp "$ROOT_DIR/Tests/s1_durable_manual_adoption_contract.swift" "$TMP_DIR/main.swift"
 
+cat > "$TMP_DIR/logger.swift" <<'SWIFT'
+import Foundation
+enum LyricsE2ELog { static func log(_ message: String) { print(message) } }
+SWIFT
 swiftc -D DEBUG -parse-as-library \
   "$ROOT_DIR/SpotifyLyrics/Models/Models.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/TrackIdentity.swift" \
@@ -21,7 +25,7 @@ swiftc -D DEBUG -parse-as-library \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsSafeMatcher.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsQueryPlanner.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsRecoveryModels.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsE2ELog.swift" \
+  "$TMP_DIR/logger.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsSearchManager.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/CompositeLyricsProvider.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LRCParser.swift" \
@@ -50,4 +54,10 @@ swiftc -D DEBUG -parse-as-library \
   "$TMP_DIR/main.swift" \
   -o "$TMP_DIR/s1-durable-manual-adoption-contract"
 
-"$TMP_DIR/s1-durable-manual-adoption-contract" "${1:-all}"
+if [[ "${1:-all}" == "revoke-batch" ]]; then
+  for scenario in revoke-selection revoke-rollback revoke-schema revoke-progress selection-read-fails auto-search-disabled-loads-selection locked-current selection-throws timing-throws invalid-content track-switch track-return same-track-order; do
+    "$TMP_DIR/s1-durable-manual-adoption-contract" "$scenario"
+  done
+else
+  "$TMP_DIR/s1-durable-manual-adoption-contract" "${1:-all}"
+fi

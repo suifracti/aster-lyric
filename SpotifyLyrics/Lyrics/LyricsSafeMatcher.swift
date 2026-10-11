@@ -110,6 +110,11 @@ public enum LyricsSafeMatcher {
 
         let metadataTitle = TrackTextNormalizer.normalize(metadata.track.title)
         let candidateTitle = TrackTextNormalizer.normalize(candidate.title)
+        let featuredTitleVariation = !declaredFeaturedArtists(in: metadata.track.title).isEmpty
+            && !declaredFeaturedArtists(in: candidate.title).isEmpty
+            && metadataTitle != candidateTitle
+            && featuredBaseTitle(metadata.track.title) == featuredBaseTitle(candidate.title)
+            && !featuredBaseTitle(candidate.title).isEmpty
         let metadataBaseTitle = TrackTextNormalizer.normalize(TrackTextNormalizer.stripVersionMarkers(fromTitle: metadata.track.title))
         let candidateBaseTitle = TrackTextNormalizer.normalize(TrackTextNormalizer.stripVersionMarkers(fromTitle: candidate.title))
         let manualQueryTitle = queryVariant?.queryKind == .manualOverride
@@ -122,6 +127,21 @@ public enum LyricsSafeMatcher {
 
         if candidateTitle == metadataTitle, !candidateTitle.isEmpty {
             add("titleExact", 0.30)
+        } else if titlesHaveSameTypography(candidate.title, metadata.track.title) {
+            // Keep every word (including version labels); only a standalone
+            // dash separator is equivalent to the existing bracket separators.
+            add("titleTypographyExact", 0.28)
+        } else if titlesHaveCompleteParallelForm(candidate.title, metadata.track.title) {
+            // Both halves must be the same full reading, never a contained substring.
+            add("titleParallelExact", 0.28)
+        } else if latinSpacingKey(candidate.title) != nil,
+                  latinSpacingKey(candidate.title) == latinSpacingKey(metadata.track.title) {
+            add("titleLatinSpacingExact", 0.28)
+        } else if featuredTitleVariation {
+            add("titleFeaturedBaseExact", 0.24)
+            add("featuredNameUnverified", 0)
+        } else if candidate.declaredTitleAliases.contains(where: { TrackTextNormalizer.normalize($0) == metadataTitle }), !metadataTitle.isEmpty {
+            add("titleProviderAliasConfirmed", 0.22)
         } else if let matchingAlias = titleAliases.first(where: { $0.value == candidateTitle }), !candidateTitle.isEmpty {
             let delta = matchingAlias.alias.isOfficial || matchingAlias.alias.source == .spotifyMetadata ? 0.22 : 0.16
             add("titleAliasConfirmed", delta)
@@ -136,11 +156,19 @@ public enum LyricsSafeMatcher {
             // have a persisted TrackAlias record. They still expand recall,
             // but receive less title evidence than a confirmed alias.
             add("titleAliasQuery", queryVariant.queryKind == .romajiAlias ? 0.10 : 0.12)
+        } else if titlesHaveSameReading(candidate.title, metadata.track.title) {
+            // Provider titles can remain Japanese while Spotify localizes to Latin.
+            // This is a full local reading comparison, not an echo of our query.
+            add("titleReadingExact", 0.28)
         } else if !candidateBaseTitle.isEmpty, candidateBaseTitle == metadataBaseTitle,
                   (TrackTextNormalizer.extractVersionTags(fromTitle: metadata.track.title).contains(.piano)
                    || TrackTextNormalizer.extractVersionTags(fromTitle: candidate.title).contains(.piano)) {
             // Same composition is useful for explicit recovery, not proof of the same recording.
             add("pianoBaseTitleExact", 0.24)
+        } else if !candidateBaseTitle.isEmpty, candidateBaseTitle == metadataBaseTitle,
+                  (TrackTextNormalizer.extractVersionTags(fromTitle: metadata.track.title).contains(.spedUp)
+                   || TrackTextNormalizer.extractVersionTags(fromTitle: candidate.title).contains(.spedUp)) {
+            add("tempoBaseTitleExact", 0.24)
         } else if manualTitleMatches {
             add("manualTitleMatch", 0.20)
         } else if !candidateTitle.isEmpty,
@@ -158,6 +186,9 @@ public enum LyricsSafeMatcher {
         let metadataArtists = artistGroups(for: metadata)
         let candidateArtists = TrackTextNormalizer.artistTokens(candidate.artist)
         let candidatePrimary = TrackTextNormalizer.normalizeArtistToken(candidateArtists.primary)
+        let metadataPrimaryReadingMatches = metadataArtists.contains {
+            titlesHaveSameReading($0.primary, candidateArtists.primary)
+        }
         let metadataPrimaryMatches = metadataArtists.contains {
             TrackTextNormalizer.normalizeArtistToken($0.primary) == candidatePrimary && !candidatePrimary.isEmpty
         }
@@ -174,6 +205,8 @@ public enum LyricsSafeMatcher {
 
         if metadataPrimaryMatches {
             add("primaryArtistExact", 0.30)
+        } else if metadataPrimaryReadingMatches {
+            add("primaryArtistReadingExact", 0.28)
         } else if let artistAlias {
             let delta = artistAlias.isOfficial || artistAlias.source == .spotifyMetadata ? 0.24 : 0.16
             add("primaryArtistAlias", delta)
@@ -200,7 +233,11 @@ public enum LyricsSafeMatcher {
             let metadataGroup = metadataArtists.first {
                 TrackTextNormalizer.normalizeArtistToken($0.primary) == candidatePrimary
             } ?? metadataArtists.first
-            let expectedFeatured = Set((metadataGroup?.featured ?? []).map(TrackTextNormalizer.normalizeArtistToken).filter { !$0.isEmpty })
+            // Spotify may expose the primary artist alone and declare guests
+            // in the title. Those explicit guests are not extra provider artists.
+            let titleGuests = declaredFeaturedArtists(in: metadata.track.title)
+            let expectedFeatured = Set(((metadataGroup?.featured ?? []) + titleGuests)
+                .map(TrackTextNormalizer.normalizeArtistToken).filter { !$0.isEmpty })
             let actualFeatured = Set(candidateArtists.featured.map(TrackTextNormalizer.normalizeArtistToken).filter { !$0.isEmpty })
             let missing = expectedFeatured.subtracting(actualFeatured)
             let extra = actualFeatured.subtracting(expectedFeatured)
@@ -278,6 +315,14 @@ public enum LyricsSafeMatcher {
             evidence.append(item)
         }
         versionConflict = traitResult.versionConflict
+        // A tempo-only mismatch is useful as text for explicit inspection, not
+        // as recording evidence. Duration differs by design; no global score
+        // threshold is changed. IDs/ISRC/artist conflicts remain hard barriers.
+        let tempoTextPreview = !hardReject && metadataPrimaryMatches
+            && reasons.contains("tempoBaseTitleExact")
+            && reasons.contains("spedUpConflict")
+            && metadataTags.symmetricDifference(candidateTags).subtracting([.spedUp, .remaster]).isEmpty
+            && candidate.lines.contains { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
         if let queryVariant {
             switch queryVariant.queryKind {
@@ -302,10 +347,12 @@ public enum LyricsSafeMatcher {
                 evidence.append(LyricsMatchEvidence(code: "machineAliasCeiling", delta: 0))
             }
 
-            let tierPrimaryMatch = metadataPrimaryMatches || (featuredArtistOnly && hasStrongIndependentIdentity)
+            let tierPrimaryMatch = metadataPrimaryMatches || metadataPrimaryReadingMatches || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity)
             var tier = tierFor(score: score, primaryArtistMatches: tierPrimaryMatch, hardReject: hardReject)
             if hardReject {
                 tier = .reject
+            } else if tempoTextPreview {
+                tier = .candidates
             } else if versionConflict {
                 tier = minTier(tier, score >= 0.20 ? .candidates : .reject)
             } else if featuredArtistOnly && !hasStrongIndependentIdentity {
@@ -325,7 +372,14 @@ public enum LyricsSafeMatcher {
             if queryVariant?.queryKind == .titleOnlyLoose && !hasStrongIndependentIdentity {
                 tier = minTier(tier, score >= 0.25 ? .candidates : .reject)
             }
+            if reasons.contains("titleFuzzy") && !hasStrongIndependentIdentity {
+                tier = minTier(tier, .candidates)
+            }
+            if reasons.contains("titleParallelExact") || reasons.contains("titleLatinSpacingExact") {
+                tier = minTier(tier, metadataPrimaryMatches && reasons.contains("durationClose") ? .autoMedium : .candidates)
+            }
             tier = minTier(tier, ceiling)
+            if reasons.contains("titleProviderAliasConfirmed") || metadataPrimaryReadingMatches || reasons.contains("titleReadingExact") || reasons.contains("titleTypographyExact") { tier = minTier(tier, .autoMedium) }
             return LyricsMatchDecision(
                 tier: tier,
                 score: clamp(score),
@@ -338,9 +392,11 @@ public enum LyricsSafeMatcher {
         }
 
         var tier: LyricsMatchTier
-        let tierPrimaryMatch = metadataPrimaryMatches || (featuredArtistOnly && hasStrongIndependentIdentity)
+        let tierPrimaryMatch = metadataPrimaryMatches || metadataPrimaryReadingMatches || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity)
         if hardReject {
             tier = .reject
+        } else if tempoTextPreview {
+            tier = .candidates
         } else if versionConflict {
             tier = score >= 0.20 ? .candidates : .reject
         } else if featuredArtistOnly && !hasStrongIndependentIdentity {
@@ -353,6 +409,11 @@ public enum LyricsSafeMatcher {
             // when localized artist names differ. It never becomes automatic;
             // independent ID conflicts already take the hardReject branch.
             tier = (score >= 0.10 || manualTitleMatches) ? .candidates : .reject
+        } else if featuredTitleVariation && metadataPrimaryMatches && !reasons.contains("durationFar") && aliasUsed?.source != .machineGenerated {
+            // Provisional listening choice, not a claim that guest spellings
+            // are equivalent. All independent-ID and recording barriers above
+            // still apply, and the user may change the selected version.
+            tier = .autoMedium
         } else if incompleteArtistSet && !hasStrongIndependentIdentity {
             // A missing/extra featured artist is not proof of a different
             // song, but it is insufficient for unattended adoption.
@@ -362,14 +423,22 @@ public enum LyricsSafeMatcher {
         } else {
             tier = tierFor(score: score, primaryArtistMatches: tierPrimaryMatch, hardReject: hardReject)
         }
+        // A shorter title can omit an unrecognized version label (e.g.
+        // "Another ver."). Substring containment is not whole-title identity.
+        if reasons.contains("titleFuzzy") && !hasStrongIndependentIdentity {
+            tier = minTier(tier, .candidates)
+        }
         // A generated romaji query has no independent provider alias record
         // to carry a source/confidence ceiling. Keep deterministic
         // transliteration useful for recall, but never let it promote an
         // otherwise strong match to autoHigh by itself.
-        if aliasUsed == nil, queryVariant?.queryKind == .romajiAlias {
+        if reasons.contains("titleProviderAliasConfirmed") || metadataPrimaryReadingMatches || reasons.contains("titleReadingExact") || reasons.contains("titleTypographyExact") || (aliasUsed == nil && queryVariant?.queryKind == .romajiAlias) {
             tier = minTier(tier, .autoMedium)
         }
 
+        if reasons.contains("titleParallelExact") || reasons.contains("titleLatinSpacingExact") {
+            tier = minTier(tier, metadataPrimaryMatches && reasons.contains("durationClose") ? .autoMedium : .candidates)
+        }
         return LyricsMatchDecision(
             tier: tier,
             score: clamp(score),
@@ -379,6 +448,59 @@ public enum LyricsSafeMatcher {
             evidence: evidence,
             hardReject: hardReject
         )
+    }
+
+    /// Space/case folding only for an entire Latin title. Punctuation and
+    /// added version words are not discarded; this is not fuzzy containment.
+    private static func latinSpacingKey(_ raw: String) -> String? {
+        let folded = raw.folding(options: [.caseInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+        guard folded.unicodeScalars.allSatisfy({ $0.isASCII && (CharacterSet.alphanumerics.contains($0) || CharacterSet.whitespaces.contains($0)) }) else { return nil }
+        let key = String(String.UnicodeScalarView(folded.unicodeScalars.filter { !CharacterSet.whitespaces.contains($0) }))
+        return key.count >= 3 ? key : nil
+    }
+
+    /// A parallel title is accepted only when Japanese + Latin both express
+    /// the whole title. A suffix such as Live/Another ver. fails this check;
+    /// the existing recording/ID checks still run afterward.
+    private static func titlesHaveCompleteParallelForm(_ lhs: String, _ rhs: String) -> Bool {
+        func forms(_ raw: String) -> [String]? {
+            let text = raw.folding(options: [.widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            for pattern in [#"^(.+?)\s+[-–—]\s+(.+)$"#, #"^([^()]+?)\s*\(([^()]+)\)$"#] {
+                guard let regex = try? NSRegularExpression(pattern: pattern),
+                      let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+                      let a = Range(match.range(at: 1), in: text), let b = Range(match.range(at: 2), in: text) else { continue }
+                let first = String(text[a]).trimmingCharacters(in: .whitespacesAndNewlines)
+                let second = String(text[b]).trimmingCharacters(in: .whitespacesAndNewlines)
+                // One whole Japanese reading and one Latin rendering, not two
+                // arbitrary strings separated by a dash/bracket.
+                guard (latinSpacingKey(first) != nil) != (latinSpacingKey(second) != nil),
+                      titlesHaveSameReading(first, second) else { return nil }
+                return [first, second]
+            }
+            return nil
+        }
+        let left = forms(lhs), right = forms(rhs)
+        guard left != nil || right != nil else { return false }
+        func same(_ a: String, _ b: String) -> Bool {
+            if TrackTextNormalizer.normalize(a) == TrackTextNormalizer.normalize(b) { return true }
+            if let latin = latinSpacingKey(a), latin == latinSpacingKey(b) { return true }
+            return titlesHaveSameReading(a, b)
+        }
+        // Validate each complete form against every complete form on the
+        // other side. No partial match or untranslated surplus is accepted.
+        return (left ?? [lhs]).allSatisfy { a in (right ?? [rhs]).allSatisfy { same(a, $0) } }
+    }
+
+    private static func titlesHaveSameTypography(_ lhs: String, _ rhs: String) -> Bool {
+        func key(_ title: String) -> String {
+            TrackTextNormalizer.normalize(title)
+                .split(separator: " ")
+                .filter { $0 != "-" }
+                .joined(separator: " ")
+        }
+        let left = key(lhs)
+        return !left.isEmpty && left == key(rhs)
     }
 
     private struct VersionTraitResult {
@@ -394,6 +516,7 @@ public enum LyricsSafeMatcher {
         var conflict = false
 
         let hardTraits: [(VersionTag, String)] = [
+            (.spedUp, "spedUpConflict"),
             (.live, "liveConflict"),
             (.acoustic, "acousticConflict"),
             (.remix, "remixConflict"),
@@ -427,6 +550,58 @@ public enum LyricsSafeMatcher {
         }
 
         return VersionTraitResult(versionConflict: conflict, evidence: evidence)
+    }
+
+    // MeCab title readings are bounded, local, and cached; repeated provider
+    // probes must not repeatedly start morphology processes for the same title.
+    private final class TitleReadingCache: @unchecked Sendable {
+        let values = NSCache<NSString, NSString>()
+        init() { values.countLimit = 128 }
+    }
+    private static let titleReadings = TitleReadingCache()
+
+    private static func titlesHaveSameReading(_ lhs: String, _ rhs: String) -> Bool {
+        func latinKey(_ value: String) -> String? {
+            let folded = value.folding(options: [.diacriticInsensitive, .caseInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            guard folded.unicodeScalars.allSatisfy({ $0.isASCII }) else { return nil }
+            let key = folded.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }
+            let result = String(String.UnicodeScalarView(key))
+            return result.count >= 3 ? result : nil
+        }
+        func readingKey(_ japanese: String) -> String? {
+            guard japanese.count <= 256,
+                  japanese.unicodeScalars.contains(where: { (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value) }) else { return nil }
+            if let cached = titleReadings.values.object(forKey: japanese as NSString) { return cached as String }
+            let romanized: String
+            if !JapaneseKanaGenerator.hasKanji(japanese) {
+                romanized = JapaneseRomanizer.romanize(japanese)
+            } else {
+                let reading = JapaneseReadingPipeline.analyze(originalText: japanese)
+                guard !reading.containsUnknown, reading.confidence >= 0.90,
+                      let resolved = reading.romajiText else { return nil }
+                romanized = resolved
+            }
+            guard let key = latinKey(romanized) else { return nil }
+            titleReadings.values.setObject(key as NSString, forKey: japanese as NSString)
+            return key
+        }
+        if let latin = latinKey(lhs), let japanese = readingKey(rhs) { return latin == japanese }
+        if let latin = latinKey(rhs), let japanese = readingKey(lhs) { return latin == japanese }
+        return false
+    }
+
+    private static func featuredBaseTitle(_ title: String) -> String {
+        let stripped = title.replacingOccurrences(of: #"[（(]\s*(?:feat\.?|ft\.?|featuring)\s+[^）)]+[）)]"#, with: "", options: [.regularExpression, .caseInsensitive])
+        return TrackTextNormalizer.normalize(stripped)
+    }
+
+    private static func declaredFeaturedArtists(in title: String) -> [String] {
+        let pattern = #"[（(]\s*(?:feat\.?|ft\.?|featuring)\s+([^）)]+)[）)]"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
+        return regex.matches(in: title, range: NSRange(title.startIndex..., in: title)).flatMap { match in
+            guard let range = Range(match.range(at: 1), in: title) else { return [String]() }
+            return TrackTextNormalizer.artistTokens(String(title[range])).all
+        }
     }
 
     private static func artistGroups(for metadata: TrackMetadata) -> [TrackTextNormalizer.ArtistTokens] {
