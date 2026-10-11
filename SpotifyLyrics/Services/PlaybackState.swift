@@ -2101,8 +2101,11 @@ public final class PlaybackState: ObservableObject {
     public func adoptLyricsCandidate(_ candidate: LyricsCandidate) async throws -> LyricsPersistenceSaveResult {
         let identity = candidate.identity
         let target: (track: Track, session: LyricsSessionController)
-        if let previewTrack = searchPreviewTrack,
-           TrackIdentity(track: previewTrack) == identity {
+        if let previewTrack = searchPreviewTrack {
+            guard TrackIdentity(track: previewTrack) == identity else {
+                return LyricsPersistenceSaveResult(versionID: nil,
+                    disposition: .rejected("搜索预览期间不采用当前播放歌曲的旧候选"))
+            }
             target = (previewTrack, searchPreviewSession)
         } else if currentTrackIdentity == identity {
             target = (currentTrack, lyricsSession)
@@ -2203,6 +2206,7 @@ public final class PlaybackState: ObservableObject {
 
     public func confirmPendingManualLyricsAdoption() async throws -> LyricsPersistenceSaveResult? {
         guard let pending = pendingManualLyricsAdoption else { return nil }
+        guard !isShowingSearchPreview || pending.session === searchPreviewSession else { return nil }
         let result: LyricsPersistenceSaveResult
         do {
             result = try await pending.session.adoptManually(

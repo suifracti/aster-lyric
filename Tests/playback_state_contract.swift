@@ -212,9 +212,115 @@ private struct NetworkFailureLyricsProvider: LyricsProvider {
     }
 }
 
+private actor PreviewFixtureProvider: LyricsProvider {
+    nonisolated let name = "preview-isolated-fixture"
+    var scenario = "noLyrics"
+    func setScenario(_ value: String) { scenario = value }
+    func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult {
+        switch scenario {
+        case "noMatch": return .noMatch
+        case "failed": return .failed(.networkUnavailable)
+        case "candidates":
+            return .candidates([LyricsCandidate(id: "uncertain-preview-guest", identity: identity,
+                title: track.title + " feat Unverified", artist: track.artist, album: track.album,
+                duration: track.duration, lines: [LyricLine(timestamp: 0, originalText: "Self-authored preview text")],
+                source: .lrclib, confidence: 0.3)])
+        default: return .noLyrics
+        }
+    }
+}
+
 @main
 @MainActor
 struct PlaybackStateContract {
+    static func previewOperationContract(root: URL, providerTrack: ProviderTrack) async throws {
+        let suite = "LyricsQPreviewSafety-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        settings.playbackSourceMode = .spotify
+        settings.autoSearchLyricsOnTrackChange = false
+        let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("preview.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("preview-provenance"))
+        try await repo.prepare()
+        let provider = ScriptedPlaybackProvider(snapshot: PlaybackSnapshot(status: .ready,
+            track: providerTrack, position: 11, isPlaying: false))
+        let fixture = PreviewFixtureProvider()
+        let state = PlaybackState(provider: provider, lyricsProvider: fixture, lyricsRepository: repo, settings: settings)
+        state.startProvider(connectSpotify: false); state.reconnectSpotify()
+        let deadline = Date().addingTimeInterval(2)
+        while !state.hasLiveTrack && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        precondition(state.hasLiveTrack)
+        let live = state.currentTrack, identity = state.currentTrackIdentity!
+        let candidate = LyricsCandidate(id: "old-live-sheet", identity: identity, title: live.title,
+            artist: live.artist, album: live.album, duration: live.duration,
+            lines: [LyricLine(timestamp: 0, originalText: "Self-authored live candidate")],
+            source: .manualImport, confidence: 1)
+        let preview = Track(title: "Preview only", artist: "Fixture", album: "Synthetic", duration: 60, spotifyId: "preview-only")
+        for scenario in ["noLyrics", "noMatch", "failed", "candidates"] {
+            await fixture.setScenario(scenario)
+            let previewTrack = Track(title: preview.title, artist: preview.artist, album: preview.album,
+                duration: preview.duration, spotifyId: "preview-" + scenario)
+            state.loadSearchResult(SongSearchResult(id: "preview-" + scenario, source: .local, track: previewTrack, confidence: 1))
+            let waiting = Date().addingTimeInterval(2)
+            var observed = "loading"
+            while Date() < waiting {
+                switch state.lyricsState {
+                case .noLyrics: observed = "noLyrics"
+                case .noMatch: observed = "noMatch"
+                case .failed: observed = "failed"
+                case .candidates: observed = "candidates"
+                default: break
+                }
+                if observed == scenario { break }
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+            precondition(observed == scenario, "fixture expected \(scenario), got \(observed)")
+            precondition(state.isShowingSearchPreview && state.displayedTrack == previewTrack)
+            let before = try await repo.loadEditableVersions(track: live, identity: identity)
+            let revision = state.liveLyricsSessionRevision
+            let rejected = try await state.adoptLyricsCandidate(candidate)
+            precondition(rejected.versionID == nil, "old live candidate callback during preview must not write live")
+            let after = try await repo.loadEditableVersions(track: live, identity: identity)
+            precondition(after.count == before.count && state.liveLyricsSessionRevision == revision)
+            precondition(state.currentTrack == live && provider.commandLog.isEmpty)
+            precondition(!settings.aiTranslationConfiguration.isConfigured && !settings.aiTranslationConfiguration.autoTranslateNewLyrics)
+            print("PASS preview \(scenario): stale live candidate rejected; synthetic live rows/revision/playback unchanged; paid requests=0")
+        }
+        state.clearSearchPreview()
+        let accepted = try await state.adoptLyricsCandidate(candidate)
+        precondition(accepted.versionID != nil, "live candidate action must recover after ending preview")
+        try await repo.markLyricsVersionLocked(versionID: accepted.versionID!, locked: true)
+        let replacement = LyricsCandidate(id: "locked-live-confirmation", identity: identity, title: live.title,
+            artist: live.artist, album: live.album, duration: live.duration,
+            lines: [LyricLine(timestamp: 0, originalText: "Self-authored replacement candidate")],
+            source: .manualImport, confidence: 1)
+        let conflict = try await state.adoptLyricsCandidate(replacement)
+        guard case .lockedConflict = conflict.disposition else { fatalError("private locked conflict required") }
+        state.loadSearchResult(SongSearchResult(id: "pending-preview", source: .local, track: preview, confidence: 1))
+        let countBefore = try await repo.loadEditableVersions(track: live, identity: identity).count
+        let revisionBefore = state.liveLyricsSessionRevision
+        let blockedConfirmation = try await state.confirmPendingManualLyricsAdoption()
+        precondition(blockedConfirmation == nil, "old live locked confirmation must not commit while preview is shown")
+        let countAfter = try await repo.loadEditableVersions(track: live, identity: identity).count
+        precondition(countAfter == countBefore && state.liveLyricsSessionRevision == revisionBefore)
+        state.clearSearchPreview()
+        let confirmed = try await state.confirmPendingManualLyricsAdoption()
+        precondition(confirmed?.versionID != nil, "explicit live locked confirmation restores after preview")
+        let oldLocked = try await repo.loadEditableVersion(versionID: accepted.versionID!, track: live, identity: identity)
+        precondition(oldLocked?.document.lines.map(\.originalText) == candidate.lines.map(\.originalText))
+        precondition(oldLocked?.record.isLocked == true, "protected old locked original retained")
+        print("PASS pending live locked confirmation: preview blocked before write; after preview explicit confirm restores; old locked original retained")
+        state.selectNoLyricsVersion()
+        precondition(state.isLyricsSelectionEmpty && state.canCreateManualLyrics)
+        precondition(state.prepareBlankLyricsEditor(), "manual creation must restore for live empty state")
+        state.markCurrentTrackAsInstrumental()
+        precondition(state.liveLyrics.first?.originalText == "此歌曲为没有填词的纯音乐，请您欣赏")
+        state.selectNoLyricsVersion()
+        precondition(state.isLyricsSelectionEmpty)
+        print("PASS preview ended: live candidate/none/manual editor/instrumental actions restore; no App/player/paid engine")
+    }
+
     static func selectionDefaultsContract(root: URL, providerTrack: ProviderTrack) async throws {
         let suite = "LyricsQPlaybackSelection-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -340,6 +446,7 @@ struct PlaybackStateContract {
             artworkURL: URL(string: "https://example.test/b.jpg")
         )
 
+        try! await previewOperationContract(root: root, providerTrack: trackA)
         try! await selectionDefaultsContract(root: root, providerTrack: trackA)
 
         let startupSuite = ProcessInfo.processInfo.environment["LYRICSQ_PLAYBACK_CONTRACT_SUITE"]
@@ -472,7 +579,10 @@ struct PlaybackStateContract {
 
         provider.snapshot = PlaybackSnapshot(status: .ready, track: trackB, position: 4, isPlaying: false)
         state.nextTrack()
-        try? await Task.sleep(nanoseconds: 320_000_000)
+        let nextTrackDeadline = Date().addingTimeInterval(2)
+        while state.currentTrack.title != "Track B" && Date() < nextTrackDeadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
         precondition(provider.commandLog.contains("next"))
         precondition(state.currentTrack.title == "Track B")
         precondition(state.currentTrackIdentity?.stableKey.contains("spotify-id:b") == true)
@@ -481,7 +591,10 @@ struct PlaybackStateContract {
 
         provider.snapshot = PlaybackSnapshot(status: .ready, track: trackA, position: 3, isPlaying: false)
         state.previousTrack()
-        try? await Task.sleep(nanoseconds: 320_000_000)
+        let previousTrackDeadline = Date().addingTimeInterval(2)
+        while state.currentTrack.title != "Track A" && Date() < previousTrackDeadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
         precondition(provider.commandLog.contains("previous"))
         precondition(state.currentTrack.title == "Track A")
 
