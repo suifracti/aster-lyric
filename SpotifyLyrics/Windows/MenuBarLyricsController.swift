@@ -370,8 +370,9 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 // The adopted live document is the sole source of popover translation.
                 // Include it in Equatable snapshot changes so translations arriving
                 // after the original lyrics are immediately reflected in the UI.
-                let translated = lines[currentIndex].translationText?
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let translated = state.preferences.showTranslation
+                    ? lines[currentIndex].translationText?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    : nil
                 snapshot.currentTranslationText = translated?.isEmpty == true ? nil : translated
                 return snapshot
             } else if !isSync {
