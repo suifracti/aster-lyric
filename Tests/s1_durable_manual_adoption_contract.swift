@@ -98,7 +98,7 @@ private func withTemporaryRoot<T>(_ body: (URL) async throws -> T) async throws 
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("SpotifyLyricsS1-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: root) }
+    print("S1 preserved synthetic root: \(root.path)")
     return try await body(root)
 }
 
@@ -224,9 +224,14 @@ private struct DeferredManualAdoptionRepository: LyricsRepository {
 @MainActor
 struct S1DurableManualAdoptionContract {
     static func main() async {
+        let privateHome = URL(fileURLWithPath: ProcessInfo.processInfo.environment["CFFIXED_USER_HOME"]!).resolvingSymlinksInPath()
+        precondition(FileManager.default.homeDirectoryForCurrentUser.resolvingSymlinksInPath() == privateHome, "contract preferences must be private")
+        let homeAttributes = try! FileManager.default.attributesOfItem(atPath: privateHome.path)
+        precondition((homeAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
+
         let scenario = CommandLine.arguments.dropFirst().first ?? "all"
         let scenarios = scenario == "all"
-            ? ["lyrics-ovh-zero", "kugou-half", "timed-spans", "auto-search-timed-reopen", "auto-search-disabled-loads-selection", "locked-current", "selection-throws", "timing-throws", "invalid-content", "failed-results", "track-switch", "same-track-order"]
+            ? ["force-refresh-protected", "lyrics-ovh-zero", "kugou-half", "timed-spans", "auto-search-timed-reopen", "auto-search-disabled-loads-selection", "locked-current", "selection-throws", "timing-throws", "invalid-content", "failed-results", "track-switch", "same-track-order"]
             : [scenario]
         var failures = 0
         for item in scenarios {
@@ -243,6 +248,7 @@ struct S1DurableManualAdoptionContract {
 
     private static func run(_ scenario: String) async throws {
         switch scenario {
+        case "force-refresh-protected": try await forceRefreshProtectedSelectionContract()
         case "bilingual-auto-cache": try await bilingualAutomaticCacheContract()
         case "selection-read-fails": try await failedSelectionReadStopsSearch()
         case "revoke-schema": try await revocationSchemaCompatibility()
@@ -263,6 +269,67 @@ struct S1DurableManualAdoptionContract {
         case "track-switch": try await lateAdoptionStaysBoundToItsTrack()
         case "same-track-order": try await newerSameTrackRequestWins()
         default: throw ContractFailure(description: "unknown scenario \(scenario)")
+        }
+    }
+
+    private static func forceRefreshProtectedSelectionContract() async throws {
+        for kind in ["preferred", "manual", "locked"] {
+            try await withTemporaryRoot { root in
+                let track = makeTrack("refresh-\(kind)"), identity = TrackIdentity(track: makeTrack("refresh-\(kind)"))
+                let old = makeCandidate(track: track, source: kind == "manual" ? .manualCreate : .lrclib,
+                    confidence: 1, providerID: "protected-old").makeDocument()
+                let repo = makeRepository(root: root)
+                try await repo.prepare()
+                let saved = try await repo.save(track: track, identity: identity, document: old)
+                guard let id = saved.versionID, let hash = saved.sourceContentHash else { throw ContractFailure(description: "refresh source missing") }
+                try await repo.adoptLyricsVersion(trackStableKey: identity.stableKey, lyricsVersionID: id)
+                if kind == "locked" { try await repo.markLocked(versionID: id, locked: true) }
+                // Manual/locked fixtures clear preferred so each protection is independent.
+                if kind != "preferred" { try installTrigger(databaseURL: root.appendingPathComponent("lyrics.sqlite3"),
+                    sql: "UPDATE lyrics_versions SET is_preferred = 0;") }
+                let fresh = makeCandidate(track: track, source: .amll, confidence: 1, providerID: "refresh-candidate", hasTiming: true)
+                let counter = LyricsProviderCallCounter()
+                let provider = CountingLyricsProvider(name: "refresh-fixture", counter: counter, result: .match(fresh.makeDocument()))
+                let session = LyricsSessionController(providers: [provider], repository: repo)
+                session.begin(track: track, identity: identity)
+                for _ in 0..<200 where session.isSearchInProgress { try await Task.sleep(nanoseconds: 5_000_000) }
+                try check(session.activeLyricsVersionID == id && session.activeSourceContentHash == hash, "initial protected load mismatch")
+                let projection = session.lyrics
+                // Repository reads regenerate UI line UUIDs; compare display/timing, not ephemeral IDs.
+                func sameProjection(_ lines: [LyricLine]) -> Bool {
+                    lines.count == projection.count && zip(lines, projection).allSatisfy {
+                        $0.0.originalText == $0.1.originalText && $0.0.timestamp == $0.1.timestamp
+                            && $0.0.endTime == $0.1.endTime && $0.0.timedSpans == $0.1.timedSpans
+                            && $0.0.translationText == $0.1.translationText && $0.0.kanaText == $0.1.kanaText
+                            && $0.0.romajiText == $0.1.romajiText
+                    }
+                }
+                try check(projection.map(\.originalText) == old.lines.map(\.originalText), "protected original changed")
+                let preferredBefore = try preferredVersionID(databaseURL: root.appendingPathComponent("lyrics.sqlite3"), stableKey: identity.stableKey)
+                session.retry(track: track, identity: identity)
+                try check(session.activeLyricsVersionID == id && session.activeSourceContentHash == hash && sameProjection(session.lyrics),
+                    "retry immediately cleared protected projection/ID/hash")
+                for _ in 0..<400 where session.isSearchInProgress {
+                    try check(session.activeLyricsVersionID == id && session.activeSourceContentHash == hash && sameProjection(session.lyrics),
+                        "provisional refresh replaced protected projection")
+                    try await Task.sleep(nanoseconds: 5_000_000)
+                }
+                let calls = await counter.value()
+                try check(!session.isSearchInProgress && calls > 0, "forced search did not complete")
+                try check(session.activeLyricsVersionID == id && session.activeSourceContentHash == hash && sameProjection(session.lyrics),
+                    "final refresh replaced protected projection")
+                try check(session.availableCandidates.contains { $0.providerSourceID == "refresh-candidate" }, "refresh result missing from candidates")
+                try check(try preferredVersionID(databaseURL: root.appendingPathComponent("lyrics.sqlite3"), stableKey: identity.stableKey) == preferredBefore,
+                    "refresh changed persisted preferred selection")
+                let reopened = makeRepository(root: root)
+                try await reopened.prepare()
+                let second = LyricsSessionController(providers: [provider], repository: reopened)
+                second.begin(track: track, identity: identity)
+                for _ in 0..<200 where second.isSearchInProgress { try await Task.sleep(nanoseconds: 5_000_000) }
+                try check(second.activeLyricsVersionID == id && second.activeSourceContentHash == hash && sameProjection(second.lyrics),
+                    "reopen lost protected selection")
+                print("PASS force refresh \(kind): active projection/ID/hash retained throughout; candidates only; SQLite reopen unchanged")
+            }
         }
     }
 

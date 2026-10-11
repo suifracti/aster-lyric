@@ -16,7 +16,52 @@ private struct FixtureProvider: LyricsProvider {
             lines: [LyricLine(timestamp: 8, originalText: "自写测试：那封信仍在这里", endTime: 10, translationText: "Self-authored reference", timedSpans: [TimedTextSpan(id: 0, text: "自", startTime: 8, endTime: 9, utf16Start: 0, utf16Length: 1)])],
             isSynchronized: true, source: .neteaseExperimental, confidence: 0.8, providerSourceID: "fixture:archive", spotifyTrackID: spotifyID, isrc: isrc, explicitlyTimedLineIndices: [0])
     }
+    static func featuredIdentityContract() async {
+        let track = Track(title: "Song (feat. Alice)", artist: "Artist", album: "Fixture", duration: 120,
+            isrc: "JPTEST0000001", spotifyId: "fixture-recording")
+        let metadata = TrackMetadata.bootstrap(from: track)
+        func candidate(_ guest: String, id: String? = nil, isrc: String? = nil, omitGuest: Bool = false) -> LyricsCandidate {
+            LyricsCandidate(id: "guest-\(guest)", identity: metadata.identity,
+                title: omitGuest ? "Song" : "Song (feat. \(guest))", artist: omitGuest ? "Artist" : "Artist, \(guest)",
+                album: "Fixture", duration: 120, lines: [LyricLine(timestamp: 0, originalText: "synthetic fixture")],
+                isSynchronized: true, source: .lrclib, confidence: 1, spotifyTrackID: id, isrc: isrc)
+        }
+        for item in [candidate("Bob"), candidate("Alice", omitGuest: true)] {
+            let decision = LyricsSafeMatcher.decide(candidate: item, metadata: metadata)
+            require(![.autoHigh, .autoMedium].contains(decision.tier), "unverified different/missing guest became automatic")
+            let outcome = await LyricsSearchManager(providers: [FixtureProvider(name: "guest-negative", result: .candidates([item]))])
+                .search(track: track, identity: metadata.identity)
+            if case .match = outcome.result { require(false, "different guest automatically adopted") }
+        }
+        for item in [candidate("Alice"), candidate("Bob", id: track.spotifyId), candidate("Bob", isrc: track.isrc)] {
+            require([.autoHigh, .autoMedium].contains(LyricsSafeMatcher.decide(candidate: item, metadata: metadata).tier),
+                "same guest/independent recording identity positive lost")
+        }
+        let conflict = LyricsSafeMatcher.decide(candidate: candidate("Bob", id: "other-recording"), metadata: metadata)
+        require(conflict.hardReject && conflict.tier == .reject, "guest alias bypassed conflicting recording ID")
+        let alias = TrackAlias(id: "confirmed-guest-title", field: .title, kind: .userAlias,
+            value: "Song (feat. Alicia)", source: .user, confidence: 1, isOfficial: true)
+        var confirmed = metadata; confirmed.aliases.append(alias)
+        let aliased = candidate("Alicia")
+        require([.autoHigh, .autoMedium].contains(LyricsSafeMatcher.decide(candidate: aliased, metadata: confirmed, aliasUsed: alias).tier),
+            "explicit trusted full-title guest alias no longer usable")
+        let machine = TrackAlias(id: "machine-guest-title", field: .title, kind: .alternativeTitle,
+            value: aliased.title, source: .machineGenerated, confidence: 1, isOfficial: false)
+        var untrusted = metadata; untrusted.aliases.append(machine)
+        require(![.autoHigh, .autoMedium].contains(LyricsSafeMatcher.decide(candidate: aliased, metadata: untrusted, aliasUsed: machine).tier),
+            "machine guest alias promoted automatic adoption")
+        let aliasOutcome = await LyricsSearchManager(providers: [FixtureProvider(name: "guest-alias", result: .candidates([aliased]))])
+            .search(track: track, identity: metadata.identity, aliases: [alias])
+        guard case .match = aliasOutcome.result else { require(false, "confirmed guest alias not adopted by search"); return }
+        print("PASS guest identity: Alice/Bob and missing guests candidate-only; exact guest/SpotifyID/ISRC/trusted alias positives; conflicts/machine aliases blocked")
+    }
     static func main() async {
+        let privateHome = URL(fileURLWithPath: ProcessInfo.processInfo.environment["CFFIXED_USER_HOME"]!).resolvingSymlinksInPath()
+        precondition(FileManager.default.homeDirectoryForCurrentUser.resolvingSymlinksInPath() == privateHome, "contract preferences must be private")
+        let homeAttributes = try! FileManager.default.attributesOfItem(atPath: privateHome.path)
+        precondition((homeAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
+
+        await featuredIdentityContract()
         let metadata = TrackMetadata.bootstrap(from: track)
         print("BASELINE_QUERY_PLAN", LyricsQueryPlanner.plan(for: metadata).map { "\($0.rank):\($0.titleQuery)|\($0.artistQuery ?? "")" })
         for title in ["アーカイブ - Sped Up Ver.", "アーカイブ (SPEED UP VERSION)", "アーカイブ（Sped-Up）", "アーカイブ [speed up]", "アーカイブ — Sped Up", "アーカイブ - Sped Up Version"] {

@@ -149,6 +149,11 @@ public final class TranslationSessionController: ObservableObject {
             document: document,
             configuration: configuration
         )
+        // Language/profile edits change request context, not the adopted lyric source.
+        let sameLyricsSource = context.map {
+            $0.identity == next.identity && $0.lyricsVersionID == next.lyricsVersionID
+                && $0.sourceContentHash == next.sourceContentHash
+        } ?? false
         if let previous = context, previous.key == next.key {
             // A session refresh may carry newly enriched display layers. Keep
             // the selected version but update the document used for projection.
@@ -182,7 +187,7 @@ public final class TranslationSessionController: ObservableObject {
         progressMessage = ""
         isNoSelection = manualNoSelection.contains(next.key)
         state = .idle
-        loadExistingOrAutoTranslate(next)
+        loadExistingOrAutoTranslate(next, allowAutomaticRequest: !sameLyricsSource)
     }
 
     public func cancel() {

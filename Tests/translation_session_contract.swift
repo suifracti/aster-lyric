@@ -48,6 +48,8 @@ private actor MemoryTranslationRepository: TranslationRepository {
         let promptHash: String
     }
 
+    private var versionLoads = 0
+    func loadCount() -> Int { versionLoads }
     private(set) var saves: [Save] = []
     private var versions: [StoredTranslationVersion] = []
 
@@ -56,6 +58,7 @@ private actor MemoryTranslationRepository: TranslationRepository {
         targetLanguage: String,
         sourceContentHash: String
     ) async throws -> [StoredTranslationVersion] {
+        versionLoads += 1
         _ = lyricsVersionID
         _ = targetLanguage
         _ = sourceContentHash
@@ -374,7 +377,70 @@ struct TranslationSessionContract {
         print("PASS selection persistence: private suite/SQLite; independent controllers; none/non-default/A-B-A/adoption/rebuild/recommended clearing; manual locked retained; zero fake dispatch")
     }
 
+    @MainActor
+    static func settingsRequestBoundaryContract() async throws {
+        let suite = "LyricsQSettingsBoundary-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        precondition(defaults.persistentDomain(forName: suite) == nil)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let repository = MemoryTranslationRepository(), fake = SlowTranslationService()
+        let controller = TranslationSessionController(repository: repository, service: fake,
+            selectionDefaults: defaults, acceptanceBudget: nil)
+        let a = makeTrack("settings-a", title: "Synthetic Settings A")
+        let document = makeDocument(track: a, identity: TrackIdentity(track: a))
+        let version = UUID(), hash = LyricsPersistenceMapper.sourceContentHash(document: document)
+        var config = AITranslationConfiguration(baseURL: "https://fixture.test", model: "fixture", autoTranslateNewLyrics: false)
+        func load(_ document: LyricsDocument, _ version: UUID, _ hash: String, _ config: AITranslationConfiguration) async throws {
+            let before = await repository.loadCount()
+            controller.synchronize(document: document, lyricsVersionID: version, sourceContentHash: hash, configuration: config)
+            let deadline = Date().addingTimeInterval(2)
+            while await repository.loadCount() <= before && Date() < deadline { try await Task.sleep(nanoseconds: 5_000_000) }
+            let observed = await repository.loadCount()
+            precondition(observed > before, "configuration load did not execute")
+            // The fake returns in 150ms; observe the completed async load/dispatch window.
+            try await Task.sleep(nanoseconds: 200_000_000)
+        }
+        try await load(document, version, hash, config)
+        config.autoTranslateNewLyrics = true
+        config.targetLanguage = "en"
+        try await load(document, version, hash, config)
+        var count = await fake.calls()
+        precondition(count == 0, "target-language settings dispatched a request")
+        config.targetLanguage = "fr"; config.profileID = UUID(); config.profileSnapshot = "{}"
+        try await load(document, version, hash, config)
+        count = await fake.calls()
+        precondition(count == 0, "profile/target-language settings dispatched a request")
+        config.profileID = UUID(); config.customSystemPrompt = "synthetic updated rules"
+        try await load(document, version, hash, config)
+        count = await fake.calls()
+        precondition(count == 0, "same-source profile/rules settings dispatched a request")
+        controller.translateCurrentLyrics()
+        controller.translateCurrentLyrics()
+        let explicitDeadline = Date().addingTimeInterval(2)
+        while controller.selectedVersion == nil && Date() < explicitDeadline { try await Task.sleep(nanoseconds: 5_000_000) }
+        count = await fake.calls()
+        precondition(count == 1 && controller.selectedVersion != nil, "explicit translation lost/duplicated")
+        controller.retranslateCurrentLyrics()
+        let retryDeadline = Date().addingTimeInterval(2)
+        while await fake.calls() != 2 && Date() < retryDeadline { try await Task.sleep(nanoseconds: 5_000_000) }
+        try await Task.sleep(nanoseconds: 200_000_000)
+        count = await fake.calls()
+        precondition(count == 2, "explicit retry lost or repeated")
+        let b = makeTrack("settings-b", title: "Synthetic Settings B")
+        let next = makeDocument(track: b, identity: TrackIdentity(track: b))
+        try await load(next, UUID(), LyricsPersistenceMapper.sourceContentHash(document: next), config)
+        count = await fake.calls()
+        precondition(count == 3 && controller.selectedVersion != nil, "eligible new song did not auto-translate exactly once")
+        controller.cancel()
+        print("PASS settings boundary: language/profile/rules zero fake requests; explicit and retry retained/in-flight dedup; new song automatic exactly once")
+    }
+
     static func main() async {
+        let privateHome = URL(fileURLWithPath: ProcessInfo.processInfo.environment["CFFIXED_USER_HOME"]!).resolvingSymlinksInPath()
+        precondition(FileManager.default.homeDirectoryForCurrentUser.resolvingSymlinksInPath() == privateHome, "contract preferences must be private")
+        let homeAttributes = try! FileManager.default.attributesOfItem(atPath: privateHome.path)
+        precondition((homeAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
+
         let repository = MemoryTranslationRepository()
         let service = SlowTranslationService()
         let configuration = AITranslationConfiguration(
@@ -456,6 +522,7 @@ struct TranslationSessionContract {
         }
         try! await recoveryContract()
         try! await selectionPersistenceContract()
+        try! await settingsRequestBoundaryContract()
         print("translation session contracts passed")
     }
 }

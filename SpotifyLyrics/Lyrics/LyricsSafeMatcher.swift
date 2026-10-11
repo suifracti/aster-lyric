@@ -125,6 +125,14 @@ public enum LyricsSafeMatcher {
             .filter { $0.field == .title }
             .map { (value: TrackTextNormalizer.normalize($0.value), alias: $0) }
 
+        // A trusted full-title alias explicitly binds its guest spelling to this recording.
+        // An arbitrary artist alias or generated title is not guest-equivalence evidence.
+        let hasConfirmedFeaturedAlias = featuredTitleVariation && titleAliases.contains {
+            $0.value == candidateTitle && $0.alias.confidence >= 0.9
+                && [.user, .spotifyMetadata, .importedTable, .provider].contains($0.alias.source)
+                && ($0.alias.isOfficial || $0.alias.source == .user)
+        }
+
         if candidateTitle == metadataTitle, !candidateTitle.isEmpty {
             add("titleExact", 0.30)
         } else if titlesHaveSameTypography(candidate.title, metadata.track.title) {
@@ -139,7 +147,7 @@ public enum LyricsSafeMatcher {
             add("titleLatinSpacingExact", 0.28)
         } else if featuredTitleVariation {
             add("titleFeaturedBaseExact", 0.24)
-            add("featuredNameUnverified", 0)
+            add(hasConfirmedFeaturedAlias ? "featuredNameAliasConfirmed" : "featuredNameUnverified", 0)
         } else if candidate.declaredTitleAliases.contains(where: { TrackTextNormalizer.normalize($0) == metadataTitle }), !metadataTitle.isEmpty {
             add("titleProviderAliasConfirmed", 0.22)
         } else if let matchingAlias = titleAliases.first(where: { $0.value == candidateTitle }), !candidateTitle.isEmpty {
@@ -366,7 +374,9 @@ public enum LyricsSafeMatcher {
                 tier = minTier(tier, titleEvidence && score >= 0.10 ? .candidates : .reject)
             } else if queryVariant?.queryKind == .manualOverride {
                 tier = minTier(tier, (score >= 0.10 || reasons.contains("manualTitleMatch")) ? .candidates : .reject)
-            } else if incompleteArtistSet {
+            } else if featuredTitleVariation && !hasStrongIndependentIdentity && !hasConfirmedFeaturedAlias {
+                tier = minTier(tier, .candidates)
+            } else if incompleteArtistSet && !hasStrongIndependentIdentity && !hasConfirmedFeaturedAlias {
                 tier = minTier(tier, score >= 0.25 ? .candidates : .reject)
             }
             if queryVariant?.queryKind == .titleOnlyLoose && !hasStrongIndependentIdentity {
@@ -409,12 +419,12 @@ public enum LyricsSafeMatcher {
             // when localized artist names differ. It never becomes automatic;
             // independent ID conflicts already take the hardReject branch.
             tier = (score >= 0.10 || manualTitleMatches) ? .candidates : .reject
-        } else if featuredTitleVariation && metadataPrimaryMatches && !reasons.contains("durationFar") && aliasUsed?.source != .machineGenerated {
-            // Provisional listening choice, not a claim that guest spellings
-            // are equivalent. All independent-ID and recording barriers above
-            // still apply, and the user may change the selected version.
+        } else if featuredTitleVariation && !hasStrongIndependentIdentity && !hasConfirmedFeaturedAlias {
+            tier = score >= 0.25 ? .candidates : .reject
+        } else if featuredTitleVariation && metadataPrimaryMatches && !reasons.contains("durationFar")
+                    && (hasStrongIndependentIdentity || hasConfirmedFeaturedAlias) {
             tier = .autoMedium
-        } else if incompleteArtistSet && !hasStrongIndependentIdentity {
+        } else if incompleteArtistSet && !hasStrongIndependentIdentity && !hasConfirmedFeaturedAlias {
             // A missing/extra featured artist is not proof of a different
             // song, but it is insufficient for unattended adoption.
             tier = score >= 0.25 ? .candidates : .reject

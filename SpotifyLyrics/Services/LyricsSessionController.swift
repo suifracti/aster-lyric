@@ -87,6 +87,8 @@ public final class LyricsSessionController: ObservableObject {
         queryOverride: String? = nil,
         resetQueryOverride: Bool = false
     ) {
+        // Keep the current projection while checking the persisted refresh boundary.
+        let retainsCurrentProjection = forceRefresh && activeIdentity == identity && activeLyricsVersionID != nil && !lyrics.isEmpty
         cancelCurrentRequest()
         revision &+= 1
         let requestRevision = revision
@@ -99,20 +101,24 @@ public final class LyricsSessionController: ObservableObject {
         sourceFailureSummary = nil
         activeIdentity = identity
         activeTrack = track
-        activeLyricsVersionID = nil
-        activeSourceContentHash = nil
-        alignmentProvenanceAvailability = .unavailable
+        if !retainsCurrentProjection {
+            activeLyricsVersionID = nil
+            activeSourceContentHash = nil
+            alignmentProvenanceAvailability = .unavailable
+        }
         persistenceStatusMessage = nil
         activeSearchQuery = searchQueryOverride
         automaticSearchDisabledForCurrentTrack = !automaticallySearch
-        lyrics = []
+        if !retainsCurrentProjection { lyrics = [] }
         availableCandidates = []
 #if DEBUG
-        debugLyricsBindingToken = nil
+        if !retainsCurrentProjection { debugLyricsBindingToken = nil }
 #endif
-        isSynchronized = true
-        isNoSelection = false
-        state = .loading(identity)
+        if !retainsCurrentProjection {
+            isSynchronized = true
+            isNoSelection = false
+            state = .loading(identity)
+        }
         isSearchInProgress = true
         let queryOverrideSnapshot = searchQueryOverride
 
@@ -154,13 +160,22 @@ public final class LyricsSessionController: ObservableObject {
                         return
                     }
                     storedAliases = (try? await repository.loadAliases(stableKey: identity.stableKey)) ?? []
-                    if !forceRefresh,
-                       let cached = try await repository.loadBestStored(track: track, identity: identity) {
+                    if let cached = try await repository.loadBestStored(track: track, identity: identity),
+                       !forceRefresh || (!reviewOnly && cached.isUserProtected) {
                         cachedReference = cached
                         LyricsE2ELog.log(
                             "SESSION persistence hit rev=\(requestRevision) source=\(cached.document.source) provider=\(cached.document.providerSourceID ?? "") lines=\(cached.document.lines.count) sync=\(cached.document.isSynchronized)"
                         )
-                        if automaticallySearch && !cached.document.isSynchronized && !cached.isUserProtected {
+                        if forceRefresh && cached.isUserProtected {
+                            await MainActor.run { [weak self] in
+                                guard let self, self.activeIdentity == identity, self.revision == requestRevision else { return }
+                                self.apply(.match(cached.document), identity: identity, requestRevision: requestRevision, sourceContentHash: cached.sourceContentHash)
+                                self.activeLyricsVersionID = cached.versionID
+                                self.activeSourceContentHash = cached.sourceContentHash
+                                self.alignmentProvenanceAvailability = cached.alignmentProvenanceAvailability
+                            }
+                            // Continue searching, but only into alternatives until explicit adoption.
+                        } else if automaticallySearch && !cached.document.isSynchronized && !cached.isUserProtected {
                             await MainActor.run { [weak self] in
                                 guard let self, self.activeIdentity == identity, self.revision == requestRevision else { return }
                                 self.apply(.match(cached.document), identity: identity, requestRevision: requestRevision)
@@ -175,12 +190,19 @@ public final class LyricsSessionController: ObservableObject {
                 } catch {
                     persistenceError = error.localizedDescription
                     LyricsE2ELog.log("PERSISTENCE prepare/load failed rev=\(requestRevision) error=\(error.localizedDescription)")
+                    if retainsCurrentProjection {
+                        if let self, self.activeIdentity == identity, self.revision == requestRevision {
+                            self.persistenceStatusMessage = persistenceError
+                        }
+                        return
+                    }
                 }
             }
 
             if outcome == nil, !Task.isCancelled {
                 if automaticallySearch {
-                    let suppressProvisional = reviewOnly
+                    let protectsRefresh = forceRefresh && cachedReference?.isUserProtected == true
+                    let suppressProvisional = reviewOnly || protectsRefresh
                     let searched = await searchManager.search(
                         track: track,
                         identity: identity,
@@ -206,7 +228,18 @@ public final class LyricsSessionController: ObservableObject {
                             }
                         }
                     )
-                    if reviewOnly, case .match(let document) = searched.result {
+                    if protectsRefresh, let cached = cachedReference {
+                        var alternatives = searched.alternatives
+                        if alternatives.isEmpty, case .match(let document) = searched.result {
+                            alternatives = [LyricsCandidate(id: document.providerSourceID ?? UUID().uuidString,
+                                identity: identity, title: document.title ?? track.title, artist: document.artist ?? track.artist,
+                                album: document.album ?? track.album, duration: document.duration ?? track.duration, lines: document.lines,
+                                isSynchronized: document.isSynchronized, source: document.source, confidence: document.confidence,
+                                providerSourceID: document.providerSourceID, spotifyTrackID: document.spotifyTrackID,
+                                isrc: document.isrc, explicitlyTimedLineIndices: document.explicitlyTimedLineIndices)]
+                        }
+                        outcome = SearchOutcome(result: .match(cached.document), diagnostics: searched.diagnostics, alternatives: alternatives)
+                    } else if reviewOnly, case .match(let document) = searched.result {
                         let candidate = LyricsCandidate(id: document.providerSourceID ?? UUID().uuidString,
                             identity: identity, title: document.title ?? track.title, artist: document.artist ?? track.artist,
                             album: document.album ?? track.album, duration: document.duration ?? track.duration, lines: document.lines,
