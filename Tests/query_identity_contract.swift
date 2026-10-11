@@ -76,8 +76,37 @@ struct QueryIdentityContract {
         let localizedGuestTrack = Track(title: "0 (feat. haku)", artist: "hisui", album: "", duration: 136)
         let localizedGuestCandidate = candidate(identity: TrackIdentity(track: localizedGuestTrack), title: "0 (feat. 柏)", artist: "hisui, 柏", album: "", duration: 136)
         let localizedGuestDecision = LyricsSafeMatcher.decide(candidate: localizedGuestCandidate, metadata: TrackMetadata.bootstrap(from: localizedGuestTrack))
-        require(localizedGuestDecision.tier == .autoMedium, "featured-title spelling variation should automatically choose a provisional matching version")
-        require(localizedGuestDecision.reasons.contains("featuredNameUnverified"), "automatic provisional choice must retain uncertainty")
+        require(localizedGuestDecision.tier == .candidates, "unverified featured-title spelling variation must remain candidate-only")
+        require(localizedGuestDecision.reasons.contains("featuredNameUnverified"), "candidate-only guest variation must retain uncertainty")
+
+        let verifiedGuestTrack = Track(title: localizedGuestTrack.title, artist: localizedGuestTrack.artist,
+            album: localizedGuestTrack.album, duration: localizedGuestTrack.duration,
+            isrc: "JPTEST0000001", spotifyId: "fixture-guest-recording")
+        let verifiedGuestMetadata = TrackMetadata.bootstrap(from: verifiedGuestTrack)
+        let recordingEvidence: [(spotifyID: String?, isrc: String?)] = [
+            (verifiedGuestTrack.spotifyId, nil), (nil, verifiedGuestTrack.isrc)
+        ]
+        for evidence in recordingEvidence {
+            let verifiedGuestCandidate = candidate(identity: verifiedGuestMetadata.identity,
+                title: localizedGuestCandidate.title, artist: localizedGuestCandidate.artist,
+                album: localizedGuestTrack.album, duration: localizedGuestTrack.duration,
+                spotifyTrackID: evidence.spotifyID, isrc: evidence.isrc)
+            let decision = LyricsSafeMatcher.decide(candidate: verifiedGuestCandidate, metadata: verifiedGuestMetadata)
+            require(decision.tier == .autoMedium, "independent same-recording evidence must allow localized guest variation")
+            require(decision.reasons.contains(evidence.spotifyID != nil ? "spotifyIDExact" : "isrcExact"),
+                "localized guest positive must retain independent recording evidence")
+        }
+
+        let guestTitleAlias = TrackAlias(id: "fixture-confirmed-guest-title", field: .title, kind: .userAlias,
+            value: localizedGuestCandidate.title, source: .user, confidence: 1, isOfficial: true)
+        var aliasedGuestMetadata = TrackMetadata.bootstrap(from: localizedGuestTrack)
+        aliasedGuestMetadata.aliases.append(guestTitleAlias)
+        let aliasedGuestDecision = LyricsSafeMatcher.decide(candidate: localizedGuestCandidate,
+            metadata: aliasedGuestMetadata, aliasUsed: guestTitleAlias)
+        require(aliasedGuestDecision.tier == .autoHigh || aliasedGuestDecision.tier == .autoMedium,
+            "explicit trusted full-title guest alias must allow localized guest variation")
+        require(aliasedGuestDecision.reasons.contains("featuredNameAliasConfirmed"),
+            "localized guest alias positive must retain confirmed alias evidence")
         // Spotify's localized display can be Latin while the source has the Japanese title.
         // Provider query echoes remain insufficient: prove the complete reading and primary artist.
         let romanizedTrack = Track(title: "Uta o Oshietekureta Anata e", artist: "ミセカイ", album: "Artrium", duration: 253.677, spotifyId: "7eqgj3zza04nswadcvqnyk")
