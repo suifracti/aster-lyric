@@ -232,6 +232,9 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         self.popover = pop
     }
 
+    /// The same popover is reachable by keyboard and from the status item.
+    public func togglePopover() { statusItemClicked(nil) }
+
     @objc private func statusItemClicked(_ sender: Any?) {
         guard let button = statusItem?.button, let popover else { return }
         if popover.isShown {

@@ -209,6 +209,11 @@ struct V3ResponsiveGeometryContract {
             }
         }
 
+        for size in [CGSize(width: 640, height: 420), CGSize(width: 1152, height: 720), CGSize(width: 480, height: 900)] {
+            let reading = V3ResponsiveGeometry.stageReadingRect(canvasSize: size, artworkAspectRatio: 1, position: "center")
+            precondition(reading.maxY <= size.height - 108 - 20, "Stage reading must clear the visible HUD by at least 20pt")
+            precondition(reading.minX >= 0 && reading.maxX <= size.width, "Narrow stage stays inside the canvas")
+        }
         print("V3 responsive geometry contract: PASS")
     }
 }

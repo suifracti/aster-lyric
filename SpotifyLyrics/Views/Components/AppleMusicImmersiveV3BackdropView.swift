@@ -323,13 +323,13 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 .scaleEffect(1.12)
                 .blur(radius: diffusionRadius, opaque: true)
                 .saturation(saturation)
-                .opacity(0.56)
+                .opacity(0.44)
         }
 
         RadialGradient(
             colors: [
                 ambientColor(palette.glow, saturation: saturation, maximumLuminance: 0.58)
-                    .opacity(0.34),
+                    .opacity(0.26),
                 ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.40)
                     .opacity(0.12),
                 .clear
@@ -370,7 +370,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             )
         } else if settings.v3ArtworkPosition == "center" {
             RadialGradient(
-                colors: [.clear, Color.black.opacity(0.34)],
+                colors: [.clear, Color.black.opacity(0.26)],
                 center: .center,
                 startRadius: 160,
                 endRadius: 920
