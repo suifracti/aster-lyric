@@ -89,17 +89,24 @@ public struct OpenAICompatibleClient: Sendable {
             default: throw AITranslationError.server(status)
             }
         }
+        let object: Any
         do {
-            let object = try JSONSerialization.jsonObject(with: data, options: [])
-            let rows = (object as? [String: Any])?["data"] as? [[String: Any]] ?? []
-            let models = rows.compactMap { row -> TranslationModelDescriptor? in
-                guard let id = row["id"] as? String, !id.isEmpty else { return nil }
-                return TranslationModelDescriptor(id: id)
-            }
-            return models.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
+            object = try JSONSerialization.jsonObject(with: data, options: [])
         } catch {
             throw AITranslationError.invalidResponse("模型目录响应不是有效 JSON")
         }
+        guard let dictionary = object as? [String: Any],
+              let rows = dictionary["data"] as? [[String: Any]] else {
+            throw AITranslationError.invalidResponse("模型目录响应缺少 data")
+        }
+        var models: [TranslationModelDescriptor] = []
+        for row in rows {
+            guard let id = row["id"] as? String, !id.isEmpty else {
+                throw AITranslationError.invalidResponse("模型目录条目缺少非空 ID")
+            }
+            models.append(TranslationModelDescriptor(id: id))
+        }
+        return models.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
     }
 
     private func send(

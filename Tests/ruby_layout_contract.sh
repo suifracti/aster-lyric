@@ -52,6 +52,7 @@ fi
 TMP_DIR="$(mktemp -d /tmp/ruby-token-contract.XXXXXX)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 swiftc -parse-as-library \
+  "$ROOT/SpotifyLyrics/DebugDatabaseSafety.swift" \
   "$ROOT/SpotifyLyrics/Models/Models.swift" \
   "$ROOT/SpotifyLyrics/Lyrics/JapaneseRomanizer.swift" \
   "$ROOT/SpotifyLyrics/Lyrics/JapaneseReadingPipeline.swift" \

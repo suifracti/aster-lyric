@@ -90,7 +90,7 @@ public final class WindowStatePersistence {
 
     private func saveFrame(window: NSWindow, settings: AppSettingsStore) {
         guard settings.restoreWindowState else { return }
-        UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: AppSettingsStore.Key.mainWindowFrame)
+        UserDefaults.lyricsQ.set(NSStringFromRect(window.frame), forKey: AppSettingsStore.Key.mainWindowFrame)
     }
 
     private func applyWindowLevel(window: NSWindow, keepOnTop: Bool) {

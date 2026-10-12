@@ -64,7 +64,16 @@ public struct MenuBarLyricsPopoverView: View {
                                 .lineLimit(2)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        if let next, !next.isEmpty {
+                        // Prefer the adopted Chinese line over the next original
+                        // line. Missing translations retain the old next-line preview.
+                        if let translated = snapshot.currentTranslationText, !translated.isEmpty {
+                            Text(translated)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.primary.opacity(0.76))
+                                .lineLimit(3)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .accessibilityLabel("中文译文：\(translated)")
+                        } else if let next, !next.isEmpty {
                             Text(next)
                                 .font(.system(size: 12, weight: .regular))
                                 .foregroundStyle(.secondary)

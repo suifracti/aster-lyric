@@ -223,8 +223,12 @@ enum V3ResponsiveGeometry {
         let margin = min(40, max(0, (width - readingWidth) / 2))
         let x = lyricPosition == "left" ? margin
             : lyricPosition == "right" ? width - readingWidth - margin : (width - readingWidth) / 2
-        return CGRect(x: x, y: 76,
-                      width: readingWidth, height: max(1, height - 192))
+        // Reserve the actual 96pt HUD (centered 60pt above the bottom)
+        // plus 24pt of reading air, even while the HUD is faded out.
+        let top = min(76, height * 0.15)
+        let bottom = max(top + 1, height - 108 - 24)
+        return CGRect(x: x, y: top,
+                      width: readingWidth, height: max(1, bottom - top))
     }
 
     /// Return the pointer hit region that reveals the playback details.

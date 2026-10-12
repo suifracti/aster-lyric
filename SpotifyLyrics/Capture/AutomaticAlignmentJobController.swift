@@ -254,8 +254,11 @@ public final class AutomaticAlignmentJobController: ObservableObject {
     }
 
     private func evaluateTrigger() {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return }
+#endif
         // Re-read UserDefaults so CLI `defaults write` and Settings UI stay consistent.
-        let defaultsEnabled = UserDefaults.standard.object(forKey: AppSettingsStore.Key.automaticAlignmentEnabled) as? Bool
+        let defaultsEnabled = UserDefaults.lyricsQ.object(forKey: AppSettingsStore.Key.automaticAlignmentEnabled) as? Bool
         let settings = AppSettingsStore.shared
         if let defaultsEnabled, settings.automaticAlignmentEnabled != defaultsEnabled {
             settings.automaticAlignmentEnabled = defaultsEnabled
@@ -421,7 +424,7 @@ public final class AutomaticAlignmentJobController: ObservableObject {
         // Prefer Whisper experimental for product MVP when available.
         let whisper = WhisperCLISpeechEngine()
         if whisper.isAvailable {
-            UserDefaults.standard.set(
+            UserDefaults.lyricsQ.set(
                 SpeechEngineID.whisperCLI.rawValue,
                 forKey: SpeechEngineRegistry.userDefaultsKey
             )

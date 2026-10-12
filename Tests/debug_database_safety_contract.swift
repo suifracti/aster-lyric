@@ -3,6 +3,55 @@ import Foundation
 @main
 struct DebugDatabaseSafetyContract {
     static func main() {
+        if CommandLine.arguments.contains("--debug-native-acceptance") || ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DEBUG_ACCEPTANCE"] != nil {
+            let bundle = ProcessInfo.processInfo.environment["CONTRACT_BUNDLE"]
+            DebugAcceptanceDataIsolation.prepareBeforeStateObjectsIfNeeded(bundleIdentifier: bundle)
+            if let escaped = ProcessInfo.processInfo.environment["CONTRACT_ESCAPED_STORAGE"] {
+                DebugAcceptanceDataIsolation.requireStorage(URL(fileURLWithPath: escaped))
+            }
+            let store = UserDefaults.lyricsQ
+            precondition(store.string(forKey: "playback.sourceMode") == "spotify")
+            precondition(!store.bool(forKey: "general.connectSpotifyOnLaunch"))
+            precondition(!store.bool(forKey: "ai.autoTranslateNewLyrics"))
+            precondition(!store.bool(forKey: "automaticAlignment.enabled.v1"))
+            precondition(store.string(forKey: "spotify.clientID") == nil)
+            store.set(true, forKey: "contract.bool")
+            store.set(12.5, forKey: "contract.double")
+            store.set(7, forKey: "contract.int")
+            store.set(["a": "b"], forKey: "contract.dictionary")
+            store.set(Data([1, 2, 3]), forKey: "contract.data")
+            store.set(URL(string: "https://example.invalid/fixture")!, forKey: "contract.url")
+            precondition(store.bool(forKey: "contract.bool"))
+            precondition(store.double(forKey: "contract.double") == 12.5)
+            precondition(store.integer(forKey: "contract.int") == 7)
+            precondition(store.dictionary(forKey: "contract.dictionary")?["a"] as? String == "b")
+            precondition(store.data(forKey: "contract.data") == Data([1, 2, 3]))
+            precondition(store.url(forKey: "contract.url")?.absoluteString == "https://example.invalid/fixture")
+            store.removeObject(forKey: "contract.bool")
+            precondition(!store.bool(forKey: "contract.bool"))
+            let config = DebugAcceptanceDataIsolation.configuration
+            precondition(LyricsQStorage.homeDirectory == config.home)
+            if CommandLine.arguments.contains("--cache-reopen") {
+                precondition(store.string(forKey: "contract.choice") == "manual-preserved")
+            } else {
+                store.set("manual-preserved", forKey: "contract.choice")
+                precondition(store.synchronize())
+            }
+            let spotify = KeychainSpotifyTokenStore()
+            precondition(try! spotify.load() == nil)
+            do {
+                try spotify.save(SpotifyTokenRecord(accessToken: "synthetic", refreshToken: nil, expiresAt: Date()))
+                preconditionFailure("acceptance must reject Spotify credential write")
+            } catch {}
+            try! spotify.delete()
+            let transport = ForbiddenKeychainTransport()
+            let ai = KeychainAITranslationAPIKeyStore(transport: transport)
+            precondition(ai.read() == nil)
+            do { try ai.save("synthetic"); preconditionFailure("acceptance must reject AI credential write") } catch {}
+            try! ai.delete()
+            print("native isolation contract PASS suite=\(config.suiteName) home=\(config.home.path) keychain=OFF")
+            return
+        }
         let formal = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/SpotifyLyrics/SpotifyLyrics.sqlite3")
 
@@ -44,4 +93,10 @@ struct DebugDatabaseSafetyContract {
 
         print("debug database safety contract: PASS")
     }
+}
+
+private struct ForbiddenKeychainTransport: AITranslationKeychainTransport {
+    func read(service: String, account: String) -> String? { preconditionFailure("forbidden Keychain transport read") }
+    func save(service: String, account: String, key: String) throws { preconditionFailure("forbidden Keychain transport save") }
+    func delete(service: String, account: String) throws { preconditionFailure("forbidden Keychain transport delete") }
 }

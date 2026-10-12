@@ -51,6 +51,9 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
 
     private override init() {
         super.init()
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return }
+#endif
         Self.scavengeOrphanTempDirectories()
         #if DEBUG
         // Prefer S2 auto-start when both envs are set.
@@ -106,6 +109,9 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
         autoStopAfter seconds: TimeInterval? = nil,
         sessionGuard: AutomaticLiveCaptureSessionGuard? = nil
     ) async {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return }
+#endif
         guard state == .idle || state == .failed else {
             SCKSpikeLog.log("start ignored state=\(state.rawValue)")
             return
@@ -637,7 +643,14 @@ private enum SpikeError: Error, LocalizedError {
 }
 
 enum SCKSpikeLog {
-    private static let path = "/tmp/spotifylyrics-sck-spike.log"
+    private static var path: String {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested {
+            return DebugAcceptanceDataIsolation.configuration.root.appendingPathComponent("logs/capture.log").path
+        }
+#endif
+        return "/tmp/spotifylyrics-sck-spike.log"
+    }
     private static let lock = NSLock()
 
     static func reset() {

@@ -23,7 +23,7 @@ public final class PresentationSelectionStore: ObservableObject {
     private var previewBaseline: [String: String]?
 
     public init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = .lyricsQ,
         catalog: PresentationCatalog = .shared
     ) {
         self.defaults = defaults

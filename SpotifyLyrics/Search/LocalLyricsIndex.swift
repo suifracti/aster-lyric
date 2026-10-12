@@ -43,9 +43,16 @@ public final class LocalLyricsIndex: @unchecked Sendable {
     }
 
     public static func defaultSearchDirectories(
-        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        home: URL = LyricsQStorage.homeDirectory,
         currentDirectoryPath: String = FileManager.default.currentDirectoryPath
     ) -> [URL] {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested {
+            DebugAcceptanceDataIsolation.requireStorage(home)
+            return [home.appendingPathComponent("Music/SpotifyLyrics/Lyrics"),
+                    home.appendingPathComponent("Library/Application Support/SpotifyLyrics/Lyrics")]
+        }
+#endif
         var defaults = [
             home.appendingPathComponent("Music/SpotifyLyrics/Lyrics", isDirectory: true),
             home.appendingPathComponent("Library/Application Support/SpotifyLyrics/Lyrics", isDirectory: true)

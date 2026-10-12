@@ -4,7 +4,7 @@ public struct ReadingUserDictionaryStore {
     public static let userDefaultsKey = "reading.userDictionary.v1"
     private let defaults: UserDefaults
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .lyricsQ) {
         self.defaults = defaults
     }
 

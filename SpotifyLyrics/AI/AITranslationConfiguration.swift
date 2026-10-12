@@ -4,6 +4,8 @@ import CryptoKit
 public struct AITranslationConfiguration: Equatable, Sendable {
     public var baseURL: String
     public var model: String
+    /// Non-secret Keychain reference. Existing compatible API settings retain "default".
+    public var apiCredentialAccount: String
     public var targetLanguage: String
     public var style: String
     public var customSystemPrompt: String
@@ -16,10 +18,22 @@ public struct AITranslationConfiguration: Equatable, Sendable {
     public var profileSnapshot: String
     public var fallbackStrategy: TranslationFallbackStrategy
     public var workflowID: String
+    /// Empty preserves the selected model default; never silently substitutes an effort.
+    public var codexReasoningEffort: String
+    public var grokReasoningEffort: String
+    /// Gemini CLI's native level. Keep separate from its model-specific budget.
+    public var geminiThinkingLevel: String
+    public var geminiThinkingBudget: Int?
+    /// Antigravity's native scale; per-model capability metadata remains authoritative.
+    public var antigravityEffort: String
+    /// model-default, enabled, or disabled; never infer another provider's scale.
+    public var deepSeekThinkingMode: String
+    public var deepSeekReasoningEffort: String
 
     public init(
         baseURL: String = "",
         model: String = "",
+        apiCredentialAccount: String = "default",
         targetLanguage: String = "zh-Hans",
         style: String = "natural_song",
         customSystemPrompt: String = "",
@@ -31,10 +45,18 @@ public struct AITranslationConfiguration: Equatable, Sendable {
         profileID: UUID? = nil,
         profileSnapshot: String = "",
         fallbackStrategy: TranslationFallbackStrategy = .none,
-        workflowID: String = TranslationWorkflowID.contextualV2.rawValue
+        workflowID: String = TranslationWorkflowID.contextualV2.rawValue,
+        codexReasoningEffort: String = "",
+        grokReasoningEffort: String = "",
+        geminiThinkingLevel: String = "",
+        geminiThinkingBudget: Int? = nil,
+        antigravityEffort: String = "",
+        deepSeekThinkingMode: String = "model-default",
+        deepSeekReasoningEffort: String = ""
     ) {
         self.baseURL = baseURL
         self.model = model
+        self.apiCredentialAccount = apiCredentialAccount
         self.targetLanguage = targetLanguage
         self.style = style
         self.customSystemPrompt = customSystemPrompt
@@ -47,23 +69,62 @@ public struct AITranslationConfiguration: Equatable, Sendable {
         self.profileSnapshot = profileSnapshot
         self.fallbackStrategy = fallbackStrategy
         self.workflowID = workflowID
+        self.codexReasoningEffort = codexReasoningEffort.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.grokReasoningEffort = grokReasoningEffort.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.geminiThinkingLevel = geminiThinkingLevel.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.geminiThinkingBudget = geminiThinkingBudget
+        self.antigravityEffort = antigravityEffort.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.deepSeekThinkingMode = deepSeekThinkingMode
+        self.deepSeekReasoningEffort = deepSeekReasoningEffort.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     public var isConfigured: Bool {
-        if TranslationEngineID(rawValue: engineID) == .appleSystem
-            || TranslationEngineID(rawValue: engineID) == .codexChatGPT {
-            return true
+        switch TranslationEngineID(rawValue: engineID) {
+        case .appleSystem: return true
+        case .codexChatGPT, .grokBuild, .geminiCLI, .antigravityCLI, .deepSeekAPI:
+            return !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .openAICompatible, .none: break
         }
+        if TranslationEngineID(rawValue: engineID) == .codexChatGPT { return !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         return !baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    public var providerCacheIdentity: String {
+        let usesAPI = TranslationEngineID(rawValue: engineID) == .openAICompatible
+        let fields = ["provider-cache-v1", engineID,
+            engineID == TranslationEngineID.appleSystem.rawValue ? "" : model,
+            usesAPI ? AITranslationEndpoint(baseURL: baseURL).chatCompletionsURL.absoluteString : "",
+            usesAPI ? "default" : "", providerReasoningSetting, usesAPI ? String(temperature) : ""]
+        return SHA256.hash(data: try! JSONEncoder().encode(fields)).map { String(format: "%02x", $0) }.joined()
+    }
+    public var requestIdentity: AITranslationConfigurationIdentity {
+        let usesAPI = engineID == TranslationEngineID.openAICompatible.rawValue
+        return AITranslationConfigurationIdentity(engineID: engineID, model: model, endpoint: usesAPI ? baseURL : "",
+            targetLanguage: targetLanguage, style: style, presetID: promptPresetID, customRules: customSystemPrompt,
+            profileID: profileID, profileSnapshot: profileSnapshot, workflowID: workflowID,
+            temperature: usesAPI ? temperature : 0, timeout: timeout, fallback: fallbackStrategy.rawValue,
+            codexReasoningEffort: engineID == TranslationEngineID.codexChatGPT.rawValue ? codexReasoningEffort : "",
+            grokReasoningEffort: engineID == TranslationEngineID.grokBuild.rawValue ? grokReasoningEffort : "",
+            geminiThinkingLevel: engineID == TranslationEngineID.geminiCLI.rawValue ? geminiThinkingLevel : "",
+            geminiThinkingBudget: engineID == TranslationEngineID.geminiCLI.rawValue ? geminiThinkingBudget : nil,
+            antigravityEffort: engineID == TranslationEngineID.antigravityCLI.rawValue ? antigravityEffort : "",
+            deepSeekThinkingMode: engineID == TranslationEngineID.deepSeekAPI.rawValue ? deepSeekThinkingMode : "",
+            deepSeekReasoningEffort: engineID == TranslationEngineID.deepSeekAPI.rawValue ? deepSeekReasoningEffort : "")
+    }
     public var promptHash: String {
-        let payload = [style, targetLanguage, customSystemPrompt]
-            .joined(separator: "\u{1f}")
-        return SHA256.hash(data: Data(payload.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
+        // JSON array boundaries cannot collide with separators inside user rules.
+        var fields = [style, targetLanguage, customSystemPrompt, promptPresetID, profileSnapshot, workflowID]
+        switch TranslationEngineID(rawValue: engineID) {
+        case .codexChatGPT: fields += ["codex", codexReasoningEffort]
+        case .grokBuild: fields += ["grok", grokReasoningEffort]
+        case .geminiCLI: fields += ["gemini", geminiThinkingLevel, geminiThinkingBudget.map(String.init) ?? ""]
+        case .antigravityCLI: fields += ["antigravity", antigravityEffort]
+        case .deepSeekAPI: fields += ["deepseek", deepSeekThinkingMode, deepSeekReasoningEffort]
+        case .openAICompatible, .appleSystem, .none: break
+        }
+        let payload = try! JSONEncoder().encode(fields)
+        return SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
     }
 }
 
@@ -127,5 +188,24 @@ public struct AITranslationEndpoint: Equatable, Sendable {
         if lower.hasSuffix("/models") { return raw }
         if lower.hasSuffix("/v1") { return URL(string: value + "/models") }
         return URL(string: value + "/v1/models")
+    }
+}
+
+extension AITranslationConfiguration {
+    public var providerReasoningSetting: String {
+        switch TranslationEngineID(rawValue: engineID) {
+        case .codexChatGPT: return "effort=" + (codexReasoningEffort.isEmpty ? "model-default" : codexReasoningEffort)
+        case .grokBuild: return "reasoning_effort=" + (grokReasoningEffort.isEmpty ? "model-default" : grokReasoningEffort)
+        case .geminiCLI:
+            if !geminiThinkingLevel.isEmpty { return "thinkingLevel=" + geminiThinkingLevel }
+            if let budget = geminiThinkingBudget { return "thinkingBudget=\(budget)" }
+            return "model-default"
+        case .antigravityCLI: return "effort=" + (antigravityEffort.isEmpty ? "model-default" : antigravityEffort)
+        case .deepSeekAPI:
+            let mode = deepSeekThinkingMode.isEmpty ? "model-default" : deepSeekThinkingMode
+            let effort = deepSeekReasoningEffort.isEmpty ? "model-default" : deepSeekReasoningEffort
+            return "thinking=\(mode);reasoning_effort=\(effort)"
+        case .openAICompatible, .appleSystem, .none: return ""
+        }
     }
 }
