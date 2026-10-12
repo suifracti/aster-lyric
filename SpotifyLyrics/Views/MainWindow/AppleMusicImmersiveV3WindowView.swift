@@ -856,9 +856,16 @@ struct AppleMusicImmersiveV3WindowView: View {
 
     private var allowsModelRequests: Bool {
 #if DEBUG
-        if DebugAcceptanceDataIsolation.isRequested { return false }
+        if DebugAcceptanceDataIsolation.isRequested { return DebugAcceptanceDataIsolation.allowsExplicitTranslation }
 #endif
         return true
+    }
+
+    private var allowsAutomaticTranslation: Bool {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return false }
+#endif
+        return allowsModelRequests
     }
 
     private var translationPanel: some View {
@@ -893,7 +900,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                     settings.aiTranslationConfiguration = next
                 }
             ))
-            .disabled(!allowsModelRequests || !settings.aiTranslationConfiguration.isConfigured)
+            .disabled(!allowsAutomaticTranslation || !settings.aiTranslationConfiguration.isConfigured)
             Text("优先复用已保存译文；自动翻译完整后使用，人工稿与锁定版本保留。新候选可手动采用，所有窗口共用。")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
@@ -923,7 +930,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                 .disabled(!allowsModelRequests || !settings.aiTranslationConfiguration.isConfigured || state.liveLyrics.isEmpty)
             }
             if !allowsModelRequests {
-                Text("隔离候选预算为 0：本次不生成新译文，可以查看和采用已保存版本。")
+                Text("没有剩余新请求预算；仍可查看和采用已保存版本。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let candidate = state.translationSessionPendingCandidate {

@@ -275,6 +275,7 @@ public struct AppleSystemTranslationEngine: TranslationEngine, Sendable {
 public struct CodexAppServerTranslationService: TranslationEngine, Sendable {
     public static let executablePaths = [
         "/Applications/ChatGPT.app/Contents/Resources/codex",
+        "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
         "/usr/local/bin/codex", "/opt/homebrew/bin/codex"
     ]
     private let executableCandidates: [String]
@@ -467,7 +468,8 @@ final class CodexAppServerClient: @unchecked Sendable {
         // Do not record arbitrary tool stderr, which can contain sensitive data.
         process.standardError = FileHandle.nullDevice
         process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = ["app-server", "--listen", "stdio://"]
+        process.arguments = ["app-server", "--listen", "stdio://",
+            "-c", "forced_login_method=\"chatgpt\"", "-c", "model_provider=\"openai\""]
         process.currentDirectoryURL = cwd
         // No inherited API keys, tokens, workspace paths or custom shell config.
         var environment = ["PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin", "LANG": "en_US.UTF-8", "HOME": NSHomeDirectory()]
@@ -556,6 +558,25 @@ final class CodexAppServerClient: @unchecked Sendable {
         try? input.close(); try? output.close()
     }
 
+    private func recordRecovery(stage: String, fields: [String: Any]) throws {
+#if DEBUG
+        guard DebugAcceptanceDataIsolation.isRequested,
+              ProcessInfo.processInfo.environment["SPOTIFYLYRICS_ACCEPTANCE_TRANSLATION_GRANT"] == "6119898076",
+              let attemptID else { throw AITranslationError.codexUnavailable("缺少隔离恢复身份") }
+        let file = DebugAcceptanceDataIsolation.configuration.root.appendingPathComponent("logs/codex-recovery-" + attemptID.uuidString + "-" + stage + ".json")
+        DebugAcceptanceDataIsolation.requireStorage(file)
+        guard !FileManager.default.fileExists(atPath: file.path) else { throw AITranslationError.codexUnavailable("恢复记录已存在，拒绝覆盖") }
+        var record = fields
+        record["attemptID"] = attemptID.uuidString
+        record["grant"] = "6119898076"
+        try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]).write(to: file, options: [.atomic])
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        let handle = try FileHandle(forWritingTo: file)
+        defer { try? handle.close() }
+        try handle.synchronize()
+#endif
+    }
+
     func initialize() throws {
         _ = try request(method: "initialize", params: ["clientInfo": [
             "name": "spotifylyrics", "title": "SpotifyLyrics", "version": "0.1.0"],
@@ -598,7 +619,11 @@ final class CodexAppServerClient: @unchecked Sendable {
                 throw AITranslationError.codexUnsupportedReasoningEffort(requested: requestedEffort, available: available)
             }
         }
-        var params: [String: Any] = ["cwd": cwd.path, "ephemeral": true,
+        var recoverable = false
+#if DEBUG
+        recoverable = DebugAcceptanceDataIsolation.isRequested && ProcessInfo.processInfo.environment["SPOTIFYLYRICS_ACCEPTANCE_TRANSLATION_GRANT"] == "6119898076"
+#endif
+        var params: [String: Any] = ["cwd": cwd.path, "ephemeral": !recoverable,
             "serviceName": "spotifylyrics", "approvalPolicy": "never", "sandbox": "read-only",
             // Pinned 0.160.0 exposes failed built-in calls only in raw events.
             // This observes calls and stops the owned process; it is not an
@@ -628,6 +653,19 @@ final class CodexAppServerClient: @unchecked Sendable {
         guard requestedEffort.isEmpty || selectedEffort == requestedEffort else {
             throw AITranslationError.codexUnavailable("会话未保留指定推理强度；未发送翻译请求")
         }
+        if recoverable {
+            guard thread["ephemeral"] as? Bool == false else {
+                throw AITranslationError.codexUnavailable("会话未确认持久化；未发送翻译请求")
+            }
+            var fields: [String: Any] = ["threadID": threadID, "model": actualModel,
+                "reasoningEffort": selectedEffort ?? "", "promptHash": prompt.promptHash,
+                "outputSchema": outputSchema, "promptUser": prompt.user]
+            if let wire = prompt.codexWireRequest {
+                fields["wireRequestID"] = wire.requestID.uuidString
+                fields["sourceLines"] = wire.sourceLines.map { ["index": $0.index, "lineID": $0.lineID.uuidString, "original": $0.original] as [String: Any] }
+            }
+            try recordRecovery(stage: "thread", fields: fields)
+        }
         var turnParams: [String: Any] = ["threadId": threadID,
             "input": [["type": "text", "text": prompt.system + "\nJSON:\n" + prompt.user]],
             "outputSchema": outputSchema, "approvalPolicy": "never", "cwd": cwd.path,
@@ -639,6 +677,7 @@ final class CodexAppServerClient: @unchecked Sendable {
         guard let turnObject = turn["turn"] as? [String: Any], let turnID = turnObject["id"] as? String else {
             throw AITranslationError.codexResponseInvalid("未返回 turn ID")
         }
+        if recoverable { try recordRecovery(stage: "turn", fields: ["threadID": threadID, "turnID": turnID, "model": actualModel, "reasoningEffort": selectedEffort ?? ""]) }
         diagnose("waiting_for_completion", newPhase: "turn_events")
         var text: String?
         var tokenUsage: AITranslationTokenUsage?

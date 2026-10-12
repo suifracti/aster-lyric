@@ -93,6 +93,37 @@ private final class DebugPrivateUserDefaults: UserDefaults {
 /// local-index scan or player bridge is constructed. No acceptance flag can
 /// silently fall back to a daily resource.
 enum DebugAcceptanceDataIsolation {
+    // One explicit, recording-bound subscription acceptance grant. A spent
+    // counter remains valid on reopen, but can never authorize another send.
+    static let translationGrant = "6110651480"
+    static let secondTranslationGrant = "6119898076"
+    static let secondTranslationTrackKey = "spotify-id:0zlwh8kzv299erleomelad|metadata:gijikoi|harukihamano|gijikoikoreanver|217"
+    static let translationTrackKey = "spotify-id:3eqfsbmrzv3xbxqb6tofkw|metadata:ギジコイ|浜野はるき|lovetoxic|216"
+    static func validModelBudget(_ budget: [String: Any], grant: String?) -> Bool {
+        guard let maximum = budget["maximum"] as? Int, let used = budget["used"] as? Int,
+              let stopped = budget["stopped"] as? Bool,
+              let providers = budget["providers"] as? [String],
+              let tracks = budget["trackKeys"] as? [String] else { return false }
+        if maximum == 0 { return used == 0 && stopped && providers.isEmpty && tracks.isEmpty }
+        let expectedTrack: String?
+        switch grant {
+        case translationGrant: expectedTrack = translationTrackKey
+        case secondTranslationGrant: expectedTrack = secondTranslationTrackKey
+        default: expectedTrack = nil
+        }
+        return expectedTrack != nil && maximum == 1 && (0...1).contains(used)
+            && providers == ["translationEngine.codexChatGPT.v1"] && tracks == [expectedTrack!]
+    }
+    static var allowsExplicitTranslation: Bool {
+        let e = ProcessInfo.processInfo.environment
+        guard let grant = e["SPOTIFYLYRICS_ACCEPTANCE_TRANSLATION_GRANT"],
+              [translationGrant, secondTranslationGrant].contains(grant),
+              let path = e["SPOTIFYLYRICS_ACCEPTANCE_BUDGET_FILE"],
+              let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let budget = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              validModelBudget(budget, grant: grant) else { return false }
+        return budget["maximum"] as? Int == 1 && budget["used"] as? Int == 0 && budget["stopped"] as? Bool == false
+    }
     struct Configuration {
         let root: URL
         let home: URL
@@ -183,10 +214,8 @@ enum DebugAcceptanceDataIsolation {
         }
         guard let data = try? Data(contentsOf: root.appendingPathComponent("budget.json")),
               let budget = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              budget["maximum"] as? Int == 0, budget["used"] as? Int == 0,
-              budget["stopped"] as? Bool == true,
-              (budget["providers"] as? [String]) == [], (budget["trackKeys"] as? [String]) == []
-        else { refuse("missing or nonzero model budget") }
+              validModelBudget(budget, grant: e["SPOTIFYLYRICS_ACCEPTANCE_TRANSLATION_GRANT"])
+        else { refuse("missing, unapproved or invalid model budget") }
         prepared = Configuration(root: root, home: home, database: db, provenance: provenance, suiteName: suite)
         let preferences = root.appendingPathComponent("preferences.plist")
         requireStorage(preferences)
@@ -199,7 +228,7 @@ enum DebugAcceptanceDataIsolation {
         store.set(false, forKey: "ai.autoTranslateNewLyrics")
         store.set(false, forKey: "automaticAlignment.enabled.v1")
         store.removeObject(forKey: "spotify.clientID")
-        FileHandle.standardError.write(Data("[SpotifyLyrics][NativeIsolation] ready root=\(raw) suite=\(suite) keychain=OFF model_budget=0 imports=NONE\n".utf8))
+        FileHandle.standardError.write(Data("[SpotifyLyrics][NativeIsolation] ready root=\(raw) suite=\(suite) keychain=OFF model_budget=\(budget["maximum"] as? Int ?? -1) used=\(budget["used"] as? Int ?? -1) imports=NONE\n".utf8))
     }
 }
 
