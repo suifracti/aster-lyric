@@ -5,6 +5,6 @@
 	<key>CFBundleIconFile</key>
 	<string>SpotifyLyrics.icns</string>
 	<key>NSScreenCaptureUsageDescription</key>
-	<string>Debug：仅捕获 Spotify 应用正在播放的音频，用于实验性歌词时间轴研究。不捕获麦克风、不捕获其他 App、不保存或导出音频文件，也不上传。</string>
+	<string>自动实时排轴仅支持 Spotify Desktop 播放源。捕获的音频会临时写入本机 WAV 分段供处理，任务结束后清理；不捕获麦克风或其他 App。</string>
 </dict>
 </plist>

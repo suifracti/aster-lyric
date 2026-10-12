@@ -132,6 +132,7 @@
 - Automatic alignment requires a newly advanced coordinator generation and an exactly generation-matched handoff; it cannot reuse an older `lastPartialReport`.
 - Local-file alignment remains independent of live capture and is not disabled by an active Music source.
 - The automatic switch remains opt-in and Release-reachable. Real ScreenCaptureKit/Spotify/Music capture was not run; user verification remains `USER_VERIFICATION_REQUIRED / NOT_RUN`.
+- Release 的自动对齐链会调用 partial-alignment 与 speech engine；已修正误称其为 Debug-only 的源码注释。实时捕获会临时写入本机 WAV 分段，正常任务结束时清理并在启动时尝试清理残留；设置仍默认关闭。真实捕获、权限流程和外部播放器均未运行。
 
 详见 [A0 evidence](evidence/core-integrity/A0-capture-source-containment.md)；本页不复制完整运行输出。
 

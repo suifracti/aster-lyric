@@ -266,3 +266,131 @@ report.
 
 Only **H1 — Hash Domain Boundary Repair** is next. A0 does not begin H1 or
 any later batch.
+
+## 2026-09-25 copy and Release-reachability follow-up
+
+This is a narrow follow-up to the already automated-verified A0 batch, not a
+new capture implementation or a real-capture acceptance. It corrects product
+copy and comments that understated the existing Release path and its temporary
+audio files.
+
+### Source and test identity
+
+```text
+formal project root: /Users/apple/backup/sptifylyrics
+protected formal-root checkout: codex/h1-hash-domain-boundary @ c062cfe371a2fcab3b1569888a6da35646627f0e
+three PROJECT_FULL_AUDIT_*.md files: preserved, untracked, not edited
+follow-up base: local main @ 87eade3314a595f06adeec7a0a8029790f44756e
+follow-up branch: codex/a0-capture-source-verification
+production/test source commit: 1f5389854dc63907cc79cf24ec46c4d549a787f3
+upstream: none configured; no push performed
+```
+
+The selected source was the main-derived A0 line, not the formal-root H1
+checkout. The unrelated H1 source-hash argument difference was not copied into
+this branch. H1 was not entered or modified.
+
+### Finding and before/after evidence
+
+- The pre-existing source gate was correct and remains unchanged. The settings
+  default remains `false`; automatic live capture remains restricted to an
+  identified, ready Spotify Desktop source before discovery.
+- The actual Release automatic job passes `runPartialAlignment: true` to
+  `LiveCaptureCoordinator`; the coordinator invokes
+  `SegmentPartialAlignmentPipeline.align`, which resolves
+  `SpeechEngineRegistry`. Those product files compile in Release and are not
+  file-level `#if DEBUG` implementations. Only diagnostic menus/hooks are
+  Debug-only. Comments calling the candidate, pipeline, or optional Whisper
+  engine Debug-only were inaccurate and are corrected.
+- The capture coordinator stores temporary WAV segments under the system
+  temporary directory. Normal job completion cleans the session directory;
+  startup also attempts to scavenge leftovers. This is not a claim that every
+  failure/crash guarantees cleanup. Copy now says temporary local WAV segments
+  are used and cleanup is attempted; unsupported “no files saved/exported” and
+  “not uploaded” claims were removed. No upload behavior was added or tested.
+- Local-file alignment is separate from live capture and remains independent
+  of whether Spotify or Music is the active playback source. Its prompts no
+  longer incorrectly require a Spotify song/recording or imply that every
+  selected file must come from Spotify.
+- Before changing copy, the new copy contract failed with exit `1` because the
+  permission text denied files even though the Release path writes temporary
+  WAV segments. A second new Release-reachability assertion failed with exit
+  `1` on the stale “Debug-only PartialAlignmentCandidate” comment. After the
+  copy and comment corrections both assertions pass. These were real copy /
+  source-documentation contradictions; the source-gate behavior itself was not
+  failing.
+
+### Files changed
+
+Production copy/comments:
+
+- `SpotifyLyrics/Info-Additions.plist`
+- `SpotifyLyrics/Views/Settings/SettingsRootView.swift`
+- `SpotifyLyrics/Views/Components/AssistExplainSheet.swift`
+- `SpotifyLyrics/Services/PlaybackState.swift`
+- `SpotifyLyrics/Capture/SegmentPartialAlignmentPipeline.swift`
+- `SpotifyLyrics/Capture/PartialAlignmentModels.swift`
+- `SpotifyLyrics/Capture/SpeechEngine.swift`
+- `SpotifyLyrics/Capture/WhisperCLISpeechEngine.swift`
+
+Focused contract:
+
+- `Tests/a0_capture_source_containment_contract.sh`
+
+No gate, provider, alignment algorithm, ASR selection behavior, automatic
+default, persistence, schema, or database path changed. The focused contracts
+exercise the production source gate/session guard with fake external effects
+and static release-path/copy assertions. They do not open a user database.
+This follow-up adds no database write; no repository save path is invoked.
+
+### Fresh verification
+
+All commands below ran from the follow-up worktree at the production/test
+source commit above. Each listed contract and validation exited `0`:
+
+```text
+bash Tests/a0_capture_source_containment_contract.sh
+bash Tests/automatic_alignment_trigger_contract.sh
+bash Tests/automatic_alignment_disabled_contract.sh
+bash Tests/automatic_alignment_product_path_contract.sh
+bash Tests/automatic_alignment_track_change_contract.sh
+bash Tests/automatic_alignment_complete_adopt_contract.sh
+bash Tests/assist_report_handoff_contract.sh
+bash Tests/stale_report_rejection_contract.sh
+bash Tests/local_alignment_window_contract.sh
+plutil -lint SpotifyLyrics/Info-Additions.plist
+git diff --check && git diff --cached --check
+```
+
+Fresh isolated builds both exited `0` and ended with `** BUILD SUCCEEDED **`:
+
+```text
+xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics -configuration Debug -derivedDataPath /tmp/spotifylyrics-a0-copy-verify-debug-20260925 CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics -configuration Release -derivedDataPath /tmp/spotifylyrics-a0-copy-verify-release-20260925 CODE_SIGNING_ALLOWED=NO build
+```
+
+The builds emitted existing warning classes: Swift actor/Sendable diagnostics,
+deprecated AVFoundation/Speech APIs, unused locals, and skipped AppIntents
+metadata because the target does not depend on AppIntents. No production logic
+change was made to address unrelated warnings. Release compilation verifies
+the partial-alignment and speech-engine path is compiled; it does not prove
+real capture, permission, cleanup under crash, or provider/network behavior.
+
+### Not run, side effects, and rollback
+
+- Real Spotify/Music playback, ScreenCaptureKit discovery/capture, microphone,
+  automatic alignment/ASR, App launch, formal SQLite, Keychain, network lyrics,
+  AI, and user settings were not accessed. Real capture remains
+  `USER_VERIFICATION_REQUIRED / NOT_RUN`.
+- The previously recorded `Tests/apple_music_provider_contract.sh` host failure
+  remains exit `133` because `/System/Applications/Music.app` is absent; it was
+  not rerun or bypassed.
+- Temporary build products are under `/tmp`. This follow-up was not pushed,
+  merged, tagged, or released. Obsidian README/Decisions received only the
+  accurate temporary-WAV fact; the newer Nightly Handoff pointer was preserved.
+- Rollback is limited to reverting production commit
+  `1f5389854dc63907cc79cf24ec46c4d549a787f3` and the separate documentation
+  commit identified in the final handoff. Reverting this copy correction would
+  restore misleading Debug-only/no-audio-file wording while the existing
+  Release path remains. The original A0 source-gate commits are not part of
+  this rollback.

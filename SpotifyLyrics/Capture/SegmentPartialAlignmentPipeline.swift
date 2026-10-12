@@ -2,7 +2,7 @@ import Foundation
 
 /// S3A: run Speech + LineForcedAligner per continuous CapturedAudioSegment,
 /// map relative Speech times to absolute Spotify positions, and emit a
-/// Debug-only PartialAlignmentCandidate (never written to formal SQLite).
+/// PartialAlignmentReport for the consuming alignment job's quality gate.
 public enum SegmentPartialAlignmentPipeline {
     public static let reportDirectoryName = "s3a-reports"
 

@@ -16,9 +16,9 @@ struct AssistExplainSheet: View {
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 8) {
-                Label("会临时分析 Spotify 当前歌曲音频", systemImage: "waveform")
+                Label("仅 Spotify Desktop 播放源支持实时捕获", systemImage: "waveform")
                 Label("不捕获麦克风", systemImage: "mic.slash")
-                Label("不保留或导出音频", systemImage: "trash")
+                Label("捕获音频临时写入本机 WAV 分段，任务结束后清理", systemImage: "trash")
                 Label("自动建议可能不完整", systemImage: "exclamationmark.triangle")
                 Label("只有你确认保存后才会写入时间轴版本", systemImage: "checkmark.seal")
             }

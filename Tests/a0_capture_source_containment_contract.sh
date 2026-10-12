@@ -147,4 +147,64 @@ test "$first_nonempty_job" != "#if DEBUG"
 grep -Eq '#if DEBUG' "$MAIN"
 grep -Eq '排轴捕获 Spike（调试）' "$MAIN"
 
+
+# Product-facing capture copy must match the Release-reachable source and
+# temporary WAV lifecycle. Local-file alignment remains source-independent.
+python3 - "$ROOT/SpotifyLyrics/Info-Additions.plist" \
+          "$ROOT/SpotifyLyrics/Views/Settings/SettingsRootView.swift" \
+          "$ROOT/SpotifyLyrics/Views/Components/AssistExplainSheet.swift" \
+          "$ROOT/SpotifyLyrics/Services/PlaybackState.swift" <<'PY_COPY'
+from pathlib import Path
+import sys
+
+info, settings, assist, playback = map(lambda value: Path(value).read_text(), sys.argv[1:])
+if "Debug：" in info or "不保存或导出音频文件" in info:
+    raise SystemExit("capture usage description contradicts the Release path or temporary WAV files")
+if "Spotify Desktop" not in info or "临时写入本机 WAV" not in info or "任务结束后清理" not in info:
+    raise SystemExit("capture usage description must state supported source and temporary WAV cleanup")
+if "Apple Music、未知来源不会启动" not in settings:
+    raise SystemExit("settings must explain unsupported automatic live-capture sources")
+if "临时写入本机 WAV 分段" not in settings or "默认关闭" not in settings:
+    raise SystemExit("settings must disclose temporary segments and preserve the opt-in default")
+if "仅 Spotify Desktop 播放源支持实时捕获" not in assist:
+    raise SystemExit("Assist copy must state the live-capture source boundary")
+if "临时写入本机 WAV 分段" not in assist or "不保留或导出音频" in assist:
+    raise SystemExit("Assist copy must describe temporary file use without denying it")
+if "需要当前播放歌曲" not in playback or "不会从播放器取流" not in playback:
+    raise SystemExit("local-file alignment copy must be source-neutral")
+if "对应当前歌曲的录音版本" not in playback:
+    raise SystemExit("local-file alignment confirmation must not require a Spotify recording")
+print("capture_source_copy_contract: PASS")
+PY_COPY
+
+# The automatic Release path invokes this partial-alignment pipeline and its
+# selectable speech engine; source comments must not mislabel it Debug-only.
+python3 - "$ROOT/SpotifyLyrics/Capture/AutomaticAlignmentJobController.swift" \
+          "$ROOT/SpotifyLyrics/Capture/LiveCaptureCoordinator.swift" \
+          "$ROOT/SpotifyLyrics/Capture/SegmentPartialAlignmentPipeline.swift" \
+          "$ROOT/SpotifyLyrics/Capture/PartialAlignmentModels.swift" \
+          "$ROOT/SpotifyLyrics/Capture/SpeechEngine.swift" \
+          "$ROOT/SpotifyLyrics/Capture/WhisperCLISpeechEngine.swift" <<'PY_RELEASE_COPY'
+from pathlib import Path
+import sys
+
+job, coordinator, pipeline, models, registry, whisper = map(lambda value: Path(value).read_text(), sys.argv[1:])
+if "runPartialAlignment: true" not in job:
+    raise SystemExit("automatic Release job must keep its production partial-alignment path")
+if "SegmentPartialAlignmentPipeline.align(" not in coordinator:
+    raise SystemExit("capture handoff must remain connected to the production partial-alignment pipeline")
+if "SpeechEngineRegistry.resolve()" not in pipeline:
+    raise SystemExit("production partial-alignment pipeline must resolve its speech engine")
+stale_claims = (
+    (pipeline, "Debug-only PartialAlignmentCandidate"),
+    (models, "Debug-only alignment candidate"),
+    (registry, "DEBUG / experimental selection only"),
+    (registry, "DEBUG / experimental engine selection"),
+    (whisper, "DEBUG-only speech front-end"),
+)
+for source, claim in stale_claims:
+    if claim in source:
+        raise SystemExit(f"Release-reachable capture code still says Debug-only: {claim}")
+print("release_capture_copy_contract: PASS")
+PY_RELEASE_COPY
 echo "a0_capture_source_containment_contract: PASS"
