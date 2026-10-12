@@ -99,6 +99,47 @@ public struct LyricsDocument: Equatable, Sendable {
         self.timingVersionID = timingVersionID
     }
 
+    /// Rebuilds a display document after a line projection without dropping
+    /// its identity, partial-timeline mask, language, or timing attachment.
+    public func replacingLines(_ lines: [LyricLine]) -> LyricsDocument {
+        replacingLines(lines, language: language)
+    }
+
+    /// Variant for a caller that deliberately enriches the language field.
+    public func replacingLines(_ lines: [LyricLine], language: String?) -> LyricsDocument {
+        copying(lines: lines, language: language, timingVersionID: timingVersionID)
+    }
+
+    /// Variant for a repository projection that has just selected the exact
+    /// immutable timing attachment used to build `lines`.
+    public func replacingLines(_ lines: [LyricLine], timingVersionID: UUID?) -> LyricsDocument {
+        copying(lines: lines, language: language, timingVersionID: timingVersionID)
+    }
+
+    private func copying(
+        lines: [LyricLine],
+        language: String?,
+        timingVersionID: UUID?
+    ) -> LyricsDocument {
+        LyricsDocument(
+            identity: identity,
+            title: title,
+            artist: artist,
+            album: album,
+            duration: duration,
+            lines: lines,
+            isSynchronized: isSynchronized,
+            source: source,
+            confidence: confidence,
+            providerSourceID: providerSourceID,
+            spotifyTrackID: spotifyTrackID,
+            isrc: isrc,
+            language: language,
+            explicitlyTimedLineIndices: explicitlyTimedLineIndices,
+            timingVersionID: timingVersionID
+        )
+    }
+
     public var hasTimedSpans: Bool {
         lines.contains { $0.hasTimedSpans }
     }
@@ -118,6 +159,8 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
     public let id: String
     public let identity: TrackIdentity
     public let title: String
+    /// Independent aliases declared by the provider catalog, never query echoes.
+    public let declaredTitleAliases: [String]
     public let artist: String
     public let album: String
     public let duration: TimeInterval
@@ -134,6 +177,10 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
     /// Provider-declared source language, when available. It is used only by
     /// the projection gate and never replaces the original lyric text.
     public let language: String?
+    /// Preserves explicit row-time semantics for unsynchronized partial
+    /// timelines while a Provider result is represented as a candidate.
+    /// Nil and an empty set retain their distinct legacy meanings.
+    public let explicitlyTimedLineIndices: Set<Int>?
     /// Runtime retrieval evidence. These fields are intentionally not part of
     /// persistence and are filled by LyricsSearchManager after SafeMatcher
     /// evaluates a Provider result.
@@ -159,16 +206,19 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
         spotifyTrackID: String? = nil,
         isrc: String? = nil,
         language: String? = nil,
+        explicitlyTimedLineIndices: Set<Int>? = nil,
         providerName: String? = nil,
         queryKind: String? = nil,
         queryTitle: String? = nil,
         queryArtist: String? = nil,
         matchScore: Double? = nil,
-        matchExplanation: [String] = []
+        matchExplanation: [String] = [],
+        declaredTitleAliases: [String] = []
     ) {
         self.id = id
         self.identity = identity
         self.title = title
+        self.declaredTitleAliases = declaredTitleAliases
         self.artist = artist
         self.album = album
         self.duration = duration
@@ -180,6 +230,7 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
         self.spotifyTrackID = spotifyTrackID
         self.isrc = isrc
         self.language = language
+        self.explicitlyTimedLineIndices = explicitlyTimedLineIndices
         self.providerName = providerName
         self.queryKind = queryKind
         self.queryTitle = queryTitle
@@ -190,8 +241,48 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
 
     public var displayedConfidence: Double { matchScore ?? confidence }
 
+    /// Full provider result promoted to a document without rewriting its
+    /// source, confidence, independent identity claims or lyric lines.
+    public func makeDocument() -> LyricsDocument {
+        LyricsDocument(
+            identity: identity,
+            title: title,
+            artist: artist,
+            album: album,
+            duration: duration,
+            lines: previewLines,
+            isSynchronized: requiresTextOnlyPreview ? false : isSynchronized,
+            source: source,
+            confidence: confidence,
+            providerSourceID: providerSourceID,
+            spotifyTrackID: spotifyTrackID,
+            isrc: isrc,
+            language: language,
+            explicitlyTimedLineIndices: requiresTextOnlyPreview ? nil : explicitlyTimedLineIndices
+        )
+    }
+
+    /// A text confirmation cannot certify timing from another tempo recording.
+    public var requiresTextOnlyPreview: Bool {
+        matchExplanation.contains { $0.hasPrefix("spedUpConflict ") }
+    }
+
+    public var previewLines: [LyricLine] {
+        guard requiresTextOnlyPreview else { return lines }
+        return lines.map { line in
+            var text = line
+            text.timestamp = 0
+            text.endTime = nil
+            text.timedSpans = nil
+            return text
+        }
+    }
+
     public var arrangementNotice: String? {
-        matchExplanation.contains { $0.hasPrefix("pianoConflict ") }
+        if requiresTextOnlyPreview {
+            return "加速版与来源录音不同，仅可核对并采用歌词文本；不使用来源时间轴"
+        }
+        return matchExplanation.contains { $0.hasPrefix("pianoConflict ") }
             ? "钢琴版与原曲编排可能不同，请预览确认歌词与时间轴" : nil
     }
 
@@ -226,6 +317,12 @@ public enum LyricsFailure: Error, Equatable, Sendable {
     case parseFailure
     case cancelled
     case unknown(String)
+
+    /// Keep frozen display consumers compatible while preserving a distinct
+    /// recovery message and the individual provider outcomes in diagnostics.
+    public static func identityUnconfirmed(_ count: Int, _ sourceError: String) -> LyricsFailure {
+        .unknown("搜索累计有\(count)次候选判定未确认身份（可能重复，不代表可用歌词）。" + (sourceError.isEmpty ? "" : "部分来源同时失败：" + sourceError))
+    }
 
     public var userFacingMessage: String {
         switch self {
@@ -462,5 +559,17 @@ public enum LyricsTimeline {
     ) -> Int {
         guard isSynchronized, let currentIndex else { return 0 }
         return abs(index - currentIndex)
+    }
+}
+
+/// Receipt from the current search decision, distinct from provider confidence.
+public struct LyricsAutomaticSelectionEvidence: Sendable {
+    public let identity: TrackIdentity
+    public let tier: String
+    public let hardReject: Bool
+    public let versionConflict: Bool
+    public init(identity: TrackIdentity, tier: String, hardReject: Bool, versionConflict: Bool) {
+        self.identity = identity; self.tier = tier
+        self.hardReject = hardReject; self.versionConflict = versionConflict
     }
 }

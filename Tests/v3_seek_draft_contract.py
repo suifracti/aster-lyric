@@ -9,6 +9,15 @@ source = (root / 'SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView
 source = source.split('private struct AppleMusicImmersiveV3PlaybackProgress: View {', 1)[1]
 source = source.split('private struct AppleMusicImmersiveV3TransportControls:', 1)[0]
 
+assert 'state.presentationClock.playbackTime(' in source, \
+    'V3 transport must use the playback-domain clock projection'
+assert 'state.presentationClock.presentationTime(' not in source, \
+    'V3 transport must not consume lyric presentation time'
+full_v3_source = (root / 'SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift').read_text()
+assert 'V3TransportClockLabel' in full_v3_source
+assert 'clock.playbackTime(at: ProcessInfo.processInfo.systemUptime)' in full_v3_source
+assert 'if !slider.isTrackingInteraction { slider.doubleValue = value }' in full_v3_source
+
 def block(signature, text=source):
     start = text.index(signature)
     opening = text.index('{', start)
@@ -21,12 +30,34 @@ def block(signature, text=source):
 
 fields = '\n'.join(re.findall(r'@State private (var (?:isEditing|draftPosition)[^\n]*)', source))
 setter = re.search(r'set: \{ (draftPosition = [^\n]+) \}', source).group(1).replace('$0', 'value')
+coordinator = block('final class Coordinator')
 probe = '''import Foundation
 final class FakePlaybackState {
+    let presentationClock: LyricsPresentationClock
     var currentTime: Double = 18
     var seeks: [Double] = []
+    init() {
+        let anchor = ProcessInfo.processInfo.systemUptime
+        presentationClock = LyricsPresentationClock(
+            authoritativePosition: 18,
+            receivedAtMonotonicTime: anchor,
+            isPlaying: false,
+            trackID: "contract-track",
+            trackDuration: 240,
+            presentationOffset: 2
+        )
+    }
     func seek(to value: Double, source: String) { seeks.append(value) }
 }
+struct V3PlaybackInputSlider {
+    var value: Double
+    let onEditingChanged: (Bool) -> Void
+}
+final class V3PlaybackNativeSlider: NSObject {
+    var isTrackingInteraction = false
+    var doubleValue: Double = 0
+}
+COORDINATOR
 final class ProgressProbe {
     let state = FakePlaybackState()
     var interactionChanged: (Bool) -> Void = { _ in }
@@ -38,7 +69,7 @@ EDITING
 }
 let valueFirst = ProgressProbe()
 valueFirst.write(120)
-precondition(valueFirst.visiblePosition == 120, "A click target must become visible before begin-edit arrives")
+precondition(valueFirst.playbackPosition == 120, "A click target must become visible before begin-edit arrives")
 valueFirst.handleEditingChanged(true)
 valueFirst.handleEditingChanged(false)
 precondition(valueFirst.state.seeks == [120], "Begin-edit must not replace the click target with old playback position")
@@ -48,7 +79,7 @@ let beginFirst = ProgressProbe()
 beginFirst.handleEditingChanged(true)
 beginFirst.write(120)
 beginFirst.state.currentTime = 19
-precondition(beginFirst.visiblePosition == 120, "Live refresh must not overwrite a drag target")
+precondition(beginFirst.playbackPosition == 120, "Live refresh must not overwrite a drag target")
 beginFirst.handleEditingChanged(false)
 precondition(beginFirst.state.seeks == [120])
 let unchanged = ProgressProbe()
@@ -59,15 +90,34 @@ let clamped = ProgressProbe()
 clamped.write(400)
 clamped.handleEditingChanged(false)
 precondition(clamped.state.seeks == [240])
-precondition(clamped.visiblePosition == 18, "An ended draft must release the display to live playback")
+precondition(clamped.playbackPosition == 18, "An ended draft must release the display to live playback")
+var callbackEvents: [Bool] = []
+let coordinator = Coordinator(parent: V3PlaybackInputSlider(
+    value: 10,
+    onEditingChanged: { callbackEvents.append($0) }
+))
+let keyboardSender = V3PlaybackNativeSlider()
+keyboardSender.doubleValue = 11
+coordinator.changed(keyboardSender)
+precondition(coordinator.parent.value == 11, "keyboard/AX callback must write the raw slider value")
+precondition(callbackEvents == [true, false], "standalone keyboard/AX callback must bracket one edit")
+callbackEvents.removeAll()
+keyboardSender.isTrackingInteraction = true
+keyboardSender.doubleValue = 12
+coordinator.changed(keyboardSender)
+precondition(coordinator.parent.value == 12)
+precondition(callbackEvents.isEmpty, "tracked pointer updates must not create standalone edit callbacks")
 print("V3 seek draft contract: PASS (both callback orders, tracking without a value, duplicate end, refresh, clamp)")
 '''
-probe = probe.replace('FIELDS', fields).replace('SETTER', setter).replace('VISIBLE', block('private var visiblePosition: Double')).replace('EDITING', block('private func handleEditingChanged'))
+probe = probe.replace('COORDINATOR', coordinator).replace('FIELDS', fields).replace('SETTER', setter).replace('VISIBLE', block('private var playbackPosition: Double')).replace('EDITING', block('private func handleEditingChanged'))
 with tempfile.TemporaryDirectory(prefix='lyrics-v3-seek-draft-') as temp:
     script = Path(temp) / 'main.swift'
     script.write_text(probe)
     binary = Path(temp) / 'contract'
-    subprocess.run(['swiftc', str(script), '-o', str(binary)], check=True)
+    subprocess.run([
+        'swiftc', str(root / 'SpotifyLyrics/Models/Models.swift'),
+        str(script), '-o', str(binary)
+    ], check=True)
     subprocess.run([str(binary)], check=True)
 
 fullscreen = (root / 'SpotifyLyrics/Views/Fullscreen/FullScreenLyricsView.swift').read_text()

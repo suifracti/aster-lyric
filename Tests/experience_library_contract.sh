@@ -45,8 +45,30 @@ if grep -Eq 'ForEach\(SettingsCategory\.allCases\.filter \{ includeExperienceLib
   echo "FAIL: experience library is still a top-level Settings item" >&2
   exit 1
 fi
-grep -Eq 'ForEach\(SettingsCategory\.allCases\.filter \{ \$0 != \.experienceLibrary \}\)' "$SETTINGS"
-grep -q '打开体验版本库' "$SETTINGS"
-grep -q 'onOpenExperienceLibrary' "$SETTINGS"
+python3 - "$SETTINGS" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1]).read_text()
+primary_start = source.index("static var primaryCases")
+primary_end = source.index("\n    }", primary_start)
+primary_cases = source[primary_start:primary_end]
+assert ".experienceLibrary" not in primary_cases, "experience library must stay out of primary sidebar"
+
+label = 'Label("打开体验版本库"'
+label_index = source.index(label)
+button_start = source.rfind("Button {", 0, label_index)
+button_end = source.index('accessibilityIdentifier("btn_enter_experience_library")', label_index)
+button = source[button_start:button_end]
+assert "onOpenTool(.experienceLibrary)" in button, "experience library button has no selected-tool route"
+
+detail_start = source.index("private struct SettingsDetailView")
+detail = source[detail_start:]
+assert "onOpenTool: { tool in selection = tool }" in detail, "advanced settings do not route tool selection"
+experience_case = detail.index("case .experienceLibrary:")
+assert "ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections)" in detail[experience_case:], \
+    "experience-library selection does not present the production settings view"
+print("experience library settings route: PASS")
+PY
 
 echo "experience library source contract: PASS"

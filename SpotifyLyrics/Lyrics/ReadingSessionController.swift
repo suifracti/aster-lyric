@@ -9,6 +9,7 @@ public struct ReadingProjection: Equatable, Sendable {
     public let sourceContentHash: String?
     public let readingVersionID: UUID?
     public let representationID: String?
+    public let sourceKind: ReadingVersionSourceKind?
     public let lines: [ReadingLineResult]
     public let isNoSelection: Bool
 
@@ -17,6 +18,7 @@ public struct ReadingProjection: Equatable, Sendable {
         sourceContentHash: nil,
         readingVersionID: nil,
         representationID: nil,
+        sourceKind: nil,
         lines: [],
         isNoSelection: false
     )
@@ -26,6 +28,7 @@ public struct ReadingProjection: Equatable, Sendable {
         sourceContentHash: String?,
         readingVersionID: UUID?,
         representationID: String?,
+        sourceKind: ReadingVersionSourceKind? = nil,
         lines: [ReadingLineResult],
         isNoSelection: Bool
     ) {
@@ -33,6 +36,7 @@ public struct ReadingProjection: Equatable, Sendable {
         self.sourceContentHash = sourceContentHash
         self.readingVersionID = readingVersionID
         self.representationID = representationID
+        self.sourceKind = sourceKind
         self.lines = lines.sorted { $0.lineIndex < $1.lineIndex }
         self.isNoSelection = isNoSelection
     }
@@ -56,7 +60,11 @@ public struct ReadingProjection: Equatable, Sendable {
             } else if let reading = byIndex[index], reading.originalText == source.originalText {
                 switch representationID.flatMap(ReadingRepresentationID.init(rawValue:)) {
                 case .kana:
-                    line = ReadingRubyCorrection.project(reading, onto: line)
+                    line = ReadingRubyCorrection.project(
+                        reading,
+                        onto: line,
+                        preferStoredReadingText: sourceKind == .manualEdit
+                    )
                     line.readingRepresentationID = ReadingRepresentationID.kana.rawValue
                 case .romaji:
                     line.romajiText = reading.readingText
@@ -374,10 +382,18 @@ public final class ReadingSessionController: ObservableObject {
                     contextHash: result.contextHash
                 )
                 let stored = try await repository.saveReadingVersion(ReadingVersionSaveRequest(record: record, lines: result.lines))
+                guard !Task.isCancelled,
+                      let self,
+                      self.revision == token,
+                      self.sourceLyricsVersionID == lyricsVersionID,
+                      self.sourceContentHash == sourceContentHash else { return }
                 if !requiresConfirmation {
                     try await repository.adoptReadingVersion(versionID: stored.record.id)
                 }
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled,
+                      self.revision == token,
+                      self.sourceLyricsVersionID == lyricsVersionID,
+                      self.sourceContentHash == sourceContentHash else { return }
                 await MainActor.run { [weak self] in
                     guard let self, self.revision == token,
                           self.sourceLyricsVersionID == lyricsVersionID,
@@ -394,7 +410,10 @@ public final class ReadingSessionController: ObservableObject {
                         : "读音已保存为新的本地版本"
                 }
             } catch is CancellationError {
-                await MainActor.run { [weak self] in self?.isGenerating = false }
+                await MainActor.run { [weak self] in
+                    guard let self, self.revision == token else { return }
+                    self.isGenerating = false
+                }
             } catch {
                 await MainActor.run { [weak self] in
                     guard let self, self.revision == token else { return }
@@ -407,7 +426,11 @@ public final class ReadingSessionController: ObservableObject {
 
     public func adopt(versionID: UUID) {
         guard let version = availableVersions.first(where: { $0.record.id == versionID }) else { return }
+        revision &+= 1
         let token = revision
+        loadTask?.cancel()
+        isGenerating = false
+        noSelectionSource = nil
         selectedVersion = version
         rebuildProjection()
         persistAdoption(versionID: versionID, token: token)
@@ -460,9 +483,17 @@ public final class ReadingSessionController: ObservableObject {
         let entry = try ReadingRubyCorrection.entry(surface: surface, reading: reading, trackStableKey: trackKey)
         revision &+= 1
         let token = revision
-        generationTask?.cancel()
+        let pendingGeneration = generationTask
+        generationTask = nil
+        pendingGeneration?.cancel()
         loadTask?.cancel()
         isGenerating = false
+        if let pendingGeneration {
+            await pendingGeneration.value
+        }
+        guard revision == token, sourceLyricsVersionID == lyricsVersionID else {
+            throw ReadingRepositoryError.sourceContentMismatch
+        }
         let parentID = selectedVersion?.record.id
         let edited = try await Task.detached(priority: .userInitiated) {
             try ReadingRubyCorrection.lines(visibleLines, entry: entry)
@@ -494,7 +525,43 @@ public final class ReadingSessionController: ObservableObject {
         message = "已保存这首歌的人工读音版本"
     }
 
-    public func saveManualEdit(_ version: StoredReadingVersion, readingLines: [ReadingLineResult]) {
+    public func saveManualEdit(_ version: StoredReadingVersion, readingLines: [ReadingLineResult]) async throws {
+        guard let lyricsVersionID = sourceLyricsVersionID,
+              let sourceHash = sourceContentHash,
+              version.record.lyricsVersionID == lyricsVersionID,
+              version.record.sourceContentHash == sourceHash else {
+            throw ReadingRepositoryError.sourceContentMismatch
+        }
+
+        // An explicit edit supersedes an in-flight automatic generation. Wait
+        // for its persistence call to leave the repository before saving and
+        // adopting the user's child version, so a late auto-adoption cannot
+        // replace this selection afterward.
+        revision &+= 1
+        let token = revision
+        let pendingGeneration = generationTask
+        generationTask = nil
+        pendingGeneration?.cancel()
+        loadTask?.cancel()
+        isGenerating = false
+        if let pendingGeneration {
+            await pendingGeneration.value
+        }
+        guard revision == token,
+              sourceLyricsVersionID == lyricsVersionID,
+              sourceContentHash == sourceHash else {
+            throw ReadingRepositoryError.sourceContentMismatch
+        }
+
+        let parentLines = Dictionary(uniqueKeysWithValues: version.lines.map { ($0.lineIndex, $0) })
+        let reconciledLines = readingLines.map { line -> ReadingLineResult in
+            guard let parent = parentLines[line.lineIndex] else { return line }
+            // The editor supplies no positional edit map. An unchanged line
+            // keeps its exact saved tokens; any changed whole-line string
+            // invalidates that row's tokens rather than guessing which repeated
+            // word or grapheme they belong to.
+            return line.replacingTokens(line.readingText == parent.readingText ? parent.tokens : [])
+        }
         let now = Date()
         let record = ReadingVersionRecord(
             id: UUID(),
@@ -516,20 +583,24 @@ public final class ReadingSessionController: ObservableObject {
             warningMetadata: [],
             contextHash: version.record.contextHash
         )
-        let token = revision
-        Task { [weak self, repository] in
-            do {
-                let saved = try await repository.saveReadingVersion(ReadingVersionSaveRequest(record: record, lines: readingLines))
-                try await repository.adoptReadingVersion(versionID: saved.record.id)
-                await MainActor.run { [weak self] in
-                    guard let self, self.revision == token else { return }
-                    self.availableVersions.insert(saved, at: 0)
-                    self.selectedVersion = saved
-                    self.rebuildProjection()
-                }
-            } catch {
-                await MainActor.run { [weak self] in self?.message = "人工读音保存失败" }
+        do {
+            let saved = try await repository.saveReadingVersion(ReadingVersionSaveRequest(record: record, lines: reconciledLines))
+            try await repository.adoptReadingVersion(versionID: saved.record.id)
+            guard revision == token,
+                  sourceLyricsVersionID == lyricsVersionID,
+                  sourceContentHash == sourceHash else { return }
+            let adopted = StoredReadingVersion(record: saved.record.with(isCurrent: true), lines: saved.lines)
+            availableVersions = availableVersions.map { existing in
+                guard existing.record.representationID == adopted.record.representationID else { return existing }
+                return StoredReadingVersion(record: existing.record.with(isCurrent: false), lines: existing.lines)
             }
+            availableVersions.insert(adopted, at: 0)
+            selectedVersion = adopted
+            rebuildProjection()
+            message = "人工读音已保存"
+        } catch {
+            if revision == token { message = "人工读音保存失败：\(error.localizedDescription)" }
+            throw error
         }
     }
 
@@ -538,8 +609,16 @@ public final class ReadingSessionController: ObservableObject {
     }
 
     private func persistAdoption(versionID: UUID, token: UInt64) {
+        let pendingGeneration = generationTask
+        generationTask = nil
+        pendingGeneration?.cancel()
+        isGenerating = false
         Task { [weak self, repository] in
             do {
+                if let pendingGeneration {
+                    await pendingGeneration.value
+                }
+                guard let self, self.revision == token else { return }
                 try await repository.adoptReadingVersion(versionID: versionID)
                 await MainActor.run { [weak self] in
                     guard let self, self.revision == token else { return }
@@ -608,6 +687,7 @@ public final class ReadingSessionController: ObservableObject {
             sourceContentHash: sourceContentHash,
             readingVersionID: selectedVersion?.record.id,
             representationID: selectedVersion?.record.representationID,
+            sourceKind: selectedVersion?.record.sourceKind,
             lines: selectedVersion?.lines ?? [],
             isNoSelection: noSelectionSource != nil
         )

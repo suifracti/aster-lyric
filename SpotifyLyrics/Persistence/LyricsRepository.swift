@@ -31,6 +31,8 @@ public enum LyricsPersistenceSaveDisposition: Equatable, Sendable {
     case inserted
     case duplicate
     case skippedLocked
+    /// An explicit adoption found a lock which requires a user confirmation.
+    case lockedConflict
     case rejected(String)
 }
 
@@ -38,15 +40,21 @@ public struct LyricsPersistenceSaveResult: Equatable, Sendable {
     public let versionID: UUID?
     public let disposition: LyricsPersistenceSaveDisposition
     public let sourceContentHash: String?
+    public let timingVersionID: UUID?
+    public let conflictingLockedVersionIDs: [UUID]
 
     public init(
         versionID: UUID?,
         disposition: LyricsPersistenceSaveDisposition,
-        sourceContentHash: String? = nil
+        sourceContentHash: String? = nil,
+        timingVersionID: UUID? = nil,
+        conflictingLockedVersionIDs: [UUID] = []
     ) {
         self.versionID = versionID
         self.disposition = disposition
         self.sourceContentHash = sourceContentHash
+        self.timingVersionID = timingVersionID
+        self.conflictingLockedVersionIDs = conflictingLockedVersionIDs
     }
 }
 
@@ -55,17 +63,20 @@ public struct StoredLyricsDocument: Equatable, Sendable {
     public let versionID: UUID?
     public let sourceContentHash: String?
     public let alignmentProvenanceAvailability: AlignmentProvenanceAvailability
+    public let isUserProtected: Bool
 
     public init(
         document: LyricsDocument,
         versionID: UUID?,
         sourceContentHash: String?,
-        alignmentProvenanceAvailability: AlignmentProvenanceAvailability = .unavailable
+        alignmentProvenanceAvailability: AlignmentProvenanceAvailability = .unavailable,
+        isUserProtected: Bool = false
     ) {
         self.document = document
         self.versionID = versionID
         self.sourceContentHash = sourceContentHash
         self.alignmentProvenanceAvailability = alignmentProvenanceAvailability
+        self.isUserProtected = isUserProtected
     }
 }
 
@@ -129,8 +140,28 @@ public struct LyricsDatabaseStats: Equatable, Sendable {
 }
 
 /// Persistence boundary used by the session layer. Implementations must be
+/// Resolves only scopes backed by an already-persisted lyrics version. A nil
+/// result means the track/version pair is unknown or belongs to another track.
+public protocol LyricsOffsetScopeResolving: Sendable {
+    func canonicalStableKeyForSavedLyricsVersion(
+        trackStableKey: String,
+        versionID: UUID
+    ) async throws -> String?
+}
+
+public extension LyricsOffsetScopeResolving {
+    func canonicalStableKeyForSavedLyricsVersion(
+        trackStableKey: String,
+        versionID: UUID
+    ) async throws -> String? {
+        _ = trackStableKey
+        _ = versionID
+        return nil
+    }
+}
+
 /// Sendable and perform blocking storage work away from MainActor.
-public protocol LyricsRepository: Sendable {
+public protocol LyricsRepository: Sendable, LyricsOffsetScopeResolving {
     func prepare() async throws
     /// Returns persisted aliases for query planning. This is read-only and
     /// never creates a Track or LyricsVersion.
@@ -139,6 +170,8 @@ public protocol LyricsRepository: Sendable {
     /// LyricsVersion. Implementations may use the default no-op for tests or
     /// repositories that do not persist track metadata yet.
     func saveTrackMetadata(_ metadata: TrackMetadata) async throws
+    func isLyricsSelectionRevoked(identity: TrackIdentity) async throws -> Bool
+    func revokeLyricsVersionSelection(trackStableKey: String, lyricsVersionID: UUID) async throws
     func loadBest(track: Track, identity: TrackIdentity) async throws -> LyricsDocument?
     func loadBestStored(track: Track, identity: TrackIdentity) async throws -> StoredLyricsDocument?
     func upsertListeningHistory(_ entry: ListeningHistoryEntry) async throws
@@ -150,6 +183,22 @@ public protocol LyricsRepository: Sendable {
         identity: TrackIdentity,
         document: LyricsDocument
     ) async throws -> LyricsPersistenceSaveResult
+    /// A SafeMatcher automatic decision is separate from provider confidence.
+    /// Keeps ordinary cache-save thresholds unchanged.
+    func saveAutomaticallySelected(track: Track, identity: TrackIdentity, document: LyricsDocument, decision: LyricsAutomaticSelectionEvidence) async throws -> LyricsPersistenceSaveResult
+    /// Persists a user-confirmed candidate and makes it the preferred version
+    /// in the same transaction. Passing confirmed lock IDs is an explicit
+    /// approval to select over those versions; newly appearing locks are
+    /// returned as a fresh conflict.
+    func registerManualAdoptionRequest(identity: TrackIdentity, requestID: UUID) async throws
+    func cancelManualAdoptionRequest(identity: TrackIdentity, requestID: UUID) async throws
+    func saveAndAdoptManually(
+        track: Track,
+        identity: TrackIdentity,
+        document: LyricsDocument,
+        requestID: UUID,
+        confirmedLockedVersionIDs: [UUID]?
+    ) async throws -> LyricsPersistenceSaveResult
     func saveAlignedVersion(_ request: AlignmentPersistenceRequest) async throws -> LyricsPersistenceSaveResult
     func deleteLyricsVersion(versionID: UUID) async throws
     func markLocked(versionID: UUID, locked: Bool) async throws
@@ -159,6 +208,13 @@ public protocol LyricsRepository: Sendable {
 }
 
 public extension LyricsRepository {
+    func isLyricsSelectionRevoked(identity: TrackIdentity) async throws -> Bool { false }
+    func revokeLyricsVersionSelection(trackStableKey: String, lyricsVersionID: UUID) async throws {
+        throw LyricsRepositoryError.unavailable("当前仓库不支持持久取消采用")
+    }
+    func saveAutomaticallySelected(track: Track, identity: TrackIdentity, document: LyricsDocument, decision: LyricsAutomaticSelectionEvidence) async throws -> LyricsPersistenceSaveResult {
+        try await save(track: track, identity: identity, document: document)
+    }
     func loadAliases(stableKey: String) async throws -> [TrackAlias] {
         _ = stableKey
         return []
@@ -167,6 +223,34 @@ public extension LyricsRepository {
     func saveAlignedVersion(_ request: AlignmentPersistenceRequest) async throws -> LyricsPersistenceSaveResult {
         _ = request
         throw LyricsRepositoryError.unavailable("当前歌词仓库不支持自动排轴版本")
+    }
+
+    func saveAndAdoptManually(
+        track: Track,
+        identity: TrackIdentity,
+        document: LyricsDocument,
+        requestID: UUID,
+        confirmedLockedVersionIDs: [UUID]?
+    ) async throws -> LyricsPersistenceSaveResult {
+        _ = track
+        _ = identity
+        _ = document
+        _ = requestID
+        _ = confirmedLockedVersionIDs
+        return LyricsPersistenceSaveResult(
+            versionID: nil,
+            disposition: .rejected("当前歌词仓库不支持持久采用")
+        )
+    }
+
+    func registerManualAdoptionRequest(identity: TrackIdentity, requestID: UUID) async throws {
+        _ = identity
+        _ = requestID
+    }
+
+    func cancelManualAdoptionRequest(identity: TrackIdentity, requestID: UUID) async throws {
+        _ = identity
+        _ = requestID
     }
 
     func alignmentProvenanceAvailability(versionID: UUID) async -> AlignmentProvenanceAvailability {

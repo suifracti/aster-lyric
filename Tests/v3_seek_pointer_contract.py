@@ -21,6 +21,9 @@ precondition(Pointer.pointerPosition(x: -40, width: 300, duration: 240) == 0)
 precondition(Pointer.pointerPosition(x: 360, width: 300, duration: 240) == 240)
 precondition(Pointer.pointerPosition(x: 10, width: 0, duration: 240) == 0)
 precondition(Pointer.pointerPosition(x: .nan, width: 300, duration: 240) == 0)
+for _ in [0.0, 2.0, -2.0] {
+    precondition(Pointer.pointerPosition(x: 150, width: 300, duration: 240) == 120)
+}
 // Sparse event stream: only down and up. The up coordinate must be enough
 // to derive the new seek, in either direction, with no dragged samples.
 let forward = [60.0, 270.0].map { Pointer.pointerPosition(x: $0, width: 300, duration: 240) }

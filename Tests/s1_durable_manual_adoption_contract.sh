@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+TMP_DIR="$(mktemp -d /tmp/spotifylyrics-s1-adoption.XXXXXX)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+cp "$ROOT_DIR/Tests/s1_durable_manual_adoption_contract.swift" "$TMP_DIR/main.swift"
+
+cat > "$TMP_DIR/logger.swift" <<'SWIFT'
+import Foundation
+enum LyricsE2ELog { static func log(_ message: String) { print(message) } }
+SWIFT
+swiftc -D DEBUG -parse-as-library \
+  "$ROOT_DIR/SpotifyLyrics/Models/Models.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/TrackIdentity.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsModels.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/AlignmentModels.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/TrackAlias.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/TrackMetadata.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/TrackTextNormalizer.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/JapaneseRomanizer.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/JapaneseReadingPipeline.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/JapaneseKanaGenerator.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsMatcher.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsSafeMatcher.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsQueryPlanner.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsRecoveryModels.swift" \
+  "$TMP_DIR/logger.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsSearchManager.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/CompositeLyricsProvider.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/LRCParser.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/PersonalLyricsLibraryModels.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/ListeningHistoryModels.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/ListeningStatisticsModels.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/LocalAlignedLyricsStore.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Search/SongSearchModels.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Search/TrackSearchModels.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Search/LocalLyricsIndex.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Services/LyricsSessionController.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Editor/LyricsEditorModels.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Editor/LyricsTimelineValidator.swift" \
+  "$ROOT_DIR/SpotifyLyrics/AI/AITranslationModels.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Persistence/DatabaseModels.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/ReadingModels.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Persistence/DatabaseMigrator.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Persistence/LyricsRepository.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Persistence/AlignmentProvenanceStore.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsLanguageGate.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Persistence/LyricsPersistenceMapper.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Persistence/TranslationRepository.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Persistence/LyricsEditingRepository.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Persistence/SQLiteLyricsRepository.swift" \
+  "$ROOT_DIR/SpotifyLyrics/DebugDatabaseSafety.swift" \
+  "$TMP_DIR/main.swift" \
+  -o "$TMP_DIR/s1-durable-manual-adoption-contract"
+
+if [[ "${1:-all}" == "revoke-batch" ]]; then
+  for scenario in revoke-selection revoke-rollback revoke-schema revoke-progress selection-read-fails auto-search-disabled-loads-selection locked-current selection-throws timing-throws invalid-content track-switch track-return same-track-order; do
+    "$TMP_DIR/s1-durable-manual-adoption-contract" "$scenario"
+  done
+else
+  "$TMP_DIR/s1-durable-manual-adoption-contract" "${1:-all}"
+fi

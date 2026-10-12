@@ -267,9 +267,11 @@ public enum TimedTextComposer {
         var lastEnd = currentText.startIndex
 
         for span in timedSpans {
+            let endOffset = span.utf16Start.addingReportingOverflow(span.utf16Length)
             guard span.utf16Start >= 0,
                   span.utf16Length >= 0,
-                  span.utf16Start + span.utf16Length <= utf16.count else {
+                  !endOffset.overflow,
+                  endOffset.partialValue <= utf16.count else {
                 return nil
             }
             guard let startU16 = utf16.index(utf16.startIndex, offsetBy: span.utf16Start, limitedBy: utf16.endIndex),
@@ -1166,17 +1168,61 @@ public struct LyricsPresentationClock: Equatable, Sendable {
         self.presentationOffset = min(10, max(-10, presentationOffset.isFinite ? presentationOffset : 0))
     }
 
-    /// Pure monotonic extrapolation of playback position.
+    /// Raw playback-domain extrapolation without the lyrics presentation offset.
     /// Invariant 1: If isPlaying is false, returns authoritativePosition (frozen).
     /// Invariant 2: If isPlaying is true, advances linearly by (now - receivedAtMonotonicTime).
     /// Invariant 3: Clamped to [0, trackDuration] when duration is positive.
-    public func presentationTime(at monotonicNow: TimeInterval) -> TimeInterval {
-        let elapsed = isPlaying ? max(0, monotonicNow - receivedAtMonotonicTime) : 0
-        let estimated = authoritativePosition + elapsed + presentationOffset
+    public func playbackTime(at monotonicNow: TimeInterval) -> TimeInterval {
+        let estimated = estimatedPlaybackTime(at: monotonicNow)
         if trackDuration > 0 {
             return min(trackDuration, max(0, estimated))
         }
         return max(0, estimated)
+    }
+
+    /// Returns an equivalent clock with a different lyric-only offset.
+    /// The playback anchor and transport projection remain unchanged.
+    public func withPresentationOffset(_ offset: TimeInterval) -> LyricsPresentationClock {
+        LyricsPresentationClock(
+            authoritativePosition: authoritativePosition,
+            receivedAtMonotonicTime: receivedAtMonotonicTime,
+            isPlaying: isPlaying,
+            trackID: trackID,
+            trackDuration: trackDuration,
+            presentationOffset: offset
+        )
+    }
+
+    /// Lyric presentation time: raw playback estimate plus the lyric-only
+    /// offset, clamped only after the offset is applied.
+    public func presentationTime(at monotonicNow: TimeInterval) -> TimeInterval {
+        let estimated = estimatedPlaybackTime(at: monotonicNow) + presentationOffset
+        if trackDuration > 0 {
+            return min(trackDuration, max(0, estimated))
+        }
+        return max(0, estimated)
+    }
+
+    private func estimatedPlaybackTime(at monotonicNow: TimeInterval) -> TimeInterval {
+        let elapsed = isPlaying ? max(0, monotonicNow - receivedAtMonotonicTime) : 0
+        return authoritativePosition + elapsed
+    }
+}
+
+/// Avoid publishing identical timer samples while preserving every real
+/// playback-time change. PlaybackState uses this only for periodic tick
+/// updates; seek, reset, and track-transition writes remain event-driven.
+public enum PlaybackTickTimeUpdatePolicy {
+    public static func shouldPublish(currentTime: TimeInterval, nextTime: TimeInterval) -> Bool {
+        currentTime != nextTime
+    }
+
+    public static func shouldFinishMockPlayback(
+        isPlaying: Bool,
+        currentTime: TimeInterval,
+        duration: TimeInterval
+    ) -> Bool {
+        isPlaying && currentTime >= duration
     }
 }
 
@@ -1279,8 +1325,55 @@ public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
         self.readingSurfaceText = readingSurfaceText
     }
 
+    /// Copies this line while preserving every current model field.
+    public func replacingID(_ id: UUID) -> LyricLine {
+        LyricLine(
+            id: id,
+            timestamp: timestamp,
+            originalText: originalText,
+            endTime: endTime,
+            translationText: translationText,
+            romajiText: romajiText,
+            kanaText: kanaText,
+            rubyTokens: rubyTokens,
+            performerID: performerID,
+            timedSpans: timedSpans,
+            readingRepresentationID: readingRepresentationID,
+            readingSurfaceText: readingSurfaceText
+        )
+    }
+
     public var hasTimedSpans: Bool {
         guard let timedSpans, !timedSpans.isEmpty else { return false }
+        return true
+    }
+
+    /// Whether this line carries a complete, text-aligned span sequence that
+    /// is safe to rank as real word timing. `lineStartIsMeaningful` must be
+    /// false for legacy/partial rows whose start time is only a placeholder.
+    public func hasValidTimedSpans(lineStartIsMeaningful: Bool = true) -> Bool {
+        guard let timedSpans, !timedSpans.isEmpty,
+              resolvedGraphemeSpans()?.count == timedSpans.count else { return false }
+
+        var previousUTF16End = 0
+        var previousStartTime: TimeInterval?
+        for span in timedSpans {
+            let endOffset = span.utf16Start.addingReportingOverflow(span.utf16Length)
+            guard span.utf16Start >= previousUTF16End,
+                  span.utf16Length > 0,
+                  !endOffset.overflow,
+                  span.startTime.isFinite,
+                  span.endTime.isFinite,
+                  span.startTime >= 0,
+                  span.endTime >= span.startTime,
+                  !lineStartIsMeaningful || (timestamp.isFinite && timestamp >= 0 && span.startTime >= timestamp),
+                  endTime.map({ $0.isFinite && $0 >= 0 && span.endTime <= $0 }) ?? true,
+                  previousStartTime.map({ span.startTime >= $0 }) ?? true else {
+                return false
+            }
+            previousUTF16End = endOffset.partialValue
+            previousStartTime = span.startTime
+        }
         return true
     }
 
@@ -1293,9 +1386,11 @@ public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
 
         let utf16 = originalText.utf16
         for span in timedSpans {
+            let endOffset = span.utf16Start.addingReportingOverflow(span.utf16Length)
             guard span.utf16Start >= 0,
                   span.utf16Length >= 0,
-                  span.utf16Start + span.utf16Length <= utf16.count else {
+                  !endOffset.overflow,
+                  endOffset.partialValue <= utf16.count else {
                 return nil
             }
             guard let startU16 = utf16.index(utf16.startIndex, offsetBy: span.utf16Start, limitedBy: utf16.endIndex),

@@ -193,6 +193,9 @@ private struct GeneralSettingsView: View {
                         Text(layout.title).tag(layout.rawValue)
                     }
                 }
+                Text("Direction D 为实验布局；歌曲工作台的部分信息与操作尚未接入。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Picker("经典伴随呈现", selection: $settings.classicCompanionPresentationRawValue) {
                     ForEach(ClassicCompanionPresentation.allCases) { presentation in
                         Text(presentation.title).tag(presentation.rawValue)
@@ -263,7 +266,7 @@ private struct GeneralSettingsView: View {
 
             Section("自动排轴") {
                 Toggle("自动为未排轴歌词生成时间轴", isOn: $settings.automaticAlignmentEnabled)
-                Text("播放未排轴歌曲时，Lyric Island 会在后台尝试生成时间轴。默认关闭；开启后无需点击「边听边排轴」。")
+                Text("实验功能，默认关闭。自动音频捕获仅支持已就绪的 Spotify Desktop；Apple Music、未知来源不会启动。捕获音频临时写入本机 WAV 分段，任务结束后清理。选择本地音频排轴不依赖播放来源。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

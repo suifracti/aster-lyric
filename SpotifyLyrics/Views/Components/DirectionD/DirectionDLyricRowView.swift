@@ -35,6 +35,8 @@ public struct DirectionDLineContextMenuView: View {
                 .cornerRadius(6)
             }
             .buttonStyle(.plain)
+            .disabled(true)
+            .help("Direction D 暂不支持逐行修正译文；请在歌曲操作中管理翻译版本。")
 
             Divider()
                 .frame(height: 14)
@@ -54,6 +56,8 @@ public struct DirectionDLineContextMenuView: View {
                 .cornerRadius(6)
             }
             .buttonStyle(.plain)
+            .disabled(true)
+            .help("Direction D 暂不支持逐行调整注音；请在歌曲操作中管理读音版本。")
 
             Divider()
                 .frame(height: 14)
@@ -73,6 +77,8 @@ public struct DirectionDLineContextMenuView: View {
                 .cornerRadius(6)
             }
             .buttonStyle(.plain)
+            .disabled(true)
+            .help("Direction D 暂不支持逐行校准时间；可在歌词编辑器中编辑时间轴。")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -97,7 +103,6 @@ public struct DirectionDLyricRowView: View {
     public let distance: Int
     public let policy: DirectionDLyricsPolicy
     public let availableWidth: CGFloat
-    public let onContextAction: () -> Void
 
     @State private var isHovered = false
     @State private var isContextOpen = false
@@ -110,15 +115,13 @@ public struct DirectionDLyricRowView: View {
         isActive: Bool,
         distance: Int,
         policy: DirectionDLyricsPolicy = DirectionDLyricsPolicy(),
-        availableWidth: CGFloat = DirectionDDesignTokens.Spacing.windowWide,
-        onContextAction: @escaping () -> Void = {}
+        availableWidth: CGFloat = DirectionDDesignTokens.Spacing.windowWide
     ) {
         self.line = line
         self.isActive = isActive
         self.distance = distance
         self.policy = policy
         self.availableWidth = availableWidth
-        self.onContextAction = onContextAction
     }
 
     public var body: some View {
@@ -165,7 +168,7 @@ public struct DirectionDLyricRowView: View {
 
             // Light Context Trigger Dot - Appears softly on hover for current line
             if isActive && (isHovered || isContextOpen) {
-                Button(action: { isContextOpen.toggle(); onContextAction() }) {
+                Button(action: { isContextOpen.toggle() }) {
                     Image(systemName: "ellipsis.circle.fill")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(Color.white.opacity(0.8))

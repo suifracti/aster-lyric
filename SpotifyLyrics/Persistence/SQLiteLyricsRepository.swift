@@ -10,7 +10,16 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     private var database: OpaquePointer?
     private var prepared = false
     private var redirectResolver: TrackIdentityRedirectResolver?
+    private var manualAdoptionRequestIDs: [String: UUID] = [:]
     private let alignmentProvenanceStore: AlignmentProvenanceStore
+
+#if DEBUG
+    // Contract-only synchronous checkpoints; no environment-driven production hook.
+    private var translationCompletionCheckpoint: (@Sendable (String) -> Void)?
+    public func setTranslationCompletionCheckpoint(_ checkpoint: (@Sendable (String) -> Void)?) {
+        translationCompletionCheckpoint = checkpoint
+    }
+#endif
 
     private static let transientDestructor = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
@@ -31,6 +40,10 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         databaseURL: URL = SQLiteLyricsRepository.defaultDatabaseURL,
         alignmentProvenanceDirectory: URL = AlignmentProvenanceStore.defaultDirectory
     ) {
+#if DEBUG
+        DebugAcceptanceDataIsolation.requireStorage(databaseURL)
+        DebugAcceptanceDataIsolation.requireStorage(alignmentProvenanceDirectory)
+#endif
         self.databaseURL = databaseURL
         self.alignmentProvenanceStore = AlignmentProvenanceStore(directory: alignmentProvenanceDirectory)
     }
@@ -74,6 +87,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             guard try scalarInt("PRAGMA foreign_keys;") == 1 else {
                 throw LyricsRepositoryError.sqlite("foreign_keys 未启用")
             }
+            // Request reservations must commit durably before the engine runs.
+            try execute("PRAGMA synchronous=FULL;")
             let existingVersion = try scalarInt("PRAGMA user_version;")
             // Existing user databases follow the same forward migration path as
             // fresh installs. A consistent snapshot is required before any upgrade.
@@ -105,6 +120,58 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         }
     }
 
+    public func isLyricsSelectionRevoked(identity: TrackIdentity) async throws -> Bool {
+        try ensurePrepared()
+        return try hasRevokedLyricsSelection(stableKey: identity.stableKey)
+    }
+
+    private func hasRevokedLyricsSelection(stableKey: String) throws -> Bool {
+        let family = try resolvedIdentityFamily(stableKey: stableKey)
+        let query = try prepare("SELECT 1 FROM lyrics_selection_revocations WHERE track_stable_key IN (\(placeholders(count: family.count))) LIMIT 1;")
+        defer { sqlite3_finalize(query) }
+        for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: query) }
+        let result = sqlite3_step(query)
+        guard result == SQLITE_ROW || result == SQLITE_DONE else { throw lastError() }
+        return result == SQLITE_ROW
+    }
+
+    /// Revoke the binding, never the asset. One transaction prevents either
+    /// preferred fallback or a pending manual-adoption token from reviving it.
+    public func revokeLyricsVersionSelection(trackStableKey: String, lyricsVersionID: UUID) async throws {
+        try ensurePrepared()
+        let family = try resolvedIdentityFamily(stableKey: trackStableKey)
+        let canonical = try resolvedCanonicalStableKey(trackStableKey)
+        guard let version = try fetchLyricsVersion(versionID: lyricsVersionID), family.contains(version.trackStableKey) else {
+            throw LyricsEditingRepositoryError.identityMismatch
+        }
+        try withTransaction {
+            let preferred = try prepare("SELECT id FROM lyrics_versions WHERE track_stable_key IN (\(placeholders(count: family.count))) AND is_preferred = 1;")
+            defer { sqlite3_finalize(preferred) }
+            for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: preferred) }
+            var step = sqlite3_step(preferred)
+            while step == SQLITE_ROW {
+                guard columnText(preferred, index: 0) == lyricsVersionID.uuidString else {
+                    throw LyricsRepositoryError.invalidData("当前采用版本已变化，请刷新后再取消")
+                }
+                step = sqlite3_step(preferred)
+            }
+            guard step == SQLITE_DONE else { throw lastError() }
+            let clear = try prepare("UPDATE lyrics_versions SET is_preferred = 0 WHERE track_stable_key IN (\(placeholders(count: family.count)));")
+            defer { sqlite3_finalize(clear) }
+            for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: clear) }
+            try stepDone(clear)
+            let revoke = try prepare("INSERT INTO lyrics_selection_revocations(track_stable_key, revoked_version_id, updated_at) VALUES (?, ?, ?) ON CONFLICT(track_stable_key) DO UPDATE SET revoked_version_id=excluded.revoked_version_id, updated_at=excluded.updated_at;")
+            defer { sqlite3_finalize(revoke) }
+            try bindText(canonical, at: 1, to: revoke)
+            try bindText(lyricsVersionID.uuidString, at: 2, to: revoke)
+            try bindDouble(Date().timeIntervalSince1970, at: 3, to: revoke)
+            try stepDone(revoke)
+        }
+        for key in Array(manualAdoptionRequestIDs.keys) where family.contains((try? resolvedCanonicalStableKey(key)) ?? key) {
+            manualAdoptionRequestIDs.removeValue(forKey: key)
+        }
+    }
+
     public func loadBest(track: Track, identity: TrackIdentity) async throws -> LyricsDocument? {
         try await loadBestStored(track: track, identity: identity)?.document
     }
@@ -129,18 +196,18 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             isSynchronized: version.isSynced,
             lines: lines
         )
-        let timingRecord = try? fetchBestTimingVersion(
-            lyricsVersionID: version.id,
-            sourceContentHash: sourceContentHash
-        )
-        let timingMap = timingRecord.flatMap { DocumentTimingPayload.decode($0.spansPayload) }
-
         var document = LyricsPersistenceMapper.document(
             identity: identity,
             track: trackRecord,
             version: version,
             lines: lines
         )
+        let timingRecord = try fetchBestTimingVersion(
+            lyricsVersionID: version.id,
+            sourceContentHash: sourceContentHash,
+            document: document
+        )
+        let timingMap = timingRecord.flatMap { DocumentTimingPayload.decode($0.spansPayload) }
         if let timingMap, !timingMap.isEmpty {
             var updatedLines = document.lines
             for i in updatedLines.indices {
@@ -168,13 +235,20 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             )
         }
 
+        let preferenceQuery = try prepare("SELECT is_preferred FROM lyrics_versions WHERE id = ?;")
+        defer { sqlite3_finalize(preferenceQuery) }
+        try bindText(version.id.uuidString, at: 1, to: preferenceQuery)
+        guard sqlite3_step(preferenceQuery) == SQLITE_ROW else { throw lastError() }
+        let isPreferred = sqlite3_column_int(preferenceQuery, 0) != 0
         return StoredLyricsDocument(
             document: document,
             versionID: version.id,
             sourceContentHash: sourceContentHash,
             alignmentProvenanceAvailability: version.source == DatabaseSourceIdentifier.identifier(for: .automaticAlignment)
                 ? alignmentProvenanceStore.availability(for: version.id)
-                : .unavailable
+                : .unavailable,
+            isUserProtected: isPreferred || version.isLocked || version.isManuallyEdited
+                || ["local", "manual", "manualEdit", "manualImport", "manualCreate"].contains(version.source)
         )
     }
 
@@ -449,6 +523,18 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         identity: TrackIdentity,
         document: LyricsDocument
     ) throws -> LyricsPersistenceSaveResult {
+        try saveValidated(track: track, identity: identity, document: document, automaticSelection: false)
+    }
+
+    public func saveAutomaticallySelected(track: Track, identity: TrackIdentity, document: LyricsDocument, decision: LyricsAutomaticSelectionEvidence) async throws -> LyricsPersistenceSaveResult {
+        guard (decision.tier == "autoHigh" || decision.tier == "autoMedium"), !decision.hardReject, !decision.versionConflict, decision.identity == identity,
+              TrackIdentity(track: track) == identity, document.confidence.isFinite, (0...1).contains(document.confidence) else {
+            return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("自动选择缺少有效匹配证据"))
+        }
+        return try saveValidated(track: track, identity: identity, document: document, automaticSelection: true)
+    }
+
+    private func saveValidated(track: Track, identity: TrackIdentity, document: LyricsDocument, automaticSelection: Bool) throws -> LyricsPersistenceSaveResult {
         try ensurePrepared()
 
         guard document.identity == identity else {
@@ -466,7 +552,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         guard document.source != .mock else {
             return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("Mock 歌词不写入"))
         }
-        guard LyricsMatcher.isHighConfidence(document.confidence) else {
+        guard automaticSelection || LyricsMatcher.isHighConfidence(document.confidence) else {
             return LyricsPersistenceSaveResult(
                 versionID: nil,
                 disposition: .rejected("低置信度歌词不写入")
@@ -474,6 +560,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         }
 
         let canonicalKey = try resolvedCanonicalStableKey(identity.stableKey)
+        guard !Task.isCancelled, !(try hasRevokedLyricsSelection(stableKey: canonicalKey)) else {
+            return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("已取消采用，不自动恢复歌词"))
+        }
         let now = Date()
         let rawTrackRecord = LyricsPersistenceMapper.trackRecord(track: track, identity: identity, now: now)
         let trackRecord = canonicalTrackRecord(rawTrackRecord, stableKey: canonicalKey)
@@ -528,6 +617,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             }
 
             try insertVersion(versionRecord)
+            if automaticSelection && document.isSynchronized {
+                let prefer = try prepare("UPDATE lyrics_versions SET is_preferred = 1 WHERE id = ? AND NOT EXISTS (SELECT 1 FROM lyrics_versions WHERE track_stable_key = ? AND (is_preferred = 1 OR is_locked = 1 OR is_manually_edited = 1));")
+                defer { sqlite3_finalize(prefer) }
+                try bindText(versionID.uuidString, at: 1, to: prefer)
+                try bindText(canonicalKey, at: 2, to: prefer)
+                try stepDone(prefer)
+            }
             for line in lines {
                 try insertLine(line)
             }
@@ -544,6 +640,170 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 sourceContentHash: sourceContentHash
             )
         }
+    }
+
+    /// Persists an explicit user choice. Automatic `save` deliberately keeps
+    /// its high-confidence gate; only this user-intent path may save a lower
+    /// provider confidence, and it commits the preferred selection together
+    /// with the lyric rows and any timing attachment.
+    public func saveAndAdoptManually(
+        track: Track,
+        identity: TrackIdentity,
+        document: LyricsDocument,
+        requestID: UUID,
+        confirmedLockedVersionIDs: [UUID]?
+    ) async throws -> LyricsPersistenceSaveResult {
+        try ensurePrepared()
+        guard document.identity == identity,
+              TrackIdentity(track: track) == identity else {
+            return LyricsPersistenceSaveResult(
+                versionID: nil,
+                disposition: .rejected("歌词身份与当前歌曲不一致")
+            )
+        }
+        guard !document.lines.isEmpty,
+              document.lines.contains(where: {
+                  !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              }) else {
+            return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("空歌词不写入"))
+        }
+        guard document.source != .mock else {
+            return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("Mock 歌词不写入"))
+        }
+        guard document.confidence.isFinite, (0.0...1.0).contains(document.confidence) else {
+            return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("歌词置信度无效"))
+        }
+        if let declaredSpotifyID = document.spotifyTrackID,
+           !declaredSpotifyID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard let normalizedID = TrackIdentity.canonicalSpotifyTrackID(declaredSpotifyID) else {
+                return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("候选 Spotify 歌曲身份无效"))
+            }
+            if let expectedID = identity.spotifyTrackID, normalizedID != expectedID {
+                return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("候选 Spotify 歌曲身份与当前歌曲不一致"))
+            }
+        }
+        if let declaredISRC = document.isrc,
+           let expectedISRC = identity.isrc,
+           TrackIdentity.normalizeIdentifier(declaredISRC) != expectedISRC {
+            return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("候选 ISRC 与当前歌曲不一致"))
+        }
+        guard !Task.isCancelled else { throw CancellationError() }
+        guard manualAdoptionRequestIDs[identity.stableKey] == requestID else {
+            return LyricsPersistenceSaveResult(
+                versionID: nil,
+                disposition: .rejected("歌词采用请求已被更新或取消")
+            )
+        }
+
+        let canonicalKey = try resolvedCanonicalStableKey(identity.stableKey)
+        let now = Date()
+        let trackRecord = canonicalTrackRecord(
+            LyricsPersistenceMapper.trackRecord(track: track, identity: identity, now: now),
+            stableKey: canonicalKey
+        )
+        let rawVersionRecord = LyricsPersistenceMapper.versionRecord(
+            document: document,
+            identity: identity,
+            versionID: UUID(),
+            now: now
+        )
+        let versionRecord = canonicalVersionRecord(rawVersionRecord, stableKey: canonicalKey)
+        let aliases = LyricsPersistenceMapper.aliasRecords(
+            track: track,
+            identity: identity,
+            document: document,
+            now: now
+        ).map { canonicalAliasRecord($0, stableKey: canonicalKey) }
+        let lines = LyricsPersistenceMapper.lineRecords(document: document, versionID: versionRecord.id)
+        let sourceContentHash = LyricsSourceContentHasher.hash(
+            isSynchronized: document.isSynchronized,
+            lines: lines
+        )
+
+        let result = try withTransaction {
+            guard !Task.isCancelled else { throw CancellationError() }
+            guard manualAdoptionRequestIDs[identity.stableKey] == requestID else {
+                return LyricsPersistenceSaveResult(
+                    versionID: nil,
+                    disposition: .rejected("歌词采用请求已被更新或取消")
+                )
+            }
+            let duplicateID = try findVersionID(
+                stableKey: canonicalKey,
+                source: versionRecord.source,
+                providerSourceID: versionRecord.providerSourceID,
+                contentHash: versionRecord.contentHash
+            )
+            let lockedIDs = try fetchLockedVersionIDs(stableKey: canonicalKey)
+            let conflictingLockedIDs = lockedIDs.filter { $0 != duplicateID }
+            let confirmedIDs = Set(confirmedLockedVersionIDs ?? [])
+            let newlyLockedIDs = conflictingLockedIDs.filter { !confirmedIDs.contains($0) }
+            if confirmedLockedVersionIDs == nil, !conflictingLockedIDs.isEmpty {
+                return LyricsPersistenceSaveResult(
+                    versionID: nil,
+                    disposition: .lockedConflict,
+                    conflictingLockedVersionIDs: conflictingLockedIDs
+                )
+            }
+            if confirmedLockedVersionIDs != nil, !newlyLockedIDs.isEmpty {
+                return LyricsPersistenceSaveResult(
+                    versionID: nil,
+                    disposition: .lockedConflict,
+                    conflictingLockedVersionIDs: conflictingLockedIDs
+                )
+            }
+
+            try upsertTrack(trackRecord)
+            for alias in aliases {
+                try insertAlias(alias)
+            }
+
+            let versionID = duplicateID ?? versionRecord.id
+            if duplicateID == nil {
+                try insertVersion(versionRecord)
+                for line in lines {
+                    try insertLine(line)
+                }
+            }
+            var attachmentDocument = document
+            if let suppliedTimingID = document.timingVersionID,
+               let suppliedTiming = try fetchTimingVersion(id: suppliedTimingID),
+               suppliedTiming.lyricsVersionID != versionID {
+                // A timing attachment is immutable and belongs to its parent
+                // lyrics version. Copy its validated spans into a fresh child
+                // attachment instead of reusing the parent's identity.
+                attachmentDocument = document.replacingLines(document.lines, timingVersionID: nil)
+            }
+            let persistedTimingVersionID = try attachTimingVersionIfNeeded(
+                document: attachmentDocument,
+                lyricsVersionID: versionID,
+                source: versionRecord.source,
+                sourceContentHash: sourceContentHash,
+                now: now
+            )
+            try setPreferredLyricsVersion(trackStableKey: canonicalKey, lyricsVersionID: versionID, clearRevocation: true)
+            return LyricsPersistenceSaveResult(
+                versionID: versionID,
+                disposition: duplicateID == nil ? .inserted : .duplicate,
+                sourceContentHash: sourceContentHash,
+                timingVersionID: persistedTimingVersionID
+            )
+        }
+        if result.versionID != nil,
+           manualAdoptionRequestIDs[identity.stableKey] == requestID {
+            manualAdoptionRequestIDs.removeValue(forKey: identity.stableKey)
+        }
+        return result
+    }
+
+    public func registerManualAdoptionRequest(identity: TrackIdentity, requestID: UUID) async throws {
+        try prepare()
+        manualAdoptionRequestIDs[identity.stableKey] = requestID
+    }
+
+    public func cancelManualAdoptionRequest(identity: TrackIdentity, requestID: UUID) async throws {
+        guard manualAdoptionRequestIDs[identity.stableKey] == requestID else { return }
+        manualAdoptionRequestIDs.removeValue(forKey: identity.stableKey)
     }
 
     public func saveAlignedVersion(_ request: AlignmentPersistenceRequest) async throws -> LyricsPersistenceSaveResult {
@@ -743,6 +1003,30 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         return try resolvedCanonicalStableKey(stableKey)
     }
 
+    /// Returns a canonical offset scope only when the requested saved version
+    /// belongs to the supplied track identity family. This is a read-only
+    /// validation path; it does not create track/version rows or redirects.
+    public func canonicalStableKeyForSavedLyricsVersion(
+        trackStableKey: String,
+        versionID: UUID
+    ) async throws -> String? {
+        try ensurePrepared()
+        let requestedCanonicalKey = try resolvedCanonicalStableKey(trackStableKey)
+        let statement = try prepare("SELECT track_stable_key FROM lyrics_versions WHERE id = ? LIMIT 1;")
+        defer { sqlite3_finalize(statement) }
+        try bindText(versionID.uuidString, at: 1, to: statement)
+        let result = sqlite3_step(statement)
+        guard result == SQLITE_ROW else {
+            if result == SQLITE_DONE { return nil }
+            throw lastError()
+        }
+        guard let storedTrackKey = columnText(statement, index: 0),
+              try resolvedCanonicalStableKey(storedTrackKey) == requestedCanonicalKey else {
+            return nil
+        }
+        return requestedCanonicalKey
+    }
+
     public func identityFamily(stableKey: String) throws -> [String] {
         try ensurePrepared()
         return try resolvedIdentityFamily(stableKey: stableKey)
@@ -877,6 +1161,139 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     // MARK: - TranslationRepository
 
+    public func loadTranslationRequest(key: String) async throws -> StoredTranslationRequest? {
+        try readTranslationRequest(key: key)
+    }
+
+    private func readTranslationRequest(key: String) throws -> StoredTranslationRequest? {
+        try ensurePrepared()
+        let statement = try prepare("SELECT attempt_id, phase, result_json, updated_at, completion_version_id FROM translation_requests WHERE request_key = ?;")
+        defer { sqlite3_finalize(statement) }
+        try bindText(key, at: 1, to: statement)
+        let step = sqlite3_step(statement)
+        if step == SQLITE_DONE { return nil }
+        guard step == SQLITE_ROW,
+              let id = columnText(statement, index: 0).flatMap(UUID.init(uuidString:)),
+              let phase = columnText(statement, index: 1).flatMap(TranslationRequestPhase.init(rawValue:)),
+              let time = columnDouble(statement, index: 3) else {
+            throw TranslationRepositoryError.database("请求状态不可读；未重新发送")
+        }
+        let draft = try columnText(statement, index: 2).map { try JSONDecoder().decode(AITranslationDraft.self, from: Data($0.utf8)) }
+        let completionID = columnText(statement, index: 4)
+        guard completionID == nil || UUID(uuidString: completionID!) != nil else {
+            throw TranslationRepositoryError.database("输出版本关联不可读；未重新发送")
+        }
+        return StoredTranslationRequest(key: key, attemptID: id, phase: phase, result: draft,
+            updatedAt: Date(timeIntervalSince1970: time), completionVersionID: completionID.flatMap(UUID.init(uuidString:)))
+    }
+
+    public func beginTranslationRequest(key: String, explicitRetry: Bool) async throws -> StoredTranslationRequest {
+        try ensurePrepared()
+        return try withTransaction {
+            if let prior = try readTranslationRequest(key: key), prior.phase != .prepared, !explicitRetry {
+                throw TranslationRepositoryError.database("上次翻译已发起，结果尚未确认；请主动重试，不会自动重发")
+            }
+            let request = StoredTranslationRequest(key: key, completionVersionID: UUID())
+            let statement = try prepare("INSERT OR REPLACE INTO translation_requests(request_key, attempt_id, phase, result_json, updated_at, completion_version_id) VALUES (?, ?, 'prepared', NULL, ?, ?);")
+            defer { sqlite3_finalize(statement) }
+            try bindText(key, at: 1, to: statement)
+            try bindText(request.attemptID.uuidString, at: 2, to: statement)
+            try bindDouble(request.updatedAt.timeIntervalSince1970, at: 3, to: statement)
+            try bindText(request.completionVersionID?.uuidString, at: 4, to: statement)
+            try stepDone(statement)
+            return request
+        }
+    }
+
+    public func updateTranslationRequest(_ request: StoredTranslationRequest) async throws {
+        try ensurePrepared()
+        try withTransaction {
+            guard let previous = try readTranslationRequest(key: request.key), previous.attemptID == request.attemptID,
+                  (previous.phase == .prepared && request.phase == .dispatching) ||
+                  (previous.phase == .dispatching && request.phase == .received && request.result != nil) else {
+                throw TranslationRepositoryError.database("请求代次或阶段已改变；拒绝迟到结果")
+            }
+            let statement = try prepare("UPDATE translation_requests SET phase = ?, result_json = ?, updated_at = ? WHERE request_key = ? AND attempt_id = ?;")
+            defer { sqlite3_finalize(statement) }
+            try bindText(request.phase.rawValue, at: 1, to: statement)
+            let payload = try request.result.map { String(decoding: try JSONEncoder().encode($0), as: UTF8.self) }
+            try bindText(payload, at: 2, to: statement)
+            try bindDouble(request.updatedAt.timeIntervalSince1970, at: 3, to: statement)
+            try bindText(request.key, at: 4, to: statement)
+            try bindText(request.attemptID.uuidString, at: 5, to: statement)
+            try stepDone(statement)
+        }
+    }
+
+    public func completeTranslationRequest(key: String, attemptID: UUID,
+                                           context: TranslationCompletionContext) async throws -> StoredTranslationVersion {
+        try ensurePrepared()
+        let completed = try withTransaction {
+            // Read the current attempt under the SQLite write lock, before any INSERT.
+            guard let request = try readTranslationRequest(key: key), request.attemptID == attemptID,
+                  request.phase == .received || request.phase == .saved else {
+                throw TranslationRepositoryError.database("请求代次或阶段已改变；拒绝迟到完成")
+            }
+            guard let completionID = request.completionVersionID else {
+                throw TranslationRepositoryError.database("旧请求无法安全关联输出版本；保留已有结果，可主动重试")
+            }
+            guard try context.requestKey() == key,
+                  let source = try fetchSourceLyrics(versionID: context.lyricsVersionID),
+                  source.hash == context.sourceContentHash,
+                  source.lines.map(\.originalText) == context.originalLines else {
+                throw TranslationRepositoryError.sourceContentMismatch
+            }
+            let identityStatement = try prepare("SELECT track_stable_key FROM lyrics_versions WHERE id = ?;")
+            defer { sqlite3_finalize(identityStatement) }
+            try bindText(context.lyricsVersionID.uuidString, at: 1, to: identityStatement)
+            guard sqlite3_step(identityStatement) == SQLITE_ROW,
+                  columnText(identityStatement, index: 0) == context.identity.stableKey else {
+                throw TranslationRepositoryError.sourceContentMismatch
+            }
+            if request.phase == .saved {
+                guard request.result == nil,
+                      let exact = try loadTranslationVersions(lyricsVersionID: context.lyricsVersionID,
+                        targetLanguage: context.targetLanguage, sourceContentHash: context.sourceContentHash)
+                        .first(where: { $0.record.id == completionID }),
+                      context.accepts(engine: exact.record.engineID),
+                      exact.record.providerExecutionMetadata.cacheIdentity == context.providerCacheIdentity else {
+                    throw TranslationRepositoryError.database("已完成请求的精确版本缺失或不完整；不会重建或重发")
+                }
+                return exact
+            }
+            guard let draft = request.result, draft.targetLanguage == context.targetLanguage,
+                  context.accepts(engine: draft.engineID) else {
+                throw TranslationRepositoryError.database("请求缺少完整且同语言/引擎的结果")
+            }
+            // Always insert an independent candidate. Adoption remains a separate,
+            // explicit Controller decision after commit and its current selection checks.
+            let saved = try insertValidatedTranslation(versionID: completionID, lyricsVersionID: context.lyricsVersionID,
+                sourceContentHash: context.sourceContentHash, originalLines: context.originalLines,
+                draft: draft.with(isDraft: true, isArchived: false, providerCacheIdentity: context.providerCacheIdentity))
+#if DEBUG
+            translationCompletionCheckpoint?("beforeCommit")
+#endif
+            let statement = try prepare("""
+                UPDATE translation_requests SET phase='saved', result_json=NULL, updated_at=?
+                WHERE request_key=? AND attempt_id=? AND phase='received' AND completion_version_id=?;
+                """)
+            defer { sqlite3_finalize(statement) }
+            try bindDouble(Date().timeIntervalSince1970, at: 1, to: statement)
+            try bindText(key, at: 2, to: statement)
+            try bindText(attemptID.uuidString, at: 3, to: statement)
+            try bindText(completionID.uuidString, at: 4, to: statement)
+            try stepDone(statement)
+            guard sqlite3_changes(database) == 1 else {
+                throw TranslationRepositoryError.database("完成 CAS 失败；版本和行已回滚")
+            }
+            return saved
+        }
+#if DEBUG
+        translationCompletionCheckpoint?("afterCommit")
+#endif
+        return completed
+    }
+
     public func loadTranslationVersions(
         lyricsVersionID: UUID,
         targetLanguage: String,
@@ -896,7 +1313,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                    updated_at, is_machine_generated, is_manually_edited,
                    is_locked, status, confidence, engine_id, prompt_preset_id,
                    profile_id, profile_snapshot, temperature, workflow_id,
-                   fallback_strategy, is_draft, is_archived
+                   fallback_strategy, is_draft, is_archived, provider_execution_metadata_json
             FROM translation_versions
             WHERE lyrics_version_id = ? AND target_language = ?
               AND source_content_hash = ?
@@ -930,6 +1347,16 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     ) throws -> StoredTranslationVersion {
         try ensurePrepared()
         _ = forceNewVersion // Every completed explicit request gets a new ID.
+        return try withTransaction {
+            try insertValidatedTranslation(versionID: UUID(), lyricsVersionID: lyricsVersionID,
+                sourceContentHash: sourceContentHash, originalLines: originalLines, draft: draft)
+        }
+    }
+
+    /// Caller owns the write transaction; never starts a nested transaction.
+    private func insertValidatedTranslation(versionID: UUID, lyricsVersionID: UUID,
+                                            sourceContentHash: String, originalLines: [String],
+                                            draft: AITranslationDraft) throws -> StoredTranslationVersion {
         guard let source = try fetchSourceLyrics(versionID: lyricsVersionID) else {
             throw TranslationRepositoryError.sourceLyricsNotFound
         }
@@ -955,7 +1382,6 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         }
 
         let now = Date()
-        let versionID = UUID()
         let record = DatabaseTranslationVersionRecord(
             id: versionID,
             lyricsVersionID: lyricsVersionID,
@@ -979,6 +1405,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             temperature: draft.temperature,
             workflowID: draft.workflowID,
             fallbackStrategy: draft.fallbackStrategy,
+            providerExecutionMetadata: AITranslationProviderExecutionMetadata(
+                reasoningSetting: draft.providerReasoningSetting, tokenUsage: draft.tokenUsage, cacheIdentity: draft.providerCacheIdentity
+            ),
             isDraft: draft.isDraft,
             isArchived: draft.isArchived
         )
@@ -990,10 +1419,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             )
         }
 
-        try withTransaction {
-            try insertTranslationVersion(record)
-            for line in lines { try insertTranslationLine(line) }
-        }
+        try insertTranslationVersion(record)
+        for line in lines { try insertTranslationLine(line) }
         return StoredTranslationVersion(record: record, lines: lines)
     }
 
@@ -1073,8 +1500,18 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         var result: [StoredReadingVersion] = []
         while sqlite3_step(statement) == SQLITE_ROW {
             let record = try readingVersionRecord(from: statement)
-            let lines = try fetchReadingLines(versionID: record.id)
-            guard validateStoredReading(record: record, lines: lines, sourceLines: source.lines) else { continue }
+            let storedLines = try fetchReadingLines(versionID: record.id)
+            guard validateStoredReading(record: record, lines: storedLines, sourceLines: source.lines) else { continue }
+            // Older manual versions may contain a token map saved beside a
+            // different whole-line reading. Keep the immutable version and
+            // its readingText, but fail closed on the unusable token layer.
+            let isKana = record.representationID == ReadingRepresentationID.kana.rawValue
+            let lines = storedLines.map { line -> ReadingLineResult in
+                guard !line.tokens.isEmpty else { return line }
+                let rangesMatch = line.hasExactTokenSurfaceCoverage
+                let readingMatches = !isKana || line.hasConsistentKanaTokenProjection
+                return rangesMatch && readingMatches ? line : line.replacingTokens([])
+            }
             result.append(StoredReadingVersion(record: record, lines: lines))
         }
         return result
@@ -1103,6 +1540,11 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                   !(line.readingText ?? "").contains("\n"),
                   !(line.readingText ?? "").contains("\r") else {
                 throw ReadingRepositoryError.invalidLines("原文映射或空白行规则不匹配")
+            }
+            if request.record.representationID == ReadingRepresentationID.kana.rawValue,
+               !line.tokens.isEmpty,
+               !line.hasConsistentKanaTokenProjection {
+                throw ReadingRepositoryError.invalidLines("假名与逐词 token 不一致；请清除失效 token 后保存")
             }
         }
         if let existing = try fetchReadingVersion(versionID: request.record.id) {
@@ -1215,12 +1657,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 isSynchronized: record.isSynced,
                 lines: lines
             )
-            let timingRecord = try? fetchBestTimingVersion(
+            var baseDoc = LyricsPersistenceMapper.document(identity: identity, track: trackRecord, version: record, lines: lines)
+            let timingRecord = try fetchBestTimingVersion(
                 lyricsVersionID: record.id,
-                sourceContentHash: sourceContentHash
+                sourceContentHash: sourceContentHash,
+                document: baseDoc
             )
             let timingMap = timingRecord.flatMap { DocumentTimingPayload.decode($0.spansPayload) }
-            var baseDoc = LyricsPersistenceMapper.document(identity: identity, track: trackRecord, version: record, lines: lines)
             if let timingMap, !timingMap.isEmpty {
                 var updatedLines = baseDoc.lines
                 for i in updatedLines.indices {
@@ -1229,22 +1672,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                         updatedLines[i].timedSpans = timing.spans
                     }
                 }
-                baseDoc = LyricsDocument(
-                    identity: baseDoc.identity,
-                    title: baseDoc.title,
-                    artist: baseDoc.artist,
-                    album: baseDoc.album,
-                    duration: baseDoc.duration,
-                    lines: updatedLines,
-                    isSynchronized: baseDoc.isSynchronized,
-                    source: baseDoc.source,
-                    confidence: baseDoc.confidence,
-                    providerSourceID: baseDoc.providerSourceID,
-                    spotifyTrackID: baseDoc.spotifyTrackID,
-                    isrc: baseDoc.isrc,
-                    language: baseDoc.language,
-                    timingVersionID: timingRecord?.id
-                )
+                baseDoc = baseDoc.replacingLines(updatedLines, timingVersionID: timingRecord?.id)
             }
             let document = applyingLockedReadings(
                 to: baseDoc,
@@ -1272,12 +1700,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             isSynchronized: record.isSynced,
             lines: lines
         )
-        let timingRecord = try? fetchBestTimingVersion(
+        var baseDoc = LyricsPersistenceMapper.document(identity: identity, track: trackRecord, version: record, lines: lines)
+        let timingRecord = try fetchBestTimingVersion(
             lyricsVersionID: record.id,
-            sourceContentHash: sourceContentHash
+            sourceContentHash: sourceContentHash,
+            document: baseDoc
         )
         let timingMap = timingRecord.flatMap { DocumentTimingPayload.decode($0.spansPayload) }
-        var baseDoc = LyricsPersistenceMapper.document(identity: identity, track: trackRecord, version: record, lines: lines)
         if let timingMap, !timingMap.isEmpty {
             var updatedLines = baseDoc.lines
             for i in updatedLines.indices {
@@ -1286,22 +1715,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                     updatedLines[i].timedSpans = timing.spans
                 }
             }
-            baseDoc = LyricsDocument(
-                identity: baseDoc.identity,
-                title: baseDoc.title,
-                artist: baseDoc.artist,
-                album: baseDoc.album,
-                duration: baseDoc.duration,
-                lines: updatedLines,
-                isSynchronized: baseDoc.isSynchronized,
-                source: baseDoc.source,
-                confidence: baseDoc.confidence,
-                providerSourceID: baseDoc.providerSourceID,
-                spotifyTrackID: baseDoc.spotifyTrackID,
-                isrc: baseDoc.isrc,
-                language: baseDoc.language,
-                timingVersionID: timingRecord?.id
-            )
+            baseDoc = baseDoc.replacingLines(updatedLines, timingVersionID: timingRecord?.id)
         }
         let document = applyingLockedReadings(
             to: baseDoc,
@@ -1335,13 +1749,16 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         let canonicalKey = try resolvedCanonicalStableKey(request.identity.stableKey)
 
         let sourceLines: [DatabaseLyricLineRecord]
+        let sourceVersionRecord: DatabaseLyricsVersionRecord?
         if request.isNewSource {
             sourceLines = []
+            sourceVersionRecord = nil
         } else {
             guard let existing = try fetchLyricsVersion(versionID: request.sourceVersionID),
                   try resolvedCanonicalStableKey(existing.trackStableKey) == canonicalKey else {
                 throw LyricsEditingRepositoryError.sourceNotFound
             }
+            sourceVersionRecord = existing
             sourceLines = try fetchLines(versionID: request.sourceVersionID)
             let sourceHash = LyricsSourceContentHasher.hash(
                 isSynchronized: existing.isSynced,
@@ -1366,33 +1783,85 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             throw LyricsEditingRepositoryError.noChanges
         }
 
+        let projectedLines = request.document.lines.enumerated().map { index, line in
+            LyricsEditorLineDraft(
+                line: line,
+                startTimeIsMeaningful: request.document.lineHasExplicitTiming(index)
+            )
+        }
+        var sourceTimingMap: [Int: (performerID: String?, spans: [TimedTextSpan])] = [:]
+        if request.createLyricsVersion {
+            if let sourceVersionRecord {
+                let sourceDocument = Self.documentForTimingValidation(
+                    identity: request.identity,
+                    track: request.track,
+                    version: sourceVersionRecord,
+                    lines: sourceLines
+                )
+                let sourceHash = LyricsSourceContentHasher.hash(
+                    isSynchronized: sourceVersionRecord.isSynced,
+                    lines: sourceLines
+                )
+                let record = try fetchBestTimingVersion(
+                    lyricsVersionID: sourceVersionRecord.id,
+                    sourceContentHash: sourceHash,
+                    document: sourceDocument
+                )
+                sourceTimingMap = record.flatMap { DocumentTimingPayload.decode($0.spansPayload) } ?? [:]
+            }
+        }
+        let sanitizedProjectedLines = request.createLyricsVersion
+            ? Self.sanitizedTimingLines(projectedLines, sourceMap: sourceTimingMap, sourceRows: sourceLines)
+            : projectedLines
+        if request.createLyricsVersion {
+            let timingLoss = Self.timingLossSummary(
+                sourceMap: sourceTimingMap,
+                proposedLines: sanitizedProjectedLines,
+                originalProposedLines: projectedLines
+            )
+            guard !timingLoss.requiresConfirmation || request.confirmedTimingLoss else {
+                throw LyricsEditingRepositoryError.timingLossRequiresConfirmation(timingLoss)
+            }
+        }
+
         let now = Date()
         let newLyricsID = request.createLyricsVersion ? UUID() : nil
-        let targetDocument = request.createLyricsVersion
-            ? request.document
-            : LyricsDocument(
-                identity: request.document.identity,
-                title: request.document.title,
-                artist: request.document.artist,
-                album: request.document.album,
-                duration: request.document.duration,
-                lines: request.document.lines,
-                isSynchronized: timeline.isSynchronized,
-                source: request.document.source,
-                confidence: request.document.confidence,
-                providerSourceID: request.document.providerSourceID,
-                explicitlyTimedLineIndices: request.document.explicitlyTimedLineIndices
-            )
+        let explicitTimingMask: Set<Int>? = {
+            guard !timeline.isSynchronized else { return nil }
+            let timed = Set(sanitizedProjectedLines.indices.filter { sanitizedProjectedLines[$0].startTime != nil })
+            if request.document.explicitlyTimedLineIndices != nil { return timed }
+            return timed.isEmpty ? nil : timed
+        }()
+        let projectedDocument = LyricsDocument(
+            identity: request.document.identity,
+            title: request.document.title,
+            artist: request.document.artist,
+            album: request.document.album,
+            duration: request.document.duration,
+            lines: request.createLyricsVersion ? sanitizedProjectedLines.map { $0.asLyricLine() } : request.document.lines,
+            isSynchronized: timeline.isSynchronized,
+            source: request.document.source,
+            confidence: request.document.confidence,
+            providerSourceID: request.document.providerSourceID,
+            spotifyTrackID: request.document.spotifyTrackID,
+            isrc: request.document.isrc,
+            language: request.document.language,
+            explicitlyTimedLineIndices: request.createLyricsVersion ? explicitTimingMask : request.document.explicitlyTimedLineIndices,
+            timingVersionID: request.createLyricsVersion ? nil : request.document.timingVersionID
+        )
+        let targetDocument = projectedDocument
         // Translation versions are the canonical home for translations after
         // v2. Keep lyric_lines.translation_text as a read-only compatibility
         // field instead of duplicating a new manual translation there.
         let storageDocument = request.createLyricsVersion
-            ? Self.documentWithoutTranslations(targetDocument)
+            ? Self.documentWithoutTranslations(
+                Self.removingLockedReadingProjection(targetDocument, layers: request.readingLayers)
+            )
             : targetDocument
         let targetRecords = newLyricsID.map {
             LyricsPersistenceMapper.lineRecords(document: storageDocument, versionID: $0)
         } ?? sourceLines
-        let targetHash = LyricsSourceContentHasher.hash(isSynchronized: timeline.isSynchronized, lines: targetRecords)
+        let targetHash = LyricsSourceContentHasher.hash(isSynchronized: storageDocument.isSynchronized, lines: targetRecords)
         let rawTrackRecord = LyricsPersistenceMapper.trackRecord(
             track: request.track,
             identity: request.identity,
@@ -1427,16 +1896,26 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                     try insertVersion(canonicalVersionRecord(record, stableKey: canonicalKey))
                     for line in targetRecords { try insertLine(line) }
                     try insertReadingLayers(request.readingLayers, versionID: newLyricsID, now: now)
+                    try attachTimingVersionIfNeeded(
+                        document: storageDocument,
+                        lyricsVersionID: newLyricsID,
+                        source: DatabaseSourceIdentifier.identifier(for: request.targetSource),
+                        sourceContentHash: targetHash,
+                        now: now
+                    )
                     if !request.preserveCurrentLyricsSelection {
                         try setPreferredLyricsVersion(trackStableKey: canonicalKey, lyricsVersionID: newLyricsID)
                     }
                 }
                 return ()
             }
-            return LyricsEditSaveResult(
-                lyricsVersion: newLyricsID.flatMap { try? loadEditableVersion(versionID: $0, track: request.track, identity: request.identity) } ?? nil,
-                translationVersion: nil
-            )
+            let storedLyrics: StoredEditableLyricsVersion?
+            if let newLyricsID {
+                storedLyrics = try loadEditableVersion(versionID: newLyricsID, track: request.track, identity: request.identity)
+            } else {
+                storedLyrics = nil
+            }
+            return LyricsEditSaveResult(lyricsVersion: storedLyrics, translationVersion: nil)
         }
 
         guard translation.lines.count == targetDocument.lines.count else {
@@ -1491,9 +1970,16 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 try insertVersion(canonicalVersionRecord(record, stableKey: canonicalKey))
                 for line in targetRecords { try insertLine(line) }
                 try insertReadingLayers(request.readingLayers, versionID: newLyricsID, now: now)
-                    if !request.preserveCurrentLyricsSelection {
-                        try setPreferredLyricsVersion(trackStableKey: canonicalKey, lyricsVersionID: newLyricsID)
-                    }
+                try attachTimingVersionIfNeeded(
+                    document: storageDocument,
+                    lyricsVersionID: newLyricsID,
+                    source: DatabaseSourceIdentifier.identifier(for: request.targetSource),
+                    sourceContentHash: targetHash,
+                    now: now
+                )
+                if !request.preserveCurrentLyricsSelection {
+                    try setPreferredLyricsVersion(trackStableKey: canonicalKey, lyricsVersionID: newLyricsID)
+                }
             }
             try insertTranslationVersion(translationRecord)
             for (index, text) in translation.lines.enumerated() {
@@ -1505,9 +1991,12 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             }
         }
 
-        let storedLyrics = newLyricsID.flatMap {
-            try? loadEditableVersion(versionID: $0, track: request.track, identity: request.identity)
-        } ?? nil
+        let storedLyrics: StoredEditableLyricsVersion?
+        if let newLyricsID {
+            storedLyrics = try loadEditableVersion(versionID: newLyricsID, track: request.track, identity: request.identity)
+        } else {
+            storedLyrics = nil
+        }
         let storedTranslation = StoredTranslationVersion(
             record: translationRecord,
             lines: translation.lines.enumerated().map {
@@ -1568,7 +2057,11 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 translationText: nil,
                 romajiText: line.romajiText,
                 kanaText: line.kanaText,
-                rubyTokens: line.rubyTokens
+                rubyTokens: line.rubyTokens,
+                performerID: line.performerID,
+                timedSpans: line.timedSpans,
+                readingRepresentationID: line.readingRepresentationID,
+                readingSurfaceText: line.readingSurfaceText
             )
         }
         return LyricsDocument(
@@ -1582,9 +2075,134 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             source: document.source,
             confidence: document.confidence,
             providerSourceID: document.providerSourceID,
+            language: document.language,
             // Preserve Assist partial-timeline mask; dropping it zeroed all
             // start_time values on manual save of partially timed drafts.
-            explicitlyTimedLineIndices: document.explicitlyTimedLineIndices
+            explicitlyTimedLineIndices: document.explicitlyTimedLineIndices,
+            // A child timing attachment is created independently in the
+            // save transaction. Never carry the parent's attachment identity.
+            timingVersionID: nil
+        )
+    }
+
+    private static func removingLockedReadingProjection(
+        _ document: LyricsDocument,
+        layers: [LyricsReadingLayerDraft]
+    ) -> LyricsDocument {
+        guard !layers.isEmpty else { return document }
+        var lines = document.lines
+        for layer in layers where lines.indices.contains(layer.lineIndex) {
+            if layer.kanaText != nil { lines[layer.lineIndex].kanaText = nil }
+            if layer.romajiText != nil { lines[layer.lineIndex].romajiText = nil }
+        }
+        return document.replacingLines(lines)
+    }
+
+    private static func sanitizedTimingLines(
+        _ proposedLines: [LyricsEditorLineDraft],
+        sourceMap: [Int: (performerID: String?, spans: [TimedTextSpan])],
+        sourceRows: [DatabaseLyricLineRecord]
+    ) -> [LyricsEditorLineDraft] {
+        proposedLines.enumerated().map { index, original in
+            var line = original
+            guard line.timedSpans != nil else { return line }
+            let matchingSourceIndex = sourceMap.first(where: { sourceIndex, timing in
+                sourceRows.first(where: { $0.lineIndex == sourceIndex })?.originalText == line.originalText &&
+                    timing.spans.contains(where: { line.timedSpans?.contains($0) == true })
+            })?.key
+            let sourceIndex = matchingSourceIndex ?? index
+            let priorEndTime = sourceRows.first(where: { $0.lineIndex == sourceIndex })?.endTime
+            let endChanged = priorEndTime != line.endTime
+            line.timedSpans = LyricsTimingCompatibility.compatibleSpans(
+                in: line,
+                enforceLineEndBoundary: endChanged && line.endTime != nil
+            )
+            return line
+        }
+    }
+
+    private static func documentForTimingValidation(
+        identity: TrackIdentity,
+        track: Track,
+        version: DatabaseLyricsVersionRecord,
+        lines: [DatabaseLyricLineRecord]
+    ) -> LyricsDocument {
+        let sorted = lines.sorted { $0.lineIndex < $1.lineIndex }
+        let lyricLines = sorted.map { line in
+            LyricLine(
+                timestamp: line.startTime ?? 0,
+                originalText: line.originalText,
+                endTime: line.endTime,
+                translationText: line.translationText,
+                romajiText: line.romajiText,
+                kanaText: line.kanaText
+            )
+        }
+        let timedIndices: Set<Int>? = {
+            guard !version.isSynced else { return nil }
+            let values = Set(sorted.compactMap { $0.startTime == nil ? nil : $0.lineIndex })
+            return values.isEmpty ? nil : values
+        }()
+        return LyricsDocument(
+            identity: identity,
+            title: track.title,
+            artist: track.artist,
+            album: track.album,
+            duration: track.duration,
+            lines: lyricLines,
+            isSynchronized: version.isSynced,
+            source: DatabaseSourceIdentifier.source(for: version.source),
+            confidence: version.confidence,
+            providerSourceID: version.providerSourceID,
+            language: version.language,
+            explicitlyTimedLineIndices: timedIndices
+        )
+    }
+
+    private static func timingLossSummary(
+        sourceMap: [Int: (performerID: String?, spans: [TimedTextSpan])],
+        proposedLines: [LyricsEditorLineDraft],
+        originalProposedLines: [LyricsEditorLineDraft]
+    ) -> LyricsTimingLossSummary {
+        var targetSpans = proposedLines.flatMap { LyricsTimingCompatibility.compatibleSpans(in: $0) }
+        let sourceEntries = sourceMap.sorted { $0.key < $1.key }
+        var missingSpanCount = 0
+        var affectedSourceLineIndices = Set<Int>()
+        var missingPerformerCount = 0
+
+        for (sourceIndex, entry) in sourceEntries {
+            var lineLoss = 0
+            for span in entry.spans {
+                if let match = targetSpans.firstIndex(of: span) {
+                    targetSpans.remove(at: match)
+                } else {
+                    lineLoss += 1
+                }
+            }
+            if lineLoss > 0 {
+                missingSpanCount += lineLoss
+                affectedSourceLineIndices.insert(sourceIndex)
+            }
+            if entry.performerID != nil {
+                let retainsPerformer = proposedLines.contains { line in
+                    line.performerID == entry.performerID &&
+                        entry.spans.contains(where: { LyricsTimingCompatibility.compatibleSpans(in: line).contains($0) })
+                }
+                if !retainsPerformer { missingPerformerCount += 1 }
+            }
+        }
+
+        let invalidTargetSpanCount = originalProposedLines.reduce(into: 0) { count, line in
+            count += max(0, (line.timedSpans?.count ?? 0) - LyricsTimingCompatibility.compatibleSpans(in: line).count)
+        }
+        let lostSpans = max(missingSpanCount, invalidTargetSpanCount)
+        let invalidTargetLineCount = originalProposedLines.filter {
+            ($0.timedSpans?.count ?? 0) > LyricsTimingCompatibility.compatibleSpans(in: $0).count
+        }.count
+        return LyricsTimingLossSummary(
+            lostSpanCount: lostSpans,
+            affectedLineCount: max(affectedSourceLineIndices.count, invalidTargetLineCount),
+            lostPerformerMetadataLineCount: missingPerformerCount
         )
     }
 
@@ -1847,30 +2465,12 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         guard !readings.isEmpty else { return document }
         var lines = document.lines
         for reading in readings where lines.indices.contains(reading.lineIndex) {
-            let current = lines[reading.lineIndex]
-            lines[reading.lineIndex] = LyricLine(
-                id: current.id,
-                timestamp: current.timestamp,
-                originalText: current.originalText,
-                endTime: current.endTime,
-                translationText: current.translationText,
-                romajiText: reading.romajiText ?? current.romajiText,
-                kanaText: reading.kanaText ?? current.kanaText,
-                rubyTokens: current.rubyTokens
-            )
+            var projected = lines[reading.lineIndex]
+            projected.romajiText = reading.romajiText ?? projected.romajiText
+            projected.kanaText = reading.kanaText ?? projected.kanaText
+            lines[reading.lineIndex] = projected
         }
-        return LyricsDocument(
-            identity: document.identity,
-            title: document.title,
-            artist: document.artist,
-            album: document.album,
-            duration: document.duration,
-            lines: lines,
-            isSynchronized: document.isSynchronized,
-            source: document.source,
-            confidence: document.confidence,
-            providerSourceID: document.providerSourceID
-        )
+        return document.replacingLines(lines)
     }
 
     private func insertReadingLayers(
@@ -1988,9 +2588,18 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             temperature: sqlite3_column_double(statement, 20),
             workflowID: columnText(statement, index: 21) ?? TranslationWorkflowID.classicV1.rawValue,
             fallbackStrategy: TranslationFallbackStrategy(rawValue: columnText(statement, index: 22) ?? "none") ?? .none,
+            providerExecutionMetadata: decodeProviderExecutionMetadata(columnText(statement, index: 25)),
             isDraft: sqlite3_column_int(statement, 23) != 0,
             isArchived: sqlite3_column_int(statement, 24) != 0
         )
+    }
+
+    private func decodeProviderExecutionMetadata(_ json: String?) -> AITranslationProviderExecutionMetadata {
+        guard let json, let data = json.data(using: .utf8),
+              let metadata = try? JSONDecoder().decode(AITranslationProviderExecutionMetadata.self, from: data) else {
+            return AITranslationProviderExecutionMetadata()
+        }
+        return metadata
     }
 
     private func validateStoredTranslation(
@@ -2018,10 +2627,10 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 id, lyrics_version_id, parent_version_id, source_kind, target_language, model,
                 base_url_host, prompt_hash, source_content_hash, created_at,
                 updated_at, is_machine_generated, is_manually_edited,
-                is_locked, status, confidence, engine_id, prompt_preset_id,
-                profile_id, profile_snapshot, temperature, workflow_id,
-                fallback_strategy, is_draft, is_archived
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                   is_locked, status, confidence, engine_id, prompt_preset_id,
+                   profile_id, profile_snapshot, temperature, workflow_id,
+                   fallback_strategy, is_draft, is_archived, provider_execution_metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """)
         defer { sqlite3_finalize(statement) }
         try bindText(record.id.uuidString, at: 1, to: statement)
@@ -2049,6 +2658,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         try bindText(record.fallbackStrategy.rawValue, at: 23, to: statement)
         try bindInt(record.isDraft ? 1 : 0, at: 24, to: statement)
         try bindInt(record.isArchived ? 1 : 0, at: 25, to: statement)
+        let metadataData = try JSONEncoder().encode(record.providerExecutionMetadata)
+        try bindText(String(data: metadataData, encoding: .utf8) ?? "{}", at: 26, to: statement)
         try stepDone(statement)
     }
 
@@ -2439,6 +3050,23 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         return sqlite3_step(statement) == SQLITE_ROW
     }
 
+    private func fetchLockedVersionIDs(stableKey: String) throws -> [UUID] {
+        let family = try resolvedIdentityFamily(stableKey: stableKey)
+        let statement = try prepare("SELECT id FROM lyrics_versions WHERE track_stable_key IN (\(placeholders(count: family.count))) AND is_locked = 1 ORDER BY id;")
+        defer { sqlite3_finalize(statement) }
+        for (index, key) in family.enumerated() {
+            try bindText(key, at: Int32(index + 1), to: statement)
+        }
+        var ids: [UUID] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let value = columnText(statement, index: 0), let id = UUID(uuidString: value) else {
+                throw LyricsRepositoryError.invalidData("锁定歌词版本 UUID 无效")
+            }
+            ids.append(id)
+        }
+        return ids
+    }
+
     private func fetchTrack(stableKey: String) throws -> DatabaseTrackRecord? {
         let statement = try prepare("""
             SELECT stable_key, spotify_id, spotify_uri, isrc, title, artist_display,
@@ -2470,31 +3098,43 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     }
 
     private func hasValidWordTiming(version: DatabaseLyricsVersionRecord) throws -> Bool {
-        let checkStmt = try prepare("SELECT 1 FROM lyrics_timing_versions WHERE lyrics_version_id = ? LIMIT 1;")
-        defer { sqlite3_finalize(checkStmt) }
-        try bindText(version.id.uuidString, at: 1, to: checkStmt)
-        guard sqlite3_step(checkStmt) == SQLITE_ROW else { return false }
-
         let lines = try fetchLines(versionID: version.id)
         guard !lines.isEmpty else { return false }
         let sourceContentHash = LyricsSourceContentHasher.hash(
             isSynchronized: version.isSynced,
             lines: lines
         )
+        guard let trackRecord = try fetchTrack(stableKey: version.trackStableKey) else { return false }
+        let track = Track(
+            title: trackRecord.title,
+            artist: trackRecord.artistDisplay,
+            album: trackRecord.album,
+            duration: trackRecord.duration,
+            isrc: trackRecord.isrc,
+            spotifyId: trackRecord.spotifyID
+        )
+        let document = Self.documentForTimingValidation(
+            identity: TrackIdentity(track: track),
+            track: track,
+            version: version,
+            lines: lines
+        )
         guard let timingRecord = try fetchBestTimingVersion(
             lyricsVersionID: version.id,
-            sourceContentHash: sourceContentHash
+            sourceContentHash: sourceContentHash,
+            document: document
         ) else {
             return false
         }
         guard let timingMap = DocumentTimingPayload.decode(timingRecord.spansPayload),
-              !timingMap.isEmpty else {
+              LyricsTimingCompatibility.validatedTimingMap(timingMap, for: document) != nil else {
             return false
         }
         return timingMap.values.contains { !$0.spans.isEmpty }
     }
 
     private func fetchBestVersion(stableKey: String) throws -> DatabaseLyricsVersionRecord? {
+        guard !(try hasRevokedLyricsSelection(stableKey: stableKey)) else { return nil }
         let family = try resolvedIdentityFamily(stableKey: stableKey)
         let statement = try prepare("""
             SELECT id, track_stable_key, source, provider_source_id, language,
@@ -2652,15 +3292,31 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         )
     }
 
+    @discardableResult
     private func attachTimingVersionIfNeeded(
         document: LyricsDocument,
         lyricsVersionID: UUID,
         source: String,
         sourceContentHash: String,
         now: Date
-    ) throws {
-        guard let payload = DocumentTimingPayload.encode(document.lines) else { return }
+    ) throws -> UUID? {
+        guard LyricsTimingCompatibility.hasOnlyCompatibleSpans(in: document) else {
+            throw LyricsRepositoryError.dataIntegrityViolation("Timed spans do not match the document text or valid time order")
+        }
+        guard let payload = DocumentTimingPayload.encode(document.lines) else { return nil }
         let granularity = document.lines.compactMap(\.timedSpans).flatMap { $0 }.first?.granularity.rawValue ?? "timedUnit"
+
+        if document.timingVersionID == nil,
+           let existing = try fetchBestTimingVersion(
+               lyricsVersionID: lyricsVersionID,
+               sourceContentHash: sourceContentHash,
+               document: document
+           ),
+           existing.source == source,
+           existing.granularity == granularity,
+           existing.spansPayload == payload {
+            return existing.id
+        }
 
         if let existingTimingID = document.timingVersionID {
             if let existing = try fetchTimingVersion(id: existingTimingID) {
@@ -2670,7 +3326,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                     existing.granularity == granularity &&
                     existing.spansPayload == payload {
                     // Safe idempotent no-op for re-saving exact identical immutable timing version
-                    return
+                    return existingTimingID
                 } else {
                     throw LyricsRepositoryError.dataIntegrityViolation(
                         "Timing version data integrity violation for \(existingTimingID): existing record differs from incoming payload (immutable timing identity mismatch)"
@@ -2687,6 +3343,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                     createdAt: now
                 )
                 try insertTimingVersion(timingRecord)
+                return existingTimingID
             }
         } else {
             let timingRecord = DatabaseLyricsTimingVersionRecord(
@@ -2699,6 +3356,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 createdAt: now
             )
             try insertTimingVersion(timingRecord)
+            return timingRecord.id
         }
     }
 
@@ -2707,40 +3365,47 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     /// Historical timing versions remain immutable in `lyrics_timing_versions` and are neither overwritten nor deleted.
     private func fetchBestTimingVersion(
         lyricsVersionID: UUID,
-        sourceContentHash: String
+        sourceContentHash: String,
+        document: LyricsDocument
     ) throws -> DatabaseLyricsTimingVersionRecord? {
         let statement = try prepare("""
             SELECT id, lyrics_version_id, source, granularity,
                    source_content_hash, spans_payload, created_at
             FROM lyrics_timing_versions
             WHERE lyrics_version_id = ? AND source_content_hash = ?
-            ORDER BY created_at DESC LIMIT 1;
+            ORDER BY created_at DESC;
             """)
         defer { sqlite3_finalize(statement) }
         try bindText(lyricsVersionID.uuidString, at: 1, to: statement)
         try bindText(sourceContentHash, at: 2, to: statement)
 
-        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
-        guard let idText = columnText(statement, index: 0),
-              let id = UUID(uuidString: idText),
-              let versionIDText = columnText(statement, index: 1),
-              let versionID = UUID(uuidString: versionIDText),
-              let source = columnText(statement, index: 2),
-              let granularity = columnText(statement, index: 3),
-              let hash = columnText(statement, index: 4),
-              let payload = columnText(statement, index: 5) else {
-            return nil
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let idText = columnText(statement, index: 0),
+                  let id = UUID(uuidString: idText),
+                  let versionIDText = columnText(statement, index: 1),
+                  let versionID = UUID(uuidString: versionIDText),
+                  let source = columnText(statement, index: 2),
+                  let granularity = columnText(statement, index: 3),
+                  let hash = columnText(statement, index: 4),
+                  let payload = columnText(statement, index: 5) else {
+                continue
+            }
+            guard let timingMap = DocumentTimingPayload.decode(payload),
+                  LyricsTimingCompatibility.validatedTimingMap(timingMap, for: document) != nil else {
+                continue
+            }
+            let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(statement, 6))
+            return DatabaseLyricsTimingVersionRecord(
+                id: id,
+                lyricsVersionID: versionID,
+                source: source,
+                granularity: granularity,
+                sourceContentHash: hash,
+                spansPayload: payload,
+                createdAt: createdAt
+            )
         }
-        let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(statement, 6))
-        return DatabaseLyricsTimingVersionRecord(
-            id: id,
-            lyricsVersionID: versionID,
-            source: source,
-            granularity: granularity,
-            sourceContentHash: hash,
-            spansPayload: payload,
-            createdAt: createdAt
-        )
+        return nil
     }
 
     private func execute(_ sql: String) throws {
@@ -2920,6 +3585,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         var lyricsVersionCount = 0
         var hasLockedLyrics = false
         var hasManualLyrics = false
+        let selectionRevoked = try hasRevokedLyricsSelection(stableKey: stableKey)
         var activeLyricsVersionID: UUID?
         var lyricsVersionIDs: [UUID] = []
         var maxDate = fallbackDate
@@ -2929,7 +3595,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                   let id = UUID(uuidString: idText) else { continue }
             lyricsVersionCount += 1
             lyricsVersionIDs.append(id)
-            if activeLyricsVersionID == nil {
+            if activeLyricsVersionID == nil, !selectionRevoked {
                 activeLyricsVersionID = id
             }
             let isManual = sqlite3_column_int(lyricsStmt, 1) == 1
@@ -4005,11 +4671,12 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     public func setPersonalLibraryActiveLyrics(trackStableKey: String, lyricsVersionID: UUID) throws {
         try prepare()
         try withTransaction {
-            try setPreferredLyricsVersion(trackStableKey: trackStableKey, lyricsVersionID: lyricsVersionID)
+            try setPreferredLyricsVersion(trackStableKey: trackStableKey, lyricsVersionID: lyricsVersionID, clearRevocation: true)
         }
     }
 
-    private func setPreferredLyricsVersion(trackStableKey: String, lyricsVersionID: UUID) throws {
+    private func setPreferredLyricsVersion(trackStableKey: String, lyricsVersionID: UUID, clearRevocation: Bool = false) throws {
+        if !clearRevocation, try hasRevokedLyricsSelection(stableKey: trackStableKey) { return }
         let family = try resolvedIdentityFamily(stableKey: trackStableKey)
         guard let version = try fetchLyricsVersion(versionID: lyricsVersionID), family.contains(version.trackStableKey) else {
             throw LyricsEditingRepositoryError.identityMismatch
@@ -4018,6 +4685,12 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         defer { sqlite3_finalize(clear) }
         for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: clear) }
         try stepDone(clear)
+        if clearRevocation {
+            let reset = try prepare("DELETE FROM lyrics_selection_revocations WHERE track_stable_key IN (\(placeholders(count: family.count)));")
+            defer { sqlite3_finalize(reset) }
+            for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: reset) }
+            try stepDone(reset)
+        }
         let choose = try prepare("UPDATE lyrics_versions SET is_preferred = 1 WHERE id = ?;")
         defer { sqlite3_finalize(choose) }
         try bindText(lyricsVersionID.uuidString, at: 1, to: choose)

@@ -21,6 +21,8 @@ public struct MenuBarLyricsSnapshot: Equatable, Sendable {
     public let isPlaying: Bool
     public let hasLiveTrack: Bool
     public let artworkURL: URL?
+    /// Translation of the currently playing live line; never sourced from a search preview.
+    public var currentTranslationText: String? = nil
 }
 
 public enum MenuBarTextFormatter {
@@ -230,6 +232,9 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         self.popover = pop
     }
 
+    /// The same popover is reachable by keyboard and from the status item.
+    public func togglePopover() { statusItemClicked(nil) }
+
     @objc private func statusItemClicked(_ sender: Any?) {
         guard let button = statusItem?.button, let popover else { return }
         if popover.isShown {
@@ -354,7 +359,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                     : nil
 
                 let statusText = currentLine.isEmpty ? "♪ \(title)" : "♪ \(currentLine)"
-                return MenuBarLyricsSnapshot(
+                var snapshot = MenuBarLyricsSnapshot(
                     state: .synchronized(current: currentLine, next: nextLine),
                     statusText: statusText,
                     trackTitle: title,
@@ -365,6 +370,14 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                     hasLiveTrack: true,
                     artworkURL: artworkURL
                 )
+                // The adopted live document is the sole source of popover translation.
+                // Include it in Equatable snapshot changes so translations arriving
+                // after the original lyrics are immediately reflected in the UI.
+                let translated = state.preferences.showTranslation
+                    ? lines[currentIndex].translationText?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    : nil
+                snapshot.currentTranslationText = translated?.isEmpty == true ? nil : translated
+                return snapshot
             } else if !isSync {
                 let displayTitle = title.isEmpty ? "Lyric Island" : title
                 return MenuBarLyricsSnapshot(

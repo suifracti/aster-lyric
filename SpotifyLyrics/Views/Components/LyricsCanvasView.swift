@@ -8,6 +8,7 @@ struct LyricsCanvasView: View {
     @State private var lastScrolledLineIndex: Int?
     @State private var isAlignmentDetailsPresented = false
     @State private var manualLyricsSearchQuery = ""
+    @State private var candidateToPreview: LyricsCandidate?
 
     var body: some View {
         Group {
@@ -35,6 +36,13 @@ struct LyricsCanvasView: View {
     /// states differs.
     @ViewBuilder
     private var systemStateContent: some View {
+        if state.isShowingSearchPreview {
+            if !state.lyrics.isEmpty {
+                lyricsScroll
+            } else {
+                LyricsStateContentFirstView(state: state, onSearch: onSearch)
+            }
+        } else {
         switch state.lyricsState {
         case .loaded(_), .mockPreview:
             lyricsScroll
@@ -117,6 +125,8 @@ struct LyricsCanvasView: View {
                 }
                 .frame(maxHeight: 160)
             }
+        case .loading where state.isAutomaticSearchDisabledForDisplayedSession:
+            statusView(icon: "text.quote", message: "正在加载已保存歌词…", detail: "切歌后自动搜索已关闭。")
         case .loading:
             statusView(icon: "magnifyingglass", message: "正在自动补全歌词…", detail: "Local → AMLL → LRCLIB → 网易云/QQ（实验）查询中")
         case .noLyrics:
@@ -164,8 +174,22 @@ struct LyricsCanvasView: View {
             }
         case .candidates(_, let candidates):
             candidateList(candidates)
+        case .idle where state.isAutomaticSearchDisabledForDisplayedSession:
+            statusView(
+                icon: "magnifyingglass",
+                message: "切歌后自动搜索已关闭",
+                detail: state.lyricsSession.persistenceStatusMessage.map { "读取已保存歌词失败：\($0)" }
+                    ?? "已保存版本仍会自动加载；可用顶部“搜索歌曲”入口手动查找。"
+            ) {
+                if let onSearch {
+                    Button("手动搜索歌词", action: onSearch)
+                        .buttonStyle(.borderedProminent)
+                        .tint(LyricsDesignTokens.accent)
+                }
+            }
         case .idle:
             statusView(icon: "music.note", message: "等待 Spotify 歌曲", detail: "连接后将自动补全当前歌曲歌词")
+        }
         }
     }
 
@@ -204,8 +228,14 @@ struct LyricsCanvasView: View {
     }
 
     private var lyricsScroll: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            translationControls
+        let seekDocumentTrack = state.displayedTrack
+        let seekDocumentIdentity = TrackIdentity(track: seekDocumentTrack)
+        let seekDocumentRevision = state.lyricsSessionRevision
+        let seekDocumentSource: PlaybackState.LyricsSeekDocumentSource = state.isShowingSearchPreview ? .searchPreview : .live
+        let seekLines = state.lyrics
+        let seekIsSynchronized = state.lyricsAreSynchronized
+        return VStack(alignment: .leading, spacing: 6) {
+            lyricsScopeControls
             GeometryReader { geometry in
                 ScrollViewReader { proxy in
                     ScrollView(.vertical) {
@@ -219,14 +249,20 @@ struct LyricsCanvasView: View {
                                 visibleLayerCount: visibleLayerCount
                             )
                         ) {
-                            ForEach(Array(state.lyrics.enumerated()), id: \.element.id) { index, line in
+                            ForEach(Array(seekLines.enumerated()), id: \.element.id) { index, line in
                                 if let seekTimestamp = LyricsTimeline.validSeekTimestamp(
                                     for: line,
-                                    isSynchronized: state.lyricsAreSynchronized,
-                                    duration: state.displayedTrack.duration
+                                    isSynchronized: seekIsSynchronized,
+                                    duration: seekDocumentTrack.duration
                                 ) {
                                     Button {
-                                        state.seek(to: seekTimestamp, source: "lyric-line")
+                                        state.seekFromDisplayedLyrics(
+                                            to: seekTimestamp,
+                                            documentIdentity: seekDocumentIdentity,
+                                            documentRevision: seekDocumentRevision,
+                                            documentSource: seekDocumentSource,
+                                            source: "lyric-line"
+                                        )
                                     } label: {
                                         lyricLineView(
                                             line: line,
@@ -307,6 +343,37 @@ struct LyricsCanvasView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var lyricsScopeControls: some View {
+        if state.isShowingSearchPreview {
+            searchPreviewReadOnlyCue
+        } else {
+            translationControls
+        }
+    }
+
+    private var searchPreviewReadOnlyCue: some View {
+        HStack(spacing: 8) {
+            Label("搜索预览 · 只读", systemImage: "eye")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(LyricsDesignTokens.accent)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(LyricsDesignTokens.accent.opacity(0.12), in: Capsule())
+
+            Text(state.displayedTrack.title.isEmpty ? "候选歌词" : state.displayedTrack.title)
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(LyricsDesignTokens.mutedText)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, LyricsDesignTokens.canvasHorizontalPadding)
+        .padding(.top, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("lyrics.search-preview.read-only")
     }
 
     private var translationControls: some View {
@@ -411,7 +478,7 @@ struct LyricsCanvasView: View {
 
                 ForEach(candidates) { candidate in
                     Button {
-                        state.adoptLyricsCandidate(candidate)
+                        candidateToPreview = candidate
                     } label: {
                         candidateRow(candidate)
                     }
@@ -424,6 +491,14 @@ struct LyricsCanvasView: View {
             .padding(.vertical, LyricsDesignTokens.canvasVerticalPadding)
         }
         .scrollIndicators(.hidden)
+        .sheet(item: $candidateToPreview) { candidate in
+            LyricsCandidatePreviewSheet(
+                candidate: candidate,
+                onAdopt: { try await state.adoptLyricsCandidate(candidate) },
+                onConfirmLocked: { try await state.confirmPendingManualLyricsAdoption() },
+                onCancelLocked: { state.cancelPendingManualLyricsAdoption() }
+            )
+        }
     }
 
     private func candidateRow(_ candidate: LyricsCandidate) -> some View {
@@ -552,7 +627,9 @@ struct LyricsStateContentFirstView: View {
 
     var body: some View {
         Group {
-            if case .candidates(_, let candidates) = state.lyricsState {
+            if state.isShowingSearchPreview {
+                searchPreviewContent
+            } else if case .candidates(_, let candidates) = state.lyricsState {
                 candidateContent(candidates)
             } else {
                 statusContent
@@ -560,11 +637,51 @@ struct LyricsStateContentFirstView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(item: $candidateToPreview) { candidate in
-            LyricsCandidatePreviewSheet(candidate: candidate) {
-                state.adoptLyricsCandidate(candidate)
-                candidateToPreview = nil
+            if !state.isShowingSearchPreview {
+                LyricsCandidatePreviewSheet(
+                    candidate: candidate,
+                    onAdopt: { try await state.adoptLyricsCandidate(candidate) },
+                    onConfirmLocked: { try await state.confirmPendingManualLyricsAdoption() },
+                    onCancelLocked: { state.cancelPendingManualLyricsAdoption() }
+                )
             }
         }
+        .onChange(of: state.isShowingSearchPreview) { _, showingPreview in
+            if showingPreview { candidateToPreview = nil }
+        }
+    }
+
+    // Preview feedback never builds a live operation or adoption sheet.
+    private var searchPreviewContent: some View {
+        ScrollView {
+            VStack(spacing: compact ? 12 : 16) {
+                Label("搜索预览 · 只读", systemImage: "eye")
+                    .foregroundStyle(LyricsDesignTokens.accent)
+                Text(state.displayedTrack.title)
+                    .font(.headline)
+                Text(stateTitle)
+                    .font(.title3)
+                Text(stateDetail)
+                    .foregroundStyle(LyricsDesignTokens.mutedText)
+                    .multilineTextAlignment(.center)
+                if case .candidates(_, let candidates) = state.lyricsState {
+                    ForEach(candidates) { candidate in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(candidate.title)
+                            Text("\(candidate.artist) · \(candidate.source.displayName)")
+                                .font(.caption)
+                                .foregroundStyle(LyricsDesignTokens.mutedText)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                Button("返回当前播放") { state.clearSearchPreview() }
+                    .buttonStyle(.bordered)
+            }
+            .padding(compact ? 18 : LyricsDesignTokens.Spacing.xl)
+            .frame(maxWidth: .infinity)
+        }
+        .accessibilityIdentifier("lyrics.search-preview.read-only.empty")
     }
 
     private var statusContent: some View {
@@ -614,6 +731,12 @@ struct LyricsStateContentFirstView: View {
         case .noSelection:
             if let onSearch {
                 Button("搜索歌词", action: onSearch)
+                    .buttonStyle(.borderedProminent)
+                    .tint(LyricsDesignTokens.accent)
+            }
+        case .idle where state.isAutomaticSearchDisabledForDisplayedSession:
+            if let onSearch {
+                Button("手动搜索歌词", action: onSearch)
                     .buttonStyle(.borderedProminent)
                     .tint(LyricsDesignTokens.accent)
             }
@@ -720,6 +843,8 @@ struct LyricsStateContentFirstView: View {
 
     private var stateTitle: String {
         switch state.lyricsState {
+        case .loading where state.isAutomaticSearchDisabledForDisplayedSession:
+            return "正在加载已保存歌词"
         case .loading:
             return "正在搜索歌词"
         case .noLyrics:
@@ -730,6 +855,8 @@ struct LyricsStateContentFirstView: View {
             return "暂不使用歌词"
         case .failed:
             return "歌词暂不可用"
+        case .idle where state.isAutomaticSearchDisabledForDisplayedSession:
+            return "切歌后自动搜索已关闭"
         case .idle:
             switch state.providerStatus {
             case .connecting:
@@ -756,6 +883,11 @@ struct LyricsStateContentFirstView: View {
 
     private var stateDetail: String {
         switch state.lyricsState {
+        case .loading where state.isAutomaticSearchDisabledForDisplayedSession:
+            if let error = state.lyricsSession.persistenceStatusMessage {
+                return "读取已保存歌词失败：\(error)"
+            }
+            return "切歌自动搜索已关闭；仍会恢复本地已保存版本。需要查找时可手动搜索。"
         case .loading:
             return "正在为当前歌曲查找可用歌词。"
         case .noLyrics:
@@ -766,6 +898,11 @@ struct LyricsStateContentFirstView: View {
             return "本次播放不显示歌词；已有版本没有被删除。"
         case .failed(_, let failure):
             return friendlyFailureDetail(failure)
+        case .idle where state.isAutomaticSearchDisabledForDisplayedSession:
+            if let error = state.lyricsSession.persistenceStatusMessage {
+                return "读取已保存歌词失败：\(error)"
+            }
+            return "已保存版本仍会自动加载；此设置只关闭切歌后自动搜索。可手动搜索当前歌曲。"
         case .idle:
             switch state.providerStatus {
             case .connecting:
@@ -826,13 +963,21 @@ struct LyricsStateContentFirstView: View {
                     candidateRow(candidate, isRecommended: candidate.id == recommendedID)
                 }
 
-                Button("不使用任何歌词版本") {
-                    state.selectNoLyricsVersion()
+                if state.isShowingSearchPreview {
+                    Label("预览中不会更改当前播放歌曲歌词版本", systemImage: "eye")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(LyricsDesignTokens.mutedText)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 4)
+                } else {
+                    Button("不使用任何歌词版本") {
+                        state.selectNoLyricsVersion()
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(LyricsDesignTokens.mutedText)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 4)
                 }
-                .buttonStyle(.borderless)
-                .foregroundStyle(LyricsDesignTokens.mutedText)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, 4)
 
                 if state.canCreateManualLyrics {
                     ManualLyricsActionsView(
@@ -937,8 +1082,14 @@ struct LyricsStateContentFirstView: View {
 
 private struct LyricsCandidatePreviewSheet: View {
     let candidate: LyricsCandidate
-    let onAdopt: () -> Void
+    let onAdopt: () async throws -> LyricsPersistenceSaveResult
+    let onConfirmLocked: () async throws -> LyricsPersistenceSaveResult?
+    let onCancelLocked: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var isSaving = false
+    @State private var isLockConfirmationPresented = false
+    @State private var conflictingLockedVersionIDs: [UUID] = []
+    @State private var failureMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -986,13 +1137,82 @@ private struct LyricsCandidatePreviewSheet: View {
 
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
-                Button("采用此版本", action: onAdopt)
+                Button("取消") {
+                    onCancelLocked()
+                    dismiss()
+                }
+                .disabled(isSaving)
+                Button(isSaving ? "正在保存…" : "采用此版本") {
+                    performAdoption(confirmingLocks: false)
+                }
                     .buttonStyle(.borderedProminent)
+                    .disabled(isSaving)
+            }
+            if let failureMessage {
+                Text(failureMessage)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(22)
         .frame(width: 620, height: 600)
+        .interactiveDismissDisabled(isSaving)
+        .confirmationDialog(
+            "歌词版本已锁定",
+            isPresented: $isLockConfirmationPresented,
+            titleVisibility: .visible
+        ) {
+            Button("仍采用此版本", role: .destructive) {
+                performAdoption(confirmingLocks: true)
+            }
+            Button("取消", role: .cancel) {
+                onCancelLocked()
+                conflictingLockedVersionIDs = []
+            }
+        } message: {
+            Text("当前歌曲有 \(conflictingLockedVersionIDs.count) 个锁定歌词版本。继续会将此候选设为当前，并保留原版本的锁定标记。")
+        }
+    }
+
+    private func performAdoption(confirmingLocks: Bool) {
+        guard !isSaving else { return }
+        isSaving = true
+        failureMessage = nil
+        Task { @MainActor in
+            do {
+                let result: LyricsPersistenceSaveResult?
+                if confirmingLocks {
+                    result = try await onConfirmLocked()
+                } else {
+                    result = try await onAdopt()
+                }
+                guard let result else {
+                    failureMessage = "候选已失效，请重新搜索后再采用。"
+                    isSaving = false
+                    return
+                }
+                switch result.disposition {
+                case .inserted, .duplicate:
+                    guard result.versionID != nil else {
+                        failureMessage = "歌词没有返回持久版本身份，未显示采用成功。"
+                        break
+                    }
+                    onCancelLocked()
+                    dismiss()
+                case .lockedConflict:
+                    conflictingLockedVersionIDs = result.conflictingLockedVersionIDs
+                    isLockConfirmationPresented = true
+                case .skippedLocked:
+                    failureMessage = "歌词仍受锁定保护，未采用。"
+                case .rejected(let message):
+                    failureMessage = message
+                }
+            } catch {
+                failureMessage = "歌词未能保存：\(error.localizedDescription)"
+            }
+            isSaving = false
+        }
     }
 
     private func previewTimeLabel(_ timestamp: TimeInterval) -> String {

@@ -40,6 +40,115 @@ public enum PlaybackProviderState: Equatable, Sendable {
     }
 }
 
+/// The provider that produced a playback snapshot. This is deliberately
+/// separate from process discovery: a running application is not proof that
+/// it is the active playback source.
+public enum PlaybackSourceIdentity: String, Codable, Equatable, Sendable {
+    case spotifyDesktop = "spotify"
+    case appleMusic = "appleMusic"
+    case mockPreview = "mockPreview"
+    case unknown = "unknown"
+}
+
+/// Inputs to the automatic live-capture capability gate. The gate is shared
+/// by the product job and the capture coordinator; external process and
+/// ScreenCaptureKit I/O happen only after it allows the request.
+public struct AutomaticLiveCaptureContext: Equatable, Sendable {
+    public let source: PlaybackSourceIdentity
+    public let providerIsReady: Bool
+    public let hasLiveTrack: Bool
+    public let isMockPreview: Bool
+    public let isPlaying: Bool
+    public let identityKey: String?
+
+    public init(
+        source: PlaybackSourceIdentity,
+        providerIsReady: Bool,
+        hasLiveTrack: Bool,
+        isMockPreview: Bool,
+        isPlaying: Bool,
+        identityKey: String?
+    ) {
+        self.source = source
+        self.providerIsReady = providerIsReady
+        self.hasLiveTrack = hasLiveTrack
+        self.isMockPreview = isMockPreview
+        self.isPlaying = isPlaying
+        self.identityKey = identityKey
+    }
+}
+
+public struct AutomaticLiveCaptureEligibility: Equatable, Sendable {
+    public let isAllowed: Bool
+    public let reason: String
+
+    public init(isAllowed: Bool, reason: String) {
+        self.isAllowed = isAllowed
+        self.reason = reason
+    }
+
+    public var isUnsupportedSource: Bool {
+        reason.hasPrefix("unsupported_source:") || reason == "mock_preview"
+    }
+}
+
+/// Source capability for the current automatic live-capture implementation.
+/// Spotify Desktop is the only supported live source in A0. Local-file
+/// alignment does not use this gate.
+public enum AutomaticLiveCaptureSourceGate {
+    public static func evaluate(
+        _ context: AutomaticLiveCaptureContext,
+        requiresPlaying: Bool = true
+    ) -> AutomaticLiveCaptureEligibility {
+        if context.isMockPreview {
+            return AutomaticLiveCaptureEligibility(isAllowed: false, reason: "mock_preview")
+        }
+        guard context.source == .spotifyDesktop else {
+            return AutomaticLiveCaptureEligibility(
+                isAllowed: false,
+                reason: "unsupported_source:\(context.source.rawValue)"
+            )
+        }
+        guard context.providerIsReady else {
+            return AutomaticLiveCaptureEligibility(isAllowed: false, reason: "playback_unavailable")
+        }
+        guard context.hasLiveTrack, let identityKey = context.identityKey, !identityKey.isEmpty else {
+            return AutomaticLiveCaptureEligibility(isAllowed: false, reason: "no_track_identity")
+        }
+        if requiresPlaying, !context.isPlaying {
+            return AutomaticLiveCaptureEligibility(isAllowed: false, reason: "not_playing")
+        }
+        return AutomaticLiveCaptureEligibility(isAllowed: true, reason: "spotify_supported")
+    }
+}
+
+/// In-memory provenance for one automatic capture job. It extends the
+/// existing generation/identity guard without changing any persisted schema.
+public struct AutomaticLiveCaptureSessionGuard: Equatable, Sendable {
+    public let source: PlaybackSourceIdentity
+    public let identityKey: String
+    public let generation: UInt64
+
+    public init(source: PlaybackSourceIdentity, identityKey: String, generation: UInt64) {
+        self.source = source
+        self.identityKey = identityKey
+        self.generation = generation
+    }
+
+    public func accepts(
+        source: PlaybackSourceIdentity,
+        identityKey: String?,
+        generation: UInt64,
+        providerReady: Bool
+    ) -> Bool {
+        providerReady
+            && self.source == .spotifyDesktop
+            && source == self.source
+            && identityKey == self.identityKey
+            && generation == self.generation
+    }
+}
+
 public struct ProviderTrack: Equatable, Sendable {
     /// Spotify's stable track identifier when the provider can read one.
     /// It is optional so identity can correctly fall back to metadata when
@@ -79,17 +188,20 @@ public struct PlaybackSnapshot: Equatable, Sendable {
     public let track: ProviderTrack?
     public let position: TimeInterval
     public let isPlaying: Bool
+    public let sourceIdentity: PlaybackSourceIdentity
 
     public init(
         status: PlaybackProviderState,
         track: ProviderTrack? = nil,
         position: TimeInterval = 0,
-        isPlaying: Bool = false
+        isPlaying: Bool = false,
+        sourceIdentity: PlaybackSourceIdentity = .unknown
     ) {
         self.status = status
         self.track = track
         self.position = position
         self.isPlaying = isPlaying
+        self.sourceIdentity = sourceIdentity
     }
 }
 

@@ -103,6 +103,95 @@ public enum FloatingLyricsPresentationHelper {
     }
 }
 
+private final class FloatingTimedRubyLayoutBox: NSObject {
+    let value: TimedRubyLayout?
+
+    init(_ value: TimedRubyLayout?) {
+        self.value = value
+    }
+}
+
+final class FloatingTimedRubyLayoutCacheKey: NSObject {
+    private struct Inputs: Hashable {
+        let originalText: String
+        let spans: [TimedTextSpan]
+        let fontSize: CGFloat
+        let weight: CGFloat
+        let showsRuby: Bool
+        let rubyTokens: [LyricRubyToken]?
+        let design: String
+    }
+
+    private let inputs: Inputs
+
+    init(
+        originalText: String,
+        spans: [TimedTextSpan],
+        fontSize: CGFloat,
+        weight: CGFloat,
+        showsRuby: Bool,
+        rubyTokens: [LyricRubyToken]?,
+        design: String
+    ) {
+        inputs = Inputs(
+            originalText: originalText,
+            spans: spans,
+            fontSize: fontSize,
+            weight: weight,
+            showsRuby: showsRuby,
+            rubyTokens: rubyTokens,
+            design: design
+        )
+    }
+
+    override var hash: Int { inputs.hashValue }
+
+    override func isEqual(_ object: Any?) -> Bool {
+        guard let other = object as? FloatingTimedRubyLayoutCacheKey else { return false }
+        return inputs == other.inputs
+    }
+}
+
+/// Bounded cache for desktop word-timing geometry. Playback time is not part
+/// of this key because the layout stores geometry; the live clock is read by
+/// the renderer when it paints progress.
+public enum FloatingTimedRubyLayoutCache {
+    private static let cache: NSCache<FloatingTimedRubyLayoutCacheKey, FloatingTimedRubyLayoutBox> = {
+        let cache = NSCache<FloatingTimedRubyLayoutCacheKey, FloatingTimedRubyLayoutBox>()
+        cache.countLimit = 512
+        return cache
+    }()
+
+    static func key(
+        originalText: String,
+        spans: [TimedTextSpan],
+        fontSize: CGFloat,
+        weight: CGFloat,
+        showsRuby: Bool,
+        rubyTokens: [LyricRubyToken]?,
+        design: String
+    ) -> FloatingTimedRubyLayoutCacheKey {
+        FloatingTimedRubyLayoutCacheKey(
+            originalText: originalText,
+            spans: spans,
+            fontSize: fontSize,
+            weight: weight,
+            showsRuby: showsRuby,
+            rubyTokens: rubyTokens,
+            design: design
+        )
+    }
+
+    static func layout(for key: FloatingTimedRubyLayoutCacheKey, make: () -> TimedRubyLayout?) -> TimedRubyLayout? {
+        if let cached = cache.object(forKey: key) {
+            return cached.value
+        }
+        let value = make()
+        cache.setObject(FloatingTimedRubyLayoutBox(value), forKey: key)
+        return value
+    }
+}
+
 public enum FloatingLyricsStylePanelPlacement: String, Equatable, Sendable {
     case right
     case left
@@ -247,6 +336,72 @@ public struct FloatingDesktopColor: Equatable, Sendable {
     }
 }
 
+/// Typography caches compare their complete inputs, rather than a delimiter
+/// string or Ruby token count. A reading correction can retain the same token
+/// count while changing both measured width and the fitted font size.
+final class FloatingEstimatedLineWidthCacheKey: NSObject {
+    private struct Inputs: Hashable {
+        let text: String?
+        let rubyTokens: [LyricRubyToken]?
+        let hasRuby: Bool
+        let fontSize: Double
+        let outlineWidth: Double
+    }
+
+    private let inputs: Inputs
+
+    init(text: String?, rubyTokens: [LyricRubyToken]?, hasRuby: Bool, fontSize: Double, outlineWidth: Double) {
+        inputs = Inputs(
+            text: text, rubyTokens: rubyTokens, hasRuby: hasRuby,
+            fontSize: fontSize, outlineWidth: outlineWidth
+        )
+    }
+
+    override var hash: Int { inputs.hashValue }
+
+    override func isEqual(_ object: Any?) -> Bool {
+        guard let other = object as? FloatingEstimatedLineWidthCacheKey else { return false }
+        return inputs == other.inputs
+    }
+}
+
+final class FloatingFittedFontSizeCacheKey: NSObject {
+    private struct Inputs: Hashable {
+        let requested: Double
+        let height: Double
+        let doubleLine: Bool
+        let hasRuby: Bool
+        let outlineWidth: Double
+        let width: Double?
+        let text: String?
+        let rubyTokens: [LyricRubyToken]?
+        let companionText: String?
+        let minFontSize: Double
+    }
+
+    private let inputs: Inputs
+
+    init(
+        requested: Double, height: Double, doubleLine: Bool, hasRuby: Bool,
+        outlineWidth: Double, width: Double?, text: String?, rubyTokens: [LyricRubyToken]?,
+        companionText: String?, minFontSize: Double
+    ) {
+        inputs = Inputs(
+            requested: requested, height: height, doubleLine: doubleLine,
+            hasRuby: hasRuby, outlineWidth: outlineWidth, width: width,
+            text: text, rubyTokens: rubyTokens, companionText: companionText,
+            minFontSize: minFontSize
+        )
+    }
+
+    override var hash: Int { inputs.hashValue }
+
+    override func isEqual(_ object: Any?) -> Bool {
+        guard let other = object as? FloatingFittedFontSizeCacheKey else { return false }
+        return inputs == other.inputs
+    }
+}
+
 public enum FloatingDesktopTypography {
     public static func outlineWidth(_ value: Double) -> Double {
         value.isFinite ? min(3, max(0, value)) : 1.25
@@ -267,14 +422,14 @@ public enum FloatingDesktopTypography {
             + (hasRuby ? ceil(fontSize * 0.45 * 1.3) + inset + 2 : 0)
     }
 
-    private static let estimatedLineWidthCache: NSCache<NSString, NSNumber> = {
-        let cache = NSCache<NSString, NSNumber>()
+    private static let estimatedLineWidthCache: NSCache<FloatingEstimatedLineWidthCacheKey, NSNumber> = {
+        let cache = NSCache<FloatingEstimatedLineWidthCacheKey, NSNumber>()
         cache.countLimit = 512
         return cache
     }()
 
-    private static let fittedFontSizeCache: NSCache<NSString, NSNumber> = {
-        let cache = NSCache<NSString, NSNumber>()
+    private static let fittedFontSizeCache: NSCache<FloatingFittedFontSizeCacheKey, NSNumber> = {
+        let cache = NSCache<FloatingFittedFontSizeCacheKey, NSNumber>()
         cache.countLimit = 256
         return cache
     }()
@@ -286,7 +441,10 @@ public enum FloatingDesktopTypography {
         fontSize: Double,
         outlineWidth: Double = 0
     ) -> Double {
-        let cacheKey = "\(text ?? "")-\(hasRuby)-\(fontSize)-\(outlineWidth)-\(rubyTokens?.count ?? 0)" as NSString
+        let cacheKey = FloatingEstimatedLineWidthCacheKey(
+            text: text, rubyTokens: rubyTokens, hasRuby: hasRuby,
+            fontSize: fontSize, outlineWidth: outlineWidth
+        )
         if let cached = estimatedLineWidthCache.object(forKey: cacheKey) {
             return cached.doubleValue
         }
@@ -379,7 +537,12 @@ public enum FloatingDesktopTypography {
         companionText: String? = nil,
         minFontSize: Double = 14
     ) -> Double {
-        let cacheKey = "\(requested)-\(height)-\(doubleLine)-\(hasRuby)-\(outlineWidth)-\(width ?? 0)-\(text ?? "")-\(companionText ?? "")-\(minFontSize)-\(rubyTokens?.count ?? 0)" as NSString
+        let cacheKey = FloatingFittedFontSizeCacheKey(
+            requested: requested, height: height, doubleLine: doubleLine,
+            hasRuby: hasRuby, outlineWidth: outlineWidth, width: width,
+            text: text, rubyTokens: rubyTokens, companionText: companionText,
+            minFontSize: minFontSize
+        )
         if let cached = fittedFontSizeCache.object(forKey: cacheKey) {
             return cached.doubleValue
         }

@@ -93,6 +93,7 @@ public enum VersionTag: String, Codable, Sendable, CaseIterable, Hashable {
     case remix
     case acoustic
     case piano
+    case spedUp
     case instrumental
     case karaoke
     case radioEdit

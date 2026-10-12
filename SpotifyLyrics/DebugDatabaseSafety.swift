@@ -1,6 +1,236 @@
-#if DEBUG
 import Foundation
 import Darwin
+import CryptoKit
+
+/// The application's defaults boundary. Release and ordinary Debug retain
+/// their existing standard domain; native acceptance has one validated suite.
+extension UserDefaults {
+    public static var lyricsQ: UserDefaults {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return DebugAcceptanceDataIsolation.defaults }
+#endif
+        return .standard
+    }
+}
+
+public enum LyricsQStorage {
+    public static var homeDirectory: URL {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return DebugAcceptanceDataIsolation.configuration.home }
+#endif
+        return FileManager.default.homeDirectoryForCurrentUser
+    }
+}
+
+#if DEBUG
+/// CFPreferences can route a named suite through the login user's daemon even
+/// with CFFIXED_USER_HOME. Acceptance therefore implements the existing
+/// UserDefaults API using one root-owned plist, never a CF persistent domain.
+private final class DebugPrivateUserDefaults: UserDefaults {
+    private let file: URL
+    private let suite: String
+    private let lock = NSRecursiveLock()
+    private var values: [String: Any]
+    init?(suiteName: String, storageURL: URL) {
+        file = storageURL
+        suite = suiteName
+        if FileManager.default.fileExists(atPath: storageURL.path) {
+            guard let data = try? Data(contentsOf: storageURL),
+                  let result = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+            else { DebugAcceptanceDataIsolation.refuse("private preferences unreadable") }
+            values = result
+        } else { values = [:] }
+        super.init(suiteName: suiteName)
+    }
+    override func object(forKey key: String) -> Any? {
+        lock.lock(); defer { lock.unlock() }; return values[key]
+    }
+    override func set(_ value: Any?, forKey key: String) {
+        lock.lock(); defer { lock.unlock() }; values[key] = value
+        _ = synchronize()
+    }
+    override func removeObject(forKey key: String) { set(nil, forKey: key) }
+    override func string(forKey key: String) -> String? { object(forKey: key) as? String }
+    override func array(forKey key: String) -> [Any]? { object(forKey: key) as? [Any] }
+    override func dictionary(forKey key: String) -> [String: Any]? { object(forKey: key) as? [String: Any] }
+    override func data(forKey key: String) -> Data? { object(forKey: key) as? Data }
+    override func stringArray(forKey key: String) -> [String]? { object(forKey: key) as? [String] }
+    override func bool(forKey key: String) -> Bool { (object(forKey: key) as? NSNumber)?.boolValue ?? false }
+    override func integer(forKey key: String) -> Int { (object(forKey: key) as? NSNumber)?.intValue ?? 0 }
+    override func float(forKey key: String) -> Float { (object(forKey: key) as? NSNumber)?.floatValue ?? 0 }
+    override func double(forKey key: String) -> Double { (object(forKey: key) as? NSNumber)?.doubleValue ?? 0 }
+    override func url(forKey key: String) -> URL? { string(forKey: key).flatMap(URL.init(string:)) }
+    override func set(_ value: Bool, forKey key: String) { set(value as Any, forKey: key) }
+    override func set(_ value: Int, forKey key: String) { set(value as Any, forKey: key) }
+    override func set(_ value: Float, forKey key: String) { set(value as Any, forKey: key) }
+    override func set(_ value: Double, forKey key: String) { set(value as Any, forKey: key) }
+    override func set(_ value: URL?, forKey key: String) { set(value?.absoluteString as Any?, forKey: key) }
+    override func dictionaryRepresentation() -> [String: Any] {
+        lock.lock(); defer { lock.unlock() }; return values
+    }
+    override func persistentDomain(forName name: String) -> [String: Any]? { name == suite ? dictionaryRepresentation() : nil }
+    override func setPersistentDomain(_ domain: [String: Any], forName name: String) {
+        guard name == suite else { DebugAcceptanceDataIsolation.refuse("foreign preference domain") }
+        lock.lock(); defer { lock.unlock() }; values = domain; _ = synchronize()
+    }
+    override func removePersistentDomain(forName name: String) { setPersistentDomain([:], forName: name) }
+    override func register(defaults registration: [String: Any]) {
+        lock.lock(); defer { lock.unlock() }
+        for (key, value) in registration where values[key] == nil { values[key] = value }
+    }
+    override func synchronize() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        DebugAcceptanceDataIsolation.requireStorage(file)
+        do {
+            let data = try PropertyListSerialization.data(fromPropertyList: values, format: .binary, options: 0)
+            try data.write(to: file, options: .atomic)
+            return true
+        } catch { DebugAcceptanceDataIsolation.refuse("private preferences write failed") }
+    }
+}
+
+/// Must complete before any StateObject, preferences, repository, credentials,
+/// local-index scan or player bridge is constructed. No acceptance flag can
+/// silently fall back to a daily resource.
+enum DebugAcceptanceDataIsolation {
+    // One explicit, recording-bound subscription acceptance grant. A spent
+    // counter remains valid on reopen, but can never authorize another send.
+    static let translationGrant = "6110651480"
+    static let secondTranslationGrant = "6119898076"
+    static let secondTranslationTrackKey = "spotify-id:0zlwh8kzv299erleomelad|metadata:gijikoi|harukihamano|gijikoikoreanver|217"
+    static let translationTrackKey = "spotify-id:3eqfsbmrzv3xbxqb6tofkw|metadata:ギジコイ|浜野はるき|lovetoxic|216"
+    static func validModelBudget(_ budget: [String: Any], grant: String?) -> Bool {
+        guard let maximum = budget["maximum"] as? Int, let used = budget["used"] as? Int,
+              let stopped = budget["stopped"] as? Bool,
+              let providers = budget["providers"] as? [String],
+              let tracks = budget["trackKeys"] as? [String] else { return false }
+        if maximum == 0 { return used == 0 && stopped && providers.isEmpty && tracks.isEmpty }
+        let expectedTrack: String?
+        switch grant {
+        case translationGrant: expectedTrack = translationTrackKey
+        case secondTranslationGrant: expectedTrack = secondTranslationTrackKey
+        default: expectedTrack = nil
+        }
+        return expectedTrack != nil && maximum == 1 && (0...1).contains(used)
+            && providers == ["translationEngine.codexChatGPT.v1"] && tracks == [expectedTrack!]
+    }
+    static var allowsExplicitTranslation: Bool {
+        let e = ProcessInfo.processInfo.environment
+        guard let grant = e["SPOTIFYLYRICS_ACCEPTANCE_TRANSLATION_GRANT"],
+              [translationGrant, secondTranslationGrant].contains(grant),
+              let path = e["SPOTIFYLYRICS_ACCEPTANCE_BUDGET_FILE"],
+              let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let budget = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              validModelBudget(budget, grant: grant) else { return false }
+        return budget["maximum"] as? Int == 1 && budget["used"] as? Int == 0 && budget["stopped"] as? Bool == false
+    }
+    struct Configuration {
+        let root: URL
+        let home: URL
+        let database: URL
+        let provenance: URL
+        let suiteName: String
+    }
+    nonisolated(unsafe) private static var prepared: Configuration?
+    nonisolated(unsafe) private static var preparedDefaults: UserDefaults?
+    static var isRequested: Bool {
+        let e = ProcessInfo.processInfo.environment
+        return ProcessInfo.processInfo.arguments.contains("--debug-native-acceptance")
+            || e["SPOTIFYLYRICS_DEBUG_ACCEPTANCE"] != nil
+            || e["SPOTIFYLYRICS_ACCEPTANCE_DATA_ROOT"] != nil
+            || e["SPOTIFYLYRICS_ACCEPTANCE_SUITE"] != nil
+            || (Bundle.main.bundleIdentifier?.hasPrefix("com.spotifylyrics.acceptance.") ?? false)
+    }
+    static var configuration: Configuration {
+        guard let prepared else { refuse("acceptance resource accessed before entry validation") }
+        return prepared
+    }
+    static var defaults: UserDefaults {
+        _ = configuration
+        guard let preparedDefaults else { refuse("acceptance defaults unavailable") }
+        return preparedDefaults
+    }
+    static func refuse(_ message: String) -> Never {
+        FileHandle.standardError.write(Data("[SpotifyLyrics][NativeIsolation] refusal=\(message)\n".utf8))
+        exit(78)
+    }
+    static func requireStorage(_ url: URL) {
+        guard isRequested else { return }
+        let root = configuration.root.path
+        let raw = url.path
+        guard raw.hasPrefix(root + "/"), !raw.split(separator: "/").contains(".."),
+              url.resolvingSymlinksInPath().standardizedFileURL == url.standardizedFileURL
+        else { refuse("storage escaped private root") }
+        if FileManager.default.fileExists(atPath: raw) {
+            var s = stat()
+            guard lstat(raw, &s) == 0, s.st_uid == geteuid(),
+                  (s.st_mode & S_IFMT) != S_IFLNK,
+                  ((s.st_mode & S_IFMT) != S_IFREG || s.st_nlink == 1) else { refuse("unsafe storage inode") }
+        }
+    }
+    static func prepareBeforeStateObjectsIfNeeded(bundleIdentifier: String? = Bundle.main.bundleIdentifier) {
+        guard isRequested else { return }
+        guard prepared == nil else { return }
+        let e = ProcessInfo.processInfo.environment
+        guard ProcessInfo.processInfo.arguments.contains("--debug-native-acceptance"),
+              e["SPOTIFYLYRICS_DEBUG_ACCEPTANCE"] == "1",
+              let bundleIdentifier, bundleIdentifier.hasPrefix("com.spotifylyrics.acceptance."),
+              e["SPOTIFYLYRICS_ACCEPTANCE_BUNDLE_ID"] == bundleIdentifier,
+              e["SPOTIFYLYRICS_DISABLE_KEYCHAIN"] == "1" else { refuse("missing flag, independent bundle identity or Keychain prohibition") }
+        guard let raw = e["SPOTIFYLYRICS_ACCEPTANCE_DATA_ROOT"],
+              raw.hasPrefix("/private/tmp/lyricsq-m1-native-"),
+              !raw.split(separator: "/").contains(where: { $0 == ".." || $0 == "." }),
+              !raw.contains("//"),
+              URL(fileURLWithPath: raw).standardizedFileURL == URL(fileURLWithPath: raw).resolvingSymlinksInPath().standardizedFileURL
+        else { refuse("invalid private root") }
+        let root = URL(fileURLWithPath: raw, isDirectory: true)
+        let home = root.appendingPathComponent("home", isDirectory: true)
+        let db = root.appendingPathComponent("lyrics.sqlite3")
+        let provenance = root.appendingPathComponent("provenance", isDirectory: true)
+        let digest = SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
+        let suite = bundleIdentifier + ".root." + digest
+        guard e["SPOTIFYLYRICS_ACCEPTANCE_SUITE"] == suite,
+              e["CFFIXED_USER_HOME"] == home.path,
+              FileManager.default.homeDirectoryForCurrentUser.resolvingSymlinksInPath().standardizedFileURL == home.standardizedFileURL,
+              e["TMPDIR"] == root.appendingPathComponent("tmp").path + "/",
+              e["SPOTIFYLYRICS_DATABASE_PATH"] == db.path,
+              e["SPOTIFYLYRICS_ALIGNMENT_PROVENANCE_PATH"] == provenance.path,
+              e["SPOTIFYLYRICS_ACCEPTANCE_BUDGET_FILE"] == root.appendingPathComponent("budget.json").path,
+              e["SPOTIFYLYRICS_ACCEPTANCE_CONTROL_PATH"] == root.appendingPathComponent("control.txt").path,
+              e["SPOTIFYLYRICS_E2E_LOG_PATH"] == root.appendingPathComponent("logs/e2e.log").path,
+              e["SPOTIFY_CLIENT_ID"] == nil,
+              !e.keys.contains(where: { $0.hasPrefix("SPOTIFYLYRICS_SCK_") || $0.hasPrefix("SPOTIFYLYRICS_AUTO_ALIGN_") })
+        else { refuse("environment, private home, suite or storage identity mismatch") }
+        // Check all existing data before reading a budget or preferences file.
+        let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
+        var paths = [root, home, root.appendingPathComponent("tmp"), provenance, root.appendingPathComponent("logs")]
+        while let url = enumerator?.nextObject() as? URL { paths.append(url) }
+        for url in paths {
+            var s = stat()
+            guard lstat(url.path, &s) == 0, s.st_uid == geteuid(),
+                  (s.st_mode & S_IFMT) != S_IFLNK,
+                  ((s.st_mode & S_IFMT) != S_IFREG || s.st_nlink == 1),
+                  (s.st_mode & 0o077) == 0 else { refuse("private storage ownership, permission or link violation") }
+        }
+        guard let data = try? Data(contentsOf: root.appendingPathComponent("budget.json")),
+              let budget = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              validModelBudget(budget, grant: e["SPOTIFYLYRICS_ACCEPTANCE_TRANSLATION_GRANT"])
+        else { refuse("missing, unapproved or invalid model budget") }
+        prepared = Configuration(root: root, home: home, database: db, provenance: provenance, suiteName: suite)
+        let preferences = root.appendingPathComponent("preferences.plist")
+        requireStorage(preferences)
+        guard let store = DebugPrivateUserDefaults(suiteName: suite, storageURL: preferences) else { refuse("private suite unavailable") }
+        preparedDefaults = store
+        // Never import daily settings/history. Preserve only this root's UI and
+        // choices on reopen; freeze all external side effects before init.
+        store.set("spotify", forKey: "playback.sourceMode")
+        store.set(false, forKey: "general.connectSpotifyOnLaunch")
+        store.set(false, forKey: "ai.autoTranslateNewLyrics")
+        store.set(false, forKey: "automaticAlignment.enabled.v1")
+        store.removeObject(forKey: "spotify.clientID")
+        FileHandle.standardError.write(Data("[SpotifyLyrics][NativeIsolation] ready root=\(raw) suite=\(suite) keychain=OFF model_budget=\(budget["maximum"] as? Int ?? -1) used=\(budget["used"] as? Int ?? -1) imports=NONE\n".utf8))
+    }
+}
 
 /// Fail-closed database boundary for Debug-only presentation experiments.
 ///

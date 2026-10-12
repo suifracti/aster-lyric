@@ -1,0 +1,53 @@
+#!/bin/zsh
+set -euo pipefail
+umask 077
+ROOT="${0:A:h}/.."
+BUILD="${TMPDIR:-/tmp}/lyrics-provider-model-settings"
+mkdir -p "$BUILD"
+cat > "$BUILD/logger.swift" <<'SWIFT'
+import Foundation
+enum LyricsE2ELog { static func log(_ message: String) { print(message) } }
+SWIFT
+SOURCES=(
+  "$ROOT/SpotifyLyrics/Models/Models.swift"
+  "$ROOT/SpotifyLyrics/Lyrics/TrackIdentity.swift"
+  "$ROOT/SpotifyLyrics/Lyrics/LyricsModels.swift"
+  "$ROOT/SpotifyLyrics/Lyrics/AlignmentModels.swift"
+  "$ROOT/SpotifyLyrics/Lyrics/TrackAlias.swift"
+  "$ROOT/SpotifyLyrics/Lyrics/TrackMetadata.swift"
+  "$ROOT/SpotifyLyrics/Lyrics/TrackTextNormalizer.swift"
+  "$ROOT/SpotifyLyrics/Lyrics/JapaneseRomanizer.swift"
+  "$ROOT/SpotifyLyrics/Lyrics/JapaneseReadingPipeline.swift"
+  "$ROOT/SpotifyLyrics/Lyrics/JapaneseKanaGenerator.swift"
+  "$ROOT/SpotifyLyrics/Lyrics/LyricsMatcher.swift"
+  "$ROOT/SpotifyLyrics/Editor/LyricsEditorModels.swift"
+  "$ROOT/SpotifyLyrics/Editor/LyricsTimelineValidator.swift"
+  "$ROOT/SpotifyLyrics/AI/AITranslationModels.swift"
+  "$ROOT/SpotifyLyrics/AI/AITranslationConfiguration.swift"
+  "$ROOT/SpotifyLyrics/Persistence/DatabaseModels.swift"
+  "$ROOT/SpotifyLyrics/Lyrics/ReadingModels.swift"
+  "$ROOT/SpotifyLyrics/Persistence/DatabaseMigrator.swift"
+  "$ROOT/SpotifyLyrics/Persistence/LyricsRepository.swift"
+  "$ROOT/SpotifyLyrics/Persistence/AlignmentProvenanceStore.swift"
+  "$ROOT/SpotifyLyrics/Lyrics/LyricsLanguageGate.swift"
+  "$ROOT/SpotifyLyrics/Persistence/LyricsPersistenceMapper.swift"
+  "$ROOT/SpotifyLyrics/Persistence/TranslationRepository.swift"
+  "$ROOT/SpotifyLyrics/Persistence/LyricsEditingRepository.swift"
+  "$ROOT/SpotifyLyrics/Persistence/SQLiteLyricsRepository.swift"
+  "$ROOT/SpotifyLyrics/Lyrics/ListeningHistoryModels.swift"
+  "$ROOT/SpotifyLyrics/Lyrics/ListeningStatisticsModels.swift"
+  "$ROOT/SpotifyLyrics/Lyrics/PersonalLyricsLibraryModels.swift"
+  "$ROOT/SpotifyLyrics/DebugDatabaseSafety.swift"
+  "$ROOT/SpotifyLyrics/AI/AITranslationKeychain.swift"
+  "$ROOT/SpotifyLyrics/AI/AITranslationPromptBuilder.swift"
+  "$ROOT/SpotifyLyrics/AI/AITranslationResponseParser.swift"
+  "$ROOT/SpotifyLyrics/AI/OpenAICompatibleClient.swift"
+  "$ROOT/SpotifyLyrics/AI/AITranslationService.swift"
+ "$ROOT/SpotifyLyrics/AI/MultiProviderTranslationServices.swift"
+ "$ROOT/SpotifyLyrics/Settings/TranslationModelSettingsStore.swift"
+ "$ROOT/Tests/translation_model_settings_contract.swift"
+ "$BUILD/logger.swift"
+)
+shasum -a 256 "$0" "${SOURCES[@]}" > "$BUILD/inputs.sha256"
+swiftc -D DEBUG -parse-as-library "${SOURCES[@]}" -o "$BUILD/contract"
+"$BUILD/contract"

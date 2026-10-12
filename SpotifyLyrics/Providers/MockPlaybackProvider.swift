@@ -13,7 +13,8 @@ public final class MockPlaybackProvider: PlaybackProvider {
             status: .mockPreview,
             track: ProviderTrack(mockTrack: MockData.sampleTrack),
             position: 0,
-            isPlaying: isPlaying
+            isPlaying: isPlaying,
+            sourceIdentity: .mockPreview
         )
     }
 

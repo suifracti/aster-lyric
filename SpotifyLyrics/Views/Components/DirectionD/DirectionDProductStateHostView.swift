@@ -42,7 +42,7 @@ public struct DirectionDProductStateHostView: View {
                                 router.onOpenSongWorkbench()
                             },
                             onOpenSearch: { router.onOpenManualLyricsSearch() },
-                            onOpenSettings: {}
+                            onOpenSettings: { router.onOpenSettings() }
                         )
 
                         Spacer(minLength: 12)
@@ -56,7 +56,10 @@ public struct DirectionDProductStateHostView: View {
 
                     if !isSmallViewport && isInspectorOpen {
                         DirectionDInspectorView(
-                            trackTitle: adapter.trackTitle.isEmpty ? "当前歌曲" : adapter.trackTitle,
+                            trackTitle: DirectionDTrackSummaryPresentation.displayTitle(
+                                adapter.trackTitle,
+                                hasCurrentTrack: adapter.hasTrackForDisplay
+                            ),
                             artistName: adapter.trackArtist.isEmpty ? "—" : adapter.trackArtist,
                             albumName: adapter.trackAlbum,
                             onClose: { isInspectorOpen = false }
@@ -71,7 +74,15 @@ public struct DirectionDProductStateHostView: View {
                         Color.black.opacity(0.40)
                             .edgesIgnoringSafeArea(.all)
                             .onTapGesture { isSmallSheetOpen = false }
-                        DirectionDSmallSheetView(onClose: { isSmallSheetOpen = false })
+                        DirectionDSmallSheetView(
+                            trackTitle: DirectionDTrackSummaryPresentation.displayTitle(
+                                adapter.trackTitle,
+                                hasCurrentTrack: adapter.hasTrackForDisplay
+                            ),
+                            artistName: adapter.trackArtist.isEmpty ? "—" : adapter.trackArtist,
+                            albumName: adapter.trackAlbum,
+                            onClose: { isSmallSheetOpen = false }
+                        )
                             .transition(.move(edge: .bottom))
                     }
                 }
@@ -138,9 +149,7 @@ public struct DirectionDProductStateHostView: View {
                 primaryTitle: "手动搜索歌词",
                 primary: { router.onOpenManualLyricsSearch() },
                 secondaryTitle: "导入本地歌词",
-                secondary: { router.onImportLyrics() },
-                tertiaryTitle: "歌曲工作台",
-                tertiary: { router.onOpenSongWorkbench() }
+                secondary: { router.onImportLyrics() }
             )
 
         case .networkUnavailableNoCache:

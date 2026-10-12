@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import ScreenCaptureKit
 import CoreMedia
 import AVFoundation
@@ -36,13 +37,25 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
     private var autoStopTask: Task<Void, Never>?
     private var workDirectory: URL?
     private var selectedAppsDescription: String = ""
+    private weak var playback: PlaybackState?
+    private var playbackCancellables = Set<AnyCancellable>()
+    private var activeCaptureGuard: AutomaticLiveCaptureSessionGuard?
+    private var captureGeneration: UInt64 = 0
+    private let sampleDeliveryGate = CaptureSampleDeliveryGate()
 
     /// Optional sink for S2 continuity layer. Invoked on the capture queue.
-    nonisolated(unsafe) public var audioSampleHandler: ((CMSampleBuffer) -> Void)?
+    /// The generation is assigned by the coordinator and is invalidated before
+    /// a segment is finalized. It prevents queued samples from being relabeled
+    /// as belonging to a later segment.
+    nonisolated(unsafe) public var audioSampleHandler: ((CMSampleBuffer, UInt64) -> Void)?
 
     private override init() {
         super.init()
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return }
+#endif
         Self.scavengeOrphanTempDirectories()
+        #if DEBUG
         // Prefer S2 auto-start when both envs are set.
         if ProcessInfo.processInfo.environment["SPOTIFYLYRICS_SCK_S2"] == "1" {
             // LiveCaptureCoordinator owns start sequencing.
@@ -54,6 +67,7 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
                 await self.start(autoStopAfter: max(5, seconds))
             }
         }
+        #endif
     }
 
     deinit {
@@ -63,11 +77,80 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
 
     // MARK: - Public control
 
-    public func start(autoStopAfter seconds: TimeInterval? = nil) async {
+    public func bind(playback: PlaybackState) {
+        playbackCancellables.removeAll()
+        self.playback = playback
+        playback.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.evaluateBoundPlaybackContext()
+                }
+            }
+            .store(in: &playbackCancellables)
+    }
+
+    /// Assign the currently open coordinator segment's sample generation.
+    /// Zero means that no sample may be forwarded to the coordinator.
+    public func setSampleDeliveryGeneration(_ generation: UInt64) {
+        sampleDeliveryGate.setGeneration(generation)
+    }
+
+    /// Invalidate queued callbacks before a segment is closed or a stream is
+    /// replaced. The serial callback queue is drained while the gate is off,
+    /// so a callback already queued before the boundary cannot enter the next
+    /// segment after it is assigned a new generation.
+    public func invalidateSampleDeliveryAndDrain() {
+        sampleDeliveryGate.invalidate()
+        sampleQueue.sync { }
+    }
+
+    public func start(
+        autoStopAfter seconds: TimeInterval? = nil,
+        sessionGuard: AutomaticLiveCaptureSessionGuard? = nil
+    ) async {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return }
+#endif
         guard state == .idle || state == .failed else {
             SCKSpikeLog.log("start ignored state=\(state.rawValue)")
             return
         }
+        guard let playback else {
+            lastError = "没有绑定当前播放来源，已拒绝 Spotify discovery"
+            SCKSpikeLog.log("SPIKE start rejected reason=no_playback_bound")
+            return
+        }
+        // Keep the existing paused-session behavior for manual/debug entry;
+        // automatic alignment gates playing state before reaching here.
+        let eligibility = playback.liveCaptureEligibility(requiresPlaying: false)
+        guard eligibility.isAllowed else {
+            lastError = playback.playbackSourceIdentity == .appleMusic
+                ? "当前 Apple Music 播放不支持 Spotify discovery/capture"
+                : "当前播放来源不支持 Spotify discovery/capture（\(eligibility.reason)）"
+            SCKSpikeLog.log(
+                "SPIKE start rejected source=\(playback.playbackSourceIdentity.rawValue) reason=\(eligibility.reason)"
+            )
+            return
+        }
+        guard let identityKey = playback.liveTrackIdentity?.stableKey else {
+            lastError = "当前播放来源缺少有效歌曲身份，已拒绝 Spotify discovery"
+            SCKSpikeLog.log("SPIKE start rejected reason=no_track_identity")
+            return
+        }
+        captureGeneration &+= 1
+        let startGuard = sessionGuard ?? AutomaticLiveCaptureSessionGuard(
+            source: playback.playbackSourceIdentity,
+            identityKey: identityKey,
+            generation: captureGeneration
+        )
+        guard startGuard.source == .spotifyDesktop,
+              startGuard.identityKey == identityKey else {
+            lastError = "播放来源或歌曲已切换，已拒绝 Spotify discovery"
+            SCKSpikeLog.log("SPIKE start rejected reason=stale_start_guard")
+            return
+        }
+        activeCaptureGuard = startGuard
         lastError = nil
         state = .discovering
         stats.reset()
@@ -78,6 +161,10 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
 
         do {
             let discovery = try await Self.discoverSpotifyApplications()
+            guard accepts(startGuard) else {
+                await rejectStaleStart(startGuard)
+                return
+            }
             selectedAppsDescription = discovery.summary
             SCKSpikeLog.log("DISCOVER \(discovery.summary)")
             for line in discovery.detailLines {
@@ -88,6 +175,10 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
             }
 
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            guard accepts(startGuard) else {
+                await rejectStaleStart(startGuard)
+                return
+            }
             guard let display = content.displays.first else {
                 throw SpikeError.noDisplay
             }
@@ -117,6 +208,8 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
             let stream = SCStream(filter: filter, configuration: config, delegate: self)
             // Audio output only — no screen consumer.
             try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
+            self.stream = stream
+            sampleDeliveryGate.activate(stream: stream)
             SCKSpikeLog.log("STREAM configured capturesAudio=1 screenOutput=0 mic=0 sampleRate=48000 channels=2")
 
             let work = FileManager.default.temporaryDirectory
@@ -132,8 +225,15 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
             )
             SCKSpikeLog.log("TEMP dir=\(work.path) (marker only; no audio files)")
 
+            guard accepts(startGuard) else {
+                await rejectStaleStart(startGuard)
+                return
+            }
             try await stream.startCapture()
-            self.stream = stream
+            guard accepts(startGuard) else {
+                await rejectStaleStart(startGuard)
+                return
+            }
             state = .capturing
             SCKSpikeLog.log("STREAM started")
 
@@ -154,6 +254,11 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
                 }
             }
         } catch {
+            if !accepts(startGuard) {
+                await rejectStaleStart(startGuard)
+                return
+            }
+            activeCaptureGuard = nil
             let message = (error as? SpikeError)?.errorDescription ?? error.localizedDescription
             lastError = message
             state = .failed
@@ -164,6 +269,7 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
 
     public func stop(reason: String = "user") async {
         guard state == .capturing || state == .discovering || state == .failed else { return }
+        activeCaptureGuard = nil
         state = .stopping
         SCKSpikeLog.log("SPIKE stop reason=\(reason)")
         autoStopTask?.cancel()
@@ -174,6 +280,42 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
         await cleanupResources(reason: reason)
         state = .idle
         SCKSpikeLog.log("SPIKE stopped idle")
+    }
+
+    private func accepts(_ startGuard: AutomaticLiveCaptureSessionGuard) -> Bool {
+        guard activeCaptureGuard == startGuard,
+              let playback else { return false }
+        return startGuard.accepts(
+            source: playback.playbackSourceIdentity,
+            identityKey: playback.liveTrackIdentity?.stableKey,
+            generation: startGuard.generation,
+            providerReady: playback.providerStatus.isReady
+                && playback.hasLiveTrack
+                && !playback.isMockPreviewMode
+        )
+    }
+
+    private func rejectStaleStart(_ startGuard: AutomaticLiveCaptureSessionGuard) async {
+        guard activeCaptureGuard == startGuard else { return }
+        activeCaptureGuard = nil
+        autoStopTask?.cancel()
+        autoStopTask = nil
+        statsTimer?.invalidate()
+        statsTimer = nil
+        await cleanupResources(reason: "stale-start")
+        state = .idle
+        SCKSpikeLog.log("SPIKE drop stale startup provenance")
+    }
+
+    private func evaluateBoundPlaybackContext() {
+        guard activeCaptureGuard != nil,
+              state == .discovering || state == .capturing else { return }
+        guard let startGuard = activeCaptureGuard, accepts(startGuard) else {
+            Task { @MainActor [weak self] in
+                await self?.stop(reason: "playback-context-changed")
+            }
+            return
+        }
     }
 
     // MARK: - Discovery
@@ -219,6 +361,7 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
     }
 
     private func cleanupResources(reason: String) async {
+        invalidateSampleDeliveryAndDrain()
         if let stream {
             do {
                 try await stream.stopCapture()
@@ -229,6 +372,7 @@ public final class SpotifyScreenCaptureAudioSpike: NSObject, ObservableObject {
             try? stream.removeStreamOutput(self, type: .audio)
         }
         self.stream = nil
+        sampleDeliveryGate.invalidate()
 
         if let workDirectory {
             let path = workDirectory.path
@@ -268,8 +412,11 @@ extension SpotifyScreenCaptureAudioSpike: SCStreamDelegate, SCStreamOutput {
             return
         }
         guard type == .audio else { return }
+        guard sampleDeliveryGate.matches(stream: stream) else { return }
         stats.ingestAudio(sampleBuffer)
-        audioSampleHandler?(sampleBuffer)
+        if let generation = sampleDeliveryGate.generation(for: stream) {
+            audioSampleHandler?(sampleBuffer, generation)
+        }
     }
 
     nonisolated public func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -279,6 +426,51 @@ extension SpotifyScreenCaptureAudioSpike: SCStreamDelegate, SCStreamOutput {
             self.state = .failed
             await self.cleanupResources(reason: "stream-error")
         }
+    }
+}
+
+/// Thread-safe provenance for ScreenCaptureKit callbacks. A stream identity
+/// prevents a callback from an old stream being re-labeled after restart;
+/// generation is controlled by the coordinator at segment boundaries.
+private final class CaptureSampleDeliveryGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var activeStreamID: ObjectIdentifier?
+    private var activeGeneration: UInt64 = 0
+
+    func activate(stream: SCStream) {
+        lock.lock()
+        defer { lock.unlock() }
+        activeStreamID = ObjectIdentifier(stream)
+        activeGeneration = 0
+    }
+
+    func setGeneration(_ generation: UInt64) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard activeStreamID != nil else { return }
+        activeGeneration = generation
+    }
+
+    func invalidate() {
+        lock.lock()
+        defer { lock.unlock() }
+        activeStreamID = nil
+        activeGeneration = 0
+    }
+
+    func generation(for stream: SCStream) -> UInt64? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard activeStreamID == ObjectIdentifier(stream), activeGeneration != 0 else {
+            return nil
+        }
+        return activeGeneration
+    }
+
+    func matches(stream: SCStream) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return activeStreamID == ObjectIdentifier(stream)
     }
 }
 
@@ -451,7 +643,14 @@ private enum SpikeError: Error, LocalizedError {
 }
 
 enum SCKSpikeLog {
-    private static let path = "/tmp/spotifylyrics-sck-spike.log"
+    private static var path: String {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested {
+            return DebugAcceptanceDataIsolation.configuration.root.appendingPathComponent("logs/capture.log").path
+        }
+#endif
+        return "/tmp/spotifylyrics-sck-spike.log"
+    }
     private static let lock = NSLock()
 
     static func reset() {

@@ -71,11 +71,10 @@ assert_contains "lyrics tokens define reading anchor" "$TOKENS" "readingAnchor"
 assert_contains "lyrics tokens define active scale" "$TOKENS" "activeScale"
 assert_contains "hero typography is semibold" "$TOKENS" ".system(size: size, weight: .semibold"
 
-# Inspector is a task-oriented continuous workbench; engineering details are
-# behind a disclosure and no dashboard badge is required by the normal layer.
-assert_contains "inspector uses task language" "$INSPECTOR" 'title: "歌词与版本"'
-assert_contains "inspector has collapsed advanced details" "$INSPECTOR" 'DisclosureGroup'
-assert_contains "inspector avoids technical badge layer" "$INSPECTOR" '高级详细信息'
+# The workbench identifies unavailable actions without implying fixed completion.
+assert_contains "inspector explains experimental scope" "$INSPECTOR" 'title: "Direction D 实验界面"'
+assert_contains "inspector explains unavailable details" "$INSPECTOR" '暂未接入此工作台'
+assert_not_contains "inspector avoids false completed state" "$INSPECTOR" 'status: "已完成"'
 assert_not_contains "inspector has no 100 percent badge" "$INSPECTOR" "100%"
 assert_not_contains "inspector has no debug badge title" "$INSPECTOR" "DEBUG"
 

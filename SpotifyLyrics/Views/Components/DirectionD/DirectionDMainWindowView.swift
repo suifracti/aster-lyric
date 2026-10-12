@@ -38,6 +38,12 @@ public struct DirectionDMainWindowView: View {
     private var trackTitle: String { currentTrack.title }
     private var artistName: String { currentTrack.artist }
     private var albumName: String { currentTrack.album }
+    private var trackSummaryTitle: String {
+        DirectionDTrackSummaryPresentation.displayTitle(
+            trackTitle,
+            hasCurrentTrack: playbackState.hasLiveTrack || playbackState.isMockPreviewMode
+        )
+    }
     private var isPlaying: Bool { playbackState.isPlaying }
     private var currentTime: Double { playbackState.currentTime }
     private var totalDuration: Double { max(1, currentTrack.duration) }
@@ -137,7 +143,7 @@ public struct DirectionDMainWindowView: View {
                             .onTapGesture { isSmallSheetOpen = false }
 
                         DirectionDSmallSheetView(
-                            trackTitle: trackTitle.isEmpty ? "当前歌曲" : trackTitle,
+                            trackTitle: trackSummaryTitle,
                             artistName: artistName.isEmpty ? "—" : artistName,
                             albumName: albumName,
                             onClose: { isSmallSheetOpen = false }
@@ -222,6 +228,7 @@ public struct DirectionDMainWindowView: View {
             VStack(spacing: 0) {
                 DirectionDQuietToolbar(
                     isInspectorOpen: isInspectorOpen,
+                    canPresentWindowActions: router.canPresentWindowActions,
                     onToggleInspector: {
                         isInspectorOpen.toggle()
                         router.onOpenSongWorkbench()
@@ -239,7 +246,7 @@ public struct DirectionDMainWindowView: View {
 
             if isInspectorOpen {
                 DirectionDInspectorView(
-                    trackTitle: trackTitle.isEmpty ? "当前歌曲" : trackTitle,
+                    trackTitle: trackSummaryTitle,
                     artistName: artistName.isEmpty ? "—" : artistName,
                     albumName: albumName,
                     onClose: { isInspectorOpen = false }
@@ -283,6 +290,7 @@ public struct DirectionDMainWindowView: View {
 
                 DirectionDQuietToolbar(
                     isInspectorOpen: isSmallSheetOpen,
+                    canPresentWindowActions: router.canPresentWindowActions,
                     onToggleInspector: {
                         isSmallSheetOpen.toggle()
                         router.onOpenSongWorkbench()
@@ -309,6 +317,7 @@ public struct DirectionDMainWindowView: View {
         VStack(spacing: 0) {
             DirectionDQuietToolbar(
                 isInspectorOpen: isInspectorOpen,
+                canPresentWindowActions: router.canPresentWindowActions,
                 onToggleInspector: {
                     isInspectorOpen.toggle()
                     router.onOpenSongWorkbench()
@@ -469,10 +478,10 @@ public struct DirectionDMainWindowView: View {
                 icon: "text.magnifyingglass",
                 primaryTitle: "手动搜索歌词",
                 primary: { router.onOpenManualLyricsSearch() },
+                primaryDisabledReason: router.canPresentWindowActions ? nil : "此诊断窗口无法打开歌词搜索，请使用主窗口。",
                 secondaryTitle: "导入本地歌词",
                 secondary: { router.onImportLyrics() },
-                tertiaryTitle: "歌曲工作台",
-                tertiary: { router.onOpenSongWorkbench() }
+                secondaryDisabledReason: router.canPresentWindowActions ? nil : "此诊断窗口无法打开歌词编辑器，请使用主窗口导入。"
             )
         case .networkUnavailableNoCache:
             statusActions(
@@ -481,7 +490,8 @@ public struct DirectionDMainWindowView: View {
                 primaryTitle: "重新尝试",
                 primary: { router.onRetryLyricsSearch() },
                 secondaryTitle: "导入本地歌词",
-                secondary: { router.onImportLyrics() }
+                secondary: { router.onImportLyrics() },
+                secondaryDisabledReason: router.canPresentWindowActions ? nil : "此诊断窗口无法打开歌词编辑器，请使用主窗口导入。"
             )
         case .showingLyrics:
             if projectedLyrics.isEmpty {
@@ -647,8 +657,10 @@ public struct DirectionDMainWindowView: View {
         icon: String,
         primaryTitle: String,
         primary: @escaping () -> Void,
+        primaryDisabledReason: String? = nil,
         secondaryTitle: String? = nil,
         secondary: (() -> Void)? = nil,
+        secondaryDisabledReason: String? = nil,
         tertiaryTitle: String? = nil,
         tertiary: (() -> Void)? = nil
     ) -> some View {
@@ -665,10 +677,20 @@ public struct DirectionDMainWindowView: View {
             HStack(spacing: 10) {
                 Button(primaryTitle, action: primary)
                     .buttonStyle(.borderedProminent)
+                    .disabled(primaryDisabledReason != nil)
+                    .help(primaryDisabledReason ?? primaryTitle)
                 if let secondaryTitle, let secondary {
                     Button(secondaryTitle, action: secondary)
                         .buttonStyle(.bordered)
+                        .disabled(secondaryDisabledReason != nil)
+                        .help(secondaryDisabledReason ?? secondaryTitle)
                 }
+            }
+            if primaryDisabledReason != nil || secondaryDisabledReason != nil {
+                Text("此诊断窗口无法打开搜索或歌词编辑器；请使用主窗口完成这些操作。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .multilineTextAlignment(.center)
             }
 
             if let tertiaryTitle, let tertiary {

@@ -12,7 +12,6 @@ public struct DirectionDInspectorView: View {
     public let artworkImage: Image?
     public let onClose: () -> Void
 
-    @State private var isAdvancedExpanded = false
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     public init(
@@ -64,91 +63,20 @@ public struct DirectionDInspectorView: View {
                     trackSummary
                     sectionDivider
 
-                    inspectorSection(title: "歌词与版本", icon: "text.book.closed") {
-                        selectionRow(
-                            title: "社区同步歌词",
-                            detail: "包含逐行时间轴",
-                            status: "当前使用"
-                        )
-
-                        HStack(spacing: 16) {
-                            inspectorAction("切换候选", systemImage: "arrow.left.arrow.right") {}
-                            inspectorAction("重新搜索", systemImage: "magnifyingglass") {}
-                        }
-                        .padding(.top, 10)
+                    inspectorSection(title: "Direction D 实验界面", icon: "info.circle") {
+                        Text("这里显示当前歌曲信息。歌词版本、翻译、读音和时间轴状态暂未接入此工作台。")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.68))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     sectionDivider
 
-                    inspectorSection(title: "翻译与读音", icon: "character.book.closed") {
-                        selectionRow(
-                            title: "智能意译",
-                            detail: "自然流畅风格",
-                            status: "当前显示"
-                        )
-                        selectionRow(
-                            title: "日文平假名注音",
-                            detail: "与原文保持对齐",
-                            status: "可显示"
-                        )
+                    inspectorSection(title: "工作台操作", icon: "ellipsis.circle") {
+                        Text("候选切换、搜索、校准、历史版本及导入导出暂不可在此操作。请使用主窗口的搜索或现有歌词编辑入口。")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.68))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    sectionDivider
-
-                    inspectorSection(title: "时间同步", icon: "clock") {
-                        selectionRow(
-                            title: "逐行时间轴同步",
-                            detail: "当前版本已完成",
-                            status: "已完成"
-                        )
-                        inspectorAction("校准时间", systemImage: "slider.horizontal.3") {}
-                            .padding(.top, 10)
-                    }
-                    sectionDivider
-
-                    inspectorSection(title: "历史版本", icon: "clock.arrow.circlepath") {
-                        HStack(spacing: 10) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("查看歌词与翻译的历史版本")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.92))
-                                Text("保留原始内容，随时可以恢复")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.white.opacity(0.56))
-                            }
-                            Spacer(minLength: 8)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.42))
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {}
-                    }
-                    sectionDivider
-
-                    inspectorSection(title: "导入与导出", icon: "square.and.arrow.down") {
-                        HStack(spacing: 16) {
-                            inspectorAction("导出 .lrc", systemImage: "square.and.arrow.up") {}
-                            inspectorAction("导入本地文件", systemImage: "square.and.arrow.down") {}
-                        }
-                    }
-                    sectionDivider
-
-                    DisclosureGroup(isExpanded: $isAdvancedExpanded) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("来源与运行细节")
-                            Text("仅用于排查问题，不影响歌词显示")
-                        }
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.54))
-                        .padding(.top, 10)
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "ellipsis.circle")
-                            Text("高级详细信息")
-                        }
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.64))
-                    }
-                    .tint(.white.opacity(0.58))
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 18)
@@ -232,32 +160,7 @@ public struct DirectionDInspectorView: View {
         }
     }
 
-    private func selectionRow(title: String, detail: String, status: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.94))
-                Text(detail)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.56))
-            }
-            Spacer(minLength: 8)
-            Text(status)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.56))
-        }
-    }
 
-    private func inspectorAction(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.76))
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-    }
 }
 
 /// Small window Sheet Overlay component for Direction D.

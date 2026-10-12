@@ -26,16 +26,21 @@ struct ExperienceLibraryContract {
             "design-only capsule must not claim runnable preview"
         )
         require(
-            catalog.metadata(for: "capsule.controlFocused.v2")?.status == .current,
-            "control-focused v2 must remain the current capsule"
+            catalog.metadata(for: "capsule.controlFocused.v2")?.availability == .release
+                && catalog.metadata(for: "capsule.controlFocused.v2")?.isPreviewable == true,
+            "explicit control-focused v2 selections must remain runnable"
         )
         require(
             catalog.metadata(for: "capsule.dynamicIslandDark.v4")?.availability == .release,
             "dynamic-island dark v4 must be Release-capable"
         )
         require(
-            catalog.metadata(for: "capsule.dynamicIslandDark.v4")?.status == .recommended,
-            "dynamic-island dark v4 must remain the recommended capsule"
+            catalog.metadata(for: "capsule.dynamicIslandDark.v4")?.status == .current,
+            "dynamic-island dark v4 must remain the current capsule"
+        )
+        require(
+            catalog.recommended(for: .capsule)?.stableID == "capsule.dynamicIslandDark.v4",
+            "unset capsule selection must fall back to the current v4"
         )
 
         let mainIDs = [

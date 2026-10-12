@@ -39,6 +39,16 @@ public final class LyricsSearchManager: @unchecked Sendable {
         let duration: TimeInterval
     }
 
+    private struct AutomaticAdoption {
+        let document: LyricsDocument
+        let decision: LyricsMatchDecision
+        let timingPriority: Int
+        let providerIndex: Int
+        let candidateIndex: Int
+        let providerName: String
+        let cameFromCandidates: Bool
+    }
+
     public init(
         providers: [LyricsProvider],
         name: String = "Lyrics Search",
@@ -76,11 +86,13 @@ public final class LyricsSearchManager: @unchecked Sendable {
         identity: TrackIdentity
     ) async -> ProviderProbeResult {
         let started = Date()
+        LyricsE2ELog.log("PROBE start provider=\(indexedProvider.provider.name) queryTitle=\(track.title) queryArtist=\(track.artist)")
         let result = await lookupWithTimeout(
             provider: indexedProvider.provider,
             track: track,
             identity: identity
         )
+        LyricsE2ELog.log("PROBE finish provider=\(indexedProvider.provider.name) elapsed=\(String(format: "%.3f", Date().timeIntervalSince(started)))s cancelled=\(Task.isCancelled) outcome=\(probeOutcome(result))")
         return ProviderProbeResult(
             index: indexedProvider.index,
             provider: indexedProvider.provider,
@@ -89,15 +101,34 @@ public final class LyricsSearchManager: @unchecked Sendable {
         )
     }
 
+    private static func probeOutcome(_ result: LyricsLookupResult) -> String {
+        switch result {
+        case .match: return "match"
+        case .candidates(let list): return "candidates(\(list.count))"
+        case .noMatch: return "noMatch"
+        case .noLyrics: return "noLyrics"
+        case .failed(.serverError(let code)): return "http(\(code))"
+        case .failed(.timedOut): return "timedOut"
+        case .failed(.networkUnavailable): return "networkUnavailable"
+        case .failed(.cancelled): return "cancelled"
+        case .failed: return "failure"
+        }
+    }
+
     private static func probeNetworkProviders(
         track: Track,
         identity: TrackIdentity,
-        providers: [IndexedProvider]
+        providers: [IndexedProvider],
+        metadata: TrackMetadata,
+        variant: LyricsQueryVariant,
+        onProvisional: (@Sendable (LyricsDocument) async -> Void)? = nil,
+        onCandidates: (@Sendable ([LyricsCandidate]) async -> Void)? = nil
     ) async -> [ProviderProbeResult] {
         await withTaskGroup(of: ProviderProbeResult.self) { group in
             var next = 0
+            var settled = false
             func enqueueNext() {
-                guard !Task.isCancelled, next < providers.count else { return }
+                guard !settled, !Task.isCancelled, next < providers.count else { return }
                 let indexedProvider = providers[next]
                 next += 1
                 group.addTask {
@@ -107,12 +138,93 @@ public final class LyricsSearchManager: @unchecked Sendable {
             for _ in 0..<min(3, providers.count) { enqueueNext() }
             var results: [ProviderProbeResult] = []
             for await result in group {
-                results.append(result)
+                if !settled {
+                    results.append(result)
+                    // A safely identified original can appear while preceding
+                    // sources settle. Final ranking/persistence still occurs
+                    // after the bounded group; no candidate confirmation needed.
+                    if !Task.isCancelled, let document = automaticProvisionalDocument(result, metadata: metadata, variant: variant) {
+                        await onProvisional?(document)
+                    }
+                    if !Task.isCancelled {
+                        let previews = safePreviewCandidates(result, metadata: metadata, variant: variant)
+                        if !previews.isEmpty { await onCandidates?(previews) }
+                    }
+                }
                 if Task.isCancelled { group.cancelAll() }
-                else { enqueueNext() }
+                else if !settled, let ready = results.filter({ hasAutomaticResult($0, metadata: metadata, variant: variant) }).min(by: { $0.index < $1.index }),
+                        providers.filter({ $0.index < ready.index }).allSatisfy({ prior in results.contains { $0.index == prior.index } }) {
+                    // Once an eligible result and its preceding providers have
+                    // resolved, unrelated lower-priority network work cannot
+                    // keep the listening UI blocked until its own timeout.
+                    settled = true
+                    group.cancelAll()
+                } else { enqueueNext() }
             }
             return results.sorted { $0.index < $1.index }
         }
+    }
+
+    /// Uses the same decision/enrichment as final acceptance. Publishing a
+    /// preview never adopts it or upgrades incompatible recording timestamps.
+    private static func safePreviewCandidates(_ probe: ProviderProbeResult, metadata: TrackMetadata, variant: LyricsQueryVariant) -> [LyricsCandidate] {
+        let list: [LyricsCandidate]
+        switch probe.result {
+        case .candidates(let candidates): list = candidates
+        case .match(let document):
+            list = [LyricsCandidate(id: document.providerSourceID ?? "preview", identity: document.identity,
+                title: document.title ?? metadata.track.title, artist: document.artist ?? metadata.track.artist,
+                album: document.album ?? metadata.track.album, duration: document.duration ?? metadata.track.duration,
+                lines: document.lines, isSynchronized: document.isSynchronized, source: document.source,
+                confidence: document.confidence, providerSourceID: document.providerSourceID,
+                spotifyTrackID: document.spotifyTrackID, isrc: document.isrc, language: document.language,
+                explicitlyTimedLineIndices: document.explicitlyTimedLineIndices)]
+        default: return []
+        }
+        var accepted: [String: LyricsCandidate] = [:]
+        for item in list where item.identity == metadata.identity {
+            let decision = LyricsSafeMatcher.decide(candidate: item, metadata: metadata,
+                aliasUsed: metadata.aliases.first { $0.id == variant.aliasIDs.first }, queryVariant: variant)
+            if decision.tier != .reject {
+                acceptCandidate(item, provider: probe.provider.name, variant: variant, decision: decision, into: &accepted)
+            }
+        }
+        return accepted.values.sorted { $0.displayedConfidence > $1.displayedConfidence }
+    }
+
+    private static func hasAutomaticResult(_ probe: ProviderProbeResult, metadata: TrackMetadata, variant: LyricsQueryVariant) -> Bool {
+        let candidates: [LyricsCandidate]
+        switch probe.result {
+        case .candidates(let list): candidates = list
+        case .match(let d):
+            candidates = [LyricsCandidate(id: "probe", identity: d.identity,
+                title: d.title ?? metadata.track.title, artist: d.artist ?? metadata.track.artist,
+                album: d.album ?? metadata.track.album, duration: d.duration ?? metadata.track.duration,
+                lines: d.lines, isSynchronized: d.isSynchronized, source: d.source,
+                confidence: d.confidence, providerSourceID: d.providerSourceID,
+                spotifyTrackID: d.spotifyTrackID, isrc: d.isrc, language: d.language)]
+        default: return false
+        }
+        return candidates.contains { candidate in
+            guard candidate.identity == metadata.identity, candidate.isSynchronized else { return false }
+            let decision = LyricsSafeMatcher.decide(candidate: candidate, metadata: metadata, aliasUsed: metadata.aliases.first { $0.id == variant.aliasIDs.first }, queryVariant: variant)
+            return decision.tier == .autoHigh || decision.tier == .autoMedium
+        }
+    }
+
+    private static func automaticProvisionalDocument(_ probe: ProviderProbeResult, metadata: TrackMetadata, variant: LyricsQueryVariant) -> LyricsDocument? {
+        let list: [LyricsCandidate]
+        switch probe.result {
+        case .candidates(let candidates): list = candidates
+        case .match(let d): list = [LyricsCandidate(id: "plain", identity: d.identity, title: d.title ?? "", artist: d.artist ?? "", album: d.album ?? "", duration: d.duration ?? 0, lines: d.lines, isSynchronized: d.isSynchronized, source: d.source, confidence: d.confidence, spotifyTrackID: d.spotifyTrackID, isrc: d.isrc)]
+        default: return nil
+        }
+        return list.first(where: { candidate in
+            guard candidate.identity == metadata.identity, !candidate.requiresTextOnlyPreview else { return false }
+            if candidate.isSynchronized && timingPriority(of: candidate) == 0 { return false }
+            let decision = LyricsSafeMatcher.decide(candidate: candidate, metadata: metadata, aliasUsed: metadata.aliases.first { $0.id == variant.aliasIDs.first }, queryVariant: variant)
+            return decision.tier == .autoHigh || decision.tier == .autoMedium
+        }).map { finalizeDocument($0.makeDocument(), identity: metadata.identity) }
     }
 
     private static func lookupWithTimeout(
@@ -168,12 +280,16 @@ public final class LyricsSearchManager: @unchecked Sendable {
         identity: TrackIdentity,
         queryOverride: String? = nil,
         forceRefresh: Bool = false,
-        aliases: [TrackAlias] = []
+        aliases: [TrackAlias] = [],
+        onProvisional: (@Sendable (LyricsDocument) async -> Void)? = nil,
+        onCandidates: (@Sendable ([LyricsCandidate]) async -> Void)? = nil
     ) async -> SearchOutcome {
         if Task.isCancelled {
             return SearchOutcome(result: .failed(.cancelled), diagnostics: [])
         }
-
+        let started = Date()
+        let searchID = String(UUID().uuidString.prefix(8))
+        defer { LyricsE2ELog.log("SEARCH end id=\(searchID) total=\(String(format: "%.3f", Date().timeIntervalSince(started)))s cancelled=\(Task.isCancelled)") }
         let metadata = TrackMetadata.bootstrap(from: track)
         let mergedAliases = Self.mergeAliases(metadata.aliases, aliases)
         // Keep identity stable with caller-supplied identity (playback).
@@ -201,6 +317,9 @@ public final class LyricsSearchManager: @unchecked Sendable {
         var sawNoLyrics = false
         var sawNoMatch = false
         var firstFailure: LyricsFailure?
+        // Only this search: next user/recovery search gets a fresh probe.
+        var unavailableProviders: Set<Int> = []
+        var probeCache: [String: [ProviderProbeResult]] = [:]
 
         func alias(for variant: LyricsQueryVariant) -> TrackAlias? {
             guard let id = variant.aliasIDs.first else { return nil }
@@ -234,6 +353,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
             let networkProviders = indexedProviders.filter { $0.provider.executionLane == .network }
             var localCursor = 0
             var didProbeNetwork = false
+            var automaticAdoptions: [AutomaticAdoption] = []
 
             while localCursor < localProviders.count || !didProbeNetwork {
                 if Task.isCancelled {
@@ -250,11 +370,34 @@ public final class LyricsSearchManager: @unchecked Sendable {
                     localCursor += 1
                 } else {
                     didProbeNetwork = true
-                    probeResults = await Self.probeNetworkProviders(
-                        track: probeTrack,
-                        identity: identity,
-                        providers: networkProviders
-                    )
+                    let queryKey = probeTrack.title + "\u{1F}" + probeTrack.artist
+                    if let reused = probeCache[queryKey] {
+                        probeResults = reused.map { ProviderProbeResult(index: $0.index, provider: $0.provider, result: $0.result, duration: 0) }
+                        LyricsE2ELog.log("SEARCH reuse id=\(searchID) rank=\(variant.rank) providerCount=\(reused.count)")
+                    } else {
+                        let enabled = networkProviders.filter { !unavailableProviders.contains($0.index) }
+                        probeResults = await Self.probeNetworkProviders(
+                            track: probeTrack, identity: identity, providers: enabled,
+                            metadata: meta, variant: variant, onProvisional: onProvisional,
+                            onCandidates: { candidates in
+                                LyricsE2ELog.log("SEARCH preview id=\(searchID) rank=\(variant.rank) elapsed=\(String(format: "%.3f", Date().timeIntervalSince(started)))s count=\(candidates.count)")
+                                await onCandidates?(candidates)
+                            }
+                        )
+                        probeCache[queryKey] = probeResults
+                        for probe in probeResults {
+                            if case .failed(let failure) = probe.result {
+                                switch failure {
+                                case .serverError(let code) where (500...599).contains(code): unavailableProviders.insert(probe.index)
+                                case .timedOut, .networkUnavailable: unavailableProviders.insert(probe.index)
+                                default: break
+                                }
+                            }
+                        }
+                        if enabled.count < networkProviders.count {
+                            LyricsE2ELog.log("SEARCH skip-unavailable id=\(searchID) rank=\(variant.rank) count=\(networkProviders.count - enabled.count)")
+                        }
+                    }
                 }
 
                 for probe in probeResults {
@@ -295,7 +438,8 @@ public final class LyricsSearchManager: @unchecked Sendable {
                         providerSourceID: document.providerSourceID,
                         spotifyTrackID: document.spotifyTrackID,
                         isrc: document.isrc,
-                        language: document.language
+                        language: document.language,
+                        explicitlyTimedLineIndices: document.explicitlyTimedLineIndices
                     )
                     let decision = LyricsSafeMatcher.decide(
                         candidate: candidate,
@@ -313,11 +457,17 @@ public final class LyricsSearchManager: @unchecked Sendable {
                     )
 
                     if decision.tier == .autoHigh || decision.tier == .autoMedium {
-                        let enriched = Self.finalizeDocument(document, identity: identity)
-                        LyricsE2ELog.log("MANAGER AUTO_ADOPT provider=\(provider.name) strategy=\(variant.strategy.rawValue) kind=\(variant.queryKind.rawValue) tier=\(decision.tier) score=\(decision.score) evidence=\(decision.explanation.joined(separator: ";")) lines=\(enriched.lines.count) sync=\(enriched.isSynchronized)")
-                        return SearchOutcome(result: .match(enriched), diagnostics: diagnostics)
+                        automaticAdoptions.append(AutomaticAdoption(
+                            document: document,
+                            decision: decision,
+                            timingPriority: Self.timingPriority(of: candidate),
+                            providerIndex: probe.index,
+                            candidateIndex: 0,
+                            providerName: provider.name,
+                            cameFromCandidates: false
+                        ))
                     }
-                    if decision.tier == .candidates {
+                    if decision.tier != .reject {
                         Self.acceptCandidate(
                             candidate,
                             provider: provider.name,
@@ -330,8 +480,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
 
                 case .candidates(let list):
                     var candidateDecisions: [LyricsMatchDecision] = []
-                    var autoAdoption: (LyricsCandidate, LyricsMatchDecision)?
-                    for item in list where item.identity == identity {
+                    for (candidateIndex, item) in list.enumerated() where item.identity == identity {
                         let decision = LyricsSafeMatcher.decide(
                             candidate: item,
                             metadata: meta,
@@ -339,11 +488,19 @@ public final class LyricsSearchManager: @unchecked Sendable {
                             queryVariant: variant
                         )
                         candidateDecisions.append(decision)
+                        LyricsE2ELog.log("MATCH provider=\(provider.name) rank=\(variant.rank) sourceID=\(item.providerSourceID ?? item.id) title=\(item.title) artist=\(item.artist) duration=\(item.duration) tier=\(decision.tier.rawValue) evidence=\(decision.explanation.joined(separator: ";"))")
                         if decision.tier == .autoHigh || decision.tier == .autoMedium {
-                            autoAdoption = (item, decision)
-                            break
+                            automaticAdoptions.append(AutomaticAdoption(
+                                document: item.makeDocument(),
+                                decision: decision,
+                                timingPriority: Self.timingPriority(of: item),
+                                providerIndex: probe.index,
+                                candidateIndex: candidateIndex,
+                                providerName: provider.name,
+                                cameFromCandidates: true
+                            ))
                         }
-                        if decision.tier == .candidates {
+                        if decision.tier != .reject {
                             Self.acceptCandidate(
                                 item,
                                 provider: provider.name,
@@ -361,26 +518,6 @@ public final class LyricsSearchManager: @unchecked Sendable {
                             matchDecisions: candidateDecisions
                         )
                     )
-                    if let (item, decision) = autoAdoption {
-                        let document = LyricsDocument(
-                            identity: identity,
-                            title: item.title,
-                            artist: item.artist,
-                            album: item.album,
-                            duration: item.duration,
-                            lines: item.lines,
-                            isSynchronized: item.isSynchronized,
-                            source: item.source,
-                            confidence: item.confidence,
-                            providerSourceID: item.providerSourceID,
-                            spotifyTrackID: item.spotifyTrackID,
-                            isrc: item.isrc,
-                            language: item.language
-                        )
-                        let enriched = Self.finalizeDocument(document, identity: identity)
-                        LyricsE2ELog.log("MANAGER AUTO_ADOPT from-candidates provider=\(provider.name) strategy=\(variant.strategy.rawValue) kind=\(variant.queryKind.rawValue) tier=\(decision.tier) score=\(decision.score) evidence=\(decision.explanation.joined(separator: ";")) lines=\(enriched.lines.count)")
-                        return SearchOutcome(result: .match(enriched), diagnostics: diagnostics)
-                    }
 
                 case .noLyrics:
                     sawNoLyrics = true
@@ -419,6 +556,16 @@ public final class LyricsSearchManager: @unchecked Sendable {
                     // Isolate: continue other providers/variants
                     }
                 }
+
+            }
+
+            if let selected = Self.bestAutomaticAdoption(in: automaticAdoptions) {
+                let enriched = Self.finalizeDocument(selected.document, identity: identity)
+                let selectionPath = selected.cameFromCandidates ? "from-candidates" : "provider-result"
+                LyricsE2ELog.log("MANAGER AUTO_ADOPT \(selectionPath) provider=\(selected.providerName) strategy=\(variant.strategy.rawValue) kind=\(variant.queryKind.rawValue) tier=\(selected.decision.tier) score=\(selected.decision.score) timingPriority=\(selected.timingPriority) evidence=\(selected.decision.explanation.joined(separator: ";")) lines=\(enriched.lines.count) sync=\(enriched.isSynchronized)")
+                return SearchOutcome(result: .match(enriched), diagnostics: diagnostics,
+                    alternatives: acceptedCandidates.values.sorted { $0.displayedConfidence > $1.displayedConfidence },
+                    automaticDecision: selected.decision)
             }
         }
 
@@ -428,6 +575,10 @@ public final class LyricsSearchManager: @unchecked Sendable {
             return SearchOutcome(result: .candidates(sorted), diagnostics: diagnostics)
         }
 
+        let rejected = diagnostics.flatMap(\.matchDecisions).filter { $0.tier == .reject }
+        if !rejected.isEmpty {
+            return SearchOutcome(result: .failed(.identityUnconfirmed(rejected.count, SearchOutcome.sourceFailureSummary(for: diagnostics) ?? "")), diagnostics: diagnostics)
+        }
         if firstFailure == nil, sawNoLyrics {
             storeNegativeResult(.noLyrics, for: cacheKey)
             return SearchOutcome(result: .noLyrics, diagnostics: diagnostics)
@@ -436,6 +587,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
             storeNegativeResult(.noMatch, for: cacheKey)
             return SearchOutcome(result: .noMatch, diagnostics: diagnostics)
         }
+
         if let firstFailure {
             return SearchOutcome(result: .failed(firstFailure), diagnostics: diagnostics)
         }
@@ -490,6 +642,62 @@ public final class LyricsSearchManager: @unchecked Sendable {
         negativeCacheLock.unlock()
     }
 
+    private static func timingPriority(of candidate: LyricsCandidate) -> Int {
+        let suppliedSpanLines = candidate.lines.enumerated().filter { _, line in
+            !(line.timedSpans?.isEmpty ?? true)
+        }
+        let hasValidWordTiming = !suppliedSpanLines.isEmpty && suppliedSpanLines.allSatisfy { index, line in
+            let lineStartIsMeaningful = candidate.isSynchronized
+                || candidate.explicitlyTimedLineIndices?.contains(index) == true
+            return line.hasValidTimedSpans(lineStartIsMeaningful: lineStartIsMeaningful)
+        }
+        if hasValidWordTiming { return 2 }
+
+        let hasValidLineTiming: Bool
+        if candidate.isSynchronized {
+            hasValidLineTiming = !candidate.lines.isEmpty
+                && candidate.lines.allSatisfy { $0.timestamp.isFinite && $0.timestamp >= 0 }
+        } else {
+            if let indices = candidate.explicitlyTimedLineIndices, !indices.isEmpty {
+                hasValidLineTiming = indices.allSatisfy { index in
+                    candidate.lines.indices.contains(index)
+                        && candidate.lines[index].timestamp.isFinite
+                        && candidate.lines[index].timestamp >= 0
+                }
+            } else {
+                hasValidLineTiming = false
+            }
+        }
+        return hasValidLineTiming ? 1 : 0
+    }
+
+    private static func bestAutomaticAdoption(in candidates: [AutomaticAdoption]) -> AutomaticAdoption? {
+        candidates.max { lhs, rhs in
+            // Timing is preferred only among already safely matched recordings.
+            if lhs.decision.score != rhs.decision.score {
+                return lhs.decision.score < rhs.decision.score
+            }
+            let lhsTier = automaticTierPriority(lhs.decision.tier)
+            let rhsTier = automaticTierPriority(rhs.decision.tier)
+            if lhsTier != rhsTier { return lhsTier < rhsTier }
+            if lhs.timingPriority != rhs.timingPriority {
+                return lhs.timingPriority < rhs.timingPriority
+            }
+            if lhs.providerIndex != rhs.providerIndex {
+                return lhs.providerIndex > rhs.providerIndex
+            }
+            return lhs.candidateIndex > rhs.candidateIndex
+        }
+    }
+
+    private static func automaticTierPriority(_ tier: LyricsMatchTier) -> Int {
+        switch tier {
+        case .autoHigh: return 2
+        case .autoMedium: return 1
+        case .candidates, .reject: return 0
+        }
+    }
+
     private static func acceptCandidate(
         _ candidate: LyricsCandidate,
         provider: String,
@@ -515,21 +723,29 @@ public final class LyricsSearchManager: @unchecked Sendable {
     /// Enrich layers; preserve originalText; mark unsynced documents clearly.
     private static func finalizeDocument(_ document: LyricsDocument, identity: TrackIdentity) -> LyricsDocument {
         let lines = LyricsLayerEnricher.enrich(lines: document.lines)
-        return LyricsDocument(
-            identity: identity,
-            title: document.title,
-            artist: document.artist,
-            album: document.album,
-            duration: document.duration,
-            lines: lines,
-            isSynchronized: document.isSynchronized,
-            source: document.source,
-            confidence: document.confidence,
-            providerSourceID: document.providerSourceID,
-            spotifyTrackID: document.spotifyTrackID,
-            isrc: document.isrc,
-            language: document.language
-        )
+        let identified: LyricsDocument
+        if document.identity == identity {
+            identified = document
+        } else {
+            identified = LyricsDocument(
+                identity: identity,
+                title: document.title,
+                artist: document.artist,
+                album: document.album,
+                duration: document.duration,
+                lines: document.lines,
+                isSynchronized: document.isSynchronized,
+                source: document.source,
+                confidence: document.confidence,
+                providerSourceID: document.providerSourceID,
+                spotifyTrackID: document.spotifyTrackID,
+                isrc: document.isrc,
+                language: document.language,
+                explicitlyTimedLineIndices: document.explicitlyTimedLineIndices,
+                timingVersionID: document.timingVersionID
+            )
+        }
+        return identified.replacingLines(lines)
     }
 
     private static func enrichCandidate(
@@ -538,27 +754,37 @@ public final class LyricsSearchManager: @unchecked Sendable {
         variant: LyricsQueryVariant? = nil,
         decision: LyricsMatchDecision? = nil
     ) -> LyricsCandidate {
-        LyricsCandidate(
+        let textOnly = decision?.reasons.contains("spedUpConflict") == true || candidate.requiresTextOnlyPreview
+        let safeLines = textOnly ? candidate.lines.map { line in
+            var text = line
+            text.timestamp = 0
+            text.endTime = nil
+            text.timedSpans = nil
+            return text
+        } : candidate.lines
+        return LyricsCandidate(
             id: candidate.id,
             identity: candidate.identity,
             title: candidate.title,
             artist: candidate.artist,
             album: candidate.album,
             duration: candidate.duration,
-            lines: LyricsLayerEnricher.enrich(lines: candidate.lines),
-            isSynchronized: candidate.isSynchronized,
+            lines: LyricsLayerEnricher.enrich(lines: safeLines),
+            isSynchronized: textOnly ? false : candidate.isSynchronized,
             source: candidate.source,
             confidence: candidate.confidence,
             providerSourceID: candidate.providerSourceID,
             spotifyTrackID: candidate.spotifyTrackID,
             isrc: candidate.isrc,
             language: candidate.language,
+            explicitlyTimedLineIndices: textOnly ? nil : candidate.explicitlyTimedLineIndices,
             providerName: providerName ?? candidate.providerName,
             queryKind: variant?.queryKind.rawValue ?? candidate.queryKind,
             queryTitle: variant?.titleQuery ?? candidate.queryTitle,
             queryArtist: variant?.artistQuery ?? candidate.queryArtist,
             matchScore: decision?.score ?? candidate.matchScore,
-            matchExplanation: decision?.explanation ?? candidate.matchExplanation
+            matchExplanation: decision?.explanation ?? candidate.matchExplanation,
+            declaredTitleAliases: candidate.declaredTitleAliases
         )
     }
 }
@@ -566,10 +792,27 @@ public final class LyricsSearchManager: @unchecked Sendable {
 public struct SearchOutcome {
     public let result: LyricsLookupResult
     public let diagnostics: [LyricsProviderDiagnostic]
+    public let alternatives: [LyricsCandidate]
+    public let automaticDecision: LyricsMatchDecision?
 
-    public init(result: LyricsLookupResult, diagnostics: [LyricsProviderDiagnostic]) {
+    public var sourceFailureSummary: String? { Self.sourceFailureSummary(for: diagnostics) }
+
+    static func sourceFailureSummary(for diagnostics: [LyricsProviderDiagnostic]) -> String? {
+        var seen = Set<String>()
+        let failures = diagnostics.compactMap { diagnostic -> String? in
+            guard case .failed(let failure) = diagnostic.outcome, failure != .cancelled else { return nil }
+            let provider = diagnostic.provider.components(separatedBy: "@").first ?? diagnostic.provider
+            let label = provider + "：" + failure.userFacingMessage
+            return seen.insert(label).inserted ? label : nil
+        }
+        return failures.isEmpty ? nil : failures.joined(separator: "；")
+    }
+
+    public init(result: LyricsLookupResult, diagnostics: [LyricsProviderDiagnostic], alternatives: [LyricsCandidate] = [], automaticDecision: LyricsMatchDecision? = nil) {
         self.result = result
         self.diagnostics = diagnostics
+        self.alternatives = alternatives
+        self.automaticDecision = automaticDecision
     }
 }
 

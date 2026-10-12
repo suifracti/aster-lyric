@@ -31,26 +31,51 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
 
     public func refresh() async -> PlaybackSnapshot {
         guard FileManager.default.fileExists(atPath: applicationPath) else {
-            return PlaybackSnapshot(status: .notInstalled, track: nil, position: 0, isPlaying: false)
+            return PlaybackSnapshot(
+                status: .notInstalled,
+                track: nil,
+                position: 0,
+                isPlaying: false,
+                sourceIdentity: .spotifyDesktop
+            )
         }
 
         guard isRunning else {
-            return PlaybackSnapshot(status: .notRunning, track: nil, position: 0, isPlaying: false)
+            return PlaybackSnapshot(
+                status: .notRunning,
+                track: nil,
+                position: 0,
+                isPlaying: false,
+                sourceIdentity: .spotifyDesktop
+            )
         }
 
         do {
             guard let result = try await execute(script: readScript) else {
-                return PlaybackSnapshot(status: .unavailable("Spotify 没有返回当前歌曲"), track: nil, position: 0, isPlaying: false)
+                return PlaybackSnapshot(
+                    status: .unavailable("Spotify 没有返回当前歌曲"),
+                    track: nil,
+                    position: 0,
+                    isPlaying: false,
+                    sourceIdentity: .spotifyDesktop
+                )
             }
             return parseSnapshot(result)
         } catch let error as AppleScriptExecutionError {
-            return PlaybackSnapshot(status: map(error: error), track: nil, position: 0, isPlaying: false)
+            return PlaybackSnapshot(
+                status: map(error: error),
+                track: nil,
+                position: 0,
+                isPlaying: false,
+                sourceIdentity: .spotifyDesktop
+            )
         } catch {
             return PlaybackSnapshot(
                 status: .unavailable(error.localizedDescription),
                 track: nil,
                 position: 0,
-                isPlaying: false
+                isPlaying: false,
+                sourceIdentity: .spotifyDesktop
             )
         }
     }
@@ -111,7 +136,13 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
     private func parseSnapshot(_ value: String) -> PlaybackSnapshot {
         let fields = value.components(separatedBy: fieldSeparator)
         guard fields.count >= 9 else {
-            return PlaybackSnapshot(status: .unavailable("Spotify 返回的数据格式无法识别"), track: nil, position: 0, isPlaying: false)
+            return PlaybackSnapshot(
+                status: .unavailable("Spotify 返回的数据格式无法识别"),
+                track: nil,
+                position: 0,
+                isPlaying: false,
+                sourceIdentity: .spotifyDesktop
+            )
         }
 
         let state = fields[0].lowercased()
@@ -129,7 +160,8 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
                 status: .noTrack,
                 track: nil,
                 position: 0,
-                isPlaying: false
+                isPlaying: false,
+                sourceIdentity: .spotifyDesktop
             )
         }
 
@@ -145,7 +177,13 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
 
         let isPlaying = state == "playing"
         let status: PlaybackProviderState = state == "stopped" && title.isEmpty ? .noTrack : .ready
-        return PlaybackSnapshot(status: status, track: track, position: min(max(0, position), duration), isPlaying: isPlaying)
+        return PlaybackSnapshot(
+            status: status,
+            track: track,
+            position: min(max(0, position), duration),
+            isPlaying: isPlaying,
+            sourceIdentity: .spotifyDesktop
+        )
     }
 
     private func map(error: AppleScriptExecutionError) -> PlaybackProviderState {

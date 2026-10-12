@@ -1,0 +1,520 @@
+
+=== RUN 01: B0 clock + paused update routing ===
+B0 isolation: suite=com.spotifylyrics.tests.b0-clock.spotifylyrics-b0-clock.AuibM8 temporaryDatabase=/tmp/spotifylyrics-b0-clock.AuibM8/b0.sqlite3 databaseOpened=false
+case	mode	raw	elapsed	offset	presentation	status
+raw-10-playing-offset-0.0	playing	10.0	1.25	0.0	11.25	PASS
+raw-10-playing-offset-2.0	playing	10.0	1.25	2.0	13.25	PASS
+raw-10-playing-offset--2.0	playing	10.0	1.25	-2.0	9.25	PASS
+raw-10-paused-offset-0.0	paused	10.0	0.0	0.0	10.0	PASS
+raw-10-paused-offset-2.0	paused	10.0	0.0	2.0	12.0	PASS
+raw-10-paused-offset--2.0	paused	10.0	0.0	-2.0	8.0	PASS
+case	mode	lyricTimestamp	offset	rawArrival	presentationAtArrival	status
+lyric-10-playing-offset-0.0	playing	10	0.0	10.0	10.0	PASS
+lyric-10-paused-offset-0.0	paused	10	0.0	10.0	10.0	PASS
+lyric-10-playing-offset-2.0	playing	10	2.0	8.0	10.0	PASS
+lyric-10-paused-offset-2.0	paused	10	2.0	8.0	10.0	PASS
+lyric-10-playing-offset--2.0	playing	10	-2.0	12.0	10.0	PASS
+lyric-10-paused-offset--2.0	paused	10	-2.0	12.0	10.0	PASS
+clamp-lower	paused	0	0	-2	0.0	PASS
+clamp-upper	paused	59	0	2	60.0	PASS
+PASS: B0 production clock raw/elapsed/offset/presentation and clamp cases
+published-will-set	received=2	stored-at-callback=0	final=2	PASS
+PASS: @Published ordering probe for paused offset update path
+PASS: B0 source routing assertions (clock/settings/V3/fullscreen/no offset seek)
+=== PASS: B0 clock + paused update routing ===
+
+=== RUN 02: C1 offset direction and subscriber semantics ===
+C1 offset semantics/source contract: PASS
+=== PASS: C1 offset direction and subscriber semantics ===
+
+=== RUN 03: C1 V3 seek draft / Fullscreen route ===
+V3 seek draft contract: PASS (both callback orders, tracking without a value, duplicate end, refresh, clamp)
+Fullscreen shared V3 seek contract: PASS
+=== PASS: C1 V3 seek draft / Fullscreen route ===
+
+=== RUN 04: C1 raw pointer-to-seek mapping ===
+V3 seek pointer mapping: PASS
+=== PASS: C1 raw pointer-to-seek mapping ===
+
+=== RUN 05: C1 preview identity guard ===
+C1 preview identity guard: PASS (cross identity blocked, same identity/live allowed)
+C1 lyric-row guard wiring: PASS (V3 and shared Classic canvas)
+=== PASS: C1 preview identity guard ===
+
+=== RUN 06: A0 source / track / generation containment ===
+a0_capture_source_containment_contract: PASS
+a0_capture_source_containment_contract: PASS
+=== PASS: A0 source / track / generation containment ===
+
+=== RUN 07: H1 canonical source hash boundary ===
+H1 hash domain boundary contract passed
+=== PASS: H1 canonical source hash boundary ===
+
+=== RUN 08: T1 read projection fidelity ===
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T1-4E091B8D-70FB-41AA-96FC-F2E3C8BE6764/t1-fixture.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:47:36Z sessionGeneration=2 requestSpotifyTrackID=t1-projection-fixture requestLyricsIdentity=spotify-id:t1-projection-fixture|metadata:t1readprojectionfixture|projectiontest|coreintegrity|120 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=6ef40875a53f24e0fe8cdd1e5703b8e330cfd346fe3a5a209b367f9d335602ef lyricsVersionID=74038538-36EB-4673-8E72-7CC507DFB101 source=amll lineCount=2 timedSpanCount=0
+partial session observed mask=Optional(Set([0])) sync=false hashMatch=true line0Explicit=true line1Explicit=false
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:47:36Z sessionGeneration=2 requestSpotifyTrackID=t1-projection-fixture requestLyricsIdentity=spotify-id:t1-projection-fixture|metadata:t1readprojectionfixture|projectiontest|coreintegrity|120 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=8a75bcf547b3100e1252260730e2877e152d39b58290293ef97bddb387003e5c lyricsVersionID=B4DA69C6-9974-4BDC-AACA-CC35A8E9C2A0 source=lrclib lineCount=1 timedSpanCount=0
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:47:36Z sessionGeneration=3 requestSpotifyTrackID=t1-projection-fixture requestLyricsIdentity=spotify-id:t1-projection-fixture|metadata:t1readprojectionfixture|projectiontest|coreintegrity|120 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=6ef40875a53f24e0fe8cdd1e5703b8e330cfd346fe3a5a209b367f9d335602ef lyricsVersionID=74038538-36EB-4673-8E72-7CC507DFB101 source=manualImport lineCount=1 timedSpanCount=0
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:47:36Z sessionGeneration=4 requestSpotifyTrackID=t1-projection-fixture requestLyricsIdentity=spotify-id:t1-projection-fixture|metadata:t1readprojectionfixture|projectiontest|coreintegrity|120 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=6ef40875a53f24e0fe8cdd1e5703b8e330cfd346fe3a5a209b367f9d335602ef lyricsVersionID=74038538-36EB-4673-8E72-7CC507DFB101 source=manualImport lineCount=1 timedSpanCount=0
+legacy overlay observed kana=Optional("こんにち") romaji=Optional("konnichi") spans=3 performer=Optional("v2") language=Optional("ja") timingID=Optional(E7FD465C-066C-4EA2-8A93-D7D96F4034C1) provider=Optional("t1-authoritative-provider-source")
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:47:36Z sessionGeneration=2 requestSpotifyTrackID=t1-projection-fixture requestLyricsIdentity=spotify-id:t1-projection-fixture|metadata:t1readprojectionfixture|projectiontest|coreintegrity|120 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=2c014447c39a18b9831143d8912ff072d6ca370d417818bc9ec370e6f9deccb9 lyricsVersionID=1A6B44AE-6452-4869-9092-E6A2A2EFB4AD source=neteaseExperimental lineCount=1 timedSpanCount=3
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:47:36Z sessionGeneration=3 requestSpotifyTrackID=t1-projection-fixture requestLyricsIdentity=spotify-id:t1-projection-fixture|metadata:t1readprojectionfixture|projectiontest|coreintegrity|120 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=164a55b9c09799418c12665f561c8e0150ec947834b378fe6a419c1b59cd7325 lyricsVersionID=BB219ED9-0425-40FE-93B8-8218F6C52991 source=lrclib lineCount=1 timedSpanCount=0
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:47:36Z sessionGeneration=4 requestSpotifyTrackID=t1-projection-fixture requestLyricsIdentity=spotify-id:t1-projection-fixture|metadata:t1readprojectionfixture|projectiontest|coreintegrity|120 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=2c014447c39a18b9831143d8912ff072d6ca370d417818bc9ec370e6f9deccb9 lyricsVersionID=1A6B44AE-6452-4869-9092-E6A2A2EFB4AD source=neteaseExperimental lineCount=1 timedSpanCount=3
+T1 read/projection fidelity contract passed (all)
+=== PASS: T1 read projection fidelity ===
+
+=== RUN 09: T2 editor + library timing persistence ===
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T2-editor-58624C2C-DA4B-4D9E-A91C-7078DE37ADF6/editor.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T2-editor-58624C2C-DA4B-4D9E-A91C-7078DE37ADF6/editor.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T2-library-47F2A8C1-376C-4620-A0BE-432723D8249F/library.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T2-library-47F2A8C1-376C-4620-A0BE-432723D8249F/library.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T2-loss-6AC05285-BC3F-4708-8BF8-7B1FABFDE54B/loss.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T2-loss-6AC05285-BC3F-4708-8BF8-7B1FABFDE54B/loss.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T2-loss-6AC05285-BC3F-4708-8BF8-7B1FABFDE54B/loss.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T2-end-loss-FCBC7996-9390-4E74-A599-34DE8A170EA5/end.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T2-end-loss-FCBC7996-9390-4E74-A599-34DE8A170EA5/end.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T2-time-loss-34A365D6-C1E1-4635-AB43-04E17CFCBDBA/time.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T2-time-loss-34A365D6-C1E1-4635-AB43-04E17CFCBDBA/time.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T2-translation-4F656224-FF9E-4EDC-9127-C352C3F07804/translation.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T2-translation-4F656224-FF9E-4EDC-9127-C352C3F07804/translation.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T2-rollback-D9A02453-2BBD-4C8A-8AAA-BA748755946D/rollback.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T2-invalid-09705D1E-EA48-421F-A3FF-9EF0009FEA82/invalid.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-T2-invalid-09705D1E-EA48-421F-A3FF-9EF0009FEA82/invalid.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+T2 editor copy observed parent=94DEAEC8-46AC-4F9A-99D7-FE22754B485A child=11E3DFFD-9738-4529-B1E8-CE70949F1381 spans=3 timing=D514DE92-9128-4310-A55B-B8D170752186
+T2 library revision observed parent=1707D8CE-00B0-4640-9BE3-7E2570195358 child=DF5766F1-756C-4A97-8E55-FC6B6A5D167C spans=3 timing=6C599AB6-FFE9-4544-8594-4AF401E66B9F
+T2 incompatible editor edit: cancel rows unchanged; confirmation dropped exactly one incompatible span
+T2 incompatible library retiming: unconfirmed request had zero writes; confirmation retained one valid span
+T2 translation-only edit added one translation row and no lyric/timing rows
+T2 attachment failure rolled back all rows and preserved the selected parent
+T2 malformed payload rejected; automatic and explicit line-only selection remained valid
+T2 lossless editing/timing contract passed (all)
+=== PASS: T2 editor + library timing persistence ===
+
+=== RUN 10: S1 durable manual adoption ===
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-E79913F8-8D34-492E-AC04-AA472B30968A/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-E79913F8-8D34-492E-AC04-AA472B30968A/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-1E3CF3B0-7091-4124-AB4F-9C168C0D0C5B/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-1E3CF3B0-7091-4124-AB4F-9C168C0D0C5B/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-594C45E6-5984-437C-B27B-34BCBD7A69DF/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-594C45E6-5984-437C-B27B-34BCBD7A69DF/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-87889B4A-D322-4EEC-AC32-7CF81D29D930/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:05Z sessionGeneration=1 requestSpotifyTrackID=s1-adoption-ovh requestLyricsIdentity=spotify-id:s1-adoption-ovh|metadata:采用测试ovh|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=s1-adoption-ovh adoptedDocumentBindingToken=1f19593497008dfd8dfe10e85bef7f371955db2f165a3ff0b55763f8d7b655bf lyricsVersionID=9837E175-90A7-42A2-9758-34DD00170381 source=lyricsOVH lineCount=1 timedSpanCount=0
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:05Z sessionGeneration=1 requestSpotifyTrackID=s1-adoption-ovh requestLyricsIdentity=spotify-id:s1-adoption-ovh|metadata:采用测试ovh|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=1f19593497008dfd8dfe10e85bef7f371955db2f165a3ff0b55763f8d7b655bf lyricsVersionID=none source=lyricsOVH lineCount=1 timedSpanCount=0
+durable manual adoption source=lyricsOVH confidence=0.0 version=9837E175-90A7-42A2-9758-34DD00170381 reopened=true
+S1 manual adoption scenario passed: lyrics-ovh-zero
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:06Z sessionGeneration=1 requestSpotifyTrackID=s1-adoption-kugou requestLyricsIdentity=spotify-id:s1-adoption-kugou|metadata:采用测试kugou|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=s1-adoption-kugou adoptedDocumentBindingToken=cf333393dc61899eee252fd3cf04546b3b520a972772ffba57e08c00b7fcd1ae lyricsVersionID=D72196BF-A7F3-42F1-9816-BF913FB15EBA source=kugouExperimental lineCount=1 timedSpanCount=0
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:06Z sessionGeneration=1 requestSpotifyTrackID=s1-adoption-kugou requestLyricsIdentity=spotify-id:s1-adoption-kugou|metadata:采用测试kugou|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=cf333393dc61899eee252fd3cf04546b3b520a972772ffba57e08c00b7fcd1ae lyricsVersionID=none source=kugouExperimental lineCount=1 timedSpanCount=0
+durable manual adoption source=kugouExperimental confidence=0.5 version=D72196BF-A7F3-42F1-9816-BF913FB15EBA reopened=true
+S1 manual adoption scenario passed: kugou-half
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:06Z sessionGeneration=1 requestSpotifyTrackID=s1-adoption-timed requestLyricsIdentity=spotify-id:s1-adoption-timed|metadata:采用测试timed|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=s1-adoption-timed adoptedDocumentBindingToken=3716e8e0c75aea912f850ce0fbf92e750b6aac37d6024e2acb8f07e62fd27e3b lyricsVersionID=D467A774-BDA7-4366-AFAF-66BCE1E84A2B source=amll lineCount=1 timedSpanCount=3
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:06Z sessionGeneration=1 requestSpotifyTrackID=s1-adoption-timed requestLyricsIdentity=spotify-id:s1-adoption-timed|metadata:采用测试timed|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=3716e8e0c75aea912f850ce0fbf92e750b6aac37d6024e2acb8f07e62fd27e3b lyricsVersionID=none source=amll lineCount=1 timedSpanCount=3
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:06Z sessionGeneration=1 requestSpotifyTrackID=s1-adoption-timed requestLyricsIdentity=spotify-id:s1-adoption-timed|metadata:采用测试timed|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=s1-adoption-timed adoptedDocumentBindingToken=3716e8e0c75aea912f850ce0fbf92e750b6aac37d6024e2acb8f07e62fd27e3b lyricsVersionID=D467A774-BDA7-4366-AFAF-66BCE1E84A2B source=amll lineCount=1 timedSpanCount=3
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:06Z sessionGeneration=1 requestSpotifyTrackID=s1-adoption-timed requestLyricsIdentity=spotify-id:s1-adoption-timed|metadata:采用测试timed|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=3716e8e0c75aea912f850ce0fbf92e750b6aac37d6024e2acb8f07e62fd27e3b lyricsVersionID=CE00A6B2-F1F1-44B7-A5B8-9AFFBE00780E source=amll lineCount=1 timedSpanCount=3
+durable manual adoption source=amll confidence=0.5 version=D467A774-BDA7-4366-AFAF-66BCE1E84A2B reopened=true
+S1 manual adoption scenario passed: timed-spans
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:06Z s[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-87889B4A-D322-4EEC-AC32-7CF81D29D930/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-416E8FF0-3743-4AAD-9C3C-CD545296C82A/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-E80B717A-71AD-4C75-B3C5-519CDA303CCA/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-09CCE2B5-6A2E-46B9-8728-74E3B8102F02/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-96A06903-0807-4EBA-9AA3-027C24490B21/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-4F138682-A657-4E19-8F06-059A1E6A287D/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-017B2148-16EE-4533-8EDC-8B0D103DAFFD/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+essionGeneration=1 requestSpotifyTrackID=s1-adoption-nightly-auto requestLyricsIdentity=spotify-id:s1-adoption-nightly-auto|metadata:采用测试nightlyauto|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=s1-adoption-nightly-auto adoptedDocumentBindingToken=207e795d3a94aa9e62c743b52844e2ece767fdff3e5b8099414c3ff965d03165 lyricsVersionID=none source=amll lineCount=1 timedSpanCount=3
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:06Z sessionGeneration=1 requestSpotifyTrackID=s1-adoption-nightly-auto requestLyricsIdentity=spotify-id:s1-adoption-nightly-auto|metadata:采用测试nightlyauto|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=207e795d3a94aa9e62c743b52844e2ece767fdff3e5b8099414c3ff965d03165 lyricsVersionID=none source=amll lineCount=1 timedSpanCount=3
+S1 manual adoption scenario passed: auto-search-timed-reopen
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:06Z sessionGeneration=1 requestSpotifyTrackID=s1-adoption-auto-disabled-stored requestLyricsIdentity=spotify-id:s1-adoption-auto-disabled-stored|metadata:采用测试autodisabledstored|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=8871a9aff7af7b68c0e6430d95b6deca0507c02ed15d4feedabdc694e8d15b4f lyricsVersionID=none source=amll lineCount=1 timedSpanCount=0
+[RuntimeLyricsEmpty] timestamp=2026-09-23T15:48:06Z sessionGeneration=3 requestSpotifyTrackID=s1-adoption-auto-disabled-empty requestLyricsIdentity=spotify-id:s1-adoption-auto-disabled-empty|metadata:采用测试autodisabledempty|s1contract|temporaryfixture|121 reason=noMatch
+S1 manual adoption scenario passed: auto-search-disabled-loads-selection
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:06Z sessionGeneration=2 requestSpotifyTrackID=s1-adoption-locked requestLyricsIdentity=spotify-id:s1-adoption-locked|metadata:采用测试locked|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=239efcc335b30f6a633656592af524864fd7cda3c0ae9333e89ae9baf101b369 lyricsVersionID=C0AA7BD9-4973-4B11-8B4D-83D66E3AA784 source=lrclib lineCount=1 timedSpanCount=0
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:06Z sessionGeneration=2 requestSpotifyTrackID=s1-adoption-locked requestLyricsIdentity=spotify-id:s1-adoption-locked|metadata:采用测试locked|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=s1-adoption-locked adoptedDocumentBindingToken=b18532ebaa79466a7d17ccd52eb30b8253225a97a537cbbac775f15048b92e3e lyricsVersionID=F1003A96-3535-46BF-93A0-9FE5D15F340C source=kugouExperimental lineCount=1 timedSpanCount=0
+locked candidate: cancel unchanged; stale confirmation re-prompted; explicit confirmation selected candidate and retained locks
+S1 manual adoption scenario passed: locked-current
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:06Z sessionGeneration=2 requestSpotifyTrackID=s1-adoption-selection-failure requestLyricsIdentity=spotify-id:s1-adoption-selection-failure|metadata:采用测试selectionfailure|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=50a4f613638189b72c1a36638554fd046432f99e05451228e463d23361303bc8 lyricsVersionID=CEAEC62D-AE66-489E-8A42-C9F8D8C93732 source=lrclib lineCount=1 timedSpanCount=0
+preferred-selection failure rolled back candidate rows and preserved the prior selection
+S1 manual adoption scenario passed: selection-throws
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:06Z sessionGeneration=2 requestSpotifyTrackID=s1-adoption-timing-failure requestLyricsIdentity=spotify-id:s1-adoption-timing-failure|metadata:采用测试timingfailure|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=50a4f613638189b72c1a36638554fd046432f99e05451228e463d23361303bc8 lyricsVersionID=FFB917A0-0123-41CB-861D-5D75F80B0CA1 source=lrclib lineCount=1 timedSpanCount=0
+timing-attachment failure rolled back candidate rows and preserved the prior selection
+S1 manual adoption scenario passed: timing-throws
+S1 manual adoption scenario passed: invalid-content
+[[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-75A38E9A-C43B-446F-B935-CF494FEBC5E5/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-51FC4548-1CE3-4402-A72E-84070F35FEE4/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyricsS1-C5CCD69D-1F32-40C0-AD79-3B8802451842/lyrics.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:06Z sessionGeneration=2 requestSpotifyTrackID=none requestLyricsIdentity=metadata:采用测试failurerejectedinjectedrepositoryrejection|s1contract|temporaryfixture|121|metadata:采用测试failurerejectedinjectedrepositoryrejection|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=71731aa7d38bae1a07eeb5f258a341791d01a47add45b28be11ad9b5e2998360 lyricsVersionID=12E5C0F4-0202-437A-BBBE-A758EA5BCE07 source=lrclib lineCount=1 timedSpanCount=0
+S1 repository proxy manual save request=83113FAF-8488-445C-AF25-D4B0C5C498E3
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:06Z sessionGeneration=2 requestSpotifyTrackID=s1-adoption-failure-skippedlocked requestLyricsIdentity=spotify-id:s1-adoption-failure-skippedlocked|metadata:采用测试failureskippedlocked|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=71731aa7d38bae1a07eeb5f258a341791d01a47add45b28be11ad9b5e2998360 lyricsVersionID=92F780AD-0EE8-420D-9C25-462FC63A8FC3 source=lrclib lineCount=1 timedSpanCount=0
+S1 repository proxy manual save request=738CCD02-D197-4C26-AFC7-B6A8D7C2448F
+S1 manual adoption scenario passed: failed-results
+S1 repository proxy manual save request=61FDBF61-93D6-4485-9B8B-76672F02CF50
+S1 repository proxy manual save result=inserted
+A→B late completion persisted only to A and left B's live state untouched
+S1 manual adoption scenario passed: track-switch
+S1 repository proxy manual save request=7D8AFADD-1C06-465B-BDA1-F043694F0E10
+S1 repository proxy manual save request=CA262C17-F68C-4BC8-BC9F-7191D22D54B0
+S1 repository proxy manual save result=inserted
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:06Z sessionGeneration=1 requestSpotifyTrackID=s1-adoption-same-track requestLyricsIdentity=spotify-id:s1-adoption-same-track|metadata:采用测试sametrack|s1contract|temporaryfixture|121 adoptedDocumentSpotifyTrackID=s1-adoption-same-track adoptedDocumentBindingToken=f3b9f63e27b15720992d4ad426f15041768625f49451db73eea1867babb8495d lyricsVersionID=195341CF-20B5-4CC2-9BE8-E3B4278CEA2A source=kugouExperimental lineCount=1 timedSpanCount=0
+S1 repository proxy manual save result=rejected("歌词采用请求已被更新或取消")
+same-track late request was rejected after a newer manual adoption
+S1 manual adoption scenario passed: same-track-order
+=== PASS: S1 durable manual adoption ===
+
+=== RUN 11: O1 scoped offset persistence and editor identity ===
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-O1-5B422437-56E0-43B6-BD79-B7FD8D123D47/o1.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-O1-5B422437-56E0-43B6-BD79-B7FD8D123D47/o1.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-O1-5B422437-56E0-43B6-BD79-B7FD8D123D47/o1.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:22Z sessionGeneration=1 requestSpotifyTrackID=none requestLyricsIdentity=metadata:o1a|fixture|o1|180|metadata:o1a|fixture|o1|180 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=18237bb753c0c036140ab4818090e7914fd3c70a0f2334c3a590887ee701c252 lyricsVersionID=none source=lrclib lineCount=1 timedSpanCount=0
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:22Z sessionGeneration=2 requestSpotifyTrackID=none requestLyricsIdentity=metadata:o1a|fixture|o1|180|metadata:o1a|fixture|o1|180 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=f682d0543a97618efa4c4440d35017aead5ef7e5ca7a36099409e0bb85bd4b82 lyricsVersionID=none source=lrclib lineCount=1 timedSpanCount=0
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:22Z sessionGeneration=3 requestSpotifyTrackID=none requestLyricsIdentity=metadata:o1b|fixture|o1|180|metadata:o1b|fixture|o1|180 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=345d3334eec02abc2a3409b9bcf36ec14c6c167bbe20ad69e86354cba769ba30 lyricsVersionID=none source=lrclib lineCount=1 timedSpanCount=0
+[RuntimeLyricsAdopted] timestamp=2026-09-23T15:48:22Z sessionGeneration=1 requestSpotifyTrackID=none requestLyricsIdentity=metadata:o1a|fixture|o1|180|metadata:o1a|fixture|o1|180 adoptedDocumentSpotifyTrackID=none adoptedDocumentBindingToken=f682d0543a97618efa4c4440d35017aead5ef7e5ca7a36099409e0bb85bd4b82 lyricsVersionID=none source=lrclib lineCount=1 timedSpanCount=0
+O1 scoped offset production contract: PASS
+O1 scoped offset source routing: PASS
+=== PASS: O1 scoped offset persistence and editor identity ===
+
+=== RUN 12: R1 reading/token consistency ===
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-R1-manual-F1D9F886-1ED3-4991-9308-8B757F49DBC3/r1-manual.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-R1-manual-F1D9F886-1ED3-4991-9308-8B757F49DBC3/r1-manual.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-R1-race-CB216B7F-A3EF-4D36-ACC8-8EA870235D5F/r1-race.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-R1-race-CB216B7F-A3EF-4D36-ACC8-8EA870235D5F/r1-race.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-R1-click-4FCF615A-29BE-45DB-9FB8-E3BFBE747B9B/r1-click.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+[SpotifyLyrics][DebugSafety] event=repository_open
+[SpotifyLyrics][DebugSafety] forced_presentation_id=none
+[SpotifyLyrics][DebugSafety] forced_presentation_mode=none
+[SpotifyLyrics][DebugSafety] database_path=/var/folders/kq/dz44fm994nz94zw2dfqnz_g00000gn/T/SpotifyLyrics-R1-click-4FCF615A-29BE-45DB-9FB8-E3BFBE747B9B/r1-click.sqlite3
+[SpotifyLyrics][DebugSafety] temporary_copy=YES
+[SpotifyLyrics][DebugSafety] formal_database_opened=NO
+R1 ROUNDTRIP: changed line retained old tokens after save/reopen = false
+R1 SOURCE CHECK: rows=true hash=true timing=50A21D34-1179-47E6-8792-2BFB71FD55B7/50A21D34-1179-47E6-8792-2BFB71FD55B7
+R1 RACE: persisted current after delayed generation = manualEdit, reading=かきくけこ
+R1 reading/token consistency contract PASS (all)
+=== PASS: R1 reading/token consistency ===
+
+=== RUN 13: R1 existing click-correction regression ===
+ruby correction PASS
+=== PASS: R1 existing click-correction regression ===
+
+=== RUN 14: U1 action and state projection ===
+U1 honest experimental UI source/route contract: PASS
+U1 manual import action: cancellation stays closed; success opens editor once
+=== PASS: U1 action and state projection ===
+
+=== RUN 15: Experience Library catalog and route ===
+experience library contract: PASS
+experience library settings route: PASS
+experience library source contract: PASS
+=== PASS: Experience Library catalog and route ===
+
+=== RUN 16: Persisted presentation selection ===
+presentation selection store contract: PASS
+presentation selection store: PASS
+=== PASS: Persisted presentation selection ===
+
+=== RUN 17: Phase 3.3 product host / adapter / router ===
+======================================================
+Phase 3.3 Product Host / Adapter / Router Contracts
+======================================================
+[PASS] pbx Sources: DirectionDProductStateModel
+[PASS] pbx Sources: DirectionDProductStateAdapter
+[PASS] pbx Sources: DirectionDActionRouter
+[PASS] pbx Sources: DirectionDProductStateHostView
+[PASS] pbx Sources: DirectionDExperimentalProductHost
+[PASS] host_no_matrix
+[PASS] host_no_provider
+[PASS] copy_permission
+[PASS] copy_cache
+[PASS] no_lyrics_search_btn
+[PASS] no_lyrics_import_btn
+[PASS] spotify_open_btn
+[PASS] settings_btn
+[PASS] recheck_btn
+priority_behavior OK
+[PASS] priority_pause_and_secondary
+[PASS] adapter_bind_playback
+[PASS] adapter_auto_align
+[PASS] adapter_force_inject
+[PASS] stale_track_clear
+[PASS] main_host_window
+[PASS] exp_host_type
+[PASS] exp_host_binds
+[PASS] router_onOpenSpotify
+[PASS] router_onOpenSystemSettings
+[PASS] router_onRetryPlaybackDetection
+[PASS] router_onRetryLyricsSearch
+[PASS] router_onOpenManualLyricsSearch
+[PASS] router_onImportLyrics
+[PASS] router_onOpenSongWorkbench
+[PASS] router_onRetryAutomaticAlignment
+[PASS] router_onStopAutomaticAlignment
+host_structure OK
+[PASS] host_secondary_over_lyrics
+[PASS] v3_default
+[PASS] v3_default_d_explicitly_selectable
+======================================================
+PASS=34 FAIL=0
+======================================================
+=== PASS: Phase 3.3 product host / adapter / router ===
+
+=== RUN 18: Direction D stale-track and product-state contract ===
+======================================================
+Lyric Island Phase 3.4 Correctness Contract Test Suite
+======================================================
+[PASS] direction_d_track_change_clears_old_lyrics_contract
+[PASS] direction_d_track_change_clears_old_lyrics_contract.adapter
+[PASS] direction_d_document_identity_matches_track_contract
+[PASS] direction_d_document_identity_matches_track_contract.adapter
+[PASS] direction_d_late_lyrics_result_rejected_contract
+[PASS] direction_d_late_lyrics_result_rejected_contract.revision
+[PASS] direction_d_old_auxiliary_projection_cleared_contract.language
+[PASS] direction_d_old_auxiliary_projection_cleared_contract.source
+[PASS] direction_d_old_auxiliary_projection_cleared_contract.adapter
+[PASS] direction_d_loading_never_shows_previous_track_contract
+[PASS] direction_d_loading_never_shows_previous_track_contract.lines
+[PASS] direction_d_paused_track_not_idle_contract
+[PASS] direction_d_paused_track_not_idle_contract.comment
+[PASS] direction_d_paused_track_not_idle_contract.runtime
+[PASS] direction_d_inspector_preserves_product_state_contract
+[PASS] direction_d_inspector_preserves_product_state_contract.fixture_gate
+[PASS] direction_d_inspector_preserves_product_state_contract.layout_keys_not_forced
+[PASS] direction_d_layout_preserves_product_state_contract
+[PASS] direction_d_layout_preserves_product_state_contract.binding
+[PASS] direction_d_forced_state_debug_only_contract.main
+[PASS] direction_d_forced_state_debug_only_contract.adapter
+[PASS] direction_d_forced_state_debug_only_contract.environment
+======================================================
+Summary: 22 passed, 0 failed.
+======================================================
+=== PASS: Direction D stale-track and product-state contract ===
+
+=== RUN 19: Direction D saved-layout recovery ===
+======================================================
+Lyric Island Phase 3.4 Layout Recovery Contracts
+======================================================
+layout recovery model: PASS
+wide_sizes=1200x760,1440x900,900x520
+reading_anchor=0.54
+small_sheet=496x532
+[PASS] main-window V4 has an independent raw layout value
+[PASS] main-window V4 has an independent catalog stable ID
+[PASS] V4 is selected without entering the V3 branch
+[PASS] V3 catalog identity remains present
+[PASS] V4 keeps a bounded technical envelope
+[PASS] current line scrolls through a stable row-derived target ID
+[PASS] active-row marker is bounded and cannot create a lyric gap
+Summary: layout recovery contracts PASS
+=== PASS: Direction D saved-layout recovery ===
+
+=== RUN 20: Classic / V3 / D layout compatibility ===
+PASS: main-window layout families are fused and compatibly named
+=== PASS: Classic / V3 / D layout compatibility ===
+
+AUTOMATED CONTRACT SUMMARY: run=20 pass=20 fail=0
+NOTICE: app UI smoke, external player/capture checks, and required human acceptance are not executed by this headless runner.

@@ -128,10 +128,13 @@ pass "host_secondary_over_lyrics"
 
 # V3 default preserved
 grep -q 'appleMusicImmersiveV3' "$SWIFT_DIR/Settings/AppSettingsStore.swift" && pass "v3_default" || fail "v3_default" "missing"
-if grep -q 'directionD' "$SWIFT_DIR/Design/MainWindowLayoutStyle.swift"; then
-  fail "no_d_default_layout" "Direction D must not be MainWindowLayoutStyle"
+STYLE="$SWIFT_DIR/Design/MainWindowLayoutStyle.swift"
+if grep -Fq '?? MainWindowLayoutStyle.appleMusicImmersiveV3.rawValue' "$SWIFT_DIR/Settings/AppSettingsStore.swift" \
+  && grep -q 'case directionDV4 = "directionD"' "$STYLE" \
+  && grep -A6 'static let userSelectableCases' "$STYLE" | grep -q '\.directionDV4'; then
+  pass "v3_default_d_explicitly_selectable"
 else
-  pass "no_d_default_layout"
+  fail "v3_default_d_explicitly_selectable" "V3 must remain the unset-layout default while Direction D remains an explicit user choice"
 fi
 
 # Business files zero-diff vs 39678ff for providers (optional soft)

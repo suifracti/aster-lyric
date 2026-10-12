@@ -158,6 +158,10 @@ public enum TrackTextNormalizer {
     // Only explicit arrangement suffixes count; titles such as “Piano Man” stay intact.
     private static let pianoSuffix = #"\s*(?:[-–—]\s*(?:piano(?:\s+(?:ver\.?|version))?|ピアノ版)|[\(\[（【]\s*(?:piano(?:\s+(?:ver\.?|version))?|ピアノ版)\s*[\)\]）】])\s*$"#
 
+    // Tempo labels are recording traits only when explicitly delimited at the end.
+    // Never strip words from titles such as “Speed Up Your Life”.
+    private static let spedUpSuffix = #"\s*(?:[-–—]\s*(?:sped|speed)[\s-]+up(?:\s+(?:ver\.?|version))?|[\(\[（【]\s*(?:sped|speed)[\s-]+up(?:\s+(?:ver\.?|version))?\s*[\)\]）】])\s*$"#
+
     public static func extractVersionTags(fromTitle title: String) -> [VersionTag] {
         let n = normalize(title)
         var tags: [VersionTag] = []
@@ -190,6 +194,9 @@ public enum TrackTextNormalizer {
         if title.range(of: pianoSuffix, options: [.regularExpression, .caseInsensitive]) != nil {
             tags.append(.piano)
         }
+        if title.range(of: spedUpSuffix, options: [.regularExpression, .caseInsensitive]) != nil {
+            tags.append(.spedUp)
+        }
         // Japanese markers
         if title.contains("ライブ") {
             if !tags.contains(.live) { tags.append(.live) }
@@ -210,6 +217,7 @@ public enum TrackTextNormalizer {
         var s = title
         let patterns = [
             pianoSuffix,
+            spedUpSuffix,
             #"\s*[\(\[\{（【].*?(live|remix|acoustic|instrumental|karaoke|radio\s*edit|demo|cover|remaster(?:ed)?|first\s*take|movie|anime|short).*?[\)\]\}）】]\s*"#,
             #"\s*-\s*(live|remix|acoustic|instrumental|remaster(?:ed)?|from\s+the\s+first\s+take).*$"#
         ]

@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 public final class LyricsSessionController: ObservableObject {
     @Published public private(set) var state: LyricsLoadState = .idle
+    @Published public private(set) var availableCandidates: [LyricsCandidate] = []
     @Published public private(set) var lyrics: [LyricLine] = []
 #if DEBUG
     @Published public private(set) var debugLyricsBindingToken: String?
@@ -17,13 +18,21 @@ public final class LyricsSessionController: ObservableObject {
     @Published public private(set) var activeSourceContentHash: String?
     @Published public private(set) var alignmentProvenanceAvailability: AlignmentProvenanceAvailability = .unavailable
     @Published public private(set) var revision: UInt64 = 0
+    @Published public private(set) var isSearchInProgress = false
+    @Published public private(set) var sourceFailureSummary: String?
     @Published public private(set) var persistenceStatusMessage: String?
     @Published public private(set) var activeSearchQuery: String?
+    @Published public private(set) var automaticSearchDisabledForCurrentTrack = false
 
     private let searchManager: LyricsSearchManager
     private let repository: (any LyricsRepository)?
     private var requestTask: Task<Void, Never>?
-    private var automaticRecoveryRetryIdentity: TrackIdentity?
+    private var manualAdoptionRequestIDs: [TrackIdentity: UUID] = [:]
+    private var manualAdoptionRequestRevisions: [TrackIdentity: UInt64] = [:]
+    private var recoveryTask: Task<Void, Never>?
+    private var recoveryAttempts = 0
+    private let recoveryCooldowns: [TimeInterval]
+    private var isRecoveryAttempt = false
     private var activeTrack: Track?
     private var searchQueryOverride: String?
 
@@ -34,10 +43,12 @@ public final class LyricsSessionController: ObservableObject {
     public init(
         providers: [LyricsProvider],
         name: String = "LyricsSearchManager",
-        repository: (any LyricsRepository)? = nil
+        repository: (any LyricsRepository)? = nil,
+        recoveryCooldowns: [TimeInterval] = [2, 5]
     ) {
         self.searchManager = LyricsSearchManager(providers: providers, name: name)
         self.repository = repository
+        self.recoveryCooldowns = recoveryCooldowns.map { max(0, $0) }
     }
 
     /// Test/compat wrapper around a single composite provider.
@@ -51,6 +62,7 @@ public final class LyricsSessionController: ObservableObject {
 
     deinit {
         requestTask?.cancel()
+        recoveryTask?.cancel()
     }
 
     public var activeDocument: LyricsDocument? {
@@ -63,8 +75,7 @@ public final class LyricsSessionController: ObservableObject {
 
     public func updateProviders(_ providers: [LyricsProvider]) {
         searchManager.updateProviders(providers)
-        requestTask?.cancel()
-        requestTask = nil
+        cancelCurrentRequest()
         revision &+= 1
     }
 
@@ -76,6 +87,8 @@ public final class LyricsSessionController: ObservableObject {
         queryOverride: String? = nil,
         resetQueryOverride: Bool = false
     ) {
+        // Keep the current projection while checking the persisted refresh boundary.
+        let retainsCurrentProjection = forceRefresh && activeIdentity == identity && activeLyricsVersionID != nil && !lyrics.isEmpty
         cancelCurrentRequest()
         revision &+= 1
         let requestRevision = revision
@@ -84,72 +97,176 @@ public final class LyricsSessionController: ObservableObject {
         } else if let queryOverride {
             searchQueryOverride = Self.normalizedQuery(queryOverride)
         }
-        if activeIdentity != identity {
-            automaticRecoveryRetryIdentity = nil
-        }
+        if !isRecoveryAttempt { recoveryAttempts = 0 }
+        sourceFailureSummary = nil
         activeIdentity = identity
         activeTrack = track
-        activeLyricsVersionID = nil
-        activeSourceContentHash = nil
-        alignmentProvenanceAvailability = .unavailable
+        if !retainsCurrentProjection {
+            activeLyricsVersionID = nil
+            activeSourceContentHash = nil
+            alignmentProvenanceAvailability = .unavailable
+        }
         persistenceStatusMessage = nil
         activeSearchQuery = searchQueryOverride
-        lyrics = []
+        automaticSearchDisabledForCurrentTrack = !automaticallySearch
+        if !retainsCurrentProjection { lyrics = [] }
+        availableCandidates = []
 #if DEBUG
-        debugLyricsBindingToken = nil
+        if !retainsCurrentProjection { debugLyricsBindingToken = nil }
 #endif
-        isSynchronized = true
-        isNoSelection = false
-        state = .loading(identity)
+        if !retainsCurrentProjection {
+            isSynchronized = true
+            isNoSelection = false
+            state = .loading(identity)
+        }
+        isSearchInProgress = true
         let queryOverrideSnapshot = searchQueryOverride
 
         LyricsE2ELog.log(
             "SESSION begin rev=\(requestRevision) identity=\(identity.stableKey) title=\(track.title) artist=\(track.artist) duration=\(track.duration) spotifyId=\(track.spotifyId ?? "")"
         )
 
-        guard automaticallySearch else {
-            state = .idle
-            LyricsE2ELog.log("SESSION automatic search disabled identity=\(identity.stableKey)")
-            return
-        }
-
         requestTask = Task { [weak self, searchManager, repository] in
+            defer {
+                if let self, self.activeIdentity == identity, self.revision == requestRevision { self.isSearchInProgress = false }
+            }
             var outcome: SearchOutcome?
             var cachedReference: StoredLyricsDocument?
             var persistenceError: String?
             var repositoryReady = false
             var storedAliases: [TrackAlias] = []
+            var reviewOnly = false
 
             if let repository {
                 do {
                     try await repository.prepare()
                     repositoryReady = true
+                    do {
+                        reviewOnly = try await repository.isLyricsSelectionRevoked(identity: identity)
+                    } catch {
+                        await MainActor.run { [weak self] in
+                            guard let self, self.activeIdentity == identity, self.revision == requestRevision else { return }
+                            self.persistenceStatusMessage = error.localizedDescription
+                            self.apply(.failed(.unknown("无法读取采用状态，停止自动搜索以保护已有选择")), identity: identity, requestRevision: requestRevision)
+                        }
+                        return
+                    }
+                    if reviewOnly, !forceRefresh {
+                        await MainActor.run { [weak self] in
+                            guard let self, self.activeIdentity == identity, self.revision == requestRevision else { return }
+                            self.selectNoVersion(identity: identity)
+                            self.persistenceStatusMessage = "已取消采用；歌词资产保留，可重新选择或搜索同步歌词"
+                        }
+                        return
+                    }
                     storedAliases = (try? await repository.loadAliases(stableKey: identity.stableKey)) ?? []
-                    if !forceRefresh,
-                       let cached = try await repository.loadBestStored(track: track, identity: identity) {
+                    if let cached = try await repository.loadBestStored(track: track, identity: identity),
+                       !forceRefresh || (!reviewOnly && cached.isUserProtected) {
                         cachedReference = cached
                         LyricsE2ELog.log(
                             "SESSION persistence hit rev=\(requestRevision) source=\(cached.document.source) provider=\(cached.document.providerSourceID ?? "") lines=\(cached.document.lines.count) sync=\(cached.document.isSynchronized)"
                         )
-                        outcome = SearchOutcome(result: .match(cached.document), diagnostics: [])
+                        if forceRefresh && cached.isUserProtected {
+                            await MainActor.run { [weak self] in
+                                guard let self, self.activeIdentity == identity, self.revision == requestRevision else { return }
+                                self.apply(.match(cached.document), identity: identity, requestRevision: requestRevision, sourceContentHash: cached.sourceContentHash)
+                                self.activeLyricsVersionID = cached.versionID
+                                self.activeSourceContentHash = cached.sourceContentHash
+                                self.alignmentProvenanceAvailability = cached.alignmentProvenanceAvailability
+                            }
+                            // Continue searching, but only into alternatives until explicit adoption.
+                        } else if automaticallySearch && !cached.document.isSynchronized && !cached.isUserProtected {
+                            await MainActor.run { [weak self] in
+                                guard let self, self.activeIdentity == identity, self.revision == requestRevision else { return }
+                                self.apply(.match(cached.document), identity: identity, requestRevision: requestRevision)
+                                // Keep translation pending until this bounded synchronization search settles.
+                            }
+                        } else {
+                            outcome = SearchOutcome(result: .match(cached.document), diagnostics: [])
+                        }
                     } else {
                         LyricsE2ELog.log("SESSION persistence miss rev=\(requestRevision) identity=\(identity.stableKey)")
                     }
                 } catch {
                     persistenceError = error.localizedDescription
                     LyricsE2ELog.log("PERSISTENCE prepare/load failed rev=\(requestRevision) error=\(error.localizedDescription)")
+                    if retainsCurrentProjection {
+                        if let self, self.activeIdentity == identity, self.revision == requestRevision {
+                            self.persistenceStatusMessage = persistenceError
+                        }
+                        return
+                    }
                 }
             }
 
             if outcome == nil, !Task.isCancelled {
-                let searched = await searchManager.search(
-                    track: track,
-                    identity: identity,
-                    queryOverride: queryOverrideSnapshot,
-                    forceRefresh: forceRefresh,
-                    aliases: storedAliases
-                )
-                outcome = searched
+                if automaticallySearch {
+                    let protectsRefresh = forceRefresh && cachedReference?.isUserProtected == true
+                    let suppressProvisional = reviewOnly || protectsRefresh
+                    let searched = await searchManager.search(
+                        track: track,
+                        identity: identity,
+                        queryOverride: queryOverrideSnapshot,
+                        forceRefresh: forceRefresh,
+                        aliases: storedAliases,
+                        onProvisional: { [weak self] document in
+                            await MainActor.run { [weak self] in
+                                guard !suppressProvisional, !Task.isCancelled, let self, self.activeIdentity == identity, self.revision == requestRevision,
+                                      self.activeLyricsVersionID == nil else { return }
+                                self.apply(.match(document), identity: identity, requestRevision: requestRevision)
+                            }
+                        },
+                        onCandidates: { [weak self] candidates in
+                            await MainActor.run { [weak self] in
+                                guard let self, self.activeIdentity == identity, self.revision == requestRevision,
+                                      !Task.isCancelled else { return }
+                                var previews = Dictionary(self.availableCandidates.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+                                for candidate in candidates where candidate.identity == identity { previews[candidate.id] = candidate }
+                                let sorted = previews.values.sorted { $0.displayedConfidence > $1.displayedConfidence }
+                                if self.lyrics.isEmpty { self.apply(.candidates(sorted), identity: identity, requestRevision: requestRevision) }
+                                self.availableCandidates = sorted
+                            }
+                        }
+                    )
+                    if protectsRefresh, let cached = cachedReference {
+                        var alternatives = searched.alternatives
+                        if alternatives.isEmpty, case .match(let document) = searched.result {
+                            alternatives = [LyricsCandidate(id: document.providerSourceID ?? UUID().uuidString,
+                                identity: identity, title: document.title ?? track.title, artist: document.artist ?? track.artist,
+                                album: document.album ?? track.album, duration: document.duration ?? track.duration, lines: document.lines,
+                                isSynchronized: document.isSynchronized, source: document.source, confidence: document.confidence,
+                                providerSourceID: document.providerSourceID, spotifyTrackID: document.spotifyTrackID,
+                                isrc: document.isrc, explicitlyTimedLineIndices: document.explicitlyTimedLineIndices)]
+                        }
+                        outcome = SearchOutcome(result: .match(cached.document), diagnostics: searched.diagnostics, alternatives: alternatives)
+                    } else if reviewOnly, case .match(let document) = searched.result {
+                        let candidate = LyricsCandidate(id: document.providerSourceID ?? UUID().uuidString,
+                            identity: identity, title: document.title ?? track.title, artist: document.artist ?? track.artist,
+                            album: document.album ?? track.album, duration: document.duration ?? track.duration, lines: document.lines,
+                            isSynchronized: document.isSynchronized, source: document.source, confidence: document.confidence,
+                            providerSourceID: document.providerSourceID, spotifyTrackID: document.spotifyTrackID,
+                            isrc: document.isrc, explicitlyTimedLineIndices: document.explicitlyTimedLineIndices)
+                        let alternatives = searched.alternatives.isEmpty ? [candidate] : searched.alternatives
+                        outcome = SearchOutcome(result: .candidates(alternatives), diagnostics: searched.diagnostics, alternatives: alternatives)
+                    } else if let cached = cachedReference {
+                        if case .match(let document) = searched.result, document.isSynchronized {
+                            cachedReference = nil
+                            outcome = searched
+                        } else {
+                            outcome = SearchOutcome(result: .match(cached.document), diagnostics: searched.diagnostics)
+                        }
+                    } else { outcome = searched }
+                } else {
+                    await MainActor.run { [weak self] in
+                        guard let self,
+                              self.activeIdentity == identity,
+                              self.revision == requestRevision else { return }
+                        self.persistenceStatusMessage = persistenceError
+                        self.state = .idle
+                        LyricsE2ELog.log("SESSION automatic search disabled; stored lyrics absent identity=\(identity.stableKey)")
+                    }
+                    return
+                }
             }
 
             guard let outcome else { return }
@@ -169,14 +286,27 @@ public final class LyricsSessionController: ObservableObject {
                     LyricsE2ELog.log("SESSION drop stale result rev=\(requestRevision) current=\(currentRevision)")
                     return false
                 }
+                self.sourceFailureSummary = outcome.sourceFailureSummary
                 self.persistenceStatusMessage = persistenceError
-                self.apply(outcome.result, identity: identity, requestRevision: requestRevision)
+                self.availableCandidates = outcome.alternatives.filter { $0.identity == identity }
+                self.apply(
+                    outcome.result,
+                    identity: identity,
+                    requestRevision: requestRevision,
+                    sourceContentHash: cachedReference?.sourceContentHash
+                )
                 if let cachedReference {
                     self.activeLyricsVersionID = cachedReference.versionID
                     self.activeSourceContentHash = cachedReference.sourceContentHash
                     self.alignmentProvenanceAvailability = cachedReference.alignmentProvenanceAvailability
                 }
                 return true
+            }
+
+            // Loading an already persisted choice is read-only. Do not send it
+            // back through the automatic-save path when track search is off.
+            if !automaticallySearch, cachedReference != nil {
+                return
             }
 
             // Persist only after the current Session has accepted the match.
@@ -188,19 +318,21 @@ public final class LyricsSessionController: ObservableObject {
                !Task.isCancelled,
                document.identity == identity,
                !document.lines.isEmpty,
-               LyricsMatcher.isHighConfidence(document.confidence) {
+               cachedReference == nil,
+               outcome.automaticDecision != nil || LyricsMatcher.isHighConfidence(document.confidence) {
                 do {
-                    let saved = try await repository?.save(
-                        track: track,
-                        identity: identity,
-                        document: document
-                    )
+                    let saved: LyricsPersistenceSaveResult?
+                    if let decision = outcome.automaticDecision {
+                        saved = try await repository?.saveAutomaticallySelected(track: track, identity: identity, document: document, decision: LyricsAutomaticSelectionEvidence(identity: identity, tier: decision.tier.rawValue, hardReject: decision.hardReject, versionConflict: decision.versionConflict))
+                    } else {
+                        saved = try await repository?.save(track: track, identity: identity, document: document)
+                    }
                     LyricsE2ELog.log(
                         "SESSION persistence save rev=\(requestRevision) disposition=\(String(describing: saved?.disposition)) lines=\(document.lines.count)"
                     )
                     if let saved, saved.versionID != nil {
                         await MainActor.run { [weak self] in
-                            guard let self, self.activeIdentity == identity else { return }
+                            guard let self, self.activeIdentity == identity, self.revision == requestRevision else { return }
                             self.activeLyricsVersionID = saved.versionID
                             self.activeSourceContentHash = saved.sourceContentHash
                         }
@@ -209,7 +341,7 @@ public final class LyricsSessionController: ObservableObject {
                     let message = error.localizedDescription
                     LyricsE2ELog.log("PERSISTENCE save failed rev=\(requestRevision) error=\(message)")
                     await MainActor.run { [weak self] in
-                        guard let self, self.activeIdentity == identity else { return }
+                        guard let self, self.activeIdentity == identity, self.revision == requestRevision else { return }
                         self.persistenceStatusMessage = message
                     }
                 }
@@ -224,7 +356,9 @@ public final class LyricsSessionController: ObservableObject {
         activeLyricsVersionID = nil
         activeSourceContentHash = nil
         alignmentProvenanceAvailability = .unavailable
+        automaticSearchDisabledForCurrentTrack = false
         lyrics = []
+        availableCandidates = []
         isSynchronized = true
         isNoSelection = false
         state = .loading(identity)
@@ -236,6 +370,7 @@ public final class LyricsSessionController: ObservableObject {
         cancelCurrentRequest()
         revision &+= 1
         lyrics = []
+        availableCandidates = []
         isSynchronized = true
         isNoSelection = false
         state = .failed(identity, failure)
@@ -270,15 +405,16 @@ public final class LyricsSessionController: ObservableObject {
         guard activeIdentity == identity,
               case .failed(let failedIdentity, .networkUnavailable) = state,
               failedIdentity == identity,
-              automaticRecoveryRetryIdentity != identity else {
+              !automaticSearchDisabledForCurrentTrack, !isNoSelection,
+              recoveryTask == nil, recoveryAttempts < recoveryCooldowns.count else {
             return false
         }
-        automaticRecoveryRetryIdentity = identity
-        begin(track: track, identity: identity)
+        scheduleRecovery(track: track, identity: identity, revision: revision)
         return true
     }
 
     public func clear() {
+        sourceFailureSummary = nil
         cancelCurrentRequest()
         revision &+= 1
         activeIdentity = nil
@@ -286,10 +422,12 @@ public final class LyricsSessionController: ObservableObject {
         activeSourceContentHash = nil
         alignmentProvenanceAvailability = .unavailable
         activeTrack = nil
-        automaticRecoveryRetryIdentity = nil
+        recoveryAttempts = 0
+        automaticSearchDisabledForCurrentTrack = false
         searchQueryOverride = nil
         activeSearchQuery = nil
         lyrics = []
+        availableCandidates = []
         isSynchronized = true
         isNoSelection = false
         state = .idle
@@ -299,17 +437,36 @@ public final class LyricsSessionController: ObservableObject {
     /// Keeps the live TrackIdentity while explicitly selecting no lyric
     /// version. This is intentionally not a noMatch/failed state and is not
     /// persisted as an empty LyricsVersion.
+    @discardableResult
+    public func revokeCurrentVersion(identity: TrackIdentity, versionID: UUID) async throws -> Bool {
+        guard activeIdentity == identity, activeLyricsVersionID == versionID, let repository else { return false }
+        cancelCurrentRequest()
+        revision &+= 1
+        let expectedRevision = revision
+        manualAdoptionRequestIDs.removeValue(forKey: identity)
+        manualAdoptionRequestRevisions.removeValue(forKey: identity)
+        try await repository.revokeLyricsVersionSelection(trackStableKey: identity.stableKey, lyricsVersionID: versionID)
+        guard activeIdentity == identity, revision == expectedRevision else { return false }
+        selectNoVersion(identity: identity)
+        persistenceStatusMessage = "已取消采用；保留原词、时间轴及关联资产"
+        return true
+    }
+
     public func selectNoVersion(identity: TrackIdentity? = nil) {
         guard let activeIdentity,
               identity == nil || identity == activeIdentity else { return }
+        if let pending = manualAdoptionRequestIDs[activeIdentity] {
+            cancelManualAdoptionRequest(identity: activeIdentity, requestID: pending)
+        }
         cancelCurrentRequest()
         revision &+= 1
         activeLyricsVersionID = nil
         activeSourceContentHash = nil
         alignmentProvenanceAvailability = .unavailable
-        automaticRecoveryRetryIdentity = nil
+        recoveryAttempts = 0
         persistenceStatusMessage = nil
         lyrics = []
+        availableCandidates = []
         isSynchronized = true
         isNoSelection = true
         state = .noSelection(activeIdentity)
@@ -324,7 +481,7 @@ public final class LyricsSessionController: ObservableObject {
         activeSourceContentHash = nil
         alignmentProvenanceAvailability = .unavailable
         activeTrack = nil
-        automaticRecoveryRetryIdentity = nil
+        recoveryAttempts = 0
         lyrics = lines
         isSynchronized = true
         isNoSelection = false
@@ -355,34 +512,148 @@ public final class LyricsSessionController: ObservableObject {
         LyricsE2ELog.log("SESSION markAsInstrumental identity=\(identity.stableKey)")
     }
 
-    public func adopt(candidate: LyricsCandidate) {
-        guard activeIdentity == candidate.identity else {
-            LyricsE2ELog.log("SESSION adopt candidate REJECT identity mismatch")
-            return
+    /// Registers one explicit adoption before any async repository work starts.
+    /// A later adoption for the same identity replaces this request token;
+    /// switching to another identity leaves this operation bound to its source.
+    @discardableResult
+    public func beginManualAdoptionRequest(identity: TrackIdentity, requestID: UUID) async throws -> Bool {
+        guard activeIdentity == identity else {
+            LyricsE2ELog.log("SESSION manual adoption REJECT stale identity")
+            return false
         }
-        guard !candidate.lines.isEmpty else {
-            lyrics = []
-            isNoSelection = false
-            state = .noLyrics(candidate.identity)
-            return
+        cancelCurrentRequest()
+        revision &+= 1
+        manualAdoptionRequestIDs[identity] = requestID
+        manualAdoptionRequestRevisions[identity] = revision
+        do {
+            try await repository?.registerManualAdoptionRequest(identity: identity, requestID: requestID)
+        } catch {
+            if manualAdoptionRequestIDs[identity] == requestID {
+                manualAdoptionRequestIDs.removeValue(forKey: identity)
+                manualAdoptionRequestRevisions.removeValue(forKey: identity)
+            }
+            throw error
         }
-        let document = LyricsDocument(
-            identity: candidate.identity,
-            title: candidate.title,
-            artist: candidate.artist,
-            album: candidate.album,
-            duration: candidate.duration,
-            lines: candidate.lines,
-            isSynchronized: candidate.isSynchronized,
-            source: candidate.source,
-            confidence: candidate.confidence,
-            providerSourceID: candidate.providerSourceID,
-            spotifyTrackID: candidate.spotifyTrackID,
-            isrc: candidate.isrc,
-            language: candidate.language
-        )
-        applyLoadedDocument(document, identity: candidate.identity)
-        persistAdoptedDocument(document)
+        return manualAdoptionRequestIDs[identity] == requestID
+    }
+
+    public func cancelManualAdoptionRequest(identity: TrackIdentity, requestID: UUID) {
+        guard manualAdoptionRequestIDs[identity] == requestID else { return }
+        manualAdoptionRequestIDs.removeValue(forKey: identity)
+        manualAdoptionRequestRevisions.removeValue(forKey: identity)
+        guard let repository else { return }
+        Task {
+            try? await repository.cancelManualAdoptionRequest(identity: identity, requestID: requestID)
+        }
+    }
+
+    /// Persists a user-confirmed document and selects it only after the
+    /// repository commits its asset, timing and preferred-selection rows.
+    /// The Track is captured by the caller at the start of the interaction so
+    /// an A→B switch cannot redirect A's late persistence to B.
+    public func adoptManually(
+        document: LyricsDocument,
+        track: Track,
+        requestID: UUID,
+        confirmedLockedVersionIDs: [UUID]? = nil
+    ) async throws -> LyricsPersistenceSaveResult {
+        let identity = document.identity
+        guard manualAdoptionRequestIDs[identity] == requestID,
+              let requestRevision = manualAdoptionRequestRevisions[identity] else {
+            return LyricsPersistenceSaveResult(
+                versionID: nil,
+                disposition: .rejected("歌词采用请求已被更新或取消")
+            )
+        }
+        guard TrackIdentity(track: track) == identity else {
+            manualAdoptionRequestIDs.removeValue(forKey: identity)
+            manualAdoptionRequestRevisions.removeValue(forKey: identity)
+            return LyricsPersistenceSaveResult(
+                versionID: nil,
+                disposition: .rejected("歌词身份与当前歌曲不一致")
+            )
+        }
+        guard let repository else {
+            manualAdoptionRequestIDs.removeValue(forKey: identity)
+            manualAdoptionRequestRevisions.removeValue(forKey: identity)
+            return LyricsPersistenceSaveResult(
+                versionID: nil,
+                disposition: .rejected("歌词仓库不可用，候选仅保留为预览")
+            )
+        }
+        guard !Task.isCancelled else {
+            manualAdoptionRequestIDs.removeValue(forKey: identity)
+            manualAdoptionRequestRevisions.removeValue(forKey: identity)
+            throw CancellationError()
+        }
+
+        do {
+            let result = try await repository.saveAndAdoptManually(
+                track: track,
+                identity: identity,
+                document: document,
+                requestID: requestID,
+                confirmedLockedVersionIDs: confirmedLockedVersionIDs
+            )
+            LyricsE2ELog.log(
+                "SESSION manual adoption disposition=\(String(describing: result.disposition)) source=\(document.source) confidence=\(document.confidence) lines=\(document.lines.count)"
+            )
+            switch result.disposition {
+            case .inserted, .duplicate:
+                guard let versionID = result.versionID,
+                      let sourceContentHash = result.sourceContentHash else {
+                    if manualAdoptionRequestIDs[identity] == requestID {
+                        manualAdoptionRequestIDs.removeValue(forKey: identity)
+                        manualAdoptionRequestRevisions.removeValue(forKey: identity)
+                    }
+                    return LyricsPersistenceSaveResult(
+                        versionID: nil,
+                        disposition: .rejected("歌词已保存，但缺少持久版本身份")
+                    )
+                }
+                if manualAdoptionRequestIDs[identity] == requestID {
+                    if activeIdentity == identity, revision == requestRevision {
+                        activeLyricsVersionID = versionID
+                        let committedDocument = document.replacingLines(
+                            document.lines,
+                            timingVersionID: result.timingVersionID
+                        )
+                        applyLoadedDocument(committedDocument, identity: identity, sourceContentHash: sourceContentHash)
+                        activeSourceContentHash = sourceContentHash
+                        alignmentProvenanceAvailability = committedDocument.source == .automaticAlignment ? .available : .unavailable
+                        persistenceStatusMessage = nil
+                    }
+                    manualAdoptionRequestIDs.removeValue(forKey: identity)
+                    manualAdoptionRequestRevisions.removeValue(forKey: identity)
+                }
+            case .lockedConflict:
+                if activeIdentity == identity, revision == requestRevision,
+                   manualAdoptionRequestIDs[identity] == requestID {
+                    persistenceStatusMessage = "存在锁定歌词版本，需要确认后才能切换当前版本"
+                }
+            case .rejected(let message):
+                if manualAdoptionRequestIDs[identity] == requestID {
+                    if activeIdentity == identity, revision == requestRevision { persistenceStatusMessage = message }
+                    manualAdoptionRequestIDs.removeValue(forKey: identity)
+                    manualAdoptionRequestRevisions.removeValue(forKey: identity)
+                }
+            case .skippedLocked:
+                if manualAdoptionRequestIDs[identity] == requestID {
+                    if activeIdentity == identity, revision == requestRevision { persistenceStatusMessage = "歌词版本仍受锁定保护，未采用" }
+                    manualAdoptionRequestIDs.removeValue(forKey: identity)
+                    manualAdoptionRequestRevisions.removeValue(forKey: identity)
+                }
+            }
+            return result
+        } catch {
+            if manualAdoptionRequestIDs[identity] == requestID {
+                if activeIdentity == identity, revision == requestRevision { persistenceStatusMessage = error.localizedDescription }
+                manualAdoptionRequestIDs.removeValue(forKey: identity)
+                manualAdoptionRequestRevisions.removeValue(forKey: identity)
+            }
+            LyricsE2ELog.log("PERSISTENCE manual adoption failed error=\(error.localizedDescription)")
+            throw error
+        }
     }
 
     public func adopt(document: LyricsDocument) {
@@ -412,7 +683,7 @@ public final class LyricsSessionController: ObservableObject {
         cancelCurrentRequest()
         revision &+= 1
         activeLyricsVersionID = versionID
-        applyLoadedDocument(document, identity: document.identity)
+        applyLoadedDocument(document, identity: document.identity, sourceContentHash: sourceContentHash)
         activeSourceContentHash = sourceContentHash
         alignmentProvenanceAvailability = document.source == .automaticAlignment ? .available : .unavailable
         LyricsE2ELog.log("SESSION adopt persisted version=\(versionID.uuidString) source=\(document.source)")
@@ -540,29 +811,19 @@ public final class LyricsSessionController: ObservableObject {
         )
     }
 
-    private func applyLoadedDocument(_ document: LyricsDocument, identity: TrackIdentity) {
+    private func applyLoadedDocument(
+        _ document: LyricsDocument,
+        identity: TrackIdentity,
+        sourceContentHash: String? = nil
+    ) {
         isNoSelection = false
         let enrichedLines = LyricsLayerEnricher.enrich(lines: document.lines)
         let inferredLanguage = document.language ?? LyricsLanguageGate.inferredLanguage(
             text: enrichedLines.map(\.originalText).joined(separator: "\n")
         )
-        let enriched = LyricsDocument(
-            identity: identity,
-            title: document.title,
-            artist: document.artist,
-            album: document.album,
-            duration: document.duration,
-            lines: enrichedLines,
-            isSynchronized: document.isSynchronized,
-            source: document.source,
-            confidence: document.confidence,
-            providerSourceID: document.providerSourceID,
-            spotifyTrackID: document.spotifyTrackID,
-            isrc: document.isrc,
-            language: inferredLanguage
-        )
+        let enriched = document.replacingLines(enrichedLines, language: inferredLanguage)
         lyrics = enriched.lines
-        let bindingToken = LyricsPersistenceMapper.sourceContentHash(document: enriched)
+        let bindingToken = sourceContentHash ?? LyricsPersistenceMapper.sourceContentHash(document: document)
 #if DEBUG
         debugLyricsBindingToken = bindingToken
 #endif
@@ -599,7 +860,8 @@ public final class LyricsSessionController: ObservableObject {
     private func apply(
         _ result: LyricsLookupResult,
         identity: TrackIdentity,
-        requestRevision: UInt64
+        requestRevision: UInt64,
+        sourceContentHash: String? = nil
     ) {
         guard activeIdentity == identity, revision == requestRevision else {
             LyricsE2ELog.log("SESSION drop stale result rev=\(requestRevision) current=\(revision)")
@@ -610,6 +872,7 @@ public final class LyricsSessionController: ObservableObject {
         case .match(let document):
             guard document.identity == identity else {
                 lyrics = []
+        availableCandidates = []
 #if DEBUG
                 debugLyricsBindingToken = nil
 #endif
@@ -617,9 +880,10 @@ public final class LyricsSessionController: ObservableObject {
                 LyricsE2ELog.log("SESSION match identity mismatch")
                 return
             }
-            applyLoadedDocument(document, identity: identity)
+            applyLoadedDocument(document, identity: identity, sourceContentHash: sourceContentHash)
         case .candidates(let candidates):
             lyrics = []
+        availableCandidates = []
 #if DEBUG
             debugLyricsBindingToken = nil
 #endif
@@ -633,6 +897,7 @@ public final class LyricsSessionController: ObservableObject {
 #endif
         case .noLyrics:
             lyrics = []
+        availableCandidates = []
 #if DEBUG
             debugLyricsBindingToken = nil
 #endif
@@ -646,6 +911,7 @@ public final class LyricsSessionController: ObservableObject {
 #endif
         case .noMatch:
             lyrics = []
+        availableCandidates = []
 #if DEBUG
             debugLyricsBindingToken = nil
 #endif
@@ -659,12 +925,21 @@ public final class LyricsSessionController: ObservableObject {
 #endif
         case .failed(let failure):
             lyrics = []
+        availableCandidates = []
 #if DEBUG
             debugLyricsBindingToken = nil
 #endif
             isSynchronized = true
             state = .failed(identity, failure)
             LyricsE2ELog.log("SESSION failed \(failure)")
+            if !automaticSearchDisabledForCurrentTrack, !isNoSelection, let activeTrack {
+                switch failure {
+                case .timedOut: scheduleRecovery(track: activeTrack, identity: identity, revision: requestRevision)
+                case .serverError(let code) where (500...599).contains(code):
+                    scheduleRecovery(track: activeTrack, identity: identity, revision: requestRevision)
+                default: break // Offline waits for NWPath; identity/no lyrics never retry.
+                }
+            }
 #if DEBUG
             let nowIso = ISO8601DateFormatter().string(from: Date())
             let reqSid = TrackIdentity.canonicalSpotifyTrackID(identity.spotifyTrackID) ?? identity.spotifyTrackID ?? "none"
@@ -674,8 +949,33 @@ public final class LyricsSessionController: ObservableObject {
     }
 
     private func cancelCurrentRequest() {
+        isSearchInProgress = false
         requestTask?.cancel()
         requestTask = nil
+        recoveryTask?.cancel()
+        recoveryTask = nil
+    }
+
+    private func scheduleRecovery(track: Track, identity: TrackIdentity, revision expectedRevision: UInt64) {
+        guard recoveryTask == nil, recoveryAttempts < recoveryCooldowns.count else { return }
+        let delay = recoveryCooldowns[recoveryAttempts]
+        LyricsE2ELog.log("SESSION recovery scheduled attempt=\(recoveryAttempts + 1) cooldown=\(delay)s rev=\(expectedRevision)")
+        recoveryTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) } catch { return }
+            guard let self, !Task.isCancelled, self.activeIdentity == identity, self.revision == expectedRevision,
+                  !self.automaticSearchDisabledForCurrentTrack, !self.isNoSelection,
+                  case .failed(let failedIdentity, let failure) = self.state, failedIdentity == identity else { return }
+            switch failure {
+            case .timedOut, .networkUnavailable: break
+            case .serverError(let code) where (500...599).contains(code): break
+            default: return
+            }
+            self.recoveryTask = nil
+            self.recoveryAttempts += 1
+            self.isRecoveryAttempt = true
+            self.begin(track: track, identity: identity, forceRefresh: true)
+            self.isRecoveryAttempt = false
+        }
     }
 
     private static func normalizedQuery(_ value: String?) -> String? {

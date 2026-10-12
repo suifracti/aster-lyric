@@ -136,6 +136,7 @@
 		1100005B2D83400100000001 /* SpotifyTrackMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1100005B2D83400100000000 /* SpotifyTrackMapper.swift */; };
 		1100005C2D83400100000001 /* SpotifySearchProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1100005C2D83400100000000 /* SpotifySearchProvider.swift */; };
 		1100005D2D83400100000001 /* AppSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1100005D2D83400100000000 /* AppSettingsStore.swift */; };
+		110007012D83400100000001 /* ScopedLyricsOffsetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110007012D83400100000000 /* ScopedLyricsOffsetStore.swift */; };
 		1100005E2D83400100000001 /* LyricsProviderConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1100005E2D83400100000000 /* LyricsProviderConfiguration.swift */; };
 		1100005F2D83400100000001 /* WindowStatePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1100005F2D83400100000000 /* WindowStatePersistence.swift */; };
 		110000602D83400100000001 /* SettingsDataController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000602D83400100000000 /* SettingsDataController.swift */; };
@@ -147,6 +148,7 @@
 		110000662D83400100000001 /* AITranslationResponseParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000662D83400100000000 /* AITranslationResponseParser.swift */; };
 		110000672D83400100000001 /* OpenAICompatibleClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000672D83400100000000 /* OpenAICompatibleClient.swift */; };
 		110000682D83400100000001 /* AITranslationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000682D83400100000000 /* AITranslationService.swift */; };
+		A10F1234ABCD5678EF000001 /* MultiProviderTranslationServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10F1234ABCD5678EF000002 /* MultiProviderTranslationServices.swift */; };
 		110000692D83400100000001 /* TranslationRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000692D83400100000000 /* TranslationRepository.swift */; };
 		1100006A2D83400100000001 /* TranslationSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1100006A2D83400100000000 /* TranslationSessionController.swift */; };
 		1100006B2D83400100000001 /* LyricsEditingRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1100006B2D83400100000000 /* LyricsEditingRepository.swift */; };
@@ -212,6 +214,8 @@
 		110006052D83400100000001 /* ListeningStatisticsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006052D83400100000000 /* ListeningStatisticsModels.swift */; };
 		110006062D83400100000001 /* ListeningStatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006062D83400100000000 /* ListeningStatisticsView.swift */; };
 		110006072D83400100000001 /* PersonalDataSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006072D83400100000000 /* PersonalDataSync.swift */; };
+		A7100701ABCDEF0100000001 /* TranslationModelSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7100701ABCDEF0100000002 /* TranslationModelSettingsStore.swift */; };
+		A7100702ABCDEF0100000001 /* TranslationCLISetupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7100702ABCDEF0100000002 /* TranslationCLISetupStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -350,6 +354,7 @@
 		1100005B2D83400100000000 /* SpotifyTrackMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyTrackMapper.swift; sourceTree = "<group>"; };
 		1100005C2D83400100000000 /* SpotifySearchProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifySearchProvider.swift; sourceTree = "<group>"; };
 		1100005D2D83400100000000 /* AppSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsStore.swift; sourceTree = "<group>"; };
+		110007012D83400100000000 /* ScopedLyricsOffsetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScopedLyricsOffsetStore.swift; sourceTree = "<group>"; };
 		1100005E2D83400100000000 /* LyricsProviderConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsProviderConfiguration.swift; sourceTree = "<group>"; };
 		1100005F2D83400100000000 /* WindowStatePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowStatePersistence.swift; sourceTree = "<group>"; };
 		110000602D83400100000000 /* SettingsDataController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsDataController.swift; sourceTree = "<group>"; };
@@ -361,6 +366,7 @@
 		110000662D83400100000000 /* AITranslationResponseParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AITranslationResponseParser.swift; sourceTree = "<group>"; };
 		110000672D83400100000000 /* OpenAICompatibleClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAICompatibleClient.swift; sourceTree = "<group>"; };
 		110000682D83400100000000 /* AITranslationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AITranslationService.swift; sourceTree = "<group>"; };
+		A10F1234ABCD5678EF000002 /* MultiProviderTranslationServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiProviderTranslationServices.swift; sourceTree = "<group>"; };
 		110000692D83400100000000 /* TranslationRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslationRepository.swift; sourceTree = "<group>"; };
 		1100006A2D83400100000000 /* TranslationSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/TranslationSessionController.swift; sourceTree = "<group>"; };
 		1100006B2D83400100000000 /* LyricsEditingRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsEditingRepository.swift; sourceTree = "<group>"; };
@@ -426,6 +432,8 @@
 		110006052D83400100000000 /* ListeningStatisticsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lyrics/ListeningStatisticsModels.swift; sourceTree = "<group>"; };
 		110006062D83400100000000 /* ListeningStatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningStatisticsView.swift; sourceTree = "<group>"; };
 		110006072D83400100000000 /* PersonalDataSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalDataSync.swift; sourceTree = "<group>"; };
+		A7100701ABCDEF0100000002 /* TranslationModelSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslationModelSettingsStore.swift; sourceTree = "<group>"; };
+		A7100702ABCDEF0100000002 /* TranslationCLISetupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslationCLISetupStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -750,7 +758,10 @@
 		110000002D83400000000029 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				110007012D83400100000000 /* ScopedLyricsOffsetStore.swift */,
 				1100005D2D83400100000000 /* AppSettingsStore.swift */,
+				A7100701ABCDEF0100000002 /* TranslationModelSettingsStore.swift */,
+				A7100702ABCDEF0100000002 /* TranslationCLISetupStore.swift */,
 				1100005E2D83400100000000 /* LyricsProviderConfiguration.swift */,
 				1100005F2D83400100000000 /* WindowStatePersistence.swift */,
 				110000602D83400100000000 /* SettingsDataController.swift */,
@@ -769,6 +780,7 @@
 				110000662D83400100000000 /* AITranslationResponseParser.swift */,
 				110000672D83400100000000 /* OpenAICompatibleClient.swift */,
 				110000682D83400100000000 /* AITranslationService.swift */,
+				A10F1234ABCD5678EF000002 /* MultiProviderTranslationServices.swift */,
 			);
 			path = AI;
 			sourceTree = "<group>";
@@ -998,6 +1010,9 @@
 				1100005B2D83400100000001 /* SpotifyTrackMapper.swift in Sources */,
 				1100005C2D83400100000001 /* SpotifySearchProvider.swift in Sources */,
 				1100005D2D83400100000001 /* AppSettingsStore.swift in Sources */,
+				A7100701ABCDEF0100000001 /* TranslationModelSettingsStore.swift in Sources */,
+				A7100702ABCDEF0100000001 /* TranslationCLISetupStore.swift in Sources */,
+				110007012D83400100000001 /* ScopedLyricsOffsetStore.swift in Sources */,
 				1100005E2D83400100000001 /* LyricsProviderConfiguration.swift in Sources */,
 				1100005F2D83400100000001 /* WindowStatePersistence.swift in Sources */,
 				110000602D83400100000001 /* SettingsDataController.swift in Sources */,
@@ -1010,6 +1025,7 @@
 				110000662D83400100000001 /* AITranslationResponseParser.swift in Sources */,
 				110000672D83400100000001 /* OpenAICompatibleClient.swift in Sources */,
 				110000682D83400100000001 /* AITranslationService.swift in Sources */,
+				A10F1234ABCD5678EF000001 /* MultiProviderTranslationServices.swift in Sources */,
 				110000692D83400100000001 /* TranslationRepository.swift in Sources */,
 				1100006A2D83400100000001 /* TranslationSessionController.swift in Sources */,
 				1100006B2D83400100000001 /* LyricsEditingRepository.swift in Sources */,

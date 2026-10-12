@@ -17,6 +17,16 @@ public struct StoredEditableLyricsVersion: Equatable, Sendable {
         self.document = document
         self.lockedReadingLayers = lockedReadingLayers
     }
+
+    /// Canonical identity of the stored source rows. Unlike
+    /// `record.contentHash`, this excludes provider/deduplication metadata and
+    /// any translation, timing, or reading projection applied to `document`.
+    public var sourceContentHash: String {
+        LyricsSourceContentHasher.hash(
+            isSynchronized: record.isSynced,
+            lines: lines
+        )
+    }
 }
 
 public struct LyricsReadingLayerDraft: Equatable, Sendable {
@@ -73,6 +83,9 @@ public struct LyricsEditSaveRequest: Equatable, Sendable {
     public let lockLyricsVersion: Bool
     public let preserveCurrentLyricsSelection: Bool
     public let targetSource: LyricsSource
+    /// True only after the editor/library UI has shown the concrete timing
+    /// loss and the user chose to continue with the compatible remainder.
+    public let confirmedTimingLoss: Bool
     /// A fresh manual/import source has no provider version to compare against.
     /// Existing editor saves keep this false and remain compare-and-save
     /// operations against `sourceVersionID`.
@@ -90,6 +103,7 @@ public struct LyricsEditSaveRequest: Equatable, Sendable {
         lockLyricsVersion: Bool = false,
         preserveCurrentLyricsSelection: Bool = false,
         targetSource: LyricsSource = .manualEdit,
+        confirmedTimingLoss: Bool = false,
         isNewSource: Bool = false,
         translation: ManualTranslationEdit? = nil,
         readingLayers: [LyricsReadingLayerDraft] = []
@@ -103,6 +117,7 @@ public struct LyricsEditSaveRequest: Equatable, Sendable {
         self.lockLyricsVersion = lockLyricsVersion
         self.preserveCurrentLyricsSelection = preserveCurrentLyricsSelection
         self.targetSource = targetSource
+        self.confirmedTimingLoss = confirmedTimingLoss
         self.isNewSource = isNewSource
         self.translation = translation
         self.readingLayers = readingLayers
@@ -126,6 +141,7 @@ public enum LyricsEditingRepositoryError: Error, Equatable, Sendable, LocalizedE
     case invalidDocument(String)
     case invalidTimeline(String)
     case invalidTranslation(String)
+    case timingLossRequiresConfirmation(LyricsTimingLossSummary)
     case noChanges
     case lockedVersion
 
@@ -136,6 +152,7 @@ public enum LyricsEditingRepositoryError: Error, Equatable, Sendable, LocalizedE
         case .identityMismatch: return "编辑内容不属于当前歌曲"
         case .invalidTimeline(let message): return "时间轴校验失败：\(message)"
         case .invalidTranslation(let message): return "翻译校验失败：\(message)"
+        case .timingLossRequiresConfirmation(let summary): return summary.confirmationMessage
         case .invalidDocument(let message): return "歌词文档无效：\(message)"
         case .noChanges: return "没有需要保存的编辑"
         case .lockedVersion: return "锁定版本不能被直接覆盖"
@@ -143,7 +160,7 @@ public enum LyricsEditingRepositoryError: Error, Equatable, Sendable, LocalizedE
     }
 }
 
-public protocol LyricsEditingRepository: Sendable {
+public protocol LyricsEditingRepository: Sendable, LyricsOffsetScopeResolving {
     func loadEditableVersions(track: Track, identity: TrackIdentity) async throws -> [StoredEditableLyricsVersion]
     func loadEditableVersion(versionID: UUID, track: Track, identity: TrackIdentity) async throws -> StoredEditableLyricsVersion?
     /// Marks an existing lyrics version as the preferred persisted version for
@@ -181,23 +198,69 @@ public struct LibraryLyricsRevisionDraft: Identifiable {
 
     public var hasChanges: Bool { lines != originalLines }
 
-    public func saveRequest() throws -> LyricsEditSaveRequest {
+    public var timingLossSummary: LyricsTimingLossSummary {
+        LyricsTimingCompatibility.loss(from: originalLines, to: lines)
+    }
+
+    public func saveRequest(confirmingTimingLoss: Bool = false) throws -> LyricsEditSaveRequest {
         guard hasChanges else { throw LyricsEditingRepositoryError.noChanges }
+        let timingLoss = timingLossSummary
+        guard !timingLoss.requiresConfirmation || confirmingTimingLoss else {
+            throw LyricsEditingRepositoryError.timingLossRequiresConfirmation(timingLoss)
+        }
         // Derived text must not silently follow rewritten words into the revision.
-        let timingChanged = lines.map(\.id) != originalLines.map(\.id)
-            || lines.map(\.startTime) != originalLines.map(\.startTime)
-        let cleaned = lines.map { line -> LyricsEditorLineDraft in
+        let cleaned = LyricsTimingCompatibility.sanitized(lines, relativeTo: originalLines).map { line -> LyricsEditorLineDraft in
             var line = line
             line.translationText = nil
-            if timingChanged { line.endTime = nil }
+            if line.startTime == nil || line.endTime.map({ $0 < (line.startTime ?? 0) }) == true {
+                line.endTime = nil
+            }
             if originalLines.first(where: { $0.id == line.id })?.originalText != line.originalText {
                 line.kanaText = nil; line.romajiText = nil; line.rubyTokens = nil
             }
             return line
         }
         let hash = LyricsSourceContentHasher.hash(isSynchronized: source.record.isSynced, lines: source.lines)
-        let draft = LyricsEditorDraft(identity: source.document.identity, title: track.title, artist: track.artist, album: track.album, duration: track.duration, lines: cleaned, sourceVersionID: source.record.id, sourceContentHash: hash, source: .manualEdit)
+        let draft = LyricsEditorDraft(
+            identity: source.document.identity,
+            title: track.title,
+            artist: track.artist,
+            album: track.album,
+            duration: track.duration,
+            lines: cleaned,
+            isSynchronized: source.document.isSynchronized,
+            language: source.document.language,
+            explicitlyTimedLineIndices: source.document.explicitlyTimedLineIndices,
+            sourceVersionID: source.record.id,
+            sourceContentHash: hash,
+            source: .manualEdit
+        )
         guard let document = draft.document() else { throw LyricsEditingRepositoryError.invalidDocument("无法生成歌词版本") }
-        return LyricsEditSaveRequest(track: track, identity: source.document.identity, sourceVersionID: source.record.id, sourceContentHash: hash, document: document, createLyricsVersion: true, preserveCurrentLyricsSelection: true)
+        let readingLayers = source.lockedReadingLayers.compactMap { sourceLayer -> LyricsReadingLayerDraft? in
+            guard source.document.lines.indices.contains(sourceLayer.lineIndex) else { return nil }
+            let sourceLineID = source.document.lines[sourceLayer.lineIndex].id
+            guard let newIndex = cleaned.firstIndex(where: { $0.id == sourceLineID }),
+                  cleaned[newIndex].originalText == source.document.lines[sourceLayer.lineIndex].originalText else {
+                return nil
+            }
+            return LyricsReadingLayerDraft(
+                lineIndex: newIndex,
+                kanaText: sourceLayer.kanaText,
+                romajiText: sourceLayer.romajiText,
+                source: sourceLayer.source,
+                isLocked: true
+            )
+        }
+        return LyricsEditSaveRequest(
+            track: track,
+            identity: source.document.identity,
+            sourceVersionID: source.record.id,
+            sourceContentHash: hash,
+            document: document,
+            createLyricsVersion: true,
+            preserveCurrentLyricsSelection: true,
+            confirmedTimingLoss: confirmingTimingLoss,
+            readingLayers: readingLayers
+        )
     }
 }

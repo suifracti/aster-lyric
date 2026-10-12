@@ -44,14 +44,16 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         }
     }
 
-    public func saveRevision(_ draft: LibraryLyricsRevisionDraft) {
+    public func saveRevision(_ draft: LibraryLyricsRevisionDraft, confirmingTimingLoss: Bool = false) {
         guard !revisionBusy else { return }
         revisionBusy = true
         revisionError = nil
         Task {
             defer { revisionBusy = false }
             do {
-                let result = try await repository.saveManualEdit(draft.saveRequest())
+                let result = try await repository.saveManualEdit(
+                    draft.saveRequest(confirmingTimingLoss: confirmingTimingLoss)
+                )
                 guard result.lyricsVersion != nil else { throw LyricsEditingRepositoryError.sourceNotFound }
                 revisionDraft = nil
                 selectTrack(stableKey: draft.source.record.trackStableKey)
@@ -66,7 +68,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
 
     public init(
         repository: SQLiteLyricsRepository = SQLiteLyricsRepository(),
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .lyricsQ
     ) {
         self.repository = repository
         self.defaults = defaults

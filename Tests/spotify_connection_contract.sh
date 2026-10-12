@@ -50,6 +50,7 @@ struct SpotifyConnectionContract {
         precondition(snapshot.track?.title == "Track")
         precondition(snapshot.track?.duration == 180)
         precondition(snapshot.isPlaying)
+        precondition(snapshot.sourceIdentity == .spotifyDesktop)
 
         try? await provider.pause()
         print("Spotify connection contract passed")

@@ -384,6 +384,9 @@ struct CurrentSongOperationsView: View {
 
     private var translationSection: some View {
         VStack(alignment: .leading, spacing: 8) {
+            Text("AI 翻译为实验功能；采用前请预览并核对译文。")
+                .font(.system(size: 10, design: .rounded))
+                .foregroundStyle(.secondary)
             HStack {
                 Label("翻译版本", systemImage: "character.book.closed")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
@@ -693,6 +696,9 @@ struct CurrentSongOperationsView: View {
         switch state.liveLyricsState {
         case .alignmentQueued:
             VStack(alignment: .leading, spacing: 8) {
+                Text("实验排轴：选择本地音频可独立于播放来源生成预览，确认后保存。")
+                    .font(.system(size: 10, design: .rounded))
+                    .foregroundStyle(.secondary)
                 HStack {
                     Label("待排轴", systemImage: "waveform")
                     Spacer()

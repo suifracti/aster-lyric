@@ -28,7 +28,7 @@ public enum PersonalDataSyncStore {
 
     public static func saveFolderReference(
         _ folder: URL,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .lyricsQ
     ) throws {
         let normalizedFolder = folder.standardizedFileURL
         var isDirectory = ObjCBool(false)
@@ -52,7 +52,7 @@ public enum PersonalDataSyncStore {
     }
 
     public static func restoreFolderReference(
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .lyricsQ
     ) -> URL? {
         if let bookmark = defaults.data(forKey: folderBookmarkDefaultsKey) {
             var isStale = false
@@ -75,7 +75,7 @@ public enum PersonalDataSyncStore {
         return URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
     }
 
-    public static func clearFolderReference(defaults: UserDefaults = .standard) {
+    public static func clearFolderReference(defaults: UserDefaults = .lyricsQ) {
         defaults.removeObject(forKey: folderBookmarkDefaultsKey)
         defaults.removeObject(forKey: folderPathDefaultsKey)
     }

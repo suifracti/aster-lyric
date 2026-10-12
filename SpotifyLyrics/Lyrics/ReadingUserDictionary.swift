@@ -4,7 +4,7 @@ public struct ReadingUserDictionaryStore {
     public static let userDefaultsKey = "reading.userDictionary.v1"
     private let defaults: UserDefaults
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .lyricsQ) {
         self.defaults = defaults
     }
 
@@ -79,20 +79,27 @@ public enum ReadingRubyCorrection {
                                       trackStableKey: trackStableKey, priority: 1000, notes: "点击假名纠音")
     }
 
-    public static func project(_ reading: ReadingLineResult, onto source: LyricLine) -> LyricLine {
+    public static func project(
+        _ reading: ReadingLineResult,
+        onto source: LyricLine,
+        preferStoredReadingText: Bool = false
+    ) -> LyricLine {
         guard reading.originalText == source.originalText else { return source }
         var line = source
-        if reading.readingText == reading.originalText, JapaneseKanaGenerator.hasKanji(reading.originalText) {
-            return line // Unresolved lines retain their original auxiliary layers.
+        if !preferStoredReadingText,
+           reading.readingText == reading.originalText,
+           JapaneseKanaGenerator.hasKanji(reading.originalText) {
+            return line // Generated unresolved rows keep their existing safe fallback.
         }
         line.kanaText = reading.readingText
-        let tokens = reading.tokens.map { token in
+        let consistentTokens = reading.hasConsistentKanaTokenProjection ? reading.tokens : []
+        let tokens = consistentTokens.map { token in
             JapaneseReadingToken(id: token.id, originalText: token.surface, lemma: nil,
                 kana: token.reading, romaji: token.reading.flatMap(JapaneseRomanizer.romanizeConfirmedKana),
                 source: .userCorrection, confidence: token.confidence,
                 startOffset: token.startOffset, endOffset: token.endOffset)
         }
-        if reading.tokens.contains(where: { $0.source == .userDictionary }),
+        if consistentTokens.contains(where: { $0.source == .userDictionary }),
            tokens.map(\.originalText).joined() == source.originalText, !tokens.isEmpty {
             line.romajiText = JapaneseReadingPipeline.buildRomajiText(from: tokens)
             line.rubyTokens = tokens.flatMap { JapaneseReadingPipeline.rubyTokens(for: $0) }

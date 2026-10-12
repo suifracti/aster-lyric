@@ -927,8 +927,8 @@ struct LibraryVersionLabel: View {
     init(kind: String, id: UUID, originalTitle: String) {
         self.originalTitle = originalTitle
         let key = "personalLibrary.versionLabel.\(kind).\(id.uuidString)"
-        _customTitle = AppStorage(wrappedValue: "", key + ".title")
-        _note = AppStorage(wrappedValue: "", key + ".note")
+        _customTitle = AppStorage(wrappedValue: "", key + ".title", store: UserDefaults.lyricsQ)
+        _note = AppStorage(wrappedValue: "", key + ".note", store: UserDefaults.lyricsQ)
     }
 
     var body: some View {
@@ -1021,6 +1021,8 @@ private struct LibraryLyricsRevisionSheet: View {
     @ObservedObject var service: PersonalLyricsLibraryService
     @Environment(\.dismiss) private var dismiss
     @State private var draft: LibraryLyricsRevisionDraft
+    @State private var timingLossPendingDraft: LibraryLyricsRevisionDraft?
+    @State private var showTimingLossConfirmation = false
     private static let secondsFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -1074,7 +1076,7 @@ private struct LibraryLyricsRevisionSheet: View {
                 Spacer()
                 if service.revisionBusy { ProgressView().controlSize(.small) }
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("保存为新版本") { service.saveRevision(draft) }
+                Button("保存为新版本") { requestSave() }
                     .buttonStyle(.borderedProminent)
                     .disabled(!draft.hasChanges)
             }
@@ -1083,5 +1085,26 @@ private struct LibraryLyricsRevisionSheet: View {
         .padding(24)
         .frame(width: 760, height: 580)
         .interactiveDismissDisabled(service.revisionBusy)
+        .alert("保存将丢失部分逐字时间", isPresented: $showTimingLossConfirmation) {
+            Button("确认并保存兼容部分", role: .destructive) {
+                if let pending = timingLossPendingDraft {
+                    service.saveRevision(pending, confirmingTimingLoss: true)
+                }
+                timingLossPendingDraft = nil
+            }
+            Button("取消", role: .cancel) { timingLossPendingDraft = nil }
+        } message: {
+            Text(timingLossPendingDraft?.timingLossSummary.confirmationMessage ?? "取消不会写入数据库。")
+        }
+    }
+
+    private func requestSave() {
+        let summary = draft.timingLossSummary
+        guard summary.requiresConfirmation else {
+            service.saveRevision(draft)
+            return
+        }
+        timingLossPendingDraft = draft
+        showTimingLossConfirmation = true
     }
 }

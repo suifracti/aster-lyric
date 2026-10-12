@@ -38,6 +38,7 @@ require "$PLAYBACK" 'liveLyricsProjectionCache' 'projection cache is owned by Pl
 require "$TRANSLATION" 'identity: TrackIdentity' 'translation projection can validate live identity'
 require "$TIMELINE" 'middle = lower' 'timeline lookup uses binary search'
 require "$FLOATING_VIEW" 'NSAttributedString\(string: text, attributes:' 'floating text measurement uses current text before AppKit view update'
+require "$FLOATING_VIEW" 'FloatingTimedRubyLayoutCache\.layout\(for: key\)' 'desktop timed layout reuses bounded geometry cache'
 ! grep -Eq 'lines\.indices\.last' "$TIMELINE" || {
   echo 'FAIL: timeline still scans from the end on every playback tick' >&2
   exit 1

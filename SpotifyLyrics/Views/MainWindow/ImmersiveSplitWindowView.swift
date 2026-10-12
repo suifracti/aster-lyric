@@ -82,34 +82,6 @@ struct ImmersiveSplitWindowView: View {
                 alignment: .center
             )
 
-            HStack(spacing: 10) {
-                Button {
-                    // Favorite is intentionally visual-only until the playback
-                    // provider exposes a library mutation API.
-                } label: {
-                    Label("收藏", systemImage: "heart")
-                        .labelStyle(.iconOnly)
-                        .frame(width: 30, height: 30)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(LyricsDesignTokens.secondaryText)
-                .help("收藏（暂未连接 Spotify Library API）")
-
-                Button {
-                    // Keep this as a safe placeholder for future track actions.
-                } label: {
-                    Label("更多", systemImage: "ellipsis")
-                        .labelStyle(.iconOnly)
-                        .frame(width: 30, height: 30)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(LyricsDesignTokens.secondaryText)
-                .help("更多歌曲操作")
-
-                Spacer()
-            }
-            .frame(maxWidth: 220)
-
             PlaybackControlsView(state: state, vertical: true)
 
             if !state.canControlSpotify || state.isUsingMockPreview {

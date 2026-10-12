@@ -5,6 +5,8 @@ struct ReadingVersionEditorView: View {
     let version: StoredReadingVersion
     @Environment(\.dismiss) private var dismiss
     @State private var drafts: [String]
+    @State private var saving = false
+    @State private var error = ""
 
     init(state: PlaybackState, version: StoredReadingVersion) {
         self.state = state
@@ -19,6 +21,11 @@ struct ReadingVersionEditorView: View {
             Text("保存会创建新的人工读音版本，不覆盖 \(version.record.engineID)。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if !error.isEmpty {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
             List {
                 ForEach(Array(version.lines.enumerated()), id: \.element.lineIndex) { index, line in
                     VStack(alignment: .leading, spacing: 5) {
@@ -29,6 +36,7 @@ struct ReadingVersionEditorView: View {
                             set: { if drafts.indices.contains(index) { drafts[index] = $0 } }
                         ))
                         .textFieldStyle(.roundedBorder)
+                        .disabled(saving)
                     }
                     .padding(.vertical, 4)
                 }
@@ -36,27 +44,35 @@ struct ReadingVersionEditorView: View {
             HStack {
                 Spacer()
                 Button("取消") { dismiss() }
+                    .disabled(saving)
+                if saving { ProgressView().controlSize(.small) }
                 Button("另存为人工版本") {
-                    let edited = version.lines.map { line in
-                        ReadingLineResult(
-                            lineIndex: line.lineIndex,
-                            originalText: line.originalText,
-                            readingText: line.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : (drafts.indices.contains(line.lineIndex) ? drafts[line.lineIndex] : line.readingText),
-                            language: line.language,
-                            tokens: line.tokens,
-                            warnings: [],
-                            confidence: 1
-                        )
-                    }
-                    state.readingSession.saveManualEdit(version, readingLines: edited)
-                    dismiss()
+                    save()
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(saving)
             }
         }
         .padding(20)
         .frame(minWidth: 560, minHeight: 460)
         .preferredColorScheme(.dark)
+        .interactiveDismissDisabled(saving)
+    }
+
+    private func save() {
+        guard !saving else { return }
+        saving = true
+        error = ""
+        let edited = ReadingManualEdit.lines(from: version.lines, drafts: drafts)
+        Task { @MainActor in
+            do {
+                try await state.readingSession.saveManualEdit(version, readingLines: edited)
+                dismiss()
+            } catch {
+                self.error = error.localizedDescription
+                saving = false
+            }
+        }
     }
 }
 

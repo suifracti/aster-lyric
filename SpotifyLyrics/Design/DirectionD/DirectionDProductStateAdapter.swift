@@ -16,6 +16,13 @@ public final class DirectionDProductStateAdapter: ObservableObject {
     @Published public private(set) var trackArtist: String = ""
     @Published public private(set) var trackAlbum: String = ""
 
+    /// Whether the summary metadata belongs to a live or explicit preview
+    /// track, rather than an unbound/empty adapter state.
+    public var hasTrackForDisplay: Bool {
+        guard let playback else { return false }
+        return playback.hasLiveTrack || playback.isMockPreviewMode
+    }
+
     private var lastAnnouncedState: DirectionDPresentationState?
     private var cancellables = Set<AnyCancellable>()
     private weak var playback: PlaybackState?

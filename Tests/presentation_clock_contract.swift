@@ -268,7 +268,7 @@ struct PresentationClockContract {
             isPlaying: false,
             trackID: "offset",
             trackDuration: 30,
-            presentationOffset: -2.0
+            presentationOffset: 2.0
         )
         let delayByTwoSeconds = LyricsPresentationClock(
             authoritativePosition: 10,
@@ -276,7 +276,7 @@ struct PresentationClockContract {
             isPlaying: false,
             trackID: "offset",
             trackDuration: 30,
-            presentationOffset: 2.0
+            presentationOffset: -2.0
         )
         let reset = LyricsPresentationClock(
             authoritativePosition: 10,
@@ -286,13 +286,83 @@ struct PresentationClockContract {
             trackDuration: 30,
             presentationOffset: 0
         )
-        assert(abs(advanceByTwoSeconds.presentationTime(at: 100) - 8.0) < 1e-6,
-               "提前 2s must move presented time from 10s to 8s")
-        assert(abs(delayByTwoSeconds.presentationTime(at: 100) - 12.0) < 1e-6,
-               "延后 2s must move presented time from 10s to 12s")
+        assert(abs(advanceByTwoSeconds.playbackTime(at: 100) - 10.0) < 1e-6,
+               "+offset must not move the playback-domain time")
+        assert(abs(delayByTwoSeconds.playbackTime(at: 100) - 10.0) < 1e-6,
+               "-offset must not move the playback-domain time")
+        assert(abs(advanceByTwoSeconds.presentationTime(at: 100) - 12.0) < 1e-6,
+               "正 offset 2s must move lyrics earlier: presentation 10s -> 12s")
+        assert(abs(delayByTwoSeconds.presentationTime(at: 100) - 8.0) < 1e-6,
+               "负 offset 2s must move lyrics later: presentation 10s -> 8s")
         assert(abs(reset.presentationTime(at: 100) - 10) < 1e-6)
         let sourceLine = LyricLine(timestamp: 10, originalText: "unchanged")
         assert(sourceLine.timestamp == 10, "presentation offset must not mutate source timestamps")
+
+        print("[13] Testing lyric advance/delay against raw playback cases...")
+        let advanceCase = LyricsPresentationClock(
+            authoritativePosition: 8,
+            receivedAtMonotonicTime: 100,
+            isPlaying: false,
+            trackID: "advance-case",
+            trackDuration: 60,
+            presentationOffset: 2
+        )
+        let delayCase = LyricsPresentationClock(
+            authoritativePosition: 12,
+            receivedAtMonotonicTime: 100,
+            isPlaying: false,
+            trackID: "delay-case",
+            trackDuration: 60,
+            presentationOffset: -2
+        )
+        assert(advanceCase.playbackTime(at: 100) == 8)
+        assert(advanceCase.presentationTime(at: 100) == 10)
+        assert(delayCase.playbackTime(at: 100) == 12)
+        assert(delayCase.presentationTime(at: 100) == 10)
+
+        print("[14] Testing paused offset mutation and independent clamps...")
+        let pausedZero = LyricsPresentationClock(
+            authoritativePosition: 10,
+            receivedAtMonotonicTime: 100,
+            isPlaying: false,
+            trackID: "paused",
+            trackDuration: 60,
+            presentationOffset: 0
+        )
+        let pausedAdvance = pausedZero.withPresentationOffset(2)
+        assert(pausedAdvance.playbackTime(at: 999) == 10)
+        assert(pausedZero.presentationTime(at: 999) == 10)
+        assert(pausedAdvance.presentationTime(at: 999) == 12)
+
+        let lowerBound = LyricsPresentationClock(
+            authoritativePosition: 0,
+            receivedAtMonotonicTime: 100,
+            isPlaying: false,
+            trackID: "clamp",
+            trackDuration: 60,
+            presentationOffset: -2
+        )
+        let upperBound = LyricsPresentationClock(
+            authoritativePosition: 60,
+            receivedAtMonotonicTime: 100,
+            isPlaying: false,
+            trackID: "clamp",
+            trackDuration: 60,
+            presentationOffset: 2
+        )
+        assert(lowerBound.playbackTime(at: 100) == 0)
+        assert(lowerBound.presentationTime(at: 100) == 0)
+        assert(upperBound.playbackTime(at: 100) == 60)
+        assert(upperBound.presentationTime(at: 100) == 60)
+
+        assert(!PlaybackTickTimeUpdatePolicy.shouldPublish(currentTime: 12, nextTime: 12))
+        assert(!PlaybackTickTimeUpdatePolicy.shouldPublish(currentTime: 0, nextTime: 0))
+        assert(!PlaybackTickTimeUpdatePolicy.shouldPublish(currentTime: 60, nextTime: 60))
+        assert(PlaybackTickTimeUpdatePolicy.shouldPublish(currentTime: 12, nextTime: 12.2))
+        assert(PlaybackTickTimeUpdatePolicy.shouldPublish(currentTime: 12, nextTime: 11.8))
+        assert(!PlaybackTickTimeUpdatePolicy.shouldFinishMockPlayback(isPlaying: false, currentTime: 60, duration: 60))
+        assert(PlaybackTickTimeUpdatePolicy.shouldFinishMockPlayback(isPlaying: true, currentTime: 60, duration: 60))
+        assert(!PlaybackTickTimeUpdatePolicy.shouldFinishMockPlayback(isPlaying: true, currentTime: 59, duration: 60))
 
         print("PASS: Presentation clock contract verified")
     }

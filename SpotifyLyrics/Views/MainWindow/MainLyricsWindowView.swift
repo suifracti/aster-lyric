@@ -198,7 +198,10 @@ struct MainLyricsWindowView: View {
                 isSearchPresented = true
             },
             onImportLyrics: {
-                _ = state.prepareManualLyricsFromTXT()
+                DirectionDActionRouter.performManualLyricsImport(
+                    prepare: { state.prepareManualLyricsFromTXT() },
+                    openEditor: { openWindow(id: "lyrics-editor") }
+                )
             },
             onOpenSettings: {
                 openSettings()

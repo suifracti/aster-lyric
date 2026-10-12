@@ -2,7 +2,14 @@ import Foundation
 
 /// Lightweight acceptance trace logger. Writes to /tmp/spotifylyrics-e2e.log
 enum LyricsE2ELog {
-    private static let path = "/tmp/spotifylyrics-e2e.log"
+    private static var path: String {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested {
+            return DebugAcceptanceDataIsolation.configuration.root.appendingPathComponent("logs/e2e.log").path
+        }
+#endif
+        return "/tmp/spotifylyrics-e2e.log"
+    }
     private static let lock = NSLock()
 
     static func reset() {

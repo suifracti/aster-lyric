@@ -175,9 +175,12 @@ public final class AppSettingsStore: ObservableObject {
         public static let aiProfileSnapshot = "ai.profileSnapshot"
         public static let aiFallbackStrategy = "ai.fallbackStrategy"
         public static let aiWorkflowID = "ai.workflowID"
+        public static let aiCodexReasoningEffort = "ai.codexReasoningEffort"
         public static let settingsCenterPresentation = "settings.centerPresentation"
         public static let readingPreferences = "reading.preferences.v1"
         public static let v3PlaybackDetailsOnHover = "v3.playbackDetailsOnHover"
+        /// Preserved historical global offset. New runtime reads/writes use
+        /// `lyricsOffsetStore`; this key is never migrated or overwritten.
         public static let lyricsPresentationOffset = "lyrics.presentationOffset.v1"
         public static let v3LyricsPositions = "v3.lyricsPositions.v1"
         public static let v3StageReadabilityEnabled = "v3.stageReadabilityEnabled"
@@ -197,6 +200,9 @@ public final class AppSettingsStore: ObservableObject {
     public static let currentSettingsVersion = 1
 
     private let defaults: UserDefaults
+
+    /// Translation choices use the same injected preferences scope as settings.
+    var translationSelectionDefaults: UserDefaults { defaults }
     private var v3BlurByPresentation: [V3ArtworkPresentation: Double] = [:]
     private var isApplyingStoredV3Blur = false
 
@@ -206,6 +212,7 @@ public final class AppSettingsStore: ObservableObject {
     public let presentationSelections: PresentationSelectionStore
     public let translationProfiles: TranslationProfileStore
     public let readingUserDictionary: ReadingUserDictionaryStore
+    public let lyricsOffsetStore: ScopedLyricsOffsetStore
 
     @Published public var settingsCenterPresentationRawValue: String {
         didSet { defaults.set(settingsCenterPresentationRawValue, forKey: Key.settingsCenterPresentation) }
@@ -375,17 +382,10 @@ public final class AppSettingsStore: ObservableObject {
         didSet { defaults.set(v3PlaybackDetailsOnHover, forKey: Key.v3PlaybackDetailsOnHover) }
     }
 
-    /// Shared presentation-only lyric offset. It never changes Spotify's
-    /// position, provider timestamps, or the stored LRC document.
-    @Published public var lyricsPresentationOffset: Double {
-        didSet {
-            let normalized = min(10, max(-10, lyricsPresentationOffset.isFinite ? lyricsPresentationOffset : 0))
-            if normalized != lyricsPresentationOffset {
-                lyricsPresentationOffset = normalized
-            } else {
-                defaults.set(normalized, forKey: Key.lyricsPresentationOffset)
-            }
-        }
+    /// Old global setting remains available only for an explicit history note.
+    /// Reading this value never assigns it to a song or lyrics version.
+    public var legacyLyricsPresentationOffset: Double? {
+        (defaults.object(forKey: Key.lyricsPresentationOffset) as? NSNumber)?.doubleValue
     }
 
     @Published public var v3StageReadabilityEnabled: Bool {
@@ -458,8 +458,9 @@ public final class AppSettingsStore: ObservableObject {
     @Published public private(set) var aiModelDirectoryStatus: TranslationModelDirectoryStatus
     @Published public private(set) var aiCachedModels: [TranslationModelDescriptor]
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .lyricsQ) {
         self.defaults = defaults
+        self.lyricsOffsetStore = ScopedLyricsOffsetStore(defaults: defaults)
         self.v3LyricsPositions = (defaults.dictionary(forKey: Key.v3LyricsPositions) as? [String: String] ?? [:])
             .filter { ["automatic", "left", "center", "right"].contains($0.value) }
         let legacyBlur = defaults.object(forKey: Key.v3BackdropBlurRadius) as? Double ?? 36.0
@@ -484,10 +485,6 @@ public final class AppSettingsStore: ObservableObject {
                 ?? (presentation == selectedPresentation ? legacyBlur : blurDefaults[presentation] ?? legacyBlur)
         }
         self.v3PlaybackDetailsOnHover = defaults.bool(forKey: Key.v3PlaybackDetailsOnHover)
-        self.lyricsPresentationOffset = min(
-            10,
-            max(-10, defaults.object(forKey: Key.lyricsPresentationOffset) as? Double ?? 0)
-        )
         self.v3StageReadabilityEnabled = defaults.bool(forKey: Key.v3StageReadabilityEnabled)
         self.v3BackdropBlurRadius = self.v3BlurByPresentation[selectedPresentation] ?? legacyBlur
         self.v3ArtworkPosition = defaults.string(forKey: Key.v3ArtworkPosition) ?? "left"
@@ -980,7 +977,8 @@ public final class AppSettingsStore: ObservableObject {
             profileID: defaults.string(forKey: Key.aiProfileID).flatMap(UUID.init(uuidString:)),
             profileSnapshot: defaults.string(forKey: Key.aiProfileSnapshot) ?? "",
             fallbackStrategy: TranslationFallbackStrategy(rawValue: defaults.string(forKey: Key.aiFallbackStrategy) ?? "none") ?? .none,
-            workflowID: defaults.string(forKey: Key.aiWorkflowID) ?? TranslationWorkflowID.contextualV2.rawValue
+            workflowID: defaults.string(forKey: Key.aiWorkflowID) ?? TranslationWorkflowID.contextualV2.rawValue,
+            codexReasoningEffort: defaults.string(forKey: Key.aiCodexReasoningEffort) ?? ""
         )
     }
 
@@ -1003,6 +1001,7 @@ public final class AppSettingsStore: ObservableObject {
         defaults.set(configuration.profileSnapshot, forKey: Key.aiProfileSnapshot)
         defaults.set(configuration.fallbackStrategy.rawValue, forKey: Key.aiFallbackStrategy)
         defaults.set(configuration.workflowID, forKey: Key.aiWorkflowID)
+        defaults.set(configuration.codexReasoningEffort, forKey: Key.aiCodexReasoningEffort)
     }
 
     private static func loadCachedModels(defaults: UserDefaults) -> [TranslationModelDescriptor] {

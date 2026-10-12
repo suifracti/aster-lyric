@@ -5,6 +5,9 @@ struct SongSearchPopover: View {
     @ObservedObject var manager: SongSearchManager
     @ObservedObject var playbackState: PlaybackState
     @State private var query = ""
+    @State private var isApplyingPreview = false
+    @State private var isLockConfirmationPresented = false
+    @State private var previewAdoptionMessage: String?
     @FocusState private var isSearchFieldFocused: Bool
 
     var body: some View {
@@ -227,13 +230,20 @@ struct SongSearchPopover: View {
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(LyricsDesignTokens.primaryText)
                 .lineLimit(1)
+            if let previewAdoptionMessage {
+                Text(previewAdoptionMessage)
+                    .font(.system(size: 10, design: .rounded))
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
             Spacer()
             Button("应用到当前歌曲") {
-                playbackState.adoptSearchPreviewLyrics()
+                applySearchPreview(confirmingLocks: false)
             }
             .buttonStyle(.borderedProminent)
             .tint(LyricsDesignTokens.accent)
             .controlSize(.small)
+            .disabled(isApplyingPreview)
 
             Button("退出预览") {
                 playbackState.clearSearchPreview()
@@ -246,6 +256,56 @@ struct SongSearchPopover: View {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(LyricsDesignTokens.controlBackground)
         )
+        .confirmationDialog(
+            "歌词版本已锁定",
+            isPresented: $isLockConfirmationPresented,
+            titleVisibility: .visible
+        ) {
+            Button("仍采用此版本", role: .destructive) {
+                applySearchPreview(confirmingLocks: true)
+            }
+            Button("取消", role: .cancel) {
+                playbackState.cancelPendingManualLyricsAdoption()
+            }
+        } message: {
+            Text("当前歌曲有 \(playbackState.pendingManualLyricsAdoptionLockedVersionCount) 个锁定歌词版本。继续会将预览歌词设为当前，并保留原版本的锁定标记。")
+        }
+    }
+
+    private func applySearchPreview(confirmingLocks: Bool) {
+        guard !isApplyingPreview else { return }
+        isApplyingPreview = true
+        previewAdoptionMessage = nil
+        Task { @MainActor in
+            do {
+                let result: LyricsPersistenceSaveResult?
+                if confirmingLocks {
+                    result = try await playbackState.confirmPendingManualLyricsAdoption()
+                } else {
+                    result = try await playbackState.adoptSearchPreviewLyrics()
+                }
+                guard let result else {
+                    previewAdoptionMessage = "预览已失效，未更改当前版本。"
+                    isApplyingPreview = false
+                    return
+                }
+                switch result.disposition {
+                case .inserted, .duplicate:
+                    if result.versionID == nil {
+                        previewAdoptionMessage = "没有返回持久版本身份，未显示采用成功。"
+                    }
+                case .lockedConflict:
+                    isLockConfirmationPresented = true
+                case .skippedLocked:
+                    previewAdoptionMessage = "歌词仍受锁定保护，未采用。"
+                case .rejected(let message):
+                    previewAdoptionMessage = message
+                }
+            } catch {
+                previewAdoptionMessage = "歌词未能保存：\(error.localizedDescription)"
+            }
+            isApplyingPreview = false
+        }
     }
 
     private var isAuthorizing: Bool {

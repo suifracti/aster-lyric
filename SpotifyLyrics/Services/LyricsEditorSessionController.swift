@@ -50,6 +50,8 @@ public final class LyricsEditorSessionController: ObservableObject {
     @Published public private(set) var state: LyricsEditorSessionState = .idle
     @Published public private(set) var draft: LyricsEditorDraft?
     @Published public private(set) var availableVersions: [StoredEditableLyricsVersion] = []
+    @Published public private(set) var resolvedPersistentLyricsOffsetScope: LyricsOffsetScope?
+    @Published public private(set) var isResolvingLyricsOffsetScope = false
     @Published public private(set) var availableTranslations: [StoredTranslationVersion] = []
     @Published public private(set) var selectedTranslation: StoredTranslationVersion?
     @Published public private(set) var validation = LyricsTimelineValidationResult(issues: [], isSynchronized: false)
@@ -64,12 +66,16 @@ public final class LyricsEditorSessionController: ObservableObject {
     @Published public var assistAutoAdvance = true
     /// Callback for partial-save confirmation. Return true to proceed.
     public var confirmPartialSave: ((Int, Int) -> Bool)?
+    /// The user must acknowledge any timed spans that cannot follow the edited
+    /// text/line time. A missing callback fails closed and performs no write.
+    public var confirmTimingLoss: ((LyricsTimingLossSummary) -> Bool)?
 
     public var onSaved: ((LyricsEditSaveResult, TrackIdentity) -> Void)?
     public var isStillCurrent: (() -> Bool)?
 
     private let repository: (any LyricsEditingRepository)?
     private var loadTask: Task<Void, Never>?
+    private var lyricsOffsetScopeTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
     private var generation: UInt64 = 0
     private var track: Track?
@@ -92,6 +98,7 @@ public final class LyricsEditorSessionController: ObservableObject {
 
     deinit {
         loadTask?.cancel()
+        lyricsOffsetScopeTask?.cancel()
         saveTask?.cancel()
     }
 
@@ -107,6 +114,44 @@ public final class LyricsEditorSessionController: ObservableObject {
     public var currentSourceVersionID: UUID? { sourceVersionID }
     public var currentSourceContentHash: String? { sourceContentHash }
     public var currentSourceRevision: UInt64 { sourceRevision }
+
+    /// The editor scope is validated and canonicalized by the repository for
+    /// this selected saved version. Dirty/new drafts never become identities.
+    public var persistentLyricsOffsetScope: LyricsOffsetScope? {
+        guard state != .saving,
+              !isStale,
+              !hasUnsavedChanges,
+              !isNewSourceSession,
+              let selectedSavedLyricsOffsetVersionID,
+              let resolvedPersistentLyricsOffsetScope,
+              resolvedPersistentLyricsOffsetScope.lyricsVersionID == selectedSavedLyricsOffsetVersionID else {
+            return nil
+        }
+        return resolvedPersistentLyricsOffsetScope
+    }
+
+    public var selectedSavedLyricsOffsetVersionID: UUID? {
+        guard !isNewSourceSession,
+              let sourceVersionID,
+              availableVersions.contains(where: { $0.record.id == sourceVersionID }) else {
+            return nil
+        }
+        return sourceVersionID
+    }
+
+    public var lyricsOffsetDisabledReason: String? {
+        if state == .saving { return "正在保存；请稍后再调整已保存版本的偏移。" }
+        if isStale { return "编辑会话已过期，暂不能调整歌词偏移。" }
+        if hasUnsavedChanges { return "请先保存或撤销未保存修改，再调整这个歌词版本的偏移。" }
+        if isNewSourceSession { return "这份歌词尚未保存为持久版本，暂不能设置偏移。" }
+        guard let sourceVersionID else { return "当前编辑内容没有持久歌词版本身份。" }
+        guard availableVersions.contains(where: { $0.record.id == sourceVersionID }) else {
+            return "正在确认所选的已保存歌词版本，暂不能设置偏移。"
+        }
+        if persistentLyricsOffsetScope != nil { return nil }
+        if isResolvingLyricsOffsetScope { return "正在确认此歌词版本所属的歌曲，暂不能设置偏移。" }
+        return "无法确认此歌词版本所属的规范歌曲，偏移写入已禁用。"
+    }
 
     public func reportExportResult(_ message: String) {
         self.message = message
@@ -136,6 +181,7 @@ public final class LyricsEditorSessionController: ObservableObject {
     ) {
         generation &+= 1
         loadTask?.cancel()
+        clearResolvedLyricsOffsetScope()
         saveTask?.cancel()
         self.track = track
         self.identity = identity
@@ -196,6 +242,11 @@ public final class LyricsEditorSessionController: ObservableObject {
                         self.baseLockedReadingIDs = self.lockedReadingIDs
                         self.message = selected.record.isLocked ? "当前来源版本已锁定；保存将创建新的人工版本" : nil
                     }
+                    self.resolveEditorLyricsOffsetScope(
+                        versionID: lyricsVersionID,
+                        identity: identity,
+                        generation: loadGeneration
+                    )
                 }
             } catch {
                 await MainActor.run { [weak self] in
@@ -219,6 +270,7 @@ public final class LyricsEditorSessionController: ObservableObject {
     ) {
         generation &+= 1
         loadTask?.cancel()
+        clearResolvedLyricsOffsetScope()
         saveTask?.cancel()
         self.track = track
         self.identity = identity
@@ -496,10 +548,8 @@ public final class LyricsEditorSessionController: ObservableObject {
 
     public func selectTranslation(versionID: UUID) {
         guard let version = availableTranslations.first(where: { $0.record.id == versionID }), version.isComplete,
-              let draft,
-              let baseDoc = draft.document(source: draft.source) else { return }
-        let document = Self.documentByProjecting(version, onto: baseDoc)
-        let replacement = LyricsEditorDraft(document: document, sourceVersionID: draft.sourceVersionID, sourceContentHash: draft.sourceContentHash)
+              let draft else { return }
+        let replacement = Self.draftByProjecting(version, onto: draft)
         self.draft = replacement
         self.selectedTranslation = version
         self.baseTranslationLines = replacement.lines.map(Self.translationText)
@@ -509,9 +559,10 @@ public final class LyricsEditorSessionController: ObservableObject {
     public func selectLyricsVersion(versionID: UUID) {
         guard let repository, let track, let identity else { return }
         guard let record = availableVersions.first(where: { $0.record.id == versionID }) else { return }
+        let requestedSourceContentHash = record.sourceContentHash
         let preferredTranslationID = availableTranslations.first {
             $0.record.lyricsVersionID == versionID &&
-            $0.record.sourceContentHash == record.record.contentHash &&
+            $0.record.sourceContentHash == requestedSourceContentHash &&
             $0.record.targetLanguage == translationConfiguration.targetLanguage
         }?.record.id
         let requestGeneration = generation
@@ -523,7 +574,7 @@ public final class LyricsEditorSessionController: ObservableObject {
                 let translations = try await repository.loadTranslationVersions(
                     lyricsVersionID: loaded.record.id,
                     targetLanguage: self?.translationConfiguration.targetLanguage ?? "zh-Hans",
-                    sourceContentHash: loaded.record.contentHash
+                    sourceContentHash: loaded.sourceContentHash
                 )
                 guard !Task.isCancelled else { return }
                 let selected = translations.first { $0.record.id == preferredTranslationID }
@@ -536,7 +587,7 @@ public final class LyricsEditorSessionController: ObservableObject {
                         identity: identity,
                         document: loaded.document,
                         lyricsVersionID: loaded.record.id,
-                        sourceContentHash: loaded.record.contentHash,
+                        sourceContentHash: loaded.sourceContentHash,
                         revision: self.sourceRevision,
                         translations: translations,
                         selectedTranslation: selected,
@@ -751,6 +802,16 @@ public final class LyricsEditorSessionController: ObservableObject {
         }
         guard validation.isSaveAllowed else { return }
 
+        let timingLoss = LyricsTimingCompatibility.loss(from: baseLyricsLines, to: draft.lines)
+        var timingLossConfirmed = false
+        if timingLoss.requiresConfirmation {
+            guard confirmTimingLoss?(timingLoss) == true else {
+                message = "已取消保存（逐字时间损失未确认）"
+                return
+            }
+            timingLossConfirmed = true
+        }
+
         let timedCount = draft.timedNonBlankLineCount
         let untimedCount = draft.untimedNonBlankLineCount
         if untimedCount > 0, timedCount > 0 {
@@ -761,7 +822,21 @@ public final class LyricsEditorSessionController: ObservableObject {
             }
         }
 
-        guard let document = draft.document(
+        var saveDraft = draft
+        let sourceLinesByID = Dictionary(baseLyricsLines.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for index in saveDraft.lines.indices {
+            if let sourceLine = sourceLinesByID[saveDraft.lines[index].id],
+               sourceLine.originalText != saveDraft.lines[index].originalText {
+                saveDraft.lines[index].kanaText = nil
+                saveDraft.lines[index].romajiText = nil
+                saveDraft.lines[index].rubyTokens = nil
+                saveDraft.lines[index].readingRepresentationID = nil
+                saveDraft.lines[index].readingSurfaceText = nil
+            }
+        }
+        saveDraft.lines = LyricsTimingCompatibility.sanitized(saveDraft.lines, relativeTo: baseLyricsLines)
+
+        guard let document = saveDraft.document(
             source: isNewSourceSession ? newSourceKind : .manualEdit,
             isSynchronized: validation.isSynchronized
         ) else { return }
@@ -774,8 +849,9 @@ public final class LyricsEditorSessionController: ObservableObject {
             parentVersionID: selectedTranslation?.record.id,
             isLocked: lockTranslation
         ) : nil
-        let readingLayers = draft.lines.enumerated().compactMap { index, line -> LyricsReadingLayerDraft? in
-            guard lockedReadingIDs.contains(line.id) else { return nil }
+        let readingLayers = saveDraft.lines.enumerated().compactMap { index, line -> LyricsReadingLayerDraft? in
+            guard lockedReadingIDs.contains(line.id),
+                  sourceLinesByID[line.id]?.originalText == line.originalText else { return nil }
             return LyricsReadingLayerDraft(
                 lineIndex: index,
                 kanaText: line.kanaText,
@@ -804,6 +880,7 @@ public final class LyricsEditorSessionController: ObservableObject {
                     createLyricsVersion: lyricsChanged,
                     lockLyricsVersion: lockLyrics,
                     targetSource: requestTargetSource,
+                    confirmedTimingLoss: timingLossConfirmed,
                     isNewSource: requestIsNewSource,
                     translation: translation,
                     readingLayers: readingLayers
@@ -833,7 +910,7 @@ public final class LyricsEditorSessionController: ObservableObject {
             isNewSourceSession = false
             newSourceKind = .manualEdit
             sourceVersionID = stored.record.id
-            sourceContentHash = stored.record.contentHash
+            sourceContentHash = stored.sourceContentHash
             // SQLite stores rows by lineIndex, not the editor-only UUID used by
             // SwiftUI bindings. Preserve the current draft IDs while the
             // focused TextField is committing, otherwise the re-render after
@@ -841,7 +918,7 @@ public final class LyricsEditorSessionController: ObservableObject {
             // misleading "找不到歌词行" message.
             let projected = Self.documentByProjecting(result.translationVersion, onto: stored.document)
             let stableProjected = Self.documentPreservingLineIDs(projected, from: self.draft)
-            var next = LyricsEditorDraft(document: stableProjected, sourceVersionID: stored.record.id, sourceContentHash: stored.record.contentHash)
+            var next = LyricsEditorDraft(document: stableProjected, sourceVersionID: stored.record.id, sourceContentHash: stored.sourceContentHash)
             next.markSaved()
             draft = next
             baseLyricsLines = next.lines.map(Self.lyricsProjection)
@@ -852,6 +929,11 @@ public final class LyricsEditorSessionController: ObservableObject {
                 return next.lines[layer.lineIndex].id
             })
             baseLockedReadingIDs = lockedReadingIDs
+            resolveEditorLyricsOffsetScope(
+                versionID: stored.record.id,
+                identity: identity,
+                generation: generation
+            )
         } else if var draft {
             draft.markSaved()
             self.draft = draft
@@ -884,6 +966,56 @@ public final class LyricsEditorSessionController: ObservableObject {
         onSaved?(result, identity)
     }
 
+    private func clearResolvedLyricsOffsetScope() {
+        lyricsOffsetScopeTask?.cancel()
+        lyricsOffsetScopeTask = nil
+        resolvedPersistentLyricsOffsetScope = nil
+        isResolvingLyricsOffsetScope = false
+    }
+
+    private func resolveEditorLyricsOffsetScope(
+        versionID: UUID,
+        identity: TrackIdentity,
+        generation requestGeneration: UInt64
+    ) {
+        clearResolvedLyricsOffsetScope()
+        guard let repository,
+              identity == self.identity,
+              sourceVersionID == versionID,
+              availableVersions.contains(where: { $0.record.id == versionID }) else {
+            return
+        }
+
+        isResolvingLyricsOffsetScope = true
+        lyricsOffsetScopeTask = Task { [weak self, repository] in
+            let resolvedScope: LyricsOffsetScope?
+            do {
+                let canonicalKey = try await repository.canonicalStableKeyForSavedLyricsVersion(
+                    trackStableKey: identity.stableKey,
+                    versionID: versionID
+                )
+                resolvedScope = canonicalKey.flatMap {
+                    LyricsOffsetScope(canonicalTrackStableKey: $0, lyricsVersionID: versionID)
+                }
+            } catch {
+                resolvedScope = nil
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self,
+                      self.generation == requestGeneration,
+                      self.identity == identity,
+                      self.sourceVersionID == versionID,
+                      self.availableVersions.contains(where: { $0.record.id == versionID }) else {
+                    return
+                }
+                self.isResolvingLyricsOffsetScope = false
+                self.resolvedPersistentLyricsOffsetScope = resolvedScope
+                self.lyricsOffsetScopeTask = nil
+            }
+        }
+    }
+
     private func validate(_ draft: LyricsEditorDraft) {
         validation = LyricsTimelineValidator.validate(lines: draft.lines, duration: draft.duration)
         if state == .saved { return }
@@ -900,7 +1032,11 @@ public final class LyricsEditorSessionController: ObservableObject {
             endTime: line.endTime,
             kanaText: line.kanaText,
             romajiText: line.romajiText,
-            rubyTokens: line.rubyTokens
+            rubyTokens: line.rubyTokens,
+            performerID: line.performerID,
+            timedSpans: line.timedSpans,
+            readingRepresentationID: line.readingRepresentationID,
+            readingSurfaceText: line.readingSurfaceText
         )
     }
 
@@ -919,18 +1055,21 @@ public final class LyricsEditorSessionController: ObservableObject {
         for stored in translation.lines where lines.indices.contains(stored.lineIndex) {
             lines[stored.lineIndex].translationText = stored.translatedText
         }
-        return LyricsDocument(
-            identity: document.identity,
-            title: document.title,
-            artist: document.artist,
-            album: document.album,
-            duration: document.duration,
-            lines: lines,
-            isSynchronized: document.isSynchronized,
-            source: document.source,
-            confidence: document.confidence,
-            providerSourceID: document.providerSourceID
-        )
+        return document.replacingLines(lines)
+    }
+
+    private static func draftByProjecting(
+        _ translation: StoredTranslationVersion,
+        onto draft: LyricsEditorDraft
+    ) -> LyricsEditorDraft {
+        guard translation.isComplete,
+              translation.lines.count == draft.lines.count else { return draft }
+        var projected = draft
+        for stored in translation.lines where projected.lines.indices.contains(stored.lineIndex) {
+            projected.lines[stored.lineIndex].translationText = stored.translatedText
+        }
+        projected.markSaved()
+        return projected
     }
 
     private static func documentPreservingLineIDs(
@@ -940,41 +1079,24 @@ public final class LyricsEditorSessionController: ObservableObject {
         guard let previousDraft,
               previousDraft.lines.count == document.lines.count else { return document }
         let lines = document.lines.enumerated().map { index, line in
-            LyricLine(
-                id: previousDraft.lines[index].id,
-                timestamp: line.timestamp,
-                originalText: line.originalText,
-                endTime: line.endTime,
-                translationText: line.translationText,
-                romajiText: line.romajiText,
-                kanaText: line.kanaText,
-                rubyTokens: line.rubyTokens
-            )
+            line.replacingID(previousDraft.lines[index].id)
         }
-        return LyricsDocument(
-            identity: document.identity,
-            title: document.title,
-            artist: document.artist,
-            album: document.album,
-            duration: document.duration,
-            lines: lines,
-            isSynchronized: document.isSynchronized,
-            source: document.source,
-            confidence: document.confidence,
-            providerSourceID: document.providerSourceID
-        )
+        return document.replacingLines(lines)
     }
 
     private static func regenerate(_ line: LyricsEditorLineDraft) -> LyricsEditorLineDraft {
-        let source = LyricsEditorLineDraft(
+        let source = LyricLine(
             id: line.id,
+            timestamp: line.startTime ?? 0,
             originalText: line.originalText,
+            endTime: line.endTime,
             translationText: line.translationText,
-            startTime: line.startTime,
-            endTime: line.endTime
+            performerID: line.performerID,
+            timedSpans: line.timedSpans,
+            readingRepresentationID: line.readingRepresentationID,
+            readingSurfaceText: line.readingSurfaceText
         )
-        let generated = LyricsLayerEnricher.enrich(lines: [source.asLyricLine()]).first
-        guard let generated else { return source }
+        guard let generated = LyricsLayerEnricher.enrich(lines: [source]).first else { return line }
         var result = LyricsEditorLineDraft(
             line: generated,
             startTimeIsMeaningful: line.startTime != nil

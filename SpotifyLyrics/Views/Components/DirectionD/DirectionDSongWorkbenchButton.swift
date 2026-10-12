@@ -99,6 +99,7 @@ public struct DirectionDSongWorkbenchButton: View {
 /// Fades in smoothly when hovering over the top titlebar area or when Inspector is open.
 public struct DirectionDQuietToolbar: View {
     public let isInspectorOpen: Bool
+    public let canPresentWindowActions: Bool
     public let onToggleInspector: () -> Void
     public let onOpenSearch: () -> Void
     public let onOpenSettings: () -> Void
@@ -109,12 +110,14 @@ public struct DirectionDQuietToolbar: View {
 
     public init(
         isInspectorOpen: Bool,
+        canPresentWindowActions: Bool = true,
         onToggleInspector: @escaping () -> Void,
         onOpenSearch: @escaping () -> Void,
         onOpenSettings: @escaping () -> Void,
         compact: Bool = false
     ) {
         self.isInspectorOpen = isInspectorOpen
+        self.canPresentWindowActions = canPresentWindowActions
         self.onToggleInspector = onToggleInspector
         self.onOpenSearch = onOpenSearch
         self.onOpenSettings = onOpenSettings
@@ -141,7 +144,8 @@ public struct DirectionDQuietToolbar: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .help("搜索歌词")
+            .disabled(!canPresentWindowActions)
+            .help(canPresentWindowActions ? "搜索歌词" : "此诊断窗口无法打开歌词搜索，请使用主窗口。")
 
             Button(action: onOpenSettings) {
                 Image(systemName: "gearshape")
@@ -153,7 +157,8 @@ public struct DirectionDQuietToolbar: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .help("设置中心")
+            .disabled(!canPresentWindowActions)
+            .help(canPresentWindowActions ? "设置中心" : "此诊断窗口无法打开设置，请使用主窗口。")
         }
         .padding(.horizontal, compact ? 8 : 16)
         .padding(.vertical, compact ? 6 : 8)

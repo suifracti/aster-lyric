@@ -42,6 +42,20 @@ public enum DirectionDPresentationState: String, CaseIterable, Equatable, Sendab
     }
 }
 
+/// Resolves the song-summary title from playback identity and title metadata.
+/// An absent track is an idle state; a present track with a blank title is
+/// unknown metadata rather than a fabricated song name.
+public enum DirectionDTrackSummaryPresentation {
+    public static func displayTitle(_ title: String?, hasCurrentTrack: Bool) -> String {
+        guard hasCurrentTrack else { return "等待歌曲" }
+        guard let title,
+              !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "歌曲标题未知"
+        }
+        return title
+    }
+}
+
 /// Primary vs Secondary state breakdown for Direction D.
 public enum DirectionDPrimaryState: Equatable, Sendable {
     case permissionRequired

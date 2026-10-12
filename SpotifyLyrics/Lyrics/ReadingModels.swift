@@ -165,6 +165,74 @@ public struct ReadingLineResult: Codable, Hashable, Sendable, Equatable {
         self.warnings = warnings
         self.confidence = confidence
     }
+
+    /// Token offsets use Swift `Character` indices throughout the reading
+    /// engines. A token map is usable for display only when its ranges cover
+    /// the original surface exactly, in order, with no guessed gaps.
+    public var hasExactTokenSurfaceCoverage: Bool {
+        guard !tokens.isEmpty,
+              Set(tokens.map(\.id)).count == tokens.count else { return false }
+        let characters = Array(originalText)
+        var expectedStart = 0
+        for token in tokens {
+            guard token.startOffset == expectedStart,
+                  token.endOffset > token.startOffset,
+                  token.endOffset <= characters.count,
+                  String(characters[token.startOffset..<token.endOffset]) == token.surface else {
+                return false
+            }
+            expectedStart = token.endOffset
+        }
+        return expectedStart == characters.count
+    }
+
+    /// Kana token projections must reconstruct the stored reading as well as
+    /// the source surface. This prevents an old user-dictionary token set from
+    /// overriding a newer whole-line reading after reload.
+    public var hasConsistentKanaTokenProjection: Bool {
+        guard hasExactTokenSurfaceCoverage, let readingText,
+              tokens.filter({ $0.source == .userDictionary }).allSatisfy({
+                  guard let reading = $0.reading else { return false }
+                  return !reading.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              }) else { return false }
+        let reconstructed = tokens.map { $0.reading ?? $0.surface }.joined()
+        return reconstructed == readingText
+    }
+
+    public func replacingTokens(_ tokens: [ReadingToken]) -> ReadingLineResult {
+        ReadingLineResult(
+            lineIndex: lineIndex,
+            originalText: originalText,
+            readingText: readingText,
+            language: language,
+            tokens: tokens,
+            warnings: warnings,
+            confidence: confidence
+        )
+    }
+}
+
+/// Builds the exact payload submitted by the whole-line reading editor. This
+/// editor has no positional mapping from its text field back to token spans,
+/// so a changed reading invalidates that row's tokens while untouched rows
+/// retain their saved mappings.
+public enum ReadingManualEdit {
+    public static func lines(from source: [ReadingLineResult], drafts: [String]) -> [ReadingLineResult] {
+        source.map { line in
+            let readingText = line.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? ""
+                : (drafts.indices.contains(line.lineIndex) ? drafts[line.lineIndex] : line.readingText)
+            return ReadingLineResult(
+                lineIndex: line.lineIndex,
+                originalText: line.originalText,
+                readingText: readingText,
+                language: line.language,
+                tokens: readingText == line.readingText ? line.tokens : [],
+                warnings: [],
+                confidence: 1
+            )
+        }
+    }
 }
 
 /// SQLite-shaped version metadata.  Reading content is intentionally kept

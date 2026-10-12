@@ -277,8 +277,30 @@ struct FloatingLyricsView: View {
             convertedText: original,
             using: conversion
         ) ?? (line.timedSpans ?? [])
-        let timedLayout = primaryIsOriginal && activeIndex != nil
-            ? effectivePresentation.timedLayout(spans: effectiveSpans, fontSize: fontSize, weight: NSFont.Weight.bold.rawValue, showsRuby: hasRuby, design: "default") : nil
+        let timedLayout: TimedRubyLayout?
+        if primaryIsOriginal && activeIndex != nil {
+            let weight = NSFont.Weight.bold.rawValue
+            let key = FloatingTimedRubyLayoutCache.key(
+                originalText: original,
+                spans: effectiveSpans,
+                fontSize: fontSize,
+                weight: weight,
+                showsRuby: hasRuby,
+                rubyTokens: rubyTokens,
+                design: "default"
+            )
+            timedLayout = FloatingTimedRubyLayoutCache.layout(for: key) {
+                effectivePresentation.timedLayout(
+                    spans: effectiveSpans,
+                    fontSize: fontSize,
+                    weight: weight,
+                    showsRuby: hasRuby,
+                    design: "default"
+                )
+            }
+        } else {
+            timedLayout = nil
+        }
         let baseColor = timedLayout != nil || activeIndex == nil ? palette.original : palette.highlight
         let originalView: (TimeInterval?) -> RubyLineView = { time in
             RubyLineView(originalText: original, kanaText: hasRuby ? (presentation.kanaText ?? "") : "",
