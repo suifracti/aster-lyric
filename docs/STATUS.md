@@ -1,9 +1,15 @@
 # Spotify Lyrics Current Status
 
-状态页最后更新：2026-09-23。
+状态页最后更新：2026-10-12。
 这是 repository 的唯一滚动工程状态入口；详细运行证据保留在 `docs/evidence/`，不在本页复制完整审计。
 
 文档链：`README.md` → `docs/STATUS.md` → 具体 evidence / batch report / 已授权计划。
+
+## 2026-10-12 全分支整合
+
+用户明确授权合并所有 PR 与分支。原 M1 整合保留所有本地/远端分支历史，包括 provider 模型目录、捕获来源跟进、预览安全及最新 ambient 样式；更早的下列状态是历史记录，当前产品规划仍以 Issue #30、执行证据以 Issue #33 为准。
+
+本轮 10 项定向离线合同与 unsigned Debug 构建通过；普通编译/runner 依赖及设置文案兼容失败已保留并修正。没有新增真实模型请求、启动 App/播放器或操作日用数据。真实三 V3 中文视觉与所有窗口切行验收仍未完成，合并不替代实机验收。
 
 ## Source Identity
 
@@ -132,6 +138,7 @@
 - Automatic alignment requires a newly advanced coordinator generation and an exactly generation-matched handoff; it cannot reuse an older `lastPartialReport`.
 - Local-file alignment remains independent of live capture and is not disabled by an active Music source.
 - The automatic switch remains opt-in and Release-reachable. Real ScreenCaptureKit/Spotify/Music capture was not run; user verification remains `USER_VERIFICATION_REQUIRED / NOT_RUN`.
+- Release 的自动对齐链会调用 partial-alignment 与 speech engine；已修正误称其为 Debug-only 的源码注释。实时捕获会临时写入本机 WAV 分段，正常任务结束时清理并在启动时尝试清理残留；设置仍默认关闭。真实捕获、权限流程和外部播放器均未运行。
 
 详见 [A0 evidence](evidence/core-integrity/A0-capture-source-containment.md)；本页不复制完整运行输出。
 

@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import Darwin
 
 public enum AITranslationSourceKind: String, CaseIterable, Codable, Sendable {
     case ai
@@ -313,7 +314,7 @@ public final class TranslationProfileStore: ObservableObject, @unchecked Sendabl
     private let key = "ai.translationProfiles.v1"
     @Published public private(set) var revision: Int = 0
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .lyricsQ) {
         self.defaults = defaults
     }
 
@@ -573,6 +574,31 @@ public struct AITranslationSourceLine: Equatable, Sendable {
     }
 }
 
+/// Field-bounded identity for in-flight work; source identity is owned by the
+/// existing session. Operational changes (timeout/fallback) also cancel old work.
+public struct AITranslationConfigurationIdentity: Hashable, Sendable {
+    public let engineID: String
+    public let model: String
+    public let endpoint: String
+    public let targetLanguage: String
+    public let style: String
+    public let presetID: String
+    public let customRules: String
+    public let profileID: UUID?
+    public let profileSnapshot: String
+    public let workflowID: String
+    public let temperature: Double
+    public let timeout: TimeInterval
+    public let fallback: String
+    public let codexReasoningEffort: String
+    public let grokReasoningEffort: String
+    public let geminiThinkingLevel: String
+    public let geminiThinkingBudget: Int?
+    public let antigravityEffort: String
+    public let deepSeekThinkingMode: String
+    public let deepSeekReasoningEffort: String
+}
+
 public struct AITranslationTokenUsage: Codable, Equatable, Sendable {
     public let inputTokens: Int
     public let cachedInputTokens: Int
@@ -590,7 +616,19 @@ public struct AITranslationTokenUsage: Codable, Equatable, Sendable {
     }
 }
 
-public struct AITranslationDraft: Equatable, Sendable {
+public struct AITranslationProviderExecutionMetadata: Codable, Equatable, Sendable {
+    public let reasoningSetting: String
+    public let tokenUsage: AITranslationTokenUsage?
+    public let cacheIdentity: String?
+
+    public init(reasoningSetting: String = "", tokenUsage: AITranslationTokenUsage? = nil, cacheIdentity: String? = nil) {
+        self.reasoningSetting = reasoningSetting
+        self.tokenUsage = tokenUsage
+        self.cacheIdentity = cacheIdentity
+    }
+}
+
+public struct AITranslationDraft: Codable, Equatable, Sendable {
     public let lines: [AITranslationLine]
     public let targetLanguage: String
     public let model: String
@@ -610,8 +648,10 @@ public struct AITranslationDraft: Equatable, Sendable {
     public let fallbackStrategy: TranslationFallbackStrategy
     public let isDraft: Bool
     public let isArchived: Bool
+    public let codexReasoningEffort: String
     public let tokenUsage: AITranslationTokenUsage?
     public let providerReasoningSetting: String
+    public let providerCacheIdentity: String?
 
     public init(
         lines: [AITranslationLine],
@@ -633,8 +673,10 @@ public struct AITranslationDraft: Equatable, Sendable {
         fallbackStrategy: TranslationFallbackStrategy = .none,
         isDraft: Bool = false,
         isArchived: Bool = false,
+        codexReasoningEffort: String = "",
         tokenUsage: AITranslationTokenUsage? = nil,
-        providerReasoningSetting: String = ""
+        providerReasoningSetting: String = "",
+        providerCacheIdentity: String? = nil
     ) {
         self.lines = lines
         self.targetLanguage = targetLanguage
@@ -655,11 +697,13 @@ public struct AITranslationDraft: Equatable, Sendable {
         self.fallbackStrategy = fallbackStrategy
         self.isDraft = isDraft
         self.isArchived = isArchived
+        self.codexReasoningEffort = codexReasoningEffort
         self.tokenUsage = tokenUsage
         self.providerReasoningSetting = providerReasoningSetting
+        self.providerCacheIdentity = providerCacheIdentity
     }
 
-    public func with(isDraft: Bool? = nil, isArchived: Bool? = nil) -> AITranslationDraft {
+    public func with(isDraft: Bool? = nil, isArchived: Bool? = nil, providerCacheIdentity: String? = nil) -> AITranslationDraft {
         AITranslationDraft(
             lines: lines,
             targetLanguage: targetLanguage,
@@ -680,8 +724,9 @@ public struct AITranslationDraft: Equatable, Sendable {
             fallbackStrategy: fallbackStrategy,
             isDraft: isDraft ?? self.isDraft,
             isArchived: isArchived ?? self.isArchived,
-            tokenUsage: tokenUsage,
-            providerReasoningSetting: providerReasoningSetting
+            codexReasoningEffort: codexReasoningEffort, tokenUsage: tokenUsage,
+            providerReasoningSetting: providerReasoningSetting,
+            providerCacheIdentity: providerCacheIdentity ?? self.providerCacheIdentity
         )
     }
 }
@@ -699,6 +744,10 @@ public enum AITranslationError: Error, Equatable, Sendable, LocalizedError {
     case invalidResponse(String)
     case persistence(String)
     case engineUnavailable(String)
+    case codexQuotaExceeded
+    case codexIsolationUnverified
+    case codexToolRequestRejected
+    case codexUnsupportedReasoningEffort(requested: String, available: [String])
     case codexNotInstalled
     case codexRequiresLogin
     case codexUnavailable(String)
@@ -718,8 +767,13 @@ public enum AITranslationError: Error, Equatable, Sendable, LocalizedError {
         case .invalidResponse: return "AI 翻译响应校验失败"
         case .persistence: return "AI 翻译保存失败"
         case .engineUnavailable(let message): return message
+        case .codexQuotaExceeded: return "Codex 可用额度不足，请检查官方额度状态"
+        case .codexIsolationUnverified: return "Codex 离线阶段：实际模型权限与工具隔离尚未验证，真实调用已禁用"
+        case .codexToolRequestRejected: return "Codex 工具请求已拒绝，本次翻译已结束；可手动重试翻译"
+        case .codexUnsupportedReasoningEffort(let requested, let available):
+            return "Codex 模型不支持推理强度 \(requested)；可用档位：\(available.joined(separator: ", "))。本次未发送翻译请求。"
         case .codexNotInstalled: return "未找到 ChatGPT/Codex 本地运行时"
-        case .codexRequiresLogin: return "请先在浏览器完成 ChatGPT/Codex 登录"
+        case .codexRequiresLogin: return "未检测到既有 ChatGPT/Codex 登录；本阶段不会发起新登录"
         case .codexUnavailable(let message): return "Codex 本地服务不可用：\(message)"
         case .codexResponseInvalid: return "Codex 返回的歌词翻译无法按稳定行 ID 校验"
         }
@@ -737,5 +791,50 @@ public struct AITranslationProgress: Equatable, Sendable {
         self.inputLineCount = inputLineCount
         self.outputLineCount = outputLineCount
         self.elapsed = elapsed
+    }
+}
+
+/// Only enabled for an explicitly configured acceptance process. The durable
+/// counter is reserved before calling a provider, including retries/restarts.
+public final class TranslationAcceptanceRequestBudget: @unchecked Sendable {
+    public struct State: Codable, Sendable {
+        public var maximum: Int
+        public var used: Int
+        public var providers: [String]
+        public var trackKeys: [String]
+        public var stopped: Bool
+        public init(maximum: Int, used: Int = 0, providers: [String], trackKeys: [String], stopped: Bool = false) {
+            self.maximum=maximum; self.used=used; self.providers=providers; self.trackKeys=trackKeys; self.stopped=stopped
+        }
+    }
+    public static let processBudget: TranslationAcceptanceRequestBudget? = {
+        guard let path=ProcessInfo.processInfo.environment["SPOTIFYLYRICS_ACCEPTANCE_BUDGET_FILE"] else { return nil }
+        return TranslationAcceptanceRequestBudget(fileURL: URL(fileURLWithPath:path))
+    }()
+    private let fileURL: URL
+    private let lock=NSLock()
+    public init(fileURL: URL) { self.fileURL=fileURL }
+    public func reserve(provider: String, trackKey: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        // Never create a permissive file from defaults. Missing/corrupt budget
+        // or a recording outside the approved set stops before provider I/O.
+        let fd=open(fileURL.path, O_RDWR | O_NOFOLLOW)
+        guard fd >= 0 else { throw AITranslationError.engineUnavailable("验收预算文件不可用，已停止新请求") }
+        defer { close(fd) }
+        guard flock(fd,LOCK_EX)==0 else { throw AITranslationError.engineUnavailable("无法锁定验收预算，已停止新请求") }
+        defer { flock(fd,LOCK_UN) }
+        let handle=FileHandle(fileDescriptor:fd,closeOnDealloc:false)
+        guard let data=try handle.readToEnd(), data.count <= 65536,
+              var state=try? JSONDecoder().decode(State.self,from:data),
+              state.maximum >= 0, state.used >= 0, !state.stopped,
+              state.providers.contains(provider), state.trackKeys.contains(trackKey), state.used < state.maximum else {
+            throw AITranslationError.engineUnavailable("本次验收已停止、范围不符或请求上限已达到；缓存仍可使用")
+        }
+        state.used += 1
+        let updated=try JSONEncoder().encode(state)
+        try handle.seek(toOffset:0)
+        try handle.truncate(atOffset:0)
+        try handle.write(contentsOf:updated)
+        guard fsync(fd)==0 else { throw AITranslationError.engineUnavailable("验收预算未可靠保存，已停止新请求") }
     }
 }

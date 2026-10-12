@@ -175,6 +175,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let aiProfileSnapshot = "ai.profileSnapshot"
         public static let aiFallbackStrategy = "ai.fallbackStrategy"
         public static let aiWorkflowID = "ai.workflowID"
+        public static let aiCodexReasoningEffort = "ai.codexReasoningEffort"
         public static let settingsCenterPresentation = "settings.centerPresentation"
         public static let readingPreferences = "reading.preferences.v1"
         public static let v3PlaybackDetailsOnHover = "v3.playbackDetailsOnHover"
@@ -199,6 +200,9 @@ public final class AppSettingsStore: ObservableObject {
     public static let currentSettingsVersion = 1
 
     private let defaults: UserDefaults
+
+    /// Translation choices use the same injected preferences scope as settings.
+    var translationSelectionDefaults: UserDefaults { defaults }
     private var v3BlurByPresentation: [V3ArtworkPresentation: Double] = [:]
     private var isApplyingStoredV3Blur = false
 
@@ -454,7 +458,7 @@ public final class AppSettingsStore: ObservableObject {
     @Published public private(set) var aiModelDirectoryStatus: TranslationModelDirectoryStatus
     @Published public private(set) var aiCachedModels: [TranslationModelDescriptor]
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .lyricsQ) {
         self.defaults = defaults
         self.lyricsOffsetStore = ScopedLyricsOffsetStore(defaults: defaults)
         self.v3LyricsPositions = (defaults.dictionary(forKey: Key.v3LyricsPositions) as? [String: String] ?? [:])
@@ -973,7 +977,8 @@ public final class AppSettingsStore: ObservableObject {
             profileID: defaults.string(forKey: Key.aiProfileID).flatMap(UUID.init(uuidString:)),
             profileSnapshot: defaults.string(forKey: Key.aiProfileSnapshot) ?? "",
             fallbackStrategy: TranslationFallbackStrategy(rawValue: defaults.string(forKey: Key.aiFallbackStrategy) ?? "none") ?? .none,
-            workflowID: defaults.string(forKey: Key.aiWorkflowID) ?? TranslationWorkflowID.contextualV2.rawValue
+            workflowID: defaults.string(forKey: Key.aiWorkflowID) ?? TranslationWorkflowID.contextualV2.rawValue,
+            codexReasoningEffort: defaults.string(forKey: Key.aiCodexReasoningEffort) ?? ""
         )
     }
 
@@ -996,6 +1001,7 @@ public final class AppSettingsStore: ObservableObject {
         defaults.set(configuration.profileSnapshot, forKey: Key.aiProfileSnapshot)
         defaults.set(configuration.fallbackStrategy.rawValue, forKey: Key.aiFallbackStrategy)
         defaults.set(configuration.workflowID, forKey: Key.aiWorkflowID)
+        defaults.set(configuration.codexReasoningEffort, forKey: Key.aiCodexReasoningEffort)
     }
 
     private static func loadCachedModels(defaults: UserDefaults) -> [TranslationModelDescriptor] {

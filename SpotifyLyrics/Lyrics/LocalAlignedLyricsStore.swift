@@ -17,7 +17,7 @@ extension LocalAlignedLyricsStoreError: LocalizedError {
 /// Does not mutate original audio. Index can rescan afterwards.
 public enum LocalAlignedLyricsStore {
     public static func defaultSaveDirectory(
-        home: URL = FileManager.default.homeDirectoryForCurrentUser
+        home: URL = LyricsQStorage.homeDirectory
     ) -> URL {
         home.appendingPathComponent("Music/SpotifyLyrics/Lyrics", isDirectory: true)
     }

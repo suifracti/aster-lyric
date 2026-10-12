@@ -80,6 +80,9 @@ public final class LiveCaptureCoordinator: ObservableObject {
     }
 
     private init() {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return }
+#endif
         LiveCaptureCoordinator.scavengeOrphanTemp()
         #if DEBUG
         // Diagnostic harness only — never auto-start on product launch.
@@ -130,6 +133,9 @@ public final class LiveCaptureCoordinator: ObservableObject {
     private var shouldRunPartialAlignment = false
 
     public func start(autoStopAfter seconds: TimeInterval? = nil, runPartialAlignment: Bool = false) async {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return }
+#endif
         guard state == .idle || state == .failed else {
             SCKSpikeLog.log("S2 start ignored state=\(state.rawValue)")
             // Do not clear an in-flight handoff; surface explicit start-ignored.

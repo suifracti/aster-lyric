@@ -75,6 +75,11 @@ public final class PlaybackState: ObservableObject {
     private var timer: Timer?
     private var isProviderStarted = false
     private var automaticSpotifyConnectionEnabled = true
+    /// The launch toggle gates only explicitly selected Spotify. `.auto`
+    /// retains its existing player discovery path, including Apple Music.
+    private var canRefreshSelectedProvider: Bool {
+        settingsStore.playbackSourceMode != .spotify || automaticSpotifyConnectionEnabled
+    }
     private var isRefreshingProvider = false
     private var providerRefreshGeneration: UInt64 = 0
     private var refreshRequestedWhileBusy = false
@@ -181,7 +186,8 @@ public final class PlaybackState: ObservableObject {
         let translationRepository = (resolvedRepository as? any TranslationRepository)
             ?? UnavailableTranslationRepository()
         let translation = TranslationSessionController(
-            repository: translationRepository
+            repository: translationRepository,
+            selectionDefaults: resolvedSettings.translationSelectionDefaults
         )
         let readingRepository = (resolvedRepository as? any ReadingRepository)
             ?? UnavailableReadingRepository()
@@ -309,9 +315,9 @@ public final class PlaybackState: ObservableObject {
             .store(in: &self.settingsCancellables)
         resolvedSettings.$aiTranslationConfiguration
             .dropFirst()
-            .sink { [weak self] _ in
+            .sink { [weak self] configuration in
                 guard let self else { return }
-                self.syncTranslationSession()
+                self.syncTranslationSession(configuration: configuration)
             }
             .store(in: &self.settingsCancellables)
         resolvedSettings.$readingPreferences
@@ -634,13 +640,14 @@ public final class PlaybackState: ObservableObject {
         }
 
         let track = currentTrack
+        let revision = lyricsSession.revision
         guard let stored = try await repository.loadEditableVersion(
             versionID: versionID,
             track: track,
             identity: identity
         ),
         stored.document.identity == identity,
-        currentTrackIdentity == identity else {
+        currentTrackIdentity == identity, lyricsSession.revision == revision else {
             return false
         }
 
@@ -649,7 +656,7 @@ public final class PlaybackState: ObservableObject {
             lyricsVersionID: stored.record.id
         )
 
-        guard currentTrackIdentity == identity else { return false }
+        guard currentTrackIdentity == identity, lyricsSession.revision == revision else { return false }
         applyLyricsEditorResult(
             LyricsEditSaveResult(lyricsVersion: stored, translationVersion: nil),
             identity: identity
@@ -818,6 +825,12 @@ public final class PlaybackState: ObservableObject {
     public func retranslateCurrentLyrics() { translationSession.retranslateCurrentLyrics() }
     public func selectTranslation(versionID: UUID) { translationSession.select(versionID: versionID) }
     public func selectNoTranslationVersion() { translationSession.selectNone() }
+    public var liveLyricsCandidates: [LyricsCandidate] {
+        liveLyricsDocumentMatchesCurrentTrack ? lyricsSession.availableCandidates : []
+    }
+    public var originalLiveLyrics: [LyricLine] {
+        liveLyricsDocumentMatchesCurrentTrack ? (lyricsSession.activeDocument?.lines ?? []) : []
+    }
     public func lockSelectedTranslation() { translationSession.lockSelected() }
     public func deleteSelectedTranslation() { translationSession.deleteSelected() }
     public func adoptTranslation(versionID: UUID) { translationSession.adoptTranslation(versionID: versionID) }
@@ -827,6 +840,12 @@ public final class PlaybackState: ObservableObject {
 
     /// Explicitly clears the live lyric projection for this session without
     /// deleting any stored LyricsVersion.
+    @discardableResult
+    public func revokeCurrentLyricsVersion(versionID: UUID) async throws -> Bool {
+        guard let identity = currentTrackIdentity, liveTrackIdentity == identity else { return false }
+        return try await lyricsSession.revokeCurrentVersion(identity: identity, versionID: versionID)
+    }
+
     public func selectNoLyricsVersion() {
         guard let identity = currentTrackIdentity else { return }
         lyricsSession.selectNoVersion(identity: identity)
@@ -848,15 +867,16 @@ public final class PlaybackState: ObservableObject {
     public func deleteReading(versionID: UUID) { readingSession.delete(versionID: versionID) }
     public func restoreRecommendedReading() { readingSession.restoreRecommended() }
 
-    private func syncTranslationSession() {
+    private func syncTranslationSession(configuration incoming: AITranslationConfiguration? = nil) {
+        let configuration = incoming ?? settingsStore.aiTranslationConfiguration
         translationSession.setEngine(
-            TranslationEngineRegistry.make(stableID: settingsStore.aiTranslationConfiguration.engineID)
+            TranslationEngineRegistry.make(stableID: configuration.engineID)
         )
         translationSession.synchronize(
             document: lyricsSession.activeDocument,
             lyricsVersionID: lyricsSession.activeLyricsVersionID,
             sourceContentHash: lyricsSession.activeSourceContentHash,
-            configuration: settingsStore.aiTranslationConfiguration
+            configuration: configuration
         )
         syncReadingSession()
     }
@@ -1719,7 +1739,7 @@ public final class PlaybackState: ObservableObject {
     /// Known plain lyrics + local audio -> line-level forced alignment preview.
     public func alignCurrentLyricsWithLocalAudio() {
         guard hasLiveTrack, let identity = currentTrackIdentity, !isMockPreviewMode else {
-            songSearchSelectionMessage = "需要当前 Spotify 歌曲"
+            songSearchSelectionMessage = "需要当前播放歌曲"
             return
         }
         guard let plain = lyricsSession.state.plainDocument ?? lyricsSession.state.document else {
@@ -1758,7 +1778,7 @@ public final class PlaybackState: ObservableObject {
                 UTType(filenameExtension: "flac")
             ].compactMap { $0 }
             panel.title = "选择本地音频（逐行自动排轴）"
-            panel.message = "不会修改原音频，也不会从 Spotify 取流。确认前不会覆盖当前歌词。"
+            panel.message = "不会修改原音频，也不会从播放器取流。确认前不会覆盖当前歌词。"
             guard panel.runModal() == .OK, let picked = panel.url else { return }
             url = picked
         }
@@ -1893,7 +1913,7 @@ public final class PlaybackState: ObservableObject {
         let embeddedTitle = metadata.embeddedTitle ?? "未标注"
         let embeddedArtist = metadata.embeddedArtist ?? "未标注"
         alert.informativeText = String(
-            format: "文件：%@\n当前歌曲：%@ / %@\n音频标签：%@ / %@\n时长 %.1f 秒 · %.0f Hz · %d 声道\nSHA-256 %@…\n请确认这是完整、对应当前 Spotify 录音的本地音频。",
+            format: "文件：%@\n当前歌曲：%@ / %@\n音频标签：%@ / %@\n时长 %.1f 秒 · %.0f Hz · %d 声道\nSHA-256 %@…\n请确认这是完整、对应当前歌曲的录音版本的本地音频。",
             fileName,
             track.title,
             track.artist,
@@ -2081,8 +2101,11 @@ public final class PlaybackState: ObservableObject {
     public func adoptLyricsCandidate(_ candidate: LyricsCandidate) async throws -> LyricsPersistenceSaveResult {
         let identity = candidate.identity
         let target: (track: Track, session: LyricsSessionController)
-        if let previewTrack = searchPreviewTrack,
-           TrackIdentity(track: previewTrack) == identity {
+        if let previewTrack = searchPreviewTrack {
+            guard TrackIdentity(track: previewTrack) == identity else {
+                return LyricsPersistenceSaveResult(versionID: nil,
+                    disposition: .rejected("搜索预览期间不采用当前播放歌曲的旧候选"))
+            }
             target = (previewTrack, searchPreviewSession)
         } else if currentTrackIdentity == identity {
             target = (currentTrack, lyricsSession)
@@ -2183,6 +2206,7 @@ public final class PlaybackState: ObservableObject {
 
     public func confirmPendingManualLyricsAdoption() async throws -> LyricsPersistenceSaveResult? {
         guard let pending = pendingManualLyricsAdoption else { return nil }
+        guard !isShowingSearchPreview || pending.session === searchPreviewSession else { return nil }
         let result: LyricsPersistenceSaveResult
         do {
             result = try await pending.session.adoptManually(
@@ -2304,7 +2328,7 @@ public final class PlaybackState: ObservableObject {
     }
 
     private func refreshProvider() async {
-        guard !isMockPreviewMode else { return }
+        guard !isMockPreviewMode, canRefreshSelectedProvider else { return }
         guard !isRefreshingProvider else {
             refreshRequestedWhileBusy = true
             return
@@ -2329,14 +2353,17 @@ public final class PlaybackState: ObservableObject {
         // while a previous Apple Events request is unwinding.
         lastProviderRefreshDate = Date()
 
-        let shouldApply = !Task.isCancelled && generation == providerRefreshGeneration && !isMockPreviewMode
+        let shouldApply = !Task.isCancelled &&
+            generation == providerRefreshGeneration &&
+            !isMockPreviewMode &&
+            canRefreshSelectedProvider
         if shouldApply {
             synchronize(with: snapshot, observedAtMonotonic: latencyCompensatedMonotonic)
         }
 
         let shouldQueueRefresh = refreshRequestedWhileBusy
         refreshRequestedWhileBusy = false
-        if shouldQueueRefresh && !isMockPreviewMode {
+        if shouldQueueRefresh && !isMockPreviewMode && canRefreshSelectedProvider {
             providerRefreshTask = Task { @MainActor [weak self] in
                 await self?.refreshProvider()
             }
@@ -2652,6 +2679,7 @@ public final class PlaybackState: ObservableObject {
         }
 
         let shouldRefreshProvider = !isMockPreviewMode &&
+            canRefreshSelectedProvider &&
             Date().timeIntervalSince(lastProviderRefreshDate) >= calibrationInterval
         if shouldRefreshProvider && !isRefreshingProvider {
             providerRefreshTask = Task { @MainActor [weak self] in

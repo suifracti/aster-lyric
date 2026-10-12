@@ -79,6 +79,9 @@ public struct AlignmentProvenanceStore: Sendable {
     public let directory: URL
 
     public init(directory: URL = AlignmentProvenanceStore.defaultDirectory) {
+#if DEBUG
+        DebugAcceptanceDataIsolation.requireStorage(directory)
+#endif
         self.directory = directory
     }
 

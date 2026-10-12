@@ -97,7 +97,7 @@ enum MainWindowResponsiveMode: String, Equatable, Sendable {
         compactFocusWidth: CGFloat = 900,
         compactFocusHeight: CGFloat = 640
     ) -> MainWindowResponsiveMode {
-        if let raw = UserDefaults.standard.string(
+        if let raw = UserDefaults.lyricsQ.string(
             forKey: PresentationSelectionStore.runtimeKey(for: .responsiveLayout)
         ) {
             switch raw {

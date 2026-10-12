@@ -85,10 +85,33 @@ public struct AITranslationConfiguration: Equatable, Sendable {
             return !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .openAICompatible, .none: break
         }
+        if TranslationEngineID(rawValue: engineID) == .codexChatGPT { return !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         return !baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    public var providerCacheIdentity: String {
+        let usesAPI = TranslationEngineID(rawValue: engineID) == .openAICompatible
+        let fields = ["provider-cache-v1", engineID,
+            engineID == TranslationEngineID.appleSystem.rawValue ? "" : model,
+            usesAPI ? AITranslationEndpoint(baseURL: baseURL).chatCompletionsURL.absoluteString : "",
+            usesAPI ? "default" : "", providerReasoningSetting, usesAPI ? String(temperature) : ""]
+        return SHA256.hash(data: try! JSONEncoder().encode(fields)).map { String(format: "%02x", $0) }.joined()
+    }
+    public var requestIdentity: AITranslationConfigurationIdentity {
+        let usesAPI = engineID == TranslationEngineID.openAICompatible.rawValue
+        return AITranslationConfigurationIdentity(engineID: engineID, model: model, endpoint: usesAPI ? baseURL : "",
+            targetLanguage: targetLanguage, style: style, presetID: promptPresetID, customRules: customSystemPrompt,
+            profileID: profileID, profileSnapshot: profileSnapshot, workflowID: workflowID,
+            temperature: usesAPI ? temperature : 0, timeout: timeout, fallback: fallbackStrategy.rawValue,
+            codexReasoningEffort: engineID == TranslationEngineID.codexChatGPT.rawValue ? codexReasoningEffort : "",
+            grokReasoningEffort: engineID == TranslationEngineID.grokBuild.rawValue ? grokReasoningEffort : "",
+            geminiThinkingLevel: engineID == TranslationEngineID.geminiCLI.rawValue ? geminiThinkingLevel : "",
+            geminiThinkingBudget: engineID == TranslationEngineID.geminiCLI.rawValue ? geminiThinkingBudget : nil,
+            antigravityEffort: engineID == TranslationEngineID.antigravityCLI.rawValue ? antigravityEffort : "",
+            deepSeekThinkingMode: engineID == TranslationEngineID.deepSeekAPI.rawValue ? deepSeekThinkingMode : "",
+            deepSeekReasoningEffort: engineID == TranslationEngineID.deepSeekAPI.rawValue ? deepSeekReasoningEffort : "")
+    }
     public var promptHash: String {
         // JSON array boundaries cannot collide with separators inside user rules.
         var fields = [style, targetLanguage, customSystemPrompt, promptPresetID, profileSnapshot, workflowID]

@@ -306,6 +306,7 @@ public struct DatabaseTranslationVersionRecord: Equatable, Sendable {
     public let temperature: Double
     public let workflowID: String
     public let fallbackStrategy: TranslationFallbackStrategy
+    public let providerExecutionMetadata: AITranslationProviderExecutionMetadata
     public let isDraft: Bool
     public let isArchived: Bool
 
@@ -333,6 +334,7 @@ public struct DatabaseTranslationVersionRecord: Equatable, Sendable {
         temperature: Double = 0.2,
         workflowID: String = TranslationWorkflowID.classicV1.rawValue,
         fallbackStrategy: TranslationFallbackStrategy = .none,
+        providerExecutionMetadata: AITranslationProviderExecutionMetadata = AITranslationProviderExecutionMetadata(),
         isDraft: Bool = false,
         isArchived: Bool = false
     ) {
@@ -359,6 +361,7 @@ public struct DatabaseTranslationVersionRecord: Equatable, Sendable {
         self.temperature = temperature
         self.workflowID = workflowID
         self.fallbackStrategy = fallbackStrategy
+        self.providerExecutionMetadata = providerExecutionMetadata
         self.isDraft = isDraft
         self.isArchived = isArchived
     }
@@ -388,6 +391,7 @@ public struct DatabaseTranslationVersionRecord: Equatable, Sendable {
             temperature: temperature,
             workflowID: workflowID,
             fallbackStrategy: fallbackStrategy,
+            providerExecutionMetadata: providerExecutionMetadata,
             isDraft: isDraft ?? self.isDraft,
             isArchived: isArchived ?? self.isArchived
         )

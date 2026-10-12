@@ -13,6 +13,14 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     private var manualAdoptionRequestIDs: [String: UUID] = [:]
     private let alignmentProvenanceStore: AlignmentProvenanceStore
 
+#if DEBUG
+    // Contract-only synchronous checkpoints; no environment-driven production hook.
+    private var translationCompletionCheckpoint: (@Sendable (String) -> Void)?
+    public func setTranslationCompletionCheckpoint(_ checkpoint: (@Sendable (String) -> Void)?) {
+        translationCompletionCheckpoint = checkpoint
+    }
+#endif
+
     private static let transientDestructor = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     public static var defaultDatabaseURL: URL {
@@ -32,6 +40,10 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         databaseURL: URL = SQLiteLyricsRepository.defaultDatabaseURL,
         alignmentProvenanceDirectory: URL = AlignmentProvenanceStore.defaultDirectory
     ) {
+#if DEBUG
+        DebugAcceptanceDataIsolation.requireStorage(databaseURL)
+        DebugAcceptanceDataIsolation.requireStorage(alignmentProvenanceDirectory)
+#endif
         self.databaseURL = databaseURL
         self.alignmentProvenanceStore = AlignmentProvenanceStore(directory: alignmentProvenanceDirectory)
     }
@@ -75,6 +87,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             guard try scalarInt("PRAGMA foreign_keys;") == 1 else {
                 throw LyricsRepositoryError.sqlite("foreign_keys 未启用")
             }
+            // Request reservations must commit durably before the engine runs.
+            try execute("PRAGMA synchronous=FULL;")
             let existingVersion = try scalarInt("PRAGMA user_version;")
             // Existing user databases follow the same forward migration path as
             // fresh installs. A consistent snapshot is required before any upgrade.
@@ -103,6 +117,58 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             sqlite3_close(handle)
             database = nil
             throw LyricsRepositoryError.unavailable(error.localizedDescription)
+        }
+    }
+
+    public func isLyricsSelectionRevoked(identity: TrackIdentity) async throws -> Bool {
+        try ensurePrepared()
+        return try hasRevokedLyricsSelection(stableKey: identity.stableKey)
+    }
+
+    private func hasRevokedLyricsSelection(stableKey: String) throws -> Bool {
+        let family = try resolvedIdentityFamily(stableKey: stableKey)
+        let query = try prepare("SELECT 1 FROM lyrics_selection_revocations WHERE track_stable_key IN (\(placeholders(count: family.count))) LIMIT 1;")
+        defer { sqlite3_finalize(query) }
+        for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: query) }
+        let result = sqlite3_step(query)
+        guard result == SQLITE_ROW || result == SQLITE_DONE else { throw lastError() }
+        return result == SQLITE_ROW
+    }
+
+    /// Revoke the binding, never the asset. One transaction prevents either
+    /// preferred fallback or a pending manual-adoption token from reviving it.
+    public func revokeLyricsVersionSelection(trackStableKey: String, lyricsVersionID: UUID) async throws {
+        try ensurePrepared()
+        let family = try resolvedIdentityFamily(stableKey: trackStableKey)
+        let canonical = try resolvedCanonicalStableKey(trackStableKey)
+        guard let version = try fetchLyricsVersion(versionID: lyricsVersionID), family.contains(version.trackStableKey) else {
+            throw LyricsEditingRepositoryError.identityMismatch
+        }
+        try withTransaction {
+            let preferred = try prepare("SELECT id FROM lyrics_versions WHERE track_stable_key IN (\(placeholders(count: family.count))) AND is_preferred = 1;")
+            defer { sqlite3_finalize(preferred) }
+            for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: preferred) }
+            var step = sqlite3_step(preferred)
+            while step == SQLITE_ROW {
+                guard columnText(preferred, index: 0) == lyricsVersionID.uuidString else {
+                    throw LyricsRepositoryError.invalidData("当前采用版本已变化，请刷新后再取消")
+                }
+                step = sqlite3_step(preferred)
+            }
+            guard step == SQLITE_DONE else { throw lastError() }
+            let clear = try prepare("UPDATE lyrics_versions SET is_preferred = 0 WHERE track_stable_key IN (\(placeholders(count: family.count)));")
+            defer { sqlite3_finalize(clear) }
+            for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: clear) }
+            try stepDone(clear)
+            let revoke = try prepare("INSERT INTO lyrics_selection_revocations(track_stable_key, revoked_version_id, updated_at) VALUES (?, ?, ?) ON CONFLICT(track_stable_key) DO UPDATE SET revoked_version_id=excluded.revoked_version_id, updated_at=excluded.updated_at;")
+            defer { sqlite3_finalize(revoke) }
+            try bindText(canonical, at: 1, to: revoke)
+            try bindText(lyricsVersionID.uuidString, at: 2, to: revoke)
+            try bindDouble(Date().timeIntervalSince1970, at: 3, to: revoke)
+            try stepDone(revoke)
+        }
+        for key in Array(manualAdoptionRequestIDs.keys) where family.contains((try? resolvedCanonicalStableKey(key)) ?? key) {
+            manualAdoptionRequestIDs.removeValue(forKey: key)
         }
     }
 
@@ -169,13 +235,20 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             )
         }
 
+        let preferenceQuery = try prepare("SELECT is_preferred FROM lyrics_versions WHERE id = ?;")
+        defer { sqlite3_finalize(preferenceQuery) }
+        try bindText(version.id.uuidString, at: 1, to: preferenceQuery)
+        guard sqlite3_step(preferenceQuery) == SQLITE_ROW else { throw lastError() }
+        let isPreferred = sqlite3_column_int(preferenceQuery, 0) != 0
         return StoredLyricsDocument(
             document: document,
             versionID: version.id,
             sourceContentHash: sourceContentHash,
             alignmentProvenanceAvailability: version.source == DatabaseSourceIdentifier.identifier(for: .automaticAlignment)
                 ? alignmentProvenanceStore.availability(for: version.id)
-                : .unavailable
+                : .unavailable,
+            isUserProtected: isPreferred || version.isLocked || version.isManuallyEdited
+                || ["local", "manual", "manualEdit", "manualImport", "manualCreate"].contains(version.source)
         )
     }
 
@@ -450,6 +523,18 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         identity: TrackIdentity,
         document: LyricsDocument
     ) throws -> LyricsPersistenceSaveResult {
+        try saveValidated(track: track, identity: identity, document: document, automaticSelection: false)
+    }
+
+    public func saveAutomaticallySelected(track: Track, identity: TrackIdentity, document: LyricsDocument, decision: LyricsAutomaticSelectionEvidence) async throws -> LyricsPersistenceSaveResult {
+        guard (decision.tier == "autoHigh" || decision.tier == "autoMedium"), !decision.hardReject, !decision.versionConflict, decision.identity == identity,
+              TrackIdentity(track: track) == identity, document.confidence.isFinite, (0...1).contains(document.confidence) else {
+            return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("自动选择缺少有效匹配证据"))
+        }
+        return try saveValidated(track: track, identity: identity, document: document, automaticSelection: true)
+    }
+
+    private func saveValidated(track: Track, identity: TrackIdentity, document: LyricsDocument, automaticSelection: Bool) throws -> LyricsPersistenceSaveResult {
         try ensurePrepared()
 
         guard document.identity == identity else {
@@ -467,7 +552,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         guard document.source != .mock else {
             return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("Mock 歌词不写入"))
         }
-        guard LyricsMatcher.isHighConfidence(document.confidence) else {
+        guard automaticSelection || LyricsMatcher.isHighConfidence(document.confidence) else {
             return LyricsPersistenceSaveResult(
                 versionID: nil,
                 disposition: .rejected("低置信度歌词不写入")
@@ -475,6 +560,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         }
 
         let canonicalKey = try resolvedCanonicalStableKey(identity.stableKey)
+        guard !Task.isCancelled, !(try hasRevokedLyricsSelection(stableKey: canonicalKey)) else {
+            return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("已取消采用，不自动恢复歌词"))
+        }
         let now = Date()
         let rawTrackRecord = LyricsPersistenceMapper.trackRecord(track: track, identity: identity, now: now)
         let trackRecord = canonicalTrackRecord(rawTrackRecord, stableKey: canonicalKey)
@@ -529,6 +617,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             }
 
             try insertVersion(versionRecord)
+            if automaticSelection && document.isSynchronized {
+                let prefer = try prepare("UPDATE lyrics_versions SET is_preferred = 1 WHERE id = ? AND NOT EXISTS (SELECT 1 FROM lyrics_versions WHERE track_stable_key = ? AND (is_preferred = 1 OR is_locked = 1 OR is_manually_edited = 1));")
+                defer { sqlite3_finalize(prefer) }
+                try bindText(versionID.uuidString, at: 1, to: prefer)
+                try bindText(canonicalKey, at: 2, to: prefer)
+                try stepDone(prefer)
+            }
             for line in lines {
                 try insertLine(line)
             }
@@ -686,7 +781,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 sourceContentHash: sourceContentHash,
                 now: now
             )
-            try setPreferredLyricsVersion(trackStableKey: canonicalKey, lyricsVersionID: versionID)
+            try setPreferredLyricsVersion(trackStableKey: canonicalKey, lyricsVersionID: versionID, clearRevocation: true)
             return LyricsPersistenceSaveResult(
                 versionID: versionID,
                 disposition: duplicateID == nil ? .inserted : .duplicate,
@@ -1066,6 +1161,139 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     // MARK: - TranslationRepository
 
+    public func loadTranslationRequest(key: String) async throws -> StoredTranslationRequest? {
+        try readTranslationRequest(key: key)
+    }
+
+    private func readTranslationRequest(key: String) throws -> StoredTranslationRequest? {
+        try ensurePrepared()
+        let statement = try prepare("SELECT attempt_id, phase, result_json, updated_at, completion_version_id FROM translation_requests WHERE request_key = ?;")
+        defer { sqlite3_finalize(statement) }
+        try bindText(key, at: 1, to: statement)
+        let step = sqlite3_step(statement)
+        if step == SQLITE_DONE { return nil }
+        guard step == SQLITE_ROW,
+              let id = columnText(statement, index: 0).flatMap(UUID.init(uuidString:)),
+              let phase = columnText(statement, index: 1).flatMap(TranslationRequestPhase.init(rawValue:)),
+              let time = columnDouble(statement, index: 3) else {
+            throw TranslationRepositoryError.database("请求状态不可读；未重新发送")
+        }
+        let draft = try columnText(statement, index: 2).map { try JSONDecoder().decode(AITranslationDraft.self, from: Data($0.utf8)) }
+        let completionID = columnText(statement, index: 4)
+        guard completionID == nil || UUID(uuidString: completionID!) != nil else {
+            throw TranslationRepositoryError.database("输出版本关联不可读；未重新发送")
+        }
+        return StoredTranslationRequest(key: key, attemptID: id, phase: phase, result: draft,
+            updatedAt: Date(timeIntervalSince1970: time), completionVersionID: completionID.flatMap(UUID.init(uuidString:)))
+    }
+
+    public func beginTranslationRequest(key: String, explicitRetry: Bool) async throws -> StoredTranslationRequest {
+        try ensurePrepared()
+        return try withTransaction {
+            if let prior = try readTranslationRequest(key: key), prior.phase != .prepared, !explicitRetry {
+                throw TranslationRepositoryError.database("上次翻译已发起，结果尚未确认；请主动重试，不会自动重发")
+            }
+            let request = StoredTranslationRequest(key: key, completionVersionID: UUID())
+            let statement = try prepare("INSERT OR REPLACE INTO translation_requests(request_key, attempt_id, phase, result_json, updated_at, completion_version_id) VALUES (?, ?, 'prepared', NULL, ?, ?);")
+            defer { sqlite3_finalize(statement) }
+            try bindText(key, at: 1, to: statement)
+            try bindText(request.attemptID.uuidString, at: 2, to: statement)
+            try bindDouble(request.updatedAt.timeIntervalSince1970, at: 3, to: statement)
+            try bindText(request.completionVersionID?.uuidString, at: 4, to: statement)
+            try stepDone(statement)
+            return request
+        }
+    }
+
+    public func updateTranslationRequest(_ request: StoredTranslationRequest) async throws {
+        try ensurePrepared()
+        try withTransaction {
+            guard let previous = try readTranslationRequest(key: request.key), previous.attemptID == request.attemptID,
+                  (previous.phase == .prepared && request.phase == .dispatching) ||
+                  (previous.phase == .dispatching && request.phase == .received && request.result != nil) else {
+                throw TranslationRepositoryError.database("请求代次或阶段已改变；拒绝迟到结果")
+            }
+            let statement = try prepare("UPDATE translation_requests SET phase = ?, result_json = ?, updated_at = ? WHERE request_key = ? AND attempt_id = ?;")
+            defer { sqlite3_finalize(statement) }
+            try bindText(request.phase.rawValue, at: 1, to: statement)
+            let payload = try request.result.map { String(decoding: try JSONEncoder().encode($0), as: UTF8.self) }
+            try bindText(payload, at: 2, to: statement)
+            try bindDouble(request.updatedAt.timeIntervalSince1970, at: 3, to: statement)
+            try bindText(request.key, at: 4, to: statement)
+            try bindText(request.attemptID.uuidString, at: 5, to: statement)
+            try stepDone(statement)
+        }
+    }
+
+    public func completeTranslationRequest(key: String, attemptID: UUID,
+                                           context: TranslationCompletionContext) async throws -> StoredTranslationVersion {
+        try ensurePrepared()
+        let completed = try withTransaction {
+            // Read the current attempt under the SQLite write lock, before any INSERT.
+            guard let request = try readTranslationRequest(key: key), request.attemptID == attemptID,
+                  request.phase == .received || request.phase == .saved else {
+                throw TranslationRepositoryError.database("请求代次或阶段已改变；拒绝迟到完成")
+            }
+            guard let completionID = request.completionVersionID else {
+                throw TranslationRepositoryError.database("旧请求无法安全关联输出版本；保留已有结果，可主动重试")
+            }
+            guard try context.requestKey() == key,
+                  let source = try fetchSourceLyrics(versionID: context.lyricsVersionID),
+                  source.hash == context.sourceContentHash,
+                  source.lines.map(\.originalText) == context.originalLines else {
+                throw TranslationRepositoryError.sourceContentMismatch
+            }
+            let identityStatement = try prepare("SELECT track_stable_key FROM lyrics_versions WHERE id = ?;")
+            defer { sqlite3_finalize(identityStatement) }
+            try bindText(context.lyricsVersionID.uuidString, at: 1, to: identityStatement)
+            guard sqlite3_step(identityStatement) == SQLITE_ROW,
+                  columnText(identityStatement, index: 0) == context.identity.stableKey else {
+                throw TranslationRepositoryError.sourceContentMismatch
+            }
+            if request.phase == .saved {
+                guard request.result == nil,
+                      let exact = try loadTranslationVersions(lyricsVersionID: context.lyricsVersionID,
+                        targetLanguage: context.targetLanguage, sourceContentHash: context.sourceContentHash)
+                        .first(where: { $0.record.id == completionID }),
+                      context.accepts(engine: exact.record.engineID),
+                      exact.record.providerExecutionMetadata.cacheIdentity == context.providerCacheIdentity else {
+                    throw TranslationRepositoryError.database("已完成请求的精确版本缺失或不完整；不会重建或重发")
+                }
+                return exact
+            }
+            guard let draft = request.result, draft.targetLanguage == context.targetLanguage,
+                  context.accepts(engine: draft.engineID) else {
+                throw TranslationRepositoryError.database("请求缺少完整且同语言/引擎的结果")
+            }
+            // Always insert an independent candidate. Adoption remains a separate,
+            // explicit Controller decision after commit and its current selection checks.
+            let saved = try insertValidatedTranslation(versionID: completionID, lyricsVersionID: context.lyricsVersionID,
+                sourceContentHash: context.sourceContentHash, originalLines: context.originalLines,
+                draft: draft.with(isDraft: true, isArchived: false, providerCacheIdentity: context.providerCacheIdentity))
+#if DEBUG
+            translationCompletionCheckpoint?("beforeCommit")
+#endif
+            let statement = try prepare("""
+                UPDATE translation_requests SET phase='saved', result_json=NULL, updated_at=?
+                WHERE request_key=? AND attempt_id=? AND phase='received' AND completion_version_id=?;
+                """)
+            defer { sqlite3_finalize(statement) }
+            try bindDouble(Date().timeIntervalSince1970, at: 1, to: statement)
+            try bindText(key, at: 2, to: statement)
+            try bindText(attemptID.uuidString, at: 3, to: statement)
+            try bindText(completionID.uuidString, at: 4, to: statement)
+            try stepDone(statement)
+            guard sqlite3_changes(database) == 1 else {
+                throw TranslationRepositoryError.database("完成 CAS 失败；版本和行已回滚")
+            }
+            return saved
+        }
+#if DEBUG
+        translationCompletionCheckpoint?("afterCommit")
+#endif
+        return completed
+    }
+
     public func loadTranslationVersions(
         lyricsVersionID: UUID,
         targetLanguage: String,
@@ -1085,7 +1313,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                    updated_at, is_machine_generated, is_manually_edited,
                    is_locked, status, confidence, engine_id, prompt_preset_id,
                    profile_id, profile_snapshot, temperature, workflow_id,
-                   fallback_strategy, is_draft, is_archived
+                   fallback_strategy, is_draft, is_archived, provider_execution_metadata_json
             FROM translation_versions
             WHERE lyrics_version_id = ? AND target_language = ?
               AND source_content_hash = ?
@@ -1119,6 +1347,16 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     ) throws -> StoredTranslationVersion {
         try ensurePrepared()
         _ = forceNewVersion // Every completed explicit request gets a new ID.
+        return try withTransaction {
+            try insertValidatedTranslation(versionID: UUID(), lyricsVersionID: lyricsVersionID,
+                sourceContentHash: sourceContentHash, originalLines: originalLines, draft: draft)
+        }
+    }
+
+    /// Caller owns the write transaction; never starts a nested transaction.
+    private func insertValidatedTranslation(versionID: UUID, lyricsVersionID: UUID,
+                                            sourceContentHash: String, originalLines: [String],
+                                            draft: AITranslationDraft) throws -> StoredTranslationVersion {
         guard let source = try fetchSourceLyrics(versionID: lyricsVersionID) else {
             throw TranslationRepositoryError.sourceLyricsNotFound
         }
@@ -1144,7 +1382,6 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         }
 
         let now = Date()
-        let versionID = UUID()
         let record = DatabaseTranslationVersionRecord(
             id: versionID,
             lyricsVersionID: lyricsVersionID,
@@ -1168,6 +1405,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             temperature: draft.temperature,
             workflowID: draft.workflowID,
             fallbackStrategy: draft.fallbackStrategy,
+            providerExecutionMetadata: AITranslationProviderExecutionMetadata(
+                reasoningSetting: draft.providerReasoningSetting, tokenUsage: draft.tokenUsage, cacheIdentity: draft.providerCacheIdentity
+            ),
             isDraft: draft.isDraft,
             isArchived: draft.isArchived
         )
@@ -1179,10 +1419,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             )
         }
 
-        try withTransaction {
-            try insertTranslationVersion(record)
-            for line in lines { try insertTranslationLine(line) }
-        }
+        try insertTranslationVersion(record)
+        for line in lines { try insertTranslationLine(line) }
         return StoredTranslationVersion(record: record, lines: lines)
     }
 
@@ -2350,9 +2588,18 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             temperature: sqlite3_column_double(statement, 20),
             workflowID: columnText(statement, index: 21) ?? TranslationWorkflowID.classicV1.rawValue,
             fallbackStrategy: TranslationFallbackStrategy(rawValue: columnText(statement, index: 22) ?? "none") ?? .none,
+            providerExecutionMetadata: decodeProviderExecutionMetadata(columnText(statement, index: 25)),
             isDraft: sqlite3_column_int(statement, 23) != 0,
             isArchived: sqlite3_column_int(statement, 24) != 0
         )
+    }
+
+    private func decodeProviderExecutionMetadata(_ json: String?) -> AITranslationProviderExecutionMetadata {
+        guard let json, let data = json.data(using: .utf8),
+              let metadata = try? JSONDecoder().decode(AITranslationProviderExecutionMetadata.self, from: data) else {
+            return AITranslationProviderExecutionMetadata()
+        }
+        return metadata
     }
 
     private func validateStoredTranslation(
@@ -2380,10 +2627,10 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 id, lyrics_version_id, parent_version_id, source_kind, target_language, model,
                 base_url_host, prompt_hash, source_content_hash, created_at,
                 updated_at, is_machine_generated, is_manually_edited,
-                is_locked, status, confidence, engine_id, prompt_preset_id,
-                profile_id, profile_snapshot, temperature, workflow_id,
-                fallback_strategy, is_draft, is_archived
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                   is_locked, status, confidence, engine_id, prompt_preset_id,
+                   profile_id, profile_snapshot, temperature, workflow_id,
+                   fallback_strategy, is_draft, is_archived, provider_execution_metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """)
         defer { sqlite3_finalize(statement) }
         try bindText(record.id.uuidString, at: 1, to: statement)
@@ -2411,6 +2658,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         try bindText(record.fallbackStrategy.rawValue, at: 23, to: statement)
         try bindInt(record.isDraft ? 1 : 0, at: 24, to: statement)
         try bindInt(record.isArchived ? 1 : 0, at: 25, to: statement)
+        let metadataData = try JSONEncoder().encode(record.providerExecutionMetadata)
+        try bindText(String(data: metadataData, encoding: .utf8) ?? "{}", at: 26, to: statement)
         try stepDone(statement)
     }
 
@@ -2885,6 +3134,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     }
 
     private func fetchBestVersion(stableKey: String) throws -> DatabaseLyricsVersionRecord? {
+        guard !(try hasRevokedLyricsSelection(stableKey: stableKey)) else { return nil }
         let family = try resolvedIdentityFamily(stableKey: stableKey)
         let statement = try prepare("""
             SELECT id, track_stable_key, source, provider_source_id, language,
@@ -3335,6 +3585,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         var lyricsVersionCount = 0
         var hasLockedLyrics = false
         var hasManualLyrics = false
+        let selectionRevoked = try hasRevokedLyricsSelection(stableKey: stableKey)
         var activeLyricsVersionID: UUID?
         var lyricsVersionIDs: [UUID] = []
         var maxDate = fallbackDate
@@ -3344,7 +3595,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                   let id = UUID(uuidString: idText) else { continue }
             lyricsVersionCount += 1
             lyricsVersionIDs.append(id)
-            if activeLyricsVersionID == nil {
+            if activeLyricsVersionID == nil, !selectionRevoked {
                 activeLyricsVersionID = id
             }
             let isManual = sqlite3_column_int(lyricsStmt, 1) == 1
@@ -4420,11 +4671,12 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     public func setPersonalLibraryActiveLyrics(trackStableKey: String, lyricsVersionID: UUID) throws {
         try prepare()
         try withTransaction {
-            try setPreferredLyricsVersion(trackStableKey: trackStableKey, lyricsVersionID: lyricsVersionID)
+            try setPreferredLyricsVersion(trackStableKey: trackStableKey, lyricsVersionID: lyricsVersionID, clearRevocation: true)
         }
     }
 
-    private func setPreferredLyricsVersion(trackStableKey: String, lyricsVersionID: UUID) throws {
+    private func setPreferredLyricsVersion(trackStableKey: String, lyricsVersionID: UUID, clearRevocation: Bool = false) throws {
+        if !clearRevocation, try hasRevokedLyricsSelection(stableKey: trackStableKey) { return }
         let family = try resolvedIdentityFamily(stableKey: trackStableKey)
         guard let version = try fetchLyricsVersion(versionID: lyricsVersionID), family.contains(version.trackStableKey) else {
             throw LyricsEditingRepositoryError.identityMismatch
@@ -4433,6 +4685,12 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         defer { sqlite3_finalize(clear) }
         for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: clear) }
         try stepDone(clear)
+        if clearRevocation {
+            let reset = try prepare("DELETE FROM lyrics_selection_revocations WHERE track_stable_key IN (\(placeholders(count: family.count)));")
+            defer { sqlite3_finalize(reset) }
+            for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: reset) }
+            try stepDone(reset)
+        }
         let choose = try prepare("UPDATE lyrics_versions SET is_preferred = 1 WHERE id = ?;")
         defer { sqlite3_finalize(choose) }
         try bindText(lyricsVersionID.uuidString, at: 1, to: choose)

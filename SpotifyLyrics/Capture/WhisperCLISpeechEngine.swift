@@ -1,7 +1,7 @@
 import Foundation
 import AVFoundation
 
-/// Experimental DEBUG-only speech front-end via `whisper-cli` (whisper.cpp).
+/// Optional experimental speech front-end via whisper-cli (whisper.cpp).
 /// Does not embed models or auto-download. Paths come from env / gitignored config.
 public struct WhisperCLISpeechEngine: LyricsSpeechEngine {
     public let engineID: SpeechEngineID = .whisperCLI

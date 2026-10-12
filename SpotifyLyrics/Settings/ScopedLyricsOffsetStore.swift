@@ -29,7 +29,7 @@ public final class ScopedLyricsOffsetStore: ObservableObject {
 
     private let defaults: UserDefaults
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .lyricsQ) {
         self.defaults = defaults
         self.activeScope = nil
         self.activeOffset = 0

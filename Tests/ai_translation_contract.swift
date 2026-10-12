@@ -9,7 +9,167 @@ struct AITranslationContract {
         try stableIDResponseContract()
         try await clientErrorContract()
         try await testConnectionContract()
+        try await codexOfflineContract()
+        try await protectedRecoveryContract()
         print("AI translation contracts passed")
+    }
+
+    static func codexOfflineContract() async throws {
+        let config = AITranslationConfiguration(model: "synthetic-model", engineID: TranslationEngineID.codexChatGPT.rawValue,
+            codexReasoningEffort: "low")
+        precondition(config.isConfigured)
+        let source = [AITranslationSourceLine(index: 0, original: "synthetic one"),
+                      AITranslationSourceLine(index: 1, original: "")]
+        func context(_ lines: [AITranslationSourceLine]) -> AITranslationContext {
+            AITranslationContext(title: "Synthetic", artist: "Fixture", album: "", sourceLanguage: "en",
+                targetLanguage: config.targetLanguage, style: config.style, lines: lines)
+        }
+        let input = context(source)
+        let first = try AITranslationPromptBuilder().build(context: input, configuration: config)
+        let reloaded = context(source.enumerated().map { AITranslationSourceLine(index: $0.offset, original: $0.element.original) })
+        let second = try AITranslationPromptBuilder().build(context: reloaded, configuration: config)
+        guard let wire = first.codexWireRequest, let secondWire = second.codexWireRequest else { fatalError("wire missing") }
+        precondition(wire.requestID != secondWire.requestID && first.promptHash == second.promptHash,
+            "nonce/display UUID changes must not invalidate stable semantic cache")
+        precondition(Set(wire.sourcesByWireID.keys) == Set(["L0", "L1"]))
+        var rules = config; rules.customSystemPrompt = "synthetic rule change"
+        let changedRulesPrompt = try AITranslationPromptBuilder().build(context: input, configuration: rules)
+        precondition(changedRulesPrompt.promptHash != first.promptHash)
+        var effort = config; effort.codexReasoningEffort = "high"
+        precondition(effort.providerCacheIdentity != config.providerCacheIdentity && effort.requestIdentity != config.requestIdentity)
+        let valid: [String: Any] = ["requestID": wire.requestID.uuidString,
+            "lines": [["lineID": "L1", "translation": ""], ["lineID": "L0", "translation": "synthetic translated"]]]
+        let parsed = try AITranslationResponseParser.parseCodex(JSONSerialization.data(withJSONObject: valid), request: wire)
+        precondition(parsed.map(\.lineID) == source.map(\.lineID) && parsed.map(\.index) == [0, 1])
+        var wrongNonce = valid; wrongNonce["requestID"] = UUID().uuidString
+        var extraField = valid; extraField["timestamp"] = 1
+        var duplicate = valid; duplicate["lines"] = [["lineID":"L0","translation":"one"],["lineID":"L0","translation":"two"]]
+        var unknown = valid; unknown["lines"] = [["lineID":"L9","translation":"one"],["lineID":"L1","translation":""]]
+        var blankMismatch = valid; blankMismatch["lines"] = [["lineID":"L0","translation":"one"],["lineID":"L1","translation":"nonblank"]]
+        for invalid in [wrongNonce, extraField, duplicate, unknown, blankMismatch] {
+            do {
+                _ = try AITranslationResponseParser.parseCodex(JSONSerialization.data(withJSONObject: invalid), request: wire)
+                fatalError("malformed Codex payload accepted")
+            } catch AITranslationResponseError.validationFailed { }
+        }
+        let fake = CodexAppServerTranslationService(executableCandidates: ["/usr/bin/true"], transport: SyntheticCodexTransport(corruptNonce: false))
+        let draft = try await fake.translate(context: input, sourceContentHash: "synthetic-hash", configuration: config)
+        precondition(draft.engineID == config.engineID && draft.model == config.model && draft.sourceContentHash == "synthetic-hash")
+        precondition(draft.tokenUsage?.totalTokens == 10 && draft.providerReasoningSetting == "effort=low")
+        do {
+            _ = try await CodexAppServerTranslationService(executableCandidates: ["/usr/bin/true"], transport: SyntheticCodexTransport(corruptNonce: true))
+                .translate(context: input, sourceContentHash: "synthetic-hash", configuration: config)
+            fatalError("fake transport nonce mismatch accepted")
+        } catch AITranslationError.codexResponseInvalid { }
+        print("PASS Codex short IDs/UUID restore/nonce/malformed payloads/stable cache/rules/reasoning/fake transport; zero processes or network")
+    }
+
+    @MainActor
+    static func protectedRecoveryContract() async throws {
+        guard let path = ProcessInfo.processInfo.environment["SPOTIFYLYRICS_CONTRACT_ROOT"] else { fatalError("isolated fixtures required") }
+        let root = URL(fileURLWithPath: path, isDirectory: true)
+        precondition(root.lastPathComponent == "fixtures")
+        precondition(root.deletingLastPathComponent().path == URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().path)
+        precondition(!FileManager.default.fileExists(atPath: root.path))
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for kind in ["manual", "locked"] {
+            let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent(kind + ".sqlite3"),
+                alignmentProvenanceDirectory: root.appendingPathComponent(kind + "-provenance"))
+            try await repo.prepare()
+            let track = Track(title: "Synthetic Protected", artist: "Fixture", album: "", duration: 10, spotifyId: kind)
+            let identity = TrackIdentity(track: track)
+            let document = LyricsDocument(identity: identity, title: track.title, artist: track.artist, album: track.album,
+                duration: 10, lines: [LyricLine(timestamp: 0, originalText: "synthetic original")],
+                isSynchronized: true, source: .lrclib, confidence: 1, providerSourceID: kind)
+            let source = try await repo.save(track: track, identity: identity, document: document)
+            guard let versionID = source.versionID, let hash = source.sourceContentHash else { fatalError("source missing") }
+            let config = AITranslationConfiguration(model: "synthetic-model", autoTranslateNewLyrics: true,
+                engineID: TranslationEngineID.codexChatGPT.rawValue, codexReasoningEffort: "low")
+            let context = AITranslationContext(title: track.title, artist: track.artist, album: "", sourceLanguage: "ja",
+                targetLanguage: config.targetLanguage, style: config.style,
+                lines: [AITranslationSourceLine(index: 0, original: document.lines[0].originalText, lineID: document.lines[0].id, timestamp: 0)])
+            let old = AITranslationDraft(lines: [AITranslationLine(index: 0, translation: "synthetic protected old")],
+                targetLanguage: config.targetLanguage, model: "old-model", baseURLHost: "fixture", promptHash: "old-rules",
+                sourceContentHash: hash, sourceKind: kind == "manual" ? .manualEdit : .ai,
+                isMachineGenerated: kind != "manual", isManuallyEdited: kind == "manual", engineID: config.engineID)
+            let protected = try await repo.saveTranslation(lyricsVersionID: versionID, sourceContentHash: hash,
+                originalLines: document.lines.map(\.originalText), draft: old, forceNewVersion: false)
+            if kind == "locked" { try await repo.markTranslationLocked(versionID: protected.record.id, locked: true) }
+            let key = try AITranslationRequestExecution.key(identity: identity, versionID: versionID, sourceHash: hash,
+                context: context, configuration: config)
+            var request = try await repo.beginTranslationRequest(key: key, explicitRetry: false)
+            request.phase = .dispatching; try await repo.updateTranslationRequest(request)
+            request.phase = .received
+            request.result = AITranslationDraft(lines: [AITranslationLine(index: 0, translation: "synthetic recovered new")],
+                targetLanguage: config.targetLanguage, model: config.model, baseURLHost: "fixture",
+                promptHash: try AITranslationPromptBuilder().build(context: context, configuration: config).promptHash,
+                sourceContentHash: hash, engineID: config.engineID, providerReasoningSetting: config.providerReasoningSetting)
+            try await repo.updateTranslationRequest(request)
+            let fake = NeverDispatchService()
+            let controller = TranslationSessionController(repository: repo, service: fake, acceptanceBudget: nil)
+            controller.synchronize(document: document, lyricsVersionID: versionID, sourceContentHash: hash, configuration: config)
+            let deadline = Date().addingTimeInterval(2)
+            while Date() < deadline {
+                if let journal = try await repo.loadTranslationRequest(key: key), journal.phase == .saved { break }
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+            let calls = await fake.calls
+            let journal = try await repo.loadTranslationRequest(key: key)
+            let versions = try await repo.loadTranslationVersions(lyricsVersionID: versionID,
+                targetLanguage: config.targetLanguage, sourceContentHash: hash)
+            precondition(calls == 0 && journal?.phase == .saved && versions.count == 2)
+            precondition(controller.selectedVersion?.record.id == protected.record.id, "recovery overwrote manual/locked adopted version")
+            precondition(controller.project(onto: document.lines).first?.translationText == "synthetic protected old")
+            guard let candidate = versions.first(where: { $0.record.id != protected.record.id }) else { fatalError("new candidate missing") }
+            precondition(candidate.record.isDraft && !candidate.record.isArchived && candidate.record.parentVersionID == nil,
+                "independent AI generation must remain a draft with no fabricated translation parent")
+            precondition(candidate.record.lyricsVersionID == versionID && candidate.record.sourceContentHash == hash)
+            guard let retained = versions.first(where: { $0.record.id == protected.record.id }) else { fatalError("protected history lost") }
+            precondition(retained.lines == protected.lines && retained.record.parentVersionID == protected.record.parentVersionID)
+            precondition(retained.record.isLocked == (kind == "locked") && retained.record.isManuallyEdited == (kind == "manual"))
+            var unknownConfig = config
+            unknownConfig.customSystemPrompt = "synthetic unknown request rules"
+            let unknownKey = try AITranslationRequestExecution.key(identity: identity, versionID: versionID,
+                sourceHash: hash, context: context, configuration: unknownConfig)
+            var unknownRequest = try await repo.beginTranslationRequest(key: unknownKey, explicitRetry: false)
+            unknownRequest.phase = .dispatching
+            try await repo.updateTranslationRequest(unknownRequest)
+            let unknownController = TranslationSessionController(repository: repo, service: fake, acceptanceBudget: nil)
+            unknownController.synchronize(document: document, lyricsVersionID: versionID, sourceContentHash: hash, configuration: unknownConfig)
+            let unknownDeadline = Date().addingTimeInterval(2)
+            while Date() < unknownDeadline && !unknownController.progressMessage.contains("不会自动重发") {
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+            let unknownJournal = try await repo.loadTranslationRequest(key: unknownKey)
+            let unknownCalls = await fake.calls
+            precondition(unknownJournal?.phase == .dispatching && unknownJournal?.attemptID == unknownRequest.attemptID && unknownCalls == 0)
+            precondition(unknownController.selectedVersion?.record.id == protected.record.id && unknownController.progressMessage.contains("不会自动重发"))
+            unknownController.cancel()
+            let edit = ManualTranslationEdit(targetLanguage: config.targetLanguage, lines: ["synthetic derived edit"],
+                parentVersionID: protected.record.id)
+            let editResult = try await repo.saveManualEdit(LyricsEditSaveRequest(track: track, identity: identity,
+                sourceVersionID: versionID, sourceContentHash: hash, document: document, createLyricsVersion: false,
+                preserveCurrentLyricsSelection: true, translation: edit))
+            guard let derived = editResult.translationVersion else { fatalError("derived translation missing") }
+            precondition(derived.record.id != protected.record.id && derived.record.parentVersionID == protected.record.id)
+            precondition(derived.record.sourceKind == .manualEdit && derived.record.isManuallyEdited)
+            precondition(derived.record.lyricsVersionID == versionID && derived.record.sourceContentHash == hash)
+            let afterEdit = try await repo.loadTranslationVersions(lyricsVersionID: versionID, targetLanguage: config.targetLanguage, sourceContentHash: hash)
+            precondition(afterEdit.count == 3 && afterEdit.contains { $0.record.id == protected.record.id && $0.lines == protected.lines })
+            do {
+                _ = try await repo.saveManualEdit(LyricsEditSaveRequest(track: track, identity: identity,
+                    sourceVersionID: versionID, sourceContentHash: "synthetic stale hash", document: document,
+                    createLyricsVersion: false, translation: edit))
+                fatalError("stale source edit accepted")
+            } catch LyricsEditingRepositoryError.sourceContentMismatch { }
+            let afterRejectedEdit = try await repo.loadTranslationVersions(lyricsVersionID: versionID,
+                targetLanguage: config.targetLanguage, sourceContentHash: hash)
+            precondition(afterRejectedEdit == afterEdit, "failed edit changed translation versions or parent chain")
+            controller.selectNone()
+            precondition(controller.project(onto: document.lines).allSatisfy { $0.translationText == nil })
+            controller.cancel()
+            print("PASS received recovery protects \(kind) old version; independent AI nil parent/manual edit explicit parent/stale hash rejection/unknown dispatch/none; zero fake dispatch")
+        }
     }
 
     static func endpointContract() throws {
@@ -88,8 +248,9 @@ struct AITranslationContract {
             )
             throw ContractFailure(message: "stable response accepted a timestamp mutation")
         } catch AITranslationResponseError.validationFailed { }
-        guard AITranslationConfiguration(engineID: TranslationEngineID.codexChatGPT.rawValue).isConfigured else {
-            throw ContractFailure(message: "Codex engine should not require an API key")
+        guard !AITranslationConfiguration(engineID: TranslationEngineID.codexChatGPT.rawValue).isConfigured,
+              !CodexAppServerTranslationService().metadata.requiresAPIKey else {
+            throw ContractFailure(message: "Codex offline gate must not claim configured or request an API key")
         }
     }
 
@@ -203,4 +364,27 @@ private final class MemoryKeyStore: AITranslationAPIKeyStore, @unchecked Sendabl
     func read() -> String? { value }
     func save(_ key: String) throws { value = key }
     func delete() throws { value = nil }
+}
+
+private struct SyntheticCodexTransport: CodexTranslationTransport {
+    let corruptNonce: Bool
+    func run(executable: String, prompt: AITranslationPrompt, model: String, reasoningEffort: String,
+             timeout: TimeInterval, outputSchema: [String: Any]) async throws -> CodexTranslationResult {
+        precondition(executable == "/usr/bin/true") // Presence probe only; never executed.
+        guard let wire = prompt.codexWireRequest else { fatalError("missing wire") }
+        let body: [String: Any] = ["requestID": corruptNonce ? UUID().uuidString : wire.requestID.uuidString,
+            "lines": wire.sourceLines.enumerated().map { ["lineID": "L\($0.offset)",
+                "translation": $0.element.original.isEmpty ? "" : "synthetic translated"] }]
+        let text = String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self)
+        return CodexTranslationResult(text: text, model: model, reasoningEffort: reasoningEffort,
+            tokenUsage: AITranslationTokenUsage(inputTokens: 6, outputTokens: 4, totalTokens: 10))
+    }
+}
+private actor NeverDispatchService: AITranslationService {
+    private(set) var calls = 0
+    func translate(context: AITranslationContext, sourceContentHash: String, configuration: AITranslationConfiguration) async throws -> AITranslationDraft {
+        calls += 1
+        throw AITranslationError.engineUnavailable("synthetic unexpected dispatch")
+    }
+    func testConnection(configuration: AITranslationConfiguration) async throws { }
 }

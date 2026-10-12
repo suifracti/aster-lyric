@@ -78,8 +78,35 @@ public struct TrackMetadata: Equatable, Sendable {
             )
         }
 
+        aliases.append(contentsOf: verifiedLocalizedTitleAliases(for: track, identity: identity))
         let tags = TrackTextNormalizer.extractVersionTags(fromTitle: track.title)
         return TrackMetadata(identity: identity, track: track, aliases: aliases, versionTags: tags)
+    }
+
+    /// One publisher-declared localized title, scoped to its exact Spotify recording.
+    /// Verified 2026-10-09: https://linkco.re/Sbs3VHBC?lang=ja and ?lang=en.
+    /// The publisher's Spotify link redirects to album 76hqFIJHX8epoaSztfSr1Z;
+    /// Spotify declares the requested recording as its only track. The NetEase
+    /// link is merely a search URL: it is NOT an independent source-ID/ISRC map.
+    /// This adds title evidence only; artist, recording and version barriers stay intact.
+    private static func verifiedLocalizedTitleAliases(for track: Track, identity: TrackIdentity) -> [TrackAlias] {
+        let declaredTitles = ["The day i became a star", "星になった日"].map(TrackTextNormalizer.normalize)
+        let declaredArtists = ["HIBANA", "ヒバナ"].map(TrackTextNormalizer.normalize)
+        guard identity.spotifyTrackID == "2flmegp9ci94sx8u7gpseo",
+              declaredTitles.contains(TrackTextNormalizer.normalize(track.title)),
+              declaredArtists.contains(TrackTextNormalizer.normalize(track.artist)),
+              declaredTitles.contains(TrackTextNormalizer.normalize(track.album)) else { return [] }
+        return [TrackAlias(
+            id: "tunecore:Sbs3VHBC:title:ja",
+            field: .title,
+            kind: .localizedTitle,
+            value: "星になった日",
+            language: "ja",
+            script: .kanjiHiraganaKatakana,
+            source: .provider,
+            confidence: 1,
+            isOfficial: true
+        )]
     }
 
     public func aliases(for field: TrackAliasField, kind: TrackAliasKind? = nil) -> [TrackAlias] {

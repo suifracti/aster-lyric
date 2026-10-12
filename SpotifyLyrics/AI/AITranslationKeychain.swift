@@ -11,6 +11,9 @@ public struct SecurityAITranslationKeychainTransport: AITranslationKeychainTrans
     public init() {}
 
     public func read(service: String, account: String) -> String? {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return nil }
+#endif
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -30,6 +33,9 @@ public struct SecurityAITranslationKeychainTransport: AITranslationKeychainTrans
     }
 
     public func save(service: String, account: String, key: String) throws {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { throw AITranslationKeychainError.status(-1) }
+#endif
         let data = Data(key.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -49,6 +55,9 @@ public struct SecurityAITranslationKeychainTransport: AITranslationKeychainTrans
     }
 
     public func delete(service: String, account: String) throws {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return }
+#endif
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -89,6 +98,9 @@ public final class KeychainAITranslationAPIKeyStore: AITranslationAPIKeyStore, @
     }
 
     public func read() -> String? {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return nil }
+#endif
         if ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_KEYCHAIN"] == "1" {
             return nil
         }
@@ -106,6 +118,9 @@ public final class KeychainAITranslationAPIKeyStore: AITranslationAPIKeyStore, @
     }
 
     public func save(_ key: String) throws {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { throw AITranslationKeychainError.status(-1) }
+#endif
         if ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_KEYCHAIN"] == "1" {
             lock.lock()
             self.cachedKey = key
@@ -123,6 +138,9 @@ public final class KeychainAITranslationAPIKeyStore: AITranslationAPIKeyStore, @
     }
 
     public func delete() throws {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return }
+#endif
         if ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_KEYCHAIN"] == "1" {
             lock.lock()
             self.cachedKey = nil

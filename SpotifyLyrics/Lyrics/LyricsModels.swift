@@ -159,6 +159,8 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
     public let id: String
     public let identity: TrackIdentity
     public let title: String
+    /// Independent aliases declared by the provider catalog, never query echoes.
+    public let declaredTitleAliases: [String]
     public let artist: String
     public let album: String
     public let duration: TimeInterval
@@ -210,11 +212,13 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
         queryTitle: String? = nil,
         queryArtist: String? = nil,
         matchScore: Double? = nil,
-        matchExplanation: [String] = []
+        matchExplanation: [String] = [],
+        declaredTitleAliases: [String] = []
     ) {
         self.id = id
         self.identity = identity
         self.title = title
+        self.declaredTitleAliases = declaredTitleAliases
         self.artist = artist
         self.album = album
         self.duration = duration
@@ -246,20 +250,39 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
             artist: artist,
             album: album,
             duration: duration,
-            lines: lines,
-            isSynchronized: isSynchronized,
+            lines: previewLines,
+            isSynchronized: requiresTextOnlyPreview ? false : isSynchronized,
             source: source,
             confidence: confidence,
             providerSourceID: providerSourceID,
             spotifyTrackID: spotifyTrackID,
             isrc: isrc,
             language: language,
-            explicitlyTimedLineIndices: explicitlyTimedLineIndices
+            explicitlyTimedLineIndices: requiresTextOnlyPreview ? nil : explicitlyTimedLineIndices
         )
     }
 
+    /// A text confirmation cannot certify timing from another tempo recording.
+    public var requiresTextOnlyPreview: Bool {
+        matchExplanation.contains { $0.hasPrefix("spedUpConflict ") }
+    }
+
+    public var previewLines: [LyricLine] {
+        guard requiresTextOnlyPreview else { return lines }
+        return lines.map { line in
+            var text = line
+            text.timestamp = 0
+            text.endTime = nil
+            text.timedSpans = nil
+            return text
+        }
+    }
+
     public var arrangementNotice: String? {
-        matchExplanation.contains { $0.hasPrefix("pianoConflict ") }
+        if requiresTextOnlyPreview {
+            return "加速版与来源录音不同，仅可核对并采用歌词文本；不使用来源时间轴"
+        }
+        return matchExplanation.contains { $0.hasPrefix("pianoConflict ") }
             ? "钢琴版与原曲编排可能不同，请预览确认歌词与时间轴" : nil
     }
 
@@ -294,6 +317,12 @@ public enum LyricsFailure: Error, Equatable, Sendable {
     case parseFailure
     case cancelled
     case unknown(String)
+
+    /// Keep frozen display consumers compatible while preserving a distinct
+    /// recovery message and the individual provider outcomes in diagnostics.
+    public static func identityUnconfirmed(_ count: Int, _ sourceError: String) -> LyricsFailure {
+        .unknown("搜索累计有\(count)次候选判定未确认身份（可能重复，不代表可用歌词）。" + (sourceError.isEmpty ? "" : "部分来源同时失败：" + sourceError))
+    }
 
     public var userFacingMessage: String {
         switch self {
@@ -530,5 +559,17 @@ public enum LyricsTimeline {
     ) -> Int {
         guard isSynchronized, let currentIndex else { return 0 }
         return abs(index - currentIndex)
+    }
+}
+
+/// Receipt from the current search decision, distinct from provider confidence.
+public struct LyricsAutomaticSelectionEvidence: Sendable {
+    public let identity: TrackIdentity
+    public let tier: String
+    public let hardReject: Bool
+    public let versionConflict: Bool
+    public init(identity: TrackIdentity, tier: String, hardReject: Bool, versionConflict: Bool) {
+        self.identity = identity; self.tier = tier
+        self.hardReject = hardReject; self.versionConflict = versionConflict
     }
 }

@@ -80,6 +80,7 @@ struct AppleMusicImmersiveV3WindowView: View {
     @State private var isSearchPresented = false
     @State private var isWindowMenuPresented = false
     @State private var isDisplayPresented = false
+    @State private var isTranslationPresented = false
     @State private var isVersionPickerPresented = false
     @State private var isAppearancePresented = false
     @State private var isLyricsTimePresented = false
@@ -170,11 +171,22 @@ struct AppleMusicImmersiveV3WindowView: View {
 
                 layout(for: geometry)
 
+                VStack {
+                    HStack {
+                        artworkStylePicker
+                        Spacer(minLength: 0)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, 20)
+                .padding(.leading, 26)
+
                 toolBar(for: geometry.size)
                     .padding(.top, 18)
                     .padding(.trailing, 26)
                     .opacity(toolsVisible || toolbarPanelIsPresented ? 1 : 0)
                     .allowsHitTesting(toolsVisible || toolbarPanelIsPresented)
+                    .accessibilityHidden(!(toolsVisible || toolbarPanelIsPresented))
                     .animation(
                         LyricsDesignTokens.Motion.animation(reduceMotion: reduceMotion),
                         value: toolsVisible || toolbarPanelIsPresented
@@ -548,10 +560,10 @@ struct AppleMusicImmersiveV3WindowView: View {
         let availableHeight = max(1, geometry.size.height - verticalPadding * 2)
         let split = V3ResponsiveGeometry.splitColumns(
             containerWidth: contentWidth,
-            requestedArtworkRatio: regime == .wide ? 0.49 : 0.46,
+            requestedArtworkRatio: regime == .wide ? 0.40 : 0.38,
             gap: gap,
             minimumArtworkWidth: regime == .wide ? 320 : 260,
-            minimumLyricsWidth: regime == .wide ? 420 : 360
+            minimumLyricsWidth: regime == .wide ? 480 : 400
         )
         let coverSize = V3ResponsiveGeometry.boundedCoverSize(
             availableWidth: max(1, split.artwork - 28),
@@ -730,6 +742,10 @@ struct AppleMusicImmersiveV3WindowView: View {
                     scale: visualScale,
                     alignment: alignmentKey
                 ))
+                // Center the complete cover when the reserved player card is
+                // hidden; keep its measured hover region and lyric column fixed.
+                .offset(y: playbackDetailsVisible ? 0 : min(compact ? 88 : 113,
+                    max(0, (availableHeight - coverSize * visualScale) / 2)))
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: playbackDetailsVisible)
 
                 Spacer().frame(height: compact ? LyricsDesignTokens.Spacing.lg - 2 : LyricsDesignTokens.Spacing.xl)
@@ -816,8 +832,130 @@ struct AppleMusicImmersiveV3WindowView: View {
             || size.height <= MainWindowResponsiveThresholds.comfortableMinimumSize.height
     }
 
+    private var artworkStylePicker: some View {
+        HStack(spacing: 2) {
+            ForEach(V3ArtworkPresentation.allCases) { style in
+                Button {
+                    settings.v3ArtworkPresentation = style
+                } label: {
+                    Text(style.title)
+                        .font(.system(size: 10, weight: .medium))
+                        .padding(.horizontal, 8).padding(.vertical, 6)
+                        .background(settings.v3ArtworkPresentation == style ? Color.white.opacity(0.18) : .clear,
+                                    in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("v3.style." + style.rawValue)
+                .accessibilityAddTraits(settings.v3ArtworkPresentation == style ? .isSelected : [])
+                .help(style.detail)
+            }
+        }
+        .padding(3)
+        .background(.ultraThinMaterial, in: Capsule())
+    }
+
+    private var allowsModelRequests: Bool {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return DebugAcceptanceDataIsolation.allowsExplicitTranslation }
+#endif
+        return true
+    }
+
+    private var allowsAutomaticTranslation: Bool {
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return false }
+#endif
+        return allowsModelRequests
+    }
+
+    private var translationPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("AI 翻译", systemImage: "sparkles").font(.headline)
+            Picker("引擎", selection: Binding(
+                get: { settings.aiTranslationConfiguration.engineID },
+                set: { id in
+                    var next = settings.aiTranslationConfiguration
+                    next.engineID = id
+                    settings.aiTranslationConfiguration = next
+                }
+            )) {
+                ForEach(TranslationEngineCatalog.all, id: \.stableID) { engine in
+                    Text(engine.displayName).tag(engine.stableID)
+                }
+            }
+            TextField("模型名称（沿用现有 GPT / Codex 配置）", text: Binding(
+                get: { settings.aiTranslationConfiguration.model },
+                set: { model in
+                    var next = settings.aiTranslationConfiguration
+                    next.model = model
+                    settings.aiTranslationConfiguration = next
+                }
+            ))
+            .textFieldStyle(.roundedBorder)
+            Toggle("新歌词自动翻译", isOn: Binding(
+                get: { settings.aiTranslationConfiguration.autoTranslateNewLyrics },
+                set: { enabled in
+                    var next = settings.aiTranslationConfiguration
+                    next.autoTranslateNewLyrics = enabled
+                    settings.aiTranslationConfiguration = next
+                }
+            ))
+            .disabled(!allowsAutomaticTranslation || !settings.aiTranslationConfiguration.isConfigured)
+            Text("优先复用已保存译文；自动翻译完整后使用，人工稿与锁定版本保留。新候选可手动采用，所有窗口共用。")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Toggle("原文", isOn: displayBinding(\.showOriginal))
+                Toggle("中文", isOn: displayBinding(\.showTranslation))
+                Toggle("读音", isOn: displayBinding(\.showKana))
+            }
+            Divider()
+            if !state.translationProgressMessage.isEmpty {
+                Text(state.translationProgressMessage).font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if !state.translationState.userFacingMessage.isEmpty {
+                Text(state.translationState.userFacingMessage).font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(state.selectedTranslation != nil ? "正在显示已采用译文" : "尚未采用译文")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if case .loading = state.translationState {
+                HStack { ProgressView().controlSize(.small)
+                    Button("取消") { state.cancelTranslation() } }
+            } else {
+                HStack {
+                    Button("翻译整首") { state.translateCurrentLyrics() }
+                    Button("重新翻译") { state.retranslateCurrentLyrics() }
+                }
+                .disabled(!allowsModelRequests || !settings.aiTranslationConfiguration.isConfigured || state.liveLyrics.isEmpty)
+            }
+            if !allowsModelRequests {
+                Text("没有剩余新请求预算；仍可查看和采用已保存版本。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let candidate = state.translationSessionPendingCandidate {
+                HStack {
+                    Text("新候选已保存，待采用").font(.caption)
+                    Spacer()
+                    Button("采用") { state.adoptTranslation(versionID: candidate.record.id) }
+                }
+            }
+            Menu("已保存的译文") {
+                Button("无译文") { state.selectNoTranslationVersion() }
+                ForEach(state.translationVersions, id: \.record.id) { version in
+                    Button(version.record.id == state.selectedTranslation?.record.id ? "✓ 已采用" : "译文 · " + String(version.record.id.uuidString.prefix(8))) {
+                        state.selectTranslation(versionID: version.record.id)
+                    }
+                }
+                Button("恢复推荐") { state.restoreRecommendedTranslation() }
+            }
+        }
+        .toggleStyle(.switch)
+        .padding(18).frame(width: 340)
+    }
+
     private var toolbarPanelIsPresented: Bool {
-        isWindowMenuPresented || isSearchPresented || isDisplayPresented || isVersionPickerPresented || isAppearancePresented || isLyricsTimePresented
+        isWindowMenuPresented || isSearchPresented || isDisplayPresented || isTranslationPresented || isVersionPickerPresented || isAppearancePresented || isLyricsTimePresented
     }
 
     private func toolBar(for size: CGSize) -> some View {
@@ -842,11 +980,24 @@ struct AppleMusicImmersiveV3WindowView: View {
                 iconLabel("books.vertical", description: "歌词库")
             }
             .toolbarTooltip("歌词库", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
-            CurrentSongOperationsView(state: state, versionShortcutOnly: true, iconOnly: true,
-                onVersionPickerPresentationChange: { isVersionPickerPresented = $0 },
-                onOpenEditor: liveOnly ? { MenuBarLyricsController.shared.openEditor() } : nil)
-                .environmentObject(settings)
-                .toolbarTooltip("歌词版本", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
+            if liveOnly || !state.isShowingSearchPreview {
+                CurrentSongOperationsView(state: state, versionShortcutOnly: true, iconOnly: true,
+                    onVersionPickerPresentationChange: { isVersionPickerPresented = $0 },
+                    onOpenEditor: liveOnly ? { MenuBarLyricsController.shared.openEditor() } : nil)
+                    .environmentObject(settings)
+                    .toolbarTooltip("歌词版本", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
+            }
+            if liveOnly || !state.isShowingSearchPreview {
+                Button { isTranslationPresented.toggle() } label: {
+                    iconLabel("sparkles", description: "AI 翻译")
+                }
+                .keyboardShortcut("t", modifiers: [.command, .option])
+                .accessibilityIdentifier("translation.shortcut")
+                .toolbarTooltip("AI 翻译", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
+                .popover(isPresented: $isTranslationPresented, arrowEdge: .top) {
+                    translationPanel
+                }
+            }
             Button { isLyricsTimePresented.toggle() } label: {
                 iconLabel("clock.arrow.2.circlepath", description: lyricsTimeToolbarLabel)
             }
@@ -2553,6 +2704,18 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
         guard isSynchronized else { return 1 }
         let factor = max(0.15, min(1, preferences.opacity / 0.85))
         if isActive { return 1 }
+
+        // Ambient remains legible beyond the active line. Stage and Classic
+        // retain their established hierarchy in this first visual pass.
+        if settings.v3ArtworkPresentation == .ambient {
+            switch clampedDistance {
+            case 0: return 0.70 * factor
+            case 1: return 0.68 * factor
+            case 2: return 0.46 * factor
+            default: return max(0.28, 0.36 - Double(clampedDistance - 3) * 0.03) * factor
+            }
+        }
+
         if clampedDistance <= 0 { return 0.58 }
         switch clampedDistance {
         case 1: return 0.44 * factor
@@ -2931,8 +3094,8 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
 
             if preferences.showTranslation, let translation = line.translationText, !translation.isEmpty {
                 Text(translation)
-                    .font(.system(size: max(12, auxiliarySize * 0.82), weight: .regular, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.58))
+                    .font(.system(size: max(14, auxiliarySize * 0.94), weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(isActive ? 0.86 : (settings.v3ArtworkPresentation == .ambient ? 0.76 : 0.54)))
                     .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)

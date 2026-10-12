@@ -1,6 +1,6 @@
 import Foundation
 
-/// Stable engine identifiers (DEBUG / experimental selection only).
+/// Stable identifiers for the speech engines available to alignment jobs.
 public enum SpeechEngineID: String, Sendable, Equatable, CaseIterable {
     case apple = "speechEngine.apple.v1"
     case whisperCLI = "speechEngine.whisperCLI.experimental.v1"
@@ -133,7 +133,7 @@ public protocol LyricsSpeechEngine: Sendable {
     ) async throws -> SpeechEngineResult
 }
 
-/// DEBUG / experimental engine selection (never shown in ordinary settings).
+/// Internal engine selection shared by the Release automatic-alignment and assist paths.
 public enum SpeechEngineRegistry {
     public static let environmentKey = "SPOTIFYLYRICS_SPEECH_ENGINE"
     /// Optional: `apple` | `whisper` | `whisper_cli` | full stable IDs.
@@ -141,7 +141,7 @@ public enum SpeechEngineRegistry {
 
     public static func resolve(
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .lyricsQ
     ) -> any LyricsSpeechEngine {
         let raw = (environment[environmentKey] ?? defaults.string(forKey: userDefaultsKey) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)

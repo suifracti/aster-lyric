@@ -7,7 +7,11 @@ TMP_DIR="$(mktemp -d /tmp/spotifylyrics-sqlite-session.XXXXXX)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 cp Tests/sqlite_session_contract.swift "$TMP_DIR/main.swift"
 
-swiftc -parse-as-library \
+cat > "$TMP_DIR/logger.swift" <<'SWIFT'
+import Foundation
+enum LyricsE2ELog { static func log(_ message: String) { print(message) } }
+SWIFT
+swiftc -D DEBUG -parse-as-library \
   SpotifyLyrics/Models/Models.swift \
   SpotifyLyrics/Lyrics/TrackIdentity.swift \
   SpotifyLyrics/Lyrics/LyricsModels.swift \
@@ -22,7 +26,7 @@ swiftc -parse-as-library \
   SpotifyLyrics/Lyrics/LyricsSafeMatcher.swift \
   SpotifyLyrics/Lyrics/LyricsQueryPlanner.swift \
   SpotifyLyrics/Lyrics/LyricsRecoveryModels.swift \
-  SpotifyLyrics/Lyrics/LyricsE2ELog.swift \
+  "$TMP_DIR/logger.swift" \
   SpotifyLyrics/Lyrics/LyricsSearchManager.swift \
   SpotifyLyrics/Lyrics/CompositeLyricsProvider.swift \
   SpotifyLyrics/Lyrics/LRCParser.swift \
@@ -47,6 +51,7 @@ swiftc -parse-as-library \
   SpotifyLyrics/Persistence/TranslationRepository.swift \
   SpotifyLyrics/Persistence/LyricsEditingRepository.swift \
   SpotifyLyrics/Persistence/SQLiteLyricsRepository.swift \
+  SpotifyLyrics/DebugDatabaseSafety.swift \
   "$TMP_DIR/main.swift" \
   -o "$TMP_DIR/sqlite-session-contract"
 

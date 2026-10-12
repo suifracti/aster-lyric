@@ -127,13 +127,13 @@ public final class SpotifyAuthorizationManager: ObservableObject {
         let next = trimmed.isEmpty ? nil : trimmed
         clientID = next
         if let next {
-            UserDefaults.standard.set(next, forKey: "spotify.clientID")
+            UserDefaults.lyricsQ.set(next, forKey: "spotify.clientID")
             hasLoadedToken = false
             cachedToken = nil
             cachedTokenLoadError = nil
             if !state.isAuthorized { state = .signedOut }
         } else {
-            UserDefaults.standard.removeObject(forKey: "spotify.clientID")
+            UserDefaults.lyricsQ.removeObject(forKey: "spotify.clientID")
             hasLoadedToken = false
             cachedToken = nil
             cachedTokenLoadError = nil
@@ -277,11 +277,11 @@ public final class SpotifyAuthorizationManager: ObservableObject {
         }
 #if DEBUG
         let forceRefreshForAcceptance = ProcessInfo.processInfo.environment["SPOTIFYLYRICS_FORCE_TOKEN_REFRESH"] == "1"
-            || UserDefaults.standard.bool(forKey: "spotify.forceTokenRefreshForAcceptance")
+            || UserDefaults.lyricsQ.bool(forKey: "spotify.forceTokenRefreshForAcceptance")
         if forceRefreshForAcceptance,
            !didPerformForcedRefresh {
             didPerformForcedRefresh = true
-            UserDefaults.standard.removeObject(forKey: "spotify.forceTokenRefreshForAcceptance")
+            UserDefaults.lyricsQ.removeObject(forKey: "spotify.forceTokenRefreshForAcceptance")
             do {
                 let refreshed = try await refreshNow()
                 LyricsE2ELog.log("SPOTIFY refresh success")

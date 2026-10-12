@@ -36,6 +36,13 @@ struct LyricsCanvasView: View {
     /// states differs.
     @ViewBuilder
     private var systemStateContent: some View {
+        if state.isShowingSearchPreview {
+            if !state.lyrics.isEmpty {
+                lyricsScroll
+            } else {
+                LyricsStateContentFirstView(state: state, onSearch: onSearch)
+            }
+        } else {
         switch state.lyricsState {
         case .loaded(_), .mockPreview:
             lyricsScroll
@@ -183,6 +190,7 @@ struct LyricsCanvasView: View {
         case .idle:
             statusView(icon: "music.note", message: "等待 Spotify 歌曲", detail: "连接后将自动补全当前歌曲歌词")
         }
+        }
     }
 
     @ViewBuilder
@@ -227,7 +235,7 @@ struct LyricsCanvasView: View {
         let seekLines = state.lyrics
         let seekIsSynchronized = state.lyricsAreSynchronized
         return VStack(alignment: .leading, spacing: 6) {
-            translationControls
+            lyricsScopeControls
             GeometryReader { geometry in
                 ScrollViewReader { proxy in
                     ScrollView(.vertical) {
@@ -335,6 +343,37 @@ struct LyricsCanvasView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var lyricsScopeControls: some View {
+        if state.isShowingSearchPreview {
+            searchPreviewReadOnlyCue
+        } else {
+            translationControls
+        }
+    }
+
+    private var searchPreviewReadOnlyCue: some View {
+        HStack(spacing: 8) {
+            Label("搜索预览 · 只读", systemImage: "eye")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(LyricsDesignTokens.accent)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(LyricsDesignTokens.accent.opacity(0.12), in: Capsule())
+
+            Text(state.displayedTrack.title.isEmpty ? "候选歌词" : state.displayedTrack.title)
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(LyricsDesignTokens.mutedText)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, LyricsDesignTokens.canvasHorizontalPadding)
+        .padding(.top, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("lyrics.search-preview.read-only")
     }
 
     private var translationControls: some View {
@@ -588,7 +627,9 @@ struct LyricsStateContentFirstView: View {
 
     var body: some View {
         Group {
-            if case .candidates(_, let candidates) = state.lyricsState {
+            if state.isShowingSearchPreview {
+                searchPreviewContent
+            } else if case .candidates(_, let candidates) = state.lyricsState {
                 candidateContent(candidates)
             } else {
                 statusContent
@@ -596,13 +637,51 @@ struct LyricsStateContentFirstView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(item: $candidateToPreview) { candidate in
-            LyricsCandidatePreviewSheet(
-                candidate: candidate,
-                onAdopt: { try await state.adoptLyricsCandidate(candidate) },
-                onConfirmLocked: { try await state.confirmPendingManualLyricsAdoption() },
-                onCancelLocked: { state.cancelPendingManualLyricsAdoption() }
-            )
+            if !state.isShowingSearchPreview {
+                LyricsCandidatePreviewSheet(
+                    candidate: candidate,
+                    onAdopt: { try await state.adoptLyricsCandidate(candidate) },
+                    onConfirmLocked: { try await state.confirmPendingManualLyricsAdoption() },
+                    onCancelLocked: { state.cancelPendingManualLyricsAdoption() }
+                )
+            }
         }
+        .onChange(of: state.isShowingSearchPreview) { _, showingPreview in
+            if showingPreview { candidateToPreview = nil }
+        }
+    }
+
+    // Preview feedback never builds a live operation or adoption sheet.
+    private var searchPreviewContent: some View {
+        ScrollView {
+            VStack(spacing: compact ? 12 : 16) {
+                Label("搜索预览 · 只读", systemImage: "eye")
+                    .foregroundStyle(LyricsDesignTokens.accent)
+                Text(state.displayedTrack.title)
+                    .font(.headline)
+                Text(stateTitle)
+                    .font(.title3)
+                Text(stateDetail)
+                    .foregroundStyle(LyricsDesignTokens.mutedText)
+                    .multilineTextAlignment(.center)
+                if case .candidates(_, let candidates) = state.lyricsState {
+                    ForEach(candidates) { candidate in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(candidate.title)
+                            Text("\(candidate.artist) · \(candidate.source.displayName)")
+                                .font(.caption)
+                                .foregroundStyle(LyricsDesignTokens.mutedText)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                Button("返回当前播放") { state.clearSearchPreview() }
+                    .buttonStyle(.bordered)
+            }
+            .padding(compact ? 18 : LyricsDesignTokens.Spacing.xl)
+            .frame(maxWidth: .infinity)
+        }
+        .accessibilityIdentifier("lyrics.search-preview.read-only.empty")
     }
 
     private var statusContent: some View {
@@ -884,13 +963,21 @@ struct LyricsStateContentFirstView: View {
                     candidateRow(candidate, isRecommended: candidate.id == recommendedID)
                 }
 
-                Button("不使用任何歌词版本") {
-                    state.selectNoLyricsVersion()
+                if state.isShowingSearchPreview {
+                    Label("预览中不会更改当前播放歌曲歌词版本", systemImage: "eye")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(LyricsDesignTokens.mutedText)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 4)
+                } else {
+                    Button("不使用任何歌词版本") {
+                        state.selectNoLyricsVersion()
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(LyricsDesignTokens.mutedText)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 4)
                 }
-                .buttonStyle(.borderless)
-                .foregroundStyle(LyricsDesignTokens.mutedText)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, 4)
 
                 if state.canCreateManualLyrics {
                     ManualLyricsActionsView(
