@@ -1,118 +1,34 @@
-# Development Workflow
+# Spotify Lyrics｜轻量开发参考
 
-This document defines the durable repository workflow. Product direction, decisions, and stage priority follow the authoritative hierarchy: (1) 用户明确指令, (2) Obsidian Current 的 Spotify Lyrics `README.md`、`Decisions.md`、活动 `Handoff.md`, and (3) Git `HEAD` 与真实运行证据. Craft 已弃用，不得用于当前方向、优先级、阶段或项目状态判断. Exact source identity comes from Git.
+> 这份文件只指导现有原生工程的安全操作，**不是另一份计划或任务清单**。先读 Obsidian Vault `03-项目与工程/Spotify Lyrics/README.md` → `Handoff.md`（唯一当前活动任务）→ 必要时 `Decisions.md`（长期约束）。
 
-## Repository layout
+## 本机工作树
 
-Tracked project files stay in the formal root:
+- 原常用项目根为 `/Users/apple/backup/sptifylyrics`，但实际活动树可能不同，进入用户当前选择的工作树后读 `git status --short`、`git branch --show-current`、`git rev-parse HEAD` 和 `git diff --stat`。
+- 保护已有 dirty/untracked、旧树和正式资产。不要默认新开临时 worktree，不执行清理／重置／覆盖式 checkout/pull。`.local/`、DerivedData、旧 ZIP、历史截图不等于当前源码或 App。
+- 使用既有 `SpotifyLyrics/` Swift/SwiftUI/AppKit、`SpotifyLyrics.xcodeproj/`、`Tests/`、`Scripts/`、`Tools/`。旧 `generate_xcodeproj.py` 不能因普通小改动自动执行。
 
-```text
-SpotifyLyrics/                 Swift and SwiftUI source
-SpotifyLyrics.xcodeproj/       Xcode project
-Tests/                         Shell contracts and test sources
-Tools/                         Deliberate research and validation tools
-Scripts/                       Repeatable project scripts
-docs/                          Current documentation, evidence, research, and archive
-README.md                      Short project entry point
-AGENTS.md                      AI handoff rules
-LICENSE                        Repository usage rights
-docs/STATUS.md                 Honest implementation and maturity snapshot
-docs/SUBMISSION_BASELINE.md    Commit and handoff verification checklist
-generate_xcodeproj.py          Legacy generator; do not run without explicit authorization
-```
+## 最少的编译和运行
 
-Do not create additional top-level project directories for local state, builds, backups, or reference repositories.
-
-## `.local/` boundary
-
-`.local/` is ignored by Git and is never the current source tree:
-
-```text
-.local/
-├── backups/              complete local snapshots only
-├── patches/              local recovery or review patches only
-├── reference-projects/   external projects used for research only
-└── builds/               optional preserved `.app` builds only
-```
-
-`builds/` does not need to exist until a build is explicitly worth preserving. Do not use anything in `.local/` as an automatic source recovery mechanism, and do not upload it as part of the repository.
-
-## DerivedData and builds
-
-DerivedData is temporary and belongs under `/tmp`, never in the project root or `.local/`. The standard Debug build is:
-
+- 输入不变的已通过测试直接复用；若可用现成对应二进制，优先实机看效果，否则只做必要构建。文档变更不编译 Xcode。
+- 参考 unsigned Debug 构建（确实需要时才执行）：
 ```sh
-xcodebuild -project SpotifyLyrics.xcodeproj \
-  -scheme SpotifyLyrics \
-  -configuration Debug \
-  -derivedDataPath /tmp/lyrics-window-macos-deriveddata \
-  CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics \
+  -configuration Debug CODE_SIGNING_ALLOWED=NO \
+  -derivedDataPath /tmp/lyricsq-deriveddata build
 ```
+- 只运行受影响的定向检查、真实用户要看的 App 画面；普通编译错误在已授权任务内修复，不把每个失败变成新增 Issue/PR/审计。
+- 翻译请求、业务 Keychain、正式 SQLite、用户播放状态、`/Applications` 安装覆盖、数据迁移不因“轻量测试”自动允许。
 
-For parallel or repeated work, use a task-specific `/tmp` path. Temporary DerivedData and ordinary build products do not need to be saved.
+## 版本、提交和发布
 
-Only a user-requested and accepted `.app` should be preserved. Store it as:
+- 文件附件继续用 Google Drive；GitHub 只管理源码、发布信息与历史证据。默认不建新分支、PR、Issue，不自动 commit/push、改 main、覆盖正式 App/库或发起模型请求；具体动作按用户本轮许可。
+- Git 写入若被本轮用户明确授权：限定仓库、分支和文件范围，先看 diff 与敏感数据，再按授权 commit/push；不依历史“每次小阶段必须 push”或“重大修改先 push checkpoint”执行。
+- 在 Obsidian 当前任务页报告实际运行的源码、App/Bundle、数据目录、编译与体验范围；本机打包且需要共享时，附件放到既有 Google Drive，并回写实际链接。
 
-```text
-.local/builds/<YYYY-MM-DD>-<label>-<short-sha>/
-├── SpotifyLyrics.app
-└── BUILD_INFO.md
-```
+## 历史与事实
 
-`BUILD_INFO.md` must record:
+- GitHub `docs/evidence/`、`docs/archive/`、`docs/superpowers/`、旧 PR/Issue 仅供查证过去发生了什么。`docs/STATUS.md` 是静态仓库参考，不含下一执行命令。
+- 未被重新实测的模式、歌词质量、切行、数据迁移不能因为本轮修了代码或文件就升级为 PASS。
 
-- full commit SHA
-- branch
-- build configuration
-- exact build command
-- date
-- purpose or label
-- user acceptance status
-
-The modification time or folder name of an `.app` or DerivedData directory is never a source-version signal. The commit SHA is the version identity.
-
-## Tests
-
-Use the repository's existing contract scripts; do not invent an aggregate test command. The documented core entry point is:
-
-```sh
-bash Tests/v3_lyric_readability_contract.sh
-```
-
-Run additional focused scripts from `Tests/` when the changed area requires them. Record the exact commands and results in the handoff or commit context.
-
-## Branches, commits, and releases
-
-- **Canonical engineering SOT**: fresh remote `origin/main`.
-- **Historical anchors**:
-  - Latest product-code-changing merge: `b16caee38eb4bb1d02d30c2971437d39ed59eb93` (C5)
-  - Status-convergence docs-only merge: `54ab96226fb62064e6dad7f6d888dc47cdbd28b9` (PR #20)
-- Other Windows C1–C5 are `CLOSED / FROZEN / MERGED`.
-- `codex/<topic>` is for Codex work.
-- `antigravity/<topic>` is for Antigravity/Gemini work.
-- Other agents use `<agent>/<topic>`.
-- Start new work from `main` unless the user explicitly identifies another current branch.
-- **Dirty checkout policy**: `/Users/apple/backup/sptifylyrics` is not canonical main and contains uncommitted user assets and tools. Strictly prohibited to run `git reset --hard`, `git clean`, `git restore`, `git pull`, or checkout overwrite. New work must be created from fresh `origin/main` in an isolated worktree under `/private/tmp/`.
-- A runnable, reviewable small stage should end with an intentional commit and push.
-- Use clear Conventional Commit messages and never force-push or rewrite shared history.
-- **Internal test releases**:
-  - `v0.1.0`: `910df5dc55e44a19144be0b6ccf79a3145a67943`
-  - `v0.1.1`: `9e65fbbe13b82626bfb5d9bc36f2620a44dd2762` (includes C3; does **not** include subsequent C4/C5; not a full experience package of current main).
-  - Tags and release packages are frozen and immutable. Do not overwrite or re-tag.
-- **Current phase**: `Concentrated user experience / reliability triage` (not C6).
-  - Only real **Blocker** or necessary **Relevant** issues trigger code work.
-  - Reliability candidates remain deferred (e.g., statistics read failure empty-state presentation, listening history read failure lack of independent failed state, statistics contract midnight boundary stability).
-
-## Handoff identity
-
-When handing work to another AI, report:
-
-1. project root;
-2. current branch;
-3. `git rev-parse HEAD`;
-4. whether the worktree is clean;
-5. any base SHA plus uncommitted changes;
-6. exact tests/builds run;
-7. whether an accepted `.app` archive exists.
-
-Current authoritative sources (用户明确指令 and Obsidian Current) decide what should be done next; Craft 已弃用，不得用于决定后续或阶段优先级. Git identifies exactly what source was used.
+**一个活动任务做完并更新 Handoff，才推进下一项。**

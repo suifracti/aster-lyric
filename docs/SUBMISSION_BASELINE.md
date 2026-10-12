@@ -1,77 +1,28 @@
-# Submission Baseline
+# Spotify Lyrics｜必要提交与交付核对
 
-This is the required local checklist for any AI or collaborator preparing a commit, push, handoff, or accepted build. It complements `AGENTS.md` and `DEVELOPMENT_WORKFLOW.md`. The authoritative hierarchy is: (1) 用户明确指令, (2) Obsidian Current 的 Spotify Lyrics `README.md`、`Decisions.md`、活动 `Handoff.md`, (3) Git `HEAD` 与真实运行证据. Craft 已弃用，不得用于当前方向、优先级、阶段或项目状态判断.
+> **只在用户确实授权 commit/push 或交付 App 时使用。** 本文件不能创建任务、强制开分支/PR、自动 checkpoint 或恢复旧审批流程。先读 Obsidian `03-项目与工程/Spotify Lyrics/README.md` → `Handoff.md` → 当前任务，再按 `Decisions.md` 保留数据与费用边界。
 
-## 1. Identify the source exactly
-
-Run before editing and again before handoff:
+## 核对
 
 ```sh
 git status --short
 git branch --show-current
 git rev-parse HEAD
-git log -5 --oneline
-git remote -v
+git diff --stat
 ```
 
-When an upstream exists, also run:
+- 实际源码版本是当前 HEAD（若脏树则为 `base HEAD + 未提交差异`）；实际运行 `.app`、数据目录、正式 Release 需独立识别。
+- 只能包括本轮授权文件，不能覆盖 dirty/untracked，也不能公开凭据、OAuth、正式 SQLite、受限制歌词/音频或私有日志。
+- 代码修改做最少必要编译与受影响检查；仅文档修改验证文字、链接与导航，无须为了文档重跑整个 Mac App。
+- App 视觉只据真实前台窗口和同曲已采用译文判断，不能以截图缩略图或旧 PR 结论代替。没有新验证写 NOT_RUN。
 
-```sh
-git rev-parse '@{upstream}'
-```
+## Git 操作只按授权
 
-- Clean worktree: the full `HEAD` SHA is the exact source identity.
-- Dirty worktree: report `base HEAD + uncommitted changes` and list the changed paths.
-- `main` is the confirmed default baseline, not proof that another explicitly selected feature branch is obsolete.
-- Never use a DerivedData folder, `.app`, `.local/` backup, screenshot, old report, or modification date to decide which source is newest.
+- 文件附件继续用 Google Drive；GitHub 只管理源码、发布信息与历史证据。默认不建新分支、PR、Issue，不自动 commit/push、改 main、覆盖正式 App/库或发起模型请求；具体动作按用户本轮许可。
+- 如当轮明确授权提交/推送：先审核具体 diff 与目标分支，执行 `git diff --check`，只暂存指定路径，再做明确许可的 commit / push；**不隐含更新 main、重写历史或创建 PR**。
+- 执行后读回 GitHub 实际 commit SHA、修改文件列表；Git 文档已更新 ≠ Mac App 已同步/安装。
 
-## 2. Protect the intended scope
+## 文件交接
 
-- Read `AGENTS.md`, Obsidian Current documents (`README.md`, `Decisions.md`, active `Handoff.md`), and `docs/STATUS.md`. Note that Craft 已弃用，不得依据旧 Craft execution board 进行判断.
-- Confirm which changes belong to the current task with `git status` and `git diff`.
-- Do not stage unrelated user changes.
-- Before a substantial or risky modification, create and push a reversible checkpoint commit.
-- Never recover files from `.local/` or history unless the user explicitly requests that exact recovery.
-
-## 3. Verify before committing
-
-- Review the full diff and run `git diff --check`.
-- Run the focused contracts for the changed area.
-- Run the standard Debug build for source, project, resource, or build-setting changes.
-- Documentation-only changes do not require a rebuild, but links, commands, and repository state still require verification.
-- Update `docs/STATUS.md` when a capability changes maturity; do not describe experimental code as stable.
-- Check that credentials, databases, user data, generated artifacts, and `.local/` are not staged.
-
-## 4. Commit and push intentionally
-
-```sh
-git diff --cached --stat
-git diff --cached
-git commit -m "<conventional commit message>"
-git push -u origin "$(git branch --show-current)"
-```
-
-Use explicit paths when staging. Do not force-push, rebase shared history, or rewrite commits without explicit authorization.
-
-## 5. Verify the published baseline
-
-After pushing:
-
-```sh
-git status --short
-git rev-parse HEAD
-git rev-parse '@{upstream}'
-```
-
-The handoff must report:
-
-- project root;
-- branch;
-- full `HEAD` SHA;
-- whether `HEAD` matches its upstream;
-- clean or dirty worktree;
-- exact build/test commands and results;
-- any intentionally uncommitted files;
-- whether the change is on `main`, a feature branch, or both.
-
-Commit SHA is the version identity. An archived accepted `.app`, if one exists, must record that SHA in `.local/builds/.../BUILD_INFO.md` and must never become a substitute source tree.
+- 任务结果只回写 Obsidian `03-项目与工程/Spotify Lyrics/Handoff.md` 与对应任务页；成果文件交给 [原有私有 Google Drive](https://drive.google.com/drive/folders/1cm5KnwoYn82b7R61YrXvYiCfXHE37BEs)，上传成功才登记链接。
+- 本文件不维护独立下一步或历史执行名单；完整旧状态留 [STATUS 归档](archive/status-before-obsidian-handoff-20261012.md)。

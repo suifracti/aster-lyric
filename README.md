@@ -2,7 +2,14 @@
 
 ### 跟着 Spotify / Apple Music 听歌，也认真看歌词。
 
-lyricsQ 是一款原生 macOS 歌词应用，提供沉浸式主播放页、全屏歌词、桌面歌词、歌词版本管理和手动时间轴编辑入口。当前工程状态、成熟度边界和未关闭风险以 [docs/STATUS.md](docs/STATUS.md) 为准。
+lyricsQ 是一款原生 macOS 歌词应用，提供沉浸式主播放页、全屏歌词、桌面歌词、歌词版本管理和手动时间轴编辑入口。仓库仅提供源码和发布信息；**实时进度、任务与交接在 Obsidian**，而 [docs/STATUS.md](docs/STATUS.md) 是静态状态参考，不是当前施工入口。
+
+## AI / 开发接手入口（2026-10-12 起）
+
+- **唯一任务主源**：Obsidian Vault `03-项目与工程/Spotify Lyrics/README.md` → `Handoff.md`（当前状态和唯一活动任务）→ `Decisions.md`（按需读长期规则）。无法访问 Obsidian 时不得以旧 Issue/STATUS 自行派工。
+- **文件附件**：Obsidian `03-项目与工程/Spotify Lyrics/资料与附件.md` → [既有私有 Google Drive](https://drive.google.com/drive/folders/1cm5KnwoYn82b7R61YrXvYiCfXHE37BEs)；仅保存 App/ZIP/截图/日志等文件，不做第二份交接。
+- **源码**：本仓库及用户实际 Mac 工作树；不默认创建分支、PR、Issue 或自动提交/推送。正式 App、数据库、AI 费用与发布均需当轮对应许可。
+- 开发约束入口：[AGENTS.md](AGENTS.md)。**已关闭 Issue #30/#33、合并 PR 与旧 Nightly 计划均仅供追溯，不是当前授权。**
 
 ## 当前正式发布
 
@@ -10,7 +17,7 @@ lyricsQ 是一款原生 macOS 歌词应用，提供沉浸式主播放页、全�
 - 发布提交：`6528be3103f75fd4f63757855b9d61cd30f757d8`
 - 下载：[GitHub Release v0.1.2](https://github.com/suifracti/lyricsQ/releases/tag/v0.1.2)
 - 发布资产：`SpotifyLyrics-0.1.2.zip`、`SpotifyLyrics-0.1.2.dmg`
-- 当前工程入口：[Spotify Lyrics Current Status](docs/STATUS.md)
+- 仓库历史／功能状态参考：[STATUS（不是当前交接）](docs/STATUS.md)
 
 v0.1.2 是当前正式发布身份。发布包面向 Apple Silicon（arm64）和 macOS 14 或更高版本；当前没有 Apple notarization 完成证据，不应把代码签名检查表述为公证。
 
@@ -48,7 +55,7 @@ xcodebuild -project SpotifyLyrics.xcodeproj \
   CODE_SIGNING_ALLOWED=NO build
 ```
 
-开发流程、提交检查和当前工程推进状态：
+仅供需要时查阅的源码操作与状态参考（**实际下一项仍读 Obsidian Handoff**）：
 
 - [当前工程状态](docs/STATUS.md)
 - [开发流程](docs/DEVELOPMENT_WORKFLOW.md)
