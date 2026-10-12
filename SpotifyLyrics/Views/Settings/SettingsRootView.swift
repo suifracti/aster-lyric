@@ -266,7 +266,7 @@ private struct GeneralSettingsView: View {
 
             Section("自动排轴") {
                 Toggle("自动为未排轴歌词生成时间轴", isOn: $settings.automaticAlignmentEnabled)
-                Text("实验功能，默认关闭。自动音频捕获仅支持已就绪的 Spotify Desktop；Apple Music 不支持自动捕获。捕获音频临时写入本机 WAV 分段，任务结束后清理。选择本地音频排轴不依赖播放来源。")
+                Text("实验功能，默认关闭。自动音频捕获仅支持已就绪的 Spotify Desktop；Apple Music、未知来源不会启动。捕获音频临时写入本机 WAV 分段，任务结束后清理。选择本地音频排轴不依赖播放来源。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

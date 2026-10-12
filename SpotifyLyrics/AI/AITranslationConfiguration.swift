@@ -90,10 +90,6 @@ public struct AITranslationConfiguration: Equatable, Sendable {
         !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    public var providerReasoningSetting: String {
-        engineID == TranslationEngineID.codexChatGPT.rawValue
-            ? "effort=" + (codexReasoningEffort.isEmpty ? "model-default" : codexReasoningEffort) : ""
-    }
     public var providerCacheIdentity: String {
         let usesAPI = TranslationEngineID(rawValue: engineID) == .openAICompatible
         let fields = ["provider-cache-v1", engineID,
