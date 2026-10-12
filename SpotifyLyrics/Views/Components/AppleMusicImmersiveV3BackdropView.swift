@@ -304,8 +304,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
         // without falling back to an unrelated black canvas.
         LinearGradient(
             colors: [
-                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.42),
-                ambientColor(palette.secondary, saturation: saturation * 0.90, maximumLuminance: 0.30),
+                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.34),
+                ambientColor(palette.secondary, saturation: saturation * 0.90, maximumLuminance: 0.24),
                 Color(red: 0.055, green: 0.060, blue: 0.072)
             ],
             startPoint: coverLightCenter,
@@ -323,13 +323,15 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 .scaleEffect(1.12)
                 .blur(radius: diffusionRadius, opaque: true)
                 .saturation(saturation)
-                .opacity(0.44)
+                // Bright artwork should not wash the canvas grey.
+                // Dark covers retain their existing ambient texture.
+                .opacity(palette.luminance > 0.5 ? 0.28 : 0.40)
         }
 
         RadialGradient(
             colors: [
-                ambientColor(palette.glow, saturation: saturation, maximumLuminance: 0.58)
-                    .opacity(0.26),
+                ambientColor(palette.glow, saturation: saturation, maximumLuminance: 0.52)
+                    .opacity(0.22),
                 ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.40)
                     .opacity(0.12),
                 .clear
