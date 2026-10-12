@@ -302,7 +302,25 @@ public struct CodexAppServerTranslationService: TranslationEngine, Sendable {
     public var metadata: TranslationEngineMetadata {
         TranslationEngineMetadata(stableID: TranslationEngineID.codexChatGPT.rawValue,
             displayName: "Codex / ChatGPT 登录", availability: (try? resolveExecutable()) == nil ? .unavailable : .available,
-            requiresAPIKey: false, supportsModelDirectory: false)
+            requiresAPIKey: false, supportsModelDirectory: true)
+    }
+
+    /// Metadata-only probe: it asks the existing app-server for models without starting a thread or turn.
+    public func listModels(timeout: TimeInterval = 20) async throws -> [TranslationModelDescriptor] {
+        guard timeout.isFinite, timeout > 0 else {
+            throw AITranslationError.invalidResponse("Codex 模型目录超时设置无效")
+        }
+        let executable = try resolveExecutable()
+        return try await Task.detached(priority: .utility) {
+            let cwd = FileManager.default.temporaryDirectory.appendingPathComponent("lyrics-model-directory-" + UUID().uuidString)
+            try FileManager.default.createDirectory(at: cwd, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+            defer { try? FileManager.default.removeItem(at: cwd) }
+            let client = try CodexAppServerClient(executable: executable, cwd: cwd, timeout: timeout)
+            defer { client.stop() }
+            try client.initialize()
+            try client.ensureAuthenticated()
+            return try client.availableModels()
+        }.value
     }
 
     public func translate(context: AITranslationContext, sourceContentHash: String,
@@ -591,6 +609,42 @@ final class CodexAppServerClient: @unchecked Sendable {
         }
     }
 
+    func availableModels() throws -> [TranslationModelDescriptor] {
+        var models: [TranslationModelDescriptor] = []
+        var seen = Set<String>()
+        var cursors = Set<String>()
+        var cursor: String?
+        for _ in 0..<10 {
+            var params: [String: Any] = ["limit": 100, "includeHidden": false]
+            if let cursor { params["cursor"] = cursor }
+            let result = try request(method: "model/list", params: params)
+            guard let rows = result["data"] as? [[String: Any]] else {
+                throw AITranslationError.invalidResponse("Codex 模型目录缺少 data；无法判定可用模型")
+            }
+            for row in rows {
+                guard let id = (row["model"] as? String ?? row["id"] as? String), !id.isEmpty else {
+                    throw AITranslationError.invalidResponse("Codex 模型目录缺少模型 ID")
+                }
+                if seen.insert(id).inserted {
+                    let efforts = (row["supportedReasoningEfforts"] as? [[String: Any]])?
+                        .compactMap { $0["reasoningEffort"] as? String }
+                    models.append(.init(
+                        id: id,
+                        displayName: row["displayName"] as? String,
+                        source: "codex-model-list",
+                        reasoningEfforts: efforts
+                    ))
+                }
+            }
+            guard let next = result["nextCursor"] as? String, !next.isEmpty else { return models }
+            guard cursors.insert(next).inserted else {
+                throw AITranslationError.invalidResponse("Codex 模型目录分页重复")
+            }
+            cursor = next
+        }
+        throw AITranslationError.invalidResponse("Codex 模型目录分页超过上限")
+    }
+
     func availableReasoningEfforts(model: String) throws -> [String] {
         var cursor: String?
         // Bound pagination; never infer support from a hard-coded model name.
@@ -826,13 +880,38 @@ final class CodexAppServerClient: @unchecked Sendable {
 
 public enum TranslationEngineRegistry {
     public static func make(stableID: String) -> any TranslationEngine {
-        if stableID == TranslationEngineID.appleSystem.rawValue {
+        switch TranslationEngineID(rawValue:stableID) {
+        case .appleSystem:
             return AppleSystemTranslationEngine()
-        }
-        if stableID == TranslationEngineID.codexChatGPT.rawValue {
+        case .codexChatGPT:
             return CodexAppServerTranslationService()
+        case .grokBuild, .geminiCLI, .antigravityCLI, .deepSeekAPI:
+            let catalog=TranslationEngineCatalog.metadata(for:stableID)
+            let metadata=TranslationEngineMetadata(
+                stableID:stableID,
+                displayName:catalog?.displayName ?? "未接线的翻译服务",
+                availability:.unavailable,
+                requiresAPIKey:catalog?.requiresAPIKey ?? false,
+                supportsModelDirectory:catalog?.supportsModelDirectory ?? false
+            )
+            return UnavailableProviderTranslationEngine(metadata:metadata)
+        case .openAICompatible, .none:
+            return OpenAICompatibleTranslationService()
         }
-        return OpenAICompatibleTranslationService()
+    }
+}
+
+private struct UnavailableProviderTranslationEngine: TranslationEngine, Sendable {
+    let metadata:TranslationEngineMetadata
+    private static let reason="此 Provider 的翻译执行尚未接线。"
+
+    func translate(context:AITranslationContext,sourceContentHash:String,
+                   configuration:AITranslationConfiguration) async throws -> AITranslationDraft {
+        throw AITranslationError.engineUnavailable(Self.reason)
+    }
+
+    func testConnection(configuration:AITranslationConfiguration) async throws {
+        throw AITranslationError.engineUnavailable(Self.reason)
     }
 }
 

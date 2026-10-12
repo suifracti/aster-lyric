@@ -17,6 +17,10 @@ public enum TranslationEngineID: String, CaseIterable, Codable, Sendable {
     case openAICompatible = "translationEngine.openAICompatible.v1"
     case appleSystem = "translationEngine.appleSystem.v1"
     case codexChatGPT = "translationEngine.codexChatGPT.v1"
+    case grokBuild = "translationEngine.grokBuild.v1"
+    case geminiCLI = "translationEngine.geminiCLI.v1"
+    case antigravityCLI = "translationEngine.antigravityCLI.v1"
+    case deepSeekAPI = "translationEngine.deepSeekAPI.v1"
 }
 
 public enum TranslationEngineAvailability: String, Codable, Sendable {
@@ -89,8 +93,54 @@ public enum TranslationEngineCatalog {
             availability: .available,
             requiresAPIKey: false,
             supportsModelDirectory: false
+        ),
+        TranslationEngineMetadata(
+            stableID: TranslationEngineID.grokBuild.rawValue,
+            displayName: "Grok Build CLI",
+            availability: .requiresConfiguration,
+            requiresAPIKey: false,
+            supportsModelDirectory: false
+        ),
+        TranslationEngineMetadata(
+            stableID: TranslationEngineID.geminiCLI.rawValue,
+            displayName: "Gemini CLI",
+            availability: .unavailable,
+            requiresAPIKey: false,
+            supportsModelDirectory: false
+        ),
+        TranslationEngineMetadata(
+            stableID: TranslationEngineID.antigravityCLI.rawValue,
+            displayName: "Gemini（Antigravity CLI）",
+            availability: .unavailable,
+            requiresAPIKey: false,
+            supportsModelDirectory: false
+        ),
+        TranslationEngineMetadata(
+            stableID: TranslationEngineID.deepSeekAPI.rawValue,
+            displayName: "DeepSeek API",
+            availability: .requiresConfiguration,
+            requiresAPIKey: true,
+            supportsModelDirectory: false
         )
     ]
+
+    /// Presentation groups never replace the persisted backend identity.
+    public static var selectable: [TranslationEngineMetadata] {
+        let entries: [(TranslationEngineID,String)] = [(.codexChatGPT,"GPT"),(.grokBuild,"Grok"),
+            (.openAICompatible,"API"),(.appleSystem,"苹果翻译")]
+        return entries.compactMap { id,name in
+            guard let old=metadata(for:id.rawValue) else { return nil }
+            return .init(stableID:old.stableID,displayName:name,availability:old.availability,
+                requiresAPIKey:old.requiresAPIKey,supportsModelDirectory:old.supportsModelDirectory)
+        }
+    }
+
+    public static func topLevelID(for backend:String) -> String {
+        switch TranslationEngineID(rawValue:backend) {
+        case .deepSeekAPI:return TranslationEngineID.openAICompatible.rawValue
+        default:return backend
+        }
+    }
 
     public static func metadata(for stableID: String) -> TranslationEngineMetadata? {
         all.first { $0.stableID == stableID }
@@ -400,12 +450,15 @@ public struct TranslationModelDescriptor: Codable, Equatable, Sendable {
     public let displayName: String
     public let source: String
     public let updatedAt: Date?
+    /// nil means unreported, [] means explicitly no adjustable effort. Native values only.
+    public let reasoningEfforts: [String]?
 
-    public init(id: String, displayName: String? = nil, source: String = "directory", updatedAt: Date? = nil) {
+    public init(id: String, displayName: String? = nil, source: String = "directory", updatedAt: Date? = nil, reasoningEfforts: [String]? = nil) {
         self.id = id
         self.displayName = displayName ?? id
         self.source = source
         self.updatedAt = updatedAt
+        self.reasoningEfforts = reasoningEfforts
     }
 }
 
@@ -421,13 +474,13 @@ public enum TranslationModelDirectoryStatus: Equatable, Sendable {
 
     public var userFacingTitle: String {
         switch self {
-        case .idle: return "尚未刷新"
-        case .loading: return "正在刷新模型"
-        case .loaded(let models): return "已加载 \(models.count) 个模型"
+        case .idle: return "尚未读取"
+        case .loading: return "正在读取模型"
+        case .loaded(let models): return "已缓存 \(models.count) 个模型"
         case .empty: return "服务未返回模型"
         case .unauthorized: return "未授权"
         case .endpointUnsupported: return "服务不提供模型目录"
-        case .unavailable: return "目录暂不可用"
+        case .unavailable: return "目录读取失败"
         case .manualFallback: return "使用手动模型"
         }
     }
