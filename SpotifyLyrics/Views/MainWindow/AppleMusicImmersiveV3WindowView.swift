@@ -2704,6 +2704,18 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
         guard isSynchronized else { return 1 }
         let factor = max(0.15, min(1, preferences.opacity / 0.85))
         if isActive { return 1 }
+
+        // Ambient remains legible beyond the active line. Stage and Classic
+        // retain their established hierarchy in this first visual pass.
+        if settings.v3ArtworkPresentation == .ambient {
+            switch clampedDistance {
+            case 0: return 0.70 * factor
+            case 1: return 0.68 * factor
+            case 2: return 0.46 * factor
+            default: return max(0.28, 0.36 - Double(clampedDistance - 3) * 0.03) * factor
+            }
+        }
+
         if clampedDistance <= 0 { return 0.58 }
         switch clampedDistance {
         case 1: return 0.44 * factor
@@ -3083,7 +3095,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
             if preferences.showTranslation, let translation = line.translationText, !translation.isEmpty {
                 Text(translation)
                     .font(.system(size: max(14, auxiliarySize * 0.94), weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(isActive ? 0.86 : 0.54))
+                    .foregroundStyle(.white.opacity(isActive ? 0.86 : (settings.v3ArtworkPresentation == .ambient ? 0.76 : 0.54)))
                     .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
