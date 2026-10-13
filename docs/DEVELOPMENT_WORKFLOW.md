@@ -22,8 +22,8 @@ xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics \
 
 ## 版本、提交和发布
 
-- 文件附件继续用 Google Drive；GitHub 只管理源码、发布信息与历史证据。默认不建新分支、PR、Issue，不自动 commit/push、改 main、覆盖正式 App/库或发起模型请求；具体动作按用户本轮许可。
-- Git 写入若被本轮用户明确授权：限定仓库、分支和文件范围，先看 diff 与敏感数据，再按授权 commit/push；不依历史“每次小阶段必须 push”或“重大修改先 push checkpoint”执行。
+- GitHub `origin/main` 是共同代码主源。依用户 2026-10-13 明确决定，修改结束后默认审查、提交并普通推送到 `main`，读回远端确认；当前任务明确禁止提交推送时才例外，并注明 `NOT_SYNCED`。默认不新建分支、PR、Issue；不得 force push。Drive 存附件，Obsidian 存交接；覆盖正式 App/数据库、模型费用和发布仍需对应授权。
+- 同步在本项目已经得到用户的持续明确授权；每轮只提交已审核的本轮成果，普通推送到已有main，网络/并发更新导致非快进拒绝就停止核对，不能force。明确不提交的单轮任务保留dirty并报告未同步。不要因为某次任务的临时限制，重新废止用户的长期同步要求。
 - 在 Obsidian 当前任务页报告实际运行的源码、App/Bundle、数据目录、编译与体验范围；本机打包且需要共享时，附件放到既有 Google Drive，并回写实际链接。
 
 ## 历史与事实
@@ -32,3 +32,19 @@ xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics \
 - 未被重新实测的模式、歌词质量、切行、数据迁移不能因为本轮修了代码或文件就升级为 PASS。
 
 **一个活动任务做完并更新 Handoff，才推进下一项。**
+
+## 每轮开始和结束的最小核对
+
+开始先运行：
+```sh
+git status --short
+git branch --show-current
+git rev-parse HEAD
+git fetch origin
+git merge-base --is-ancestor origin/main HEAD
+```
+最后一项失败说明当前基线未包含远端更新；网络失败也不能用旧origin缓存冒充最新。先核清差异，保护dirty；安全快进只在不覆盖现有修改时使用，不恢复旧整文件。已有正在进行的授权dirty可以继续同一任务，不能擅自舍弃。
+
+完成并审查/验证后，在现有活动M1工作树用 `git push origin HEAD:main` 普通同步，不另开分支/PR。推送成功后通过GitHub API或 `git ls-remote origin refs/heads/main` 确认远端SHA与本地HEAD一致，并检查状态清洁。明确禁止推送时写清NOT_SYNCED与差异，下一轮不能误认同步已完成。
+
+源码提交、编译候选和正式安装是三件事。安装包需有源码提交/输入清单对应；缺记录就写身份未确认，不凭文件日期、版本号或二进制SHA差异推断先后。UI/模型/正式数据验收未做时保留NOT_RUN。

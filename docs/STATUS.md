@@ -8,6 +8,15 @@
 - 实机截图、候选 App/ZIP 与脱敏日志：Obsidian `03-项目与工程/Spotify Lyrics/资料与附件.md` 指向 [已有私有 Google Drive](https://drive.google.com/drive/folders/1cm5KnwoYn82b7R61YrXvYiCfXHE37BEs)；没有上传即没有可用附件。
 - 项目当前唯一状态：Obsidian `Handoff.md`；禁用从本仓库状态、历史报告或已关闭 GitHub Issue/PR 直接选择下一阶段。
 
+
+## 2026-10-13 源码收拢与验证范围
+
+- AI优先推荐、原生译文独立保留、多AI版本切换及用户选择恢复已同步：源码提交 `ab0d6e59a8b6b22267de05df8a0f7b9648e46a41`。ChatGPT两份环境光补丁及多译文比较UI原样保留，Sol A没有自行设计UI。
+- 翻译会话、SQLite持久化/并发回滚、Playback合同和Mac Debug编译有输入SHA一致的通过证据；此次查询身份合同和UI静态入口检查也通过。不重跑未受影响全库，不调用AI或正式数据。
+- 多译文比较的原生显示/逐行对齐/切换/手动采用仍NOT_RUN：现有场景缺少已采用原词与两份同源译文。环境光用户视觉认可也未完成；同步代码不升级这些状态。
+- 正式安装App未经本轮更新，其Git提交绑定尚未从bundle确认；不能把它当最新代码或仅凭不同exe SHA断言它丢失功能。当前无运行中的歌词App。
+- 本轮已核对27个合并PR与20个本地分支头的主线归属；源码没有漏取main已合并内容。具体方法和限制见[源码版本核对](SOURCE_CONVERGENCE_2026-10-13.md)。
+
 ## 已知的不同证据截点（非本轮新验收）
 
 - 此次文档修改前，2026-10-12 GitHub `main` 合流源码 SHA 为 `d90c8ee2f57c51670f4e7ac2d66c1c6d02829853`，包含原合并分支成果及 V3 环境光两处微调。

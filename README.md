@@ -8,7 +8,8 @@ lyricsQ 是一款原生 macOS 歌词应用，提供沉浸式主播放页、全�
 
 - **唯一任务主源**：Obsidian Vault `03-项目与工程/Spotify Lyrics/README.md` → `Handoff.md`（当前状态和唯一活动任务）→ `Decisions.md`（按需读长期规则）。无法访问 Obsidian 时不得以旧 Issue/STATUS 自行派工。
 - **文件附件**：Obsidian `03-项目与工程/Spotify Lyrics/资料与附件.md` → [既有私有 Google Drive](https://drive.google.com/drive/folders/1cm5KnwoYn82b7R61YrXvYiCfXHE37BEs)；仅保存 App/ZIP/截图/日志等文件，不做第二份交接。
-- **源码**：本仓库及用户实际 Mac 工作树；不默认创建分支、PR、Issue 或自动提交/推送。正式 App、数据库、AI 费用与发布均需当轮对应许可。
+- **源码**：GitHub `main` 是共同代码主源。修改结束默认检查并普通提交/推送、核对远端，避免本机长期分叉；明确禁止推送的任务须标记未同步。默认不创建分支/PR/Issue；正式安装、数据库、AI费用和发布仍需对应许可。
+- **防止丢成果**：接手先获取远端并核对活动工作树包含最新main；旧树、旧安装包和Drive ZIP不自动当最新。只保留输入相同的验证，不把离线通过当实机通过。见[本轮版本核对](docs/SOURCE_CONVERGENCE_2026-10-13.md)。
 - 开发约束入口：[AGENTS.md](AGENTS.md)。**已关闭 Issue #30/#33、合并 PR 与旧 Nightly 计划均仅供追溯，不是当前授权。**
 
 ## 当前正式发布

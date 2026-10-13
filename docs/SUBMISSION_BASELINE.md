@@ -1,6 +1,6 @@
 # Spotify Lyrics｜必要提交与交付核对
 
-> **只在用户确实授权 commit/push 或交付 App 时使用。** 本文件不能创建任务、强制开分支/PR、自动 checkpoint 或恢复旧审批流程。先读 Obsidian `03-项目与工程/Spotify Lyrics/README.md` → `Handoff.md` → 当前任务，再按 `Decisions.md` 保留数据与费用边界。
+> **用户已授权每次修改后同步GitHub，明确禁止同步的单轮任务除外；交付App的正式安装仍另行核授权。** 本文件不能创建任务、强制开分支/PR、自动 checkpoint 或恢复旧审批流程。先读 Obsidian `03-项目与工程/Spotify Lyrics/README.md` → `Handoff.md` → 当前任务，再按 `Decisions.md` 保留数据与费用边界。
 
 ## 核对
 
@@ -18,11 +18,13 @@ git diff --stat
 
 ## Git 操作只按授权
 
-- 文件附件继续用 Google Drive；GitHub 只管理源码、发布信息与历史证据。默认不建新分支、PR、Issue，不自动 commit/push、改 main、覆盖正式 App/库或发起模型请求；具体动作按用户本轮许可。
-- 如当轮明确授权提交/推送：先审核具体 diff 与目标分支，执行 `git diff --check`，只暂存指定路径，再做明确许可的 commit / push；**不隐含更新 main、重写历史或创建 PR**。
+- GitHub `origin/main` 是共同代码主源。依用户 2026-10-13 明确决定，修改结束后默认审查、提交并普通推送到 `main`，读回远端确认；当前任务明确禁止提交推送时才例外，并注明 `NOT_SYNCED`。默认不新建分支、PR、Issue；不得 force push。Drive 存附件，Obsidian 存交接；覆盖正式 App/数据库、模型费用和发布仍需对应授权。
+- 先审核 diff、目标main和敏感内容，执行 `git diff --check`，只暂存明确路径，再普通commit/push到main；不重写历史、不创建PR。推送前获取远端并确认它是当前HEAD祖先；若失败，保护现场后核对，禁止覆盖式拉取/force。
 - 执行后读回 GitHub 实际 commit SHA、修改文件列表；Git 文档已更新 ≠ Mac App 已同步/安装。
 
 ## 文件交接
 
 - 任务结果只回写 Obsidian `03-项目与工程/Spotify Lyrics/Handoff.md` 与对应任务页；成果文件交给 [原有私有 Google Drive](https://drive.google.com/drive/folders/1cm5KnwoYn82b7R61YrXvYiCfXHE37BEs)，上传成功才登记链接。
 - 本文件不维护独立下一步或历史执行名单；完整旧状态留 [STATUS 归档](archive/status-before-obsidian-handoff-20261012.md)。
+
+**完成同步的判据**：本地HEAD = 从GitHub实际读回的main SHA；工作树没有遗漏成果；本轮影响的检查有真实结果。仅commit未push、上传Drive源码ZIP或打包App都不等于同步完成。
