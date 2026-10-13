@@ -479,6 +479,118 @@ struct TranslationSessionContract {
         print("PASS settings boundary: language/profile/rules zero fake requests; explicit and retry retained/in-flight dedup; new song automatic exactly once")
     }
 
+    @MainActor
+    static func aiFirstEmbeddedTranslationContract() async throws {
+        let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["SPOTIFYLYRICS_CONTRACT_ROOT"]!)
+        let url = root.appendingPathComponent("ai-first.sqlite3")
+        precondition(!FileManager.default.fileExists(atPath: url.path))
+        let provenance = root.appendingPathComponent("ai-first-provenance")
+        let repo = SQLiteLyricsRepository(databaseURL: url, alignmentProvenanceDirectory: provenance)
+        try await repo.prepare()
+        let track = makeTrack("ai-first", title: "Synthetic AI First")
+        let document = LyricsDocument(identity: TrackIdentity(track: track), title: track.title,
+            artist: track.artist, album: track.album, duration: track.duration,
+            lines: [LyricLine(timestamp: 0, originalText: "君の声", translationText: "你的声音"),
+                    LyricLine(timestamp: 2, originalText: "忘れない", translationText: "不会忘记")],
+            isSynchronized: true, source: .lrclib, confidence: 0.99)
+        let source = try await repo.save(track: track, identity: document.identity, document: document)
+        let version = source.versionID!, hash = source.sourceContentHash!
+        let suite = "LyricsQAIPrimary-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        precondition(defaults.persistentDomain(forName: suite) == nil)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let fake = SlowTranslationService()
+        let config = AITranslationConfiguration(baseURL: "https://contract.test", model: "fixture",
+            autoTranslateNewLyrics: true)
+        let controller = TranslationSessionController(repository: repo, service: fake,
+            selectionDefaults: defaults, acceptanceBudget: nil)
+        controller.synchronize(document: document, lyricsVersionID: version, sourceContentHash: hash, configuration: config)
+        precondition(controller.project(onto: document.lines).allSatisfy { $0.translationText == nil },
+            "embedded Chinese must not appear as the default while AI is pending")
+        let deadline = Date().addingTimeInterval(3)
+        while controller.selectedVersion == nil && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        precondition(controller.selectedVersion?.record.sourceKind == .ai, "AI must be the default")
+        precondition(controller.project(onto: document.lines).map(\.translationText) == ["译文 0", "译文 1"])
+        let initialCalls = await fake.calls()
+        precondition(initialCalls == 1, "embedded Chinese must not suppress automatic AI")
+        guard let native = controller.availableVersions.first(where: { $0.record.sourceKind == .providerEmbedded }) else {
+            fatalError("native translation must remain an independently selectable version")
+        }
+        let firstAI = controller.selectedVersion!.record.id
+        precondition(native.record.targetLanguage == "und", "do not invent the native translation's language metadata")
+        precondition(native.lines.map(\.translatedText) == ["你的声音", "不会忘记"])
+        controller.select(versionID: native.record.id)
+        precondition(controller.project(onto: document.lines).map(\.translationText) == ["你的声音", "不会忘记"])
+        let reopened = SQLiteLyricsRepository(databaseURL: url, alignmentProvenanceDirectory: provenance)
+        try await reopened.prepare()
+        let second = TranslationSessionController(repository: reopened, service: fake,
+            selectionDefaults: UserDefaults(suiteName: suite)!, acceptanceBudget: nil)
+        second.synchronize(document: document, lyricsVersionID: version, sourceContentHash: hash, configuration: config)
+        let reloadDeadline = Date().addingTimeInterval(2)
+        while second.availableVersions.count != 2 && Date() < reloadDeadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        precondition(second.availableVersions.count == 2 && second.selectedVersion?.record.id == native.record.id,
+            "explicit native selection must survive reconstruction without duplicate native versions")
+        let reopenCalls = await fake.calls()
+        precondition(reopenCalls == 1, "reopening must not translate again")
+        async let preserveFirst: Void = repo.preserveEmbeddedTranslation(lyricsVersionID: version, sourceContentHash: hash)
+        async let preserveSecond: Void = reopened.preserveEmbeddedTranslation(lyricsVersionID: version, sourceContentHash: hash)
+        _ = try await (preserveFirst, preserveSecond)
+        let unchanged = try await reopened.loadTranslationVersions(lyricsVersionID: version,
+            targetLanguage: config.targetLanguage, sourceContentHash: hash)
+        precondition(unchanged.count == 2 && unchanged.contains { $0 == native })
+        do {
+            try await reopened.preserveEmbeddedTranslation(lyricsVersionID: version, sourceContentHash: "stale-hash")
+            fatalError("stale source must be rejected")
+        } catch TranslationRepositoryError.sourceContentMismatch {}
+        second.restoreRecommended()
+        let restoreDeadline = Date().addingTimeInterval(2)
+        while second.selectedVersion?.record.id != firstAI && Date() < restoreDeadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        precondition(second.selectedVersion?.record.id == firstAI)
+        second.retranslateCurrentLyrics()
+        let retryDeadline = Date().addingTimeInterval(3)
+        while second.availableVersions.count != 3 && Date() < retryDeadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        precondition(second.availableVersions.count == 3 && second.selectedVersion?.record.id != firstAI)
+        precondition(second.availableVersions.contains { $0.record.id == firstAI } && second.availableVersions.contains { $0 == native },
+            "new AI must preserve both the old AI and native comparison versions")
+        let retryCalls = await fake.calls()
+        precondition(retryCalls == 2)
+        second.selectNone()
+        precondition(second.project(onto: document.lines).allSatisfy { $0.translationText == nil })
+        controller.cancel(); second.cancel()
+        print("PASS AI-first: no native default; automatic fake AI; native + multiple AI retained; switch/reopen/recommended/none; no duplicate native")
+
+        // Explicit manual text remains protected, even though fresh provider
+        // text is no longer a default. These fixtures never call a real engine.
+        for manual in [false, true] {
+            let otherTrack = makeTrack(manual ? "ai-first-manual" : "ai-first-partial", title: "Synthetic Native Safety")
+            let otherDocument = LyricsDocument(identity: TrackIdentity(track: otherTrack), title: otherTrack.title,
+                artist: otherTrack.artist, album: otherTrack.album, duration: otherTrack.duration,
+                lines: [LyricLine(timestamp: 0, originalText: "君の声", translationText: "保留这句"),
+                        LyricLine(timestamp: 2, originalText: "忘れない", translationText: manual ? "保留那句" : nil)],
+                isSynchronized: true, source: manual ? .manualImport : .lrclib, confidence: 1)
+            let otherSource = try await repo.save(track: otherTrack, identity: otherDocument.identity, document: otherDocument)
+            var otherConfig = config
+            otherConfig.autoTranslateNewLyrics = manual // Partial native must not be fabricated even with auto off.
+            let safe = TranslationSessionController(repository: repo, service: fake,
+                selectionDefaults: defaults, acceptanceBudget: nil)
+            safe.synchronize(document: otherDocument, lyricsVersionID: otherSource.versionID,
+                sourceContentHash: otherSource.sourceContentHash, configuration: otherConfig)
+            try await Task.sleep(nanoseconds: 200_000_000)
+            let safetyCalls = await fake.calls()
+            precondition(safetyCalls == 2, "manual text or disabled auto must not dispatch")
+            if manual {
+                precondition(safe.selectedVersion?.record.isManuallyEdited == true)
+                precondition(safe.project(onto: otherDocument.lines).map(\.translationText) == ["保留这句", "保留那句"])
+            } else {
+                precondition(safe.availableVersions.isEmpty, "partial native must not be manufactured as a complete version")
+                let savedSource = try await repo.loadBest(track: otherTrack, identity: otherDocument.identity)
+                precondition(savedSource?.lines.first?.translationText == "保留这句", "partial original asset must remain intact")
+            }
+            safe.cancel()
+        }
+        print("PASS native safety: two SQLite connections idempotent; stale hash rejected; manual retained with zero dispatch; partial native not fabricated or erased")
+    }
+
     static func main() async {
         let privateHome = URL(fileURLWithPath: ProcessInfo.processInfo.environment["CFFIXED_USER_HOME"]!).resolvingSymlinksInPath()
         precondition(FileManager.default.homeDirectoryForCurrentUser.resolvingSymlinksInPath() == privateHome, "contract preferences must be private")
@@ -567,6 +679,7 @@ struct TranslationSessionContract {
         try! await recoveryContract()
         try! await selectionPersistenceContract()
         try! await settingsRequestBoundaryContract()
+        try! await aiFirstEmbeddedTranslationContract()
         print("translation session contracts passed")
     }
 }

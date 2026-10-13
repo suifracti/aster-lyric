@@ -81,6 +81,7 @@ struct AppleMusicImmersiveV3WindowView: View {
     @State private var isWindowMenuPresented = false
     @State private var isDisplayPresented = false
     @State private var isTranslationPresented = false
+    @State private var isTranslationComparisonPresented = false
     @State private var isVersionPickerPresented = false
     @State private var isAppearancePresented = false
     @State private var isLyricsTimePresented = false
@@ -130,6 +131,9 @@ struct AppleMusicImmersiveV3WindowView: View {
         compact: Bool,
         portrait: Bool = false
     ) -> CGFloat {
+        // Ambient retains its complete, user-sized foreground cover when
+        // hover-only playback controls hide; Classic still uses its cap.
+        guard settings.v3ArtworkPresentation != .ambient else { return 1 }
         guard !playbackDetailsVisible, !reduceMotion else { return 1 }
         return V3ResponsiveGeometry.ambientHiddenCoverScale(
             coverSize: size,
@@ -293,6 +297,26 @@ struct AppleMusicImmersiveV3WindowView: View {
             if let report = state.liveLyricsState.alignmentReport {
                 AlignmentPreviewView(report: report)
             }
+        }
+        .sheet(isPresented: $isTranslationComparisonPresented) {
+            V3TranslationComparisonSheet(
+                sourceLines: state.originalLiveLyrics,
+                versions: state.translationVersions,
+                selectedVersionID: state.selectedTranslation?.record.id
+            ) { versionID in
+                guard !state.isShowingSearchPreview,
+                      state.liveLyricsDocumentMatchesCurrentTrack,
+                      state.translationVersions.contains(where: { $0.record.id == versionID })
+                else { return }
+                state.selectTranslation(versionID: versionID)
+            }
+        }
+        // Close the comparison rather than showing a former song's versions.
+        .onChange(of: state.currentTrackIdentity) { _, _ in
+            isTranslationComparisonPresented = false
+        }
+        .onChange(of: state.liveLyricsVersionID) { _, _ in
+            isTranslationComparisonPresented = false
         }
     }
 
@@ -949,6 +973,13 @@ struct AppleMusicImmersiveV3WindowView: View {
                 }
                 Button("恢复推荐") { state.restoreRecommendedTranslation() }
             }
+            Button {
+                isTranslationComparisonPresented = true
+            } label: {
+                Label("并排对比已保存译文", systemImage: "rectangle.split.3x1")
+            }
+            .disabled(state.translationVersions.count < 2 || state.originalLiveLyrics.isEmpty)
+            .help("仅查看当前歌词的不同译文；采用时才改变当前显示，不调用翻译 AI")
         }
         .toggleStyle(.switch)
         .padding(18).frame(width: 340)
@@ -3541,5 +3572,164 @@ private struct V3VisualTuningPopoverView: View {
         .buttonStyle(.plain)
         .font(.system(size: 10, weight: abs(settings.v3ArtworkSizeScale - val) < 0.04 ? .bold : .regular))
         .foregroundStyle(abs(settings.v3ArtworkSizeScale - val) < 0.04 ? Color.blue : Color.secondary)
+    }
+}
+
+// A read-only, line-index-aligned view of already persisted translations.
+// It never starts translation, mutates source lyrics or treats draft rows as complete.
+private struct V3TranslationComparisonSheet: View {
+    let sourceLines: [LyricLine]
+    let versions: [StoredTranslationVersion]
+    let selectedVersionID: UUID?
+    let onSelect: (UUID) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var leftID: UUID
+    @State private var rightID: UUID
+
+    init(
+        sourceLines: [LyricLine],
+        versions: [StoredTranslationVersion],
+        selectedVersionID: UUID?,
+        onSelect: @escaping (UUID) -> Void
+    ) {
+        self.sourceLines = sourceLines
+        self.versions = versions
+        self.selectedVersionID = selectedVersionID
+        self.onSelect = onSelect
+        let first = versions.first(where: { $0.record.id == selectedVersionID })?.record.id
+            ?? versions.first?.record.id ?? UUID()
+        _leftID = State(initialValue: first)
+        _rightID = State(initialValue: versions.first(where: { $0.record.id != first })?.record.id ?? first)
+    }
+
+    private var left: StoredTranslationVersion? { versions.first { $0.record.id == leftID } }
+    private var right: StoredTranslationVersion? { versions.first { $0.record.id == rightID } }
+
+    private func title(_ version: StoredTranslationVersion) -> String {
+        let record = version.record
+        let kind: String
+        switch record.sourceKind {
+        case .providerEmbedded: kind = "词源译文"
+        case .manualImport, .manualEdit: kind = "人工译文"
+        case .legacyImported: kind = "历史译文"
+        case .ai: kind = record.isManuallyEdited ? "人工修订 AI" : "AI 译文"
+        }
+        let model = record.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = model.isEmpty || model == "provider-embedded" ? kind : "\(kind) · \(model)"
+        let status = version.isArchived ? " · 已归档"
+            : version.isDraft ? " · 待采用" : (!version.isComplete ? " · 不完整" : "")
+        let locked = record.isLocked ? " · 已锁定" : ""
+        return "\(name)\(status)\(locked) · \(record.createdAt.formatted(date: .abbreviated, time: .shortened))"
+    }
+
+    private func textByIndex(_ version: StoredTranslationVersion?) -> [Int: String] {
+        guard let version else { return [:] }
+        var result: [Int: String] = [:]
+        for line in version.lines where line.lineIndex >= 0 && line.lineIndex < sourceLines.count {
+            result[line.lineIndex] = line.translatedText
+        }
+        return result
+    }
+
+    private func canSelect(_ version: StoredTranslationVersion?) -> Bool {
+        guard let version else { return false }
+        return version.isComplete && !version.isDraft && !version.isArchived
+    }
+
+    private func columnText(_ text: String?) -> some View {
+        Text(text.flatMap { $0.isEmpty ? nil : $0 } ?? "— 本行无译文 —")
+            .font(.system(size: 13))
+            .foregroundStyle(text?.isEmpty == false ? .primary : .secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+    }
+
+    var body: some View {
+        let leftLines = textByIndex(left)
+        let rightLines = textByIndex(right)
+        VStack(spacing: 0) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("译文对比").font(.system(size: 20, weight: .semibold))
+                    Text("仅比较当前歌曲已保存的版本；切换对比不会重新翻译，也不会改变当前采用稿。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)
+            }
+            .padding(20)
+            Divider()
+            HStack(spacing: 14) {
+                Text("原文 · \(sourceLines.count) 行")
+                    .font(.callout.weight(.medium))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Picker("左侧", selection: $leftID) {
+                    ForEach(versions, id: \.record.id) { version in
+                        Text(title(version)).tag(version.record.id)
+                    }
+                }
+                .labelsHidden().frame(maxWidth: .infinity)
+                .accessibilityLabel("左侧译文版本")
+                Picker("右侧", selection: $rightID) {
+                    ForEach(versions, id: \.record.id) { version in
+                        Text(title(version)).tag(version.record.id)
+                    }
+                }
+                .labelsHidden().frame(maxWidth: .infinity)
+                .accessibilityLabel("右侧译文版本")
+            }
+            .padding(.horizontal, 20).padding(.vertical, 12)
+            Divider()
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(sourceLines.indices, id: \.self) { index in
+                        HStack(alignment: .top, spacing: 14) {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("\(index + 1)")
+                                    .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+                                Text(sourceLines[index].originalText)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .textSelection(.enabled)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            columnText(leftLines[index])
+                            columnText(rightLines[index])
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .background(index.isMultiple(of: 2) ? Color.primary.opacity(0.025) : .clear)
+                        Divider().opacity(0.30)
+                    }
+                }
+            }
+            Divider()
+            HStack(spacing: 12) {
+                Text("\(versions.count) 份已存译文 · 按原文行号对齐，不拼接缺失行")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if let left {
+                    Button(left.record.id == selectedVersionID ? "左侧已采用" : "采用左侧") {
+                        onSelect(left.record.id)
+                        dismiss()
+                    }
+                    .disabled(!canSelect(left) || left.record.id == selectedVersionID)
+                }
+                if let right {
+                    Button(right.record.id == selectedVersionID ? "右侧已采用" : "采用右侧") {
+                        onSelect(right.record.id)
+                        dismiss()
+                    }
+                    .disabled(!canSelect(right) || right.record.id == selectedVersionID || rightID == leftID)
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(16)
+        }
+        .frame(minWidth: 760, idealWidth: 960, minHeight: 480, idealHeight: 650)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }

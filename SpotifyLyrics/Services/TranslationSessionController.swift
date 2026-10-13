@@ -285,7 +285,7 @@ public final class TranslationSessionController: ObservableObject {
         guard let context,
               let version = availableVersions.first(where: { $0.record.id == versionID }),
               version.record.sourceContentHash == context.sourceContentHash,
-              version.record.targetLanguage == context.configuration.targetLanguage,
+              (version.record.targetLanguage == context.configuration.targetLanguage || version.isEmbeddedTranslation),
               version.isComplete,
               !version.isDraft,
               !version.isArchived else { return }
@@ -424,7 +424,16 @@ public final class TranslationSessionController: ObservableObject {
               selectedVersion.isComplete,
               selectedVersion.lines.count == lines.count,
               selectedVersion.lines.map(\.lineIndex) == Array(lines.indices) else {
-            return lines
+            // Provider Chinese is a comparison option, not an implicit default.
+            // Preserve translations attached to explicitly imported/edited lyrics.
+            if let context, [LyricsSource.manualEdit, .manualImport, .manualCreate].contains(context.document.source) {
+                return lines
+            }
+            return lines.map { line in
+                var cleared = line
+                cleared.translationText = nil
+                return cleared
+            }
         }
         var projected = lines
         for stored in selectedVersion.lines {
@@ -470,6 +479,10 @@ public final class TranslationSessionController: ObservableObject {
         let key = context.key
         requestTask = Task { [weak self, repository] in
             do {
+                if context.document.lines.contains(where: { $0.translationText?.isEmpty == false }) {
+                    try await repository.preserveEmbeddedTranslation(lyricsVersionID: context.lyricsVersionID,
+                        sourceContentHash: context.sourceContentHash)
+                }
                 var versions = try await repository.loadTranslationVersions(
                     lyricsVersionID: context.lyricsVersionID,
                     targetLanguage: context.configuration.targetLanguage,
@@ -520,7 +533,7 @@ public final class TranslationSessionController: ObservableObject {
                         self.state = .failed("上次请求已发起但没有可恢复的完整结果；不会自动重发，请主动重试")
                         self.errorMessage = self.state.userFacingMessage
                         self.progressMessage = "翻译已中断；原文和已有译文保留"
-                    } else if allowAutomaticRequest && context.configuration.autoTranslateNewLyrics && context.configuration.isConfigured {
+                    } else if allowAutomaticRequest && self.canUseAutomatically(context) && context.configuration.autoTranslateNewLyrics && context.configuration.isConfigured {
                         self.startTranslation(context, forceNewVersion: false)
                     } else {
                         // Old automatic results remain in history, but cannot be
@@ -555,17 +568,17 @@ public final class TranslationSessionController: ObservableObject {
             $0.isComplete &&
             !$0.isDraft &&
             !$0.isArchived &&
-            $0.record.targetLanguage == context.configuration.targetLanguage &&
+            ($0.record.targetLanguage == context.configuration.targetLanguage || $0.isEmbeddedTranslation) &&
             $0.record.sourceContentHash == context.sourceContentHash
         }
         guard !manualNoSelection.contains(context.key) else { return nil }
         if let manualID = manualSelection[context.key],
            let manual = eligible.first(where: { $0.record.id == manualID }) { return manual }
         if let locked = eligible.first(where: { $0.record.isLocked }) { return locked }
-        if let edited = eligible.first(where: { $0.record.isManuallyEdited || !$0.record.isMachineGenerated }) { return edited }
+        if let edited = eligible.first(where: { $0.record.isManuallyEdited || (!$0.record.isMachineGenerated && !$0.isEmbeddedTranslation) }) { return edited }
         // Adopted history remains usable after a settings change. A mismatch is
         // never labelled a cache hit for a new explicit request.
-        return eligible.first(where: { matchesRequest($0, context: context) }) ?? eligible.first
+        return eligible.first(where: { matchesRequest($0, context: context) }) ?? eligible.first(where: { !$0.isEmbeddedTranslation })
     }
 
     private func matchesRequest(_ version: StoredTranslationVersion, context: TranslationContext) -> Bool {

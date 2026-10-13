@@ -971,7 +971,7 @@ public final class AppSettingsStore: ObservableObject {
             customSystemPrompt: defaults.string(forKey: Key.aiCustomSystemPrompt) ?? "",
             temperature: defaults.object(forKey: Key.aiTemperature) as? Double ?? 0.2,
             timeout: defaults.object(forKey: Key.aiTimeout) as? Double ?? 60,
-            autoTranslateNewLyrics: defaults.object(forKey: Key.aiAutoTranslateNewLyrics) as? Bool ?? false,
+            autoTranslateNewLyrics: defaults.object(forKey: Key.aiAutoTranslateNewLyrics) as? Bool ?? true,
             engineID: defaults.string(forKey: Key.aiEngineID) ?? TranslationEngineID.openAICompatible.rawValue,
             promptPresetID: defaults.string(forKey: Key.aiPromptPresetID) ?? TranslationPromptPresetID.naturalSong.rawValue,
             profileID: defaults.string(forKey: Key.aiProfileID).flatMap(UUID.init(uuidString:)),

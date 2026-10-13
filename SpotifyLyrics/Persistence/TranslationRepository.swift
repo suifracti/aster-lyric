@@ -62,6 +62,13 @@ public struct StoredTranslationVersion: Equatable, Sendable {
     public var isDraft: Bool { record.isDraft }
     public var isArchived: Bool { record.isArchived }
 
+    /// Embedded/legacy text has no trustworthy target-language metadata. Keep
+    /// it selectable without claiming it is an AI result for the active profile.
+    public var isEmbeddedTranslation: Bool {
+        record.engineID == "provider-embedded" || record.sourceKind == .providerEmbedded ||
+            (record.sourceKind == .legacyImported && record.targetLanguage == "und")
+    }
+
     public func with(record: DatabaseTranslationVersionRecord) -> StoredTranslationVersion {
         StoredTranslationVersion(record: record, lines: lines)
     }
@@ -91,6 +98,7 @@ public enum TranslationRepositoryError: Error, Equatable, Sendable, LocalizedErr
 /// Implementations must write only complete, validated versions in one
 /// transaction. Request phases are separate records, never translation versions.
 public protocol TranslationRepository: Sendable {
+    func preserveEmbeddedTranslation(lyricsVersionID: UUID, sourceContentHash: String) async throws
     func loadTranslationRequest(key: String) async throws -> StoredTranslationRequest?
     func beginTranslationRequest(key: String, explicitRetry: Bool) async throws -> StoredTranslationRequest
     func updateTranslationRequest(_ request: StoredTranslationRequest) async throws
@@ -118,6 +126,9 @@ public protocol TranslationRepository: Sendable {
 // Repositories without a durable request store may still show cached versions,
 // but must fail closed before a new dispatch. Tests opt in with their own store.
 public extension TranslationRepository {
+    func preserveEmbeddedTranslation(lyricsVersionID: UUID, sourceContentHash: String) async throws {
+        throw TranslationRepositoryError.database("当前仓库无法保留词源译文；未发送翻译")
+    }
     func loadTranslationRequest(key: String) async throws -> StoredTranslationRequest? { nil }
     func beginTranslationRequest(key: String, explicitRetry: Bool) async throws -> StoredTranslationRequest {
         throw TranslationRepositoryError.database("请求状态无法可靠保存；未发送翻译")

@@ -238,6 +238,7 @@ struct PlaybackStateContract {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = AppSettingsStore(defaults: defaults)
+        settings.aiTranslationConfiguration.autoTranslateNewLyrics = false
         settings.playbackSourceMode = .spotify
         settings.autoSearchLyricsOnTrackChange = false
         let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("preview.sqlite3"),
@@ -328,6 +329,7 @@ struct PlaybackStateContract {
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = AppSettingsStore(defaults: defaults)
         precondition(settings.translationSelectionDefaults === defaults, "must reuse injected defaults object")
+        settings.aiTranslationConfiguration.autoTranslateNewLyrics = false
         settings.playbackSourceMode = .spotify
         settings.autoSearchLyricsOnTrackChange = false
         precondition(!settings.aiTranslationConfiguration.autoTranslateNewLyrics && !settings.aiTranslationConfiguration.isConfigured)
@@ -429,6 +431,20 @@ struct PlaybackStateContract {
         precondition(normalizedDatabase.pathComponents != DebugDatabaseSafety.status().formalDatabaseURL.standardizedFileURL.pathComponents)
         precondition(SpotifyOAuthConfiguration.resolved().clientID == nil, "OAuth must be unconfigured before auth initialization")
         print("PASS playback isolation preflight: private home/database; OAuth unconfigured, no token loading")
+        let aiDefaultsSuite = "LyricsQAIPrimaryDefaults-\(UUID().uuidString)"
+        let aiDefaults = UserDefaults(suiteName: aiDefaultsSuite)!
+        precondition(aiDefaults.persistentDomain(forName: aiDefaultsSuite) == nil)
+        let freshAISettings = AppSettingsStore(defaults: aiDefaults)
+        precondition(freshAISettings.aiTranslationConfiguration.autoTranslateNewLyrics,
+            "new settings should automatically translate instead of defaulting to provider Chinese")
+        precondition(!freshAISettings.aiTranslationConfiguration.isConfigured,
+            "enabling the preference must not invent provider credentials")
+        freshAISettings.aiTranslationConfiguration.autoTranslateNewLyrics = false
+        let preservedOff = AppSettingsStore(defaults: UserDefaults(suiteName: aiDefaultsSuite)!)
+        precondition(!preservedOff.aiTranslationConfiguration.autoTranslateNewLyrics,
+            "an explicit off preference must survive reconstruction")
+        aiDefaults.removePersistentDomain(forName: aiDefaultsSuite)
+        print("PASS AI-first defaults: new auto enabled, explicit off retained, no provider configured")
         let trackA = ProviderTrack(
             id: "spotify:track:a",
             title: "Track A",

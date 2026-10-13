@@ -125,6 +125,14 @@ struct AppleMusicImmersiveV3BackdropView: View {
         let luminanceBoost = palette.luminance > 0.5 ? (palette.luminance - 0.5) * 0.32 : 0.0
         let paletteVeil = min(0.38, baseVeil + luminanceBoost)
 
+        // Ambient needs its artwork colors visible; the lyric side has its
+        // own localized protection. Keep Classic's established veil intact.
+        if settings.v3ArtworkPresentation == .ambient {
+            if reduceTransparency { return min(0.76, max(0.56, paletteVeil + 0.22)) }
+            if increaseContrast { return min(0.48, paletteVeil + 0.12) }
+            return min(0.10, paletteVeil * 0.26)
+        }
+
         if reduceTransparency {
             return min(0.90, max(0.62, paletteVeil + 0.18))
         }
@@ -298,42 +306,59 @@ struct AppleMusicImmersiveV3BackdropView: View {
             1.3,
             style.paletteSaturation * 1.18 + (increaseContrast ? 0.06 : 0)
         )
-        let diffusionRadius = normalizedBlur * 48.0
+        let diffusionRadius = normalizedBlur * 56.0
 
         // A luminance-clamped album field keeps very bright artwork legible
         // without falling back to an unrelated black canvas.
         LinearGradient(
             colors: [
-                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.34),
-                ambientColor(palette.secondary, saturation: saturation * 0.90, maximumLuminance: 0.24),
-                Color(red: 0.055, green: 0.060, blue: 0.072)
+                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.46),
+                ambientColor(palette.secondary, saturation: saturation * 0.90, maximumLuminance: 0.34),
+                Color(red: 0.085, green: 0.090, blue: 0.110)
             ],
             startPoint: coverLightCenter,
             endPoint: settings.v3ArtworkPosition == "right" ? .topLeading : .bottomTrailing
         )
 
-        // Retain album structure before applying the user-controlled diffusion.
-        // Keep image visibility independent of diffusion, including at 0%.
-        // The full-resolution snapshot avoids baked-in blur at the clear endpoint.
-        Group {
+        // Show the complete cover as a softly feathered source of ambient
+        // light.  No scaled-to-fill crop or hard square image boundary:
+        // 0% retains its detail, while 100% becomes an album-colored wash.
+        GeometryReader { canvas in
+            let side = min(canvas.size.height * 1.02, canvas.size.width * 0.86)
+            let imageX: CGFloat = settings.v3ArtworkPosition == "right" ? 0.56
+                : (settings.v3ArtworkPosition == "center" ? 0.50 : 0.44)
+
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)
-                .scaledToFill()
-                .scaleEffect(1.12)
-                .blur(radius: diffusionRadius, opaque: true)
+                .scaledToFit()
+                .frame(width: side, height: side)
+                .blur(radius: diffusionRadius)
                 .saturation(saturation)
-                // Bright artwork should not wash the canvas grey.
-                // Dark covers retain their existing ambient texture.
-                .opacity(palette.luminance > 0.5 ? 0.28 : 0.40)
+                .opacity(palette.luminance > 0.58 ? 0.66 : 0.82)
+                .mask(
+                    RadialGradient(
+                        stops: [
+                            .init(color: .white, location: 0.00),
+                            .init(color: .white, location: 0.30),
+                            .init(color: .white.opacity(0.80), location: 0.52),
+                            .init(color: .clear, location: 1.00)
+                        ],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: side * 0.52
+                    )
+                )
+                .position(x: canvas.size.width * imageX, y: canvas.size.height * 0.50)
         }
+        .clipped()
 
         RadialGradient(
             colors: [
                 ambientColor(palette.glow, saturation: saturation, maximumLuminance: 0.52)
-                    .opacity(0.22),
+                    .opacity(0.28),
                 ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.40)
-                    .opacity(0.12),
+                    .opacity(0.13),
                 .clear
             ],
             center: coverLightCenter,
@@ -347,7 +372,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
         RadialGradient(
             colors: [
                 .clear,
-                Color.black.opacity(min(0.36, style.vignetteIntensity * 0.72))
+                Color.black.opacity(min(0.20, style.vignetteIntensity * 0.46))
             ],
             center: coverLightCenter,
             startRadius: 180,
@@ -366,20 +391,20 @@ struct AppleMusicImmersiveV3BackdropView: View {
     private var ambientReadingVeil: some View {
         if settings.v3ArtworkPosition == "right" {
             LinearGradient(
-                colors: [Color.black.opacity(0.42), Color.black.opacity(0.18), .clear],
+                colors: [Color.black.opacity(0.30), Color.black.opacity(0.12), .clear],
                 startPoint: .leading,
                 endPoint: .trailing
             )
         } else if settings.v3ArtworkPosition == "center" {
             RadialGradient(
-                colors: [.clear, Color.black.opacity(0.26)],
+                colors: [.clear, Color.black.opacity(0.18)],
                 center: .center,
                 startRadius: 160,
                 endRadius: 920
             )
         } else {
             LinearGradient(
-                colors: [.clear, Color.black.opacity(0.16), Color.black.opacity(0.46)],
+                colors: [.clear, Color.black.opacity(0.10), Color.black.opacity(0.31)],
                 startPoint: .leading,
                 endPoint: .trailing
             )

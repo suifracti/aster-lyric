@@ -1294,6 +1294,41 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         return completed
     }
 
+    /// Copy complete embedded text once into independent version history. The
+    /// original lyric_lines stay untouched; BEGIN IMMEDIATE serializes two
+    /// controllers opening the same source concurrently.
+    public func preserveEmbeddedTranslation(lyricsVersionID: UUID, sourceContentHash: String) async throws {
+        try ensurePrepared()
+        try withTransaction {
+            guard let source = try fetchSourceLyrics(versionID: lyricsVersionID),
+                  let version = try fetchLyricsVersion(versionID: lyricsVersionID) else {
+                throw TranslationRepositoryError.sourceLyricsNotFound
+            }
+            guard source.hash == sourceContentHash else { throw TranslationRepositoryError.sourceContentMismatch }
+            let existing = try loadTranslationVersions(lyricsVersionID: lyricsVersionID,
+                targetLanguage: "und", sourceContentHash: sourceContentHash)
+            guard !existing.contains(where: { $0.isEmbeddedTranslation }) else { return }
+            let lines = source.lines.map { AITranslationLine(index: $0.lineIndex, translation: $0.translationText ?? "") }
+            // Incomplete native text remains in lyric_lines; never manufacture
+            // missing translations or label a partial result complete.
+            guard lines.contains(where: { !$0.translation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+                  source.lines.allSatisfy({ line in
+                      let originalBlank = line.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                      let text = line.translationText ?? ""
+                      return originalBlank == text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                          (!originalBlank || text.isEmpty) && !text.contains("\n") && !text.contains("\r")
+                  }) else { return }
+            let manual = version.isManuallyEdited || [LyricsSource.manualEdit.rawValue,
+                LyricsSource.manualImport.rawValue, LyricsSource.manualCreate.rawValue].contains(version.source)
+            let draft = AITranslationDraft(lines: lines, targetLanguage: "und",
+                model: manual ? "人工已有译文" : "词源自带译文", baseURLHost: "", promptHash: "",
+                sourceContentHash: sourceContentHash, sourceKind: manual ? .manualImport : .providerEmbedded,
+                isMachineGenerated: false, isManuallyEdited: manual, engineID: "provider-embedded")
+            _ = try insertValidatedTranslation(versionID: UUID(), lyricsVersionID: lyricsVersionID,
+                sourceContentHash: sourceContentHash, originalLines: source.lines.map(\.originalText), draft: draft)
+        }
+    }
+
     public func loadTranslationVersions(
         lyricsVersionID: UUID,
         targetLanguage: String,
@@ -1315,7 +1350,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                    profile_id, profile_snapshot, temperature, workflow_id,
                    fallback_strategy, is_draft, is_archived, provider_execution_metadata_json
             FROM translation_versions
-            WHERE lyrics_version_id = ? AND target_language = ?
+            WHERE lyrics_version_id = ? AND (target_language = ? OR
+              (target_language = 'und' AND (source_kind IN ('providerEmbedded', 'legacyImported') OR engine_id = 'provider-embedded')))
               AND source_content_hash = ?
             ORDER BY is_locked DESC, updated_at DESC;
             """)
