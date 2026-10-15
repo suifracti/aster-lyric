@@ -392,7 +392,6 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         } else {
             fullLyricsSnapshot = nil
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
             (popover.contentViewController as? MenuBarPopoverHostingController<MenuBarLyricsPopoverView>)?.clearOpeningFocus()
         }
     }

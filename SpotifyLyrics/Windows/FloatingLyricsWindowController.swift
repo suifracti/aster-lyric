@@ -150,7 +150,7 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
         stylePanel.hidesOnDeactivate = false
         stylePanel.hasShadow = true
         stylePanel.backgroundColor = .clear
-        stylePanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        stylePanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]
         stylePanel.contentView = NSHostingView(
             rootView: FloatingLyricsStylePanelView(settings: settings)
         )
@@ -238,7 +238,7 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
         panel.hidesOnDeactivate = false
         panel.isFloatingPanel = true
         panel.becomesKeyOnlyIfNeeded = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]
         panel.minSize = persistence.minimumSize
         panel.maxSize = persistence.maximumSize
         panel.contentView = NSHostingView(

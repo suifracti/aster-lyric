@@ -326,7 +326,7 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         panel.isFloatingPanel = true
         panel.becomesKeyOnlyIfNeeded = true
         panel.level = effectivePanelLevel
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]
         panel.isMovable = false
         panel.isMovableByWindowBackground = false
         let hostedView = NSHostingView(rootView: CapsuleLyricsView(state: state, windowController: self))
