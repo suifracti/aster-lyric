@@ -9,7 +9,8 @@ WINDOW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swi
 for stable_id in \
   'v3ArtworkPresentation.ambient.v1' \
   'v3ArtworkPresentation.stage.v1' \
-  'v3ArtworkPresentation.classic.v1'; do
+  'v3ArtworkPresentation.classic.v1' \
+  'v3ArtworkPresentation.feathered.v1'; do
   grep -q "$stable_id" "$SETTINGS" || {
     echo "missing stable V3 artwork presentation ID: $stable_id" >&2
     exit 1
@@ -24,6 +25,15 @@ grep -q 'v3AmbientBackdropEnabled' "$SETTINGS" || {
 grep -q 'switch settings.v3ArtworkPresentation' "$BACKDROP"
 grep -q 'stageArtworkLayers' "$BACKDROP"
 grep -q 'case .stage' "$BACKDROP"
+grep -q 'case .ambientFeathered' "$BACKDROP" || {
+  echo "missing independent feathered ambient mode" >&2
+  exit 1
+}
+grep -q 'v3BackdropBlurFeathered' "$SETTINGS" || {
+  echo "new mode must remember its own blur" >&2
+  exit 1
+}
+
 grep -q 'Picker("背景构图"' "$WINDOW"
 grep -q 'V3ArtworkPresentation.allCases' "$WINDOW"
 grep -q 'showsForegroundArtwork' "$WINDOW"

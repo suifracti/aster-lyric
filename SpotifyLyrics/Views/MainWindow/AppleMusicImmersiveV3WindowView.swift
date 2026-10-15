@@ -131,9 +131,9 @@ struct AppleMusicImmersiveV3WindowView: View {
         compact: Bool,
         portrait: Bool = false
     ) -> CGFloat {
-        // Ambient retains its complete, user-sized foreground cover when
-        // hover-only playback controls hide; Classic still uses its cap.
-        guard settings.v3ArtworkPresentation != .ambient else { return 1 }
+        // The newer feathered mode retains its user-sized foreground cover;
+        // original Ambient restores the pre-October hidden-controls behavior.
+        guard settings.v3ArtworkPresentation != .ambientFeathered else { return 1 }
         guard !playbackDetailsVisible, !reduceMotion else { return 1 }
         return V3ResponsiveGeometry.ambientHiddenCoverScale(
             coverSize: size,
@@ -766,10 +766,11 @@ struct AppleMusicImmersiveV3WindowView: View {
                     scale: visualScale,
                     alignment: alignmentKey
                 ))
-                // Center the complete cover when the reserved player card is
-                // hidden; keep its measured hover region and lyric column fixed.
-                .offset(y: playbackDetailsVisible ? 0 : min(compact ? 88 : 113,
-                    max(0, (availableHeight - coverSize * visualScale) / 2)))
+                // The old Ambient keeps its original vertical placement;
+                // retain the current feathered/Classic layout unchanged.
+                .offset(y: settings.v3ArtworkPresentation == .ambient || playbackDetailsVisible ? 0
+                    : min(compact ? 88 : 113,
+                        max(0, (availableHeight - coverSize * visualScale) / 2)))
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: playbackDetailsVisible)
 
                 Spacer().frame(height: compact ? LyricsDesignTokens.Spacing.lg - 2 : LyricsDesignTokens.Spacing.xl)
@@ -2738,7 +2739,7 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
 
         // Ambient remains legible beyond the active line. Stage and Classic
         // retain their established hierarchy in this first visual pass.
-        if settings.v3ArtworkPresentation == .ambient {
+        if settings.v3ArtworkPresentation == .ambientFeathered {
             switch clampedDistance {
             case 0: return 0.70 * factor
             case 1: return 0.68 * factor
@@ -3126,7 +3127,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
             if preferences.showTranslation, let translation = line.translationText, !translation.isEmpty {
                 Text(translation)
                     .font(.system(size: max(14, auxiliarySize * 0.94), weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(isActive ? 0.86 : (settings.v3ArtworkPresentation == .ambient ? 0.76 : 0.54)))
+                    .foregroundStyle(.white.opacity(isActive ? 0.86 : (settings.v3ArtworkPresentation == .ambientFeathered ? 0.76 : 0.54)))
                     .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)

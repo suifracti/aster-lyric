@@ -127,7 +127,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
         // Ambient needs its artwork colors visible; the lyric side has its
         // own localized protection. Keep Classic's established veil intact.
-        if settings.v3ArtworkPresentation == .ambient {
+        if settings.v3ArtworkPresentation == .ambientFeathered {
             if reduceTransparency { return min(0.76, max(0.56, paletteVeil + 0.22)) }
             if increaseContrast { return min(0.48, paletteVeil + 0.12) }
             return min(0.10, paletteVeil * 0.26)
@@ -215,6 +215,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
         switch settings.v3ArtworkPresentation {
         case .ambient:
             ambientArtworkLayers(image: image, ambientImage: ambientImage)
+        case .ambientFeathered:
+            featheredAmbientArtworkLayers(image: image, ambientImage: ambientImage)
         case .stage:
             stageArtworkLayers(image: image, ambientImage: ambientImage)
         case .classic:
@@ -299,8 +301,80 @@ struct AppleMusicImmersiveV3BackdropView: View {
         )
     }
 
+    // The original ambient artwork composition, recovered from the
+    // pre-2026-10-11 source (4886985). The fourth mode keeps the newer
+    // radial feathering implementation independently.
     @ViewBuilder
     private func ambientArtworkLayers(image: NSImage, ambientImage: NSImage?) -> some View {
+        let style = presentationStyle
+        let saturation = min(
+            1.3,
+            style.paletteSaturation * 1.18 + (increaseContrast ? 0.06 : 0)
+        )
+        let diffusionRadius = normalizedBlur * 48.0
+
+        // A luminance-clamped album field keeps very bright artwork legible
+        // without falling back to an unrelated black canvas.
+        LinearGradient(
+            colors: [
+                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.42),
+                ambientColor(palette.secondary, saturation: saturation * 0.90, maximumLuminance: 0.30),
+                Color(red: 0.055, green: 0.060, blue: 0.072)
+            ],
+            startPoint: coverLightCenter,
+            endPoint: settings.v3ArtworkPosition == "right" ? .topLeading : .bottomTrailing
+        )
+
+        // Retain album structure before applying the user-controlled diffusion.
+        // Keep image visibility independent of diffusion, including at 0%.
+        // The full-resolution snapshot avoids baked-in blur at the clear endpoint.
+        Group {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFill()
+                .scaleEffect(1.12)
+                .blur(radius: diffusionRadius, opaque: true)
+                .saturation(saturation)
+                .opacity(0.56)
+        }
+
+        RadialGradient(
+            colors: [
+                ambientColor(palette.glow, saturation: saturation, maximumLuminance: 0.58)
+                    .opacity(0.34),
+                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.40)
+                    .opacity(0.12),
+                .clear
+            ],
+            center: coverLightCenter,
+            startRadius: 18,
+            endRadius: 680 + normalizedBlur * 220
+        )
+        .blendMode(.screen)
+
+        ambientReadingVeil
+
+        RadialGradient(
+            colors: [
+                .clear,
+                Color.black.opacity(min(0.36, style.vignetteIntensity * 0.72))
+            ],
+            center: coverLightCenter,
+            startRadius: 180,
+            endRadius: 980
+        )
+
+        if let noiseImage {
+            Image(nsImage: noiseImage)
+                .resizable(resizingMode: .tile)
+                .blendMode(.softLight)
+                .opacity(min(0.055, style.noiseIntensity))
+        }
+    }
+
+    @ViewBuilder
+    private func featheredAmbientArtworkLayers(image: NSImage, ambientImage: NSImage?) -> some View {
         let style = presentationStyle
         let saturation = min(
             1.3,
@@ -389,22 +463,25 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
     @ViewBuilder
     private var ambientReadingVeil: some View {
+        let feathered = settings.v3ArtworkPresentation == .ambientFeathered
         if settings.v3ArtworkPosition == "right" {
             LinearGradient(
-                colors: [Color.black.opacity(0.30), Color.black.opacity(0.12), .clear],
+                colors: [Color.black.opacity(feathered ? 0.30 : 0.42),
+                         Color.black.opacity(feathered ? 0.12 : 0.18), .clear],
                 startPoint: .leading,
                 endPoint: .trailing
             )
         } else if settings.v3ArtworkPosition == "center" {
             RadialGradient(
-                colors: [.clear, Color.black.opacity(0.18)],
+                colors: [.clear, Color.black.opacity(feathered ? 0.18 : 0.34)],
                 center: .center,
                 startRadius: 160,
                 endRadius: 920
             )
         } else {
             LinearGradient(
-                colors: [.clear, Color.black.opacity(0.10), Color.black.opacity(0.31)],
+                colors: [.clear, Color.black.opacity(feathered ? 0.10 : 0.16),
+                         Color.black.opacity(feathered ? 0.31 : 0.46)],
                 startPoint: .leading,
                 endPoint: .trailing
             )
