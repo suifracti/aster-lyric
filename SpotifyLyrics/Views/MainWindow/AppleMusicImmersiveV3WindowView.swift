@@ -110,6 +110,10 @@ struct AppleMusicImmersiveV3WindowView: View {
     private var compositionArtworkScale: Double { settings.v3PreviewScale(for: compositionStyle) }
     private enum ToolbarPopover: Equatable { case translation, lyricsTime, appearance, display }
     @State private var activeToolbarPopover: ToolbarPopover?
+    @State private var hoveredToolbarTrigger: ToolbarPopover?
+    @State private var hoveredToolbarPanel: ToolbarPopover?
+    @State private var confirmedToolbarPanel: ToolbarPopover?
+    @State private var toolbarDismissTask: Task<Void, Never>?
     // Keep listening unobstructed. Tools reveal at the top edge and stay
     // available while their popover is open.
     @State private var toolsVisible = false
@@ -1186,11 +1190,68 @@ struct AppleMusicImmersiveV3WindowView: View {
     }
 
     private func presentToolbarPopover(_ panel: ToolbarPopover) {
+        toolbarDismissTask?.cancel()
         guard activeToolbarPopover != panel else { return }
+        confirmedToolbarPanel = nil
+        hoveredToolbarPanel = nil
         isWindowMenuPresented = false
         isSearchPresented = false
         if panel != .appearance { hoveredStyle = nil }
         activeToolbarPopover = panel
+    }
+
+    private func confirmToolbarPopover(_ panel: ToolbarPopover) {
+        if confirmedToolbarPanel == panel {
+            activeToolbarPopover = nil
+        } else {
+            presentToolbarPopover(panel)
+            confirmedToolbarPanel = panel
+        }
+    }
+
+    private func toolbarTriggerHover(_ panel: ToolbarPopover, inside: Bool) {
+        if inside {
+            hoveredToolbarTrigger = panel
+            presentToolbarPopover(panel)
+        } else {
+            if hoveredToolbarTrigger == panel { hoveredToolbarTrigger = nil }
+            scheduleToolbarDismissal(panel)
+        }
+    }
+
+    private func scheduleToolbarDismissal(_ panel: ToolbarPopover) {
+        toolbarDismissTask?.cancel()
+        toolbarDismissTask = Task { @MainActor in
+            // Allow the pointer to cross the small popover arrow/gap.
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled, activeToolbarPopover == panel,
+                  hoveredToolbarTrigger != panel, hoveredToolbarPanel != panel,
+                  confirmedToolbarPanel != panel else { return }
+            hoveredStyle = nil
+            activeToolbarPopover = nil
+        }
+    }
+
+    private func hoverTrackedPanel<Content: View>(_ panel: ToolbarPopover, @ViewBuilder content: () -> Content) -> some View {
+        content()
+            .buttonStyle(.automatic)
+            .onHover { inside in
+                if inside {
+                    hoveredToolbarPanel = panel
+                    toolbarDismissTask?.cancel()
+                } else {
+                    if hoveredToolbarPanel == panel { hoveredToolbarPanel = nil }
+                    scheduleToolbarDismissal(panel)
+                }
+            }
+            .simultaneousGesture(TapGesture().onEnded {
+                if activeToolbarPopover == panel { confirmedToolbarPanel = panel }
+            })
+            .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
+                // Clicking a native menu is an explicit interaction; keep its
+                // parent available while the pointer moves into that menu.
+                if activeToolbarPopover == panel { confirmedToolbarPanel = panel }
+            }
     }
 
     private func toolbarPopoverBinding(_ panel: ToolbarPopover) -> Binding<Bool> {
@@ -1233,65 +1294,69 @@ struct AppleMusicImmersiveV3WindowView: View {
                     .help("歌词版本")
             }
             if liveOnly || !state.isShowingSearchPreview {
-                Button { presentToolbarPopover(.translation) } label: {
+                Button { confirmToolbarPopover(.translation) } label: {
                     iconLabel("sparkles", description: "AI 翻译与读音")
                 }
                 .keyboardShortcut("t", modifiers: [.command, .option])
                 .accessibilityIdentifier("translation.shortcut")
                 .help("AI 翻译与读音")
-                .onHover { inside in if inside { presentToolbarPopover(.translation) } }
+                .onHover { inside in toolbarTriggerHover(.translation, inside: inside) }
                 .popover(isPresented: toolbarPopoverBinding(.translation), arrowEdge: .top) {
-                    translationPanel
+                    hoverTrackedPanel(.translation) { translationPanel }
                 }
             }
-            Button { presentToolbarPopover(.lyricsTime) } label: {
+            Button { confirmToolbarPopover(.lyricsTime) } label: {
                 iconLabel("clock.arrow.2.circlepath", description: lyricsTimeToolbarLabel)
             }
             .accessibilityIdentifier("lyrics.time")
             .help("歌词时间")
-            .onHover { inside in if inside { presentToolbarPopover(.lyricsTime) } }
+            .onHover { inside in toolbarTriggerHover(.lyricsTime, inside: inside) }
             .popover(isPresented: toolbarPopoverBinding(.lyricsTime), arrowEdge: .top) {
-                V3LyricsTimePopover(settings: settings)
+                hoverTrackedPanel(.lyricsTime) { V3LyricsTimePopover(settings: settings) }
             }
-            Button { presentToolbarPopover(.appearance) } label: {
+            Button { confirmToolbarPopover(.appearance) } label: {
                 iconLabel("slider.horizontal.3", description: "外观")
             }
             .accessibilityIdentifier("appearance.shortcut")
             .help("外观背景")
-            .onHover { inside in if inside { presentToolbarPopover(.appearance) } }
+            .onHover { inside in toolbarTriggerHover(.appearance, inside: inside) }
             .popover(isPresented: toolbarPopoverBinding(.appearance), arrowEdge: .top) {
-                V3VisualTuningPopoverView(settings: settings, layoutStyleRawValue: $layoutStyleRawValue, preview: $hoveredStyle) {
-                    activeToolbarPopover = nil
+                hoverTrackedPanel(.appearance) {
+                    V3VisualTuningPopoverView(settings: settings, layoutStyleRawValue: $layoutStyleRawValue, preview: $hoveredStyle) {
+                        activeToolbarPopover = nil
+                    }
                 }
             }
-            Button { presentToolbarPopover(.display) } label: {
+            Button { confirmToolbarPopover(.display) } label: {
                 iconLabel("character.bubble", description: "歌词显示")
             }
             .help("歌词显示")
-            .onHover { inside in if inside { presentToolbarPopover(.display) } }
+            .onHover { inside in toolbarTriggerHover(.display, inside: inside) }
             .popover(isPresented: toolbarPopoverBinding(.display), arrowEdge: .top) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("歌词显示").font(.headline)
-                    Toggle("显示假名", isOn: displayBinding(\.showKana))
-                    Toggle("显示罗马音", isOn: displayBinding(\.showRomaji))
-                    Toggle("显示拼音", isOn: displayBinding(\.showPinyin))
-                    Toggle("显示翻译", isOn: displayBinding(\.showTranslation))
-                    if settings.displayPreferences.showKana || settings.displayPreferences.showPinyin {
-                        Picker("注音排版", selection: displayBinding(\.kanaDisplayMode)) {
-                            Text("汉字上方注音").tag(KanaDisplayMode.inlineRuby)
-                            Text("独立注音行").tag(KanaDisplayMode.independentLine)
-                            Text("注音替换").tag(KanaDisplayMode.kanaReplacement)
+                hoverTrackedPanel(.display) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("歌词显示").font(.headline)
+                        Toggle("显示假名", isOn: displayBinding(\.showKana))
+                        Toggle("显示罗马音", isOn: displayBinding(\.showRomaji))
+                        Toggle("显示拼音", isOn: displayBinding(\.showPinyin))
+                        Toggle("显示翻译", isOn: displayBinding(\.showTranslation))
+                        if settings.displayPreferences.showKana || settings.displayPreferences.showPinyin {
+                            Picker("注音排版", selection: displayBinding(\.kanaDisplayMode)) {
+                                Text("汉字上方注音").tag(KanaDisplayMode.inlineRuby)
+                                Text("独立注音行").tag(KanaDisplayMode.independentLine)
+                                Text("注音替换").tag(KanaDisplayMode.kanaReplacement)
+                            }
+                        }
+                        Divider()
+                        Picker("繁简转换", selection: readingBinding(\.scriptConversionID)) {
+                            Text("不转换").tag(ScriptConversionID.none.rawValue)
+                            Text("繁体转简体").tag(ScriptConversionID.traditionalToSimplified.rawValue)
+                            Text("简体转繁体").tag(ScriptConversionID.simplifiedToTraditional.rawValue)
                         }
                     }
-                    Divider()
-                    Picker("繁简转换", selection: readingBinding(\.scriptConversionID)) {
-                        Text("不转换").tag(ScriptConversionID.none.rawValue)
-                        Text("繁体转简体").tag(ScriptConversionID.traditionalToSimplified.rawValue)
-                        Text("简体转繁体").tag(ScriptConversionID.simplifiedToTraditional.rawValue)
-                    }
+                    .padding(18)
+                    .frame(width: 300)
                 }
-                .padding(18)
-                .frame(width: 300)
             }
             if liveOnly {
                 Button { MenuBarLyricsController.shared.openSettings() } label: {
@@ -1307,6 +1372,16 @@ struct AppleMusicImmersiveV3WindowView: View {
         .buttonStyle(QuietToolbarButtonStyle())
         .padding(5)
         .background(Color.black.opacity(0.28), in: Capsule())
+        .onChange(of: activeToolbarPopover) { _, panel in
+            if panel != .appearance { hoveredStyle = nil }
+            if panel == nil {
+                toolbarDismissTask?.cancel()
+                hoveredToolbarTrigger = nil
+                hoveredToolbarPanel = nil
+                confirmedToolbarPanel = nil
+            }
+        }
+        .onDisappear { toolbarDismissTask?.cancel(); hoveredStyle = nil }
 
     }
 
@@ -3594,10 +3669,12 @@ private struct V3ThemeSelectorView: View {
     @ObservedObject var settings: AppSettingsStore
     @Binding var preview: V3ArtworkPresentation?
     var onConfirm: () -> Void
+    @State private var browsedTheme: V3ArtworkTheme?
+    private var displayedTheme: V3ArtworkTheme { browsedTheme ?? settings.v3ArtworkPresentation.theme }
 
     private var displayedStyle: V3ArtworkPresentation { preview ?? settings.v3ArtworkPresentation }
     private var variants: [V3ArtworkPresentation] {
-        switch displayedStyle.theme {
+        switch displayedTheme {
         case .ambient: return V3ArtworkPresentation.ambientVariants
         case .enlarged: return V3ArtworkPresentation.enlargedVariants
         default: return []
@@ -3628,7 +3705,12 @@ private struct V3ThemeSelectorView: View {
             }
         }
         .buttonStyle(.plain)
-        .onHover { inside in if inside && preview != style { preview = style } }
+        .onHover { inside in
+            if inside {
+                browsedTheme = theme
+                if preview != style { preview = style }
+            } else if preview == style { preview = nil }
+        }
         .help(style.detail)
         .accessibilityIdentifier("v3.theme." + theme.rawValue)
         .accessibilityAddTraits(settings.v3ArtworkPresentation.theme == theme ? .isSelected : [])
@@ -3649,7 +3731,7 @@ private struct V3ThemeSelectorView: View {
             ZStack(alignment: .leading) {
                 if !variants.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(displayedStyle.themeTitle + "方案").font(.caption).foregroundStyle(.secondary)
+                        Text(displayedTheme.title + "方案").font(.caption).foregroundStyle(.secondary)
                         HStack(spacing: 5) {
                             ForEach(variants) { style in
                                 Button { choose(style) } label: {
@@ -3660,7 +3742,10 @@ private struct V3ThemeSelectorView: View {
                                         .background(settings.v3ArtworkPresentation == style ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
                                 }
                                 .buttonStyle(.plain)
-                                .onHover { inside in if inside && preview != style { preview = style } }
+                                .onHover { inside in
+                                    if inside { if preview != style { preview = style } }
+                                    else if preview == style { preview = nil }
+                                }
                                 .help(style.detail)
                                 .accessibilityIdentifier("v3.style." + style.rawValue)
                                 .accessibilityAddTraits(settings.v3ArtworkPresentation == style ? .isSelected : [])
@@ -3675,6 +3760,9 @@ private struct V3ThemeSelectorView: View {
                 }
             }
             .frame(height: 64)
+        }
+        .onHover { inside in
+            if !inside { preview = nil; browsedTheme = nil }
         }
     }
 }
@@ -3708,12 +3796,6 @@ private struct V3VisualTuningPopoverView: View {
         .frame(width: 340)
         .frame(maxHeight: 680)
         .onDisappear { preview = nil }
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.white.opacity(0.18), lineWidth: 0.8)
-        )
     }
 
     private var tuningControls: some View {
