@@ -372,15 +372,26 @@ struct AppleMusicImmersiveV3BackdropView: View {
         // Keep image visibility independent of diffusion, including at 0%.
         // The full-resolution snapshot avoids baked-in blur at the clear endpoint.
         Group {
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.high)
-                .scaledToFill()
-                .scaleEffect(1.12)
-                .blur(radius: diffusionRadius, opaque: true)
-                .saturation(saturation)
-                .opacity(0.56)
+            if settings.v3AmbientBackgroundShowsCompleteArtwork {
+                GeometryReader { geometry in
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .blur(radius: diffusionRadius)
+                }
+            } else {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFill()
+                    .scaleEffect(1.12)
+                    .blur(radius: diffusionRadius, opaque: true)
+            }
         }
+        .saturation(saturation)
+        .opacity(0.56)
 
         RadialGradient(
             colors: [

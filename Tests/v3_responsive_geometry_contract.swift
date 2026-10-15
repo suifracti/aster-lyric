@@ -41,6 +41,30 @@ struct V3ResponsiveGeometryContract {
         precondition(V3ResponsiveGeometry.ambientHiddenCoverOffset(containerWidth: 480, coverSize: 320, scale: 1, alignment: "left") == 0)
         precondition(abs(V3ResponsiveGeometry.ambientHiddenCoverOffset(containerWidth: 480, coverSize: 320, scale: 1.1, alignment: "left") - 80) < 0.001)
         precondition(abs(V3ResponsiveGeometry.ambientHiddenCoverOffset(containerWidth: 480, coverSize: 320, scale: 1.1, alignment: "right") + 80) < 0.001)
+        for compact in [false, true] {
+            for height: CGFloat in [300, 520, 720, 1080] {
+                for coverSize: CGFloat in [120, 180, 240] {
+                    for detailsHeight: CGFloat in [60, 100, 200] where coverSize + detailsHeight <= height {
+                        let scale = V3ResponsiveGeometry.ambientHiddenCoverScale(
+                            coverSize: coverSize, availableWidth: 430, availableHeight: height,
+                            compact: compact, portrait: false
+                        )
+                        let offset = V3ResponsiveGeometry.hiddenCoverVerticalOffset(
+                            containerHeight: height, compositionHeight: coverSize + detailsHeight,
+                            coverSize: coverSize, scale: scale, compact: compact
+                        )
+                        let oldCenter = (height - detailsHeight) / 2
+                        let newCenter = oldCenter + offset
+                        precondition(offset >= 0 && offset <= (compact ? 88 : 113), "centering has a restrained travel limit")
+                        precondition(newCenter >= oldCenter && newCenter <= height / 2 + 0.001, "centering approaches the column middle without overshoot")
+                        precondition(newCenter - coverSize * scale / 2 >= -0.001, "expanded cover stays below the top boundary")
+                        precondition(newCenter + coverSize * scale / 2 <= height + 0.001, "expanded cover stays above the bottom boundary")
+                    }
+                }
+            }
+        }
+        precondition(V3ResponsiveGeometry.hiddenCoverVerticalOffset(containerHeight: 720, compositionHeight: 0, coverSize: 320, scale: 1.14, compact: false) == 0,
+                     "a missing measurement must not cause a speculative jump")
         precondition(!V3ResponsiveGeometry.stagePlaybackDetailsVisible(pointerY: nil, canvasHeight: 800, previousVisible: true))
         precondition(!V3ResponsiveGeometry.stagePlaybackDetailsVisible(pointerY: 120, canvasHeight: 800, previousVisible: false))
         precondition(V3ResponsiveGeometry.stagePlaybackDetailsVisible(pointerY: 680, canvasHeight: 800, previousVisible: false))

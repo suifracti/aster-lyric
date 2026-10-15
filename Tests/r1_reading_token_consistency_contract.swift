@@ -27,7 +27,9 @@ public struct AIReadingCandidateService: Sendable {
         _ = request
         _ = configuration
         await ReadingAICallCounter.shared.record()
-        return result
+        return ReadingGenerationResult(engineID: result.engineID, representationID: result.representationID,
+            lines: result.lines, language: result.language, confidence: result.confidence,
+            warnings: result.warnings + [.aiCandidateOnly], contextHash: result.contextHash + ":fake-ai")
     }
 }
 
@@ -218,7 +220,33 @@ struct R1ReadingTokenConsistencyContract {
         try require(afterExplicit == before + 1, "only the explicit AI action may invoke candidate refinement once")
         let selectedAfterAI = await MainActor.run { session.selectedVersion?.record.id }
         try require(selectedAfterAI == selectedBeforeAI, "AI candidates must not auto-replace the current reading")
-        print("PASS reading automatic/local zero AI; explicit action one fake call")
+        guard let candidateID = await MainActor.run(body: { session.availableVersions.first?.record.id }) else {
+            throw ContractFailure("AI candidate not saved")
+        }
+        let beforeAdoption = await MainActor.run { ReadingSessionController(repository: repository, settings: settings) }
+        await MainActor.run {
+            beforeAdoption.synchronize(lyricsVersionID: saved.versionID, sourceContentHash: saved.sourceContentHash,
+                lines: lines, language: "ja", trackStableKey: identity.stableKey)
+        }
+        try await waitUntil("reading candidates did not reopen") { !beforeAdoption.availableVersions.isEmpty }
+        let unadoptedSelection = await MainActor.run { beforeAdoption.selectedVersion?.record.id }
+        try require(unadoptedSelection != candidateID, "unconfirmed AI candidate must not be chosen on reopen")
+        await MainActor.run { session.adopt(versionID: candidateID) }
+        try await waitUntil("explicit reading adoption was not persisted/reflected in memory") {
+            session.availableVersions.contains { $0.record.id == candidateID && $0.record.isCurrent }
+        }
+        let reopenedRepository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("fixture.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await reopenedRepository.prepare()
+        let reopened = await MainActor.run { ReadingSessionController(repository: reopenedRepository, settings: settings) }
+        await MainActor.run {
+            reopened.synchronize(lyricsVersionID: saved.versionID, sourceContentHash: saved.sourceContentHash,
+                lines: lines, language: "ja", trackStableKey: identity.stableKey)
+        }
+        try await waitUntil("explicitly adopted AI reading did not survive independent repository reopen") {
+            reopened.selectedVersion?.record.id == candidateID
+        }
+        print("PASS reading automatic/local zero AI; explicit fake call; unconfirmed excluded and confirmed candidate survives reopen")
     }
 
     private static func runManualEditRoundTrip() async throws {

@@ -2230,7 +2230,16 @@ public final class PlaybackState: ObservableObject {
 
     public func confirmPendingManualLyricsAdoption() async throws -> LyricsPersistenceSaveResult? {
         guard let pending = pendingManualLyricsAdoption else { return nil }
-        guard !isShowingSearchPreview || pending.session === searchPreviewSession else { return nil }
+        if let previewGeneration = pending.clearSearchPreviewGeneration {
+            // This confirmation belongs to an explicit preview-to-live action.
+            // It must still refer to the same preview and the same live song.
+            guard isShowingSearchPreview, searchPreviewGeneration == previewGeneration,
+                  pending.session === lyricsSession,
+                  liveTrackIdentity == pending.identity,
+                  currentTrackIdentity == pending.identity else { return nil }
+        } else {
+            guard !isShowingSearchPreview || pending.session === searchPreviewSession else { return nil }
+        }
         let result: LyricsPersistenceSaveResult
         do {
             result = try await pending.session.adoptManually(

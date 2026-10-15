@@ -750,7 +750,7 @@ struct CurrentSongOperationsView: View {
     private func readingVersionTitle(_ version: StoredReadingVersion) -> String {
         var labels: [String] = []
         if version.record.isLocked { labels.append("锁定") }
-        if version.record.isCurrent { labels.append("当前") }
+        if state.selectedReadingVersion?.record.id == version.record.id { labels.append("当前") }
         if version.record.isArchived { labels.append("已归档") }
         if version.record.isManuallyEdited { labels.append("人工") }
         if version.record.warningMetadata.contains(.aiCandidateOnly) { labels.append("AI 候选") }

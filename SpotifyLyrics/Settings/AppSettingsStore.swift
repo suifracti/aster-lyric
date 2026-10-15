@@ -208,6 +208,8 @@ public final class AppSettingsStore: ObservableObject {
         public static let settingsCenterPresentation = "settings.centerPresentation"
         public static let readingPreferences = "reading.preferences.v1"
         public static let v3PlaybackDetailsOnHover = "v3.playbackDetailsOnHover"
+        public static let v3ExpandArtworkWhenDetailsHidden = "v3.expandArtworkWhenDetailsHidden.v1"
+        public static let v3AmbientBackgroundShowsCompleteArtwork = "v3.ambientBackgroundShowsCompleteArtwork.v1"
         /// Preserved historical global offset. New runtime reads/writes use
         /// `lyricsOffsetStore`; this key is never migrated or overwritten.
         public static let lyricsPresentationOffset = "lyrics.presentationOffset.v1"
@@ -423,6 +425,15 @@ public final class AppSettingsStore: ObservableObject {
         didSet { defaults.set(v3PlaybackDetailsOnHover, forKey: Key.v3PlaybackDetailsOnHover) }
     }
 
+    @Published public var v3ExpandArtworkWhenDetailsHidden: Bool {
+        didSet { defaults.set(v3ExpandArtworkWhenDetailsHidden, forKey: Key.v3ExpandArtworkWhenDetailsHidden) }
+    }
+
+    /// Ambient background framing is independent of foreground cover size.
+    @Published public var v3AmbientBackgroundShowsCompleteArtwork: Bool {
+        didSet { defaults.set(v3AmbientBackgroundShowsCompleteArtwork, forKey: Key.v3AmbientBackgroundShowsCompleteArtwork) }
+    }
+
     /// Old global setting remains available only for an explicit history note.
     /// Reading this value never assigns it to a song or lyrics version.
     public var legacyLyricsPresentationOffset: Double? {
@@ -605,6 +616,8 @@ public final class AppSettingsStore: ObservableObject {
                 ?? (presentation == selectedPresentation && hasLegacyBlur ? legacyBlur : blurDefaults[presentation] ?? legacyBlur)
         }
         self.v3PlaybackDetailsOnHover = defaults.bool(forKey: Key.v3PlaybackDetailsOnHover)
+        self.v3ExpandArtworkWhenDetailsHidden = defaults.object(forKey: Key.v3ExpandArtworkWhenDetailsHidden) as? Bool ?? true
+        self.v3AmbientBackgroundShowsCompleteArtwork = defaults.bool(forKey: Key.v3AmbientBackgroundShowsCompleteArtwork)
         self.v3StageReadabilityEnabled = defaults.bool(forKey: Key.v3StageReadabilityEnabled)
         self.v3BackdropBlurRadius = self.v3BlurByPresentation[selectedPresentation] ?? legacyBlur
         let positionKey = Self.v3PositionDefaultsKey(for: selectedPresentation)

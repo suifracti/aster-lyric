@@ -10,16 +10,19 @@ import Foundation
 /// `aiCandidateOnly` so the reading session cannot auto-adopt it.
 public struct AIReadingCandidateService: Sendable {
     private let client: OpenAICompatibleClient
-    private let keyStore: any AITranslationAPIKeyStore
+    private let keyStore: (any AITranslationAPIKeyStore)?
+    private let keyStoreFactory: @Sendable (String) -> any AITranslationAPIKeyStore
     private let acceptanceBudget: TranslationAcceptanceRequestBudget?
 
     public init(
         client: OpenAICompatibleClient = OpenAICompatibleClient(),
-        keyStore: any AITranslationAPIKeyStore = KeychainAITranslationAPIKeyStore(),
-        acceptanceBudget: TranslationAcceptanceRequestBudget? = .processBudget
+        keyStore: (any AITranslationAPIKeyStore)? = nil,
+        acceptanceBudget: TranslationAcceptanceRequestBudget? = .processBudget,
+        keyStoreFactory: @escaping @Sendable (String) -> any AITranslationAPIKeyStore = { KeychainAITranslationAPIKeyStore(account: $0) }
     ) {
         self.client = client
         self.keyStore = keyStore
+        self.keyStoreFactory = keyStoreFactory
         self.acceptanceBudget = acceptanceBudget
     }
 
@@ -83,7 +86,9 @@ public struct AIReadingCandidateService: Sendable {
         try Task.checkCancellation()
         try acceptanceBudget?.reserve(
             provider: configuration.engineID, trackKey: request.trackStableKey ?? "")
-        guard let apiKey = keyStore.read(), !apiKey.isEmpty else {
+        // Resolve the current endpoint account at dispatch, without retaining an old key cache.
+        let credentials = keyStore ?? keyStoreFactory(configuration.apiCredentialAccount)
+        guard let apiKey = credentials.read(), !apiKey.isEmpty else {
             throw AITranslationError.notConfigured
         }
         try Task.checkCancellation()

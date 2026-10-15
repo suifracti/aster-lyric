@@ -336,6 +336,71 @@ struct PlaybackStateContract {
         state.selectNoLyricsVersion()
         precondition(state.isLyricsSelectionEmpty)
         print("PASS preview ended: live candidate/none/manual editor/instrumental actions restore; no App/player/paid engine")
+
+        let previewIdentity = TrackIdentity(track: preview)
+        let previewDocument = LyricsDocument(identity: previewIdentity, title: preview.title, artist: preview.artist,
+            album: preview.album, duration: preview.duration,
+            lines: [LyricLine(timestamp: 2, originalText: "Self-authored explicit preview adoption")],
+            source: .manualImport, confidence: 1, providerSourceID: "explicit-preview-fixture")
+        _ = try await repo.save(track: preview, identity: previewIdentity, document: previewDocument)
+        let previewResult = SongSearchResult(id: "explicit-preview-fixture", source: .local, track: preview, confidence: 1)
+        func openReadyPreview() async throws {
+            state.loadSearchResult(previewResult)
+            for _ in 0..<200 {
+                if state.lyricsState.document?.lines.first?.originalText == previewDocument.lines.first?.originalText { return }
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            preconditionFailure("stored explicit preview did not load")
+        }
+        for staleContext in ["new-preview-generation", "preview-closed", "live-track-changed"] {
+            try await openReadyPreview()
+            let pendingPreview = try await state.adoptSearchPreviewLyrics()
+            precondition(pendingPreview?.disposition == .lockedConflict, "preview-to-live must require explicit lock confirmation")
+            let versionsBefore = try await repo.loadEditableVersions(track: live, identity: identity).map(\.record.id)
+            let selectionBefore = try await repo.loadBestStored(track: live, identity: identity)?.versionID
+            switch staleContext {
+            case "new-preview-generation": state.loadSearchResult(previewResult)
+            case "preview-closed": state.clearSearchPreview()
+            default:
+                provider.snapshot = PlaybackSnapshot(status: .ready,
+                    track: ProviderTrack(id: "different-live-fixture", title: "Other Live", artist: "Other", album: "Fixture", duration: 90),
+                    position: 3, isPlaying: false)
+                state.reconnectSpotify()
+                for _ in 0..<200 where state.currentTrack.title != "Other Live" { try await Task.sleep(nanoseconds: 5_000_000) }
+                precondition(state.currentTrack.title == "Other Live")
+            }
+            let rejected = try await state.confirmPendingManualLyricsAdoption()
+            precondition(rejected == nil, "stale preview-to-live confirmation must be rejected: \(staleContext)")
+            let versionsAfter = try await repo.loadEditableVersions(track: live, identity: identity).map(\.record.id)
+            let selectionAfter = try await repo.loadBestStored(track: live, identity: identity)?.versionID
+            precondition(versionsAfter == versionsBefore && selectionAfter == selectionBefore,
+                "stale confirmation changed stored assets or selection")
+            state.cancelPendingManualLyricsAdoption()
+            state.clearSearchPreview()
+            if staleContext == "live-track-changed" {
+                provider.snapshot = PlaybackSnapshot(status: .ready, track: providerTrack, position: 11, isPlaying: false)
+                state.reconnectSpotify()
+                for _ in 0..<200 where state.currentTrackIdentity != identity { try await Task.sleep(nanoseconds: 5_000_000) }
+                precondition(state.currentTrackIdentity == identity)
+            }
+        }
+        try await openReadyPreview()
+        let previewConflict = try await state.adoptSearchPreviewLyrics()
+        precondition(previewConflict?.disposition == .lockedConflict, "expected current preview lock conflict")
+        let previewConfirmed = try await state.confirmPendingManualLyricsAdoption()
+        precondition(previewConfirmed?.versionID != nil && !state.isShowingSearchPreview,
+            "explicit confirmation must adopt the current preview and return to live")
+        precondition(state.liveLyricsVersionID == previewConfirmed?.versionID
+            && state.liveLyrics.first?.originalText == previewDocument.lines.first?.originalText,
+            "confirmed preview lyrics did not enter the live session")
+        let retainedLock = try await repo.loadEditableVersion(versionID: accepted.versionID!, track: live, identity: identity)
+        precondition(retainedLock?.record.isLocked == true && retainedLock?.document.lines.map(\.originalText) == candidate.lines.map(\.originalText))
+        let reopened = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("preview.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("preview-provenance"))
+        try await reopened.prepare()
+        let reopenedChoice = try await reopened.loadBestStored(track: live, identity: identity)
+        precondition(reopenedChoice?.versionID == previewConfirmed?.versionID && provider.commandLog.isEmpty)
+        print("PASS current preview-to-live lock confirmation adopts, returns live and survives reopen; old live/new preview/closed preview/changed live blocked; prior locked asset retained")
     }
 
     static func selectionDefaultsContract(root: URL, providerTrack: ProviderTrack) async throws {

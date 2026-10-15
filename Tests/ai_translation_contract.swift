@@ -41,7 +41,21 @@ struct AITranslationContract {
         precondition(keys.reads == 0, "provider and zero-budget gates must reject before credential access")
         let finalBudget = try Data(contentsOf: url)
         precondition(finalBudget == initial, "zero budget must not be reset or increased")
-        print("PASS reading unsupported provider/zero budget reject before credentials or network")
+        let accounts = ReadingCredentialAccounts()
+        let routedService = AIReadingCandidateService(acceptanceBudget: nil, keyStoreFactory: { account in
+            accounts.record(account)
+            return MemoryKeyStore(value: nil)
+        })
+        for account in ["fixture-endpoint-a", "fixture-endpoint-b", "fixture-endpoint-a"] {
+            let config = AITranslationConfiguration(baseURL: "https://example.invalid/v1", model: "fixture", apiCredentialAccount: account)
+            do {
+                _ = try await routedService.refine(result: result, request: request, configuration: config)
+                throw ContractFailure(message: "missing credentials accepted")
+            } catch AITranslationError.notConfigured { }
+        }
+        precondition(accounts.values == ["fixture-endpoint-a", "fixture-endpoint-b", "fixture-endpoint-a"],
+            "each explicit request must resolve its own current endpoint account without cached old keys")
+        print("PASS reading provider/budget/credential-account gates; zero real credentials or network")
     }
 
     static func naturalStyleContract() throws {
@@ -446,4 +460,11 @@ private actor NeverDispatchService: AITranslationService {
         throw AITranslationError.engineUnavailable("synthetic unexpected dispatch")
     }
     func testConnection(configuration: AITranslationConfiguration) async throws { }
+}
+
+private final class ReadingCredentialAccounts: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String] = []
+    func record(_ value: String) { lock.lock(); defer { lock.unlock() }; storage.append(value) }
+    var values: [String] { lock.lock(); defer { lock.unlock() }; return storage }
 }

@@ -149,6 +149,10 @@ struct AppleMusicImmersiveV3WindowView: View {
         V3PlaybackVisibility(visible: playbackDetailsVisible, reduceMotion: reduceMotion)
     }
 
+    private var expandsHiddenArtwork: Bool {
+        settings.v3ExpandArtworkWhenDetailsHidden && !playbackDetailsVisible && !reduceMotion
+    }
+
     private func immersiveCoverScale(
         size: CGFloat,
         availableWidth: CGFloat,
@@ -156,18 +160,18 @@ struct AppleMusicImmersiveV3WindowView: View {
         compact: Bool,
         portrait: Bool = false
     ) -> CGFloat {
-        // Preserve user-sized artwork. The older compositions keep only a
-        // small breathing motion when details hide, without filling the column.
+        // Restore the earlier bounded breathing motion without changing the
+        // user's stored foreground size or the surrounding layout.
         guard compositionStyle != .ambientFeathered,
               compositionStyle != .albumPoster else { return 1 }
-        guard !playbackDetailsVisible, !reduceMotion else { return 1 }
-        return min(1.06, V3ResponsiveGeometry.ambientHiddenCoverScale(
+        guard expandsHiddenArtwork else { return 1 }
+        return V3ResponsiveGeometry.ambientHiddenCoverScale(
             coverSize: size,
             availableWidth: availableWidth,
             availableHeight: availableHeight,
             compact: compact,
             portrait: portrait
-        ))
+        )
     }
 
     private var showsForegroundArtwork: Bool {
@@ -888,6 +892,15 @@ struct AppleMusicImmersiveV3WindowView: View {
             compact: compact
         )
         let alignmentKey = alignment == .center ? "center" : (alignment == .trailing ? "right" : "left")
+        let centersHiddenCover = expandsHiddenArtwork
+            && (compositionStyle == .classic || compositionStyle == .ambientFeathered)
+        let verticalOffset = centersHiddenCover ? V3ResponsiveGeometry.hiddenCoverVerticalOffset(
+            containerHeight: availableHeight,
+            compositionHeight: playbackRegion.isNull ? 0 : playbackRegion.height,
+            coverSize: coverSize,
+            scale: visualScale,
+            compact: compact
+        ) : 0
         return VStack(alignment: alignment, spacing: 0) {
             if showsForegroundArtwork {
                 ArtworkView(
@@ -897,15 +910,15 @@ struct AppleMusicImmersiveV3WindowView: View {
                     cornerRadiusRatio: 0.06,
                     preservesCompleteArtwork: true
                 )
-                .frame(maxWidth: width, alignment: alignment == .center ? .center : .leading)
+                // Scale the artwork itself, preserving the column's bounds.
                 .scaleEffect(visualScale)
+                .frame(maxWidth: width, alignment: alignment == .center ? .center : .leading)
                 .offset(x: V3ResponsiveGeometry.ambientHiddenCoverOffset(
                     containerWidth: width,
                     coverSize: coverSize,
                     scale: visualScale,
                     alignment: alignmentKey
-                ))
-                // Keep the cover in place when its playback details fade.
+                ), y: verticalOffset)
                 .shadow(color: .black.opacity(0.22), radius: compact ? 14 : 24, y: 10)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: playbackDetailsVisible)
 
@@ -3600,6 +3613,20 @@ private struct V3VisualTuningPopoverView: View {
     }
 
     var body: some View {
+        ScrollView {
+            tuningControls
+        }
+        .frame(width: 340)
+        .frame(maxHeight: 680)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.18), lineWidth: 0.8)
+        )
+    }
+
+    private var tuningControls: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("外观与布局")
                 .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -3612,6 +3639,14 @@ private struct V3VisualTuningPopoverView: View {
                 Text("移入封面或播放区域时显示播放控制；移到顶部可打开工具。")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if settings.v3ArtworkPresentation == .ambient
+                    || settings.v3ArtworkPresentation == .classic
+                    || settings.v3ArtworkPresentation == .ambientFeathered {
+                    Toggle("隐藏播放信息时舒展封面", isOn: $settings.v3ExpandArtworkWhenDetailsHidden)
+                        .disabled(!settings.v3PlaybackDetailsOnHover)
+                        .help("隐藏播放信息后，在可用空间内轻轻展开封面；关闭后保持设定的尺寸与位置。")
+                        .accessibilityIdentifier("v3.artwork.expandWhenDetailsHidden")
+                }
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -3635,6 +3670,21 @@ private struct V3VisualTuningPopoverView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if settings.v3ArtworkPresentation == .ambient {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("背景封面").font(.system(size: 12, weight: .medium))
+                    Picker("背景封面", selection: $settings.v3AmbientBackgroundShowsCompleteArtwork) {
+                        Text("铺满").tag(false)
+                        Text("完整").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("v3.ambient.backgroundFraming")
+                    Text("完整显示保留封面全貌，余白延续专辑色彩与光晕。")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -3759,13 +3809,6 @@ private struct V3VisualTuningPopoverView: View {
             }
         }
         .padding(14)
-        .frame(width: 340)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.white.opacity(0.18), lineWidth: 0.8)
-        )
     }
 
     @ViewBuilder

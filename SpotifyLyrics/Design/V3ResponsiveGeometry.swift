@@ -305,6 +305,27 @@ enum V3ResponsiveGeometry {
         }
     }
 
+    /// Reclaim only part of the hidden metadata's space. The intrinsic
+    /// composition stays measured in place, preserving the hover target and
+    /// lyric layout while the complete cover moves toward the column center.
+    static func hiddenCoverVerticalOffset(
+        containerHeight: CGFloat,
+        compositionHeight: CGFloat,
+        coverSize: CGFloat,
+        scale: CGFloat,
+        compact: Bool
+    ) -> CGFloat {
+        guard compositionHeight.isFinite, compositionHeight > 0 else { return 0 }
+        let height = finitePositive(containerHeight)
+        let size = finitePositive(coverSize)
+        let scaledHalfSize = size * max(1, finiteValue(scale)) / 2
+        let originalCenter = (height - compositionHeight + size) / 2
+        guard scaledHalfSize <= height / 2, originalCenter >= 0 else { return 0 }
+        let desiredOffset = max(0, height / 2 - originalCenter)
+        let bottomLimit = max(0, height - scaledHalfSize - originalCenter)
+        return min(compact ? 88 : 113, desiredOffset, bottomLimit)
+    }
+
     /// Stage playback controls use the full player canvas as their hit area.
     /// A small midpoint hysteresis band prevents a pointer resting on the
     /// split from rapidly toggling the details during native event jitter.

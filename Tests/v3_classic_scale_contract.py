@@ -42,6 +42,8 @@ defaults.set(1.3, forKey: AppSettingsStore.Key.v3ArtworkSizeScale)
 defaults.set("right", forKey: AppSettingsStore.Key.v3ArtworkPosition)
 let originalDomain = defaults.persistentDomain(forName: suite)!
 let settings = AppSettingsStore(defaults: defaults)
+check(settings.v3ExpandArtworkWhenDetailsHidden, "hidden playback restores bounded cover expansion by default")
+check(!settings.v3AmbientBackgroundShowsCompleteArtwork, "ambient background retains fill by default")
 check(settings.v3ArtworkSizeScale == 1.3, "migration preserves foreground appearance")
 check(settings.v3ClassicBackdropSizeScale == 1.3, "migration preserves background appearance")
 for (key, value) in originalDomain {
@@ -57,6 +59,8 @@ check(afterForeground.v3ClassicBackdropSizeScale == 1.3,
 check(afterForeground.v3ArtworkSizeScale == 0.8, "foreground survives restart")
 
 settings.v3ClassicBackdropSizeScale = 1.1
+settings.v3ExpandArtworkWhenDetailsHidden = false
+settings.v3AmbientBackgroundShowsCompleteArtwork = true
 check(settings.v3ArtworkSizeScale == 0.8, "background resize must not resize foreground")
 check(settings.v3PreviewBackdropScale(for: .classic) == 1.1, "classic preview uses background size")
 check(settings.v3PreviewScale(for: .classic) == 0.8, "classic foreground preview uses foreground size")
@@ -68,6 +72,8 @@ for style in V3ArtworkPresentation.allCases {
     _ = settings.v3PreviewPosition(for: style)
     _ = settings.v3PreviewLyricsPosition(for: style)
     _ = settings.v3PreviewBlur(for: style)
+    _ = settings.v3ExpandArtworkWhenDetailsHidden
+    _ = settings.v3AmbientBackgroundShowsCompleteArtwork
 }
 check(NSDictionary(dictionary: beforePreview).isEqual(to: defaults.persistentDomain(forName: suite)!),
       "hover preview must not write preferences")
@@ -85,7 +91,11 @@ let reopened = AppSettingsStore(defaults: defaults)
 check(reopened.v3ArtworkSizeScale == 1.4 && reopened.v3ClassicBackdropSizeScale == 1.1,
       "both dimensions survive restart independently")
 check(reopened.v3PreviewScale(for: .ambientFeathered) == 0.9, "feathered scale remains independent")
-print("PASS: classic scale migration, independent edits/reopen, unchanged legacy keys, read-only previews")
+check(!reopened.v3ExpandArtworkWhenDetailsHidden && reopened.v3AmbientBackgroundShowsCompleteArtwork,
+      "expansion and ambient fit choices survive style switching and restart independently")
+check(reopened.v3PreviewBlur(for: .classic) == settings.v3PreviewBlur(for: .classic),
+      "ambient fit and cover expansion must not change remembered blur")
+print("PASS: independent V3 preferences, classic migration, legacy keys, read-only previews")
 """
 
 with tempfile.TemporaryDirectory(prefix="lyricsq-classic-scale-") as folder:

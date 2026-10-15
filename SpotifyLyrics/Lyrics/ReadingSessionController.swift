@@ -630,6 +630,11 @@ public final class ReadingSessionController: ObservableObject {
                 try await repository.adoptReadingVersion(versionID: versionID)
                 await MainActor.run { [weak self] in
                     guard let self, self.revision == token else { return }
+                    self.availableVersions = self.availableVersions.map {
+                        StoredReadingVersion(record: $0.record.with(isCurrent: $0.record.id == versionID), lines: $0.lines)
+                    }
+                    self.selectedVersion = self.availableVersions.first { $0.record.id == versionID }
+                    self.rebuildProjection()
                     self.message = ""
                 }
             } catch {
@@ -668,9 +673,12 @@ public final class ReadingSessionController: ObservableObject {
         return active.filter { $0.record.isCurrent && $0.record.isManuallyEdited }
             .max(by: { $0.record.updatedAt < $1.record.updatedAt })
             ?? locked.first(where: { $0.record.representationID == preferred })
-            ?? eligible.first(where: { $0.record.representationID == preferred && $0.record.isCurrent })
+            // A saved current flag is an adoption, including an explicitly
+            // confirmed AI candidate. Warnings still exclude unadopted drafts.
+            ?? active.first(where: { $0.record.representationID == preferred && $0.record.isCurrent })
             ?? eligible.first(where: { $0.record.representationID == preferred })
             ?? locked.first
+            ?? active.first(where: { $0.record.isCurrent })
             ?? eligible.first
     }
 
