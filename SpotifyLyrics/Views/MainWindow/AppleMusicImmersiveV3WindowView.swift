@@ -99,20 +99,17 @@ struct AppleMusicImmersiveV3WindowView: View {
 
     @State private var isSearchPresented = false
     @State private var isWindowMenuPresented = false
-    @State private var isDisplayPresented = false
-    @State private var isTranslationPresented = false
     @State private var showsAIReadingControls = false
     @State private var confirmsAIReadingRequest = false
     @State private var isTranslationComparisonPresented = false
     @State private var isVersionPickerPresented = false
-    @State private var isAppearancePresented = false
     @State private var hoveredStyle: V3ArtworkPresentation?
     private var compositionStyle: V3ArtworkPresentation { hoveredStyle ?? settings.v3ArtworkPresentation }
     private var compositionArtworkPosition: String { settings.v3PreviewPosition(for: compositionStyle) }
     private var compositionLyricsPosition: String { settings.v3PreviewLyricsPosition(for: compositionStyle) }
     private var compositionArtworkScale: Double { settings.v3PreviewScale(for: compositionStyle) }
-    @State private var isLyricsTimePresented = false
-    @State private var hoveredToolbarItem: String? = nil
+    private enum ToolbarPopover: Equatable { case translation, lyricsTime, appearance, display }
+    @State private var activeToolbarPopover: ToolbarPopover?
     // Keep listening unobstructed. Tools reveal at the top edge and stay
     // available while their popover is open.
     @State private var toolsVisible = false
@@ -130,7 +127,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             hoverOnly: settings.v3PlaybackDetailsOnHover,
             pointerInRegion: pointerRevealsPlayback,
             interacting: isPlaybackInteracting,
-            panelPresented: toolbarPanelIsPresented
+            panelPresented: false
         )
     }
 
@@ -141,7 +138,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         guard !playbackRegion.isNull, !playbackRegion.isEmpty else {
             // Compact lyrics-focus has no separate cover/player region, so
             // preserve its established canvas hover behavior.
-            return isPointerInsideCanvas
+            return isPointerInsideCanvas && !isPointerInToolbarRegion
         }
         return isPointerInsidePlaybackRegion
     }
@@ -232,12 +229,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 18)
-                .background(alignment: .top) {
-                    LinearGradient(colors: [.black.opacity(0.24), .clear], startPoint: .top, endPoint: .bottom)
-                        .frame(height: 90)
-                        .opacity(toolsVisible || toolbarPanelIsPresented ? 1 : 0)
-                        .allowsHitTesting(false)
-                }
+
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipped()
@@ -1189,15 +1181,30 @@ struct AppleMusicImmersiveV3WindowView: View {
     }
 
     private var toolbarPanelIsPresented: Bool {
-        isWindowMenuPresented || isSearchPresented || isDisplayPresented || isTranslationPresented || isVersionPickerPresented || isAppearancePresented || isLyricsTimePresented
+        isWindowMenuPresented || isSearchPresented || isVersionPickerPresented || activeToolbarPopover != nil
+    }
+
+    private func presentToolbarPopover(_ panel: ToolbarPopover) {
+        guard activeToolbarPopover != panel else { return }
+        isWindowMenuPresented = false
+        isSearchPresented = false
+        if panel != .appearance { hoveredStyle = nil }
+        activeToolbarPopover = panel
+    }
+
+    private func toolbarPopoverBinding(_ panel: ToolbarPopover) -> Binding<Bool> {
+        Binding(get: { activeToolbarPopover == panel }, set: { presented in
+            if presented { presentToolbarPopover(panel) }
+            else if activeToolbarPopover == panel { activeToolbarPopover = nil }
+        })
     }
 
     private func toolBar(for size: CGSize) -> some View {
         HStack(spacing: 4) {
-            Button { isWindowMenuPresented.toggle() } label: {
+            Button { activeToolbarPopover = nil; isWindowMenuPresented.toggle() } label: {
                 iconLabel("macwindow", description: "窗口模式")
             }
-            .toolbarTooltip("窗口模式", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
+            .help("窗口模式")
             .popover(isPresented: $isWindowMenuPresented, arrowEdge: .top) {
                 windowModePanel
             }
@@ -1213,49 +1220,55 @@ struct AppleMusicImmersiveV3WindowView: View {
             } label: {
                 iconLabel("books.vertical", description: "歌词库")
             }
-            .toolbarTooltip("歌词库", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
+            .help("歌词库")
             if liveOnly || !state.isShowingSearchPreview {
                 CurrentSongOperationsView(state: state, versionShortcutOnly: true, iconOnly: true,
-                    onVersionPickerPresentationChange: { isVersionPickerPresented = $0 },
+                    onVersionPickerPresentationChange: { presented in
+                        isVersionPickerPresented = presented
+                        if presented { activeToolbarPopover = nil }
+                    },
                     onOpenEditor: liveOnly ? { MenuBarLyricsController.shared.openEditor() } : nil)
                     .environmentObject(settings)
-                    .toolbarTooltip("歌词版本", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
+                    .help("歌词版本")
             }
             if liveOnly || !state.isShowingSearchPreview {
-                Button { isTranslationPresented.toggle() } label: {
+                Button { presentToolbarPopover(.translation) } label: {
                     iconLabel("sparkles", description: "AI 翻译与读音")
                 }
                 .keyboardShortcut("t", modifiers: [.command, .option])
                 .accessibilityIdentifier("translation.shortcut")
-                .toolbarTooltip("AI 翻译与读音", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
-                .popover(isPresented: $isTranslationPresented, arrowEdge: .top) {
+                .help("AI 翻译与读音")
+                .onHover { inside in if inside { presentToolbarPopover(.translation) } }
+                .popover(isPresented: toolbarPopoverBinding(.translation), arrowEdge: .top) {
                     translationPanel
                 }
             }
-            Button { isLyricsTimePresented.toggle() } label: {
+            Button { presentToolbarPopover(.lyricsTime) } label: {
                 iconLabel("clock.arrow.2.circlepath", description: lyricsTimeToolbarLabel)
             }
             .accessibilityIdentifier("lyrics.time")
-            .toolbarTooltip("歌词时间", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
-            .popover(isPresented: $isLyricsTimePresented, arrowEdge: .top) {
+            .help("歌词时间")
+            .onHover { inside in if inside { presentToolbarPopover(.lyricsTime) } }
+            .popover(isPresented: toolbarPopoverBinding(.lyricsTime), arrowEdge: .top) {
                 V3LyricsTimePopover(settings: settings)
             }
-            Button { isAppearancePresented = true } label: {
+            Button { presentToolbarPopover(.appearance) } label: {
                 iconLabel("slider.horizontal.3", description: "外观")
             }
             .accessibilityIdentifier("appearance.shortcut")
-            .onHover { inside in if inside { isAppearancePresented = true } }
-            .toolbarTooltip("外观背景", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
-            .popover(isPresented: $isAppearancePresented, arrowEdge: .top) {
+            .help("外观背景")
+            .onHover { inside in if inside { presentToolbarPopover(.appearance) } }
+            .popover(isPresented: toolbarPopoverBinding(.appearance), arrowEdge: .top) {
                 V3VisualTuningPopoverView(settings: settings, layoutStyleRawValue: $layoutStyleRawValue, preview: $hoveredStyle) {
-                    isAppearancePresented = false
+                    activeToolbarPopover = nil
                 }
             }
-            Button { isDisplayPresented.toggle() } label: {
+            Button { presentToolbarPopover(.display) } label: {
                 iconLabel("character.bubble", description: "歌词显示")
             }
-            .toolbarTooltip("歌词显示", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
-            .popover(isPresented: $isDisplayPresented, arrowEdge: .top) {
+            .help("歌词显示")
+            .onHover { inside in if inside { presentToolbarPopover(.display) } }
+            .popover(isPresented: toolbarPopoverBinding(.display), arrowEdge: .top) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("歌词显示").font(.headline)
                     Toggle("显示假名", isOn: displayBinding(\.showKana))
@@ -1283,10 +1296,10 @@ struct AppleMusicImmersiveV3WindowView: View {
                 Button { MenuBarLyricsController.shared.openSettings() } label: {
                     iconLabel("gearshape", description: "设置")
                 }
-                .toolbarTooltip("设置", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
+                .help("设置")
             } else {
                 SettingsLink { iconLabel("gearshape", description: "设置") }
-                    .toolbarTooltip("设置", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
+                    .help("设置")
             }
 
         }
@@ -1340,11 +1353,15 @@ struct AppleMusicImmersiveV3WindowView: View {
                     WindowManager.shared.toggleCapsule(state: state)
                     isWindowMenuPresented = false
                 }
-                toolbarAction("菜单栏歌词与播放", symbol: "menubar.rectangle") {
-                    isWindowMenuPresented = false
-                    // Close this popover before opening the status-item one.
-                    DispatchQueue.main.async { MenuBarLyricsController.shared.togglePopover() }
+                Toggle(isOn: $settings.menuBarLyricsEnabled) {
+                    Label("菜单栏歌词", systemImage: "menubar.rectangle")
+                        .font(.system(size: 13, weight: .medium))
                 }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .padding(10)
+                .accessibilityIdentifier("menubar.lyrics.toggle")
+                .help("直接开启或关闭菜单栏歌词；播放面板仍可从菜单栏图标打开。")
             }
             toolbarAction(liveOnly ? "退出全屏" : "全屏歌词", symbol: "arrow.up.left.and.arrow.down.right") {
                 WindowManager.shared.toggleFullScreen(state: state, settings: settings)
@@ -1382,10 +1399,10 @@ struct AppleMusicImmersiveV3WindowView: View {
 
     @ViewBuilder private var searchButton: some View {
         if !liveOnly {
-            Button { isSearchPresented.toggle() } label: {
+            Button { activeToolbarPopover = nil; isSearchPresented.toggle() } label: {
                 iconLabel("magnifyingglass", description: "搜索")
             }
-            .toolbarTooltip("搜索", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
+            .help("搜索")
             .popover(isPresented: $isSearchPresented, arrowEdge: .top) {
                 SongSearchPopover(manager: state.songSearchManager, playbackState: state)
             }
@@ -1426,48 +1443,6 @@ private struct QuietToolbarButtonStyle: ButtonStyle {
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .onHover { hovering = $0 }
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hovering)
-    }
-}
-
-private struct ToolbarTooltipModifier: ViewModifier {
-    let title: String
-    @Binding var currentHovered: String?
-    let panelPresented: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .onHover { hovering in
-                if hovering {
-                    currentHovered = title
-                } else if currentHovered == title {
-                    currentHovered = nil
-                }
-            }
-            .overlay(alignment: .bottom) {
-                if currentHovered == title && !panelPresented {
-                    Text(title)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
-                        )
-                        .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
-                        .fixedSize()
-                        .offset(y: 32)
-                        .allowsHitTesting(false)
-                        .zIndex(100)
-                }
-            }
-    }
-}
-
-private extension View {
-    func toolbarTooltip(_ title: String, current: Binding<String?>, panelPresented: Bool) -> some View {
-        modifier(ToolbarTooltipModifier(title: title, currentHovered: current, panelPresented: panelPresented))
     }
 }
 

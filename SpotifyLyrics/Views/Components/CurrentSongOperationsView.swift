@@ -185,7 +185,7 @@ struct CurrentSongOperationsView: View {
                     state.searchAdditionalLyricsVersions()
                 }
             )
-            .preferredColorScheme(.dark)
+            .modifier(SystemAppearanceSheetModifier())
         }
     }
 
@@ -1106,6 +1106,25 @@ private struct TranslationCandidatePreviewView: View {
         guard let timestamp = line.timestamp else { return "#\(line.lineIndex + 1)" }
         let seconds = max(0, Int(timestamp.rounded(.down)))
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+/// A sheet can follow macOS even when the listening canvas is always dark.
+private struct SystemAppearanceSheetModifier: ViewModifier {
+    @State private var scheme = Self.colorScheme(for: NSApp.effectiveAppearance)
+
+    static func colorScheme(for appearance: NSAppearance) -> ColorScheme {
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .preferredColorScheme(scheme)
+            .presentationBackground(Color(nsColor: .windowBackgroundColor))
+            .onReceive(NSApp.publisher(for: \.effectiveAppearance).receive(on: RunLoop.main)) { appearance in
+                let next = Self.colorScheme(for: appearance)
+                if scheme != next { scheme = next }
+            }
     }
 }
 
