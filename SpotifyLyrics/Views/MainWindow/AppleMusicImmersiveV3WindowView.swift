@@ -3886,7 +3886,7 @@ private struct V3ThemeSelectorView: View {
         }
     }
 
-    private func choose(_ style: V3ArtworkPresentation, closePanel: Bool = true) {
+    private func choose(_ style: V3ArtworkPresentation, closePanel: Bool = false) {
         settings.v3ArtworkPresentation = style
         preview = nil
         if closePanel { onConfirm() }
@@ -3894,7 +3894,7 @@ private struct V3ThemeSelectorView: View {
 
     private func themeButton(_ theme: V3ArtworkTheme, height: CGFloat = 64) -> some View {
         let style = settings.v3RememberedPresentation(for: theme)
-        return Button { choose(style) } label: {
+        return Button { choose(style, closePanel: false) } label: {
             VStack(spacing: 7) {
                 Image(systemName: theme.symbolName).font(.system(size: 22))
                 Text(theme.title).font(.system(size: 12, weight: .medium))
