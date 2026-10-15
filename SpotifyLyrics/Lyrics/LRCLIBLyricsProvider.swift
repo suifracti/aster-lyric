@@ -224,10 +224,24 @@ public final class LRCLIBLyricsProvider: LyricsProvider, @unchecked Sendable {
             .sorted { $0.confidence > $1.confidence }
 
         guard let best = sorted.first else {
-            if records.contains(where: { $0.instrumental == true }) {
+            // A broad search can contain other recordings or empty vocal
+            // records. Neither proves that the requested track is lyric-free.
+            if records.contains(where: { record in
+                guard record.instrumental == true,
+                      let title = record.trackName, let artist = record.artistName,
+                      let duration = record.duration, duration.isFinite, duration > 0,
+                      track.duration.isFinite, track.duration > 0, abs(duration - track.duration) <= 2,
+                      TrackTextNormalizer.normalize(title) == TrackTextNormalizer.normalize(track.title) else { return false }
+                let expected = TrackTextNormalizer.artistTokens(track.artist)
+                let actual = TrackTextNormalizer.artistTokens(artist)
+                let expectedNames = Set(expected.all.map(TrackTextNormalizer.normalizeArtistToken).filter { !$0.isEmpty })
+                let actualNames = Set(actual.all.map(TrackTextNormalizer.normalizeArtistToken).filter { !$0.isEmpty })
+                return !expectedNames.isEmpty && expectedNames == actualNames
+                    && TrackTextNormalizer.normalizeArtistToken(expected.primary) == TrackTextNormalizer.normalizeArtistToken(actual.primary)
+            }) {
                 return .noLyrics
             }
-            return records.isEmpty ? .noMatch : .noLyrics
+            return .noMatch
         }
 
         if LyricsMatcher.isHighConfidence(best.confidence),

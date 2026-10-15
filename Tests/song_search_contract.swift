@@ -28,6 +28,12 @@ private struct FixedTrackProvider: TrackSearchProvider {
     func search(query: TrackSearchQuery) async throws -> [TrackSearchResult] { results }
 }
 
+private struct UnavailableCatalog: TrackSearchProvider {
+    let name = "unavailable online catalog"
+    let error: SongSearchError
+    func search(query: TrackSearchQuery) async throws -> [TrackSearchResult] { throw error }
+}
+
 private struct DelayedTrackProvider: TrackSearchProvider {
     let name: String
     let delay: UInt64
@@ -99,6 +105,30 @@ struct SongSearchContract {
         precondition(localResults[0].lyrics == nil, "track search must not embed lyrics bodies")
         precondition(localResults[0].track.title == "Search Song")
         precondition((try! Data(contentsOf: file)) == originalData)
+
+        for error in [SongSearchError.notConfigured, .unauthorized] {
+            let offline = TrackSearchManager(providers: [local, UnavailableCatalog(error: error)])
+            await offline.search(query: SongSearchQuery(text: "Search Song"))?.value
+            guard case .results(_, let found) = offline.state else { fatalError("catalog configuration must not block local search") }
+            precondition(found.first?.source == .local)
+            await offline.search(query: SongSearchQuery(text: "No such local song"))?.value
+            guard case .noResults = offline.state else { fatalError("unconfigured catalog is not a local search failure") }
+        }
+        let broken = TrackSearchManager(providers: [UnavailableCatalog(error: .networkUnavailable)])
+        await broken.search(query: SongSearchQuery(text: "Search Song"))?.value
+        guard case .failed = broken.state else { fatalError("real search failure must remain visible") }
+        print("PASS local search works without Spotify configuration; no results and network failure stay distinct")
+        let savedTrack = Track(title: "Saved Library Song", artist: "Saved Artist", album: "Saved Album", duration: 180)
+        let savedProvider = LocalSearchProvider(index: index, savedSearch: { query in
+            guard query.text == "a line only in saved lyrics" else { return [] }
+            return [TrackSearchResult(id: "library:fixture", source: .local, track: savedTrack, confidence: 0.6)]
+        })
+        let saved = try! await savedProvider.search(query: SongSearchQuery(text: "a line only in saved lyrics"))
+        precondition(saved.map(\.id) == ["library:fixture"] && saved.allSatisfy { $0.asSongSearchResult().lyrics == nil })
+        let unavailableLibrary = LocalSearchProvider(index: index, savedSearch: { _ in throw SongSearchError.unknown("library unavailable") })
+        let localDespiteReadFailure = try! await unavailableLibrary.search(query: SongSearchQuery(text: "Search Song"))
+        precondition(localDespiteReadFailure.first?.track.title == "Search Song")
+        print("PASS saved-library metadata participates in local search; unreadable library preserves LRC results")
 
         // LRCLIB remains available for lyrics lookup, not track catalog search.
         let payload = """

@@ -53,6 +53,9 @@ public final class TrackSearchManager: ObservableObject {
                 do {
                     results.append(contentsOf: try await provider.search(query: query))
                 } catch let error as SongSearchError {
+                    // Online catalog setup is optional. Local/current-track
+                    // search remains usable before Spotify Web authorization.
+                    if error == .notConfigured || error == .unauthorized { continue }
                     errors.append(error.errorDescription ?? provider.name)
                 } catch {
                     errors.append(error.localizedDescription)

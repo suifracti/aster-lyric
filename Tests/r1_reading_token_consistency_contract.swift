@@ -11,6 +11,12 @@ public struct AITranslationConfiguration: Sendable {
     public init() {}
 }
 
+actor ReadingAICallCounter {
+    static let shared = ReadingAICallCounter()
+    var count = 0
+    func record() { count += 1 }
+}
+
 public struct AIReadingCandidateService: Sendable {
     public init() {}
     public func refine(
@@ -20,6 +26,7 @@ public struct AIReadingCandidateService: Sendable {
     ) async throws -> ReadingGenerationResult {
         _ = request
         _ = configuration
+        await ReadingAICallCounter.shared.record()
         return result
     }
 }
@@ -29,11 +36,11 @@ public final class AppSettingsStore: @unchecked Sendable {
     public let aiTranslationConfiguration = AITranslationConfiguration()
     public let readingPreferences: ReadingPreferences
 
-    public init(defaults: UserDefaults, automaticPolicy: ReadingUncertaintyPolicy = .needsConfirmation) {
+    public init(defaults: UserDefaults, automaticPolicy: ReadingUncertaintyPolicy = .needsConfirmation, aiEnabled: Bool = false, automatic: Bool = false) {
         readingUserDictionary = ReadingUserDictionaryStore(defaults: defaults)
         readingPreferences = ReadingPreferences(
-            automaticGeneration: false,
-            aiAssistedCandidate: false,
+            automaticGeneration: automatic,
+            aiAssistedCandidate: aiEnabled,
             uncertaintyPolicy: automaticPolicy
         )
     }
@@ -163,15 +170,55 @@ struct R1ReadingTokenConsistencyContract {
     static func main() async {
         do {
             let mode = CommandLine.arguments.dropFirst().first ?? "all"
+            if mode == "ai-gate" || mode == "all" { try await runExplicitAIGate() }
             if mode == "manual" || mode == "all" { try await runManualEditRoundTrip() }
             if mode == "race" || mode == "all" { try await runDelayedGenerationRace() }
             if mode == "click" || mode == "all" { try await runClickCorrectionRoundTrip() }
-            guard ["manual", "race", "click", "all"].contains(mode) else { throw ContractFailure("unknown case \(mode)") }
+            guard ["manual", "race", "click", "ai-gate", "all"].contains(mode) else { throw ContractFailure("unknown case \(mode)") }
             print("R1 reading/token consistency contract PASS (\(mode))")
         } catch {
             FileHandle.standardError.write(Data("\(error)\n".utf8))
             Darwin.exit(1)
         }
+    }
+
+    private static func runExplicitAIGate() async throws {
+        let root = try temporaryRoot("ai-gate")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("fixture.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await repository.prepare()
+        let track = Track(title: "Synthetic reading gate", artist: "Fixture", album: "Fixture", duration: 10)
+        let identity = TrackIdentity(track: track)
+        let lines = [LyricLine(timestamp: 0, originalText: "合成の月")]
+        let document = LyricsDocument(identity: identity, lines: lines, isSynchronized: true,
+            source: .amll, confidence: 1, providerSourceID: "synthetic", language: "ja")
+        let saved = try await repository.save(track: track, identity: identity, document: document)
+        let suite = "reading-ai-gate-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults, automaticPolicy: .allowLocalHighConfidence, aiEnabled: true, automatic: true)
+        let session = await MainActor.run { ReadingSessionController(repository: repository, settings: settings) }
+        let before = await ReadingAICallCounter.shared.count
+        await MainActor.run {
+            session.synchronize(lyricsVersionID: saved.versionID, sourceContentHash: saved.sourceContentHash,
+                lines: lines, language: "ja", trackStableKey: identity.stableKey)
+        }
+        try await waitUntil("automatic local generation did not finish") { !session.availableVersions.isEmpty && !session.isGenerating }
+        let afterAutomatic = await ReadingAICallCounter.shared.count
+        try require(afterAutomatic == before, "AI enabled preference must not cause automatic requests")
+        await MainActor.run { session.generateCurrentReading(representationID: .kana) }
+        try await waitUntil("manual local generation did not finish") { !session.isGenerating }
+        let afterLocal = await ReadingAICallCounter.shared.count
+        try require(afterLocal == before, "ordinary generation must remain local")
+        let selectedBeforeAI = await MainActor.run { session.selectedVersion?.record.id }
+        await MainActor.run { session.generateCurrentReading(representationID: .kana, allowAICandidate: true) }
+        try await waitUntil("explicit AI generation did not finish") { !session.isGenerating }
+        let afterExplicit = await ReadingAICallCounter.shared.count
+        try require(afterExplicit == before + 1, "only the explicit AI action may invoke candidate refinement once")
+        let selectedAfterAI = await MainActor.run { session.selectedVersion?.record.id }
+        try require(selectedAfterAI == selectedBeforeAI, "AI candidates must not auto-replace the current reading")
+        print("PASS reading automatic/local zero AI; explicit action one fake call")
     }
 
     private static func runManualEditRoundTrip() async throws {

@@ -42,7 +42,7 @@ struct ArtworkView: View {
         }
         .shadow(color: .black.opacity(showsAlbumLabel ? 0.28 : 0.18), radius: size * 0.08, y: size * 0.04)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("专辑封面，(track.album)")
+        .accessibilityLabel(track.album.isEmpty ? "专辑封面" : "专辑封面，\(track.album)")
         .task(id: "\(track.id)|\(effectiveArtworkURL?.absoluteString ?? "no-artwork")|\(debugForceNoArtwork ? "debug-no-artwork" : "artwork")") {
             remoteArtwork = nil
             guard !debugForceNoArtwork else { return }

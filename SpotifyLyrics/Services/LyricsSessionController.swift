@@ -13,6 +13,8 @@ public final class LyricsSessionController: ObservableObject {
     /// Session-only explicit absence. It never creates or deletes a database
     /// version and invalidates all in-flight Provider work.
     @Published public private(set) var isNoSelection = false
+    /// Explicit, session-only user mark; never inferred from missing lyrics or lyric text.
+    @Published public private(set) var isMarkedInstrumental = false
     @Published public private(set) var activeIdentity: TrackIdentity?
     @Published public private(set) var activeLyricsVersionID: UUID?
     @Published public private(set) var activeSourceContentHash: String?
@@ -102,6 +104,7 @@ public final class LyricsSessionController: ObservableObject {
         sourceFailureSummary = nil
         activeIdentity = identity
         activeTrack = track
+        isMarkedInstrumental = false
         if !retainsCurrentProjection {
             activeLyricsVersionID = nil
             activeSourceContentHash = nil
@@ -370,6 +373,7 @@ public final class LyricsSessionController: ObservableObject {
         lyrics = []
         availableCandidates = []
         isSynchronized = true
+        isMarkedInstrumental = false
         isNoSelection = false
         state = .loading(identity)
         LyricsE2ELog.log("SESSION placeholder identity=\(identity.stableKey) msg=\(message)")
@@ -382,6 +386,7 @@ public final class LyricsSessionController: ObservableObject {
         lyrics = []
         availableCandidates = []
         isSynchronized = true
+        isMarkedInstrumental = false
         isNoSelection = false
         state = .failed(identity, failure)
         LyricsE2ELog.log("SESSION fail identity=\(identity.stableKey) \(failure)")
@@ -439,6 +444,7 @@ public final class LyricsSessionController: ObservableObject {
         lyrics = []
         availableCandidates = []
         isSynchronized = true
+        isMarkedInstrumental = false
         isNoSelection = false
         state = .idle
         LyricsE2ELog.log("SESSION clear")
@@ -478,6 +484,7 @@ public final class LyricsSessionController: ObservableObject {
         lyrics = []
         availableCandidates = []
         isSynchronized = true
+        isMarkedInstrumental = false
         isNoSelection = true
         state = .noSelection(activeIdentity)
         LyricsE2ELog.log("SESSION explicit no-selection identity=\(activeIdentity.stableKey)")
@@ -494,15 +501,16 @@ public final class LyricsSessionController: ObservableObject {
         recoveryAttempts = 0
         lyrics = lines
         isSynchronized = true
+        isMarkedInstrumental = false
         isNoSelection = false
         state = .mockPreview
         LyricsE2ELog.log("SESSION mockPreview lines=\(lines.count)")
     }
 
     public func markAsInstrumental(identity: TrackIdentity) {
-        cancelCurrentRequest()
-        revision &+= 1
-        activeIdentity = identity
+        guard activeIdentity == identity, activeTrack != nil else { return }
+        selectNoVersion(identity: identity)
+        isMarkedInstrumental = true
         let line = LyricLine(timestamp: 0, originalText: "此歌曲为没有填词的纯音乐，请您欣赏")
         lyrics = [line]
         isSynchronized = false
@@ -520,6 +528,12 @@ public final class LyricsSessionController: ObservableObject {
         )
         state = .loaded(doc)
         LyricsE2ELog.log("SESSION markAsInstrumental identity=\(identity.stableKey)")
+    }
+
+    public func clearInstrumentalMark(identity: TrackIdentity) {
+        guard isMarkedInstrumental, activeIdentity == identity, let activeTrack else { return }
+        // The mark never changes stored selection. Restore it without asking a provider.
+        begin(track: activeTrack, identity: identity, automaticallySearch: false)
     }
 
     /// Registers one explicit adoption before any async repository work starts.
@@ -827,6 +841,7 @@ public final class LyricsSessionController: ObservableObject {
         sourceContentHash: String? = nil
     ) {
         isNoSelection = false
+        isMarkedInstrumental = false
         let enrichedLines = LyricsLayerEnricher.enrich(lines: document.lines)
         let inferredLanguage = document.language ?? LyricsLanguageGate.inferredLanguage(
             text: enrichedLines.map(\.originalText).joined(separator: "\n")

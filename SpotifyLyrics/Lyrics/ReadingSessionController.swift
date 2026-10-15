@@ -296,7 +296,7 @@ public final class ReadingSessionController: ObservableObject {
         }
     }
 
-    public func generateCurrentReading(representationID: ReadingRepresentationID? = nil) {
+    public func generateCurrentReading(representationID: ReadingRepresentationID? = nil, allowAICandidate: Bool = false) {
         guard let lyricsVersionID = sourceLyricsVersionID,
               let sourceContentHash,
               !sourceLines.isEmpty else {
@@ -310,13 +310,19 @@ public final class ReadingSessionController: ObservableObject {
         } else {
             engineID = ReadingEngineID(rawValue: settings.readingPreferences.japaneseEngineID) ?? .japaneseContextual
         }
+        if allowAICandidate {
+            guard settings.readingPreferences.aiAssistedCandidate,
+                  engineID == .japaneseContextual,
+                  ReadingLanguageGate.allowsJapaneseReadings(language: sourceLanguage, text: sourceLines.map(\.originalText).joined(separator: "\n")) else {
+                message = "AI 候选仅用于已启用的日语上下文读音；其它读音请使用本地生成"
+                return
+            }
+        }
         revision &+= 1
         let token = revision
         generationTask?.cancel()
         isGenerating = true
-        message = settings.readingPreferences.aiAssistedCandidate
-            ? "正在生成本地上下文读音（AI 候选仅在明确调用时使用）…"
-            : "正在生成读音…"
+        message = allowAICandidate ? "正在准备 AI 读音候选…" : "正在生成本地读音…"
         let request = ReadingGenerationRequest(
             lyricsVersionID: lyricsVersionID,
             sourceContentHash: sourceContentHash,
@@ -332,7 +338,7 @@ public final class ReadingSessionController: ObservableObject {
             userEntries: settings.readingUserDictionary.load()
         )
         let uncertaintyPolicy = settings.readingPreferences.uncertaintyPolicy
-        let aiEnabled = settings.readingPreferences.aiAssistedCandidate
+        let aiEnabled = allowAICandidate && settings.readingPreferences.aiAssistedCandidate
         let aiConfiguration = settings.aiTranslationConfiguration
         generationTask = Task { [weak self, repository] in
             do {
@@ -340,14 +346,16 @@ public final class ReadingSessionController: ObservableObject {
                 let result: ReadingGenerationResult
                 if aiEnabled,
                    engineID == .japaneseContextual {
-                    // AI is an explicit, candidate-only refinement. If the
-                    // optional request fails, the deterministic local result
-                    // remains usable and can still be saved for confirmation.
-                    result = (try? await self?.aiCandidateService.refine(
+                    // Only a separately confirmed action may request a paid
+                    // candidate. Surface failures instead of claiming a local
+                    // fallback was an AI success.
+                    try Task.checkCancellation()
+                    guard let self, self.revision == token else { return }
+                    result = try await self.aiCandidateService.refine(
                         result: localResult,
                         request: request,
                         configuration: aiConfiguration
-                    )) ?? localResult
+                    )
                 } else {
                     result = localResult
                 }
@@ -357,10 +365,10 @@ public final class ReadingSessionController: ObservableObject {
                       result.lines.enumerated().allSatisfy({ $0.element.originalText == request.lines[$0.offset].originalText }) else {
                     throw ReadingRepositoryError.invalidLines("生成结果与原文行不一致")
                 }
-                let requiresConfirmation = self?.requiresConfirmation(
+                let requiresConfirmation = aiEnabled || (self?.requiresConfirmation(
                     result: result,
                     policy: uncertaintyPolicy
-                ) ?? true
+                ) ?? true)
                 let now = Date()
                 let record = ReadingVersionRecord(
                     id: UUID(),

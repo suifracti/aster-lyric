@@ -280,6 +280,10 @@ struct PlaybackStateContract {
             precondition(state.isShowingSearchPreview && state.displayedTrack == previewTrack)
             let before = try await repo.loadEditableVersions(track: live, identity: identity)
             let revision = state.liveLyricsSessionRevision
+            state.markCurrentTrackAsInstrumental()
+            state.clearCurrentInstrumentalMark()
+            precondition(!state.liveTrackIsMarkedInstrumental && state.liveLyricsSessionRevision == revision,
+                "search preview must not mark or clear the live track as instrumental")
             let rejected = try await state.adoptLyricsCandidate(candidate)
             precondition(rejected.versionID == nil, "old live candidate callback during preview must not write live")
             let after = try await repo.loadEditableVersions(track: live, identity: identity)
@@ -312,11 +316,23 @@ struct PlaybackStateContract {
         precondition(oldLocked?.document.lines.map(\.originalText) == candidate.lines.map(\.originalText))
         precondition(oldLocked?.record.isLocked == true, "protected old locked original retained")
         print("PASS pending live locked confirmation: preview blocked before write; after preview explicit confirm restores; old locked original retained")
+        let beforeSearchRevision = state.liveLyricsSessionRevision
+        await state.songSearchManager.search(query: SongSearchQuery(text: "Self-authored replacement"))?.value
+        guard case .results(_, let savedResults) = state.songSearchManager.state else { fatalError("saved lyrics must be searchable without Spotify Client ID") }
+        precondition(savedResults.contains { $0.id.hasPrefix("library:") && $0.track.title == live.title && $0.lyrics == nil })
+        precondition(!state.isShowingSearchPreview && state.liveLyricsSessionRevision == beforeSearchRevision && provider.commandLog.isEmpty,
+            "search alone must not change current selection, preview or playback")
+        print("PASS PlaybackState saved-library search works without Spotify configuration and only returns metadata")
         state.selectNoLyricsVersion()
         precondition(state.isLyricsSelectionEmpty && state.canCreateManualLyrics)
         precondition(state.prepareBlankLyricsEditor(), "manual creation must restore for live empty state")
         state.markCurrentTrackAsInstrumental()
-        precondition(state.liveLyrics.first?.originalText == "此歌曲为没有填词的纯音乐，请您欣赏")
+        precondition(state.liveTrackIsMarkedInstrumental && state.liveLyricsVersionID == nil
+            && state.liveLyrics.first?.originalText == "此歌曲为没有填词的纯音乐，请您欣赏")
+        state.clearCurrentInstrumentalMark()
+        for _ in 0..<200 where state.lyricsSession.isSearchInProgress { try await Task.sleep(nanoseconds: 5_000_000) }
+        precondition(!state.liveTrackIsMarkedInstrumental && state.liveLyricsVersionID == confirmed?.versionID,
+            "undo instrumental mark must restore the previously selected saved version")
         state.selectNoLyricsVersion()
         precondition(state.isLyricsSelectionEmpty)
         print("PASS preview ended: live candidate/none/manual editor/instrumental actions restore; no App/player/paid engine")

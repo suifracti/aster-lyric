@@ -56,6 +56,18 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -f "$TMP_DIR"/* 2>/dev/null; rmdir "$TMP_DIR" 2>/dev/null || true' EXIT
 
 COMMON=(
+  "SpotifyLyrics/Lyrics/PersonalLyricsLibraryModels.swift"
+  "SpotifyLyrics/Lyrics/ListeningHistoryModels.swift"
+  "SpotifyLyrics/Lyrics/ListeningStatisticsModels.swift"
+  "SpotifyLyrics/Editor/LyricsEditorModels.swift"
+  "SpotifyLyrics/Editor/LyricsTimelineValidator.swift"
+  "SpotifyLyrics/Lyrics/ReadingModels.swift"
+  "SpotifyLyrics/Persistence/DatabaseMigrator.swift"
+  "SpotifyLyrics/Persistence/AlignmentProvenanceStore.swift"
+  "SpotifyLyrics/Persistence/TranslationRepository.swift"
+  "SpotifyLyrics/Persistence/LyricsEditingRepository.swift"
+  "SpotifyLyrics/Persistence/SQLiteLyricsRepository.swift"
+  "SpotifyLyrics/DebugDatabaseSafety.swift"
   "SpotifyLyrics/Models/Models.swift"
   "SpotifyLyrics/Lyrics/TrackIdentity.swift"
   "SpotifyLyrics/Lyrics/LyricsModels.swift"

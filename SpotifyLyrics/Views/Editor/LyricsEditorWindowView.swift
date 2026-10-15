@@ -138,10 +138,13 @@ struct LyricsEditorWindowView: View {
                 Divider()
                 Button("作为新歌词版本") { pasteText() }
             }
-            Button("导入 TXT", systemImage: "doc.text") { importTXT() }
-            Button("导入 LRC", systemImage: "square.and.arrow.down") { importLRC() }
-            Button("导出原文", systemImage: "square.and.arrow.up") { exportOriginal() }
-            Button("导出翻译", systemImage: "text.badge.plus") { exportTranslation() }
+            Menu("导入 / 导出", systemImage: "square.and.arrow.down") {
+                Button("导入 TXT", systemImage: "doc.text") { importTXT() }
+                Button("导入 LRC", systemImage: "square.and.arrow.down") { importLRC() }
+                Divider()
+                Button("导出原文", systemImage: "square.and.arrow.up") { exportOriginal() }
+                Button("导出翻译", systemImage: "text.badge.plus") { exportTranslation() }
+            }
             Button("关闭") { dismiss() }
         }
         .buttonStyle(.borderless)
@@ -152,12 +155,16 @@ struct LyricsEditorWindowView: View {
 
     private var versionPicker: some View {
         Menu {
+            if editor.availableVersions.isEmpty {
+                Text("暂无已保存的歌词版本")
+            }
             ForEach(editor.availableVersions, id: \.record.id) { version in
                 Button {
-                    editor.selectLyricsVersion(versionID: version.record.id)
+                    requestLyricsVersion(version.record.id)
                 } label: {
                     HStack {
-                        Text("\(version.record.source) · \(version.record.id.uuidString.prefix(8))")
+                        Text("\(DatabaseSourceIdentifier.displayName(for: version.record.source)) · \(version.record.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                        if version.record.id == editor.selectedSavedLyricsOffsetVersionID { Image(systemName: "checkmark") }
                         if version.record.isLocked { Image(systemName: "lock.fill") }
                     }
                 }
@@ -166,6 +173,23 @@ struct LyricsEditorWindowView: View {
             Label("歌词版本", systemImage: "doc.text")
         }
         .menuStyle(.borderlessButton)
+        .disabled(editor.state == .saving)
+    }
+
+    private func requestLyricsVersion(_ versionID: UUID) {
+        guard editor.state != .saving,
+              versionID != editor.selectedSavedLyricsOffsetVersionID else { return }
+        if editor.hasUnsavedChanges {
+            let alert = NSAlert()
+            alert.messageText = "切换版本前保留当前草稿？"
+            alert.informativeText = "切换会放弃当前未保存的修改。选择保留草稿，可以先保存人工版本后再切换。"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "保留草稿")
+            alert.addButton(withTitle: "放弃并切换")
+            guard alert.runModal() == .alertSecondButtonReturn else { return }
+        }
+        editor.selectLyricsVersion(versionID: versionID)
+        focusedLineID = nil
     }
 
     private var translationPicker: some View {
@@ -216,64 +240,100 @@ struct LyricsEditorWindowView: View {
         }
     }
 
+    private var canUsePlaybackTiming: Bool {
+        state.canControlSpotify && !state.isShowingSearchPreview && !editor.isStale
+            && editor.currentIdentity == state.liveTrackIdentity
+    }
+
     private var toolbar: some View {
-        HStack(spacing: 8) {
-            Button("撤销", systemImage: "arrow.uturn.backward") { editor.undo() }
-                .keyboardShortcut("z", modifiers: [.command])
-            Button("重做", systemImage: "arrow.uturn.forward") { editor.redo() }
-                .keyboardShortcut("z", modifiers: [.command, .shift])
-            Divider().frame(height: 16)
-            Button("插入空行", systemImage: "plus") { editor.insertBlank(after: nil) }
-            Button("重新生成整首读音", systemImage: "textformat.abc") { editor.regenerateAllReadings() }
-            Divider().frame(height: 16)
-            Button("后退 2 秒", systemImage: "gobackward.2") {
-                state.seek(to: max(0, state.currentTime - 2), source: "lyrics-editor")
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Button("撤销", systemImage: "arrow.uturn.backward") { editor.undo() }
+                    .keyboardShortcut("z", modifiers: [.command])
+                Button("重做", systemImage: "arrow.uturn.forward") { editor.redo() }
+                    .keyboardShortcut("z", modifiers: [.command, .shift])
+                Divider().frame(height: 16)
+                Button("插入空行", systemImage: "plus") { editor.insertBlank(after: focusedLineID) }
+                    .help("在所选行后插入；未选中行时添加到末尾")
+                Button("本地生成读音", systemImage: "textformat.abc") { editor.regenerateAllReadings() }
+                    .help("重新生成未锁定行的假名与罗马音；不调用 AI，可撤销")
+                Spacer(minLength: 8)
+                if editor.state == .saving {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text(editor.hasUnsavedChanges ? "有未保存修改" : "尚未修改")
+                        .font(.caption)
+                        .foregroundStyle(LyricsDesignTokens.secondaryText)
+                }
+                Button("保存人工版本") { editor.save() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(editor.draft?.identity == nil || !editor.canSave)
+                Button("保存并锁定", systemImage: "lock.fill") { editor.save(lockLyrics: true, lockTranslation: true) }
+                    .disabled(editor.draft?.identity == nil || !editor.canSave)
             }
-            Button(state.isPlaying ? "暂停" : "播放", systemImage: state.isPlaying ? "pause.fill" : "play.fill") {
-                state.togglePlayPause()
+            .disabled(editor.state == .saving)
+
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 12) {
+                        HStack(spacing: 12) {
+                            Button("后退 2 秒", systemImage: "gobackward.2") {
+                                state.seek(to: max(0, state.currentTime - 2), source: "lyrics-editor")
+                            }
+                            Button(state.isPlaying ? "暂停" : "播放", systemImage: state.isPlaying ? "pause.fill" : "play.fill") {
+                                state.togglePlayPause()
+                            }
+                            Button("前进 2 秒", systemImage: "goforward.2") {
+                                state.seek(to: min(state.currentTrack.duration, state.currentTime + 2), source: "lyrics-editor")
+                            }
+                        }
+                        .disabled(!canUsePlaybackTiming)
+                        Text(Self.formatTime(state.currentTime) + " / " + Self.formatTime(state.currentTrack.duration))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(LyricsDesignTokens.secondaryText)
+                        Spacer()
+                        Toggle("标记后自动前进", isOn: Binding(
+                            get: { editor.assistAutoAdvance },
+                            set: { editor.assistAutoAdvance = $0 }
+                        ))
+                        .toggleStyle(.checkbox)
+                        .font(.caption)
+                    }
+                    HStack(spacing: 12) {
+                        Button("记当前行", systemImage: "scope") {
+                            markFocusedLineAtCurrentTime(advance: false)
+                        }
+                        .disabled(!canUsePlaybackTiming)
+                        Button("记当前并下一行", systemImage: "arrow.down.to.line") {
+                            markFocusedLineAtCurrentTime(advance: true)
+                        }
+                        .disabled(!canUsePlaybackTiming)
+                        Button("下一条未排", systemImage: "arrow.down.circle") {
+                            jumpToNextUntimed()
+                        }
+                        Spacer()
+                        Text(canUsePlaybackTiming ? "空格：标记时间 · N：下一条未排" : "播放此编辑稿对应的歌曲后可标记时间")
+                            .font(.caption)
+                            .foregroundStyle(LyricsDesignTokens.secondaryText)
+                    }
+                }
+                .padding(.top, 6)
+                .disabled(editor.state == .saving)
+            } label: {
+                HStack(spacing: 8) {
+                    Label("时间轴与播放", systemImage: "clock")
+                    if let draft = editor.draft {
+                        Text("已排 \(draft.timedNonBlankLineCount) · 未排 \(draft.untimedNonBlankLineCount)")
+                            .foregroundStyle(LyricsDesignTokens.secondaryText)
+                    }
+                }
+                .font(.caption)
             }
-            Button("前进 2 秒", systemImage: "goforward.2") {
-                state.seek(to: min(state.currentTrack.duration, state.currentTime + 2), source: "lyrics-editor")
-            }
-            Text(Self.formatTime(state.currentTime) + " / " + Self.formatTime(state.currentTrack.duration))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(LyricsDesignTokens.secondaryText)
-            Divider().frame(height: 16)
-            Button("记当前行", systemImage: "scope") {
-                markFocusedLineAtCurrentTime(advance: false)
-            }
-            Button("记当前并下一行", systemImage: "arrow.down.to.line") {
-                markFocusedLineAtCurrentTime(advance: true)
-            }
-            Button("下一条未排", systemImage: "arrow.down.circle") {
-                jumpToNextUntimed()
-            }
-            Toggle("标记后自动前进", isOn: Binding(
-                get: { editor.assistAutoAdvance },
-                set: { editor.assistAutoAdvance = $0 }
-            ))
-            .toggleStyle(.checkbox)
-            .font(.caption)
-            Spacer()
-            if let draft = editor.draft {
-                Text("已排 \(draft.timedNonBlankLineCount) · 未排 \(draft.untimedNonBlankLineCount)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(LyricsDesignTokens.mutedText)
-            }
-            Button("保存人工版本") { editor.save() }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
-                .disabled(editor.draft?.identity == nil || !editor.canSave)
-                .help(editor.draft?.identity == nil ? "当前未关联播放曲目，无法直接保存到数据库；请先在 Spotify 播放歌曲" : "")
-            Button("保存并锁定", systemImage: "lock.fill") { editor.save(lockLyrics: true, lockTranslation: true) }
-                .buttonStyle(.borderless)
-                .controlSize(.regular)
-                .disabled(editor.draft?.identity == nil || !editor.canSave)
-                .help(editor.draft?.identity == nil ? "当前未关联播放曲目，无法直接保存到数据库；请先在 Spotify 播放歌曲" : "")
         }
         .buttonStyle(.borderless)
+        .controlSize(.small)
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
         .background(Color.white.opacity(0.02))
     }
 
@@ -406,6 +466,7 @@ struct LyricsEditorWindowView: View {
     }
 
     private func markFocusedLineAtCurrentTime(advance: Bool) {
+        guard canUsePlaybackTiming, editor.state != .saving else { return }
         let targetID = focusedLineID
             ?? editor.draft?.lines.first(where: {
                 $0.startTime == nil

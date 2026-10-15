@@ -25,9 +25,24 @@ struct TrackMetadataView: View {
                 .lineLimit(2)
                 .multilineTextAlignment(alignment == .center ? .center : .leading)
                 .shadow(color: Color.black.opacity(presentation == .v3Immersive ? 0.22 : 0), radius: 7, y: 2)
+                .help("\(track.title)\n右键复制歌曲信息")
                 .contextMenu {
                     Button("复制歌名", systemImage: "doc.on.doc") {
                         _ = TrackMetadataCopy.copy(track.title)
+                    }
+                    Button("复制歌手", systemImage: "person") {
+                        _ = TrackMetadataCopy.copy(track.artist)
+                    }
+                    if !track.album.isEmpty {
+                        Button("复制专辑", systemImage: "square.stack") {
+                            _ = TrackMetadataCopy.copy(track.album)
+                        }
+                    }
+                    Divider()
+                    Button("复制歌曲信息", systemImage: "list.clipboard") {
+                        _ = TrackMetadataCopy.copy(TrackMetadataCopy.summary(
+                            title: track.title, artist: track.artist, album: track.album
+                        ))
                     }
                 }
 
@@ -101,7 +116,7 @@ struct TrackMetadataView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(artistColor)
-            .help("在 Spotify 打开艺人：\(artist.name)")
+            .help("在 Spotify 打开艺人：\(artist.name)\n右键复制歌手")
             .contextMenu {
                 Button("复制歌手", systemImage: "doc.on.doc") {
                     _ = TrackMetadataCopy.copy(artist.name)
@@ -110,6 +125,7 @@ struct TrackMetadataView: View {
         } else {
             Text(artist.name)
                 .foregroundStyle(artistColor)
+                .help("\(artist.name)\n右键复制歌手")
                 .contextMenu {
                     Button("复制歌手", systemImage: "doc.on.doc") {
                         _ = TrackMetadataCopy.copy(artist.name)
@@ -118,22 +134,26 @@ struct TrackMetadataView: View {
         }
     }
 
-    @ViewBuilder
     private var albumButton: some View {
-        if let url = track.albumURL {
-            Button(track.album) {
-                _ = NSWorkspace.shared.open(url)
+        Group {
+            if let url = track.albumURL {
+                Button(track.album) {
+                    _ = NSWorkspace.shared.open(url)
+                }
+                .buttonStyle(.plain)
+                .help("在 Spotify 打开专辑：\(track.album)\n右键复制专辑")
+            } else {
+                Text(track.album)
+                    .help("\(track.album)\n右键复制专辑")
             }
-            .buttonStyle(.plain)
-            .font(.system(size: max(11, titleSize * 0.52), design: .rounded))
-            .foregroundStyle(albumColor)
-            .lineLimit(1)
-            .help("在 Spotify 打开专辑：\(track.album)")
-        } else {
-            Text(track.album)
-                .font(.system(size: max(11, titleSize * 0.52), design: .rounded))
-                .foregroundStyle(albumColor)
-                .lineLimit(1)
+        }
+        .font(.system(size: max(11, titleSize * 0.52), design: .rounded))
+        .foregroundStyle(albumColor)
+        .lineLimit(1)
+        .contextMenu {
+            Button("复制专辑", systemImage: "doc.on.doc") {
+                _ = TrackMetadataCopy.copy(track.album)
+            }
         }
     }
 

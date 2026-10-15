@@ -8,6 +8,20 @@ struct ReadingVersionEditorView: View {
     @State private var saving = false
     @State private var error = ""
 
+    private var changedLineCount: Int {
+        version.lines.enumerated().filter { index, line in
+            !line.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && drafts.indices.contains(index)
+                && drafts[index] != (line.readingText ?? "")
+        }.count
+    }
+
+    private var sourceIsCurrent: Bool {
+        !state.isShowingSearchPreview && state.liveLyricsVersionID == version.record.lyricsVersionID
+    }
+
+    private var canSave: Bool { !saving && sourceIsCurrent && changedLineCount > 0 }
+
     init(state: PlaybackState, version: StoredReadingVersion) {
         self.state = state
         self.version = version
@@ -18,9 +32,24 @@ struct ReadingVersionEditorView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("编辑读音")
                 .font(.title3.weight(.semibold))
-            Text("保存会创建新的人工读音版本，不覆盖 \(version.record.engineID)。")
+            Text("保存后采用新的人工读音版本，原版本保留。原文、翻译与时间轴保持不变。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Text(ReadingRepresentationID(rawValue: version.record.representationID)?.displayName ?? "读音")
+                if version.record.isLocked {
+                    Label("原版本已锁定", systemImage: "lock.fill")
+                }
+                Spacer()
+                Text(changedLineCount == 0 ? "尚未修改" : "已修改 \(changedLineCount) 行")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            if !sourceIsCurrent {
+                Label("当前歌词已变化。请关闭后重新打开对应版本。", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
             if !error.isEmpty {
                 Text(error)
                     .font(.caption)
@@ -29,14 +58,19 @@ struct ReadingVersionEditorView: View {
             List {
                 ForEach(Array(version.lines.enumerated()), id: \.element.lineIndex) { index, line in
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(line.originalText.isEmpty ? "（空行）" : line.originalText)
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text("\(index + 1)")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                            Text(line.originalText.isEmpty ? "（空行）" : line.originalText)
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                        }
                         TextField("读音", text: Binding(
                             get: { drafts.indices.contains(index) ? drafts[index] : "" },
                             set: { if drafts.indices.contains(index) { drafts[index] = $0 } }
                         ))
                         .textFieldStyle(.roundedBorder)
-                        .disabled(saving)
+                        .disabled(saving || !sourceIsCurrent || line.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     .padding(.vertical, 4)
                 }
@@ -45,12 +79,13 @@ struct ReadingVersionEditorView: View {
                 Spacer()
                 Button("取消") { dismiss() }
                     .disabled(saving)
+                    .keyboardShortcut(.cancelAction)
                 if saving { ProgressView().controlSize(.small) }
-                Button("另存为人工版本") {
+                Button("保存并采用人工版本") {
                     save()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(saving)
+                .disabled(!canSave)
             }
         }
         .padding(20)
@@ -60,7 +95,7 @@ struct ReadingVersionEditorView: View {
     }
 
     private func save() {
-        guard !saving else { return }
+        guard canSave else { return }
         saving = true
         error = ""
         let edited = ReadingManualEdit.lines(from: version.lines, drafts: drafts)
@@ -120,6 +155,7 @@ struct RubyCorrectionEditorView: View {
             if !error.isEmpty { Text(error).font(.caption).foregroundStyle(.red) }
             HStack {
                 Button("取消") { dismiss() }.disabled(saving)
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
                 if saving { ProgressView().controlSize(.small) }
                 Button("保存读音") { save() }
@@ -131,12 +167,13 @@ struct RubyCorrectionEditorView: View {
         .onAppear { focused = true }
     }
     private func save() {
-        guard !saving else { return }
+        let reading = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !saving, !reading.isEmpty else { return }
         saving = true
         error = ""
         Task { @MainActor in
             do {
-                try await state.readingSession.correctRuby(surface: request.surface, reading: draft,
+                try await state.readingSession.correctRuby(surface: request.surface, reading: reading,
                     trackKey: request.trackKey, lyricsVersionID: request.lyricsVersionID, visibleLines: request.lines,
                     expectedReadingVersionID: request.readingVersionID)
                 dismiss()

@@ -231,7 +231,7 @@ struct S1DurableManualAdoptionContract {
 
         let scenario = CommandLine.arguments.dropFirst().first ?? "all"
         let scenarios = scenario == "all"
-            ? ["force-refresh-protected", "stored-selection-read-fails", "lyrics-ovh-zero", "kugou-half", "timed-spans", "auto-search-timed-reopen", "auto-search-disabled-loads-selection", "locked-current", "selection-throws", "timing-throws", "invalid-content", "failed-results", "track-switch", "same-track-order"]
+            ? ["instrumental-mark", "force-refresh-protected", "stored-selection-read-fails", "lyrics-ovh-zero", "kugou-half", "timed-spans", "auto-search-timed-reopen", "auto-search-disabled-loads-selection", "locked-current", "selection-throws", "timing-throws", "invalid-content", "failed-results", "track-switch", "same-track-order"]
             : [scenario]
         var failures = 0
         for item in scenarios {
@@ -248,6 +248,7 @@ struct S1DurableManualAdoptionContract {
 
     private static func run(_ scenario: String) async throws {
         switch scenario {
+        case "instrumental-mark": try await reversibleInstrumentalMarkContract()
         case "force-refresh-protected": try await forceRefreshProtectedSelectionContract()
         case "bilingual-auto-cache": try await bilingualAutomaticCacheContract()
         case "selection-read-fails": try await failedSelectionReadStopsSearch()
@@ -270,6 +271,45 @@ struct S1DurableManualAdoptionContract {
         case "track-switch": try await lateAdoptionStaysBoundToItsTrack()
         case "same-track-order": try await newerSameTrackRequestWins()
         default: throw ContractFailure(description: "unknown scenario \(scenario)")
+        }
+    }
+
+    private static func reversibleInstrumentalMarkContract() async throws {
+        try await withTemporaryRoot { root in
+            let track = makeTrack("instrumental-mark"), identity = TrackIdentity(track: makeTrack("instrumental-mark"))
+            let repo = makeRepository(root: root)
+            try await repo.prepare()
+            let saved = try await repo.save(track: track, identity: identity, document: LyricsDocument(
+                identity: identity, title: track.title, artist: track.artist, album: track.album, duration: track.duration,
+                lines: [LyricLine(timestamp: 1, originalText: "我唱着纯音乐和没有填词的故事")], source: .manualImport,
+                confidence: 1, providerSourceID: "saved-vocal-fixture"))
+            let id = saved.versionID!
+            try await repo.adoptLyricsVersion(trackStableKey: identity.stableKey, lyricsVersionID: id)
+            try await repo.markLocked(versionID: id, locked: true)
+            let counter = LyricsProviderCallCounter()
+            let session = LyricsSessionController(providers: [CountingLyricsProvider(name: "must stay offline", counter: counter, result: .noMatch)], repository: repo)
+            session.begin(track: track, identity: identity)
+            for _ in 0..<200 where session.isSearchInProgress { try await Task.sleep(nanoseconds: 5_000_000) }
+            try check(!session.isMarkedInstrumental && session.activeLyricsVersionID == id, "lyric words must not imply instrumental")
+            session.markAsInstrumental(identity: identity)
+            try check(session.isMarkedInstrumental && session.activeLyricsVersionID == nil && session.activeSourceContentHash == nil,
+                "explicit instrumental mark must detach old version/translation bindings")
+            try check(try await repo.loadBestStored(track: track, identity: identity)?.versionID == id,
+                "instrumental mark changed saved selection")
+            try check(try await repo.versionCount(trackStableKey: identity.stableKey) == 1, "instrumental mark created an empty lyric asset")
+            session.clearInstrumentalMark(identity: identity)
+            for _ in 0..<200 where session.isSearchInProgress { try await Task.sleep(nanoseconds: 5_000_000) }
+            try check(!session.isMarkedInstrumental && session.activeLyricsVersionID == id
+                && session.lyrics.first?.originalText == "我唱着纯音乐和没有填词的故事", "undo must restore original selected lyrics")
+            try check(try await repo.loadEditableVersion(versionID: id, track: track, identity: identity)?.record.isLocked == true,
+                "undo removed stored lock")
+            try check(await counter.value() == 0, "undo must not contact lyric providers")
+            let other = makeTrack("instrumental-other")
+            session.markAsInstrumental(identity: TrackIdentity(track: other))
+            try check(!session.isMarkedInstrumental, "stale track mark was accepted")
+            session.markAsInstrumental(identity: identity)
+            session.begin(track: other, identity: TrackIdentity(track: other), automaticallySearch: false)
+            try check(!session.isMarkedInstrumental, "instrumental mark followed another song")
         }
     }
 

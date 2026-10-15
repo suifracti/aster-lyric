@@ -12,11 +12,22 @@ struct LyricsCanvasView: View {
 
     var body: some View {
         Group {
+            if !state.isShowingSearchPreview && state.liveTrackIsMarkedInstrumental {
+                VStack(spacing: 12) {
+                    Image(systemName: "music.note").font(.largeTitle)
+                    Text("已标记为纯音乐").font(.headline)
+                    Text("仅影响当前显示；已保存的歌词与译文仍保留。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("撤销纯音乐标记") { state.clearCurrentInstrumentalMark() }
+                        .buttonStyle(.bordered)
+                }
+            } else {
             switch LyricsStatePresentation.active {
             case .systemV1:
                 systemStateContent
             case .contentFirstV1:
                 contentFirstStateContent
+            }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -130,7 +141,7 @@ struct LyricsCanvasView: View {
         case .loading:
             statusView(icon: "magnifyingglass", message: "正在自动补全歌词…", detail: "Local → AMLL → LRCLIB → 网易云/QQ（实验）查询中")
         case .noLyrics:
-            statusView(icon: "text.magnifyingglass", message: "暂未找到歌词", detail: "来源返回无词（例如纯音乐）。可导入本地音频做 ASR 草稿。") {
+            statusView(icon: "text.magnifyingglass", message: "来源未提供歌词", detail: "这不代表已确认纯音乐。可以继续搜索或手动添加歌词。") {
                 VStack(spacing: 8) {
                     retryButton
                     manualLyricsQueryEntry

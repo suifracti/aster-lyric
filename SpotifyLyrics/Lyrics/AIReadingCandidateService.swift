@@ -11,13 +11,16 @@ import Foundation
 public struct AIReadingCandidateService: Sendable {
     private let client: OpenAICompatibleClient
     private let keyStore: any AITranslationAPIKeyStore
+    private let acceptanceBudget: TranslationAcceptanceRequestBudget?
 
     public init(
         client: OpenAICompatibleClient = OpenAICompatibleClient(),
-        keyStore: any AITranslationAPIKeyStore = KeychainAITranslationAPIKeyStore()
+        keyStore: any AITranslationAPIKeyStore = KeychainAITranslationAPIKeyStore(),
+        acceptanceBudget: TranslationAcceptanceRequestBudget? = .processBudget
     ) {
         self.client = client
         self.keyStore = keyStore
+        self.acceptanceBudget = acceptanceBudget
     }
 
     public func refine(
@@ -25,17 +28,19 @@ public struct AIReadingCandidateService: Sendable {
         request: ReadingGenerationRequest,
         configuration: AITranslationConfiguration
     ) async throws -> ReadingGenerationResult {
-        guard configuration.isConfigured,
-              let apiKey = keyStore.read(),
-              !apiKey.isEmpty else {
-            return result
+        guard configuration.engineID == TranslationEngineID.openAICompatible.rawValue else {
+            throw AITranslationError.engineUnavailable("AI 读音候选目前仅支持兼容 API；不会转用其他翻译服务")
         }
+        guard configuration.isConfigured else { throw AITranslationError.notConfigured }
+        _ = try AITranslationEndpoint(baseURL: configuration.baseURL).validatedChatCompletionsURL()
 
         let ambiguousLines = result.lines.filter { line in
             let warnings = Set(line.warnings)
             return !warnings.isDisjoint(with: [.unknownToken, .ambiguousReading, .languageNeedsConfirmation])
         }
-        guard !ambiguousLines.isEmpty else { return result }
+        guard !ambiguousLines.isEmpty else {
+            throw AITranslationError.engineUnavailable("没有需要 AI 辅助的不确定读音；本地读音可直接使用")
+        }
 
         let payload: [[String: Any]] = ambiguousLines.map { line in
             let tokens = line.tokens
@@ -75,6 +80,13 @@ public struct AIReadingCandidateService: Sendable {
         let promptHash = SHA256.hash(data: Data((system + "\n" + user).utf8))
             .map { String(format: "%02x", $0) }
             .joined()
+        try Task.checkCancellation()
+        try acceptanceBudget?.reserve(
+            provider: configuration.engineID, trackKey: request.trackStableKey ?? "")
+        guard let apiKey = keyStore.read(), !apiKey.isEmpty else {
+            throw AITranslationError.notConfigured
+        }
+        try Task.checkCancellation()
         let response = try await client.complete(
             prompt: AITranslationPrompt(system: system, user: user, promptHash: promptHash),
             configuration: configuration,

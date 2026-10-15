@@ -116,6 +116,26 @@ struct ProviderFailureContract {
         precondition(document.source == .lrclib)
         precondition(okSession.requests.first?.url?.absoluteString.contains("track_name=LRCLIB%20Song") == true)
 
+        // Empty search records are not proof that the requested song has no vocals.
+        for (label, title, artist, duration, instrumental) in [
+            ("unrelated instrumental", "Other Song", "Other Artist", 210.0, true),
+            ("different version", "LRCLIB Song (Instrumental)", "LRCLIB Artist", 210.0, true),
+            ("different duration", "LRCLIB Song", "LRCLIB Artist", 300.0, true),
+            ("empty vocal record", "LRCLIB Song", "LRCLIB Artist", 210.0, false)
+        ] {
+            let body = try! JSONSerialization.data(withJSONObject: ["id": 8, "trackName": title,
+                "artistName": artist, "duration": duration, "instrumental": instrumental])
+            let outcome = await LRCLIBLyricsProvider(session: StubLRCLIBSession(data: body), maxAutomaticRetries: 0)
+                .lookup(track: track, identity: identity)
+            guard case .noMatch = outcome else { fatalError("\(label) must not declare requested song lyric-free: \(outcome)") }
+        }
+        let instrumentalBody = try! JSONSerialization.data(withJSONObject: ["id": 9, "trackName": track.title,
+            "artistName": track.artist, "duration": track.duration, "instrumental": true])
+        let explicitNoLyrics = await LRCLIBLyricsProvider(session: StubLRCLIBSession(data: instrumentalBody), maxAutomaticRetries: 0)
+            .lookup(track: track, identity: identity)
+        guard case .noLyrics = explicitNoLyrics else { fatalError("exact instrumental metadata should retain noLyrics result") }
+        print("PASS unrelated/empty instrumental records do not classify the requested recording")
+
         // 404 -> noMatch (via search empty)
         let notFoundSession = StubLRCLIBSession(responses: [
             .init(data: Data(), statusCode: 404, headers: [:], error: nil, delay: 0),

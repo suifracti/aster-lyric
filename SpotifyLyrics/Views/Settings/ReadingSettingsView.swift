@@ -108,7 +108,7 @@ struct LyricsAndTextSettingsView: View {
 
 struct ReadingSettingsView: View {
     @EnvironmentObject private var settings: AppSettingsStore
-    @State private var isAdvancedReadingExpanded = false
+    @State private var isDictionaryExpanded = false
     @State private var dictionaryEntries: [ReadingDictionaryEntry] = []
     @State private var newSurface = ""
     @State private var newReading = ""
@@ -149,136 +149,158 @@ struct ReadingSettingsView: View {
                 numericSlider("假名字号", value: doubleBinding(\.rubyFontSize), range: 8...18, format: "%.0f pt")
             }
 
+            Section("本地读音生成") {
+                Toggle("自动生成新歌词读音", isOn: readingBinding(\.automaticGeneration))
+                Picker("不确定读音策略", selection: readingBinding(\.uncertaintyPolicy)) {
+                    ForEach(ReadingUncertaintyPolicy.allCases, id: \.self) { policy in
+                        Text(policy.displayName).tag(policy)
+                    }
+                }
+                Text("自动生成和普通「生成读音」只使用本地引擎，不产生 AI 费用。已有人工版本与锁定读音会保留。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("打开当前歌曲操作 → 读音版本，可以生成、切换和编辑读音。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("AI 辅助读音") {
+                Toggle("允许 AI 辅助候选（仅明确调用）", isOn: readingBinding(\.aiAssistedCandidate))
+                Text("开启后，在当前歌曲的「AI 辅助读音候选…」中确认调用。仅处理日语不确定读音，可能产生 API 费用；候选须手动采用，不会自动重试。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if settings.aiTranslationConfiguration.engineID != TranslationEngineID.openAICompatible.rawValue {
+                    Label("目前仅支持兼容 API，不能使用 GPT / Codex 订阅。", systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if settings.aiTranslationConfiguration.isConfigured {
+                    LabeledContent("候选模型", value: settings.aiTranslationConfiguration.model)
+                    Text("API 地址与模型沿用 AI 翻译设置。密钥仅在明确调用时检查。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Label("请先在 AI 翻译设置中配置兼容 API 地址和模型。", systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section {
-                DisclosureGroup("读音生成与用户词典", isExpanded: $isAdvancedReadingExpanded) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("生成策略")
-                                .font(.subheadline.weight(.semibold))
-                            Toggle("自动生成新歌词读音", isOn: readingBinding(\.automaticGeneration))
-                            Toggle("允许 AI 辅助候选（仅明确调用）", isOn: readingBinding(\.aiAssistedCandidate))
-                            Picker("不确定读音策略", selection: readingBinding(\.uncertaintyPolicy)) {
-                                ForEach(ReadingUncertaintyPolicy.allCases, id: \.self) { policy in
-                                    Text(policy.displayName).tag(policy)
-                                }
-                            }
-                            Text("当前版本只使用本地引擎生成；不会因浏览设置而发送 AI 请求。")
-                                .font(.caption)
+                DisclosureGroup("人工词典 · \(dictionaryEntries.filter { !$0.isArchived && $0.isEnabled }.count) 个可用词条", isExpanded: $isDictionaryExpanded) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("特殊人名、专有名词可以在这里指定读法。本地生成时优先使用匹配范围内的词条。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if dictionaryEntries.isEmpty {
+                            Text("暂无人工词条")
                                 .foregroundStyle(.secondary)
-                        }
-                        .padding(.top, 4)
-
-                        Divider()
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("用户人工词典")
-                                .font(.subheadline.weight(.semibold))
-                            if dictionaryEntries.isEmpty {
-                                Text("暂无人工词条")
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                ForEach(dictionaryEntries) { entry in
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        HStack {
-                                            Text(entry.surface)
-                                            Image(systemName: "arrow.right")
-                                                .foregroundStyle(.secondary)
-                                            Text(entry.reading)
-                                            Spacer()
-                                            Text(entry.language.displayName)
+                        } else {
+                            ForEach(dictionaryEntries) { entry in
+                                VStack(alignment: .leading, spacing: 5) {
+                                    HStack {
+                                        Text(entry.surface)
+                                        Image(systemName: "arrow.right")
+                                            .foregroundStyle(.secondary)
+                                        Text(entry.reading)
+                                        Spacer()
+                                        Text(entry.language.displayName)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        if entry.isArchived {
+                                            Text("已归档")
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
-                                        HStack(spacing: 8) {
-                                            if let artistScope = entry.artistScope, !artistScope.isEmpty {
-                                                Text("歌手：\(artistScope)")
-                                            }
-                                            if let trackStableKey = entry.trackStableKey, !trackStableKey.isEmpty {
-                                                Text("单曲范围")
-                                            }
-                                            Text("优先级 \(entry.priority)")
-                                            if !entry.notes.isEmpty {
-                                                Text(entry.notes)
-                                                    .lineLimit(1)
-                                            }
-                                            Spacer()
-                                            Button(entry.isArchived ? "恢复" : "归档") {
-                                                settings.readingUserDictionary.upsert(
-                                                    ReadingDictionaryEntry(
-                                                        id: entry.id,
-                                                        surface: entry.surface,
-                                                        reading: entry.reading,
-                                                        language: entry.language,
-                                                        trackStableKey: entry.trackStableKey,
-                                                        artistScope: entry.artistScope,
-                                                        priority: entry.priority,
-                                                        isEnabled: entry.isEnabled,
-                                                        isArchived: !entry.isArchived,
-                                                        notes: entry.notes
-                                                    )
-                                                )
-                                                reloadDictionary()
-                                            }
-                                            .buttonStyle(.borderless)
-                                            Button("删除", role: .destructive) {
-                                                settings.readingUserDictionary.remove(id: entry.id)
-                                                reloadDictionary()
-                                            }
-                                            .buttonStyle(.borderless)
-                                        }
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
                                     }
-                                    .padding(.vertical, 3)
-                                }
-                            }
-
-                            HStack {
-                                TextField("原词", text: $newSurface)
-                                TextField("读音", text: $newReading)
-                                Picker("语言", selection: $newLanguage) {
-                                    Text("日语").tag(ReadingLanguage.japanese)
-                                    Text("简中").tag(ReadingLanguage.simplifiedChinese)
-                                    Text("繁中").tag(ReadingLanguage.traditionalChinese)
-                                }
-                                .labelsHidden()
-                                TextField("优先级", text: $newPriority)
-                                    .frame(width: 52)
-                                Button("添加") {
-                                    let surface = newSurface.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    let reading = newReading.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    guard !surface.isEmpty, !reading.isEmpty else { return }
-                                    settings.readingUserDictionary.upsert(
-                                        ReadingDictionaryEntry(
-                                            surface: surface,
-                                            reading: reading,
-                                            language: newLanguage,
-                                            trackStableKey: newTrackScope.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : newTrackScope,
-                                            artistScope: newArtistScope.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : newArtistScope,
-                                            priority: Int(newPriority) ?? 0,
-                                            notes: newNotes
-                                        )
-                                    )
-                                    newSurface = ""
-                                    newReading = ""
-                                    newTrackScope = ""
-                                    newArtistScope = ""
-                                    newPriority = "0"
-                                    newNotes = ""
-                                    reloadDictionary()
-                                }
-                                .disabled(newSurface.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newReading.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                            }
-
-                            DisclosureGroup("适用范围与备注（可选）") {
-                                TextField("单曲 Spotify stableKey", text: $newTrackScope)
-                                TextField("歌手范围", text: $newArtistScope)
-                                TextField("备注", text: $newNotes)
-                                Text("留空时适用于所有歌曲；填写单曲或歌手可只修正指定范围。")
+                                    HStack(spacing: 8) {
+                                        if let artistScope = entry.artistScope, !artistScope.isEmpty {
+                                            Text("歌手：\(artistScope)")
+                                        }
+                                        if let trackStableKey = entry.trackStableKey, !trackStableKey.isEmpty {
+                                            Text("单曲范围")
+                                        }
+                                        Text("优先级 \(entry.priority)")
+                                        if !entry.notes.isEmpty {
+                                            Text(entry.notes)
+                                                .lineLimit(1)
+                                        }
+                                        Spacer()
+                                        Button(entry.isArchived ? "恢复" : "归档") {
+                                            settings.readingUserDictionary.upsert(
+                                                ReadingDictionaryEntry(
+                                                    id: entry.id,
+                                                    surface: entry.surface,
+                                                    reading: entry.reading,
+                                                    language: entry.language,
+                                                    trackStableKey: entry.trackStableKey,
+                                                    artistScope: entry.artistScope,
+                                                    priority: entry.priority,
+                                                    isEnabled: entry.isEnabled,
+                                                    isArchived: !entry.isArchived,
+                                                    notes: entry.notes
+                                                )
+                                            )
+                                            reloadDictionary()
+                                        }
+                                        .buttonStyle(.borderless)
+                                        Button("删除", role: .destructive) {
+                                            settings.readingUserDictionary.remove(id: entry.id)
+                                            reloadDictionary()
+                                        }
+                                        .buttonStyle(.borderless)
+                                    }
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
+                                }
+                                .padding(.vertical, 3)
                             }
-                            .font(.caption)
                         }
+
+                        HStack {
+                            TextField("原词", text: $newSurface)
+                            TextField("读音", text: $newReading)
+                            Picker("语言", selection: $newLanguage) {
+                                Text("日语").tag(ReadingLanguage.japanese)
+                                Text("简中").tag(ReadingLanguage.simplifiedChinese)
+                                Text("繁中").tag(ReadingLanguage.traditionalChinese)
+                            }
+                            .labelsHidden()
+                            TextField("优先级", text: $newPriority)
+                                .frame(width: 52)
+                            Button("添加") {
+                                let surface = newSurface.trimmingCharacters(in: .whitespacesAndNewlines)
+                                let reading = newReading.trimmingCharacters(in: .whitespacesAndNewlines)
+                                guard !surface.isEmpty, !reading.isEmpty else { return }
+                                settings.readingUserDictionary.upsert(
+                                    ReadingDictionaryEntry(
+                                        surface: surface,
+                                        reading: reading,
+                                        language: newLanguage,
+                                        trackStableKey: newTrackScope.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : newTrackScope,
+                                        artistScope: newArtistScope.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : newArtistScope,
+                                        priority: Int(newPriority) ?? 0,
+                                        notes: newNotes
+                                    )
+                                )
+                                newSurface = ""
+                                newReading = ""
+                                newTrackScope = ""
+                                newArtistScope = ""
+                                newPriority = "0"
+                                newNotes = ""
+                                reloadDictionary()
+                            }
+                            .disabled(newSurface.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newReading.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+
+                        DisclosureGroup("适用范围与备注（可选）") {
+                            TextField("单曲 Spotify stableKey", text: $newTrackScope)
+                            TextField("歌手范围", text: $newArtistScope)
+                            TextField("备注", text: $newNotes)
+                            Text("留空时适用于所有歌曲；填写单曲或歌手可只修正指定范围。")
+                                .foregroundStyle(.secondary)
+                        }
+                        .font(.caption)
                     }
                     .padding(.vertical, 4)
                 }

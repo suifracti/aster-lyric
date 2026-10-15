@@ -50,7 +50,7 @@ public struct AITranslationPromptBuilder: Sendable {
         let presetGuidance: String
         switch presetID {
         case .naturalSong:
-            presetGuidance = "Translate naturally as a song while preserving imagery, tone, and line structure."
+            presetGuidance = Self.naturalSongGuidance
         case .literalFaithful:
             presetGuidance = "Stay faithful to the source wording and do not add unstated story details."
         case .poeticFlow:
@@ -161,7 +161,7 @@ public struct AITranslationPromptBuilder: Sendable {
         }
         let guidance: String
         switch presetID {
-        case .naturalSong: guidance = "Translate faithfully and naturally; keep imagery and tone."
+        case .naturalSong: guidance = Self.naturalSongGuidance
         case .literalFaithful: guidance = "Prefer literal wording while preserving meaning."
         case .poeticFlow: guidance = "Keep poetic flow only when faithful to the source."
         case .contextAware: guidance = "Use the entire song to keep references and repetition consistent."
@@ -203,6 +203,17 @@ public struct AITranslationPromptBuilder: Sendable {
         let hash = SHA256.hash(data: identity).map { String(format: "%02x", $0) }.joined()
         return AITranslationPrompt(system: system, user: user, promptHash: hash)
     }
+
+    // A synthesis of confirmed editing preferences, not imported lyric examples.
+    // Kept in the prompt itself so changes participate in semantic cache identity.
+    private static let naturalSongGuidance = """
+    Natural song style v2: Meaning sets the boundary; let the source emotion shape natural, speakable wording. Preserve concrete everyday actions, imagery, hesitation, self-mockery, tenderness and intensity without ornamental padding or an invented hopeful or tragic ending.
+    Read syntax and contrast across the whole stanza, but keep each output aligned to its original line. A grammatical continuation may remain a continuation; do not move meaning between lines to make every line a standalone sentence.
+    Track who speaks to whom. Do not turn unrequited love into mutual love, a question into a promise, or an omitted subject into a definite gender or relationship. Supply only what the text clearly supports; preserve ambiguity otherwise.
+    Keep genuinely repeated passages consistent, but translate changed pronouns, responsibility, tense, negation and question forms distinctly. Do not copy a chorus over a similar but changed verse.
+    Keep cultural objects and metaphorical images without inserting explanatory glosses or symbolic backstories. Do not add time, certainty or intensity that the source does not support. Short natural interjections are appropriate only when their tone is supported.
+    Apply these principles to every source language and mixed-language song; do not impose Japanese speech habits on other languages. For Chinese, prefer lived-in, fluent speech over stiff literal mapping or uniformly ornate prose. Preserve intentional foreign-language hooks when useful, while translating their meaning when required by the selected target language and user guidance. Suspected transcription errors are not permission to invent a replacement source.
+    """
 
     private static func decodeProfile(_ snapshot: String) -> TranslationStyleProfile? {
         guard let data = snapshot.data(using: .utf8) else { return nil }

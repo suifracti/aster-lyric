@@ -3,6 +3,8 @@ import Foundation
 @main
 struct AITranslationContract {
     static func main() async throws {
+        try naturalStyleContract()
+        try await readingBudgetContract()
         try endpointContract()
         try blankLineContract()
         try responseSafetyContract()
@@ -12,6 +14,62 @@ struct AITranslationContract {
         try await codexOfflineContract()
         try await protectedRecoveryContract()
         print("AI translation contracts passed")
+    }
+
+    static func readingBudgetContract() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("reading-budget-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("budget.json")
+        let budgetState = TranslationAcceptanceRequestBudget.State(maximum: 0, providers: [TranslationEngineID.openAICompatible.rawValue], trackKeys: ["synthetic"])
+        let initial = try JSONEncoder().encode(budgetState)
+        try initial.write(to: url)
+        let keys = MemoryKeyStore(value: "synthetic-unused")
+        let service = AIReadingCandidateService(keyStore: keys, acceptanceBudget: TranslationAcceptanceRequestBudget(fileURL: url))
+        let request = ReadingGenerationRequest(lyricsVersionID: UUID(), sourceContentHash: "synthetic",
+            lines: [.init(lineIndex: 0, originalText: "fixture")], languageHint: "ja", trackStableKey: "synthetic", representationID: .kana)
+        let result = ReadingGenerationResult(engineID: .japaneseContextual, representationID: .kana,
+            lines: [.init(lineIndex: 0, originalText: "fixture", readingText: nil, language: .japanese,
+                tokens: [], warnings: [.unknownToken], confidence: 0)], language: .japanese, confidence: 0, contextHash: "synthetic")
+        for engine in [TranslationEngineID.codexChatGPT, .openAICompatible] {
+            let configuration = AITranslationConfiguration(baseURL: "https://example.invalid/v1", model: "fixture", engineID: engine.rawValue)
+            do {
+                _ = try await service.refine(result: result, request: request, configuration: configuration)
+                throw ContractFailure(message: "reading provider/budget gate allowed dispatch")
+            } catch AITranslationError.engineUnavailable { }
+        }
+        precondition(keys.reads == 0, "provider and zero-budget gates must reject before credential access")
+        let finalBudget = try Data(contentsOf: url)
+        precondition(finalBudget == initial, "zero budget must not be reset or increased")
+        print("PASS reading unsupported provider/zero budget reject before credentials or network")
+    }
+
+    static func naturalStyleContract() throws {
+        let lines = [AITranslationSourceLine(index: 0, original: "synthetic continuation"),
+                     AITranslationSourceLine(index: 1, original: ""),
+                     AITranslationSourceLine(index: 2, original: "synthetic changed question?")]
+        let context = AITranslationContext(title: "Fixture", artist: "Fixture", album: "",
+            sourceLanguage: "mixed", targetLanguage: "zh-Hans", style: "natural_song", lines: lines)
+        let builder = AITranslationPromptBuilder()
+        for engine in [TranslationEngineID.openAICompatible, .codexChatGPT] {
+            var configuration = AITranslationConfiguration(model: "fixture", engineID: engine.rawValue)
+            let natural = try builder.build(context: context, configuration: configuration)
+            precondition(natural.system.contains("Natural song style v2"))
+            let payload = try JSONSerialization.jsonObject(with: Data(natural.user.utf8)) as! [String: Any]
+            let sentLines = payload["lines"] as! [[String: Any]]
+            precondition(sentLines.map { $0["text"] as! String } == lines.map(\.original),
+                "style changes must not rewrite, merge or remove source lines")
+            configuration.promptPresetID = TranslationPromptPresetID.literalFaithful.rawValue
+            let literal = try builder.build(context: context, configuration: configuration)
+            precondition(!literal.system.contains("Natural song style v2") && literal.promptHash != natural.promptHash,
+                "literal/custom choices retain their own guidance and cache identity")
+            configuration.promptPresetID = TranslationPromptPresetID.custom.rawValue
+            configuration.customSystemPrompt = "fixture-specific style"
+            let custom = try builder.build(context: context, configuration: configuration)
+            precondition(!custom.system.contains("Natural song style v2"))
+            precondition((custom.system + custom.user).contains("fixture-specific style"))
+        }
+        print("PASS natural style preserves source boundaries, preset choice and prompt identity; no model calls")
     }
 
     static func codexOfflineContract() async throws {
@@ -361,7 +419,8 @@ private final class RecordingHTTPClient: AIHTTPClient, @unchecked Sendable {
 private final class MemoryKeyStore: AITranslationAPIKeyStore, @unchecked Sendable {
     var value: String?
     init(value: String?) { self.value = value }
-    func read() -> String? { value }
+    var reads = 0
+    func read() -> String? { reads += 1; return value }
     func save(_ key: String) throws { value = key }
     func delete() throws { value = nil }
 }

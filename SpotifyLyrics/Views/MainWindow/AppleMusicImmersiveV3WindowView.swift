@@ -5,10 +5,19 @@ private struct V3PreviewPresentationKey: EnvironmentKey {
     static let defaultValue: V3ArtworkPresentation? = nil
 }
 
+private struct V3ExplicitInstrumentalMarkKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 private extension EnvironmentValues {
     var v3PreviewPresentation: V3ArtworkPresentation? {
         get { self[V3PreviewPresentationKey.self] }
         set { self[V3PreviewPresentationKey.self] = newValue }
+    }
+
+    var v3ExplicitInstrumentalMark: Bool {
+        get { self[V3ExplicitInstrumentalMarkKey.self] }
+        set { self[V3ExplicitInstrumentalMarkKey.self] = newValue }
     }
 }
 
@@ -190,8 +199,7 @@ struct AppleMusicImmersiveV3WindowView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
-                let isInst = state.liveLyrics.first?.originalText.contains("纯音乐") == true
-                    || state.liveLyrics.first?.originalText.contains("没有填词") == true
+                let isInst = !state.isShowingSearchPreview && state.liveTrackIsMarkedInstrumental
                 AppleMusicImmersiveV3BackdropView(
                     track: usesDocumentComposition ? compositionTrack : state.currentTrack,
                     identity: usesDocumentComposition && isCompositionPreview ? nil : state.currentTrackIdentity,
@@ -460,15 +468,8 @@ struct AppleMusicImmersiveV3WindowView: View {
                 ArtworkView(track: compositionTrack, size: compact ? 44 : 52,
                             showsAlbumLabel: false, cornerRadiusRatio: 0.12,
                             preservesCompleteArtwork: true)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(compositionTrack.title)
-                        .font(.system(size: compact ? 19 : 22, weight: .semibold))
-                        .lineLimit(1)
-                    Text(compositionTrack.artist)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.62))
-                        .lineLimit(1)
-                }
+                TrackMetadataView(track: compositionTrack, titleSize: compact ? 19 : 22,
+                                  presentation: .v3Immersive)
                 Spacer(minLength: 0)
             }
             .frame(width: readingWidth, height: headerHeight, alignment: .leading)
@@ -1986,6 +1987,9 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
     }
 
     private var isPreview: Bool { !liveOnly && state.isShowingSearchPreview }
+    private var hasExplicitInstrumentalMark: Bool {
+        !state.isShowingSearchPreview && state.liveTrackIsMarkedInstrumental
+    }
     private var documentLines: [LyricLine] { liveOnly ? state.liveLyrics : state.lyrics }
     private var documentState: LyricsLoadState { liveOnly ? state.liveLyricsState : state.lyricsState }
     private var documentRevision: UInt64 { liveOnly ? state.liveLyricsSessionRevision : state.lyricsSessionRevision }
@@ -2014,6 +2018,21 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
         let seekDocumentSource: PlaybackState.LyricsSeekDocumentSource = isPreview ? .searchPreview : .live
 
         return VStack(alignment: .leading, spacing: LyricsDesignTokens.Spacing.xs) {
+            if hasExplicitInstrumentalMark {
+                HStack(spacing: 12) {
+                    Label("已标记为纯音乐", systemImage: "music.note")
+                        .foregroundStyle(.white.opacity(0.68))
+                    Spacer(minLength: 0)
+                    Button("撤销标记") { state.clearCurrentInstrumentalMark() }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.white.opacity(0.86))
+                        .help("恢复这首歌原先保存的歌词选择，不重新搜索")
+                        .accessibilityIdentifier("v3.instrumental.undo")
+                }
+                .font(.system(size: 12, weight: .medium))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+            }
             if lines.isEmpty {
                 if liveOnly {
                     VStack(alignment: .leading, spacing: 10) {
@@ -2041,6 +2060,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.v3ExplicitInstrumentalMark, hasExplicitInstrumentalMark)
         .background {
             EmptyView()
                 .sheet(item: $rubyCorrection) { request in
@@ -2958,6 +2978,7 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
 
 private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
     @Environment(\.v3PreviewPresentation) private var previewPresentation
+    @Environment(\.v3ExplicitInstrumentalMark) private var hasExplicitInstrumentalMark
     let line: LyricLine
     let isActive: Bool
     let isAdjacent: Bool
@@ -3157,7 +3178,8 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
     }
 
     private var isInstrumentalLine: Bool {
-        effectiveOriginalText.contains("纯音乐") || effectiveOriginalText.contains("没有填词")
+        hasExplicitInstrumentalMark
+            && (effectiveOriginalText.contains("纯音乐") || effectiveOriginalText.contains("没有填词"))
     }
 
     var body: some View {
@@ -3684,6 +3706,25 @@ private struct V3VisualTuningPopoverView: View {
                             Spacer()
                             sizePresetButton("巨幕 140%", val: 1.40)
                         }
+                    }
+                }
+
+                if settings.v3ArtworkPresentation == .classic {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("背景封面缩放")
+                                .font(.system(size: 12, weight: .medium))
+                            Spacer()
+                            Text("\(Int((settings.v3ClassicBackdropSizeScale * 100).rounded()))%")
+                                .font(.system(size: 11, weight: .bold).monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: $settings.v3ClassicBackdropSizeScale, in: 0.8...1.4, step: 0.05)
+                            .accessibilityLabel("经典放大背景封面缩放")
+                            .accessibilityIdentifier("v3.classic.backgroundScale")
+                        Text("只改变背景取景，不改变前景封面大小。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
 

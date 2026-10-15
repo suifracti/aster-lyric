@@ -39,7 +39,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
     private var artworkPresentation: V3ArtworkPresentation { presentationOverride ?? settings.v3ArtworkPresentation }
     private var backdropBlurRadius: Double { settings.v3PreviewBlur(for: artworkPresentation) }
     private var artworkPosition: String { settings.v3PreviewPosition(for: artworkPresentation) }
-    private var artworkSizeScale: Double { settings.v3PreviewScale(for: artworkPresentation) }
+    private var artworkSizeScale: Double { settings.v3PreviewBackdropScale(for: artworkPresentation) }
 
     var body: some View {
         ZStack {

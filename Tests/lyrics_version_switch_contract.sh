@@ -6,6 +6,7 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 swiftc -parse-as-library \
+  "$ROOT_DIR/SpotifyLyrics/DebugDatabaseSafety.swift" \
   "$ROOT_DIR/SpotifyLyrics/Models/Models.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/TrackIdentity.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsModels.swift" \

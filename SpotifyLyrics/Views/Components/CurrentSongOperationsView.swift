@@ -17,6 +17,7 @@ struct CurrentSongOperationsView: View {
     @State private var notice = ""
     @State private var showDeleteTranslationConfirmation = false
     @State private var showDeleteReadingConfirmation = false
+    @State private var showAIReadingConfirmation = false
     @State private var pendingReadingDeletionID: UUID?
     @State private var showCandidatePreview = false
     @State private var showReadingEditor = false
@@ -71,7 +72,11 @@ struct CurrentSongOperationsView: View {
         }
         .onChange(of: state.currentTrackIdentity) { _, _ in
             showLyricsVersionPicker = false
+            showAIReadingConfirmation = false
             adoptingLyricsVersionID = nil
+        }
+        .onChange(of: state.liveLyricsVersionID) { _, _ in
+            showAIReadingConfirmation = false
         }
         .onChange(of: showLyricsVersionPicker) { _, presented in
             onVersionPickerPresentationChange(presented)
@@ -103,6 +108,19 @@ struct CurrentSongOperationsView: View {
             }
         } message: {
             Text("不会删除原文、歌词版本、翻译或时间轴。锁定版本仍不可删除。")
+        }
+        .confirmationDialog(
+            "生成 AI 辅助读音候选？",
+            isPresented: $showAIReadingConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("生成候选（可能收费）") {
+                guard aiReadingUnavailableReason == nil else { return }
+                state.requestAIReadingCandidate()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("使用当前兼容 API 的模型「\(settings.aiTranslationConfiguration.model)」，可能产生费用；生成结果须手动采用，不会自动重试。")
         }
         .sheet(isPresented: $showCandidatePreview) {
             if let candidate = state.translationSessionPendingCandidate {
@@ -485,8 +503,8 @@ struct CurrentSongOperationsView: View {
                 }
             }
             if let version = state.selectedReadingVersion {
-                Text("\(version.record.representationID) · \(version.record.engineID)")
-                    .font(.system(size: 10, design: .monospaced))
+                Text(readingVersionTitle(version))
+                    .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(.secondary)
                 HStack(spacing: 8) {
                     Menu("选择版本", systemImage: "chevron.up.chevron.down") {
@@ -511,8 +529,11 @@ struct CurrentSongOperationsView: View {
                         Button("恢复推荐") { state.restoreRecommendedReading() }
                         Divider()
                         Button("重新生成假名") { state.generateCurrentReading(representationID: .kana) }
+                            .disabled(state.isReadingGenerating)
                         Button("重新生成罗马音") { state.generateCurrentReading(representationID: .romaji) }
+                            .disabled(state.isReadingGenerating)
                         Button("生成拼音") { state.generateCurrentReading(representationID: .pinyinToneMarks) }
+                            .disabled(state.isReadingGenerating)
                         if !version.record.isLocked {
                             Divider()
                             Button("归档") { state.archiveReading(versionID: version.record.id) }
@@ -542,8 +563,10 @@ struct CurrentSongOperationsView: View {
                     }
                     Button("生成假名") { state.generateCurrentReading(representationID: .kana) }
                         .buttonStyle(.borderless)
+                        .disabled(state.isReadingGenerating)
                     Button("生成拼音") { state.generateCurrentReading(representationID: .pinyinToneMarks) }
                         .buttonStyle(.borderless)
+                        .disabled(state.isReadingGenerating)
                 }
             }
             if state.isReadingGenerating {
@@ -554,10 +577,53 @@ struct CurrentSongOperationsView: View {
                     .font(.system(size: 10, design: .rounded))
                     .foregroundStyle(.secondary)
             }
+            Button("AI 辅助读音候选…", systemImage: "sparkles") {
+                showAIReadingConfirmation = true
+            }
+            .buttonStyle(.borderless)
+            .disabled(aiReadingUnavailableReason != nil)
+            if let reason = aiReadingUnavailableReason {
+                Text(reason)
+                    .font(.system(size: 10, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("仅处理日语不确定读音 · 兼容 API 可能收费 · 确认后生成")
+                    .font(.system(size: 10, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text("读音版本独立保存；不修改原文、时间轴或翻译。")
                 .font(.system(size: 10, design: .rounded))
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var aiReadingUnavailableReason: String? {
+        guard settings.readingPreferences.aiAssistedCandidate else {
+            return "在设置 → 读音中允许 AI 辅助候选后，可在此明确生成。"
+        }
+        guard settings.aiTranslationConfiguration.engineID == TranslationEngineID.openAICompatible.rawValue else {
+            return "AI 读音目前仅支持兼容 API，不能使用 GPT / Codex 订阅。"
+        }
+        guard settings.aiTranslationConfiguration.isConfigured else {
+            return "请先在 AI 翻译设置中配置兼容 API 地址和模型。"
+        }
+        guard state.hasLiveTrack, !state.isMockPreviewMode, !state.isShowingSearchPreview,
+              state.liveLyricsDocumentMatchesCurrentTrack, state.readingSession.hasSource else {
+            return "加载当前播放歌曲的已保存歌词后可生成，预览歌词不调用 AI。"
+        }
+        guard (ReadingEngineID(rawValue: settings.readingPreferences.japaneseEngineID) ?? .japaneseContextual) == .japaneseContextual else {
+            return "AI 候选需要本地上下文读音引擎。"
+        }
+        guard LyricsLanguageGate.allowsJapaneseReadings(
+            language: state.liveLyricsLanguage,
+            text: state.liveLyrics.map(\.originalText).joined(separator: "\n")
+        ) else {
+            return "AI 候选仅用于日语读音。请先确认歌词语言，或使用本地生成与人工编辑。"
+        }
+        if state.isReadingGenerating { return "读音正在生成，请等待本次完成。" }
+        return nil
     }
 
     /// Product zero-operation status — visible when switch on or a job is active.
@@ -687,8 +753,10 @@ struct CurrentSongOperationsView: View {
         if version.record.isCurrent { labels.append("当前") }
         if version.record.isArchived { labels.append("已归档") }
         if version.record.isManuallyEdited { labels.append("人工") }
+        if version.record.warningMetadata.contains(.aiCandidateOnly) { labels.append("AI 候选") }
         let suffix = labels.isEmpty ? "" : " · " + labels.joined(separator: "/")
-        return "\(version.record.representationID)\(suffix)"
+        let representation = ReadingRepresentationID(rawValue: version.record.representationID)?.displayName ?? "读音"
+        return "\(representation)\(suffix) · \(version.record.updatedAt.formatted(date: .abbreviated, time: .shortened))"
     }
 
     @ViewBuilder
@@ -1039,14 +1107,21 @@ private struct LyricsVersionPickerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("歌词版本与编辑")
-                    .font(.title3.weight(.semibold))
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("歌词版本与编辑")
+                        .font(.title3.weight(.semibold))
+                    Text([title, artistDisplay].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
                 Spacer()
                 Button("关闭") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
             }
 
-            Text("选择已有版本后会立即更新当前歌曲歌词；不会重新搜索或创建新版本。")
+            Text("采用版本会立即更新当前歌曲。编辑将保留原版，另存人工版本。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1054,6 +1129,7 @@ private struct LyricsVersionPickerView: View {
             if isLoading {
                 ProgressView("正在读取已保存版本…")
                     .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 24)
             } else if versions.isEmpty {
                 Text(message.isEmpty ? "没有已保存的歌词版本" : message)
                     .font(.body)
@@ -1061,25 +1137,18 @@ private struct LyricsVersionPickerView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 28)
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(versions, id: \.record.id) { version in
-                            versionRow(version)
-                        }
+                Text("已保存 \(versions.count) 个版本")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                if versions.count <= 2 {
+                    versionRows
+                } else {
+                    ScrollView {
+                        versionRows
                     }
+                    .frame(height: 300)
                 }
             }
-
-            HStack {
-                Button("编辑当前歌词", systemImage: "square.and.pencil", action: onEdit)
-                    .disabled(!canEdit || adoptingVersionID != nil)
-                Spacer()
-                Button("查找更多歌词版本", systemImage: "magnifyingglass", action: onSearch)
-                    .disabled(adoptingVersionID != nil)
-            }
-
-            Button("选择并复制歌词", systemImage: "doc.on.doc") { showCopy = true }
-                .disabled(lines.isEmpty)
 
             if !message.isEmpty, !isLoading, !versions.isEmpty {
                 Text(message)
@@ -1087,12 +1156,35 @@ private struct LyricsVersionPickerView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            Divider()
+            HStack(spacing: 10) {
+                Button("编辑当前", systemImage: "square.and.pencil", action: onEdit)
+                    .disabled(!canEdit || adoptingVersionID != nil)
+                    .help("保留原版，编辑后另存人工版本")
+                Button("复制歌词", systemImage: "doc.on.doc") { showCopy = true }
+                    .disabled(lines.isEmpty || adoptingVersionID != nil)
+                Spacer(minLength: 0)
+                Button("查找更多", systemImage: "magnifyingglass", action: onSearch)
+                    .disabled(adoptingVersionID != nil)
+                    .help("重新查找当前歌曲的歌词版本")
+            }
+            .controlSize(.small)
         }
         .padding(20)
-        .frame(width: 520, height: 500)
+        .frame(width: 540)
+        .fixedSize(horizontal: false, vertical: true)
         .sheet(isPresented: $showCopy) {
             LyricsCopyView(lines: lines, title: title, trackStableKey: trackStableKey,
                            artistDisplay: artistDisplay, language: language, userEntries: userEntries)
+        }
+    }
+
+    private var versionRows: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(versions, id: \.record.id) { version in
+                versionRow(version)
+            }
         }
     }
 
@@ -1108,28 +1200,31 @@ private struct LyricsVersionPickerView: View {
         let kind = version.record.isManuallyEdited ? "人工编辑" : "来源版本"
 
         return HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     LibraryVersionLabel(kind: "lyrics", id: version.record.id, originalTitle: source)
-                    Text(timing)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(kind)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if version.record.isLocked {
+                        Label("已锁定", systemImage: "lock.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                Text("更新于 \(version.record.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                Text("\(timing) · \(kind) · \(version.record.updatedAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text("来源：\(provenance)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2)
+                    .help(provenance)
             }
 
             Spacer(minLength: 8)
 
-            if isCurrent {
+            if adoptingVersionID == version.record.id {
+                ProgressView().controlSize(.small)
+                    .padding(.top, 3)
+            } else if isCurrent {
                 Label("当前版本", systemImage: "checkmark.circle.fill")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.green)
@@ -1141,7 +1236,8 @@ private struct LyricsVersionPickerView: View {
             }
         }
         .padding(12)
-        .background(.quaternary.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isCurrent ? Color.accentColor.opacity(0.08) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 

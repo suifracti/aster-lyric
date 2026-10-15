@@ -46,6 +46,7 @@ SOURCES=(
   "$ROOT/SpotifyLyrics/AI/AITranslationResponseParser.swift"
   "$ROOT/SpotifyLyrics/AI/OpenAICompatibleClient.swift"
   "$ROOT/SpotifyLyrics/AI/AITranslationService.swift"
+  "$ROOT/SpotifyLyrics/Lyrics/AIReadingCandidateService.swift"
   "$ROOT/SpotifyLyrics/Services/TranslationSessionController.swift"
   "$ROOT/Tests/ai_translation_contract.swift"
   "$BUILD/logger.swift"

@@ -202,10 +202,20 @@ public final class PlaybackState: ObservableObject {
         self.translationSession = translation
         self.readingSession = reading
         self.lyricsEditorSession = editor
-        // Track search is metadata-only: local index + current Spotify track.
+        // Track search is metadata-only: saved library, local index and current track.
         // LRCLIB stays isolated inside the lyrics session path.
         self.songSearchManager = SongSearchManager(providers: [
-            LocalSearchProvider(index: sharedIndex),
+            LocalSearchProvider(index: sharedIndex, savedSearch: { query in
+                guard let library = resolvedRepository as? SQLiteLyricsRepository else { return [] }
+                let entries = try await library.loadPersonalLibraryEntries(searchQuery: query.text)
+                return entries.map { entry in
+                    let track = Track(id: "library:\(entry.trackStableKey)", title: entry.title, artist: entry.artist,
+                        album: entry.album ?? "", duration: entry.duration, isrc: entry.isrc,
+                        spotifyId: entry.spotifyTrackID, artworkURL: entry.artworkURL, spotifyURL: entry.spotifyURI.flatMap(URL.init(string:)))
+                    return TrackSearchResult(id: "library:\(entry.trackStableKey)", source: .local, track: track,
+                        confidence: max(0.6, SongSearchScoring.score(track: track, query: query)), artworkURL: entry.artworkURL)
+                }
+            }),
             CurrentTrackResolver(playbackProvider: resolvedProvider),
             SpotifySearchProvider(authorization: authorizationManager)
         ] as [TrackSearchProvider])
@@ -514,6 +524,9 @@ public final class PlaybackState: ObservableObject {
     }
     public var liveLyricsAreSynchronized: Bool {
         liveLyricsDocumentMatchesCurrentTrack && lyricsSession.isSynchronized
+    }
+    public var liveTrackIsMarkedInstrumental: Bool {
+        liveLyricsDocumentMatchesCurrentTrack && lyricsSession.isMarkedInstrumental
     }
     public var liveLyricsSessionRevision: UInt64 { lyricsSession.revision }
     public var liveLyricsLanguage: String? {
@@ -854,15 +867,24 @@ public final class PlaybackState: ObservableObject {
     }
 
     public func markCurrentTrackAsInstrumental() {
-        guard let identity = currentTrackIdentity else { return }
+        guard !isShowingSearchPreview, let identity = liveTrackIdentity, currentTrackIdentity == identity else { return }
         lyricsSession.markAsInstrumental(identity: identity)
         objectWillChange.send()
+    }
+
+    public func clearCurrentInstrumentalMark() {
+        guard !isShowingSearchPreview, let identity = liveTrackIdentity, currentTrackIdentity == identity else { return }
+        lyricsSession.clearInstrumentalMark(identity: identity)
     }
 
     public func selectNoReadingVersion() { readingSession.selectNone() }
     public func selectReadingVersion(versionID: UUID) { readingSession.select(versionID: versionID) }
     public func generateCurrentReading(representationID: ReadingRepresentationID? = nil) {
         readingSession.generateCurrentReading(representationID: representationID)
+    }
+    public func requestAIReadingCandidate() {
+        guard !isShowingSearchPreview else { return }
+        readingSession.generateCurrentReading(allowAICandidate: true)
     }
     public func lockSelectedReading() { readingSession.lockSelected() }
     public func archiveReading(versionID: UUID) { readingSession.archive(versionID: versionID) }

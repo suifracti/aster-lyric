@@ -16,7 +16,7 @@ struct SongSearchPopover: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(LyricsDesignTokens.mutedText)
 
-                TextField("搜索歌曲、艺人或专辑", text: $query)
+                TextField("搜索已存歌词、歌曲或艺人", text: $query)
                     .textFieldStyle(.plain)
                     .focused($isSearchFieldFocused)
                     .onSubmit {
@@ -36,7 +36,7 @@ struct SongSearchPopover: View {
                     .fill(LyricsDesignTokens.controlBackground)
             )
 
-            Text("在线目录搜索需要 Spotify Web 授权；歌词正文仍由当前歌词 Provider 链负责")
+            Text("已保存的歌词和本地文件可直接搜索；连接 Spotify 后也能查在线曲库。")
                 .font(.system(size: 11, design: .rounded))
                 .foregroundStyle(LyricsDesignTokens.mutedText)
 
@@ -66,7 +66,9 @@ struct SongSearchPopover: View {
         HStack(spacing: 7) {
                 Image(systemName: playbackState.spotifyAuthorizationManager.state.isAuthorized ? "checkmark.seal.fill" : "globe")
                     .foregroundStyle(playbackState.spotifyAuthorizationManager.state.isAuthorized ? LyricsDesignTokens.accent : LyricsDesignTokens.mutedText)
-                Text(playbackState.spotifyAuthorizationManager.state.userFacingMessage)
+                Text(playbackState.spotifyAuthorizationManager.isConfigured
+                    ? playbackState.spotifyAuthorizationManager.state.userFacingMessage
+                    : "本地搜索可用 · 在线曲库尚未连接")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(LyricsDesignTokens.mutedText)
                 Spacer(minLength: 6)
@@ -81,7 +83,7 @@ struct SongSearchPopover: View {
                     .disabled(isAuthorizing)
                 } else {
                     SettingsLink {
-                        Label("设置", systemImage: "gearshape")
+                        Label("在线搜索设置", systemImage: "gearshape")
                             .font(.system(size: 11, weight: .medium, design: .rounded))
                     }
                     .buttonStyle(.borderless)
@@ -99,7 +101,7 @@ struct SongSearchPopover: View {
     private var content: some View {
         switch manager.state {
         case .idle:
-            emptyState(icon: "music.note", title: "搜索歌曲或歌词", detail: "输入标题、艺人或专辑后开始")
+            emptyState(icon: "music.note", title: "搜索歌曲或歌词", detail: "输入歌名、艺人，或已保存歌词中的一句话。")
         case .searching:
             emptyState(
                 icon: "magnifyingglass",
@@ -110,32 +112,22 @@ struct SongSearchPopover: View {
             emptyState(
                 icon: "books.vertical",
                 title: "没有找到歌曲",
-                detail: "换个标题、艺人名或 Spotify 链接再试。",
+                detail: playbackState.spotifyAuthorizationManager.state.isAuthorized
+                    ? "换个标题、艺人名或 Spotify 链接再试。"
+                    : "已搜索保存的歌词、本地文件和当前歌曲。换个关键词，或连接 Spotify 扩展搜索。",
                 actionTitle: "重新搜索",
                 action: search
             )
         case .failed(_, let message):
             VStack(alignment: .leading, spacing: 10) {
-                let needsAuthorization = message.contains("Client ID") || message.contains("未授权")
                 emptyState(
-                    icon: needsAuthorization ? "person.badge.key" : "exclamationmark.triangle",
-                    title: needsAuthorization ? "需要授权 Spotify" : "搜索失败",
-                    detail: needsAuthorization
-                        ? "授权后即可搜索 Spotify 在线曲库。"
-                        : "暂时无法完成搜索，请检查网络后重试。"
+                    icon: "exclamationmark.triangle",
+                    title: "搜索暂时未完成",
+                    detail: message
                 )
-                if needsAuthorization {
-                    Button("授权 Spotify") {
-                        playbackState.spotifyAuthorizationManager.authorize()
-                    }
-                    .buttonStyle(.borderedProminent)
+                Button("重新搜索", action: search)
+                    .buttonStyle(.bordered)
                     .tint(LyricsDesignTokens.accent)
-                    .disabled(isAuthorizing)
-                } else {
-                    Button("重新搜索", action: search)
-                        .buttonStyle(.bordered)
-                        .tint(LyricsDesignTokens.accent)
-                }
             }
         case .results(_, let results):
             ScrollView {

@@ -87,7 +87,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
         switch self {
         case .ambient: return "前景封面尺寸"
         case .stage: return "封面背景缩放"
-        case .classic: return "封面与背景倍率"
+        case .classic: return "前景封面尺寸"
         case .ambientFeathered: return "前景封面尺寸"
         case .lyricsOnly: return "封面尺寸"
         case .albumPoster: return "海报封面尺寸"
@@ -225,6 +225,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let v3AmbientBackdropEnabled = "v3.ambientBackdropEnabled"
         public static let v3ArtworkPosition = "v3.artworkPosition"
         public static let v3ArtworkSizeScale = "v3.artworkSizeScale"
+        public static let v3ClassicBackdropSizeScale = "v3.classicBackdropSizeScale.v1"
         // The fourth presentation does not overwrite the existing three modes'
         // shared artwork position/size preferences.
         public static let v3ArtworkPositionFeathered = "v3.artworkPosition.feathered.v1"
@@ -495,6 +496,10 @@ public final class AppSettingsStore: ObservableObject {
             ?? (isNewComposition ? 1.0 : defaults.object(forKey: Key.v3ArtworkSizeScale) as? Double ?? 1.0)
     }
 
+    public func v3PreviewBackdropScale(for style: V3ArtworkPresentation) -> Double {
+        style == .classic ? v3ClassicBackdropSizeScale : v3PreviewScale(for: style)
+    }
+
     public func v3PreviewLyricsPosition(for style: V3ArtworkPresentation) -> String {
         v3LyricsPositions[style.rawValue] ?? "automatic"
     }
@@ -554,6 +559,10 @@ public final class AppSettingsStore: ObservableObject {
         }
     }
 
+    @Published public var v3ClassicBackdropSizeScale: Double {
+        didSet { defaults.set(v3ClassicBackdropSizeScale, forKey: Key.v3ClassicBackdropSizeScale) }
+    }
+
     @Published public var v3InstrumentalPureImmersion: Bool {
         didSet { defaults.set(v3InstrumentalPureImmersion, forKey: Key.v3InstrumentalPureImmersion) }
     }
@@ -605,6 +614,15 @@ public final class AppSettingsStore: ObservableObject {
             ?? (isNewComposition ? "left" : defaults.string(forKey: Key.v3ArtworkPosition) ?? "left")
         self.v3ArtworkSizeScale = defaults.object(forKey: scaleKey) as? Double
             ?? (isNewComposition ? 1.0 : defaults.object(forKey: Key.v3ArtworkSizeScale) as? Double ?? 1.0)
+        let storedClassicBackdropScale = defaults.object(forKey: Key.v3ClassicBackdropSizeScale) as? Double
+        let classicBackdropScale = storedClassicBackdropScale
+            ?? defaults.object(forKey: Key.v3ArtworkSizeScale) as? Double ?? 1.0
+        self.v3ClassicBackdropSizeScale = classicBackdropScale
+        // Capture the old appearance once. Otherwise a foreground edit made
+        // before the first background edit would also resize it after relaunch.
+        if storedClassicBackdropScale == nil {
+            defaults.set(classicBackdropScale, forKey: Key.v3ClassicBackdropSizeScale)
+        }
         self.v3InstrumentalPureImmersion = defaults.object(forKey: Key.v3InstrumentalPureImmersion) as? Bool ?? true
         let storedLayout = defaults.string(forKey: Key.mainWindowLayoutStyle)
             ?? MainWindowLayoutStyle.appleMusicImmersiveV3.rawValue
