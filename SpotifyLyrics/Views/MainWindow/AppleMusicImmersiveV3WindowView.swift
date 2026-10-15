@@ -100,6 +100,8 @@ struct AppleMusicImmersiveV3WindowView: View {
     @State private var isSearchPresented = false
     @State private var isWindowMenuPresented = false
     @State private var showsAIReadingControls = false
+    @State private var hoveredAIReadingControls: Bool?
+    private var displaysAIReadingControls: Bool { hoveredAIReadingControls ?? showsAIReadingControls }
     @State private var confirmsAIReadingRequest = false
     @State private var isTranslationComparisonPresented = false
     @State private var isVersionPickerPresented = false
@@ -1013,14 +1015,19 @@ struct AppleMusicImmersiveV3WindowView: View {
         ScrollView {
         VStack(alignment: .leading, spacing: 12) {
             Label("AI 与读音", systemImage: "sparkles").font(.headline)
-            Picker("功能", selection: $showsAIReadingControls) {
-                Text("翻译").tag(false)
-                Text("读音").tag(true)
+            HStack(spacing: 8) {
+                Text("功能").font(.subheadline)
+                HStack(spacing: 2) {
+                    aiFeatureTab("翻译", reading: false)
+                    aiFeatureTab("读音", reading: true)
+                }
+                .padding(2)
+                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+                Spacer()
             }
-            .pickerStyle(.segmented)
             TranslationProviderControls(settings: settings)
             Divider()
-            if showsAIReadingControls {
+            if displaysAIReadingControls {
                 aiReadingControls
             } else {
             Toggle("新歌词自动翻译", isOn: Binding(
@@ -1105,6 +1112,28 @@ struct AppleMusicImmersiveV3WindowView: View {
         }
         .onChange(of: state.liveLyricsVersionID) { _, _ in confirmsAIReadingRequest = false }
         .onChange(of: state.liveTrackIdentity) { _, _ in confirmsAIReadingRequest = false }
+    }
+
+    private func aiFeatureTab(_ title: String, reading: Bool) -> some View {
+        Button {
+            showsAIReadingControls = reading
+            hoveredAIReadingControls = nil
+            confirmToolbarPopover(.translation)
+        } label: {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(displaysAIReadingControls == reading ? Color.white : Color.primary)
+                .frame(width: 48, height: 24)
+                .background(displaysAIReadingControls == reading ? Color.accentColor : .clear,
+                            in: RoundedRectangle(cornerRadius: 5))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { inside in
+            if inside { hoveredAIReadingControls = reading }
+            else if hoveredAIReadingControls == reading { hoveredAIReadingControls = nil }
+        }
+        .accessibilityAddTraits(showsAIReadingControls == reading ? .isSelected : [])
     }
 
     private var aiReadingControls: some View {
@@ -1201,12 +1230,10 @@ struct AppleMusicImmersiveV3WindowView: View {
     }
 
     private func confirmToolbarPopover(_ panel: ToolbarPopover) {
-        if confirmedToolbarPanel == panel {
-            activeToolbarPopover = nil
-        } else {
-            presentToolbarPopover(panel)
-            confirmedToolbarPanel = panel
-        }
+        // A click confirms the hover-opened panel. Repeated clicks remain
+        // idempotent instead of turning confirmation into a close action.
+        presentToolbarPopover(panel)
+        confirmedToolbarPanel = panel
     }
 
     private func toolbarTriggerHover(_ panel: ToolbarPopover, inside: Bool) {
@@ -1374,6 +1401,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         .background(Color.black.opacity(0.28), in: Capsule())
         .onChange(of: activeToolbarPopover) { _, panel in
             if panel != .appearance { hoveredStyle = nil }
+            if panel != .translation { hoveredAIReadingControls = nil }
             if panel == nil {
                 toolbarDismissTask?.cancel()
                 hoveredToolbarTrigger = nil
