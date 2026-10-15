@@ -24,7 +24,6 @@ struct TrackMetadataView: View {
                 .foregroundStyle(.white)
                 .lineLimit(2)
                 .multilineTextAlignment(alignment == .center ? .center : .leading)
-                .shadow(color: Color.black.opacity(presentation == .v3Immersive ? 0.22 : 0), radius: 7, y: 2)
                 .help("\(track.title)\n右键复制歌曲信息")
                 .contextMenu {
                     Button("复制歌名", systemImage: "doc.on.doc") {

@@ -47,6 +47,7 @@ struct CurrentSongOperationsView: View {
                 Button { openLyricsVersionPicker() } label: {
                     if iconOnly {
                         Image(systemName: "text.badge.checkmark")
+                            .foregroundStyle(.white.opacity(0.92))
                             .font(.system(size: 15, weight: .medium))
                             .frame(width: 36, height: 36)
                             .contentShape(Rectangle())
@@ -1119,8 +1120,16 @@ private struct SystemAppearanceSheetModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            // Reset styles inherited from the dark listening toolbar as well
+            // as the scheme; hierarchical secondary text otherwise stays white.
+            .foregroundStyle(Color.primary)
+            .buttonStyle(.bordered)
+            .tint(.accentColor)
+            .environment(\.colorScheme, scheme)
             .preferredColorScheme(scheme)
-            .presentationBackground(Color(nsColor: .windowBackgroundColor))
+            .presentationBackground(scheme == .dark
+                ? Color(red: 0.13, green: 0.14, blue: 0.15)
+                : Color(red: 0.94, green: 0.95, blue: 0.96))
             .onReceive(NSApp.publisher(for: \.effectiveAppearance).receive(on: RunLoop.main)) { appearance in
                 let next = Self.colorScheme(for: appearance)
                 if scheme != next { scheme = next }

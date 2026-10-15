@@ -131,6 +131,7 @@ public final class ReadingSessionController: ObservableObject {
     private var sourceTrackStableKey: String?
     private var sourceArtistDisplay: String?
     private var noSelectionSource: (UUID, String)?
+    private var automaticAIAttempts: Set<String> = []
 
     public init(
         repository: any ReadingRepository,
@@ -206,7 +207,8 @@ public final class ReadingSessionController: ObservableObject {
                     self.availableVersions = versions.filter(\.isComplete)
                     self.selectedVersion = self.chooseVersion(from: self.availableVersions)
                     self.rebuildProjection()
-                    if self.selectedVersion == nil,
+                    if allowAutomaticGeneration { self.optimizeAutomaticallyIfNeeded() }
+                    if self.selectedVersion == nil, !self.isGenerating,
                        allowAutomaticGeneration,
                        self.settings.readingPreferences.automaticGeneration,
                        self.noSelectionSource == nil {
@@ -299,7 +301,7 @@ public final class ReadingSessionController: ObservableObject {
         }
     }
 
-    public func generateCurrentReading(representationID: ReadingRepresentationID? = nil, allowAICandidate: Bool = false) {
+    public func generateCurrentReading(representationID: ReadingRepresentationID? = nil, allowAICandidate: Bool = false, automaticallyAdopt: Bool = false) {
         guard let lyricsVersionID = sourceLyricsVersionID,
               let sourceContentHash,
               !sourceLines.isEmpty else {
@@ -349,16 +351,22 @@ public final class ReadingSessionController: ObservableObject {
                 let result: ReadingGenerationResult
                 if aiEnabled,
                    engineID == .japaneseContextual {
-                    // Only a separately confirmed action may request a paid
-                    // candidate. Surface failures instead of claiming a local
-                    // fallback was an AI success.
                     try Task.checkCancellation()
                     guard let self, self.revision == token else { return }
-                    result = try await self.aiCandidateService.refine(
-                        result: localResult,
-                        request: request,
-                        configuration: aiConfiguration
-                    )
+                    let needsRefinement = localResult.lines.contains {
+                        !Set($0.warnings).isDisjoint(with: [.unknownToken, .ambiguousReading, .languageNeedsConfirmation])
+                    }
+                    if automaticallyAdopt && !needsRefinement {
+                        // There is nothing for AI to resolve. Keep the local
+                        // result and do not send an unnecessary request.
+                        result = localResult
+                    } else {
+                        result = try await self.aiCandidateService.refine(
+                            result: localResult,
+                            request: request,
+                            configuration: aiConfiguration
+                        )
+                    }
                 } else {
                     result = localResult
                 }
@@ -368,10 +376,10 @@ public final class ReadingSessionController: ObservableObject {
                       result.lines.enumerated().allSatisfy({ $0.element.originalText == request.lines[$0.offset].originalText }) else {
                     throw ReadingRepositoryError.invalidLines("生成结果与原文行不一致")
                 }
-                let requiresConfirmation = aiEnabled || (self?.requiresConfirmation(
+                let requiresConfirmation = !automaticallyAdopt && (aiEnabled || (self?.requiresConfirmation(
                     result: result,
                     policy: uncertaintyPolicy
-                ) ?? true)
+                ) ?? true))
                 let now = Date()
                 let record = ReadingVersionRecord(
                     id: UUID(),
@@ -418,7 +426,9 @@ public final class ReadingSessionController: ObservableObject {
                     self.rebuildProjection()
                     self.message = requiresConfirmation
                         ? "读音候选已保存，请确认后采用"
-                        : "读音已保存为新的本地版本"
+                        : (aiEnabled && result.warnings.contains(.aiCandidateOnly)
+                            ? "AI 读音已自动优化并使用" : "读音已保存为新的本地版本")
+                    if !aiEnabled { self.optimizeAutomaticallyIfNeeded() }
                 }
             } catch is CancellationError {
                 await MainActor.run { [weak self] in
@@ -433,6 +443,39 @@ public final class ReadingSessionController: ObservableObject {
                 }
             }
         }
+    }
+
+    private func optimizeAutomaticallyIfNeeded() {
+        let preferences = settings.readingPreferences
+        let configuration = settings.aiTranslationConfiguration
+        guard preferences.aiAssistedCandidate, preferences.automaticAIOptimization,
+              !isGenerating, noSelectionSource == nil,
+              let sourceLyricsVersionID, let sourceContentHash,
+              configuration.isConfigured,
+              AIReadingCandidateService.supports(engineID: configuration.engineID),
+              ReadingLanguageGate.allowsJapaneseReadings(language: sourceLanguage,
+                  text: sourceLines.map(\.originalText).joined(separator: "\n")),
+              selectedVersion?.record.isManuallyEdited != true,
+              selectedVersion?.record.isLocked != true else { return }
+        let representation = preferences.japaneseRepresentationID
+        let savedAI = availableVersions.first {
+            !$0.record.isArchived && $0.record.representationID == representation
+                && $0.record.warningMetadata.contains(.aiCandidateOnly)
+        }
+        if let savedAI {
+            if selectedVersion?.record.id != savedAI.record.id { adopt(versionID: savedAI.record.id) }
+            return
+        }
+        if let selectedVersion, selectedVersion.record.representationID == representation,
+           !selectedVersion.lines.contains(where: {
+               !Set($0.warnings).isDisjoint(with: [.unknownToken, .ambiguousReading, .languageNeedsConfirmation])
+           }) { return }
+        // One attempt per source/model in this session, including failures and
+        // cancellations. Reloads and repeated playback updates cannot retry it.
+        let key = [sourceLyricsVersionID.uuidString, sourceContentHash, representation,
+                   configuration.engineID, configuration.baseURL, configuration.model].joined(separator: "|")
+        guard automaticAIAttempts.insert(key).inserted else { return }
+        generateCurrentReading(allowAICandidate: true, automaticallyAdopt: true)
     }
 
     public func adopt(versionID: UUID) {

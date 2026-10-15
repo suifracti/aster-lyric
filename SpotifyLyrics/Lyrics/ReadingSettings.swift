@@ -22,6 +22,13 @@ public struct ReadingPreferences: Codable, Equatable, Sendable {
     public var scriptConversionID: String
     public var automaticGeneration: Bool
     public var aiAssistedCandidate: Bool
+    // Optional storage keeps older preferences decodable without resetting
+    // any of the user's existing switches when this opt-in is introduced.
+    private var automaticAIOptimizationEnabled: Bool?
+    public var automaticAIOptimization: Bool {
+        get { automaticAIOptimizationEnabled ?? false }
+        set { automaticAIOptimizationEnabled = newValue }
+    }
     public var uncertaintyPolicy: ReadingUncertaintyPolicy
 
     public init(
@@ -31,6 +38,7 @@ public struct ReadingPreferences: Codable, Equatable, Sendable {
         scriptConversionID: String = ScriptConversionID.none.rawValue,
         automaticGeneration: Bool = false,
         aiAssistedCandidate: Bool = false,
+        automaticAIOptimization: Bool = false,
         uncertaintyPolicy: ReadingUncertaintyPolicy = .needsConfirmation
     ) {
         self.japaneseEngineID = japaneseEngineID
@@ -39,6 +47,7 @@ public struct ReadingPreferences: Codable, Equatable, Sendable {
         self.scriptConversionID = scriptConversionID
         self.automaticGeneration = automaticGeneration
         self.aiAssistedCandidate = aiAssistedCandidate
+        self.automaticAIOptimizationEnabled = automaticAIOptimization
         self.uncertaintyPolicy = uncertaintyPolicy
     }
 

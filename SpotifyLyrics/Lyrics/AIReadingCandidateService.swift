@@ -6,7 +6,8 @@ import Foundation
 /// This adapter reuses the configured API, Codex or Gemini transport. It is never invoked unless the user explicitly enables
 /// AI-assisted disambiguation, and it sends only the ambiguous line/token
 /// context needed for a reading candidate. The returned result is marked with
-/// `aiCandidateOnly` so the reading session cannot auto-adopt it.
+/// `aiCandidateOnly`; adoption is manual unless automatic AI optimization was
+/// separately enabled by the user.
 public struct AIReadingCandidateService: Sendable {
     private let client: OpenAICompatibleClient
     private let keyStore: (any AITranslationAPIKeyStore)?

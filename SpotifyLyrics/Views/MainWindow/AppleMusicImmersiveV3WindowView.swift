@@ -945,13 +945,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                 .padding(.horizontal, compact ? 14 : 18)
                 .padding(.vertical, compact ? 12 : 16)
                 .frame(maxWidth: width, alignment: alignment == .center ? .center : .leading)
-                .background(.ultraThinMaterial.opacity(0.72))
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(Color.white.opacity(0.14), lineWidth: 0.8)
-                )
-                .shadow(color: Color.black.opacity(0.16), radius: 16, x: 0, y: 8)
+                .background(V3PlaybackSurface())
                 .modifier(playbackVisibility)
             }
         }
@@ -1103,7 +1097,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("使用兼容 API 模型「\(settings.aiTranslationConfiguration.model)」处理当前歌词的不确定读音，可能产生费用。候选须手动采用，不会自动重试。")
+            Text("使用所选模型「\(settings.aiTranslationConfiguration.model)」优化当前歌词的不确定读音。此处生成的候选可手动采用。")
         }
         .onChange(of: state.liveLyricsVersionID) { _, _ in confirmsAIReadingRequest = false }
         .onChange(of: state.liveTrackIdentity) { _, _ in confirmsAIReadingRequest = false }
@@ -1129,8 +1123,15 @@ struct AppleMusicImmersiveV3WindowView: View {
                     settings.readingPreferences = next
                 }
             ))
-            Text("开启不会自动请求；关闭恢复本地读音。人工修改和已锁定读音保持，其他版本仍保留。")
+            Text("关闭恢复本地读音；人工修改、锁定读音和已保存版本保留。")
                 .font(.caption).foregroundStyle(.secondary)
+            if settings.readingPreferences.aiAssistedCandidate {
+                Toggle("新歌词自动优化", isOn: readingBinding(\.automaticAIOptimization))
+                    .disabled(!allowsAutomaticTranslation || !settings.aiTranslationConfiguration.isConfigured
+                        || !AIReadingCandidateService.supports(engineID: settings.aiTranslationConfiguration.engineID))
+                Text("新歌词就绪后自动优化并使用；优先复用已保存的 AI 读音，保留人工修改和锁定读音。仅处理不确定读音，可能产生模型费用。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             HStack {
                 Button("本地生成") { state.generateCurrentReading() }
                     .disabled(!canGenerateReadingHere || state.isReadingGenerating)
@@ -1305,10 +1306,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         }
         .buttonStyle(QuietToolbarButtonStyle())
         .padding(5)
-        .background(.regularMaterial.opacity(0.78), in: Capsule())
-        .overlay(Capsule().strokeBorder(.white.opacity(0.16), lineWidth: 0.7))
-        .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 4)
-        .foregroundStyle(.white.opacity(0.92))
+        .background(Color.black.opacity(0.28), in: Capsule())
 
     }
 
@@ -1417,6 +1415,7 @@ struct AppleMusicImmersiveV3WindowView: View {
 
     private func iconLabel(_ systemImage: String, description: String) -> some View {
         Image(systemName: systemImage)
+            .foregroundStyle(.white.opacity(0.92))
             .font(.system(size: 15, weight: .medium))
             .frame(width: 36, height: 36)
             .contentShape(Rectangle())
@@ -1439,7 +1438,7 @@ private struct QuietToolbarButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(.white.opacity(configuration.isPressed ? 0.20 : hovering ? 0.10 : 0), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .opacity(configuration.isPressed ? 0.60 : hovering ? 1 : 0.86)
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .onHover { hovering = $0 }
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hovering)
@@ -1548,10 +1547,6 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
                 Capsule()
                     .fill(progressActiveGradient)
                     .frame(width: activeWidth, height: trackHeight)
-                    .shadow(
-                        color: Color.white.opacity(isEmphasized ? 0.18 : 0),
-                        radius: 3
-                    )
 
                 if isEmphasized {
                     Circle()
@@ -1756,15 +1751,7 @@ private struct V3TransportClockLabel: View {
 private struct V3PlaybackSurface: View {
     var body: some View {
         RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .fill(.ultraThinMaterial.opacity(0.62))
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color.black.opacity(0.12))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.8)
-            }
+            .fill(Color.black.opacity(0.24))
     }
 }
 
@@ -1846,10 +1833,7 @@ private struct V3TransportIconButton: View {
                 .font(.system(size: prominent ? 22 : 16, weight: .semibold))
                 .foregroundStyle(.white.opacity(enabled ? (prominent ? 1 : 0.86) : 0.35))
                 .frame(width: 44, height: 44)
-                .background {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.white.opacity(isHovered && enabled ? 0.10 : 0))
-                }
+                .opacity(isHovered && enabled ? 1 : 0.88)
                 .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(V3BounceButtonStyle())

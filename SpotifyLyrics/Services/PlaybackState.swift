@@ -336,9 +336,11 @@ public final class PlaybackState: ObservableObject {
             .dropFirst()
             .sink { [weak self] preferences in
                 guard let self else { return }
-                // Published emits before storage changes. An AI permission
-                // toggle reloads saved layers without generating a new layer.
+                // Published emits before storage changes; the asynchronous
+                // reload observes the new preferences. Only the separate
+                // automatic-AI opt-in may generate on an AI permission change.
                 self.readingSession.reload(allowAutomaticGeneration:
+                    preferences.automaticAIOptimization ||
                     preferences.aiAssistedCandidate == resolvedSettings.readingPreferences.aiAssistedCandidate)
                 self.objectWillChange.send()
             }

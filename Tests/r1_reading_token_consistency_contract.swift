@@ -8,6 +8,10 @@ private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.sel
 // All reading generation, SQLite save/load, session, and projection behavior
 // under test comes from production sources.
 public struct AITranslationConfiguration: Sendable {
+    public var engineID = "offline-fixture"
+    public var baseURL = ""
+    public var model = "fixture"
+    public var isConfigured = true
     public init() {}
 }
 
@@ -18,6 +22,7 @@ actor ReadingAICallCounter {
 }
 
 public struct AIReadingCandidateService: Sendable {
+    public static func supports(engineID: String) -> Bool { engineID == "offline-fixture" }
     public init() {}
     public func refine(
         result: ReadingGenerationResult,
@@ -27,8 +32,19 @@ public struct AIReadingCandidateService: Sendable {
         _ = request
         _ = configuration
         await ReadingAICallCounter.shared.record()
+        let lines = result.lines.map { line in
+            let tokens = line.tokens.map { token in
+                ReadingToken(id: token.id, surface: token.surface, reading: token.reading ?? "ほっけ",
+                    startOffset: token.startOffset, endOffset: token.endOffset,
+                    source: token.reading == nil ? .aiCandidate : token.source,
+                    confidence: 0.75, needsConfirmation: true)
+            }
+            return ReadingLineResult(lineIndex: line.lineIndex, originalText: line.originalText,
+                readingText: tokens.map { $0.reading ?? $0.surface }.joined(), language: line.language,
+                tokens: tokens, warnings: line.warnings + [.aiCandidateOnly], confidence: 0.75)
+        }
         return ReadingGenerationResult(engineID: result.engineID, representationID: result.representationID,
-            lines: result.lines, language: result.language, confidence: result.confidence,
+            lines: lines, language: result.language, confidence: result.confidence,
             warnings: result.warnings + [.aiCandidateOnly], contextHash: result.contextHash + ":fake-ai")
     }
 }
@@ -173,15 +189,64 @@ struct R1ReadingTokenConsistencyContract {
         do {
             let mode = CommandLine.arguments.dropFirst().first ?? "all"
             if mode == "ai-gate" || mode == "all" { try await runExplicitAIGate() }
+            if mode == "auto-ai" || mode == "all" { try await runAutomaticAI() }
             if mode == "manual" || mode == "all" { try await runManualEditRoundTrip() }
             if mode == "race" || mode == "all" { try await runDelayedGenerationRace() }
             if mode == "click" || mode == "all" { try await runClickCorrectionRoundTrip() }
-            guard ["manual", "race", "click", "ai-gate", "all"].contains(mode) else { throw ContractFailure("unknown case \(mode)") }
+            guard ["manual", "race", "click", "ai-gate", "auto-ai", "all"].contains(mode) else { throw ContractFailure("unknown case \(mode)") }
             print("R1 reading/token consistency contract PASS (\(mode))")
         } catch {
             FileHandle.standardError.write(Data("\(error)\n".utf8))
             Darwin.exit(1)
         }
+    }
+
+    private static func runAutomaticAI() async throws {
+        // Preferences written before this feature must retain the local/AI
+        // choices and leave the new paid automatic mode off.
+        let legacy = Data(#"{"japaneseEngineID":"readingEngine.japaneseContextual.v1","japaneseRepresentationID":"kana","pinyinRepresentationID":"pinyinToneMarks","scriptConversionID":"none","automaticGeneration":false,"aiAssistedCandidate":true,"uncertaintyPolicy":"needsConfirmation"}"#.utf8)
+        let decoded = try JSONDecoder().decode(ReadingPreferences.self, from: legacy)
+        try require(!decoded.automaticGeneration && decoded.aiAssistedCandidate && !decoded.automaticAIOptimization,
+                    "old reading preferences must survive with automatic AI off")
+        let root = try temporaryRoot("auto-ai")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("fixture.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await repository.prepare()
+        let track = Track(title: "Synthetic automatic reading", artist: "Fixture", album: "Fixture", duration: 10)
+        let identity = TrackIdentity(track: track)
+        let lines = [LyricLine(timestamp: 0, originalText: "𩸽の月")]
+        let document = LyricsDocument(identity: identity, lines: lines, isSynchronized: true,
+            source: .amll, confidence: 1, providerSourceID: "synthetic-auto", language: "ja")
+        let saved = try await repository.save(track: track, identity: identity, document: document)
+        let suite = "reading-auto-ai-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults, aiEnabled: true, automatic: true)
+        settings.readingPreferences.automaticAIOptimization = true
+        let session = await MainActor.run { ReadingSessionController(repository: repository, settings: settings) }
+        let before = await ReadingAICallCounter.shared.count
+        await MainActor.run {
+            session.synchronize(lyricsVersionID: saved.versionID, sourceContentHash: saved.sourceContentHash,
+                lines: lines, language: "ja", trackStableKey: identity.stableKey)
+        }
+        try await waitUntil("automatic AI did not become the shared reading") {
+            session.selectedVersion?.record.warningMetadata.contains(.aiCandidateOnly) == true && !session.isGenerating
+        }
+        let generated = await ReadingAICallCounter.shared.count
+        try require(generated == before + 1, "automatic AI must send once")
+        await MainActor.run { session.reload() }
+        try await waitUntil("saved automatic AI was not reused") {
+            session.selectedVersion?.record.warningMetadata.contains(.aiCandidateOnly) == true
+        }
+        let reused = await ReadingAICallCounter.shared.count
+        try require(reused == generated, "reload must reuse saved AI instead of requesting again")
+        await MainActor.run { session.lockSelected() }
+        try await waitUntil("automatic AI reading was not locked") { session.selectedVersion?.record.isLocked == true }
+        await MainActor.run { session.reload() }
+        try await waitUntil("locked reading was not preserved") { session.selectedVersion?.record.isLocked == true }
+        let afterLock = await ReadingAICallCounter.shared.count
+        try require(afterLock == generated, "locked reading must never trigger new automatic requests")
     }
 
     private static func runExplicitAIGate() async throws {
