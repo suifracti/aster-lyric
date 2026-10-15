@@ -578,13 +578,18 @@ struct AppleMusicImmersiveV3BackdropView: View {
     /// is retained above as an ambient variant rather than renamed Gaussian.
     private func gaussianArtworkLayers(image: NSImage) -> some View {
         GeometryReader { geometry in
+            let scale = 1 + (min(1.4, max(0.8, artworkSizeScale)) - 0.8) * 0.6
+            let aspect = max(0.01, image.size.width / max(1, image.size.height))
+            let coverWidth = max(geometry.size.width, geometry.size.height * aspect)
+            let extraWidth = max(0, (coverWidth * scale - geometry.size.width) / 2)
+            let offset = min(extraWidth, max(-extraWidth, classicArtworkOffset(for: geometry.size.width)))
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)
                 .scaledToFill()
                 .frame(width: geometry.size.width, height: geometry.size.height)
-                .scaleEffect(1.12 * min(1.4, max(0.8, artworkSizeScale)))
-                .offset(x: classicArtworkOffset(for: geometry.size.width))
+                .scaleEffect(scale)
+                .offset(x: offset)
                 .blur(radius: effectiveBlurRadius)
         }
         .clipped()
