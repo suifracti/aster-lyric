@@ -1055,6 +1055,10 @@ struct AppleMusicImmersiveV3WindowView: View {
                 Toggle("读音", isOn: displayBinding(\.showKana))
             }
             Divider()
+            if let current = state.selectedTranslation {
+                Text("当前译文 · " + current.record.translationSourceTitle)
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if !state.translationProgressMessage.isEmpty {
                 Text(state.translationProgressMessage).font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1089,7 +1093,9 @@ struct AppleMusicImmersiveV3WindowView: View {
             Menu("已保存的译文") {
                 Button("无译文") { state.selectNoTranslationVersion() }
                 ForEach(state.translationVersions, id: \.record.id) { version in
-                    Button(version.record.id == state.selectedTranslation?.record.id ? "✓ 已采用" : "译文 · " + String(version.record.id.uuidString.prefix(8))) {
+                    Button((version.record.id == state.selectedTranslation?.record.id ? "✓ " : "")
+                           + version.record.translationSourceTitle + " · "
+                           + version.record.createdAt.formatted(date: .numeric, time: .shortened)) {
                         state.selectTranslation(versionID: version.record.id)
                     }
                 }
@@ -4198,15 +4204,7 @@ private struct V3TranslationComparisonSheet: View {
 
     private func title(_ version: StoredTranslationVersion) -> String {
         let record = version.record
-        let kind: String
-        switch record.sourceKind {
-        case .providerEmbedded: kind = "词源译文"
-        case .manualImport, .manualEdit: kind = "人工译文"
-        case .legacyImported: kind = "历史译文"
-        case .ai: kind = record.isManuallyEdited ? "人工修订 AI" : "AI 译文"
-        }
-        let model = record.model.trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = model.isEmpty || model == "provider-embedded" ? kind : "\(kind) · \(model)"
+        let name = record.translationSourceTitle
         let status = version.isArchived ? " · 已归档"
             : version.isDraft ? " · 待采用" : (!version.isComplete ? " · 不完整" : "")
         let locked = record.isLocked ? " · 已锁定" : ""

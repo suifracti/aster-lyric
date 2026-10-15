@@ -310,6 +310,32 @@ public struct DatabaseTranslationVersionRecord: Equatable, Sendable {
     public let isDraft: Bool
     public let isArchived: Bool
 
+    /// Label saved provenance, never the currently selected service or a
+    /// guessed provider inferred from the model's name.
+    public var translationSourceTitle: String {
+        switch sourceKind {
+        case .providerEmbedded: return "歌词源译文"
+        case .manualImport: return "人工导入译文"
+        case .manualEdit: return "人工修订译文"
+        case .legacyImported: return "历史译文"
+        case .ai: break
+        }
+        let service: String
+        switch TranslationEngineID(rawValue: engineID) {
+        case .appleSystem: service = "苹果系统翻译"
+        case .codexChatGPT: service = "GPT / ChatGPT"
+        case .grokBuild: service = "Grok"
+        case .geminiCLI: service = "Gemini"
+        case .antigravityCLI: service = "Gemini · Antigravity"
+        case .deepSeekAPI: service = "DeepSeek"
+        case .openAICompatible: service = "兼容 API"
+        case nil: service = "译文（来源未记录）"
+        }
+        let modelName = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let suffix = engineID == TranslationEngineID.appleSystem.rawValue || modelName.isEmpty ? "" : " · " + modelName
+        return (isManuallyEdited ? "人工修订 · " : "") + service + suffix
+    }
+
     public init(
         id: UUID,
         lyricsVersionID: UUID,

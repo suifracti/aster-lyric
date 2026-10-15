@@ -968,7 +968,7 @@ struct CurrentSongOperationsView: View {
     }
 
     private func versionTitle(_ version: StoredTranslationVersion) -> String {
-        let model = version.record.model.isEmpty ? version.record.sourceKind.rawValue : version.record.model
+        let model = version.record.translationSourceTitle
         if version.record.isDraft { return "候选 · \(model)" }
         if version.record.isArchived { return "已归档 · \(model)" }
         return version.record.isLocked ? "🔒 \(model)" : model
@@ -1058,7 +1058,7 @@ private struct TranslationCandidatePreviewView: View {
                 Button("关闭") { dismiss() }
             }
             HStack(spacing: 8) {
-                Label(candidate.record.model.isEmpty ? "Apple 系统翻译" : candidate.record.model, systemImage: "character.book.closed")
+                Label(candidate.record.translationSourceTitle, systemImage: "character.book.closed")
                 Text("·")
                 Text(candidate.record.targetLanguage)
                 Text("·")
