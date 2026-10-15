@@ -54,6 +54,7 @@ struct SpotifyLyricsApp: App {
                 .environmentObject(playbackState)
                 .environmentObject(appSettings)
                 .environmentObject(directionDMainWindowAdapter)
+                .appleSystemTranslationHost()
                 .onAppear {
                     // Product path: zero-operation automatic alignment observes playback.
                     AutomaticAlignmentJobController.shared.bind(playback: playbackState)

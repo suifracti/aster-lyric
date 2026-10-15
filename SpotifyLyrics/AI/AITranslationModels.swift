@@ -819,6 +819,10 @@ public final class TranslationAcceptanceRequestBudget: @unchecked Sendable {
         }
     }
     public static let processBudget: TranslationAcceptanceRequestBudget? = {
+#if DEBUG
+        if ProcessInfo.processInfo.environment["SPOTIFYLYRICS_PRIVATE_DAILY_USE"] == "1",
+           ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DEBUG_ACCEPTANCE"] == "1" { return nil }
+#endif
         guard let path=ProcessInfo.processInfo.environment["SPOTIFYLYRICS_ACCEPTANCE_BUDGET_FILE"] else { return nil }
         return TranslationAcceptanceRequestBudget(fileURL: URL(fileURLWithPath:path))
     }()

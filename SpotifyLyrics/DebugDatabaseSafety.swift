@@ -93,6 +93,11 @@ private final class DebugPrivateUserDefaults: UserDefaults {
 /// local-index scan or player bridge is constructed. No acceptance flag can
 /// silently fall back to a daily resource.
 enum DebugAcceptanceDataIsolation {
+    /// Private daily use keeps the private library, but follows the user's
+    /// connection and translation settings instead of acceptance-only limits.
+    static var isDailyUse: Bool {
+        isRequested && ProcessInfo.processInfo.environment["SPOTIFYLYRICS_PRIVATE_DAILY_USE"] == "1"
+    }
     // One explicit, recording-bound subscription acceptance grant. A spent
     // counter remains valid on reopen, but can never authorize another send.
     static let translationGrant = "6110651480"
@@ -115,6 +120,7 @@ enum DebugAcceptanceDataIsolation {
             && providers == ["translationEngine.codexChatGPT.v1"] && tracks == [expectedTrack!]
     }
     static var allowsExplicitTranslation: Bool {
+        if isDailyUse { return true }
         let e = ProcessInfo.processInfo.environment
         guard let grant = e["SPOTIFYLYRICS_ACCEPTANCE_TRANSLATION_GRANT"],
               [translationGrant, secondTranslationGrant].contains(grant),
@@ -222,11 +228,21 @@ enum DebugAcceptanceDataIsolation {
         guard let store = DebugPrivateUserDefaults(suiteName: suite, storageURL: preferences) else { refuse("private suite unavailable") }
         preparedDefaults = store
         // Never import daily settings/history. Preserve only this root's UI and
-        // choices on reopen; freeze all external side effects before init.
-        store.set("spotify", forKey: "playback.sourceMode")
-        store.set(false, forKey: "general.connectSpotifyOnLaunch")
-        store.set(false, forKey: "ai.autoTranslateNewLyrics")
-        store.set(false, forKey: "automaticAlignment.enabled.v1")
+        // choices on reopen. Only strict acceptance freezes connection and
+        // translation switches; private daily use follows the user's choices.
+        if isDailyUse {
+            if !store.bool(forKey: "privateDailyDefaultsRestored.v1") {
+                // Earlier acceptance launches wrote false on every start.
+                // Restore automatic connection once, then honor future edits.
+                store.set(true, forKey: "general.connectSpotifyOnLaunch")
+                store.set(true, forKey: "privateDailyDefaultsRestored.v1")
+            }
+        } else {
+            store.set("spotify", forKey: "playback.sourceMode")
+            store.set(false, forKey: "general.connectSpotifyOnLaunch")
+            store.set(false, forKey: "ai.autoTranslateNewLyrics")
+            store.set(false, forKey: "automaticAlignment.enabled.v1")
+        }
         store.removeObject(forKey: "spotify.clientID")
         FileHandle.standardError.write(Data("[SpotifyLyrics][NativeIsolation] ready root=\(raw) suite=\(suite) keychain=OFF model_budget=\(budget["maximum"] as? Int ?? -1) used=\(budget["used"] as? Int ?? -1) imports=NONE\n".utf8))
     }

@@ -2,6 +2,7 @@ import Foundation
 import CoreFoundation
 import Darwin
 import AppKit
+import SwiftUI
 #if canImport(CryptoKit)
 import CryptoKit
 #endif
@@ -198,7 +199,7 @@ public struct AppleSystemTranslationEngine: TranslationEngine, Sendable {
     }
 
     private static var isRuntimeAvailable: Bool {
-        if #available(macOS 26.0, *) { return true }
+        if #available(macOS 15.0, *) { return true }
         return false
     }
 
@@ -208,23 +209,24 @@ public struct AppleSystemTranslationEngine: TranslationEngine, Sendable {
         configuration: AITranslationConfiguration
     ) async throws -> AITranslationDraft {
 #if canImport(Translation)
-        guard #available(macOS 26.0, *) else {
+        guard #available(macOS 15.0, *) else {
             throw AITranslationError.engineUnavailable("当前 macOS 不支持 Apple 系统翻译")
         }
-        let source = Locale.Language(identifier: context.sourceLanguage)
+        let hint = context.sourceLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let source: Locale.Language? = ["", "und", "unknown", "auto"].contains(hint.lowercased())
+            ? nil : Locale.Language(identifier: hint)
         let target = Locale.Language(identifier: configuration.targetLanguage)
-        let availability = await LanguageAvailability().status(from: source, to: target)
-        guard availability != .unsupported else {
-            throw AITranslationError.engineUnavailable("Apple 系统翻译不支持当前语言组合")
+        if let source {
+            let availability = await LanguageAvailability().status(from: source, to: target)
+            guard availability != .unsupported else {
+                throw AITranslationError.engineUnavailable("Apple 系统翻译不支持当前语言组合")
+            }
         }
         let nonBlank = context.lines.filter { !$0.original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        let session = TranslationSession(installedSource: source, target: target)
-        // `supported` does not imply that the language assets are installed.
-        // Preparing here lets the framework request/download what it needs
-        // before the batch call instead of failing as if translation did
-        // nothing. The UI exposes this preparation through the shared session.
-        try await session.prepareTranslation()
-        let responses = try await session.translations(from: nonBlank.map { TranslationSession.Request(sourceText: $0.original) })
+        // A SwiftUI-provided session can request/download missing languages;
+        // init(installedSource:) cannot, even if prepareTranslation is called.
+        let responses = try await AppleTranslationPresenter.shared.translate(
+            nonBlank.map(\.original), source: source, target: target)
         guard responses.count == nonBlank.count else {
             throw AITranslationError.invalidResponse("Apple 系统翻译返回行数不匹配")
         }
@@ -234,7 +236,7 @@ public struct AppleSystemTranslationEngine: TranslationEngine, Sendable {
                 return AITranslationLine(index: line.index, translation: "")
             }
             defer { responseIndex += 1 }
-            return AITranslationLine(index: line.index, translation: responses[responseIndex].targetText)
+            return AITranslationLine(index: line.index, translation: responses[responseIndex])
         }
         let validated = try AITranslationResponseValidator.validate(lines, against: context.lines.map(\.original))
         return AITranslationDraft(
@@ -269,6 +271,93 @@ public struct AppleSystemTranslationEngine: TranslationEngine, Sendable {
             sourceContentHash: "connection-test",
             configuration: configuration
         )
+    }
+}
+
+#if canImport(Translation)
+@available(macOS 15.0, *)
+@MainActor
+final class AppleTranslationPresenter: ObservableObject {
+    static let shared = AppleTranslationPresenter()
+    @Published private(set) var configuration: TranslationSession.Configuration?
+    private var previousConfiguration: TranslationSession.Configuration?
+    private var pending: (id: UUID, texts: [String], source: Locale.Language?)?
+    private var continuation: CheckedContinuation<[String], Error>?
+    private var runningID: UUID?
+    var currentRequestID: UUID? { pending?.id }
+
+    func translate(_ texts: [String], source: Locale.Language?, target: Locale.Language) async throws -> [String] {
+        try Task.checkCancellation()
+        guard continuation == nil else { throw AITranslationError.engineUnavailable("系统翻译正在处理，请稍候") }
+        guard !texts.isEmpty else { return [] }
+        let id = UUID()
+        return try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { continuation in
+                self.continuation = continuation
+                self.pending = (id, texts, source)
+                var next = previousConfiguration ?? TranslationSession.Configuration(source: source, target: target)
+                if next.source != source || next.target != target {
+                    next = TranslationSession.Configuration(source: source, target: target)
+                } else { next.invalidate() }
+                previousConfiguration = next
+                configuration = next
+            }
+        }, onCancel: {
+            Task { @MainActor in self.finish(id: id, result: .failure(CancellationError())) }
+        })
+    }
+
+    func perform(using session: TranslationSession, requestID: UUID) async {
+        guard let pending, pending.id == requestID, runningID != pending.id else { return }
+        runningID = pending.id
+        do {
+            // Unknown sources are detected from the actual text by translations;
+            // prepareTranslation has no sample and cannot detect them itself.
+            if pending.source != nil { try await session.prepareTranslation() }
+            let responses = try await session.translations(from: pending.texts.map {
+                TranslationSession.Request(sourceText: $0)
+            })
+            finish(id: pending.id, result: .success(responses.map(\.targetText)))
+        } catch is CancellationError {
+            finish(id: pending.id, result: .failure(CancellationError()))
+        } catch {
+            let native = error as NSError
+            finish(id: pending.id, result: .failure(AITranslationError.engineUnavailable(
+                "苹果系统翻译失败：\(error.localizedDescription)（\(native.domain) · \(native.code)）。请完成系统语言下载提示后重试。")))
+        }
+    }
+
+    private func finish(id: UUID, result: Result<[String], Error>) {
+        guard pending?.id == id else { return }
+        let waiting = continuation
+        continuation = nil
+        pending = nil
+        runningID = nil
+        configuration = nil
+        waiting?.resume(with: result)
+    }
+}
+
+@available(macOS 15.0, *)
+private struct AppleTranslationTaskHost: ViewModifier {
+    @ObservedObject private var presenter = AppleTranslationPresenter.shared
+    func body(content: Content) -> some View {
+        let requestID = presenter.currentRequestID
+        return content.translationTask(presenter.configuration) { session in
+            if let requestID { await presenter.perform(using: session, requestID: requestID) }
+        }
+    }
+}
+#endif
+
+extension View {
+    @ViewBuilder func appleSystemTranslationHost() -> some View {
+#if canImport(Translation)
+        if #available(macOS 15.0, *) { modifier(AppleTranslationTaskHost()) }
+        else { self }
+#else
+        self
+#endif
     }
 }
 

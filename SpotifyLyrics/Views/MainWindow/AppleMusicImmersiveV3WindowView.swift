@@ -1014,7 +1014,7 @@ struct AppleMusicImmersiveV3WindowView: View {
     private var allowsAutomaticTranslation: Bool {
         if usesSystemTranslation { return true }
 #if DEBUG
-        if DebugAcceptanceDataIsolation.isRequested { return false }
+        if DebugAcceptanceDataIsolation.isRequested && !DebugAcceptanceDataIsolation.isDailyUse { return false }
 #endif
         return allowsModelRequests
     }

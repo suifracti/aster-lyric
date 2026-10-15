@@ -41,6 +41,8 @@ run('escaped-resource-after-ready',lambda r,e:e.update(CONTRACT_ESCAPED_STORAGE=
 r,e=run('private-positive',want=0)
 suite=e['SPOTIFYLYRICS_ACCEPTANCE_SUITE'];pref=r/'preferences.plist';assert pref.is_file(),str(pref)
 run('private-reopen-preserves-choice',args=['--debug-native-acceptance','--cache-reopen'],want=0,root=(r,e))
+daily=run('private-daily-first-launch',lambda r,e:e.update(SPOTIFYLYRICS_PRIVATE_DAILY_USE='1'),want=0)
+run('private-daily-reopen-keeps-settings',args=['--debug-native-acceptance','--cache-reopen'],want=0,root=daily)
 plain={'PATH':'/usr/bin:/bin'};v=subprocess.run([str(p/'gate-contract')],env=plain,capture_output=True,text=True);results['ordinary-debug']={'runtime':v.returncode};assert v.returncode==0;print('ordinary-debug old contract',v.returncode)
 # Supplemental static completeness: no shipped consumer can accidentally call standard.
 misused=[]

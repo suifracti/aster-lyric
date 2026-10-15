@@ -10,10 +10,22 @@ struct DebugDatabaseSafetyContract {
                 DebugAcceptanceDataIsolation.requireStorage(URL(fileURLWithPath: escaped))
             }
             let store = UserDefaults.lyricsQ
-            precondition(store.string(forKey: "playback.sourceMode") == "spotify")
-            precondition(!store.bool(forKey: "general.connectSpotifyOnLaunch"))
-            precondition(!store.bool(forKey: "ai.autoTranslateNewLyrics"))
-            precondition(!store.bool(forKey: "automaticAlignment.enabled.v1"))
+            if DebugAcceptanceDataIsolation.isDailyUse {
+                precondition(DebugAcceptanceDataIsolation.allowsExplicitTranslation)
+                if CommandLine.arguments.contains("--cache-reopen") {
+                    precondition(!store.bool(forKey: "general.connectSpotifyOnLaunch"), "daily reopen overwrote user connection setting")
+                    precondition(store.bool(forKey: "ai.autoTranslateNewLyrics"), "daily reopen reset automatic translation")
+                } else {
+                    precondition(store.bool(forKey: "general.connectSpotifyOnLaunch"), "first daily launch still requires reconnect")
+                    store.set(false, forKey: "general.connectSpotifyOnLaunch")
+                    store.set(true, forKey: "ai.autoTranslateNewLyrics")
+                }
+            } else {
+                precondition(store.string(forKey: "playback.sourceMode") == "spotify")
+                precondition(!store.bool(forKey: "general.connectSpotifyOnLaunch"))
+                precondition(!store.bool(forKey: "ai.autoTranslateNewLyrics"))
+                precondition(!store.bool(forKey: "automaticAlignment.enabled.v1"))
+            }
             precondition(store.string(forKey: "spotify.clientID") == nil)
             store.set(true, forKey: "contract.bool")
             store.set(12.5, forKey: "contract.double")
