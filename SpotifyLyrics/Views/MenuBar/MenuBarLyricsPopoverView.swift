@@ -9,180 +9,218 @@ public struct MenuBarLyricsPopoverView: View {
 
     public var body: some View {
         let snapshot = controller.currentSnapshot
+        let artist = snapshot.artistName ?? ""
         VStack(alignment: .leading, spacing: 12) {
-            // Header: Cover artwork + Track title & Artist
-            HStack(alignment: .center, spacing: 10) {
+            HStack(spacing: 12) {
                 artworkView(snapshot.artworkURL)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(snapshot.trackTitle ?? "未在播放歌曲")
-                        .font(.system(size: 13, weight: .bold))
-                        .lineLimit(1)
-                    Text(snapshot.artistName ?? "Spotify")
-                        .font(.system(size: 11))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(snapshot.trackTitle ?? "等待播放音乐")
+                        .font(.system(size: 14, weight: .semibold))
+                        .lineLimit(2)
+                    Text(artist.isEmpty ? "Lyric Island" : artist)
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                Spacer(minLength: 0)
-            }
-
-            Divider()
-
-            // Lyrics display area
-            VStack(alignment: .leading, spacing: 6) {
-                switch snapshot.state {
-                case .idle:
-                    Text("暂无播放中的曲目")
-                        .font(.system(size: 12))
+                Spacer(minLength: 4)
+                if snapshot.hasLiveTrack {
+                    Image(systemName: snapshot.isPlaying ? "waveform" : "pause.fill")
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 8)
-
-                case .loading:
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("正在加载歌词…")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 8)
-
-                case .synchronized(let current, let next):
-                    if current.isEmpty && (next == nil || next?.isEmpty == true) {
-                        Text("♪ (前奏 / 间奏)")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 6)
-                    } else {
-                        if !current.isEmpty {
-                            Text(current)
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(Color.primary)
-                                .lineLimit(2)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        // Prefer the adopted Chinese line over the next original
-                        // line. Missing translations retain the old next-line preview.
-                        if let translated = snapshot.currentTranslationText, !translated.isEmpty {
-                            Text(translated)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Color.primary.opacity(0.76))
-                                .lineLimit(3)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .accessibilityLabel("中文译文：\(translated)")
-                        } else if let next, !next.isEmpty {
-                            Text(next)
-                                .font(.system(size: 12, weight: .regular))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-
-                case .unsynchronized:
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("歌词尚未同步")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary)
-                        Text("可在主窗口或编辑器中查看与排轴")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 6)
-
-                case .noLyrics:
-                    Text("未找到歌词")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 8)
-
-                case .failed:
-                    Text("歌词加载失败")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 8)
+                        .accessibilityLabel(snapshot.isPlaying ? "正在播放" : "已暂停")
                 }
             }
-            .frame(minHeight: 44)
 
-            Divider()
+            lyricsContent(snapshot)
+                .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
+                .padding(14)
+                .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+                .accessibilityElement(children: .contain)
 
-            // Transport Controls
-            HStack(alignment: .center, spacing: 18) {
+            HStack(spacing: 18) {
                 Spacer()
-
-                Button(action: {
+                transportButton("backward.fill", title: "上一首", enabled: snapshot.canControlPlayback) {
                     controller.previousTrack()
-                }) {
-                    Image(systemName: "backward.fill")
-                        .font(.system(size: 13))
                 }
-                .buttonStyle(.plain)
-                .disabled(!snapshot.hasLiveTrack)
-
-                Button(action: {
+                transportButton(snapshot.isPlaying ? "pause.fill" : "play.fill",
+                                title: snapshot.isPlaying ? "暂停" : "播放",
+                                enabled: snapshot.canControlPlayback, prominent: true) {
                     controller.togglePlayPause()
-                }) {
-                    Image(systemName: snapshot.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 16, weight: .bold))
                 }
-                .buttonStyle(.plain)
-                .disabled(!snapshot.hasLiveTrack)
-
-                Button(action: {
+                transportButton("forward.fill", title: "下一首", enabled: snapshot.canControlPlayback) {
                     controller.nextTrack()
-                }) {
-                    Image(systemName: "forward.fill")
-                        .font(.system(size: 13))
                 }
-                .buttonStyle(.plain)
-                .disabled(!snapshot.hasLiveTrack)
-
                 Spacer()
             }
-            .padding(.vertical, 2)
+            if snapshot.hasLiveTrack && !snapshot.canControlPlayback {
+                Text("播放连接暂不可用，可在主窗口查看连接状态。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Divider()
 
-            Toggle("在菜单栏显示歌词", isOn: Binding(
-                get: { controller.menuBarLyricsEnabled },
-                set: { controller.menuBarLyricsEnabled = $0 }
-            ))
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            .font(.system(size: 12))
-            .help("关闭后保留播放状态图标，点击图标仍可打开此菜单")
+            HStack(spacing: 6) {
+                shortcut("主窗口", icon: "macwindow") { controller.openMainWindow() }
+                shortcut("歌词库", icon: "books.vertical") { controller.openLibrary() }
+                shortcut("设置", icon: "gearshape") { controller.openSettings() }
+            }
 
-            // Entrypoints
-            VStack(spacing: 2) {
-                menuRow(title: "打开 Lyric Island", icon: "macwindow") {
-                    controller.openMainWindow()
+            HStack(spacing: 12) {
+                Toggle("菜单栏显示歌词", isOn: Binding(
+                    get: { controller.menuBarLyricsEnabled },
+                    set: { controller.menuBarLyricsEnabled = $0 }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .font(.system(size: 11))
+                .help("关闭后保留播放状态图标，点击图标仍可打开此菜单")
+                Spacer(minLength: 0)
+                Menu {
+                    Button("退出 Lyric Island") { controller.quit() }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .frame(width: 24, height: 24)
                 }
-
-                menuRow(title: "歌词库与收听记录", icon: "music.note.list") {
-                    controller.openLibrary()
-                }
-
-                menuRow(title: "设置…", icon: "gearshape") {
-                    controller.openSettings()
-                }
-
-                Divider()
-                    .padding(.vertical, 4)
-
-                menuRow(title: "退出 Lyric Island", icon: "power") {
-                    controller.quit()
-                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("更多操作")
+                .accessibilityLabel("更多操作")
             }
         }
-        .padding(14)
-        .frame(width: 290)
+        .padding(16)
+        .frame(width: 340)
+    }
+
+    @ViewBuilder
+    private func lyricsContent(_ snapshot: MenuBarLyricsSnapshot) -> some View {
+        switch snapshot.state {
+        case .idle:
+            statusContent("等待当前歌曲", detail: "在 Spotify 或 Apple Music 播放音乐后，这里会显示当前歌词。",
+                          symbol: "music.note", actionTitle: "打开主窗口")
+        case .loading:
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("正在加载歌词…").font(.system(size: 13, weight: .medium))
+                }
+                Text("可先继续听歌，歌词就绪后会自动显示。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .synchronized(let current, let next):
+            VStack(alignment: .leading, spacing: 10) {
+                if current.isEmpty {
+                    Label("前奏 / 间奏", systemImage: "music.note")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                } else {
+                    lyricText(current, translation: snapshot.currentTranslationText)
+                }
+                if let next, !next.isEmpty {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(current.isEmpty ? "即将开始" : "下一句")
+                            .font(.system(size: 10, weight: .medium))
+                        Text(next)
+                            .font(.system(size: 11))
+                            .lineLimit(2)
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                Button("查看完整歌词") { controller.openCurrentLyrics() }
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 11))
+            }
+        case .unsynchronized:
+            VStack(alignment: .leading, spacing: 10) {
+                Label("未同步 · 开头歌词", systemImage: "text.alignleft")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                if let text = snapshot.currentLineText, !text.isEmpty {
+                    lyricText(text, translation: snapshot.currentTranslationText)
+                }
+                Button("在主窗口查看完整歌词") { controller.openCurrentLyrics() }
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 11))
+            }
+        case .candidates(_, let count):
+            statusContent("找到 \(count) 份候选歌词", detail: "请在主窗口查看并选择要使用的版本。",
+                          symbol: "text.badge.checkmark", actionTitle: "查看候选歌词")
+        case .noSelection:
+            statusContent("当前未采用歌词", detail: "你选择了暂不使用歌词，可随时在主窗口重新选择。",
+                          symbol: "rectangle.slash", actionTitle: "查看歌词版本")
+        case .notSearched:
+            statusContent("尚未搜索歌词", detail: "可在主窗口手动查找歌词或选择已保存的版本。",
+                          symbol: "magnifyingglass", actionTitle: "打开当前歌曲")
+        case .noLyrics:
+            statusContent("没有找到歌词", detail: "可在主窗口调整搜索词、选择其它版本或导入歌词。",
+                          symbol: "text.magnifyingglass", actionTitle: "打开当前歌曲")
+        case .failed:
+            statusContent("歌词暂不可用", detail: "可在主窗口查看状态并重新搜索，播放不会因此中断。",
+                          symbol: "exclamationmark.triangle", actionTitle: "查看歌词状态")
+        }
+    }
+
+    private func lyricText(_ original: String, translation: String?) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(original)
+                .font(.system(size: 17, weight: .semibold))
+                .lineSpacing(3)
+                .lineLimit(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+            if let translation, !translation.isEmpty {
+                Text(translation)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(3)
+                    .lineLimit(4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                    .accessibilityLabel("译文：\(translation)")
+            }
+        }
+    }
+
+    private func statusContent(_ title: String, detail: String, symbol: String, actionTitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 13, weight: .semibold))
+            Text(detail)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(actionTitle) { controller.openCurrentLyrics() }
+                .buttonStyle(.borderless)
+                .font(.system(size: 12, weight: .medium))
+        }
+    }
+
+    private func transportButton(_ symbol: String, title: String, enabled: Bool,
+                                 prominent: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: prominent ? 17 : 13, weight: .semibold))
+                .frame(width: prominent ? 40 : 32, height: prominent ? 40 : 32)
+                .background(Color.primary.opacity(prominent ? 0.08 : 0), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
+        .accessibilityLabel(title)
+        .help(title)
+    }
+
+    private func shortcut(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 11, weight: .medium))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(HoverRowButtonStyle())
     }
 
     @ViewBuilder
@@ -191,10 +229,8 @@ public struct MenuBarLyricsPopoverView: View {
             AsyncImage(url: url) { phase in
                 switch phase {
                 case .success(let image):
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 38, height: 38)
+                    image.resizable().aspectRatio(contentMode: .fit)
+                        .frame(width: 44, height: 44)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 case .failure, .empty:
                     fallbackArtwork
@@ -202,7 +238,7 @@ public struct MenuBarLyricsPopoverView: View {
                     fallbackArtwork
                 }
             }
-            .frame(width: 38, height: 38)
+            .frame(width: 44, height: 44)
         } else {
             fallbackArtwork
         }
@@ -210,29 +246,11 @@ public struct MenuBarLyricsPopoverView: View {
 
     private var fallbackArtwork: some View {
         Image(systemName: "music.note")
-            .font(.system(size: 16, weight: .semibold))
+            .font(.system(size: 18, weight: .semibold))
             .foregroundStyle(Color.accentColor)
-            .frame(width: 38, height: 38)
+            .frame(width: 44, height: 44)
             .background(Color.accentColor.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
-    private func menuRow(title: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 12))
-                    .frame(width: 16, alignment: .center)
-                    .foregroundStyle(.secondary)
-                Text(title)
-                    .font(.system(size: 12))
-                Spacer()
-            }
-            .contentShape(Rectangle())
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-        }
-        .buttonStyle(HoverRowButtonStyle())
     }
 }
 
@@ -243,10 +261,8 @@ private struct HoverRowButtonStyle: ButtonStyle {
         configuration.label
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(isHovered ? Color.primary.opacity(0.08) : (configuration.isPressed ? Color.primary.opacity(0.12) : Color.clear))
+                    .fill(configuration.isPressed ? Color.primary.opacity(0.12) : isHovered ? Color.primary.opacity(0.08) : Color.clear)
             )
-            .onHover { hovering in
-                isHovered = hovering
-            }
+            .onHover { isHovered = $0 }
     }
 }

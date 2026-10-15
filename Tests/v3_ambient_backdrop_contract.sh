@@ -21,7 +21,8 @@ grep -q '?? true' "$SETTINGS" || {
   exit 1
 }
 
-grep -q 'Picker("背景构图"' "$WINDOW" || {
+grep -q 'ForEach(V3ArtworkPresentation.allCases)' "$WINDOW" \
+  && grep -q 'settings.v3ArtworkPresentation = presentation' "$WINDOW" || {
   echo 'FAIL: V3 tuning panel has no artwork presentation switch' >&2
   exit 1
 }

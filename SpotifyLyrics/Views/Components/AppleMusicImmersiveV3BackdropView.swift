@@ -25,6 +25,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
     let identity: TrackIdentity?
     var isInstrumental: Bool = false
     @ObservedObject var settings: AppSettingsStore
+    var presentationOverride: V3ArtworkPresentation? = nil
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var artworkImage: NSImage?
@@ -34,6 +35,11 @@ struct AppleMusicImmersiveV3BackdropView: View {
     @State private var noiseImage: NSImage?
     @State private var palette = BackdropPalette.neutral
     @State private var accessibilityDisplayRevision = 0
+
+    private var artworkPresentation: V3ArtworkPresentation { presentationOverride ?? settings.v3ArtworkPresentation }
+    private var backdropBlurRadius: Double { settings.v3PreviewBlur(for: artworkPresentation) }
+    private var artworkPosition: String { settings.v3PreviewPosition(for: artworkPresentation) }
+    private var artworkSizeScale: Double { settings.v3PreviewScale(for: artworkPresentation) }
 
     var body: some View {
         ZStack {
@@ -54,7 +60,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             }
 
             // The veil is intentionally independent of playback position.
-            if settings.v3ArtworkPresentation != .stage {
+            if artworkPresentation != .stage {
                 Color.black.opacity(readabilityVeilOpacity)
             }
         }
@@ -127,7 +133,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
         // Ambient needs its artwork colors visible; the lyric side has its
         // own localized protection. Keep Classic's established veil intact.
-        if settings.v3ArtworkPresentation == .ambientFeathered {
+        if artworkPresentation == .ambientFeathered {
             if reduceTransparency { return min(0.76, max(0.56, paletteVeil + 0.22)) }
             if increaseContrast { return min(0.48, paletteVeil + 0.12) }
             return min(0.10, paletteVeil * 0.26)
@@ -180,7 +186,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
     }
 
     private var normalizedBlur: Double {
-        max(0, min(100, settings.v3BackdropBlurRadius)) / 100.0
+        max(0, min(100, backdropBlurRadius)) / 100.0
     }
 
     private var effectiveBlurRadius: Double {
@@ -200,7 +206,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
     }
 
     private var coverLightCenter: UnitPoint {
-        let position = settings.v3ArtworkPosition
+        let position = artworkPosition
         if position == "right" {
             return UnitPoint(x: 0.76, y: 0.38)
         } else if position == "center" {
@@ -212,7 +218,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
     @ViewBuilder
     private func artworkLayers(image: NSImage, ambientImage: NSImage?) -> some View {
-        switch settings.v3ArtworkPresentation {
+        switch artworkPresentation {
         case .ambient:
             ambientArtworkLayers(image: image, ambientImage: ambientImage)
         case .ambientFeathered:
@@ -221,6 +227,43 @@ struct AppleMusicImmersiveV3BackdropView: View {
             stageArtworkLayers(image: image, ambientImage: ambientImage)
         case .classic:
             legacyArtworkLayers(image: image)
+        case .lyricsOnly:
+            quietArtworkColors
+        case .albumPoster:
+            quietArtworkColors
+            GeometryReader { canvas in
+                Image(nsImage: ambientImage ?? image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: canvas.size.width, height: canvas.size.height)
+                    .blur(radius: 18 + normalizedBlur * 46)
+                    .saturation(0.65)
+                    .opacity(reduceTransparency ? 0.08 : 0.20)
+            }
+            .clipped()
+            ambientReadingVeil
+        }
+    }
+
+    private var quietArtworkColors: some View {
+        ZStack {
+            Color(red: 0.055, green: 0.060, blue: 0.075)
+            LinearGradient(
+                colors: [
+                    ambientColor(palette.primary, saturation: 0.48, maximumLuminance: 0.25),
+                    ambientColor(palette.secondary, saturation: 0.32, maximumLuminance: 0.16),
+                    .clear
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .opacity(reduceTransparency ? 0.36 : 0.64 - normalizedBlur * 0.20)
+            RadialGradient(
+                colors: [ambientColor(palette.glow, saturation: 0.40, maximumLuminance: 0.34).opacity(0.16), .clear],
+                center: coverLightCenter,
+                startRadius: 20,
+                endRadius: 380 + normalizedBlur * 360
+            )
         }
     }
 
@@ -296,8 +339,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
         V3ResponsiveGeometry.stageArtworkRect(
             canvasSize: canvas,
             artworkAspectRatio: artworkAspectRatio,
-            requestedScale: settings.v3ArtworkSizeScale,
-            position: settings.v3ArtworkPosition
+            requestedScale: artworkSizeScale,
+            position: artworkPosition
         )
     }
 
@@ -322,7 +365,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 Color(red: 0.055, green: 0.060, blue: 0.072)
             ],
             startPoint: coverLightCenter,
-            endPoint: settings.v3ArtworkPosition == "right" ? .topLeading : .bottomTrailing
+            endPoint: artworkPosition == "right" ? .topLeading : .bottomTrailing
         )
 
         // Retain album structure before applying the user-controlled diffusion.
@@ -391,7 +434,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 Color(red: 0.085, green: 0.090, blue: 0.110)
             ],
             startPoint: coverLightCenter,
-            endPoint: settings.v3ArtworkPosition == "right" ? .topLeading : .bottomTrailing
+            endPoint: artworkPosition == "right" ? .topLeading : .bottomTrailing
         )
 
         // Show the complete cover as a softly feathered source of ambient
@@ -399,8 +442,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
         // 0% retains its detail, while 100% becomes an album-colored wash.
         GeometryReader { canvas in
             let side = min(canvas.size.height * 1.02, canvas.size.width * 0.86)
-            let imageX: CGFloat = settings.v3ArtworkPosition == "right" ? 0.56
-                : (settings.v3ArtworkPosition == "center" ? 0.50 : 0.44)
+            let imageX: CGFloat = artworkPosition == "right" ? 0.56
+                : (artworkPosition == "center" ? 0.50 : 0.44)
 
             Image(nsImage: image)
                 .resizable()
@@ -463,15 +506,15 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
     @ViewBuilder
     private var ambientReadingVeil: some View {
-        let feathered = settings.v3ArtworkPresentation == .ambientFeathered
-        if settings.v3ArtworkPosition == "right" {
+        let feathered = artworkPresentation == .ambientFeathered
+        if artworkPosition == "right" {
             LinearGradient(
                 colors: [Color.black.opacity(feathered ? 0.30 : 0.42),
                          Color.black.opacity(feathered ? 0.12 : 0.18), .clear],
                 startPoint: .leading,
                 endPoint: .trailing
             )
-        } else if settings.v3ArtworkPosition == "center" {
+        } else if artworkPosition == "center" {
             RadialGradient(
                 colors: [.clear, Color.black.opacity(feathered ? 0.18 : 0.34)],
                 center: .center,
@@ -537,7 +580,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
         // Layer 2: Main scaled cover substrate. Unlike the old implementation,
         // both the full 80–140% range and crop position now affect this image.
         GeometryReader { geometry in
-            let scale = min(1.4, max(0.8, settings.v3ArtworkSizeScale))
+            let scale = min(1.4, max(0.8, artworkSizeScale))
             let mainSubstrateImage = Image(nsImage: image)
                 .resizable()
                 .scaledToFill()
@@ -547,7 +590,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 .blur(radius: effectiveBlurRadius)
                 .opacity(min(1, style.artworkOpacity * style.textureIntensity))
 
-            if settings.v3ArtworkPosition == "left" {
+            if artworkPosition == "left" {
                 mainSubstrateImage
                     .mask(
                         LinearGradient(
@@ -571,7 +614,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
         // Layer 3: Specular Screen Light Bloom Pass (Only active when blur > 0 to avoid obscuring 0% clear artwork)
         if effectiveScreenBlurRadius > 0 {
             GeometryReader { geometry in
-                let scale = min(1.4, max(0.8, settings.v3ArtworkSizeScale))
+                let scale = min(1.4, max(0.8, artworkSizeScale))
 
                 Image(nsImage: image)
                     .resizable()
@@ -633,7 +676,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
     }
 
     private func classicArtworkOffset(for width: CGFloat) -> CGFloat {
-        switch settings.v3ArtworkPosition {
+        switch artworkPosition {
         case "right": return width * 0.10
         case "center": return 0
         default: return width * -0.10

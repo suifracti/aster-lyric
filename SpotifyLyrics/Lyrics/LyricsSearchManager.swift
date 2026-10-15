@@ -9,6 +9,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
     private var providers: [LyricsProvider]
     private var negativeCache: [String: NegativeCacheEntry] = [:]
     private let negativeCacheLifetime: TimeInterval
+    private let spotifyArtistResolver: SpotifyTrackArtistResolver?
 
     private struct NegativeCacheEntry {
         let result: NegativeResult
@@ -49,14 +50,26 @@ public final class LyricsSearchManager: @unchecked Sendable {
         let cameFromCandidates: Bool
     }
 
+    private struct EvaluatedCandidate {
+        let candidate: LyricsCandidate
+        let document: LyricsDocument
+        let decision: LyricsMatchDecision
+        let providerIndex: Int
+        let candidateIndex: Int
+        let providerName: String
+        let cameFromCandidates: Bool
+    }
+
     public init(
         providers: [LyricsProvider],
         name: String = "Lyrics Search",
-        negativeCacheLifetime: TimeInterval = 45
+        negativeCacheLifetime: TimeInterval = 45,
+        spotifyArtistResolver: SpotifyTrackArtistResolver? = nil
     ) {
         self.providers = providers
         self.name = name
         self.negativeCacheLifetime = max(1, negativeCacheLifetime)
+        self.spotifyArtistResolver = spotifyArtistResolver
     }
 
     /// Replaces the runtime provider order without exposing provider objects
@@ -293,7 +306,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         let metadata = TrackMetadata.bootstrap(from: track)
         let mergedAliases = Self.mergeAliases(metadata.aliases, aliases)
         // Keep identity stable with caller-supplied identity (playback).
-        let meta = TrackMetadata(
+        var meta = TrackMetadata(
             identity: identity,
             track: track,
             aliases: mergedAliases,
@@ -320,6 +333,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         // Only this search: next user/recovery search gets a fresh probe.
         var unavailableProviders: Set<Int> = []
         var probeCache: [String: [ProviderProbeResult]] = [:]
+        var attemptedArtistEnrichment = false
 
         func alias(for variant: LyricsQueryVariant) -> TrackAlias? {
             guard let id = variant.aliasIDs.first else { return nil }
@@ -354,6 +368,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
             var localCursor = 0
             var didProbeNetwork = false
             var automaticAdoptions: [AutomaticAdoption] = []
+            var evaluatedCandidates: [EvaluatedCandidate] = []
 
             while localCursor < localProviders.count || !didProbeNetwork {
                 if Task.isCancelled {
@@ -447,6 +462,9 @@ public final class LyricsSearchManager: @unchecked Sendable {
                         aliasUsed: alias(for: variant),
                         queryVariant: variant
                     )
+                    evaluatedCandidates.append(EvaluatedCandidate(candidate: candidate, document: document,
+                        decision: decision, providerIndex: probe.index, candidateIndex: 0,
+                        providerName: provider.name, cameFromCandidates: false))
                     diagnostics.append(
                         LyricsProviderDiagnostic(
                             provider: "\(provider.name)@\(variant.strategy.rawValue)",
@@ -487,6 +505,9 @@ public final class LyricsSearchManager: @unchecked Sendable {
                             aliasUsed: alias(for: variant),
                             queryVariant: variant
                         )
+                        evaluatedCandidates.append(EvaluatedCandidate(candidate: item, document: item.makeDocument(),
+                            decision: decision, providerIndex: probe.index, candidateIndex: candidateIndex,
+                            providerName: provider.name, cameFromCandidates: true))
                         candidateDecisions.append(decision)
                         LyricsE2ELog.log("MATCH provider=\(provider.name) rank=\(variant.rank) sourceID=\(item.providerSourceID ?? item.id) title=\(item.title) artist=\(item.artist) duration=\(item.duration) tier=\(decision.tier.rawValue) evidence=\(decision.explanation.joined(separator: ";"))")
                         if decision.tier == .autoHigh || decision.tier == .autoMedium {
@@ -558,6 +579,47 @@ public final class LyricsSearchManager: @unchecked Sendable {
                 }
 
             }
+
+            // Desktop can expose only the primary artist. Consult the exact
+            // official recording only when that omission blocks an otherwise
+            // matching candidate; reuse these results without another lyric request.
+            if (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               automaticAdoptions.isEmpty, !attemptedArtistEnrichment, let spotifyArtistResolver,
+               variant.queryKind != .manualOverride, variant.queryKind != .titleOnlyLoose,
+               evaluatedCandidates.contains(where: {
+                   !$0.decision.hardReject && !$0.decision.versionConflict
+                       && $0.decision.reasons.contains("extraFeaturedArtist")
+                       && $0.decision.reasons.contains("primaryArtistExact")
+                       && ($0.decision.reasons.contains("titleExact") || $0.decision.reasons.contains("titleTypographyExact"))
+               }) {
+                attemptedArtistEnrichment = true
+                let enrichmentStarted = Date()
+                if let names = await spotifyArtistResolver.artists(for: track), !Task.isCancelled {
+                    meta.verifiedSpotifyArtists = names
+                    var verifiedDecisions: [LyricsMatchDecision] = []
+                    for item in evaluatedCandidates {
+                        let decision = LyricsSafeMatcher.decide(candidate: item.candidate, metadata: meta,
+                            aliasUsed: alias(for: variant), queryVariant: variant)
+                        verifiedDecisions.append(decision)
+                        if decision.tier == .reject {
+                            acceptedCandidates.removeValue(forKey: item.candidate.id)
+                        } else {
+                            acceptedCandidates[item.candidate.id] = Self.enrichCandidate(item.candidate,
+                                providerName: item.providerName, variant: variant, decision: decision)
+                        }
+                        if decision.tier == .autoHigh || decision.tier == .autoMedium {
+                            automaticAdoptions.append(AutomaticAdoption(document: item.document, decision: decision,
+                                timingPriority: Self.timingPriority(of: item.candidate), providerIndex: item.providerIndex,
+                                candidateIndex: item.candidateIndex, providerName: item.providerName,
+                                cameFromCandidates: item.cameFromCandidates))
+                        }
+                    }
+                    diagnostics.append(LyricsProviderDiagnostic(provider: "Spotify official artist metadata",
+                        outcome: .match, duration: Date().timeIntervalSince(enrichmentStarted), matchDecisions: verifiedDecisions))
+                    LyricsE2ELog.log("SEARCH official artists verified count=\(names.count) rescored=\(verifiedDecisions.count)")
+                }
+            }
+            guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics) }
 
             if let selected = Self.bestAutomaticAdoption(in: automaticAdoptions) {
                 let enriched = Self.finalizeDocument(selected.document, identity: identity)

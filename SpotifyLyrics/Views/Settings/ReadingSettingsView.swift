@@ -2,6 +2,112 @@ import SwiftUI
 
 struct LyricsAndTextSettingsView: View {
     @EnvironmentObject private var settings: AppSettingsStore
+    let onOpenSources: () -> Void
+    let onOpenTranslation: () -> Void
+    let onOpenReading: () -> Void
+
+    var body: some View {
+        Form {
+            SettingsPageHeader(title: "歌词与翻译", detail: "调整阅读方式、歌词搜索和翻译偏好。设置会立即保存。")
+
+            Section("查找与翻译") {
+                SettingsDestinationRow(
+                    title: "歌词来源",
+                    detail: settings.lyricsSourceMode.title,
+                    systemImage: "waveform.circle",
+                    action: onOpenSources
+                )
+                SettingsDestinationRow(
+                    title: "AI 翻译",
+                    detail: settings.aiTranslationConfiguration.autoTranslateNewLyrics ? "自动翻译已开启 · 查看服务与个人风格" : "自动翻译已关闭 · 查看服务与个人风格",
+                    systemImage: "sparkles",
+                    action: onOpenTranslation
+                )
+            }
+
+            Section("显示内容") {
+                Toggle("显示原文", isOn: displayBinding(\.showOriginal))
+                Toggle("显示翻译", isOn: displayBinding(\.showTranslation))
+                Text("显示翻译只控制已有译文的显示；生成新译文由 AI 翻译设置控制。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Picker("繁简转换", selection: readingBinding(\.scriptConversionID)) {
+                    Text("不转换").tag(ScriptConversionID.none.rawValue)
+                    Text("繁体转简体").tag(ScriptConversionID.traditionalToSimplified.rawValue)
+                    Text("简体转繁体").tag(ScriptConversionID.simplifiedToTraditional.rawValue)
+                }
+                Text("转换只影响显示层，不修改原文、歌词版本或翻译。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                SettingsDestinationRow(title: "读音与注音", detail: "假名、罗马音、拼音与人工词典", systemImage: "character.phonetic", action: onOpenReading)
+            }
+
+            Section("字号与阅读层级") {
+                numericSlider("当前歌词字号", value: doubleBinding(\.fontSize), range: 14...42, format: "%.0f pt")
+                numericSlider("辅助文本字号", value: doubleBinding(\.assistantFontSize), range: 10...24, format: "%.0f pt")
+                numericSlider("非当前歌词透明度", value: displayBinding(\.opacity), range: 0.15...1, format: "%.0f%%", scale: 100)
+                Toggle("远处歌词隐藏辅助文本", isOn: displayBinding(\.hideDistantAuxiliary))
+            }
+
+            LyricsSearchSettingsSections()
+        }
+        .formStyle(.grouped)
+    }
+
+    private func displayBinding<Value>(_ keyPath: WritableKeyPath<DisplayPreferences, Value>) -> Binding<Value> {
+        Binding(
+            get: { settings.displayPreferences[keyPath: keyPath] },
+            set: { value in
+                var next = settings.displayPreferences
+                next[keyPath: keyPath] = value
+                settings.displayPreferences = next
+            }
+        )
+    }
+
+    private func doubleBinding(_ keyPath: WritableKeyPath<DisplayPreferences, CGFloat>) -> Binding<Double> {
+        Binding(
+            get: { Double(settings.displayPreferences[keyPath: keyPath]) },
+            set: { value in
+                var next = settings.displayPreferences
+                next[keyPath: keyPath] = CGFloat(value)
+                settings.displayPreferences = next
+            }
+        )
+    }
+
+    private func readingBinding<Value>(_ keyPath: WritableKeyPath<ReadingPreferences, Value>) -> Binding<Value> {
+        Binding(
+            get: { settings.readingPreferences[keyPath: keyPath] },
+            set: { value in
+                var next = settings.readingPreferences
+                next[keyPath: keyPath] = value
+                settings.readingPreferences = next
+            }
+        )
+    }
+
+    private func numericSlider(
+        _ title: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        format: String,
+        scale: Double = 1
+    ) -> some View {
+        HStack {
+            Text(title)
+            Slider(value: value, in: range)
+            Text(String(format: format, value.wrappedValue * scale))
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 58, alignment: .trailing)
+        }
+    }
+
+}
+
+struct ReadingSettingsView: View {
+    @EnvironmentObject private var settings: AppSettingsStore
     @State private var isAdvancedReadingExpanded = false
     @State private var dictionaryEntries: [ReadingDictionaryEntry] = []
     @State private var newSurface = ""
@@ -15,13 +121,11 @@ struct LyricsAndTextSettingsView: View {
     var body: some View {
         Form {
             SettingsPageHeader(
-                title: "歌词与文字",
-                detail: "管理歌词语言层、排版与读音显示。"
+                title: "读音",
+                detail: "调整假名、罗马音与拼音，或为特殊人名和词语补充读音。"
             )
 
-            Section("语言层与文字显示") {
-                Toggle("显示原文", isOn: displayBinding(\.showOriginal))
-                Toggle("显示翻译", isOn: displayBinding(\.showTranslation))
+            Section("读音显示") {
                 Toggle("显示罗马音", isOn: displayBinding(\.showRomaji))
                 Toggle("显示拼音", isOn: displayBinding(\.showPinyin))
                 Picker("假名显示模式", selection: displayBinding(\.kanaDisplayMode)) {
@@ -42,22 +146,7 @@ struct LyricsAndTextSettingsView: View {
                     Text("声调数字").tag(ReadingRepresentationID.pinyinToneNumbers.rawValue)
                     Text("无声调").tag(ReadingRepresentationID.pinyinPlain.rawValue)
                 }
-                Picker("繁简转换", selection: readingBinding(\.scriptConversionID)) {
-                    Text("不转换").tag(ScriptConversionID.none.rawValue)
-                    Text("繁体转简体").tag(ScriptConversionID.traditionalToSimplified.rawValue)
-                    Text("简体转繁体").tag(ScriptConversionID.simplifiedToTraditional.rawValue)
-                }
-                Text("转换只影响显示层，不修改原文、歌词版本或翻译。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("字号与层级") {
-                numericSlider("当前歌词字号", value: doubleBinding(\.fontSize), range: 14...42, format: "%.0f pt")
-                numericSlider("辅助文本字号", value: doubleBinding(\.assistantFontSize), range: 10...24, format: "%.0f pt")
-                numericSlider("Ruby 假名大小", value: doubleBinding(\.rubyFontSize), range: 8...18, format: "%.0f pt")
-                numericSlider("非当前歌词透明度", value: displayBinding(\.opacity), range: 0.15...1, format: "%.0f%%", scale: 100)
-                Toggle("远处歌词隐藏辅助文本", isOn: displayBinding(\.hideDistantAuxiliary))
+                numericSlider("假名字号", value: doubleBinding(\.rubyFontSize), range: 8...18, format: "%.0f pt")
             }
 
             Section {
@@ -181,10 +270,12 @@ struct LyricsAndTextSettingsView: View {
                                 .disabled(newSurface.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newReading.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
 
-                            HStack {
-                                TextField("可选 Spotify stableKey", text: $newTrackScope)
-                                TextField("可选歌手范围", text: $newArtistScope)
+                            DisclosureGroup("适用范围与备注（可选）") {
+                                TextField("单曲 Spotify stableKey", text: $newTrackScope)
+                                TextField("歌手范围", text: $newArtistScope)
                                 TextField("备注", text: $newNotes)
+                                Text("留空时适用于所有歌曲；填写单曲或歌手可只修正指定范围。")
+                                    .foregroundStyle(.secondary)
                             }
                             .font(.caption)
                         }
@@ -249,12 +340,5 @@ struct LyricsAndTextSettingsView: View {
 
     private func reloadDictionary() {
         dictionaryEntries = settings.readingUserDictionary.load()
-    }
-}
-
-/// Compatibility wrapper for any external/legacy callers
-struct ReadingSettingsView: View {
-    var body: some View {
-        LyricsAndTextSettingsView()
     }
 }

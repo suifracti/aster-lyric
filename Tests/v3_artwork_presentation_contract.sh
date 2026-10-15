@@ -10,7 +10,9 @@ for stable_id in \
   'v3ArtworkPresentation.ambient.v1' \
   'v3ArtworkPresentation.stage.v1' \
   'v3ArtworkPresentation.classic.v1' \
-  'v3ArtworkPresentation.feathered.v1'; do
+  'v3ArtworkPresentation.feathered.v1' \
+  'v3ArtworkPresentation.lyricsOnly.v1' \
+  'v3ArtworkPresentation.albumPoster.v1'; do
   grep -q "$stable_id" "$SETTINGS" || {
     echo "missing stable V3 artwork presentation ID: $stable_id" >&2
     exit 1
@@ -22,7 +24,7 @@ grep -q 'v3AmbientBackdropEnabled' "$SETTINGS" || {
   echo "old ambient preference must remain as a migration input" >&2
   exit 1
 }
-grep -q 'switch settings.v3ArtworkPresentation' "$BACKDROP"
+grep -q 'switch artworkPresentation' "$BACKDROP"
 grep -q 'stageArtworkLayers' "$BACKDROP"
 grep -q 'case .stage' "$BACKDROP"
 grep -q 'case .ambientFeathered' "$BACKDROP" || {
@@ -34,7 +36,9 @@ grep -q 'v3BackdropBlurFeathered' "$SETTINGS" || {
   exit 1
 }
 
-grep -q 'Picker("背景构图"' "$WINDOW"
+grep -q 'LazyVGrid' "$WINDOW"
+grep -q 'settings.v3ArtworkPresentation = presentation' "$WINDOW"
+grep -q 'settings.v3ArtworkPresentation = style' "$WINDOW"
 grep -q 'V3ArtworkPresentation.allCases' "$WINDOW"
 grep -q 'showsForegroundArtwork' "$WINDOW"
 grep -q 'blurControlTitle' "$SETTINGS" || {
@@ -49,7 +53,7 @@ grep -q 'artworkPositionControlTitle' "$SETTINGS" || {
   echo "V3 presentations must expose mode-specific position semantics" >&2
   exit 1
 }
-grep -q 'min(1.4, max(0.8, settings.v3ArtworkSizeScale))' "$BACKDROP" || {
+grep -q 'min(1.4, max(0.8, artworkSizeScale))' "$BACKDROP" || {
   echo "Stage backdrop must honor the full 80–140% scale range" >&2
   exit 1
 }

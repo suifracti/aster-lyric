@@ -472,7 +472,7 @@ struct LyricsCanvasView: View {
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundStyle(LyricsDesignTokens.primaryText)
 
-                Text("先预览内容，再决定是否采用。选择不会改变播放位置。")
+                Text("找到这些版本。请先核对歌曲和歌手，预览后采用；之后仍可随时切换。")
                     .font(.system(size: 13, design: .rounded))
                     .foregroundStyle(LyricsDesignTokens.mutedText)
 
@@ -507,15 +507,6 @@ struct LyricsCanvasView: View {
                 HStack(spacing: 6) {
                     Text(candidate.title)
                         .font(.system(size: 15, weight: .bold, design: .rounded))
-                    if candidate.displayedConfidence > 0.3 {
-                        Text("推荐")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.orange.opacity(0.25))
-                            .foregroundColor(.orange)
-                            .clipShape(Capsule())
-                    }
                 }
                 if let notice = candidate.arrangementNotice {
                     Text(notice)
@@ -528,9 +519,9 @@ struct LyricsCanvasView: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
-                Text("\(Int(candidate.displayedConfidence * 100))%")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(LyricsDesignTokens.accent)
+                Text(candidate.source.displayName)
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(LyricsDesignTokens.mutedText)
                 Text("预览")
                     .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(LyricsDesignTokens.mutedText)
@@ -947,20 +938,18 @@ struct LyricsStateContentFirstView: View {
     }
 
     private func candidateContent(_ candidates: [LyricsCandidate]) -> some View {
-        let recommendedID = candidates.max { $0.displayedConfidence < $1.displayedConfidence }?.id
-
         return ScrollView {
             VStack(alignment: .leading, spacing: LyricsDesignTokens.Spacing.sm) {
                 Spacer(minLength: compact ? 8 : 20)
                 Text("选择歌词版本")
                     .font(.system(size: compact ? 20 : 26, weight: .semibold, design: .rounded))
                     .foregroundStyle(LyricsDesignTokens.primaryText)
-                Text("先预览内容，再决定是否采用。选择不会改变播放位置。")
+                Text("找到这些版本。请先核对歌曲和歌手，预览后采用；之后仍可随时切换。")
                     .font(.system(size: compact ? 12 : 14, design: .rounded))
                     .foregroundStyle(LyricsDesignTokens.mutedText)
 
                 ForEach(candidates) { candidate in
-                    candidateRow(candidate, isRecommended: candidate.id == recommendedID)
+                    candidateRow(candidate)
                 }
 
                 if state.isShowingSearchPreview {
@@ -996,7 +985,7 @@ struct LyricsStateContentFirstView: View {
         .scrollIndicators(.hidden)
     }
 
-    private func candidateRow(_ candidate: LyricsCandidate, isRecommended: Bool) -> some View {
+    private func candidateRow(_ candidate: LyricsCandidate) -> some View {
         Button {
             candidateToPreview = candidate
         } label: {
@@ -1007,11 +996,6 @@ struct LyricsStateContentFirstView: View {
                             .font(.system(size: compact ? 13 : 15, weight: .semibold, design: .rounded))
                             .foregroundStyle(LyricsDesignTokens.primaryText)
                             .lineLimit(1)
-                        if isRecommended {
-                            Text("推荐")
-                                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                                .foregroundStyle(LyricsDesignTokens.accent)
-                        }
                     }
                     Text("\(candidate.artist) · \(candidate.album.isEmpty ? "未知专辑" : candidate.album)")
                         .font(.system(size: 12, design: .rounded))
@@ -1019,10 +1003,6 @@ struct LyricsStateContentFirstView: View {
                         .lineLimit(1)
                     HStack(spacing: 8) {
                         Text(candidate.source.displayName)
-                        if let provider = candidate.providerName {
-                            Text(provider)
-                        }
-                        Text(candidate.queryMethodLabel)
                         Text(languageLabel(candidate.language))
                         Text(candidate.timelineLabel)
                     }
@@ -1034,19 +1014,22 @@ struct LyricsStateContentFirstView: View {
                             .foregroundStyle(.orange)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    if !candidate.matchExplanation.isEmpty {
-                        Text(candidate.matchExplanation.prefix(3).joined(separator: " · "))
-                            .font(.system(size: 9, design: .rounded))
-                            .foregroundStyle(LyricsDesignTokens.mutedText.opacity(0.75))
-                            .lineLimit(1)
+                    if candidate.matchExplanation.contains(where: {
+                        $0.hasPrefix("extraFeaturedArtist ")
+                            || $0.hasPrefix("missingFeaturedArtist ")
+                            || $0.hasPrefix("featuredNameUnverified ")
+                    }) {
+                        Text("合作歌手信息待确认")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.orange)
                     }
                 }
 
                 Spacer(minLength: 8)
 
                 VStack(alignment: .trailing, spacing: 4) {
-                    Text("\(Int(candidate.displayedConfidence * 100))%")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded).monospacedDigit())
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 16))
                         .foregroundStyle(LyricsDesignTokens.accent)
                     Text("预览")
                         .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -1108,6 +1091,18 @@ private struct LyricsCandidatePreviewSheet: View {
 
             Text("候选预览")
                 .font(.headline)
+            DisclosureGroup("来源与匹配详情") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(candidate.source.displayName) · \(candidate.queryMethodLabel) · \(candidate.timelineLabel)")
+                    Text("匹配评分 \(Int(candidate.displayedConfidence * 100))，仅供核对，不代表录音身份已确认。")
+                    ForEach(Array(candidate.matchExplanation.enumerated()), id: \.offset) { _, explanation in
+                        Text(explanation)
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(Array(candidate.lines.enumerated()), id: \.element.id) { index, line in

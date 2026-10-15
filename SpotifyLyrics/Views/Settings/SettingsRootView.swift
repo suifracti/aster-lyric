@@ -2,29 +2,32 @@ import SwiftUI
 import AppKit
 
 private enum SettingsCategory: String, CaseIterable, Identifiable {
-    // 5 个正式偏好一级入口 (Primary Sidebar Cases)
-    case general = "通用"
-    case lyricsAndText = "歌词与文字"
-    case servicesAndSources = "服务与来源"
-    case aiTranslation = "AI 翻译"
+    case general = "播放"
+    case lyricsAndText = "歌词与翻译"
+    case appearance = "外观"
+    case reading = "读音"
     case advancedAndData = "高级与数据"
 
-    // 过渡桥接隐藏目标 (Hidden Bridge Destinations, 不在侧边栏显示)
+    // Secondary pages keep existing tools reachable without crowding the sidebar.
+    case servicesAndSources = "歌词来源"
+    case aiTranslation = "AI 翻译"
     case library = "我的歌词库"
     case history = "最近播放"
     case statistics = "听歌统计"
     case experienceLibrary = "体验版本库"
 
     static var primaryCases: [SettingsCategory] {
-        [.general, .lyricsAndText, .servicesAndSources, .aiTranslation, .advancedAndData]
+        [.general, .lyricsAndText, .appearance, .reading, .advancedAndData]
     }
 
     var id: String { rawValue }
 
     var systemImage: String {
         switch self {
-        case .general: return "gearshape"
+        case .general: return "play.circle"
         case .lyricsAndText: return "text.quote"
+        case .appearance: return "paintpalette"
+        case .reading: return "character.phonetic"
         case .servicesAndSources: return "waveform.circle"
         case .aiTranslation: return "sparkles"
         case .advancedAndData: return "wrench.and.screwdriver"
@@ -34,58 +37,128 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .experienceLibrary: return "rectangle.on.rectangle"
         }
     }
+
+    var detail: String {
+        switch self {
+        case .general: return "播放来源、连接与启动"
+        case .lyricsAndText: return "原文、中文、字体与找词"
+        case .appearance: return "主窗口、封面与桌面歌词"
+        case .reading: return "假名、罗马音、拼音与词典"
+        case .advancedAndData: return "备份、缓存与诊断"
+        case .servicesAndSources: return "搜索模式、来源顺序与外部发现"
+        case .aiTranslation: return "翻译引擎、模型与个人风格"
+        case .library: return "已保存的歌词与译文"
+        case .history: return "浏览最近听过的歌曲"
+        case .statistics: return "查看听歌记录统计"
+        case .experienceLibrary: return "预览与恢复界面版本"
+        }
+    }
+
+    private var searchTerms: String {
+        switch self {
+        case .general: return "Spotify Apple Music 自动连接 Client ID 授权 在线曲库"
+        case .lyricsAndText: return "显示翻译 显示原文 字号 字体 透明度 繁简 转换 自动搜索 自动排轴 时间轴"
+        case .appearance: return "布局 背景 模糊 环境光 封面舞台 经典放大 柔光羽化 纯净歌词 封面海报 菜单栏 置顶 悬浮 透明 颜色 窗口状态"
+        case .reading: return "日语 中文 注音 Ruby 声调 本地引擎 自动生成 人工词典 优先级 读音候选"
+        case .advancedAndData: return "数据库 存储 索引 重置 日志 导出 清除"
+        case .servicesAndSources: return "Provider 免费 实验 LRCLIB 本地 Uta-Net UtaTime AWA"
+        case .aiTranslation: return "API Key Keychain Base URL Codex ChatGPT GPT 目标语言 自动翻译 提示词 Prompt 超时 Temperature 连接测试"
+        case .library, .history, .statistics, .experienceLibrary: return ""
+        }
+    }
+
+    func matches(_ query: String) -> Bool {
+        let searchable = "\(rawValue) \(detail) \(searchTerms)"
+        return query.split(whereSeparator: { $0.isWhitespace }).allSatisfy {
+            searchable.localizedStandardContains(String($0))
+        }
+    }
 }
 
 struct SettingsRootView: View {
     @EnvironmentObject private var settings: AppSettingsStore
     @State private var selection: SettingsCategory = .general
+    @State private var searchText = ""
 
-    var body: some View {
-        Group {
-            switch settings.settingsCenterPresentation {
-            case .classicNavigationV1:
-                settingsShell(includeExperienceLibrary: false, title: "经典设置")
-            case .experienceIntegratedV2:
-                settingsShell(includeExperienceLibrary: true, title: "设置")
-            }
-        }
-        .frame(minWidth: 780, idealWidth: 860, minHeight: 500, idealHeight: 580)
-        .background(SettingsWindowBehavior())
+    private var visibleCategories: [SettingsCategory] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return query.isEmpty ? SettingsCategory.primaryCases : SettingsCategory.allCases.filter { $0.matches(query) }
     }
 
-    @ViewBuilder
-    private func settingsShell(includeExperienceLibrary: Bool, title: String) -> some View {
+    var body: some View {
         NavigationSplitView {
-            List(selection: $selection) {
-                ForEach(SettingsCategory.primaryCases) { category in
-                    Label(category.rawValue, systemImage: category.systemImage)
-                        .tag(category)
-                }
-                if !includeExperienceLibrary {
-                    Section {
+            VStack(spacing: 0) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("搜索设置", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .accessibilityIdentifier("settings.search")
+                    if !searchText.isEmpty {
                         Button {
-                            settings.settingsCenterPresentation = .experienceIntegratedV2
+                            searchText = ""
                         } label: {
-                            Label("恢复推荐设置中心", systemImage: "arrow.uturn.backward.circle")
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.borderless)
-                        .help("返回带体验版本库的推荐设置中心")
+                        .buttonStyle(.plain)
+                        .help("清除搜索")
+                        .accessibilityLabel("清除搜索")
                     }
                 }
+                .padding(8)
+                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7))
+                .padding(12)
+
+                List(selection: $selection) {
+                    ForEach(visibleCategories) { category in
+                        Label {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(category.rawValue)
+                                Text(category.detail)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        } icon: {
+                            Image(systemName: category.systemImage)
+                        }
+                        .padding(.vertical, 4)
+                        .tag(category)
+                    }
+                    if visibleCategories.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("没有匹配的设置")
+                            Text("试试“翻译”“字体”或“Spotify”。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Button("显示全部设置") { searchText = "" }
+                                .buttonStyle(.borderless)
+                        }
+                        .padding(.vertical, 8)
+                    }
+                    if settings.settingsCenterPresentation == .classicNavigationV1 {
+                        Section {
+                            Button {
+                                settings.settingsCenterPresentation = .experienceIntegratedV2
+                            } label: {
+                                Label("恢复推荐设置中心", systemImage: "arrow.uturn.backward.circle")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                }
+                .listStyle(.sidebar)
             }
-            .listStyle(.sidebar)
-            .navigationTitle(title)
+            .navigationTitle("设置")
             .accessibilityIdentifier(settings.settingsCenterPresentation.rawValue)
-            .frame(minWidth: 180)
+            .navigationSplitViewColumnWidth(min: 205, ideal: 215, max: 250)
         } detail: {
             SettingsDetailView(selection: $selection)
                 .environmentObject(settings)
         }
-        .onAppear {
-            if !includeExperienceLibrary, selection == .experienceLibrary {
-                selection = .general
-            }
-        }
+        .frame(minWidth: 800, idealWidth: 920, minHeight: 540, idealHeight: 650)
+        .background(SettingsWindowBehavior())
     }
 }
 
@@ -121,17 +194,31 @@ private struct SettingsDetailView: View {
         Group {
             switch selection {
             case .general:
-                GeneralSettingsView()
-                    .padding(28)
+                ServicesAndSourcesSettingsView(scope: .playback)
+                    .padding(16)
             case .lyricsAndText:
-                LyricsAndTextSettingsView()
-                    .padding(28)
+                LyricsAndTextSettingsView(
+                    onOpenSources: { selection = .servicesAndSources },
+                    onOpenTranslation: { selection = .aiTranslation },
+                    onOpenReading: { selection = .reading }
+                )
+                .padding(16)
+            case .appearance:
+                AppearanceSettingsView()
+                    .padding(16)
+            case .reading:
+                ReadingSettingsView()
+                    .padding(16)
             case .servicesAndSources:
-                ServicesAndSourcesSettingsView()
-                    .padding(28)
+                TransitionalBridgeContainer(title: "返回歌词与翻译", onBack: { selection = .lyricsAndText }) {
+                    ServicesAndSourcesSettingsView(scope: .lyrics)
+                        .padding(16)
+                }
             case .aiTranslation:
-                AISettingsView()
-                    .padding(28)
+                TransitionalBridgeContainer(title: "返回歌词与翻译", onBack: { selection = .lyricsAndText }) {
+                    AISettingsView()
+                        .padding(16)
+                }
             case .advancedAndData:
                 AdvancedAndDataSettingsView(
                     onOpenTool: { tool in selection = tool }
@@ -180,12 +267,62 @@ struct SettingsPageHeader: View {
     }
 }
 
-private struct GeneralSettingsView: View {
+struct SettingsDestinationRow: View {
+    let title: String
+    let detail: String
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .foregroundStyle(.primary)
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct LyricsSearchSettingsSections: View {
+    @EnvironmentObject private var settings: AppSettingsStore
+
+    var body: some View {
+        Section("切歌与同步") {
+            Toggle("切歌后自动搜索歌词", isOn: $settings.autoSearchLyricsOnTrackChange)
+            LyricsPresentationOffsetControl(settings: settings)
+        }
+        Section("自动排轴") {
+            DisclosureGroup("为没有时间轴的歌词生成同步时间") {
+                Toggle("自动为未排轴歌词生成时间轴", isOn: $settings.automaticAlignmentEnabled)
+                Text("实验功能，默认关闭。自动音频捕获仅支持已就绪的 Spotify Desktop；Apple Music、未知来源不会启动。捕获音频临时写入本机 WAV 分段，任务结束后清理。选择本地音频排轴不依赖播放来源。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+private struct AppearanceSettingsView: View {
     @EnvironmentObject private var settings: AppSettingsStore
 
     var body: some View {
         Form {
-            SettingsPageHeader(title: "通用", detail: "控制启动、切歌和主窗口的默认行为。")
+            SettingsPageHeader(title: "外观", detail: "选择适合自己的歌词画面，并调整主窗口、桌面歌词和菜单栏。")
 
             Section("主窗口") {
                 Picker("默认主窗口布局", selection: mainWindowLayoutSelection) {
@@ -193,24 +330,37 @@ private struct GeneralSettingsView: View {
                         Text(layout.title).tag(layout.rawValue)
                     }
                 }
-                Text("Direction D 为实验布局；歌曲工作台的部分信息与操作尚未接入。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Picker("经典伴随呈现", selection: $settings.classicCompanionPresentationRawValue) {
-                    ForEach(ClassicCompanionPresentation.allCases) { presentation in
-                        Text(presentation.title).tag(presentation.rawValue)
-                    }
+                if settings.mainWindowLayoutStyleRawValue == MainWindowLayoutStyle.directionDV4.rawValue {
+                    Text("Direction D 为实验布局；歌曲工作台的部分信息与操作尚未接入。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Text("经典伴随 V1 可按窗口宽度自适应，也可固定为沉浸分栏或歌词专注。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if settings.mainWindowLayoutStyleRawValue == MainWindowLayoutStyle.appleMusicImmersiveV3.rawValue {
+                    Picker("画面风格", selection: $settings.v3ArtworkPresentationRawValue) {
+                        ForEach(V3ArtworkPresentation.allCases) { presentation in
+                            Text(presentation.title).tag(presentation.rawValue)
+                        }
+                    }
+                    Text(settings.v3ArtworkPresentation.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                DisclosureGroup("经典伴随布局") {
+                    Picker("经典伴随呈现", selection: $settings.classicCompanionPresentationRawValue) {
+                        ForEach(ClassicCompanionPresentation.allCases) { presentation in
+                            Text(presentation.title).tag(presentation.rawValue)
+                        }
+                    }
+                    Text("经典伴随 V1 可按窗口宽度自适应，也可固定为沉浸分栏或歌词专注。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Toggle("小窗口自动进入歌词专注", isOn: $settings.automaticCompactLyricsFocus)
                 Text("仅在 V3 主窗口达到保守的小窗口阈值时临时隐藏封面与次要信息；恢复窗口尺寸后自动返回原布局。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Toggle("启动时恢复上次窗口状态", isOn: $settings.restoreWindowState)
                 Toggle("主窗口保持置顶", isOn: $settings.keepMainWindowOnTop)
-                LyricsPresentationOffsetControl(settings: settings)
             }
 
             Section("悬浮歌词") {
@@ -219,32 +369,34 @@ private struct GeneralSettingsView: View {
                         Text(version.title).tag(version.rawValue)
                     }
                 }
-                Picker("透明样式", selection: $settings.floatingLyricsSurfaceStyleRawValue) {
-                    ForEach(FloatingLyricsSurfaceStyle.allCases, id: \.rawValue) { style in
-                        Text(style.title).tag(style.rawValue)
+                DisclosureGroup("桌面歌词样式与交互") {
+                    Picker("透明样式", selection: $settings.floatingLyricsSurfaceStyleRawValue) {
+                        ForEach(FloatingLyricsSurfaceStyle.allCases, id: \.rawValue) { style in
+                            Text(style.title).tag(style.rawValue)
+                        }
                     }
-                }
-                Picker("桌面歌词行数", selection: $settings.floatingDesktopLineMode) {
-                    ForEach(FloatingDesktopLineMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
-                }
-                HStack {
-                    Text("桌面歌词字号")
-                    Slider(value: $settings.floatingDesktopFontSize, in: 22...64, step: 1)
-                    Text("\(Int(settings.floatingDesktopFontSize))").monospacedDigit().frame(width: 30)
-                }
-                FloatingDesktopColorControls(settings: settings)
-                Toggle("悬浮歌词保持置顶", isOn: $settings.floatingWindowAlwaysOnTop)
-                Picker("默认交互状态", selection: floatingModeBinding) {
-                    ForEach(FloatingLyricsInteractionMode.allCases, id: \.self) { mode in
-                        Text(mode.title).tag(mode)
+                    Picker("桌面歌词行数", selection: $settings.floatingDesktopLineMode) {
+                        ForEach(FloatingDesktopLineMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                     }
-                }
-                HStack {
-                    Text(settings.floatingLyricsPresentation == .transparentV2 && settings.floatingDesktopKeepsTextOpaque ? "背景不透明度" : "整个悬浮窗透明度")
-                    Slider(value: $settings.floatingWindowOpacity, in: 0.45...1, step: 0.01)
-                    Text(String(format: "%.0f%%", settings.floatingWindowOpacity * 100))
-                        .font(.system(.caption, design: .monospaced))
-                        .frame(width: 48, alignment: .trailing)
+                    HStack {
+                        Text("桌面歌词字号")
+                        Slider(value: $settings.floatingDesktopFontSize, in: 22...64, step: 1)
+                        Text("\(Int(settings.floatingDesktopFontSize))").monospacedDigit().frame(width: 30)
+                    }
+                    FloatingDesktopColorControls(settings: settings)
+                    Toggle("悬浮歌词保持置顶", isOn: $settings.floatingWindowAlwaysOnTop)
+                    Picker("默认交互状态", selection: floatingModeBinding) {
+                        ForEach(FloatingLyricsInteractionMode.allCases, id: \.self) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    HStack {
+                        Text(settings.floatingLyricsPresentation == .transparentV2 && settings.floatingDesktopKeepsTextOpaque ? "背景不透明度" : "整个悬浮窗透明度")
+                        Slider(value: $settings.floatingWindowOpacity, in: 0.45...1, step: 0.01)
+                        Text(String(format: "%.0f%%", settings.floatingWindowOpacity * 100))
+                            .font(.system(.caption, design: .monospaced))
+                            .frame(width: 48, alignment: .trailing)
+                    }
                 }
                 Text("悬浮歌词复用主播放状态和歌词显示设置；关闭后不会退出 App。启用“启动时恢复上次窗口状态”时，会恢复上次可见的悬浮窗位置和尺寸。")
                     .font(.caption)
@@ -259,18 +411,6 @@ private struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("启动与切歌") {
-                Toggle("启动时自动连接 Spotify Desktop", isOn: $settings.connectSpotifyOnLaunch)
-                Toggle("切歌后自动搜索歌词", isOn: $settings.autoSearchLyricsOnTrackChange)
-            }
-
-            Section("自动排轴") {
-                Toggle("自动为未排轴歌词生成时间轴", isOn: $settings.automaticAlignmentEnabled)
-                Text("实验功能，默认关闭。自动音频捕获仅支持已就绪的 Spotify Desktop；Apple Music、未知来源不会启动。捕获音频临时写入本机 WAV 分段，任务结束后清理。选择本地音频排轴不依赖播放来源。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
         .formStyle(.grouped)
     }
@@ -297,6 +437,8 @@ private struct GeneralSettingsView: View {
 }
 
 private struct ServicesAndSourcesSettingsView: View {
+    enum Scope { case playback, lyrics }
+    let scope: Scope
     @EnvironmentObject private var playbackState: PlaybackState
     @EnvironmentObject private var settings: AppSettingsStore
     @State private var clientIDDraft = ""
@@ -310,148 +452,153 @@ private struct ServicesAndSourcesSettingsView: View {
     var body: some View {
         Form {
             SettingsPageHeader(
-                title: "服务与来源",
-                detail: "管理音乐播放源（Spotify / Apple Music）、在线曲库授权与多源歌词检索。"
+                title: scope == .playback ? "播放" : "歌词来源",
+                detail: scope == .playback ? "选择正在使用的音乐 App，查看连接状态与启动行为。" : "选择歌词搜索范围，调整来源顺序或在浏览器中继续查找。"
             )
 
-            Section("播放源 (Playback Source)") {
-                Picker("播放源模式", selection: $settings.playbackSourceMode) {
-                    ForEach(PlaybackSourceMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.radioGroup)
-
-                Text(settings.playbackSourceMode.detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                LabeledContent("当前状态", value: playbackState.providerStatusMessage)
-            }
-
-            Section("Spotify Desktop") {
-                LabeledContent("连接状态", value: playbackState.providerStatus.userFacingMessage)
-                Text("桌面播放控制不依赖 Spotify Web OAuth。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Spotify Web 在线曲库") {
-                LabeledContent("授权状态", value: authorization.state.userFacingMessage)
-                HStack {
-                    TextField("Client ID", text: $clientIDDraft)
-                        .textFieldStyle(.roundedBorder)
-                    Button("保存") { authorization.updateClientID(clientIDDraft) }
-                        .buttonStyle(.bordered)
-                }
-                Text("只填写 Spotify Developer Dashboard 中的 Client ID，不需要 Client Secret。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                HStack {
-                    Button("授权 Spotify") { authorize() }
-                        .buttonStyle(.borderedProminent)
-                    Button("刷新授权状态") { authorization.refreshAuthorizationState() }
-                    Button("断开授权") { authorization.disconnect() }
-                        .disabled(!authorization.state.isAuthorized)
-                    Button("清除 Keychain Token") { authorization.disconnect() }
-                        .disabled(!authorization.state.isAuthorized)
-                }
-                LabeledContent("Dashboard 注册地址") {
-                    Text(authorization.dashboardRedirectURI)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-                LabeledContent("当前本地监听地址") {
-                    Text(authorization.localRedirectURI ?? "未启动（授权时动态分配端口）")
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-                Text("Dashboard 只需注册不带端口的回环地址；授权时应用会临时监听一个动态端口，并在请求和换取 Token 时使用同一个完整地址。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("授权失败不会影响 Spotify Desktop 当前播放和本地歌词链路。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("歌词来源模式") {
-                Picker("模式", selection: Binding(
-                    get: { settings.lyricsSourceMode },
-                    set: { settings.lyricsSourceMode = $0 }
-                )) {
-                    ForEach(LyricsSourceMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.radioGroup)
-                .accessibilityIdentifier("lyricsSourceMode.picker")
-
-                Text(settings.lyricsSourceMode.detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if settings.lyricsSourceMode.isExperimental {
-                    Label(
-                        "实验模式：可能随时失效，不保证覆盖率，不建议用于正式商业发行。不含任何付费歌词 API。",
-                        systemImage: "exclamationmark.triangle.fill"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .accessibilityIdentifier("lyricsSourceMode.experimentalBanner")
-                }
-
-                HStack {
-                    Text("稳定 ID")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(settings.lyricsSourceMode.rawValue)
-                        .font(.caption.monospaced())
-                        .textSelection(.enabled)
-                        .foregroundStyle(.secondary)
-                }
-
-                Button("恢复默认模式（扩展免费）") {
-                    settings.restoreDefaultLyricsSourceMode()
-                }
-                .accessibilityIdentifier("lyricsSourceMode.restoreDefault")
-            }
-
-            Section("Provider 顺序") {
-                ForEach(Array(settings.lyricsProviderConfiguration.order.enumerated()), id: \.element) { index, id in
-                    providerRow(id: id, index: index)
-                }
-            }
-
-            Section {
-                DisclosureGroup("外部发现（仅浏览器）", isExpanded: $isExternalDiscoveryExpanded) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Uta-Net、UtaTime、AWA 只用于「可能存在歌词」时的外链与复制检索词，不会自动提取、缓存或再分发歌词正文。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        TextField("歌曲名 艺人（可选）", text: $discoveryQuery)
-                            .textFieldStyle(.roundedBorder)
-
-                        HStack {
-                            Button("复制检索词") {
-                                let text = discoveryQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-                                guard !text.isEmpty else { return }
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(text, forType: .string)
-                            }
-                            .disabled(discoveryQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                            ForEach(LyricsDiscoverySite.allCases) { site in
-                                Button(site.title) {
-                                    if let url = site.browserURL(query: discoveryQuery) {
-                                        NSWorkspace.shared.open(url)
-                                    }
-                                }
-                                .help(site.detail)
-                            }
+            if scope == .playback {
+                Section("播放来源") {
+                    Picker("播放源模式", selection: $settings.playbackSourceMode) {
+                        ForEach(PlaybackSourceMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
                         }
                     }
-                    .padding(.vertical, 4)
+                    .pickerStyle(.radioGroup)
+
+                    Text(settings.playbackSourceMode.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    LabeledContent("当前状态", value: playbackState.providerStatusMessage)
+                }
+
+                Section("启动行为") {
+                    Toggle("启动时自动连接 Spotify Desktop", isOn: $settings.connectSpotifyOnLaunch)
+                    Text("播放状态会显示在上方；连接失败时，可在主窗口重新连接。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("桌面播放控制") {
+                    LabeledContent("当前播放连接", value: playbackState.providerStatus.userFacingMessage)
+                    Text("Spotify Desktop 播放控制不需要下方的在线曲库授权。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Spotify Web 在线曲库") {
+                    LabeledContent("授权状态", value: authorization.state.userFacingMessage)
+                    DisclosureGroup("配置在线曲库授权") {
+                        HStack {
+                            TextField("Client ID", text: $clientIDDraft)
+                                .textFieldStyle(.roundedBorder)
+                            Button("保存") { authorization.updateClientID(clientIDDraft) }
+                                .buttonStyle(.bordered)
+                        }
+                        Text("只填写 Spotify Developer Dashboard 中的 Client ID，不需要 Client Secret。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        HStack {
+                            Button("授权 Spotify") { authorize() }
+                                .buttonStyle(.borderedProminent)
+                            Button("刷新授权状态") { authorization.refreshAuthorizationState() }
+                        }
+                        HStack {
+                            Button("断开授权") { authorization.disconnect() }
+                                .disabled(!authorization.state.isAuthorized)
+                            Button("清除 Keychain Token") { authorization.disconnect() }
+                                .disabled(!authorization.state.isAuthorized)
+                        }
+                        LabeledContent("Dashboard 注册地址") {
+                            Text(authorization.dashboardRedirectURI)
+                                .font(.system(.caption, design: .monospaced))
+                                .textSelection(.enabled)
+                        }
+                        LabeledContent("当前本地监听地址") {
+                            Text(authorization.localRedirectURI ?? "未启动（授权时动态分配端口）")
+                                .font(.system(.caption, design: .monospaced))
+                                .textSelection(.enabled)
+                        }
+                        Text("Dashboard 只需注册不带端口的回环地址；授权时应用会临时监听一个动态端口，并在请求和换取 Token 时使用同一个完整地址。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("授权失败不会影响 Spotify Desktop 当前播放和本地歌词链路。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                Section("歌词来源模式") {
+                    Picker("模式", selection: Binding(
+                        get: { settings.lyricsSourceMode },
+                        set: { settings.lyricsSourceMode = $0 }
+                    )) {
+                        ForEach(LyricsSourceMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .accessibilityIdentifier("lyricsSourceMode.picker")
+
+                    Text(settings.lyricsSourceMode.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if settings.lyricsSourceMode.isExperimental {
+                        Label(
+                            "实验模式：可能随时失效，不保证覆盖率，不建议用于正式商业发行。不含任何付费歌词 API。",
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .accessibilityIdentifier("lyricsSourceMode.experimentalBanner")
+                    }
+
+                    Button("恢复默认模式（扩展免费）") {
+                        settings.restoreDefaultLyricsSourceMode()
+                    }
+                    .accessibilityIdentifier("lyricsSourceMode.restoreDefault")
+                }
+
+                Section {
+                    DisclosureGroup("调整歌词来源与搜索顺序") {
+                        ForEach(Array(settings.lyricsProviderConfiguration.order.enumerated()), id: \.element) { index, id in
+                            providerRow(id: id, index: index)
+                        }
+                    }
+                }
+
+                Section {
+                    DisclosureGroup("外部发现（仅浏览器）", isExpanded: $isExternalDiscoveryExpanded) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Uta-Net、UtaTime、AWA 只用于「可能存在歌词」时的外链与复制检索词，不会自动提取、缓存或再分发歌词正文。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            TextField("歌曲名 艺人（可选）", text: $discoveryQuery)
+                                .textFieldStyle(.roundedBorder)
+
+                            HStack {
+                                Button("复制检索词") {
+                                    let text = discoveryQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    guard !text.isEmpty else { return }
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(text, forType: .string)
+                                }
+                                .disabled(discoveryQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                                ForEach(LyricsDiscoverySite.allCases) { site in
+                                    Button(site.title) {
+                                        if let url = site.browserURL(query: discoveryQuery) {
+                                            NSWorkspace.shared.open(url)
+                                        }
+                                    }
+                                    .help(site.detail)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
                 }
             }
         }
@@ -535,6 +682,28 @@ private struct AISettingsView: View {
                 detail: "对当前已加载的整首歌词做上下文翻译。原文、假名、罗马音和时间轴不会被 AI 修改。"
             )
 
+            Section("翻译默认行为") {
+                TextField("目标语言", text: configurationBinding(\.targetLanguage))
+                    .textFieldStyle(.roundedBorder)
+                Picker("默认提示词预设", selection: configurationBinding(\.promptPresetID)) {
+                    ForEach(TranslationPromptPresetCatalog.all, id: \.id) { preset in
+                        Text(preset.displayName).tag(preset.id.rawValue)
+                    }
+                }
+                Picker("个人翻译风格", selection: profileBinding) {
+                    Text("不使用个人档案").tag("")
+                    ForEach(settings.translationProfiles.list(), id: \.id) { profile in
+                        Text(profile.name).tag(profile.id.uuidString)
+                    }
+                }
+                Toggle("自动翻译新歌词", isOn: configurationBinding(\.autoTranslateNewLyrics))
+                Text(settings.aiTranslationConfiguration.autoTranslateNewLyrics
+                    ? "当前已开启：新歌词可能触发所选翻译服务的请求。失败不会循环重试。"
+                    : "当前已关闭：需要在歌曲操作中主动翻译，已有译文仍可显示。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("服务配置") {
                 Picker("翻译引擎", selection: configurationBinding(\.engineID)) {
                     ForEach(TranslationEngineCatalog.all, id: \.stableID) { engine in
@@ -552,116 +721,98 @@ private struct AISettingsView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                TextField("兼容接口地址（Base URL）", text: configurationBinding(\.baseURL))
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
-                TextField("模型（Model）", text: configurationBinding(\.model))
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
-                HStack {
-                    Text("模型目录")
-                    Spacer()
-                    Text(settings.aiModelDirectoryDisplayStatus.userFacingTitle)
-                        .foregroundStyle(.secondary)
-                    Button("刷新") { settings.refreshAIModelDirectory() }
-                }
-                if !settings.aiTranslationConfiguration.model.isEmpty,
-                   !settings.aiCachedModels.contains(where: { $0.id == settings.aiTranslationConfiguration.model }) {
-                    Text("当前模型未出现在最近目录中，仍保留手动输入的模型 ID。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if !settings.aiCachedModels.isEmpty {
-                    Picker("手动选择模型", selection: configurationBinding(\.model)) {
-                        Text("保留当前输入").tag(settings.aiTranslationConfiguration.model)
-                        ForEach(settings.aiCachedModels, id: \.id) { model in
-                            Text(model.displayName).tag(model.id)
-                        }
+                DisclosureGroup("配置服务、模型与连接测试") {
+                    TextField("兼容接口地址（Base URL）", text: configurationBinding(\.baseURL))
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
+                    TextField("模型（Model）", text: configurationBinding(\.model))
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
+                    HStack {
+                        Text("模型目录")
+                        Spacer()
+                        Text(settings.aiModelDirectoryDisplayStatus.userFacingTitle)
+                            .foregroundStyle(.secondary)
+                        Button("刷新") { settings.refreshAIModelDirectory() }
                     }
-                }
-                SecureField("API Key（只保存到 Keychain）", text: $apiKeyDraft)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
-                HStack {
-                    Button(hasStoredKey ? "替换 API Key" : "保存 API Key") {
-                        let value = apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !value.isEmpty else { return }
-                        do {
-                            try keyStore.save(value)
-                            apiKeyDraft = ""
-                            hasStoredKey = true
-                            settings.aiTranslationAPIKeyConfigured = true
-                            statusMessage = "API Key 已保存到 Keychain（不会显示或写入日志）。"
-                        } catch {
-                            statusMessage = "保存失败：\(error.localizedDescription)"
-                        }
+                    if !settings.aiTranslationConfiguration.model.isEmpty,
+                       !settings.aiCachedModels.contains(where: { $0.id == settings.aiTranslationConfiguration.model }) {
+                        Text("当前模型未出现在最近目录中，仍保留手动输入的模型 ID。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
-                    Button("清除 API Key", role: .destructive) {
-                        do {
-                            try keyStore.delete()
-                            hasStoredKey = false
-                            apiKeyDraft = ""
-                            settings.aiTranslationAPIKeyConfigured = false
-                            statusMessage = "API Key 已清除。"
-                        } catch {
-                            statusMessage = "清除失败：\(error.localizedDescription)"
-                        }
-                    }
-                    .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
-                    Text(hasStoredKey ? "已配置（Keychain）" : "未配置")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                HStack {
-                    Button("测试连接") {
-                        statusMessage = "正在发送最小测试请求…"
-                        let configuration = settings.aiTranslationConfiguration
-                        let engine = TranslationEngineRegistry.make(stableID: configuration.engineID)
-                        Task {
-                            do {
-                                try await engine.testConnection(configuration: configuration)
-                                await MainActor.run { statusMessage = "连接成功。测试请求未使用当前歌词。" }
-                            } catch {
-                                await MainActor.run { statusMessage = error.localizedDescription }
+                    if !settings.aiCachedModels.isEmpty {
+                        Picker("手动选择模型", selection: configurationBinding(\.model)) {
+                            Text("保留当前输入").tag(settings.aiTranslationConfiguration.model)
+                            ForEach(settings.aiCachedModels, id: \.id) { model in
+                                Text(model.displayName).tag(model.id)
                             }
                         }
                     }
-                    if !statusMessage.isEmpty {
-                        Text(statusMessage)
+                    SecureField("API Key（只保存到 Keychain）", text: $apiKeyDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
+                    HStack {
+                        Button(hasStoredKey ? "替换 API Key" : "保存 API Key") {
+                            let value = apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !value.isEmpty else { return }
+                            do {
+                                try keyStore.save(value)
+                                apiKeyDraft = ""
+                                hasStoredKey = true
+                                settings.aiTranslationAPIKeyConfigured = true
+                                statusMessage = "API Key 已保存到 Keychain（不会显示或写入日志）。"
+                            } catch {
+                                statusMessage = "保存失败：\(error.localizedDescription)"
+                            }
+                        }
+                        .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
+                        Button("清除 API Key", role: .destructive) {
+                            do {
+                                try keyStore.delete()
+                                hasStoredKey = false
+                                apiKeyDraft = ""
+                                settings.aiTranslationAPIKeyConfigured = false
+                                statusMessage = "API Key 已清除。"
+                            } catch {
+                                statusMessage = "清除失败：\(error.localizedDescription)"
+                            }
+                        }
+                        .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
+                        Text(hasStoredKey ? "已配置（Keychain）" : "未配置")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
                     }
-                }
-                Text("macOS 可能在首次保存、替换或清除时请求 Keychain 鉴权；仅浏览此页面不会读取 Key。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Base URL 支持已包含 /v1、完整 /v1/chat/completions 和自定义反代路径；应用不会重复拼接 /v1。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("翻译默认行为") {
-                TextField("目标语言", text: configurationBinding(\.targetLanguage))
-                    .textFieldStyle(.roundedBorder)
-                Picker("默认提示词预设", selection: configurationBinding(\.promptPresetID)) {
-                    ForEach(TranslationPromptPresetCatalog.all, id: \.id) { preset in
-                        Text(preset.displayName).tag(preset.id.rawValue)
+                    HStack {
+                        Button("测试连接（发送请求）") {
+                            statusMessage = "正在发送最小测试请求…"
+                            let configuration = settings.aiTranslationConfiguration
+                            let engine = TranslationEngineRegistry.make(stableID: configuration.engineID)
+                            Task {
+                                do {
+                                    try await engine.testConnection(configuration: configuration)
+                                    await MainActor.run { statusMessage = "连接成功。测试请求未使用当前歌词。" }
+                                } catch {
+                                    await MainActor.run { statusMessage = error.localizedDescription }
+                                }
+                            }
+                        }
+                        if !statusMessage.isEmpty {
+                            Text(statusMessage)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
                     }
+                    Text("macOS 可能在首次保存、替换或清除时请求 Keychain 鉴权；仅浏览此页面不会读取 Key。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Base URL 支持已包含 /v1、完整 /v1/chat/completions 和自定义反代路径；应用不会重复拼接 /v1。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Picker("个人翻译风格", selection: profileBinding) {
-                    Text("不使用个人档案").tag("")
-                    ForEach(settings.translationProfiles.list(), id: \.id) { profile in
-                        Text(profile.name).tag(profile.id.uuidString)
-                    }
-                }
-                Toggle("自动翻译新歌词", isOn: configurationBinding(\.autoTranslateNewLyrics))
-                Text("默认关闭。失败不会循环重试，也不会创建半成品数据库版本。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             Section {
@@ -749,9 +900,9 @@ private struct AISettingsView: View {
                 return "可用：系统翻译优先隐私与速度，歌词语境和文学性可能弱于 AI。"
             }
             if engine.stableID == TranslationEngineID.codexChatGPT.rawValue {
-                return "可用：翻译请求通过本机 Codex app-server，登录和令牌由 Codex 管理。"
+                return "通过本机 Codex app-server 翻译；登录状态与服务连接以实际请求结果为准。"
             }
-            return "可用：请确认 Base URL、模型和 API Key。"
+            return "支持此引擎；请配置服务地址、模型和 API Key，连接状态以测试结果为准。"
         case .requiresConfiguration:
             return "需要配置：Base URL、模型和 API Key。"
         case .requiresSystemSupport:
@@ -1023,18 +1174,19 @@ private struct AdvancedAndDataSettingsView: View {
             )
 
             Section("数据与存储") {
-                LabeledContent("路径", value: data.statistics?.databaseURL.path ?? SQLiteLyricsRepository.defaultDatabaseURL.path)
+                LabeledContent("数据库位置", value: data.statistics?.databaseURL.path ?? "尚未读取")
                     .textSelection(.enabled)
-                LabeledContent("Migration", value: "v\(data.statistics?.schemaVersion ?? DatabaseMigrator.currentVersion)")
-                LabeledContent("Track 数量", value: "\(data.statistics?.trackCount ?? 0)")
-                LabeledContent("LyricsVersion 数量", value: "\(data.statistics?.lyricsVersionCount ?? 0)")
-                LabeledContent("LyricLine 数量", value: "\(data.statistics?.lyricLineCount ?? 0)")
+                LabeledContent("数据格式版本", value: data.statistics.map { "v\($0.schemaVersion)" } ?? "尚未读取")
+                LabeledContent("歌曲", value: data.statistics.map { String($0.trackCount) } ?? "尚未读取")
+                LabeledContent("歌词版本", value: data.statistics.map { String($0.lyricsVersionCount) } ?? "尚未读取")
+                LabeledContent("歌词行", value: data.statistics.map { String($0.lyricLineCount) } ?? "尚未读取")
                 LabeledContent("数据库大小", value: data.statistics.map { ByteCountFormatter.string(fromByteCount: $0.fileSize, countStyle: .file) } ?? "未知")
                 HStack {
                     Button("刷新统计") { data.refreshStatistics() }
                     Button("在 Finder 中显示") { data.revealDatabase() }
                     Button("创建备份") { data.createBackup() }
                 }
+                .disabled(data.isBusy)
 
                 Button("重建本地歌词索引") { data.rebuildLocalIndex() }
                 Text("只扫描 ~/Music/SpotifyLyrics/Lyrics、应用支持目录和 Debug 兼容目录，不写入或修改用户文件。")
@@ -1043,8 +1195,8 @@ private struct AdvancedAndDataSettingsView: View {
             }
 
             Section("诊断") {
-                LabeledContent("App Build", value: appVersion)
-                LabeledContent("数据库 Schema", value: "v\(DatabaseMigrator.currentVersion)")
+                LabeledContent("应用版本", value: appVersion)
+                LabeledContent("支持的数据格式", value: "v\(DatabaseMigrator.currentVersion)")
                 Button("打开日志目录") {
                     NSWorkspace.shared.open(URL(fileURLWithPath: "/tmp"))
                 }
@@ -1058,6 +1210,7 @@ private struct AdvancedAndDataSettingsView: View {
                     .foregroundStyle(.secondary)
 
                 Button("清除所有歌词缓存", role: .destructive) { showClearConfirmation = true }
+                    .disabled(data.isBusy)
                 Text("只删除 SQLite 中的歌词版本和行，保留歌曲元数据；操作前应先创建备份。")
                     .font(.caption)
                     .foregroundStyle(.secondary)

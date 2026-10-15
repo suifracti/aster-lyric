@@ -34,6 +34,8 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
     case stage = "v3ArtworkPresentation.stage.v1"
     case classic = "v3ArtworkPresentation.classic.v1"
     case ambientFeathered = "v3ArtworkPresentation.feathered.v1"
+    case lyricsOnly = "v3ArtworkPresentation.lyricsOnly.v1"
+    case albumPoster = "v3ArtworkPresentation.albumPoster.v1"
 
     public var id: String { rawValue }
 
@@ -43,6 +45,8 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
         case .stage: return "封面舞台"
         case .classic: return "经典放大"
         case .ambientFeathered: return "柔光羽化"
+        case .lyricsOnly: return "纯净歌词"
+        case .albumPoster: return "封面海报"
         }
     }
 
@@ -51,7 +55,20 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
         case .ambient: return "抽取封面的低频色彩，前景保留完整封面"
         case .stage: return "完整封面居中显示，模糊背景补齐空余区域"
         case .classic: return "保留原来的局部放大封面背景"
-        case .ambientFeathered: return "保留新版完整封面柔光羽化，前景封面仍完整显示"
+        case .ambientFeathered: return "完整封面化成柔和光晕，保留清晰的前景封面"
+        case .lyricsOnly: return "安静的专辑色背景，把更多空间留给歌词和译文"
+        case .albumPoster: return "完整封面与歌曲信息组成海报，歌词在一旁清楚呈现"
+        }
+    }
+
+    public var symbolName: String {
+        switch self {
+        case .ambient: return "sun.max"
+        case .stage: return "rectangle.inset.filled"
+        case .classic: return "square.dashed.inset.filled"
+        case .ambientFeathered: return "circle.lefthalf.filled"
+        case .lyricsOnly: return "text.alignleft"
+        case .albumPoster: return "photo.artframe"
         }
     }
 
@@ -61,6 +78,8 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
         case .stage: return "补边背景柔化"
         case .classic: return "背景高斯模糊度"
         case .ambientFeathered: return "柔光扩散程度"
+        case .lyricsOnly: return "背景色彩柔和度"
+        case .albumPoster: return "海报背景柔化"
         }
     }
 
@@ -70,6 +89,8 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
         case .stage: return "封面背景缩放"
         case .classic: return "封面与背景倍率"
         case .ambientFeathered: return "前景封面尺寸"
+        case .lyricsOnly: return "封面尺寸"
+        case .albumPoster: return "海报封面尺寸"
         }
     }
 
@@ -79,6 +100,8 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
         case .stage: return "封面背景取景"
         case .classic: return "封面与裁切位置"
         case .ambientFeathered: return "封面与光源位置"
+        case .lyricsOnly: return "背景光源位置"
+        case .albumPoster: return "海报位置"
         }
     }
 }
@@ -195,6 +218,8 @@ public final class AppSettingsStore: ObservableObject {
         public static let v3BackdropBlurStage = "v3.backdropBlur.stage.v1"
         public static let v3BackdropBlurClassic = "v3.backdropBlur.classic.v1"
         public static let v3BackdropBlurFeathered = "v3.backdropBlur.feathered.v1"
+        public static let v3BackdropBlurLyricsOnly = "v3.backdropBlur.lyricsOnly.v1"
+        public static let v3BackdropBlurAlbumPoster = "v3.backdropBlur.albumPoster.v1"
         public static let v3ArtworkPresentation = "v3.artworkPresentation.v1"
         /// Legacy migration input. Do not use as the current presentation state.
         public static let v3AmbientBackdropEnabled = "v3.ambientBackdropEnabled"
@@ -204,6 +229,10 @@ public final class AppSettingsStore: ObservableObject {
         // shared artwork position/size preferences.
         public static let v3ArtworkPositionFeathered = "v3.artworkPosition.feathered.v1"
         public static let v3ArtworkSizeScaleFeathered = "v3.artworkSizeScale.feathered.v1"
+        public static let v3ArtworkPositionLyricsOnly = "v3.artworkPosition.lyricsOnly.v1"
+        public static let v3ArtworkSizeScaleLyricsOnly = "v3.artworkSizeScale.lyricsOnly.v1"
+        public static let v3ArtworkPositionAlbumPoster = "v3.artworkPosition.albumPoster.v1"
+        public static let v3ArtworkSizeScaleAlbumPoster = "v3.artworkSizeScale.albumPoster.v1"
         public static let v3InstrumentalPureImmersion = "v3.instrumentalPureImmersion"
         public static let classicCompanionPresentation = "mainWindow.classicCompanionPresentation.v1"
     }
@@ -405,9 +434,11 @@ public final class AppSettingsStore: ObservableObject {
 
     @Published public var v3BackdropBlurRadius: Double {
         didSet {
-            defaults.set(v3BackdropBlurRadius, forKey: Key.v3BackdropBlurRadius)
-            guard !isApplyingStoredV3Blur else { return }
             let presentation = V3ArtworkPresentation(rawValue: v3ArtworkPresentationRawValue) ?? .ambient
+            if presentation != .lyricsOnly && presentation != .albumPoster {
+                defaults.set(v3BackdropBlurRadius, forKey: Key.v3BackdropBlurRadius)
+            }
+            guard !isApplyingStoredV3Blur else { return }
             v3BlurByPresentation[presentation] = v3BackdropBlurRadius
             defaults.set(v3BackdropBlurRadius, forKey: Self.v3BlurDefaultsKey(for: presentation))
         }
@@ -418,15 +449,17 @@ public final class AppSettingsStore: ObservableObject {
             defaults.set(v3ArtworkPresentationRawValue, forKey: Key.v3ArtworkPresentation)
             guard let presentation = V3ArtworkPresentation(rawValue: v3ArtworkPresentationRawValue) else { return }
 
-            // Keep the three established modes' saved artwork placement and
-            // scale unchanged when entering or leaving the new fourth mode.
-            let wasFeathered = V3ArtworkPresentation(rawValue: oldValue) == .ambientFeathered
-            let isFeathered = presentation == .ambientFeathered
-            if wasFeathered != isFeathered {
-                let positionKey = isFeathered ? Key.v3ArtworkPositionFeathered : Key.v3ArtworkPosition
-                let scaleKey = isFeathered ? Key.v3ArtworkSizeScaleFeathered : Key.v3ArtworkSizeScale
-                let nextPosition = defaults.string(forKey: positionKey) ?? v3ArtworkPosition
-                let nextScale = defaults.object(forKey: scaleKey) as? Double ?? v3ArtworkSizeScale
+            // The original three retain their shared keys. Every later style
+            // has its own keys, so visiting a new style cannot overwrite them.
+            let previousPresentation = V3ArtworkPresentation(rawValue: oldValue) ?? .ambient
+            let positionKey = Self.v3PositionDefaultsKey(for: presentation)
+            if Self.v3PositionDefaultsKey(for: previousPresentation) != positionKey {
+                let scaleKey = Self.v3ScaleDefaultsKey(for: presentation)
+                let isNewComposition = presentation == .lyricsOnly || presentation == .albumPoster
+                let nextPosition = defaults.string(forKey: positionKey)
+                    ?? (isNewComposition ? "left" : defaults.string(forKey: Key.v3ArtworkPosition) ?? "left")
+                let nextScale = defaults.object(forKey: scaleKey) as? Double
+                    ?? (isNewComposition ? 1.0 : defaults.object(forKey: Key.v3ArtworkSizeScale) as? Double ?? 1.0)
                 if v3ArtworkPosition != nextPosition { v3ArtworkPosition = nextPosition }
                 if abs(v3ArtworkSizeScale - nextScale) > 0.001 { v3ArtworkSizeScale = nextScale }
             }
@@ -443,6 +476,27 @@ public final class AppSettingsStore: ObservableObject {
     public var v3ArtworkPresentation: V3ArtworkPresentation {
         get { V3ArtworkPresentation(rawValue: v3ArtworkPresentationRawValue) ?? .ambient }
         set { v3ArtworkPresentationRawValue = newValue.rawValue }
+    }
+
+    // Hover previews read stored style values without changing preferences.
+    public func v3PreviewBlur(for style: V3ArtworkPresentation) -> Double {
+        v3BlurByPresentation[style] ?? v3BackdropBlurRadius
+    }
+
+    public func v3PreviewPosition(for style: V3ArtworkPresentation) -> String {
+        let isNewComposition = style == .lyricsOnly || style == .albumPoster
+        return defaults.string(forKey: Self.v3PositionDefaultsKey(for: style))
+            ?? (isNewComposition ? "left" : defaults.string(forKey: Key.v3ArtworkPosition) ?? "left")
+    }
+
+    public func v3PreviewScale(for style: V3ArtworkPresentation) -> Double {
+        let isNewComposition = style == .lyricsOnly || style == .albumPoster
+        return defaults.object(forKey: Self.v3ScaleDefaultsKey(for: style)) as? Double
+            ?? (isNewComposition ? 1.0 : defaults.object(forKey: Key.v3ArtworkSizeScale) as? Double ?? 1.0)
+    }
+
+    public func v3PreviewLyricsPosition(for style: V3ArtworkPresentation) -> String {
+        v3LyricsPositions[style.rawValue] ?? "automatic"
     }
 
     @Published private var v3LyricsPositions: [String: String] = [:]
@@ -463,21 +517,39 @@ public final class AppSettingsStore: ObservableObject {
         case .stage: return Key.v3BackdropBlurStage
         case .classic: return Key.v3BackdropBlurClassic
         case .ambientFeathered: return Key.v3BackdropBlurFeathered
+        case .lyricsOnly: return Key.v3BackdropBlurLyricsOnly
+        case .albumPoster: return Key.v3BackdropBlurAlbumPoster
+        }
+    }
+
+    private static func v3PositionDefaultsKey(for presentation: V3ArtworkPresentation) -> String {
+        switch presentation {
+        case .ambient, .stage, .classic: return Key.v3ArtworkPosition
+        case .ambientFeathered: return Key.v3ArtworkPositionFeathered
+        case .lyricsOnly: return Key.v3ArtworkPositionLyricsOnly
+        case .albumPoster: return Key.v3ArtworkPositionAlbumPoster
+        }
+    }
+
+    private static func v3ScaleDefaultsKey(for presentation: V3ArtworkPresentation) -> String {
+        switch presentation {
+        case .ambient, .stage, .classic: return Key.v3ArtworkSizeScale
+        case .ambientFeathered: return Key.v3ArtworkSizeScaleFeathered
+        case .lyricsOnly: return Key.v3ArtworkSizeScaleLyricsOnly
+        case .albumPoster: return Key.v3ArtworkSizeScaleAlbumPoster
         }
     }
 
     @Published public var v3ArtworkPosition: String {
         didSet {
-            let key = v3ArtworkPresentationRawValue == V3ArtworkPresentation.ambientFeathered.rawValue
-                ? Key.v3ArtworkPositionFeathered : Key.v3ArtworkPosition
+            let key = Self.v3PositionDefaultsKey(for: v3ArtworkPresentation)
             defaults.set(v3ArtworkPosition, forKey: key)
         }
     }
 
     @Published public var v3ArtworkSizeScale: Double {
         didSet {
-            let key = v3ArtworkPresentationRawValue == V3ArtworkPresentation.ambientFeathered.rawValue
-                ? Key.v3ArtworkSizeScaleFeathered : Key.v3ArtworkSizeScale
+            let key = Self.v3ScaleDefaultsKey(for: v3ArtworkPresentation)
             defaults.set(v3ArtworkSizeScale, forKey: key)
         }
     }
@@ -513,24 +585,26 @@ public final class AppSettingsStore: ObservableObject {
             .classic: 36.0,
             // First selection of the fourth mode starts at the user's existing
             // ambient setting, then remembers its own slider value.
-            .ambientFeathered: defaults.object(forKey: Key.v3BackdropBlurAmbient) as? Double ?? 58.0
+            .ambientFeathered: defaults.object(forKey: Key.v3BackdropBlurAmbient) as? Double ?? 58.0,
+            .lyricsOnly: 72.0,
+            .albumPoster: 65.0
         ]
         for presentation in V3ArtworkPresentation.allCases {
             let stored = defaults.object(forKey: Self.v3BlurDefaultsKey(for: presentation)) as? Double
+            let hasLegacyBlur = presentation != .lyricsOnly && presentation != .albumPoster
             self.v3BlurByPresentation[presentation] = stored
-                ?? (presentation == selectedPresentation ? legacyBlur : blurDefaults[presentation] ?? legacyBlur)
+                ?? (presentation == selectedPresentation && hasLegacyBlur ? legacyBlur : blurDefaults[presentation] ?? legacyBlur)
         }
         self.v3PlaybackDetailsOnHover = defaults.bool(forKey: Key.v3PlaybackDetailsOnHover)
         self.v3StageReadabilityEnabled = defaults.bool(forKey: Key.v3StageReadabilityEnabled)
         self.v3BackdropBlurRadius = self.v3BlurByPresentation[selectedPresentation] ?? legacyBlur
-        let positionKey = selectedPresentation == .ambientFeathered
-            ? Key.v3ArtworkPositionFeathered : Key.v3ArtworkPosition
-        let scaleKey = selectedPresentation == .ambientFeathered
-            ? Key.v3ArtworkSizeScaleFeathered : Key.v3ArtworkSizeScale
+        let positionKey = Self.v3PositionDefaultsKey(for: selectedPresentation)
+        let scaleKey = Self.v3ScaleDefaultsKey(for: selectedPresentation)
+        let isNewComposition = selectedPresentation == .lyricsOnly || selectedPresentation == .albumPoster
         self.v3ArtworkPosition = defaults.string(forKey: positionKey)
-            ?? defaults.string(forKey: Key.v3ArtworkPosition) ?? "left"
+            ?? (isNewComposition ? "left" : defaults.string(forKey: Key.v3ArtworkPosition) ?? "left")
         self.v3ArtworkSizeScale = defaults.object(forKey: scaleKey) as? Double
-            ?? (defaults.object(forKey: Key.v3ArtworkSizeScale) as? Double) ?? 1.0
+            ?? (isNewComposition ? 1.0 : defaults.object(forKey: Key.v3ArtworkSizeScale) as? Double ?? 1.0)
         self.v3InstrumentalPureImmersion = defaults.object(forKey: Key.v3InstrumentalPureImmersion) as? Bool ?? true
         let storedLayout = defaults.string(forKey: Key.mainWindowLayoutStyle)
             ?? MainWindowLayoutStyle.appleMusicImmersiveV3.rawValue

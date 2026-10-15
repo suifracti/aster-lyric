@@ -4,13 +4,41 @@ public struct PersonalLyricsLibraryView: View {
     @EnvironmentObject private var playback: PlaybackState
     @StateObject private var service = PersonalLyricsLibraryService()
     @State private var selectedStableKey: String?
+    @State private var libraryFilter: LibraryFilter = .all
+    @State private var showSyncFolder = false
+
+    private enum LibraryFilter: String, CaseIterable, Identifiable {
+        case all = "全部", translations = "有译文", manual = "人工歌词 / 译文", locked = "锁定歌词 / 译文"
+        var id: Self { self }
+
+        func includes(_ entry: PersonalLyricsLibraryEntry) -> Bool {
+            switch self {
+            case .all: return true
+            case .translations: return entry.translationVersionCount > 0
+            case .manual: return entry.hasManualLyrics || entry.hasManualTranslation
+            case .locked: return entry.hasLockedLyrics || entry.hasLockedTranslation
+            }
+        }
+    }
+
+    private var visibleEntries: [PersonalLyricsLibraryEntry] {
+        service.entries.filter(libraryFilter.includes)
+    }
+
+    private var currentSongEntry: PersonalLyricsLibraryEntry? {
+        guard let identity = playback.currentTrackIdentity else { return nil }
+        return service.entries.first { entry in
+            entry.trackStableKey == identity.stableKey
+                || (playback.liveLyricsVersionID != nil && entry.activeLyricsVersionID == playback.liveLyricsVersionID)
+        }
+    }
 
     public init() {}
 
     public var body: some View {
         NavigationSplitView {
             sidebarContent
-                .navigationTitle("本地个人歌词库")
+                .navigationTitle("我的歌词库")
                 .toolbar {
                     ToolbarItemGroup(placement: .primaryAction) {
                         Button {
@@ -50,10 +78,10 @@ public struct PersonalLyricsLibraryView: View {
                     Image(systemName: "books.vertical")
                         .font(.system(size: 48))
                         .foregroundStyle(.tertiary)
-                    Text("选择左侧歌曲查看资产版本")
+                    Text("找回你保存的歌词与译文")
                         .font(.headline)
                         .foregroundStyle(.secondary)
-                    Text("管理你采用、编辑、生成的歌词、翻译、读音与逐字时间轴")
+                    Text("从左侧选一首歌，查看、切换或编辑已保存的版本。")
                         .font(.subheadline)
                         .foregroundStyle(.tertiary)
                 }
@@ -91,7 +119,7 @@ public struct PersonalLyricsLibraryView: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("搜索歌曲、歌词、读音或译文...", text: $service.searchQuery)
+                TextField("搜索歌曲或内容，按回车查找", text: $service.searchQuery)
                     .textFieldStyle(.plain)
                     .onSubmit {
                         service.refresh()
@@ -124,20 +152,59 @@ public struct PersonalLyricsLibraryView: View {
                 .padding(.bottom, 6)
             }
 
-            syncFolderSection
+            HStack {
+                Menu {
+                    Picker("筛选歌曲", selection: $libraryFilter) {
+                        ForEach(LibraryFilter.allCases) { filter in
+                            Text(filter.rawValue).tag(filter)
+                        }
+                    }
+                } label: {
+                    Label(libraryFilter.rawValue, systemImage: "line.3.horizontal.decrease.circle")
+                }
+                .fixedSize()
+                Spacer()
+                Text("\(visibleEntries.count) 首")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+
+            if let entry = currentSongEntry {
+                Button {
+                    libraryFilter = .all
+                    selectedStableKey = entry.trackStableKey
+                } label: {
+                    Label("查看当前歌曲的已存版本", systemImage: "music.note.list")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderless)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+            }
+
+            DisclosureGroup("私人文件夹同步", isExpanded: $showSyncFolder) {
+                syncFolderSection
+            }
+            .font(.caption)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
 
             Divider()
 
-            if service.entries.isEmpty && !service.isLoading {
+            if visibleEntries.isEmpty && !service.isLoading {
                 VStack(spacing: 8) {
                     Spacer()
                     Image(systemName: "tray")
                         .font(.system(size: 32))
                         .foregroundStyle(.tertiary)
-                    Text("暂无本地歌词资产")
+                    Text(service.searchQuery.isEmpty && libraryFilter == .all ? "还没有保存的歌词" : "没有符合条件的歌曲")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    Text("当你采用翻译、生成读音、编辑歌词或锁定版本后，会自动收录至此。")
+                    Text(service.searchQuery.isEmpty && libraryFilter == .all
+                         ? "采用的歌词、保存的译文和人工编辑版本会收录在这里。"
+                         : "试试其他搜索词，或切回全部歌曲。")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .multilineTextAlignment(.center)
@@ -145,7 +212,7 @@ public struct PersonalLyricsLibraryView: View {
                     Spacer()
                 }
             } else {
-                List(service.entries, selection: $selectedStableKey) { entry in
+                List(visibleEntries, selection: $selectedStableKey) { entry in
                     PersonalLibraryEntryRow(entry: entry)
                         .tag(entry.trackStableKey)
                 }
@@ -247,14 +314,14 @@ private struct PersonalLibraryEntryRow: View {
             HStack(spacing: 6) {
                 if entry.lyricsVersionCount > 0 {
                     AssetBadge(
-                        title: "歌词",
+                        title: "歌词 \(entry.lyricsVersionCount)",
                         icon: entry.hasLockedLyrics ? "lock.fill" : (entry.hasManualLyrics ? "pencil" : nil),
                         color: .blue
                     )
                 }
                 if entry.translationVersionCount > 0 {
                     AssetBadge(
-                        title: "翻译",
+                        title: "译文 \(entry.translationVersionCount)",
                         icon: entry.hasLockedTranslation ? "lock.fill" : (entry.hasManualTranslation ? "pencil" : nil),
                         color: .green
                     )
@@ -308,6 +375,12 @@ public struct PersonalLibraryTrackDetailView: View {
     @EnvironmentObject private var playback: PlaybackState
     @ObservedObject var service: PersonalLyricsLibraryService
     let stableKey: String
+    @State private var selectedSection: VersionSection = .all
+
+    private enum VersionSection: String, CaseIterable, Identifiable {
+        case all = "全部", lyrics = "歌词", translations = "译文", readings = "读音", timing = "时间轴"
+        var id: Self { self }
+    }
 
     public var body: some View {
         Group {
@@ -317,64 +390,81 @@ public struct PersonalLibraryTrackDetailView: View {
                         // Header
                         trackHeader(detail.entry)
 
-                        Divider()
+                        Picker("版本类型", selection: $selectedSection) {
+                            ForEach(VersionSection.allCases) { section in
+                                Text(section.rawValue).tag(section)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+
+                        Text("切换当前版本会保留旧稿；锁定的版本不会被自动替换。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
                         // Section 1: Lyrics Versions
-                        versionSection(
-                            title: "歌词版本 (\(detail.lyricsVersions.count))",
-                            icon: "text.quote",
-                            color: .blue
-                        ) {
-                            if detail.lyricsVersions.isEmpty {
-                                emptyPlaceholder("暂无保存的歌词版本")
-                            } else {
-                                ForEach(detail.lyricsVersions) { lv in
-                                    lyricsVersionCard(lv, entry: detail.entry, versions: detail.lyricsVersions)
+                        if selectedSection == .all || selectedSection == .lyrics {
+                            versionSection(
+                                title: "歌词版本 (\(detail.lyricsVersions.count))",
+                                icon: "text.quote",
+                                color: .blue
+                            ) {
+                                if detail.lyricsVersions.isEmpty {
+                                    emptyPlaceholder("暂无保存的歌词版本")
+                                } else {
+                                    ForEach(detail.lyricsVersions) { lv in
+                                        lyricsVersionCard(lv, entry: detail.entry, versions: detail.lyricsVersions)
+                                    }
                                 }
                             }
                         }
 
                         // Section 2: Translation Versions
-                        versionSection(
-                            title: "翻译版本 (\(detail.translationVersions.count))",
-                            icon: "character.bubble",
-                            color: .green
-                        ) {
-                            if detail.translationVersions.isEmpty {
-                                emptyPlaceholder("暂无保存的翻译版本")
-                            } else {
-                                ForEach(detail.translationVersions) { tv in
-                                    translationVersionCard(tv, entry: detail.entry)
+                        if selectedSection == .all || selectedSection == .translations {
+                            versionSection(
+                                title: "翻译版本 (\(detail.translationVersions.count))",
+                                icon: "character.bubble",
+                                color: .green
+                            ) {
+                                if detail.translationVersions.isEmpty {
+                                    emptyPlaceholder("暂无保存的翻译版本")
+                                } else {
+                                    ForEach(detail.translationVersions) { tv in
+                                        translationVersionCard(tv, entry: detail.entry)
+                                    }
                                 }
                             }
                         }
 
                         // Section 3: Reading Versions
-                        versionSection(
-                            title: "读音版本 (\(detail.readingVersions.count))",
-                            icon: "character.book.closed",
-                            color: .orange
-                        ) {
-                            if detail.readingVersions.isEmpty {
-                                emptyPlaceholder("暂无保存的读音版本")
-                            } else {
-                                ForEach(detail.readingVersions) { rv in
-                                    readingVersionCard(rv, entry: detail.entry)
+                        if selectedSection == .all || selectedSection == .readings {
+                            versionSection(
+                                title: "读音版本 (\(detail.readingVersions.count))",
+                                icon: "character.book.closed",
+                                color: .orange
+                            ) {
+                                if detail.readingVersions.isEmpty {
+                                    emptyPlaceholder("暂无保存的读音版本")
+                                } else {
+                                    ForEach(detail.readingVersions) { rv in
+                                        readingVersionCard(rv, entry: detail.entry)
+                                    }
                                 }
                             }
                         }
 
                         // Section 4: Timing Versions
-                        versionSection(
-                            title: "逐字时间轴 (\(detail.timingVersions.count))",
-                            icon: "waveform",
-                            color: .purple
-                        ) {
-                            if detail.timingVersions.isEmpty {
-                                emptyPlaceholder("暂无保存的逐字时间轴")
-                            } else {
-                                ForEach(detail.timingVersions) { tm in
-                                    timingVersionCard(tm)
+                        if selectedSection == .all || selectedSection == .timing {
+                            versionSection(
+                                title: "逐字时间轴 (\(detail.timingVersions.count))",
+                                icon: "waveform",
+                                color: .purple
+                            ) {
+                                if detail.timingVersions.isEmpty {
+                                    emptyPlaceholder("暂无保存的逐字时间轴")
+                                } else {
+                                    ForEach(detail.timingVersions) { tm in
+                                        timingVersionCard(tm)
+                                    }
                                 }
                             }
                         }

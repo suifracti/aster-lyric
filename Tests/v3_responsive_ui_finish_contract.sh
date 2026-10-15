@@ -16,7 +16,7 @@ grep -q 'metadataStacked' "$METADATA" \
   || { echo "metadata fallback layout is missing" >&2; exit 1; }
 grep -q 'ScrollView(.vertical)' "$OPERATIONS" \
   || { echo "current-song operations popover is not resize-safe" >&2; exit 1; }
-grep -q 'Text("V3 视觉与布局")' "$WINDOW" \
+grep -q 'Text("外观与布局")' "$WINDOW" \
   || { echo "V3 tuning panel still exposes engineering wording" >&2; exit 1; }
 
 echo "V3 responsive UI finish contract: PASS"

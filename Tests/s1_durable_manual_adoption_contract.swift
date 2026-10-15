@@ -231,7 +231,7 @@ struct S1DurableManualAdoptionContract {
 
         let scenario = CommandLine.arguments.dropFirst().first ?? "all"
         let scenarios = scenario == "all"
-            ? ["force-refresh-protected", "lyrics-ovh-zero", "kugou-half", "timed-spans", "auto-search-timed-reopen", "auto-search-disabled-loads-selection", "locked-current", "selection-throws", "timing-throws", "invalid-content", "failed-results", "track-switch", "same-track-order"]
+            ? ["force-refresh-protected", "stored-selection-read-fails", "lyrics-ovh-zero", "kugou-half", "timed-spans", "auto-search-timed-reopen", "auto-search-disabled-loads-selection", "locked-current", "selection-throws", "timing-throws", "invalid-content", "failed-results", "track-switch", "same-track-order"]
             : [scenario]
         var failures = 0
         for item in scenarios {
@@ -251,6 +251,7 @@ struct S1DurableManualAdoptionContract {
         case "force-refresh-protected": try await forceRefreshProtectedSelectionContract()
         case "bilingual-auto-cache": try await bilingualAutomaticCacheContract()
         case "selection-read-fails": try await failedSelectionReadStopsSearch()
+        case "stored-selection-read-fails": try await failedStoredSelectionReadStopsReplacement()
         case "revoke-schema": try await revocationSchemaCompatibility()
         case "revoke-progress": try await previewProgressSession()
         case "revoke-selection": try await revocationSelectionContract()
@@ -383,6 +384,45 @@ struct S1DurableManualAdoptionContract {
             for _ in 0..<200 { if case .failed = session.state { break }; try await Task.sleep(nanoseconds: 5_000_000) }
             guard case .failed = session.state else { throw ContractFailure(description: "selection read failure must stop automatic search") }
             try check(await counter.value() == 0 && session.activeLyricsVersionID == nil, "cannot bypass unreadable persisted choice")
+        }
+    }
+
+    private static func failedStoredSelectionReadStopsReplacement() async throws {
+        try await withTemporaryRoot { root in
+            let track = makeTrack("unreadable-saved-version")
+            let identity = TrackIdentity(track: track)
+            let repo = makeRepository(root: root)
+            try await repo.prepare()
+            let old = makeCandidate(track: track, source: .local, confidence: 1, providerID: "saved-choice").makeDocument()
+            guard let versionID = try await repo.save(track: track, identity: identity, document: old).versionID else {
+                throw ContractFailure(description: "saved choice missing")
+            }
+            try await repo.adoptLyricsVersion(trackStableKey: identity.stableKey, lyricsVersionID: versionID)
+            // Leave the choice intact while making its original-text read fail.
+            // A read error must not be treated as a cache miss and replaced.
+            try installTrigger(databaseURL: repo.databaseURL, sql: "ALTER TABLE lyric_lines RENAME TO temporarily_unreadable_lines;")
+            let replacement = makeCandidate(track: track, source: .lrclib, confidence: 1, providerID: "unrequested-replacement")
+            let counter = LyricsProviderCallCounter()
+            let session = LyricsSessionController(providers: [CountingLyricsProvider(
+                name: "must not replace saved choice", counter: counter, result: .match(replacement.makeDocument())
+            )], repository: repo)
+            session.begin(track: track, identity: identity)
+            for _ in 0..<400 where session.isSearchInProgress { try await Task.sleep(nanoseconds: 5_000_000) }
+            guard case .failed = session.state else {
+                throw ContractFailure(description: "saved-version read failure displayed a replacement instead of preserving the choice")
+            }
+            try check(await counter.value() == 0 && session.activeLyricsVersionID == nil && session.lyrics.isEmpty,
+                "saved-version read failure must not dispatch a provider or adopt new lyrics")
+            try check(session.persistenceStatusMessage != nil, "saved-version read failure must remain visible")
+            try check(try preferredVersionID(databaseURL: repo.databaseURL, stableKey: identity.stableKey) == versionID,
+                "failed restore changed the persisted choice")
+
+            try installTrigger(databaseURL: repo.databaseURL, sql: "ALTER TABLE temporarily_unreadable_lines RENAME TO lyric_lines;")
+            session.begin(track: track, identity: identity)
+            for _ in 0..<400 where session.isSearchInProgress { try await Task.sleep(nanoseconds: 5_000_000) }
+            try check(session.activeLyricsVersionID == versionID && session.activeDocument?.providerSourceID == "saved-choice",
+                "retry after the read recovers must restore the original selected version")
+            try check(await counter.value() == 0, "recovered saved choice must not trigger another provider")
         }
     }
 

@@ -192,6 +192,7 @@ public enum LyricsSafeMatcher {
         }
 
         let metadataArtists = artistGroups(for: metadata)
+        if !metadata.verifiedSpotifyArtists.isEmpty { add("spotifyArtistsVerified", 0) }
         let candidateArtists = TrackTextNormalizer.artistTokens(candidate.artist)
         let candidatePrimary = TrackTextNormalizer.normalizeArtistToken(candidateArtists.primary)
         let metadataPrimaryReadingMatches = metadataArtists.contains {
@@ -615,7 +616,11 @@ public enum LyricsSafeMatcher {
     }
 
     private static func artistGroups(for metadata: TrackMetadata) -> [TrackTextNormalizer.ArtistTokens] {
-        var groups = [TrackTextNormalizer.artistTokens(metadata.track.artist)]
+        var groups: [TrackTextNormalizer.ArtistTokens] = []
+        if let primary = metadata.verifiedSpotifyArtists.first {
+            groups.append(.init(primary: primary, featured: Array(metadata.verifiedSpotifyArtists.dropFirst())))
+        }
+        groups.append(TrackTextNormalizer.artistTokens(metadata.track.artist))
         groups.append(contentsOf: metadata.aliases
             .filter { $0.field == .artist }
             .map { TrackTextNormalizer.artistTokens($0.value) })

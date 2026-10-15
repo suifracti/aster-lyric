@@ -8,6 +8,9 @@ public enum MenuBarLyricsState: Equatable, Sendable {
     case synchronized(current: String, next: String?)
     case unsynchronized(title: String)
     case noLyrics(title: String)
+    case noSelection(title: String)
+    case notSearched(title: String)
+    case candidates(title: String, count: Int)
     case failed(title: String)
 }
 
@@ -23,6 +26,8 @@ public struct MenuBarLyricsSnapshot: Equatable, Sendable {
     public let artworkURL: URL?
     /// Translation of the currently playing live line; never sourced from a search preview.
     public var currentTranslationText: String? = nil
+    /// Playback controls follow the current provider capability, not just retained metadata.
+    public var canControlPlayback: Bool = false
 }
 
 public enum MenuBarTextFormatter {
@@ -166,6 +171,15 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         }
     }
 
+    /// Explicitly return to the live song before opening its lyrics. Merely
+    /// opening the menu never changes a search preview or adopts a candidate.
+    public func openCurrentLyrics() {
+        if let playbackState, playbackState.hasLiveTrack, !playbackState.isMockPreviewMode {
+            playbackState.clearSearchPreview()
+        }
+        openMainWindow()
+    }
+
     public func openLibrary() {
         popover?.performClose(nil)
 
@@ -269,6 +283,12 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     }
 
     public static func deriveSnapshot(from state: PlaybackState) -> MenuBarLyricsSnapshot {
+        var snapshot = deriveLyricsSnapshot(from: state)
+        snapshot.canControlPlayback = state.canControlSpotify
+        return snapshot
+    }
+
+    private static func deriveLyricsSnapshot(from state: PlaybackState) -> MenuBarLyricsSnapshot {
         guard state.hasLiveTrack, !state.isMockPreviewMode else {
             return MenuBarLyricsSnapshot(
                 state: .idle,
@@ -320,7 +340,17 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 artworkURL: artworkURL
             )
 
-        case .noLyrics, .noSelection, .noMatch:
+        case .noSelection:
+            return emptyLyricsSnapshot(state: .noSelection(title: title), title: title,
+                                       artist: artist, isPlaying: isPlaying, artworkURL: artworkURL)
+
+        case .candidates(_, let candidates):
+            let candidateState: MenuBarLyricsState = candidates.isEmpty
+                ? .noLyrics(title: title) : .candidates(title: title, count: candidates.count)
+            return emptyLyricsSnapshot(state: candidateState, title: title,
+                                       artist: artist, isPlaying: isPlaying, artworkURL: artworkURL)
+
+        case .noLyrics, .noMatch:
             let displayTitle = title.isEmpty ? "Lyric Island" : title
             return MenuBarLyricsSnapshot(
                 state: .noLyrics(title: displayTitle),
@@ -380,17 +410,22 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 return snapshot
             } else if !isSync {
                 let displayTitle = title.isEmpty ? "Lyric Island" : title
-                return MenuBarLyricsSnapshot(
+                let firstLine = lines.first { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                var snapshot = MenuBarLyricsSnapshot(
                     state: .unsynchronized(title: displayTitle),
                     statusText: "♪ \(displayTitle)",
                     trackTitle: displayTitle,
                     artistName: artist,
-                    currentLineText: nil,
+                    currentLineText: firstLine?.originalText.trimmingCharacters(in: .whitespacesAndNewlines),
                     nextLineText: nil,
                     isPlaying: isPlaying,
                     hasLiveTrack: true,
                     artworkURL: artworkURL
                 )
+                let translation = state.preferences.showTranslation
+                    ? firstLine?.translationText?.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+                snapshot.currentTranslationText = translation?.isEmpty == true ? nil : translation
+                return snapshot
             } else {
                 let displayTitle = title.isEmpty ? "Lyric Island" : title
                 let nextLine: String? = lines.first?.originalText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -407,10 +442,10 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 )
             }
 
-        case .idle, .candidates, .mockPreview:
+        case .idle, .mockPreview:
             let displayTitle = title.isEmpty ? "Lyric Island" : title
             return MenuBarLyricsSnapshot(
-                state: .noLyrics(title: displayTitle),
+                state: .notSearched(title: displayTitle),
                 statusText: "♪ \(displayTitle)",
                 trackTitle: displayTitle,
                 artistName: artist,
@@ -421,5 +456,15 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 artworkURL: artworkURL
             )
         }
+    }
+
+    private static func emptyLyricsSnapshot(state: MenuBarLyricsState, title: String,
+                                            artist: String, isPlaying: Bool, artworkURL: URL?) -> MenuBarLyricsSnapshot {
+        let displayTitle = title.isEmpty ? "Lyric Island" : title
+        return MenuBarLyricsSnapshot(
+            state: state, statusText: "♪ \(displayTitle)", trackTitle: displayTitle,
+            artistName: artist, currentLineText: nil, nextLineText: nil,
+            isPlaying: isPlaying, hasLiveTrack: true, artworkURL: artworkURL
+        )
     }
 }

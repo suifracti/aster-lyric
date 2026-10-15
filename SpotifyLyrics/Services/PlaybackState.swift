@@ -177,11 +177,13 @@ public final class PlaybackState: ObservableObject {
         self.lyricsRepository = resolvedRepository
         let session = LyricsSessionController(
             providers: lyricsProviders,
-            repository: resolvedRepository
+            repository: resolvedRepository,
+            spotifyArtistResolver: lyricsProvider == nil ? .shared : nil
         )
         let previewSession = LyricsSessionController(
             providers: lyricsProviders,
-            repository: resolvedRepository
+            repository: resolvedRepository,
+            spotifyArtistResolver: lyricsProvider == nil ? .shared : nil
         )
         let translationRepository = (resolvedRepository as? any TranslationRepository)
             ?? UnavailableTranslationRepository()

@@ -21,7 +21,7 @@
 1. 打开 Obsidian 当前 Handoff 的**当前活动任务**；无法访问 Vault 时，不以旧 GitHub STATUS/Issue 代替，只执行用户当轮明确授权的狭窄部分，并说明障碍。
 2. 在实际工作树运行 `git status --short`、`git branch --show-current`、`git rev-parse HEAD`、`git fetch origin`。确认 `git merge-base --is-ancestor origin/main HEAD` 成功；失败或无法获取远端时，不从旧基线开工，先保全并核实。已有授权 dirty 必须保留，不能 reset/clean/stash 来通过检查。项目登记根目录不保证是活动源码：以当前用户/Handoff选定的工作树为准，旧树只保留。
 3. 依当前任务执行，保留输入SHA不变的验证；普通同步前检查 diff/敏感内容，完成后确认本地 HEAD 与 GitHub main 相等、没有遗漏 dirty。结果写回 Obsidian，附件上传已有 Drive；不能把测试、编译、原生体验及用户视觉认可混成一个 PASS。
-4. UI设计/SwiftUI代码由ChatGPT负责，Sol A只机械应用精确补丁。补丁必须锁定当前提交和目标文件SHA；不匹配就停止，不复制历史整文件覆盖。GitHub不会自动防止功能回退：影响旧功能时仍须保留并运行对应验证。
+4. UI分工以用户当前明确授权为准：2026-10-15 用户已授权当前执行者直接优化现有界面、增加样式与设置功能并使用子代理，覆盖此前仅机械应用补丁的限制。任务明确要求机械应用时，仍须核对补丁目标版本，不强制覆盖或自行改设计。GitHub不会自动防止功能回退：影响旧功能时仍须保留并运行对应验证。
 
 ## 本仓库其余说明
 

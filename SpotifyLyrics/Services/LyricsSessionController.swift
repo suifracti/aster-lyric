@@ -44,9 +44,10 @@ public final class LyricsSessionController: ObservableObject {
         providers: [LyricsProvider],
         name: String = "LyricsSearchManager",
         repository: (any LyricsRepository)? = nil,
-        recoveryCooldowns: [TimeInterval] = [2, 5]
+        recoveryCooldowns: [TimeInterval] = [2, 5],
+        spotifyArtistResolver: SpotifyTrackArtistResolver? = nil
     ) {
-        self.searchManager = LyricsSearchManager(providers: providers, name: name)
+        self.searchManager = LyricsSearchManager(providers: providers, name: name, spotifyArtistResolver: spotifyArtistResolver)
         self.repository = repository
         self.recoveryCooldowns = recoveryCooldowns.map { max(0, $0) }
     }
@@ -193,6 +194,15 @@ public final class LyricsSessionController: ObservableObject {
                     if retainsCurrentProjection {
                         if let self, self.activeIdentity == identity, self.revision == requestRevision {
                             self.persistenceStatusMessage = persistenceError
+                        }
+                        return
+                    }
+                    // A failed stored-version read is not a cache miss. Keep
+                    // automatic search from replacing a choice we could not load.
+                    if repositoryReady {
+                        if let self, self.activeIdentity == identity, self.revision == requestRevision {
+                            self.persistenceStatusMessage = persistenceError
+                            self.apply(.failed(.unknown("无法读取已存歌词，停止自动搜索以保护已有选择")), identity: identity, requestRevision: requestRevision)
                         }
                         return
                     }
