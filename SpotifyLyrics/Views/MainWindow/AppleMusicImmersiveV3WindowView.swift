@@ -1026,7 +1026,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                 }
             }
             .padding(16)
-            .frame(width: 300)
+            .frame(width: 300, height: 352)
         }
     }
 
@@ -3688,31 +3688,42 @@ private struct V3ThemeSelectorView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .onHover { inside in if inside { preview = style } }
+                    .onHover { inside in if inside && preview != style { preview = style } }
                     .help(style.detail)
                     .accessibilityIdentifier("v3.theme." + theme.rawValue)
                     .accessibilityAddTraits(settings.v3ArtworkPresentation.theme == theme ? .isSelected : [])
                 }
             }
-            if (preview ?? settings.v3ArtworkPresentation).theme == .ambient {
-                Text("环境光效果").font(.caption).foregroundStyle(.secondary)
-                HStack(spacing: 5) {
-                    ForEach(V3ArtworkPresentation.ambientVariants) { style in
-                        Button { choose(style) } label: {
-                            Text(style.variantTitle)
-                                .font(.system(size: 11, weight: .medium))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 9)
-                                .background(settings.v3ArtworkPresentation == style ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+            ZStack(alignment: .leading) {
+                if (preview ?? settings.v3ArtworkPresentation).theme == .ambient {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("环境光效果").font(.caption).foregroundStyle(.secondary)
+                        HStack(spacing: 5) {
+                            ForEach(V3ArtworkPresentation.ambientVariants) { style in
+                                Button { choose(style) } label: {
+                                    Text(style.variantTitle)
+                                        .font(.system(size: 11, weight: .medium))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 9)
+                                        .background(settings.v3ArtworkPresentation == style ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+                                }
+                                .buttonStyle(.plain)
+                                .onHover { inside in if inside && preview != style { preview = style } }
+                                .help(style.detail)
+                                .accessibilityIdentifier("v3.style." + style.rawValue)
+                                .accessibilityAddTraits(settings.v3ArtworkPresentation == style ? .isSelected : [])
+                            }
                         }
-                        .buttonStyle(.plain)
-                        .onHover { inside in if inside { preview = style } }
-                        .help(style.detail)
-                        .accessibilityIdentifier("v3.style." + style.rawValue)
-                        .accessibilityAddTraits(settings.v3ArtworkPresentation == style ? .isSelected : [])
                     }
+                } else {
+                    Text((preview ?? settings.v3ArtworkPresentation).detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+            .frame(height: 64)
         }
     }
 }
