@@ -3855,10 +3855,10 @@ private struct V3ThemeSelectorView: View {
         }
     }
 
-    private func choose(_ style: V3ArtworkPresentation) {
+    private func choose(_ style: V3ArtworkPresentation, closePanel: Bool = true) {
         settings.v3ArtworkPresentation = style
         preview = nil
-        onConfirm()
+        if closePanel { onConfirm() }
     }
 
     private func themeButton(_ theme: V3ArtworkTheme, height: CGFloat = 64) -> some View {
@@ -3908,7 +3908,7 @@ private struct V3ThemeSelectorView: View {
                         Text(displayedTheme.title + "方案").font(.caption).foregroundStyle(.secondary)
                         HStack(spacing: 5) {
                             ForEach(variants) { style in
-                                Button { choose(style) } label: {
+                                Button { choose(style, closePanel: false) } label: {
                                     Text(style.variantTitle)
                                         .font(.system(size: 11, weight: .medium))
                                         .frame(maxWidth: .infinity)
