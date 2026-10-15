@@ -285,6 +285,14 @@ public final class AppSettingsStore: ObservableObject {
         public static let v3ArtworkPosition = "v3.artworkPosition"
         public static let v3ArtworkSizeScale = "v3.artworkSizeScale"
         public static let v3ClassicBackdropSizeScale = "v3.classicBackdropSizeScale.v1"
+        public static let v3AmbientBackdropSizeScale = "v3.ambientBackdropScale.v1"
+        public static let v3GaussianBackdropSizeScale = "v3.gaussianBackdropScale.v1"
+        public static let v3ArtworkPositionClassic = "v3.artworkPosition.classic.v1"
+        public static let v3ArtworkSizeScaleClassic = "v3.artworkSizeScale.classic.v1"
+        public static let v3ArtworkPositionAmbient = "v3.artworkPosition.ambient.v1"
+        public static let v3ArtworkSizeScaleAmbient = "v3.artworkSizeScale.ambient.v1"
+        public static let v3ArtworkPositionStage = "v3.artworkPosition.stage.v1"
+        public static let v3ArtworkSizeScaleStage = "v3.artworkSizeScale.stage.v1"
         // The fourth presentation does not overwrite the existing three modes'
         // shared artwork position/size preferences.
         public static let v3ArtworkPositionFeathered = "v3.artworkPosition.feathered.v1"
@@ -585,17 +593,18 @@ public final class AppSettingsStore: ObservableObject {
                 defaults.set(presentation.rawValue, forKey: Key.v3EnlargedVariant)
             }
 
-            // The original three retain their shared keys. Every later style
-            // has its own keys, so visiting a new style cannot overwrite them.
+            // Every style has its own keys, with fallbacks to shared keys for migration.
             let previousPresentation = V3ArtworkPresentation(rawValue: oldValue) ?? .ambient
             let positionKey = Self.v3PositionDefaultsKey(for: presentation)
             if Self.v3PositionDefaultsKey(for: previousPresentation) != positionKey {
                 let scaleKey = Self.v3ScaleDefaultsKey(for: presentation)
                 let isNewComposition = presentation == .lyricsOnly || presentation == .albumPoster
                 let nextPosition = defaults.string(forKey: positionKey)
-                    ?? (isNewComposition ? "left" : defaults.string(forKey: Key.v3ArtworkPosition) ?? "left")
+                    ?? defaults.string(forKey: Key.v3ArtworkPosition)
+                    ?? (isNewComposition ? "left" : "left")
                 let nextScale = defaults.object(forKey: scaleKey) as? Double
-                    ?? (isNewComposition ? 1.0 : defaults.object(forKey: Key.v3ArtworkSizeScale) as? Double ?? 1.0)
+                    ?? defaults.object(forKey: Key.v3ArtworkSizeScale) as? Double
+                    ?? (isNewComposition ? 1.0 : 1.0)
                 if v3ArtworkPosition != nextPosition { v3ArtworkPosition = nextPosition }
                 if abs(v3ArtworkSizeScale - nextScale) > 0.001 { v3ArtworkSizeScale = nextScale }
             }
@@ -637,19 +646,46 @@ public final class AppSettingsStore: ObservableObject {
     public func v3PreviewPosition(for style: V3ArtworkPresentation) -> String {
         let isNewComposition = style == .lyricsOnly || style == .albumPoster
         return defaults.string(forKey: Self.v3PositionDefaultsKey(for: style))
-            ?? (isNewComposition ? "left" : defaults.string(forKey: Key.v3ArtworkPosition) ?? "left")
+            ?? defaults.string(forKey: Key.v3ArtworkPosition)
+            ?? (isNewComposition ? "left" : "left")
     }
 
     public func v3PreviewScale(for style: V3ArtworkPresentation) -> Double {
         let isNewComposition = style == .lyricsOnly || style == .albumPoster
         return defaults.object(forKey: Self.v3ScaleDefaultsKey(for: style)) as? Double
-            ?? (isNewComposition ? 1.0 : defaults.object(forKey: Key.v3ArtworkSizeScale) as? Double ?? 1.0)
+            ?? defaults.object(forKey: Key.v3ArtworkSizeScale) as? Double
+            ?? (isNewComposition ? 1.0 : 1.0)
     }
 
     public func v3PreviewBackdropScale(for style: V3ArtworkPresentation) -> Double {
-        if style == .classic { return v3ClassicBackdropSizeScale }
-        if style.theme == .enlarged { return v3ZoomBackdropSizeScale }
-        return v3PreviewScale(for: style)
+        switch style {
+        case .classic:
+            return v3ClassicBackdropSizeScale
+        case .ambient:
+            return v3AmbientBackdropSizeScale
+        case .classicGaussian:
+            return v3GaussianBackdropSizeScale
+        default:
+            return v3PreviewScale(for: style)
+        }
+    }
+
+    public func v3BackdropScale(for presentation: V3ArtworkPresentation) -> Double {
+        switch presentation {
+        case .classic: return v3ClassicBackdropSizeScale
+        case .ambient: return v3AmbientBackdropSizeScale
+        case .classicGaussian: return v3GaussianBackdropSizeScale
+        default: return v3ArtworkSizeScale
+        }
+    }
+
+    public func setV3BackdropScale(_ value: Double, for presentation: V3ArtworkPresentation) {
+        switch presentation {
+        case .classic: v3ClassicBackdropSizeScale = value
+        case .ambient: v3AmbientBackdropSizeScale = value
+        case .classicGaussian: v3GaussianBackdropSizeScale = value
+        default: v3ArtworkSizeScale = value
+        }
     }
 
     public func v3PreviewLyricsPosition(for style: V3ArtworkPresentation) -> String {
@@ -682,7 +718,9 @@ public final class AppSettingsStore: ObservableObject {
 
     private static func v3PositionDefaultsKey(for presentation: V3ArtworkPresentation) -> String {
         switch presentation {
-        case .ambient, .stage, .classic: return Key.v3ArtworkPosition
+        case .ambient: return Key.v3ArtworkPositionAmbient
+        case .stage: return Key.v3ArtworkPositionStage
+        case .classic: return Key.v3ArtworkPositionClassic
         case .classicGaussian: return Key.v3GaussianPosition
         case .ambientFeathered: return Key.v3ArtworkPositionFeathered
         case .lyricsOnly: return Key.v3ArtworkPositionLyricsOnly
@@ -692,7 +730,9 @@ public final class AppSettingsStore: ObservableObject {
 
     private static func v3ScaleDefaultsKey(for presentation: V3ArtworkPresentation) -> String {
         switch presentation {
-        case .ambient, .stage, .classic: return Key.v3ArtworkSizeScale
+        case .ambient: return Key.v3ArtworkSizeScaleAmbient
+        case .stage: return Key.v3ArtworkSizeScaleStage
+        case .classic: return Key.v3ArtworkSizeScaleClassic
         case .classicGaussian: return Key.v3GaussianArtworkScale
         case .ambientFeathered: return Key.v3ArtworkSizeScaleFeathered
         case .lyricsOnly: return Key.v3ArtworkSizeScaleLyricsOnly
@@ -720,6 +760,14 @@ public final class AppSettingsStore: ObservableObject {
 
     @Published public var v3ClassicBackdropSizeScale: Double {
         didSet { defaults.set(v3ClassicBackdropSizeScale, forKey: Key.v3ClassicBackdropSizeScale) }
+    }
+
+    @Published public var v3AmbientBackdropSizeScale: Double {
+        didSet { defaults.set(v3AmbientBackdropSizeScale, forKey: Key.v3AmbientBackdropSizeScale) }
+    }
+
+    @Published public var v3GaussianBackdropSizeScale: Double {
+        didSet { defaults.set(v3GaussianBackdropSizeScale, forKey: Key.v3GaussianBackdropSizeScale) }
     }
 
     @Published public var v3InstrumentalPureImmersion: Bool {
@@ -783,10 +831,22 @@ public final class AppSettingsStore: ObservableObject {
         self.v3ClassicBackdropSizeScale = classicBackdropScale
         let zoomScale = defaults.object(forKey: Key.v3ZoomBackdropSizeScale) as? Double ?? 1
         self.v3ZoomBackdropSizeScale = zoomScale.isFinite ? min(1.4, max(0.8, zoomScale)) : 1
-        // Capture the old appearance once. Otherwise a foreground edit made
-        // before the first background edit would also resize it after relaunch.
+        let storedAmbientBackdropScale = defaults.object(forKey: Key.v3AmbientBackdropSizeScale) as? Double
+        let ambientBackdropScale = storedAmbientBackdropScale
+            ?? (zoomScale.isFinite ? min(1.4, max(0.8, zoomScale)) : 1.12)
+        self.v3AmbientBackdropSizeScale = ambientBackdropScale
+        let storedGaussianBackdropScale = defaults.object(forKey: Key.v3GaussianBackdropSizeScale) as? Double
+        let gaussianBackdropScale = storedGaussianBackdropScale
+            ?? (zoomScale.isFinite ? min(1.4, max(0.8, zoomScale)) : 1.0)
+        self.v3GaussianBackdropSizeScale = gaussianBackdropScale
         if storedClassicBackdropScale == nil {
             defaults.set(classicBackdropScale, forKey: Key.v3ClassicBackdropSizeScale)
+        }
+        if storedAmbientBackdropScale == nil {
+            defaults.set(ambientBackdropScale, forKey: Key.v3AmbientBackdropSizeScale)
+        }
+        if storedGaussianBackdropScale == nil {
+            defaults.set(gaussianBackdropScale, forKey: Key.v3GaussianBackdropSizeScale)
         }
         self.v3InstrumentalPureImmersion = defaults.object(forKey: Key.v3InstrumentalPureImmersion) as? Bool ?? true
         let storedLayout = defaults.string(forKey: Key.mainWindowLayoutStyle)

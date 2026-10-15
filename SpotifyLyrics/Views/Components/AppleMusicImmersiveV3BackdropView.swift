@@ -131,23 +131,28 @@ struct AppleMusicImmersiveV3BackdropView: View {
         let luminanceBoost = palette.luminance > 0.5 ? (palette.luminance - 0.5) * 0.32 : 0.0
         let paletteVeil = min(0.38, baseVeil + luminanceBoost)
 
-        // Ambient needs its artwork colors visible; the lyric side has its
-        // own localized protection. Keep Classic's established veil intact.
-        if artworkPresentation == .ambientFeathered {
-            if reduceTransparency { return min(0.76, max(0.56, paletteVeil + 0.22)) }
-            if increaseContrast { return min(0.48, paletteVeil + 0.12) }
-            return min(0.10, paletteVeil * 0.26)
-        }
-
         if reduceTransparency {
-            return min(0.90, max(0.62, paletteVeil + 0.18))
+            return min(0.85, max(0.55, paletteVeil + 0.18))
         }
 
         if increaseContrast {
-            return min(0.88, paletteVeil + 0.14)
+            return min(0.75, paletteVeil + 0.14)
         }
 
-        return min(0.42, paletteVeil)
+        switch artworkPresentation {
+        case .ambientFeathered:
+            return min(0.10, paletteVeil * 0.26)
+        case .ambient:
+            return min(0.16, paletteVeil * 0.44)
+        case .classic:
+            return min(0.24, paletteVeil * 0.62)
+        case .classicGaussian:
+            return min(0.18, paletteVeil * 0.48)
+        case .stage:
+            return 0
+        default:
+            return min(0.42, paletteVeil)
+        }
     }
 
     private var artworkTransitionDuration: Double {
@@ -194,8 +199,9 @@ struct AppleMusicImmersiveV3BackdropView: View {
             return normalizedBlur * 4.0
         }
         // Crisp continuous linear mapping (0% = 0.0pt, 25% = 7.0pt, 60% = 16.8pt, 100% = 28.0pt)
-        // 0% is 100% clear artwork image, 100% maxes out at a soft 28pt blur instead of heavy mush
-        return normalizedBlur * 28.0
+        // For pure Gaussian mode, provide a smooth, creamy blur up to 42pt.
+        let maxBlur = artworkPresentation == .classicGaussian ? 42.0 : 28.0
+        return normalizedBlur * maxBlur
     }
 
     private var effectiveScreenBlurRadius: Double {
@@ -353,43 +359,39 @@ struct AppleMusicImmersiveV3BackdropView: View {
     private func ambientArtworkLayers(image: NSImage, ambientImage: NSImage?) -> some View {
         let style = presentationStyle
         let saturation = min(
-            1.3,
-            style.paletteSaturation * 1.18 + (increaseContrast ? 0.06 : 0)
+            1.35,
+            style.paletteSaturation * 1.22 + (increaseContrast ? 0.08 : 0)
         )
         let diffusionRadius = normalizedBlur * 48.0
 
-        // A luminance-clamped album field keeps very bright artwork legible
-        // without falling back to an unrelated black canvas.
+        // A rich album color field derived from dominant cover colors
         LinearGradient(
             colors: [
-                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.42),
-                ambientColor(palette.secondary, saturation: saturation * 0.90, maximumLuminance: 0.30),
-                Color(red: 0.055, green: 0.060, blue: 0.072)
+                ambientColor(palette.primary, saturation: saturation * 1.05, maximumLuminance: 0.52),
+                ambientColor(palette.secondary, saturation: saturation * 0.95, maximumLuminance: 0.40),
+                ambientColor(palette.glow, saturation: saturation * 0.70, maximumLuminance: 0.22)
             ],
             startPoint: coverLightCenter,
             endPoint: artworkPosition == "right" ? .topLeading : .bottomTrailing
         )
 
         // Retain album structure before applying the user-controlled diffusion.
-        // Keep image visibility independent of diffusion, including at 0%.
-        // The full-resolution snapshot avoids baked-in blur at the clear endpoint.
+        // Full opacity and vivid colors prevent grayish/muddy appearance.
         Group {
             if settings.v3AmbientBackgroundShowsCompleteArtwork {
                 GeometryReader { geometry in
                     let aspect = max(0.01, image.size.width / max(1, image.size.height))
                     let fitHeight = min(geometry.size.height, geometry.size.width / aspect)
-                    // Keep most of the cover visible, with at most a modest
-                    // crop. A diffuse continuation removes the hard fit bands.
                     let fillHeight = max(geometry.size.height, geometry.size.width / aspect)
-                    let height = min(fillHeight, fitHeight * 1.12) * artworkSizeScale
+                    let height = min(fillHeight, fitHeight * 1.15) * artworkSizeScale
                     ZStack {
                         Image(nsImage: image)
                             .resizable()
                             .scaledToFill()
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
-                            .blur(radius: 24 + diffusionRadius)
-                            .opacity(0.55)
+                            .blur(radius: 20 + diffusionRadius)
+                            .opacity(0.70)
                         Image(nsImage: image)
                             .resizable()
                             .interpolation(.high)
@@ -398,8 +400,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
                             .mask {
                                 LinearGradient(stops: [
                                     .init(color: .clear, location: 0),
-                                    .init(color: .white, location: 0.06),
-                                    .init(color: .white, location: 0.94),
+                                    .init(color: .white, location: 0.05),
+                                    .init(color: .white, location: 0.95),
                                     .init(color: .clear, location: 1)
                                 ], startPoint: .leading, endPoint: .trailing)
                                 .mask(LinearGradient(stops: [
@@ -423,19 +425,19 @@ struct AppleMusicImmersiveV3BackdropView: View {
             }
         }
         .saturation(saturation)
-        .opacity(0.56)
+        .opacity(0.85)
 
         RadialGradient(
             colors: [
-                ambientColor(palette.glow, saturation: saturation, maximumLuminance: 0.58)
-                    .opacity(0.34),
-                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.40)
-                    .opacity(0.12),
+                ambientColor(palette.glow, saturation: saturation, maximumLuminance: 0.62)
+                    .opacity(0.32),
+                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.44)
+                    .opacity(0.14),
                 .clear
             ],
             center: coverLightCenter,
-            startRadius: 18,
-            endRadius: 680 + normalizedBlur * 220
+            startRadius: 20,
+            endRadius: 750 + normalizedBlur * 240
         )
         .blendMode(.screen)
 
@@ -444,11 +446,11 @@ struct AppleMusicImmersiveV3BackdropView: View {
         RadialGradient(
             colors: [
                 .clear,
-                Color.black.opacity(min(0.36, style.vignetteIntensity * 0.72))
+                Color.black.opacity(min(0.20, style.vignetteIntensity * 0.40))
             ],
             center: coverLightCenter,
-            startRadius: 180,
-            endRadius: 980
+            startRadius: 220,
+            endRadius: 1050
         )
 
         if let noiseImage {
@@ -468,21 +470,30 @@ struct AppleMusicImmersiveV3BackdropView: View {
         )
         let diffusionRadius = normalizedBlur * 56.0
 
-        // A luminance-clamped album field keeps very bright artwork legible
-        // without falling back to an unrelated black canvas.
         LinearGradient(
             colors: [
-                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.46),
-                ambientColor(palette.secondary, saturation: saturation * 0.90, maximumLuminance: 0.34),
-                Color(red: 0.085, green: 0.090, blue: 0.110)
+                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.50),
+                ambientColor(palette.secondary, saturation: saturation * 0.95, maximumLuminance: 0.38),
+                ambientColor(palette.glow, saturation: saturation * 0.70, maximumLuminance: 0.22)
             ],
             startPoint: coverLightCenter,
             endPoint: artworkPosition == "right" ? .topLeading : .bottomTrailing
         )
 
-        // Show the complete cover as a softly feathered source of ambient
-        // light.  No scaled-to-fill crop or hard square image boundary:
-        // 0% retains its detail, while 100% becomes an album-colored wash.
+        // Ambient continuation: wide-spread soft wash that fills the window
+        // canvas so wide screens never have an empty, dark void on the right.
+        GeometryReader { canvas in
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: canvas.size.width, height: canvas.size.height)
+                .clipped()
+                .blur(radius: 36 + diffusionRadius)
+                .saturation(saturation * 0.9)
+                .opacity(0.38)
+        }
+
+        // Show the complete cover as a softly feathered source of ambient light.
         GeometryReader { canvas in
             let side = min(canvas.size.height * 1.02, canvas.size.width * 0.86)
             let imageX: CGFloat = artworkPosition == "right" ? 0.56
@@ -495,7 +506,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 .frame(width: side, height: side)
                 .blur(radius: diffusionRadius)
                 .saturation(saturation)
-                .opacity(palette.luminance > 0.58 ? 0.66 : 0.82)
+                .opacity(palette.luminance > 0.58 ? 0.72 : 0.86)
                 .mask(
                     RadialGradient(
                         stops: [
@@ -515,15 +526,15 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
         RadialGradient(
             colors: [
-                ambientColor(palette.glow, saturation: saturation, maximumLuminance: 0.52)
-                    .opacity(0.28),
-                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.40)
-                    .opacity(0.13),
+                ambientColor(palette.glow, saturation: saturation, maximumLuminance: 0.58)
+                    .opacity(0.36),
+                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.44)
+                    .opacity(0.18),
                 .clear
             ],
             center: coverLightCenter,
-            startRadius: 18,
-            endRadius: 680 + normalizedBlur * 220
+            startRadius: 20,
+            endRadius: 850 + normalizedBlur * 280
         )
         .blendMode(.screen)
 
@@ -532,11 +543,11 @@ struct AppleMusicImmersiveV3BackdropView: View {
         RadialGradient(
             colors: [
                 .clear,
-                Color.black.opacity(min(0.20, style.vignetteIntensity * 0.46))
+                Color.black.opacity(min(0.16, style.vignetteIntensity * 0.35))
             ],
             center: coverLightCenter,
-            startRadius: 180,
-            endRadius: 980
+            startRadius: 220,
+            endRadius: 1050
         )
 
         if let noiseImage {
@@ -588,7 +599,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 .interpolation(.high)
                 .scaledToFill()
                 .frame(width: geometry.size.width, height: geometry.size.height)
-                .scaleEffect(scale)
+                .scaleEffect(scale * 1.04)
                 .offset(x: offset)
                 .blur(radius: effectiveBlurRadius)
         }
@@ -604,45 +615,46 @@ struct AppleMusicImmersiveV3BackdropView: View {
         )
 
         // complete artwork plane scaledToFit()
-        // Layer 0: Static Album Ambient Base (Dark-neutral album color transition, 100% independent of Blur slider)
+        // Layer 0: Static Album Ambient Base with vibrant album color foundation
         LinearGradient(
             colors: [
-                color(palette.primary, saturation: saturation * 0.35).opacity(0.80),
-                color(palette.secondary, saturation: saturation * 0.25).opacity(0.60)
+                color(palette.primary, saturation: saturation * 0.75).opacity(0.85),
+                color(palette.secondary, saturation: saturation * 0.60).opacity(0.70),
+                color(palette.glow, saturation: saturation * 0.50).opacity(0.40)
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
 
-        // Layer 1: Restrained Cover Ambient Light Source (Dynamic anchor emitting from physical album cover)
+        // Layer 1: Restrained Cover Ambient Light Source emitting naturally from cover center
         ZStack {
             color(palette.primary, saturation: saturation)
                 .opacity(0.85)
 
             RadialGradient(
                 colors: [
-                    color(palette.primary, saturation: saturation * 1.15).opacity(0.14),
+                    color(palette.primary, saturation: saturation * 1.25).opacity(0.26),
                     .clear
                 ],
                 center: coverLightCenter,
                 startRadius: 40,
-                endRadius: 900
+                endRadius: 1100
             )
 
             RadialGradient(
                 colors: [
-                    color(palette.glow, saturation: saturation * 1.10).opacity(0.08),
+                    color(palette.glow, saturation: saturation * 1.20).opacity(0.18),
                     .clear
                 ],
                 center: coverLightCenter,
                 startRadius: 20,
-                endRadius: 750
+                endRadius: 900
             )
         }
-        .opacity(0.35 + 0.65 * normalizedBlur)
+        .opacity(0.45 + 0.55 * normalizedBlur)
 
-        // Layer 2: Main scaled cover substrate. Unlike the old implementation,
-        // both the full 80–140% range and crop position now affect this image.
+        // Layer 2: Main scaled cover substrate with smooth continuous background extension.
+        // Both the full 80–140% range and crop position now affect this image.
         GeometryReader { geometry in
             let scale = min(1.4, max(0.8, artworkSizeScale))
             let mainSubstrateImage = Image(nsImage: image)
@@ -660,11 +672,11 @@ struct AppleMusicImmersiveV3BackdropView: View {
                         LinearGradient(
                             stops: [
                                 .init(color: .black, location: 0.00),
-                                .init(color: .black, location: 0.28),
-                                .init(color: .black.opacity(0.85), location: 0.45),
-                                .init(color: .black.opacity(0.40), location: 0.62),
-                                .init(color: .black.opacity(0.12), location: 0.78),
-                                .init(color: .clear, location: 0.92)
+                                .init(color: .black, location: 0.35),
+                                .init(color: .black.opacity(0.88), location: 0.55),
+                                .init(color: .black.opacity(0.65), location: 0.72),
+                                .init(color: .black.opacity(0.42), location: 0.88),
+                                .init(color: .black.opacity(0.24), location: 1.00)
                             ],
                             startPoint: .leading,
                             endPoint: .trailing
@@ -688,7 +700,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                     .offset(x: classicArtworkOffset(for: geometry.size.width))
                     .blur(radius: effectiveScreenBlurRadius)
                     .blendMode(.screen)
-                    .opacity(0.35 * style.textureIntensity * normalizedBlur)
+                    .opacity(0.40 * style.textureIntensity * normalizedBlur)
             }
         }
 
@@ -696,11 +708,11 @@ struct AppleMusicImmersiveV3BackdropView: View {
         LinearGradient(
             colors: [
                 color(palette.primary, saturation: saturation)
-                    .opacity(min(1, 0.28 * style.paletteOpacity)),
+                    .opacity(min(1, 0.34 * style.paletteOpacity)),
                 color(palette.secondary, saturation: saturation)
-                    .opacity(min(1, 0.22 * style.paletteOpacity)),
+                    .opacity(min(1, 0.26 * style.paletteOpacity)),
                 color(palette.glow, saturation: saturation)
-                    .opacity(min(1, 0.18 * style.paletteOpacity))
+                    .opacity(min(1, 0.22 * style.paletteOpacity))
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -719,15 +731,15 @@ struct AppleMusicImmersiveV3BackdropView: View {
             endPoint: .trailing
         )
 
-        // Layer 6: Edge Vignette Darkening
+        // Layer 6: Edge Vignette Darkening (restrained to avoid harsh dark borders)
         RadialGradient(
             colors: [
                 .clear,
-                Color.black.opacity(min(0.35, style.vignetteIntensity * 0.65))
+                Color.black.opacity(min(0.24, style.vignetteIntensity * 0.45))
             ],
             center: .center,
-            startRadius: 160,
-            endRadius: 950
+            startRadius: 180,
+            endRadius: 1050
         )
 
         // Procedural Grain Noise Overlay (防断层极轻微感)
@@ -922,6 +934,7 @@ public actor AppleMusicImmersiveV3BackdropCache {
         // but retain enough resolution for the actual artwork plane.
         let reducedArtwork = thumbnailData(from: artworkData, maxPixel: 1280)
         let ambientArtwork = thumbnailData(from: artworkData, maxPixel: 384)
+        // Baseline low-frequency derivative: thumbnailData(from: artworkData, maxPixel: 48)
         let palette = BackdropPalette.from(imageData: reducedArtwork)
         let noise = makeNoiseData(seed: seed)
         return AppleMusicImmersiveV3BackdropSnapshot(

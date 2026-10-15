@@ -618,7 +618,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             artworkScale: foregroundArtworkScale
         )
         let regime = V3ResponsiveGeometry.layoutRegime(canvasSize: geometry.size)
-        let position = compositionArtworkPosition
+        let position = compositionArtworkPosition.isEmpty ? settings.v3ArtworkPosition : compositionArtworkPosition
         let trackAlignment: HorizontalAlignment = position == "center" ? .center : .leading
         let isWide = regime == .wide
         let isCompact = regime == .compact
@@ -926,8 +926,9 @@ struct AppleMusicImmersiveV3WindowView: View {
                     titleSize: min(compact ? 26 : 30, max(compact ? 18 : 22, coverSize * 0.075)),
                     alignment: alignment, progressDensity: progressDensity
                 )
-                .padding(14)
-                .background(V3PlaybackSurface())
+                .padding(.horizontal, compact ? 14 : 16)
+                .padding(.vertical, compact ? 12 : 14)
+                .background(V3PlaybackSurface(cornerRadius: 18))
                 .modifier(playbackVisibility)
             } else {
                 Spacer(minLength: 0)
@@ -949,10 +950,10 @@ struct AppleMusicImmersiveV3WindowView: View {
                             : nil
                     )
                 }
-                .padding(.horizontal, compact ? 14 : 18)
-                .padding(.vertical, compact ? 12 : 16)
+                .padding(.horizontal, compact ? 14 : 16)
+                .padding(.vertical, compact ? 12 : 14)
                 .frame(maxWidth: width, alignment: alignment == .center ? .center : .leading)
-                .background(V3PlaybackSurface())
+                .background(V3PlaybackSurface(cornerRadius: 18))
                 .modifier(playbackVisibility)
             }
         }
@@ -1412,7 +1413,9 @@ struct AppleMusicImmersiveV3WindowView: View {
         }
         .buttonStyle(QuietToolbarButtonStyle())
         .padding(5)
-        .background(Color.black.opacity(0.28), in: Capsule())
+        .background(.regularMaterial.opacity(0.78), in: Capsule())
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.16), lineWidth: 0.7))
+        .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 4)
         .onChange(of: activeToolbarPopover) { _, panel in
             if panel != .appearance { hoveredStyle = nil }
             if panel != .translation { hoveredAIReadingControls = nil }
@@ -1948,7 +1951,7 @@ private struct AppleMusicImmersiveV3TransportControls: View {
     let progressMaxWidth: CGFloat?
 
     var body: some View {
-        VStack(alignment: alignment, spacing: 4) {
+        VStack(alignment: alignment, spacing: 5) {
             AppleMusicImmersiveV3PlaybackProgress(
                 state: state,
                 density: progressDensity,
@@ -1960,13 +1963,13 @@ private struct AppleMusicImmersiveV3TransportControls: View {
                 Spacer()
                 Text(formatTime(state.currentTrack.duration))
             }
-            .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
-            .foregroundStyle(.white.opacity(0.72))
+            .font(.system(size: 10.5, weight: .medium, design: .rounded).monospacedDigit())
+            .foregroundStyle(.white.opacity(0.68))
             .frame(maxWidth: progressMaxWidth ?? .infinity)
             .padding(.horizontal, 2)
 
             V3PlaybackButtons(state: state)
-            .padding(.top, 4)
+                .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: alignment == .center ? .center : .leading)
     }
@@ -1998,9 +2001,20 @@ private struct V3TransportClockLabel: View {
 /// One shared surface keeps the player legible over detailed artwork without
 /// turning every individual action into a separate floating object.
 private struct V3PlaybackSurface: View {
+    var cornerRadius: CGFloat = 18
+
     var body: some View {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .fill(Color.black.opacity(0.24))
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(.ultraThinMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.black.opacity(0.12))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+            )
+            .shadow(color: Color.black.opacity(0.12), radius: 14, y: 5)
     }
 }
 
@@ -2076,14 +2090,31 @@ private struct V3TransportIconButton: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
 
+    private var restingFillOpacity: Double {
+        enabled ? (prominent ? 0.12 : 0.055) : 0.025
+    }
+
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: prominent ? 22 : 16, weight: .semibold))
-                .foregroundStyle(.white.opacity(enabled ? (prominent ? 1 : 0.86) : 0.35))
-                .frame(width: 44, height: 44)
-                .opacity(isHovered && enabled ? 1 : 0.88)
-                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .font(.system(size: prominent ? 20 : 15, weight: .semibold))
+                .foregroundStyle(.white.opacity(enabled ? (prominent ? 1.0 : 0.88) : 0.35))
+                .frame(width: prominent ? 40 : 34, height: prominent ? 40 : 34)
+                .background {
+                    Circle()
+                        .fill(Color.white.opacity(restingFillOpacity))
+
+                    if isHovered && enabled {
+                        Circle()
+                            .fill(.thinMaterial)
+                            .overlay(
+                                Circle()
+                                    .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.8)
+                            )
+                    }
+                }
+                .background(.thinMaterial, in: Circle())
+                .contentShape(Circle())
         }
         .buttonStyle(V3BounceButtonStyle())
         .disabled(!enabled)
@@ -4098,16 +4129,13 @@ private struct V3VisualTuningPopoverView: View {
                             Text("背景封面缩放")
                                 .font(.system(size: 12, weight: .medium))
                             Spacer()
-                            Text("\(Int(((settings.v3ArtworkPresentation.theme == .enlarged ? settings.v3ZoomBackdropSizeScale : settings.v3ClassicBackdropSizeScale) * 100).rounded()))%")
+                            Text("\(Int((settings.v3BackdropScale(for: settings.v3ArtworkPresentation) * 100).rounded()))%")
                                 .font(.system(size: 11, weight: .bold).monospacedDigit())
                                 .foregroundStyle(.secondary)
                         }
                         Slider(value: Binding(
-                            get: { settings.v3ArtworkPresentation.theme == .enlarged ? settings.v3ZoomBackdropSizeScale : settings.v3ClassicBackdropSizeScale },
-                            set: { value in
-                                if settings.v3ArtworkPresentation.theme == .enlarged { settings.v3ZoomBackdropSizeScale = value }
-                                else { settings.v3ClassicBackdropSizeScale = value }
-                            }
+                            get: { settings.v3BackdropScale(for: settings.v3ArtworkPresentation) },
+                            set: { settings.setV3BackdropScale($0, for: settings.v3ArtworkPresentation) }
                         ), in: 0.8...1.4, step: 0.05)
                             .accessibilityLabel("背景封面缩放")
                             .accessibilityIdentifier("v3.classic.backgroundScale")
