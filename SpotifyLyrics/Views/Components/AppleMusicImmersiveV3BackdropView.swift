@@ -194,21 +194,28 @@ struct AppleMusicImmersiveV3BackdropView: View {
         max(0, min(100, backdropBlurRadius)) / 100.0
     }
 
+    /// Non-linear perceptual blur response (power curve ~1.35) gives finer precision
+    /// in the lower range (retaining artwork sharpness/legibility) while ensuring distinct,
+    /// noticeable visual progression between 60%, 80%, and 100%.
+    private var perceptualBlur: Double {
+        pow(normalizedBlur, 1.35)
+    }
+
     private var effectiveBlurRadius: Double {
         if settings.v3InstrumentalPureImmersion && isInstrumental {
-            return normalizedBlur * 4.0
+            return perceptualBlur * 4.0
         }
-        // Crisp continuous linear mapping (0% = 0.0pt, 25% = 7.0pt, 60% = 16.8pt, 100% = 28.0pt)
-        // For pure Gaussian mode, provide a smooth, creamy blur up to 42pt.
-        let maxBlur = artworkPresentation == .classicGaussian ? 42.0 : 28.0
-        return normalizedBlur * maxBlur
+        // Crisp non-linear mapping (0% = 0.0pt, 25% = 5.9pt, 60% = 19.1pt, 80% = 28.1pt, 100% = 38.0pt)
+        // For pure Gaussian mode, provide a smooth, creamy blur up to 54pt.
+        let maxBlur = artworkPresentation == .classicGaussian ? 54.0 : 38.0
+        return perceptualBlur * maxBlur
     }
 
     private var effectiveScreenBlurRadius: Double {
         if settings.v3InstrumentalPureImmersion && isInstrumental {
-            return normalizedBlur * 1.2
+            return perceptualBlur * 1.2
         }
-        return normalizedBlur * 14.0
+        return perceptualBlur * 16.0
     }
 
     private var coverLightCenter: UnitPoint {
@@ -244,7 +251,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                     .resizable()
                     .scaledToFill()
                     .frame(width: canvas.size.width, height: canvas.size.height)
-                    .blur(radius: 18 + normalizedBlur * 46)
+                    .blur(radius: 18 + perceptualBlur * 46)
                     .saturation(0.65)
                     .opacity(reduceTransparency ? 0.08 : 0.20)
             }
@@ -265,12 +272,12 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            .opacity(reduceTransparency ? 0.36 : 0.64 - normalizedBlur * 0.20)
+            .opacity(reduceTransparency ? 0.36 : 0.64 - perceptualBlur * 0.20)
             RadialGradient(
                 colors: [ambientColor(palette.glow, saturation: 0.40, maximumLuminance: 0.34).opacity(0.16), .clear],
                 center: coverLightCenter,
                 startRadius: 20,
-                endRadius: 380 + normalizedBlur * 360
+                endRadius: 380 + perceptualBlur * 360
             )
         }
     }
@@ -328,7 +335,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             ZStack {
                 reflected
                 reflected
-                    .blur(radius: 18 + normalizedBlur * 42)
+                    .blur(radius: 18 + perceptualBlur * 42)
                     .mask(LinearGradient(stops: [
                         .init(color: .white, location: 0),
                         .init(color: .white, location: 0.55),
@@ -362,7 +369,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             1.35,
             style.paletteSaturation * 1.22 + (increaseContrast ? 0.08 : 0)
         )
-        let diffusionRadius = normalizedBlur * 48.0
+        let diffusionRadius = perceptualBlur * 58.0
 
         // A rich album color field derived from dominant cover colors
         LinearGradient(
@@ -384,14 +391,16 @@ struct AppleMusicImmersiveV3BackdropView: View {
                     let fitHeight = min(geometry.size.height, geometry.size.width / aspect)
                     let fillHeight = max(geometry.size.height, geometry.size.width / aspect)
                     let height = min(fillHeight, fitHeight * 1.15) * artworkSizeScale
+                    let backgroundFillBlur = diffusionRadius * 1.25
+                    let backgroundFillOpacity = 0.70 * min(1.0, 0.35 + perceptualBlur * 0.65)
                     ZStack {
                         Image(nsImage: image)
                             .resizable()
                             .scaledToFill()
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
-                            .blur(radius: 20 + diffusionRadius)
-                            .opacity(0.70)
+                            .blur(radius: backgroundFillBlur)
+                            .opacity(backgroundFillOpacity)
                         Image(nsImage: image)
                             .resizable()
                             .interpolation(.high)
@@ -437,7 +446,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             ],
             center: coverLightCenter,
             startRadius: 20,
-            endRadius: 750 + normalizedBlur * 240
+            endRadius: 750 + perceptualBlur * 240
         )
         .blendMode(.screen)
 
@@ -468,7 +477,9 @@ struct AppleMusicImmersiveV3BackdropView: View {
             1.3,
             style.paletteSaturation * 1.18 + (increaseContrast ? 0.06 : 0)
         )
-        let diffusionRadius = normalizedBlur * 56.0
+        let diffusionRadius = perceptualBlur * 64.0
+        let washBlur = diffusionRadius * 1.30
+        let washOpacity = 0.38 * min(1.0, perceptualBlur * 1.6)
 
         LinearGradient(
             colors: [
@@ -488,9 +499,9 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 .scaledToFill()
                 .frame(width: canvas.size.width, height: canvas.size.height)
                 .clipped()
-                .blur(radius: 36 + diffusionRadius)
+                .blur(radius: washBlur)
                 .saturation(saturation * 0.9)
-                .opacity(0.38)
+                .opacity(washOpacity)
         }
 
         // Show the complete cover as a softly feathered source of ambient light.
@@ -534,7 +545,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             ],
             center: coverLightCenter,
             startRadius: 20,
-            endRadius: 850 + normalizedBlur * 280
+            endRadius: 850 + perceptualBlur * 280
         )
         .blendMode(.screen)
 
@@ -651,7 +662,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 endRadius: 900
             )
         }
-        .opacity(0.45 + 0.55 * normalizedBlur)
+        .opacity(0.45 + 0.55 * perceptualBlur)
 
         // Layer 2: Main scaled cover substrate with smooth continuous background extension.
         // Both the full 80–140% range and crop position now affect this image.
@@ -700,7 +711,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                     .offset(x: classicArtworkOffset(for: geometry.size.width))
                     .blur(radius: effectiveScreenBlurRadius)
                     .blendMode(.screen)
-                    .opacity(0.40 * style.textureIntensity * normalizedBlur)
+                    .opacity(0.40 * style.textureIntensity * perceptualBlur)
             }
         }
 
