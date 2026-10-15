@@ -135,6 +135,34 @@ public enum MenuBarTextFormatter {
     }
 }
 
+/// Status-item controls must receive the first click even while the app is inactive.
+@MainActor
+final class MenuBarPopoverHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+@MainActor
+final class MenuBarPopoverHostingController<Content: View>: NSHostingController<Content> {
+    override init(rootView: Content) {
+        super.init(rootView: rootView)
+        view = MenuBarPopoverHostingView(rootView: rootView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("Use init(rootView:)") }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        clearOpeningFocus()
+    }
+
+    /// Avoid selecting the first action just by opening the popover. Tab can
+    /// still move keyboard focus to the controls in their normal order.
+    func clearOpeningFocus() {
+        view.window?.makeFirstResponder(nil)
+    }
+}
+
 @MainActor
 public final class MenuBarLyricsController: NSObject, ObservableObject {
     public static let shared = MenuBarLyricsController(settings: .shared)
@@ -348,7 +376,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         let pop = NSPopover()
         pop.behavior = .transient
         pop.animates = true
-        pop.contentViewController = NSHostingController(
+        pop.contentViewController = MenuBarPopoverHostingController(
             rootView: MenuBarLyricsPopoverView(controller: self)
         )
         self.popover = pop
@@ -365,6 +393,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             fullLyricsSnapshot = nil
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
+            (popover.contentViewController as? MenuBarPopoverHostingController<MenuBarLyricsPopoverView>)?.clearOpeningFocus()
         }
     }
 

@@ -5,6 +5,8 @@ import subprocess
 import tempfile
 root = Path(__file__).resolve().parents[1]
 store = (root/'SpotifyLyrics/Settings/AppSettingsStore.swift').read_text()
+controller_source = (root/'SpotifyLyrics/Windows/MenuBarLyricsController.swift').read_text()
+hosting_type = re.search(r'pop\.contentViewController = (\w+)\(', controller_source).group(1)
 # Extract the actual persistence boundary for this setting, avoiding unrelated stores.
 keys = re.findall(r'public static let menuBarLyrics\w+ = [^\n]+', store)
 assert len(keys) == 7, 'Missing persistent menu-bar lyrics settings'
@@ -21,6 +23,7 @@ public final class AppSettingsStore: ObservableObject {
 }
 '''.replace('KEY', '\n'.join(keys)).replace('PROP', '\n'.join(properties)).replace('INITIAL', initial)
 host = '''import AppKit
+import SwiftUI
 import Combine
 @main struct Contract {
  @MainActor static func main() {
@@ -30,6 +33,21 @@ import Combine
   let settings = AppSettingsStore(defaults: defaults)
   precondition(!settings.menuBarLyricsEnabled)
   let controller = MenuBarLyricsController(settings: settings)
+  let application = NSApplication.shared
+  application.setActivationPolicy(.prohibited)
+  let nativeHost = HOSTING_TYPE(rootView: MenuBarLyricsPopoverView(controller: controller))
+  let nativeWindow = NSWindow(contentViewController: nativeHost)
+  nativeWindow.isReleasedWhenClosed = false
+  nativeHost.view.layoutSubtreeIfNeeded()
+  precondition(nativeHost.view.fittingSize.width >= 300 && nativeHost.view.fittingSize.height > 100, "the first-click host must preserve the popover layout")
+  precondition(nativeHost.view.acceptsFirstMouse(for: nil), "a menu-bar control must accept its first click even when the app is inactive")
+  let keyboardField = NSTextField(string: "synthetic focus target")
+  nativeHost.view.addSubview(keyboardField)
+  precondition(nativeWindow.makeFirstResponder(keyboardField))
+  nativeHost.viewDidAppear()
+  precondition(nativeWindow.firstResponder === nativeWindow, "opening the popover must not automatically focus its first action")
+  precondition(nativeWindow.makeFirstResponder(keyboardField), "keyboard controls must remain focusable after opening")
+  nativeWindow.makeFirstResponder(nil)
   precondition(controller.statusItemTitle.isEmpty)
   let unchangedSnapshot = controller.currentSnapshot
   controller.menuBarLyricsEnabled = true
@@ -109,10 +127,11 @@ import Combine
   let restored = AppSettingsStore(defaults: defaults)
   precondition(restored.menuBarLyricsShowsFullLine && !restored.menuBarLyricsShowsOriginal && restored.menuBarLyricsShowsTranslation && restored.menuBarLyricsShowsKana && restored.menuBarLyricsShowsRomaji && restored.menuBarLyricsFontSize == 16)
   withExtendedLifetime(observation) {}
-  print("PASS menu-bar default, persistence, immediate toggle, unchanged snapshot, playing/paused icon policy")
+  print("PASS menu-bar first-click, opening focus, keyboard focus, layout, persistence, immediate toggle and content layers")
  }
 }
 '''
+host = host.replace('HOSTING_TYPE', hosting_type)
 with tempfile.TemporaryDirectory(prefix='lyrics-menu-toggle-') as temporary:
  t = Path(temporary)
  (t/'settings.swift').write_text(settings)
