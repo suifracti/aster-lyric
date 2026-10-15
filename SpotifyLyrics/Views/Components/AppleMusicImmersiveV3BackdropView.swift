@@ -227,6 +227,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
             stageArtworkLayers(image: image, ambientImage: ambientImage)
         case .classic:
             legacyArtworkLayers(image: image)
+        case .classicGaussian:
+            gaussianArtworkLayers(image: image)
         case .lyricsOnly:
             quietArtworkColors
         case .albumPoster:
@@ -379,7 +381,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                     // Keep most of the cover visible, with at most a modest
                     // crop. A diffuse continuation removes the hard fit bands.
                     let fillHeight = max(geometry.size.height, geometry.size.width / aspect)
-                    let height = min(fillHeight, fitHeight * 1.12)
+                    let height = min(fillHeight, fitHeight * 1.12) * artworkSizeScale
                     ZStack {
                         Image(nsImage: image)
                             .resizable()
@@ -416,7 +418,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                     .resizable()
                     .interpolation(.high)
                     .scaledToFill()
-                    .scaleEffect(1.12)
+                    .scaleEffect(1.12 * artworkSizeScale)
                     .blur(radius: diffusionRadius, opaque: true)
             }
         }
@@ -570,6 +572,22 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 endPoint: .trailing
             )
         }
+    }
+
+    /// Independent enlarged-cover option. The existing light-bloom renderer
+    /// is retained above as an ambient variant rather than renamed Gaussian.
+    private func gaussianArtworkLayers(image: NSImage) -> some View {
+        GeometryReader { geometry in
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFill()
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .scaleEffect(1.12 * min(1.4, max(0.8, artworkSizeScale)))
+                .offset(x: classicArtworkOffset(for: geometry.size.width))
+                .blur(radius: effectiveBlurRadius)
+        }
+        .clipped()
     }
 
     @ViewBuilder

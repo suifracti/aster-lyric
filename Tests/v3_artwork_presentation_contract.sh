@@ -10,6 +10,7 @@ for stable_id in \
   'v3ArtworkPresentation.ambient.v1' \
   'v3ArtworkPresentation.stage.v1' \
   'v3ArtworkPresentation.classic.v1' \
+  'v3ArtworkPresentation.gaussian.v1' \
   'v3ArtworkPresentation.feathered.v1' \
   'v3ArtworkPresentation.lyricsOnly.v1' \
   'v3ArtworkPresentation.albumPoster.v1'; do
@@ -36,10 +37,8 @@ grep -q 'v3BackdropBlurFeathered' "$SETTINGS" || {
   exit 1
 }
 
-grep -q 'LazyVGrid' "$WINDOW"
-grep -q 'settings.v3ArtworkPresentation = presentation' "$WINDOW"
 grep -q 'settings.v3ArtworkPresentation = style' "$WINDOW"
-grep -q 'V3ArtworkPresentation.allCases' "$WINDOW"
+grep -q 'V3ThemeSelectorView' "$WINDOW"
 grep -q 'showsForegroundArtwork' "$WINDOW"
 grep -q 'blurControlTitle' "$SETTINGS" || {
   echo "V3 presentations must expose mode-specific blur semantics" >&2
@@ -62,4 +61,39 @@ grep -q 'classicArtworkOffset' "$BACKDROP" || {
   exit 1
 }
 
+python3 - "$ROOT" <<'PYTEST'
+from pathlib import Path
+import sys, tempfile, subprocess
+root = Path(sys.argv[1])
+s = (root/'SpotifyLyrics/Settings/AppSettingsStore.swift').read_text()
+a = s.index('public enum V3ArtworkTheme:')
+b = s.index('public enum PlaybackSourceMode:', a)
+host = s[a:b] + '\n' + r'''
+@main struct ThemeCheck {
+    static func main() {
+        precondition(V3ArtworkPresentation.ambientVariants.count == 2)
+        precondition(V3ArtworkPresentation.enlargedVariants.count == 2)
+        precondition(V3ArtworkPresentation.ambientVariants.allSatisfy { $0.theme == .ambient })
+        precondition(V3ArtworkPresentation.enlargedVariants.allSatisfy { $0.theme == .enlarged })
+        precondition(V3ArtworkPresentation.classic.theme == .ambient)
+        precondition(V3ArtworkPresentation.ambient.theme == .enlarged)
+        precondition(Set(V3ArtworkPresentation.ambientVariants).isDisjoint(with: Set(V3ArtworkPresentation.enlargedVariants)))
+        precondition(V3ArtworkPresentation.allCases.count == 7)
+        precondition(V3ArtworkTheme.allCases.suffix(2) == [.ambient, .enlarged])
+        print("PASS two ambient variants and two enlarged variants; legacy IDs remain distinct")
+    }
+}
+'''
+with tempfile.TemporaryDirectory(prefix='lyrics-theme-') as d:
+    p = Path(d)/'ThemeCheck.swift'; p.write_text(host)
+    subprocess.run(['swiftc', '-parse-as-library', str(p), '-o', str(Path(d)/'check')], check=True)
+    subprocess.run([str(Path(d)/'check')], check=True)
+window = (root/'SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift').read_text()
+assert 'artworkStylePicker' not in window and 'isStylePickerPresented' not in window
+backdrop = (root/'SpotifyLyrics/Views/Components/AppleMusicImmersiveV3BackdropView.swift').read_text()
+start = backdrop.index('    private func gaussianArtworkLayers')
+end = backdrop.index('    @ViewBuilder', start)
+assert '.blur(radius: effectiveBlurRadius)' in backdrop[start:end]
+assert '.blendMode' not in backdrop[start:end], 'pure Gaussian must remain separate from light bloom'
+PYTEST
 echo "V3 artwork presentation contract passed"

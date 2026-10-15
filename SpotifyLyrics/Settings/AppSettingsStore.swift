@@ -27,12 +27,37 @@ public enum FloatingLyricsInteractionMode: String, CaseIterable, Codable, Sendab
     }
 }
 
+/// Listening themes are independent of the stable IDs of their renderers.
+public enum V3ArtworkTheme: String, CaseIterable, Identifiable, Sendable {
+    case stage, lyricsOnly, albumPoster, ambient, enlarged
+    public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .stage: return "封面舞台"
+        case .lyricsOnly: return "纯净歌词"
+        case .albumPoster: return "封面海报"
+        case .ambient: return "环境光"
+        case .enlarged: return "放大"
+        }
+    }
+    public var symbolName: String {
+        switch self {
+        case .stage: return "rectangle.inset.filled"
+        case .lyricsOnly: return "text.alignleft"
+        case .albumPoster: return "photo.artframe"
+        case .ambient: return "sun.max"
+        case .enlarged: return "square.dashed.inset.filled"
+        }
+    }
+}
+
 /// Stable V3 artwork compositions. These are presentation choices only and
 /// do not create separate playback or lyrics runtimes.
 public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, Sendable {
     case ambient = "v3ArtworkPresentation.ambient.v1"
     case stage = "v3ArtworkPresentation.stage.v1"
     case classic = "v3ArtworkPresentation.classic.v1"
+    case classicGaussian = "v3ArtworkPresentation.gaussian.v1"
     case ambientFeathered = "v3ArtworkPresentation.feathered.v1"
     case lyricsOnly = "v3ArtworkPresentation.lyricsOnly.v1"
     case albumPoster = "v3ArtworkPresentation.albumPoster.v1"
@@ -41,9 +66,10 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
 
     public var title: String {
         switch self {
-        case .ambient: return "封面环境光"
+        case .ambient: return "封面柔焦"
         case .stage: return "封面舞台"
-        case .classic: return "经典放大"
+        case .classic: return "柔和光晕"
+        case .classicGaussian: return "纯高斯"
         case .ambientFeathered: return "柔光羽化"
         case .lyricsOnly: return "纯净歌词"
         case .albumPoster: return "封面海报"
@@ -52,37 +78,36 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
 
     public var detail: String {
         switch self {
-        case .ambient: return "原环境光：真实封面背景随模糊柔化，叠加专辑色彩光晕"
+        case .ambient: return "放大封面随模糊柔化，保留封面的色彩和纹理"
         case .stage: return "完整封面居中显示，模糊背景补齐空余区域"
-        case .classic: return "放大取景与高斯模糊，背景缩放和前景封面大小分别调整"
+        case .classic: return "柔和、偏暗的封面光晕，随专辑色彩扩散"
+        case .classicGaussian: return "只柔化放大的封面，不叠加彩色光晕；背景与前景尺寸独立"
         case .ambientFeathered: return "封面边缘渐隐融入光晕；0%也保留羽化，前景封面清晰"
         case .lyricsOnly: return "安静的专辑色背景，把更多空间留给歌词和译文"
         case .albumPoster: return "完整封面与歌曲信息组成海报，歌词在一旁清楚呈现"
         }
     }
 
-    public static var themes: [Self] { [.ambient, .stage, .classic, .lyricsOnly, .albumPoster] }
-    public static var ambientVariants: [Self] { [.ambient, .ambientFeathered] }
+    public static var ambientVariants: [Self] { [.classic, .ambientFeathered] }
+    public static var enlargedVariants: [Self] { [.ambient, .classicGaussian] }
 
-    public var theme: Self {
-        Self.ambientVariants.contains(self) ? .ambient : self
-    }
-
-    public var themeTitle: String { theme == .ambient ? "环境光" : title }
-    public var variantTitle: String {
+    public var theme: V3ArtworkTheme {
         switch self {
-        case .ambient: return "封面"
-        case .classic: return "经典放大"
-        case .ambientFeathered: return "柔光羽化"
-        default: return title
+        case .classic, .ambientFeathered: return .ambient
+        case .ambient, .classicGaussian: return .enlarged
+        case .stage: return .stage
+        case .lyricsOnly: return .lyricsOnly
+        case .albumPoster: return .albumPoster
         }
     }
+    public var themeTitle: String { theme.title }
+    public var variantTitle: String { title }
 
     public var symbolName: String {
         switch self {
         case .ambient: return "sun.max"
         case .stage: return "rectangle.inset.filled"
-        case .classic: return "square.dashed.inset.filled"
+        case .classic, .classicGaussian: return "square.dashed.inset.filled"
         case .ambientFeathered: return "circle.lefthalf.filled"
         case .lyricsOnly: return "text.alignleft"
         case .albumPoster: return "photo.artframe"
@@ -93,7 +118,8 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
         switch self {
         case .ambient: return "背景封面模糊"
         case .stage: return "补边背景柔化"
-        case .classic: return "背景高斯模糊度"
+        case .classic: return "光晕柔化程度"
+        case .classicGaussian: return "背景高斯模糊度"
         case .ambientFeathered: return "柔光扩散程度"
         case .lyricsOnly: return "背景色彩柔和度"
         case .albumPoster: return "海报背景柔化"
@@ -104,7 +130,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
         switch self {
         case .ambient: return "前景封面尺寸"
         case .stage: return "封面背景缩放"
-        case .classic: return "前景封面尺寸"
+        case .classic, .classicGaussian: return "前景封面尺寸"
         case .ambientFeathered: return "前景封面尺寸"
         case .lyricsOnly: return "封面尺寸"
         case .albumPoster: return "海报封面尺寸"
@@ -115,7 +141,8 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
         switch self {
         case .ambient: return "封面与光源位置"
         case .stage: return "封面背景取景"
-        case .classic: return "封面与裁切位置"
+        case .classic: return "封面与光源位置"
+        case .classicGaussian: return "封面与裁切位置"
         case .ambientFeathered: return "封面与光源位置"
         case .lyricsOnly: return "背景光源位置"
         case .albumPoster: return "海报位置"
@@ -246,6 +273,11 @@ public final class AppSettingsStore: ObservableObject {
         public static let v3BackdropBlurFeathered = "v3.backdropBlur.feathered.v1"
         public static let v3BackdropBlurLyricsOnly = "v3.backdropBlur.lyricsOnly.v1"
         public static let v3BackdropBlurAlbumPoster = "v3.backdropBlur.albumPoster.v1"
+        public static let v3GaussianBlur = "v3.gaussian.blur.v1"
+        public static let v3GaussianPosition = "v3.gaussian.position.v1"
+        public static let v3GaussianArtworkScale = "v3.gaussian.artworkScale.v1"
+        public static let v3EnlargedVariant = "v3.enlargedVariant.v1"
+        public static let v3ZoomBackdropSizeScale = "v3.zoomBackdropScale.v1"
         public static let v3AmbientVariant = "v3.ambientVariant.v1"
         public static let v3ArtworkPresentation = "v3.artworkPresentation.v1"
         /// Legacy migration input. Do not use as the current presentation state.
@@ -549,6 +581,8 @@ public final class AppSettingsStore: ObservableObject {
 
             if presentation.theme == .ambient {
                 defaults.set(presentation.rawValue, forKey: Key.v3AmbientVariant)
+            } else if presentation.theme == .enlarged {
+                defaults.set(presentation.rawValue, forKey: Key.v3EnlargedVariant)
             }
 
             // The original three retain their shared keys. Every later style
@@ -580,10 +614,19 @@ public final class AppSettingsStore: ObservableObject {
         set { v3ArtworkPresentationRawValue = newValue.rawValue }
     }
 
-    public var v3RememberedAmbientVariant: V3ArtworkPresentation {
-        if v3ArtworkPresentation.theme == .ambient { return v3ArtworkPresentation }
-        let stored = defaults.string(forKey: Key.v3AmbientVariant).flatMap(V3ArtworkPresentation.init(rawValue:))
-        return stored?.theme == .ambient ? stored! : .ambient
+    public func v3RememberedPresentation(for theme: V3ArtworkTheme) -> V3ArtworkPresentation {
+        if v3ArtworkPresentation.theme == theme { return v3ArtworkPresentation }
+        switch theme {
+        case .ambient:
+            let saved = defaults.string(forKey: Key.v3AmbientVariant).flatMap(V3ArtworkPresentation.init(rawValue:))
+            return saved?.theme == .ambient ? saved! : .classic
+        case .enlarged:
+            let saved = defaults.string(forKey: Key.v3EnlargedVariant).flatMap(V3ArtworkPresentation.init(rawValue:))
+            return saved?.theme == .enlarged ? saved! : .ambient
+        case .stage: return .stage
+        case .lyricsOnly: return .lyricsOnly
+        case .albumPoster: return .albumPoster
+        }
     }
 
     // Hover previews read stored style values without changing preferences.
@@ -604,7 +647,9 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     public func v3PreviewBackdropScale(for style: V3ArtworkPresentation) -> Double {
-        style == .classic ? v3ClassicBackdropSizeScale : v3PreviewScale(for: style)
+        if style == .classic { return v3ClassicBackdropSizeScale }
+        if style.theme == .enlarged { return v3ZoomBackdropSizeScale }
+        return v3PreviewScale(for: style)
     }
 
     public func v3PreviewLyricsPosition(for style: V3ArtworkPresentation) -> String {
@@ -628,6 +673,7 @@ public final class AppSettingsStore: ObservableObject {
         case .ambient: return Key.v3BackdropBlurAmbient
         case .stage: return Key.v3BackdropBlurStage
         case .classic: return Key.v3BackdropBlurClassic
+        case .classicGaussian: return Key.v3GaussianBlur
         case .ambientFeathered: return Key.v3BackdropBlurFeathered
         case .lyricsOnly: return Key.v3BackdropBlurLyricsOnly
         case .albumPoster: return Key.v3BackdropBlurAlbumPoster
@@ -637,6 +683,7 @@ public final class AppSettingsStore: ObservableObject {
     private static func v3PositionDefaultsKey(for presentation: V3ArtworkPresentation) -> String {
         switch presentation {
         case .ambient, .stage, .classic: return Key.v3ArtworkPosition
+        case .classicGaussian: return Key.v3GaussianPosition
         case .ambientFeathered: return Key.v3ArtworkPositionFeathered
         case .lyricsOnly: return Key.v3ArtworkPositionLyricsOnly
         case .albumPoster: return Key.v3ArtworkPositionAlbumPoster
@@ -646,6 +693,7 @@ public final class AppSettingsStore: ObservableObject {
     private static func v3ScaleDefaultsKey(for presentation: V3ArtworkPresentation) -> String {
         switch presentation {
         case .ambient, .stage, .classic: return Key.v3ArtworkSizeScale
+        case .classicGaussian: return Key.v3GaussianArtworkScale
         case .ambientFeathered: return Key.v3ArtworkSizeScaleFeathered
         case .lyricsOnly: return Key.v3ArtworkSizeScaleLyricsOnly
         case .albumPoster: return Key.v3ArtworkSizeScaleAlbumPoster
@@ -664,6 +712,10 @@ public final class AppSettingsStore: ObservableObject {
             let key = Self.v3ScaleDefaultsKey(for: v3ArtworkPresentation)
             defaults.set(v3ArtworkSizeScale, forKey: key)
         }
+    }
+
+    @Published public var v3ZoomBackdropSizeScale: Double {
+        didSet { defaults.set(v3ZoomBackdropSizeScale, forKey: Key.v3ZoomBackdropSizeScale) }
     }
 
     @Published public var v3ClassicBackdropSizeScale: Double {
@@ -702,6 +754,7 @@ public final class AppSettingsStore: ObservableObject {
             .classic: 36.0,
             // First selection of the fourth mode starts at the user's existing
             // ambient setting, then remembers its own slider value.
+            .classicGaussian: 58.0,
             .ambientFeathered: defaults.object(forKey: Key.v3BackdropBlurAmbient) as? Double ?? 58.0,
             .lyricsOnly: 72.0,
             .albumPoster: 65.0
@@ -728,6 +781,8 @@ public final class AppSettingsStore: ObservableObject {
         let classicBackdropScale = storedClassicBackdropScale
             ?? defaults.object(forKey: Key.v3ArtworkSizeScale) as? Double ?? 1.0
         self.v3ClassicBackdropSizeScale = classicBackdropScale
+        let zoomScale = defaults.object(forKey: Key.v3ZoomBackdropSizeScale) as? Double ?? 1
+        self.v3ZoomBackdropSizeScale = zoomScale.isFinite ? min(1.4, max(0.8, zoomScale)) : 1
         // Capture the old appearance once. Otherwise a foreground edit made
         // before the first background edit would also resize it after relaunch.
         if storedClassicBackdropScale == nil {

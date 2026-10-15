@@ -106,7 +106,6 @@ struct AppleMusicImmersiveV3WindowView: View {
     @State private var isTranslationComparisonPresented = false
     @State private var isVersionPickerPresented = false
     @State private var isAppearancePresented = false
-    @State private var isStylePickerPresented = false
     @State private var hoveredStyle: V3ArtworkPresentation?
     private var compositionStyle: V3ArtworkPresentation { hoveredStyle ?? settings.v3ArtworkPresentation }
     private var compositionArtworkPosition: String { settings.v3PreviewPosition(for: compositionStyle) }
@@ -298,9 +297,6 @@ struct AppleMusicImmersiveV3WindowView: View {
             .onChange(of: toolbarPanelIsPresented) { _, presented in
                 if !presented && !isPointerInToolbarRegion { toolsVisible = false }
             }
-            .onChange(of: isStylePickerPresented) { _, presented in
-                if !presented { hoveredStyle = nil }
-            }
             .task(id: interactionToken) {
                 guard interactionToken > 0 else { return }
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
@@ -392,7 +388,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             canvasSize: geometry.size, automaticLyricsFocus: false
         ) == .portrait {
             portraitLayout(in: geometry)
-        } else if compositionStyle == .classic {
+        } else if (compositionStyle == .classic || compositionStyle == .classicGaussian) {
             classicExpandedLayout(in: geometry)
         } else {
             switch MainWindowResponsiveMode.resolve(
@@ -1009,27 +1005,6 @@ struct AppleMusicImmersiveV3WindowView: View {
             || size.height <= MainWindowResponsiveThresholds.comfortableMinimumSize.height
     }
 
-    private var artworkStylePicker: some View {
-        Button { isStylePickerPresented = true } label: {
-            iconLabel("rectangle.3.group", description: "切换样式")
-        }
-        .onHover { inside in
-            if inside { isStylePickerPresented = true }
-        }
-        .accessibilityIdentifier("v3.stylePicker")
-        .toolbarTooltip("切换样式", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
-        .popover(isPresented: $isStylePickerPresented, arrowEdge: .top) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("移入预览 · 点击确定").font(.subheadline.weight(.medium))
-                V3ThemeSelectorView(settings: settings, preview: $hoveredStyle) {
-                    isStylePickerPresented = false
-                }
-            }
-            .padding(16)
-            .frame(width: 300, height: 352)
-        }
-    }
-
     private var allowsModelRequests: Bool {
 #if DEBUG
         if DebugAcceptanceDataIsolation.isRequested { return DebugAcceptanceDataIsolation.allowsExplicitTranslation }
@@ -1214,12 +1189,11 @@ struct AppleMusicImmersiveV3WindowView: View {
     }
 
     private var toolbarPanelIsPresented: Bool {
-        isStylePickerPresented || isWindowMenuPresented || isSearchPresented || isDisplayPresented || isTranslationPresented || isVersionPickerPresented || isAppearancePresented || isLyricsTimePresented
+        isWindowMenuPresented || isSearchPresented || isDisplayPresented || isTranslationPresented || isVersionPickerPresented || isAppearancePresented || isLyricsTimePresented
     }
 
     private func toolBar(for size: CGSize) -> some View {
         HStack(spacing: 4) {
-            artworkStylePicker
             Button { isWindowMenuPresented.toggle() } label: {
                 iconLabel("macwindow", description: "窗口模式")
             }
@@ -1266,13 +1240,16 @@ struct AppleMusicImmersiveV3WindowView: View {
             .popover(isPresented: $isLyricsTimePresented, arrowEdge: .top) {
                 V3LyricsTimePopover(settings: settings)
             }
-            Button { isAppearancePresented.toggle() } label: {
+            Button { isAppearancePresented = true } label: {
                 iconLabel("slider.horizontal.3", description: "外观")
             }
             .accessibilityIdentifier("appearance.shortcut")
+            .onHover { inside in if inside { isAppearancePresented = true } }
             .toolbarTooltip("外观背景", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
             .popover(isPresented: $isAppearancePresented, arrowEdge: .top) {
-                V3VisualTuningPopoverView(settings: settings, layoutStyleRawValue: $layoutStyleRawValue, preview: $hoveredStyle)
+                V3VisualTuningPopoverView(settings: settings, layoutStyleRawValue: $layoutStyleRawValue, preview: $hoveredStyle) {
+                    isAppearancePresented = false
+                }
             }
             Button { isDisplayPresented.toggle() } label: {
                 iconLabel("character.bubble", description: "歌词显示")
@@ -3659,7 +3636,14 @@ private struct V3ThemeSelectorView: View {
     @Binding var preview: V3ArtworkPresentation?
     var onConfirm: () -> Void
 
-    private var ambientChoice: V3ArtworkPresentation { settings.v3RememberedAmbientVariant }
+    private var displayedStyle: V3ArtworkPresentation { preview ?? settings.v3ArtworkPresentation }
+    private var variants: [V3ArtworkPresentation] {
+        switch displayedStyle.theme {
+        case .ambient: return V3ArtworkPresentation.ambientVariants
+        case .enlarged: return V3ArtworkPresentation.enlargedVariants
+        default: return []
+        }
+    }
 
     private func choose(_ style: V3ArtworkPresentation) {
         settings.v3ArtworkPresentation = style
@@ -3667,39 +3651,48 @@ private struct V3ThemeSelectorView: View {
         onConfirm()
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                ForEach(V3ArtworkPresentation.themes) { theme in
-                    let style = theme == .ambient ? ambientChoice : theme
-                    Button { choose(style) } label: {
-                        VStack(spacing: 7) {
-                            Image(systemName: theme.symbolName).font(.system(size: 22))
-                            Text(theme.themeTitle).font(.system(size: 12, weight: .medium))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 64)
-                        .background(settings.v3ArtworkPresentation.theme == theme ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(alignment: .topTrailing) {
-                            if settings.v3ArtworkPresentation.theme == theme {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(Color.accentColor).padding(6)
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .onHover { inside in if inside && preview != style { preview = style } }
-                    .help(style.detail)
-                    .accessibilityIdentifier("v3.theme." + theme.rawValue)
-                    .accessibilityAddTraits(settings.v3ArtworkPresentation.theme == theme ? .isSelected : [])
+    private func themeButton(_ theme: V3ArtworkTheme, height: CGFloat = 64) -> some View {
+        let style = settings.v3RememberedPresentation(for: theme)
+        return Button { choose(style) } label: {
+            VStack(spacing: 7) {
+                Image(systemName: theme.symbolName).font(.system(size: 22))
+                Text(theme.title).font(.system(size: 12, weight: .medium))
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .background(settings.v3ArtworkPresentation.theme == theme ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(alignment: .topTrailing) {
+                if settings.v3ArtworkPresentation.theme == theme {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Color.accentColor).padding(6)
                 }
             }
+        }
+        .buttonStyle(.plain)
+        .onHover { inside in if inside && preview != style { preview = style } }
+        .help(style.detail)
+        .accessibilityIdentifier("v3.theme." + theme.rawValue)
+        .accessibilityAddTraits(settings.v3ArtworkPresentation.theme == theme ? .isSelected : [])
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                themeButton(.stage)
+                themeButton(.lyricsOnly)
+            }
+            themeButton(.albumPoster, height: 46)
+            Divider().padding(.vertical, 3)
+            HStack(spacing: 8) {
+                themeButton(.ambient)
+                themeButton(.enlarged)
+            }
             ZStack(alignment: .leading) {
-                if (preview ?? settings.v3ArtworkPresentation).theme == .ambient {
+                if !variants.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("环境光效果").font(.caption).foregroundStyle(.secondary)
+                        Text(displayedStyle.themeTitle + "方案").font(.caption).foregroundStyle(.secondary)
                         HStack(spacing: 5) {
-                            ForEach(V3ArtworkPresentation.ambientVariants) { style in
+                            ForEach(variants) { style in
                                 Button { choose(style) } label: {
                                     Text(style.variantTitle)
                                         .font(.system(size: 11, weight: .medium))
@@ -3716,9 +3709,8 @@ private struct V3ThemeSelectorView: View {
                         }
                     }
                 } else {
-                    Text((preview ?? settings.v3ArtworkPresentation).detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(displayedStyle.detail)
+                        .font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -3732,6 +3724,7 @@ private struct V3VisualTuningPopoverView: View {
     @ObservedObject var settings: AppSettingsStore
     @Binding var layoutStyleRawValue: String
     @Binding var preview: V3ArtworkPresentation?
+    var onStyleConfirmed: () -> Void
 
     private var blurPresetName: String {
         let r = settings.v3BackdropBlurRadius
@@ -3778,6 +3771,7 @@ private struct V3VisualTuningPopoverView: View {
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if settings.v3ArtworkPresentation == .ambient
+                    || settings.v3ArtworkPresentation == .classicGaussian
                     || settings.v3ArtworkPresentation == .classic
                     || settings.v3ArtworkPresentation == .ambientFeathered {
                     Toggle("隐藏播放信息时舒展封面", isOn: $settings.v3ExpandArtworkWhenDetailsHidden)
@@ -3788,7 +3782,7 @@ private struct V3VisualTuningPopoverView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                V3ThemeSelectorView(settings: settings, preview: $preview) {}
+                V3ThemeSelectorView(settings: settings, preview: $preview, onConfirm: onStyleConfirmed)
 
                 Text(settings.v3ArtworkPresentation.detail)
                     .font(.system(size: 10))
@@ -3883,18 +3877,24 @@ private struct V3VisualTuningPopoverView: View {
                     }
                 }
 
-                if settings.v3ArtworkPresentation == .classic {
+                if settings.v3ArtworkPresentation == .classic || settings.v3ArtworkPresentation.theme == .enlarged {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text("背景封面缩放")
                                 .font(.system(size: 12, weight: .medium))
                             Spacer()
-                            Text("\(Int((settings.v3ClassicBackdropSizeScale * 100).rounded()))%")
+                            Text("\(Int(((settings.v3ArtworkPresentation.theme == .enlarged ? settings.v3ZoomBackdropSizeScale : settings.v3ClassicBackdropSizeScale) * 100).rounded()))%")
                                 .font(.system(size: 11, weight: .bold).monospacedDigit())
                                 .foregroundStyle(.secondary)
                         }
-                        Slider(value: $settings.v3ClassicBackdropSizeScale, in: 0.8...1.4, step: 0.05)
-                            .accessibilityLabel("经典放大背景封面缩放")
+                        Slider(value: Binding(
+                            get: { settings.v3ArtworkPresentation.theme == .enlarged ? settings.v3ZoomBackdropSizeScale : settings.v3ClassicBackdropSizeScale },
+                            set: { value in
+                                if settings.v3ArtworkPresentation.theme == .enlarged { settings.v3ZoomBackdropSizeScale = value }
+                                else { settings.v3ClassicBackdropSizeScale = value }
+                            }
+                        ), in: 0.8...1.4, step: 0.05)
+                            .accessibilityLabel("背景封面缩放")
                             .accessibilityIdentifier("v3.classic.backgroundScale")
                         Text("只改变背景取景，不改变前景封面大小。")
                             .font(.caption)
