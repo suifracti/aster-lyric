@@ -189,27 +189,6 @@ struct ReadingSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("AI 辅助读音") {
-                Toggle("允许 AI 辅助候选（仅明确调用）", isOn: readingBinding(\.aiAssistedCandidate))
-                Text("在右上角 AI 面板中明确优化当前歌词。开启不会自动收费；关闭恢复本地展示，人工修改和已锁定读音保持，其他版本仍保留。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if settings.aiTranslationConfiguration.engineID != TranslationEngineID.openAICompatible.rawValue {
-                    Label("目前仅支持兼容 API，不能使用 GPT / Codex 订阅。", systemImage: "info.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else if settings.aiTranslationConfiguration.isConfigured {
-                    LabeledContent("候选模型", value: settings.aiTranslationConfiguration.model)
-                    Text("API 地址与模型沿用 AI 翻译设置。密钥仅在明确调用时检查。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Label("请先在 AI 翻译设置中配置兼容 API 地址和模型。", systemImage: "info.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
             Section {
                 DisclosureGroup("人工词典 · \(dictionaryEntries.filter { !$0.isArchived && $0.isEnabled }.count) 个可用词条", isExpanded: $isDictionaryExpanded) {
                     VStack(alignment: .leading, spacing: 8) {

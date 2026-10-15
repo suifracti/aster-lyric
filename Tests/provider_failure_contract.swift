@@ -288,6 +288,32 @@ struct ProviderFailureContract {
             return false
         })
 
+        let conflicting = LyricsCandidate(id: "wrong-artist", identity: identity, title: track.title,
+            artist: "Unrelated Singer", album: track.album, duration: track.duration,
+            lines: [LyricLine(timestamp: 0, originalText: "Self-authored wrong-artist fixture")],
+            source: .lrclib, confidence: 1)
+        let unconfirmed = await LyricsSearchManager(providers: [
+            FixedLyricsProvider(name: "wrong-artist", result: .candidates([conflicting])),
+            FixedLyricsProvider(name: "limited-source", result: .failed(.rateLimited(1)))
+        ]).search(track: track, identity: identity)
+        guard case .failed(let identityFailure) = unconfirmed.result,
+              case .identityUnconfirmed(let rejectedCount, let sourceError) = identityFailure else {
+            fatalError("rejected identity must stay distinct from unavailable service")
+        }
+        precondition(rejectedCount > 0 && sourceError.contains("限流"))
+        precondition(identityFailure.userFacingTitle == "歌词身份待确认")
+        precondition(identityFailure.recoveryMessage.contains("未能确认") && identityFailure.recoveryMessage.contains("限流"))
+        precondition(unconfirmed.alternatives.isEmpty && unconfirmed.automaticDecision == nil,
+            "presentation repair must not expose or auto-adopt a hard-rejected wrong artist")
+        let onlyLimited = await LyricsSearchManager(providers: [
+            FixedLyricsProvider(name: "limited-source", result: .failed(.rateLimited(1)))
+        ]).search(track: track, identity: identity)
+        guard case .failed(let networkFailure) = onlyLimited.result, case .rateLimited = networkFailure else {
+            fatalError("HTTP 429 must remain a real provider failure")
+        }
+        precondition(networkFailure.userFacingTitle == "歌词暂不可用" && networkFailure.recoveryMessage.contains("限流"))
+        print("PASS identity confirmation has its own presentation; hard rejection and HTTP 429 remain unchanged")
+
         // Lyrics search requires confirmed identity and never writes files.
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("provider-failure-\(UUID().uuidString)", isDirectory: true)

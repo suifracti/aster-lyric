@@ -855,8 +855,8 @@ struct LyricsStateContentFirstView: View {
             return "没有找到歌词"
         case .noSelection:
             return "暂不使用歌词"
-        case .failed:
-            return "歌词暂不可用"
+        case .failed(_, let failure):
+            return failure.userFacingTitle
         case .idle where state.isAutomaticSearchDisabledForDisplayedSession:
             return "切歌后自动搜索已关闭"
         case .idle:
@@ -930,22 +930,7 @@ struct LyricsStateContentFirstView: View {
     }
 
     private func friendlyFailureDetail(_ failure: LyricsFailure) -> String {
-        switch failure {
-        case .networkUnavailable:
-            return "网络暂时不可用，请检查连接后重试。"
-        case .timedOut:
-            return "歌词服务响应超时，可以稍后重试。"
-        case .rateLimited:
-            return "歌词服务暂时繁忙，请稍后重试。"
-        case .serverError:
-            return "歌词服务暂时不可用，请稍后重试。"
-        case .parseFailure:
-            return "返回内容无法识别，可以重新搜索其他来源。"
-        case .cancelled:
-            return "这次搜索已取消，可以重新搜索。"
-        case .unknown:
-            return "歌词服务暂时不可用，请稍后重试。"
-        }
+        failure.recoveryMessage
     }
 
     private func candidateContent(_ candidates: [LyricsCandidate]) -> some View {
