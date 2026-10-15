@@ -4,6 +4,8 @@ import Foundation
 struct AITranslationContract {
     static func main() async throws {
         try naturalStyleContract()
+        try multilingualPromptContract()
+        try await readingCLIContract()
         try await readingBudgetContract()
         try endpointContract()
         try blankLineContract()
@@ -14,6 +16,56 @@ struct AITranslationContract {
         try await codexOfflineContract()
         try await protectedRecoveryContract()
         print("AI translation contracts passed")
+    }
+
+    static func multilingualPromptContract() throws {
+        let line = AITranslationSourceLine(index: 0, original: "A self-authored fixture")
+        for engine in [TranslationEngineID.openAICompatible, .codexChatGPT, .geminiCLI] {
+            let config = AITranslationConfiguration(baseURL: "https://example.invalid/v1", model: "fixture", engineID: engine.rawValue)
+            var hashes = Set<String>()
+            for language in ["en", "ko", "mul", "und", "ja"] {
+                let context = AITranslationContext(title: "Fixture", artist: "Fixture", album: "", sourceLanguage: language,
+                    targetLanguage: "zh-Hans", style: "natural", lines: [line])
+                let prompt = try AITranslationPromptBuilder().build(context: context, configuration: config)
+                let payload = try JSONSerialization.jsonObject(with: Data(prompt.user.utf8)) as! [String: Any]
+                precondition(payload["sourceLanguage"] as? String == language)
+                precondition(!prompt.system.contains("especially in Japanese"))
+                hashes.insert(prompt.promptHash)
+            }
+            precondition(hashes.count == 5, "source language must participate in prompt identity")
+        }
+        print("PASS multilingual source metadata and prompt identity")
+    }
+
+    static func readingCLIContract() async throws {
+        let request = ReadingGenerationRequest(lyricsVersionID: UUID(), sourceContentHash: "fixture",
+            lines: [.init(lineIndex: 0, originalText: "空")], languageHint: "ja", trackStableKey: "fixture", representationID: .kana)
+        let token = ReadingToken(id: 7, surface: "空", reading: nil, startOffset: 0, endOffset: 1,
+            source: .unknown, confidence: 0, needsConfirmation: true)
+        let result = ReadingGenerationResult(engineID: .japaneseContextual, representationID: .kana,
+            lines: [.init(lineIndex: 0, originalText: "空", readingText: nil, language: .japanese,
+                tokens: [token], warnings: [.unknownToken], confidence: 0)], language: .japanese, confidence: 0, contextHash: "fixture")
+        let keys = MemoryKeyStore(value: nil)
+        for engine in [TranslationEngineID.codexChatGPT, .geminiCLI] {
+            let service = AIReadingCandidateService(keyStore: keys, acceptanceBudget: nil, cliCompletion: { prompt, config in
+                precondition(config.engineID == engine.rawValue && prompt.system.contains("nearby lyric context"))
+                return Data(#"{"lines":[{"lineIndex":0,"tokens":[{"id":7,"reading":"そら"}]}]}"#.utf8)
+            })
+            let config = AITranslationConfiguration(model: "fixture", engineID: engine.rawValue)
+            let refined = try await service.refine(result: result, request: request, configuration: config)
+            precondition(refined.lines[0].originalText == "空" && refined.lines[0].tokens[0].reading == "そら")
+            precondition(refined.lines[0].tokens[0].needsConfirmation && refined.warnings.contains(.aiCandidateOnly))
+        }
+        precondition(keys.reads == 0, "CLI reading must not consult API credentials")
+        let invalid = AIReadingCandidateService(acceptanceBudget: nil, cliCompletion: { _, _ in
+            Data(#"{"lines":[{"lineIndex":0,"tokens":[{"id":99,"reading":"そら"}]}]}"#.utf8)
+        })
+        do {
+            _ = try await invalid.refine(result: result, request: request,
+                configuration: .init(model: "fixture", engineID: TranslationEngineID.geminiCLI.rawValue))
+            throw ContractFailure(message: "foreign token was accepted")
+        } catch AITranslationError.invalidResponse { }
+        print("PASS GPT/Gemini reading routing, explicit candidate result and original-token protection; no model calls")
     }
 
     static func readingBudgetContract() async throws {

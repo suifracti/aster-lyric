@@ -189,6 +189,20 @@ struct SpotifyArtistEnrichmentContract {
                 && session.activeDocument == nil && !session.isSearchInProgress,
                 "late official metadata contaminated a new track or a newer same-track session")
         }
+        let localized = Track(title: "Evening Fixture", artist: "Fixture Artist", album: "", duration: 318.5,
+            spotifyId: "5EgW6VV9LW6xtgJ1sFN5RU")
+        FixtureURLProtocol.replies.reset(body: page(title: "夕景の試験", artists: ["試験作者"]))
+        let localizedOutcome = await LyricsSearchManager(providers: [FixtureProvider(artists: "試験作者", title: "夕景の試験")], spotifyArtistResolver: resolver())
+            .search(track: localized, identity: TrackIdentity(track: localized))
+        guard case .match = localizedOutcome.result else { require(false, "exact official entity aliases did not resolve localized names"); return }
+        require(localizedOutcome.automaticDecision?.reasons.contains("titleAliasConfirmed") == true,
+            "localized automatic selection lacks official title evidence")
+        require(FixtureURLProtocol.replies.count == 1, "localized matching should reuse one official metadata response")
+        FixtureURLProtocol.replies.reset(body: page(title: "夕景の試験", duration: 500000, artists: ["試験作者"]))
+        let wrongDuration = await LyricsSearchManager(providers: [FixtureProvider(artists: "試験作者", title: "夕景の試験")], spotifyArtistResolver: resolver())
+            .search(track: localized, identity: TrackIdentity(track: localized))
+        if case .match = wrongDuration.result { require(false, "unverified duration was accepted as a localized alias") }
+        print("PASS localized official identity aliases; wrong duration still rejected")
         print("PASS cancellation, A-to-B and A-to-B-to-A block late metadata adoption")
     }
 }

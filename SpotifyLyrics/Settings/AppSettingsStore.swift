@@ -41,7 +41,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
 
     public var title: String {
         switch self {
-        case .ambient: return "环境光"
+        case .ambient: return "封面环境光"
         case .stage: return "封面舞台"
         case .classic: return "经典放大"
         case .ambientFeathered: return "柔光羽化"
@@ -52,12 +52,29 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
 
     public var detail: String {
         switch self {
-        case .ambient: return "抽取封面的低频色彩，前景保留完整封面"
+        case .ambient: return "原环境光：真实封面背景随模糊柔化，叠加专辑色彩光晕"
         case .stage: return "完整封面居中显示，模糊背景补齐空余区域"
-        case .classic: return "保留原来的局部放大封面背景"
-        case .ambientFeathered: return "完整封面化成柔和光晕，保留清晰的前景封面"
+        case .classic: return "放大取景与高斯模糊，背景缩放和前景封面大小分别调整"
+        case .ambientFeathered: return "封面边缘渐隐融入光晕；0%也保留羽化，前景封面清晰"
         case .lyricsOnly: return "安静的专辑色背景，把更多空间留给歌词和译文"
         case .albumPoster: return "完整封面与歌曲信息组成海报，歌词在一旁清楚呈现"
+        }
+    }
+
+    public static var themes: [Self] { [.ambient, .stage, .classic, .lyricsOnly, .albumPoster] }
+    public static var ambientVariants: [Self] { [.ambient, .ambientFeathered] }
+
+    public var theme: Self {
+        Self.ambientVariants.contains(self) ? .ambient : self
+    }
+
+    public var themeTitle: String { theme == .ambient ? "环境光" : title }
+    public var variantTitle: String {
+        switch self {
+        case .ambient: return "封面"
+        case .classic: return "经典放大"
+        case .ambientFeathered: return "柔光羽化"
+        default: return title
         }
     }
 
@@ -74,7 +91,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
 
     public var blurControlTitle: String {
         switch self {
-        case .ambient: return "环境扩散程度"
+        case .ambient: return "背景封面模糊"
         case .stage: return "补边背景柔化"
         case .classic: return "背景高斯模糊度"
         case .ambientFeathered: return "柔光扩散程度"
@@ -147,6 +164,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let menuBarLyricsShowsTranslation = "menuBar.showsTranslation.v1"
         public static let menuBarLyricsShowsKana = "menuBar.showsKana.v1"
         public static let menuBarLyricsShowsRomaji = "menuBar.showsRomaji.v1"
+        public static let menuBarLyricsReadingsAbove = "menuBar.readingsAbove.v1"
         public static let menuBarLyricsFontSize = "menuBar.fontSize.v1"
         public static let connectSpotifyOnLaunch = "general.connectSpotifyOnLaunch"
         public static let playbackSourceMode = "playback.sourceMode"
@@ -228,6 +246,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let v3BackdropBlurFeathered = "v3.backdropBlur.feathered.v1"
         public static let v3BackdropBlurLyricsOnly = "v3.backdropBlur.lyricsOnly.v1"
         public static let v3BackdropBlurAlbumPoster = "v3.backdropBlur.albumPoster.v1"
+        public static let v3AmbientVariant = "v3.ambientVariant.v1"
         public static let v3ArtworkPresentation = "v3.artworkPresentation.v1"
         /// Legacy migration input. Do not use as the current presentation state.
         public static let v3AmbientBackdropEnabled = "v3.ambientBackdropEnabled"
@@ -338,6 +357,9 @@ public final class AppSettingsStore: ObservableObject {
     }
     @Published public var menuBarLyricsShowsRomaji: Bool {
         didSet { defaults.set(menuBarLyricsShowsRomaji, forKey: Key.menuBarLyricsShowsRomaji) }
+    }
+    @Published public var menuBarLyricsReadingsAbove: Bool {
+        didSet { defaults.set(menuBarLyricsReadingsAbove, forKey: Key.menuBarLyricsReadingsAbove) }
     }
     @Published public var menuBarLyricsFontSize: Double {
         didSet { defaults.set(menuBarLyricsFontSize, forKey: Key.menuBarLyricsFontSize) }
@@ -525,6 +547,10 @@ public final class AppSettingsStore: ObservableObject {
             defaults.set(v3ArtworkPresentationRawValue, forKey: Key.v3ArtworkPresentation)
             guard let presentation = V3ArtworkPresentation(rawValue: v3ArtworkPresentationRawValue) else { return }
 
+            if presentation.theme == .ambient {
+                defaults.set(presentation.rawValue, forKey: Key.v3AmbientVariant)
+            }
+
             // The original three retain their shared keys. Every later style
             // has its own keys, so visiting a new style cannot overwrite them.
             let previousPresentation = V3ArtworkPresentation(rawValue: oldValue) ?? .ambient
@@ -552,6 +578,12 @@ public final class AppSettingsStore: ObservableObject {
     public var v3ArtworkPresentation: V3ArtworkPresentation {
         get { V3ArtworkPresentation(rawValue: v3ArtworkPresentationRawValue) ?? .ambient }
         set { v3ArtworkPresentationRawValue = newValue.rawValue }
+    }
+
+    public var v3RememberedAmbientVariant: V3ArtworkPresentation {
+        if v3ArtworkPresentation.theme == .ambient { return v3ArtworkPresentation }
+        let stored = defaults.string(forKey: Key.v3AmbientVariant).flatMap(V3ArtworkPresentation.init(rawValue:))
+        return stored?.theme == .ambient ? stored! : .ambient
     }
 
     // Hover previews read stored style values without changing preferences.
@@ -741,6 +773,7 @@ public final class AppSettingsStore: ObservableObject {
         menuBarLyricsShowsTranslation = defaults.object(forKey: Key.menuBarLyricsShowsTranslation) as? Bool ?? false
         menuBarLyricsShowsKana = defaults.object(forKey: Key.menuBarLyricsShowsKana) as? Bool ?? false
         menuBarLyricsShowsRomaji = defaults.object(forKey: Key.menuBarLyricsShowsRomaji) as? Bool ?? false
+        menuBarLyricsReadingsAbove = defaults.object(forKey: Key.menuBarLyricsReadingsAbove) as? Bool ?? true
         menuBarLyricsFontSize = defaults.object(forKey: Key.menuBarLyricsFontSize) as? Double ?? 13
         connectSpotifyOnLaunch = defaults.object(forKey: Key.connectSpotifyOnLaunch) as? Bool ?? true
         if let rawMode = defaults.string(forKey: Key.playbackSourceMode),

@@ -252,7 +252,7 @@ struct TranslationSessionContract {
             let config = AITranslationConfiguration(model: "synthetic-model", autoTranslateNewLyrics: true,
                 engineID: TranslationEngineID.codexChatGPT.rawValue)
             let context = AITranslationContext(title: document.title ?? "", artist: document.artist ?? "",
-                album: document.album ?? "", sourceLanguage: "ja", targetLanguage: config.targetLanguage,
+                album: document.album ?? "", sourceLanguage: document.language ?? "und", targetLanguage: config.targetLanguage,
                 style: config.style, lines: document.lines.enumerated().map {
                     AITranslationSourceLine(index: $0.offset, original: $0.element.originalText,
                         lineID: $0.element.id, timestamp: $0.element.timestamp)

@@ -9,5 +9,6 @@ public final class AppSettingsStore: ObservableObject {
     @Published public var menuBarLyricsShowsTranslation = false
     @Published public var menuBarLyricsShowsKana = false
     @Published public var menuBarLyricsShowsRomaji = false
+    @Published public var menuBarLyricsReadingsAbove = true
     @Published public var menuBarLyricsFontSize = 13.0
 }

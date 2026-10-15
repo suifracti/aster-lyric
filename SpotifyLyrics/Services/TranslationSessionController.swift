@@ -69,6 +69,7 @@ public final class TranslationSessionController: ObservableObject {
     private struct RequestKey: Hashable, Sendable {
         let source: SourceKey
         let rules: AITranslationConfigurationIdentity
+        let sourceLanguage: String
     }
 
     private struct TranslationContext: Equatable, Sendable {
@@ -83,11 +84,14 @@ public final class TranslationSessionController: ObservableObject {
                 targetLanguage: configuration.targetLanguage,
                 lines: document.lines.map { SourceLineKey(id: $0.id, text: $0.originalText) })
         }
-        var requestKey: RequestKey { RequestKey(source: key, rules: configuration.requestIdentity) }
+        var requestKey: RequestKey {
+            RequestKey(source: key, rules: configuration.requestIdentity, sourceLanguage: aiContext.sourceLanguage)
+        }
         var aiContext: AITranslationContext {
             let profile = TranslationSessionController.decodeProfile(configuration.profileSnapshot)
+            let language = document.language?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return AITranslationContext(title: document.title ?? "", artist: document.artist ?? "",
-                album: document.album ?? "", sourceLanguage: "ja", targetLanguage: configuration.targetLanguage,
+                album: document.album ?? "", sourceLanguage: language.isEmpty ? "und" : language, targetLanguage: configuration.targetLanguage,
                 style: configuration.style, lines: document.lines.enumerated().map { index, line in
                     AITranslationSourceLine(index: index, original: line.originalText, kana: line.kanaText,
                         romaji: line.romajiText, lineID: line.id, timestamp: line.timestamp)

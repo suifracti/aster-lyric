@@ -163,9 +163,28 @@ public actor SpotifyTrackArtistResolver {
     }
 
     public func artists(for track: Track) async -> [String]? {
+        guard let result = await metadata(for: track), result.matches(track) else { return nil }
+        return result.names
+    }
+
+    /// Exact Spotify entity identity and duration can establish localized names
+    /// even when Desktop and the lyric source use different scripts. Provider
+    /// candidate names are never used to manufacture these aliases.
+    public func aliases(for track: Track) async -> [TrackAlias] {
+        guard let result = await metadata(for: track), track.duration.isFinite,
+              track.duration > 0, abs(result.duration - track.duration) <= 2 else { return [] }
+        let values: [(TrackAliasField, String)] = [(.title, result.title), (.artist, result.names.joined(separator: ", "))]
+        return values.map { field, value in
+            TrackAlias(id: "spotify-entity-" + field.rawValue, field: field, kind: .localizedTitle,
+                value: value, script: ScriptDetector.detect(value), source: .spotifyMetadata,
+                confidence: 1, isOfficial: true)
+        }
+    }
+
+    private func metadata(for track: Track) async -> TrackArtists? {
         guard !Task.isCancelled, let id = Self.exactTrackID(track) else { return nil }
         if let cached = cache[id], cached.expires > Date() {
-            return cached.value.flatMap { $0.matches(track) ? $0.names : nil }
+            return cached.value
         }
         let task: Task<TrackArtists?, Never>
         if let pending = inFlight[id] {
@@ -181,8 +200,8 @@ public actor SpotifyTrackArtistResolver {
             cache.removeValue(forKey: oldest)
         }
         cache[id] = Cached(value: result, expires: Date().addingTimeInterval(result == nil ? 60 : 3600))
-        guard !Task.isCancelled, let result, result.matches(track) else { return nil }
-        return result.names
+        guard !Task.isCancelled else { return nil }
+        return result
     }
 
     private static func exactTrackID(_ track: Track) -> String? {

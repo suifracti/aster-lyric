@@ -355,6 +355,19 @@ public struct CodexAppServerTranslationService: TranslationEngine, Sendable {
         catch { throw AITranslationError.codexResponseInvalid("JSON 或稳定行 ID 校验失败") }
     }
 
+    /// Shared explicit generation transport, also used by reading candidates.
+    func complete(prompt: AITranslationPrompt, configuration: AITranslationConfiguration,
+                  outputSchema: [String: Any]) async throws -> Data {
+        guard configuration.isConfigured else { throw AITranslationError.notConfigured }
+        try Task.checkCancellation()
+        let result = try await transport.run(executable: resolveExecutable(), prompt: prompt,
+            model: configuration.model, reasoningEffort: configuration.codexReasoningEffort,
+            timeout: configuration.timeout, outputSchema: outputSchema)
+        try Task.checkCancellation()
+        guard !result.model.isEmpty else { throw AITranslationError.codexResponseInvalid("未返回实际模型") }
+        return Data(result.text.utf8)
+    }
+
     public func testConnection(configuration: AITranslationConfiguration) async throws {
         _ = try resolveExecutable()
         guard !configuration.model.isEmpty else { throw AITranslationError.notConfigured }

@@ -2,7 +2,8 @@ import SwiftUI
 import Combine
 struct ProbeTrack { var title = ""; var artist = ""; var artworkURL: URL? }
 struct ProbePreferences { var showTranslation = true }
-struct ProbeLine { var originalText = ""; var translationText: String?; var kanaText: String?; var romajiText: String? }
+public struct LyricRubyToken: Equatable, Sendable { var surface: String; var ruby: String?; var romaji: String? }
+struct ProbeLine { var rubyTokens: [LyricRubyToken]? = nil; var originalText = ""; var translationText: String?; var kanaText: String?; var romajiText: String? }
 enum ProbeLoadState { case loading, noLyrics, noSelection, noMatch, failed, loaded, alignmentQueued, alignmentRunning, alignmentPreview, idle, candidates(Int, [Int]), mockPreview }
 @MainActor public final class PlaybackState: ObservableObject {
     @Published var selectedLibraryToolTab = Tab.library

@@ -624,6 +624,34 @@ public final class LyricsSearchManager: @unchecked Sendable {
                     LyricsE2ELog.log("SEARCH official artists verified count=\(names.count) rescored=\(verifiedDecisions.count)")
                 }
             }
+            // A romanized Desktop name and a localized official name need
+            // evidence from the exact Spotify entity, not a lower match score.
+            if (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               automaticAdoptions.isEmpty, !attemptedArtistEnrichment, let spotifyArtistResolver,
+               variant.queryKind != .manualOverride, variant.queryKind != .titleOnlyLoose,
+               evaluatedCandidates.contains(where: {
+                   $0.decision.reasons.contains("durationClose")
+                       && ($0.decision.reasons.contains("primaryArtistConflict") || $0.decision.reasons.contains("titleMismatch"))
+                       && ScriptDetector.detect(track.title + track.artist) != ScriptDetector.detect($0.candidate.title + $0.candidate.artist)
+               }) {
+                attemptedArtistEnrichment = true
+                let officialAliases = await spotifyArtistResolver.aliases(for: track)
+                meta.aliases = Self.mergeAliases(meta.aliases, officialAliases)
+                for item in evaluatedCandidates where !officialAliases.isEmpty {
+                    let decision = LyricsSafeMatcher.decide(candidate: item.candidate, metadata: meta,
+                        aliasUsed: alias(for: variant), queryVariant: variant)
+                    if decision.tier != .reject {
+                        acceptedCandidates[item.candidate.id] = Self.enrichCandidate(item.candidate,
+                            providerName: item.providerName, variant: variant, decision: decision)
+                    }
+                    if decision.tier == .autoHigh || decision.tier == .autoMedium {
+                        automaticAdoptions.append(AutomaticAdoption(document: item.document, decision: decision,
+                            timingPriority: Self.timingPriority(of: item.candidate), providerIndex: item.providerIndex,
+                            candidateIndex: item.candidateIndex, providerName: item.providerName,
+                            cameFromCandidates: item.cameFromCandidates))
+                    }
+                }
+            }
             guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics) }
 
             // Explicit version browsing collects all enabled sources for this

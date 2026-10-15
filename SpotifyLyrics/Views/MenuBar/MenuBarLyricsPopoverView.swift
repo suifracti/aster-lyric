@@ -359,6 +359,12 @@ private struct MenuBarLyricsAppearanceControls: View {
                 Toggle("罗马音 / 拼音", isOn: $settings.menuBarLyricsShowsRomaji)
             }
             .toggleStyle(.checkbox)
+            Picker("注音位置", selection: $settings.menuBarLyricsReadingsAbove) {
+                Text("原文上方").tag(true)
+                Text("同一行").tag(false)
+            }
+            .pickerStyle(.segmented)
+            .disabled(!settings.menuBarLyricsShowsOriginal || (!settings.menuBarLyricsShowsKana && !settings.menuBarLyricsShowsRomaji))
             HStack(spacing: 8) {
                 Text("字号")
                 Slider(value: Binding(get: { fontSize }, set: { settings.menuBarLyricsFontSize = $0 }),
@@ -366,7 +372,7 @@ private struct MenuBarLyricsAppearanceControls: View {
                     .accessibilityLabel("状态栏歌词字号")
                 Text("\(Int(fontSize)) pt").monospacedDigit().frame(width: 36, alignment: .trailing)
             }
-            Text("各层在同一行排列，只使用已有读音；所选内容为空时显示歌名。")
+            Text("只显示已有读音，不自动调用 AI。上方注音适应系统菜单栏高度；内容为空时显示歌名。")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

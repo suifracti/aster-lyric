@@ -364,6 +364,23 @@ public struct GrokBuildTranslationService: TranslationEngine, Sendable {
 struct GeminiCLIStreamParser {
     static func parse(_ data: Data, expectedLines: [AITranslationSourceLine],
                       thinkingLevel: String, thinkingBudget: Int?) throws -> ProviderTranslationOutput {
+        let completion = try completedResponse(data)
+        let output = try JSONSerialization.jsonObject(with: Data(completion.text.utf8))
+        guard let root = output as? [String: Any], Set(root.keys) == ["lines"], let lines = root["lines"] else {
+            throw AITranslationError.invalidResponse("Gemini JSON 结果必须只包含 lines")
+        }
+        let validated = try AITranslationResponseParser.parseStable(JSONSerialization.data(withJSONObject: lines), expectedLines: expectedLines)
+        let reasoning = !thinkingLevel.isEmpty ? "thinkingLevel=\(thinkingLevel)" : (thinkingBudget.map { "thinkingBudget=\($0)" } ?? "model-default")
+        return ProviderTranslationOutput(lines: validated, model: completion.model, tokenUsage: completion.usage, reasoningSetting: reasoning)
+    }
+
+    struct Completion: Sendable {
+        let text: String
+        let model: String
+        let usage: AITranslationTokenUsage?
+    }
+
+    static func completedResponse(_ data: Data) throws -> Completion {
         guard let text = String(data: data, encoding: .utf8) else { throw AITranslationError.invalidResponse("Gemini stream 不是 UTF-8") }
         var model = ""
         var response = ""
@@ -398,13 +415,7 @@ struct GeminiCLIStreamParser {
             }
         }
         guard !model.isEmpty, !response.isEmpty else { throw AITranslationError.invalidResponse("Gemini 未返回实际模型或最终文本") }
-        let output = try JSONSerialization.jsonObject(with: Data(response.utf8))
-        guard let root = output as? [String: Any], Set(root.keys) == ["lines"], let lines = root["lines"] else {
-            throw AITranslationError.invalidResponse("Gemini JSON 结果必须只包含 lines")
-        }
-        let validated = try AITranslationResponseParser.parseStable(JSONSerialization.data(withJSONObject: lines), expectedLines: expectedLines)
-        let reasoning = !thinkingLevel.isEmpty ? "thinkingLevel=\(thinkingLevel)" : (thinkingBudget.map { "thinkingBudget=\($0)" } ?? "model-default")
-        return ProviderTranslationOutput(lines: validated, model: model, tokenUsage: usage, reasoningSetting: reasoning)
+        return Completion(text: response, model: model, usage: usage)
     }
 
     private static func parseUsage(_ value: Any?) -> AITranslationTokenUsage? {
@@ -460,10 +471,34 @@ public struct GeminiCLITranslationService: TranslationEngine, Sendable {
 
     public func translate(context: AITranslationContext, sourceContentHash: String,
                           configuration: AITranslationConfiguration) async throws -> AITranslationDraft {
-        guard configuration.isConfigured, let executable = resolveExecutable() else {
+        guard configuration.isConfigured, resolveExecutable() != nil else {
             throw AITranslationError.engineUnavailable("Gemini CLI 未安装或未填写模型；本阶段不会自动安装或登录")
         }
         let prompt = try AITranslationPromptBuilder().build(context: context, configuration: configuration)
+        let output = try await completeResponse(prompt: prompt, configuration: configuration)
+        let data = try JSONSerialization.jsonObject(with: Data(output.text.utf8))
+        guard let root = data as? [String: Any], Set(root.keys) == ["lines"], let lines = root["lines"] else {
+            throw AITranslationError.invalidResponse("Gemini JSON 结果必须只包含 lines")
+        }
+        let validated = try AITranslationResponseParser.parseStable(JSONSerialization.data(withJSONObject: lines), expectedLines: context.lines)
+        let reasoning = !configuration.geminiThinkingLevel.isEmpty ? "thinkingLevel=\(configuration.geminiThinkingLevel)" : (configuration.geminiThinkingBudget.map { "thinkingBudget=\($0)" } ?? "model-default")
+        return AITranslationDraft(lines: validated, targetLanguage: configuration.targetLanguage, model: output.model,
+            baseURLHost: "gemini-cli", promptHash: prompt.promptHash, sourceContentHash: sourceContentHash,
+            engineID: TranslationEngineID.geminiCLI.rawValue, promptPresetID: configuration.promptPresetID,
+            profileID: configuration.profileID, profileSnapshot: configuration.profileSnapshot, temperature: 0,
+            workflowID: configuration.workflowID, fallbackStrategy: .none, isDraft: true,
+            tokenUsage: output.usage, providerReasoningSetting: reasoning)
+    }
+
+    func complete(prompt: AITranslationPrompt, configuration: AITranslationConfiguration) async throws -> Data {
+        Data(try await completeResponse(prompt: prompt, configuration: configuration).text.utf8)
+    }
+
+    private func completeResponse(prompt: AITranslationPrompt, configuration: AITranslationConfiguration) async throws -> GeminiCLIStreamParser.Completion {
+        guard configuration.isConfigured, let executable = resolveExecutable() else {
+            throw AITranslationError.engineUnavailable("Gemini CLI 未安装或未填写模型")
+        }
+        try Task.checkCancellation()
         return try await withProviderJob { job in
             let alias = "spotifylyrics-" + UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
             let geminiDirectory = job.appendingPathComponent(".gemini", isDirectory: true)
@@ -475,15 +510,10 @@ public struct GeminiCLITranslationService: TranslationEngine, Sendable {
                 arguments: Self.arguments(alias: alias, prompt: prompt.system + "\n\n" + prompt.user), cwd: job,
                 timeout: configuration.timeout, stdin: nil, environmentOverrides: [:])
             guard result.exitCode == 0 else { throw AITranslationError.engineUnavailable("Gemini CLI 失败（退出码 \(result.exitCode)），未创建候选") }
-            let output = try GeminiCLIStreamParser.parse(result.stdout, expectedLines: context.lines,
-                thinkingLevel: configuration.geminiThinkingLevel, thinkingBudget: configuration.geminiThinkingBudget)
+            let output = try GeminiCLIStreamParser.completedResponse(result.stdout)
             guard output.model == configuration.model else { throw AITranslationError.invalidResponse("Gemini 实际模型与设置模型不一致") }
-            return AITranslationDraft(lines: output.lines, targetLanguage: configuration.targetLanguage, model: output.model,
-                baseURLHost: "gemini-cli", promptHash: prompt.promptHash, sourceContentHash: sourceContentHash,
-                engineID: TranslationEngineID.geminiCLI.rawValue, promptPresetID: configuration.promptPresetID,
-                profileID: configuration.profileID, profileSnapshot: configuration.profileSnapshot, temperature: 0,
-                workflowID: configuration.workflowID, fallbackStrategy: .none, isDraft: true,
-                tokenUsage: output.tokenUsage, providerReasoningSetting: output.reasoningSetting)
+            try Task.checkCancellation()
+            return output
         }
     }
 

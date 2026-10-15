@@ -607,7 +607,7 @@ struct CurrentSongOperationsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("仅处理日语不确定读音 · 兼容 API 可能收费 · 确认后生成")
+                Text("仅处理日语不确定读音 · 使用所选 AI 引擎 · 确认后生成")
                     .font(.system(size: 10, design: .rounded))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -620,13 +620,13 @@ struct CurrentSongOperationsView: View {
 
     private var aiReadingUnavailableReason: String? {
         guard settings.readingPreferences.aiAssistedCandidate else {
-            return "在设置 → 读音中允许 AI 辅助候选后，可在此明确生成。"
+            return "在右上角 AI 面板开启读音优化后，可在此明确生成。"
         }
-        guard settings.aiTranslationConfiguration.engineID == TranslationEngineID.openAICompatible.rawValue else {
-            return "AI 读音目前仅支持兼容 API，不能使用 GPT / Codex 订阅。"
+        guard AIReadingCandidateService.supports(engineID: settings.aiTranslationConfiguration.engineID) else {
+            return "请选择兼容 API、GPT / ChatGPT 或 Gemini CLI 来优化读音。"
         }
         guard settings.aiTranslationConfiguration.isConfigured else {
-            return "请先在 AI 翻译设置中配置兼容 API 地址和模型。"
+            return "请先在 AI 设置中配置所选引擎与模型。"
         }
         guard state.hasLiveTrack, !state.isMockPreviewMode, !state.isShowingSearchPreview,
               state.liveLyricsDocumentMatchesCurrentTrack, state.readingSession.hasSource else {

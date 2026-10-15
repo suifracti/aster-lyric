@@ -374,13 +374,43 @@ struct AppleMusicImmersiveV3BackdropView: View {
         Group {
             if settings.v3AmbientBackgroundShowsCompleteArtwork {
                 GeometryReader { geometry in
-                    Image(nsImage: image)
-                        .resizable()
-                        .interpolation(.high)
-                        .scaledToFit()
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .blur(radius: diffusionRadius)
+                    let aspect = max(0.01, image.size.width / max(1, image.size.height))
+                    let fitHeight = min(geometry.size.height, geometry.size.width / aspect)
+                    // Keep most of the cover visible, with at most a modest
+                    // crop. A diffuse continuation removes the hard fit bands.
+                    let fillHeight = max(geometry.size.height, geometry.size.width / aspect)
+                    let height = min(fillHeight, fitHeight * 1.12)
+                    ZStack {
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .clipped()
+                            .blur(radius: 24 + diffusionRadius)
+                            .opacity(0.55)
+                        Image(nsImage: image)
+                            .resizable()
+                            .interpolation(.high)
+                            .frame(width: height * aspect, height: height)
+                            .blur(radius: diffusionRadius)
+                            .mask {
+                                LinearGradient(stops: [
+                                    .init(color: .clear, location: 0),
+                                    .init(color: .white, location: 0.06),
+                                    .init(color: .white, location: 0.94),
+                                    .init(color: .clear, location: 1)
+                                ], startPoint: .leading, endPoint: .trailing)
+                                .mask(LinearGradient(stops: [
+                                    .init(color: .clear, location: 0),
+                                    .init(color: .white, location: 0.04),
+                                    .init(color: .white, location: 0.96),
+                                    .init(color: .clear, location: 1)
+                                ], startPoint: .top, endPoint: .bottom))
+                            }
+                    }
+                    .frame(width: geometry.size.width, height: geometry.size.height)
                 }
+                .clipped()
             } else {
                 Image(nsImage: image)
                     .resizable()

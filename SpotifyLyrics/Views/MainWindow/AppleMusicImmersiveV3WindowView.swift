@@ -1021,35 +1021,8 @@ struct AppleMusicImmersiveV3WindowView: View {
         .popover(isPresented: $isStylePickerPresented, arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("移入预览 · 点击确定").font(.subheadline.weight(.medium))
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                    ForEach(V3ArtworkPresentation.allCases) { style in
-                        Button {
-                            settings.v3ArtworkPresentation = style
-                            hoveredStyle = nil
-                            isStylePickerPresented = false
-                        } label: {
-                            VStack(spacing: 8) {
-                                Image(systemName: style.symbolName).font(.system(size: 23))
-                                Text(style.title).font(.system(size: 12, weight: .medium))
-                            }
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 76)
-                            .background(settings.v3ArtworkPresentation == style ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
-                            .overlay(alignment: .topTrailing) {
-                                if settings.v3ArtworkPresentation == style {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(Color.accentColor).padding(6)
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .onHover { inside in
-                            if inside { hoveredStyle = style }
-                        }
-                        .accessibilityIdentifier("v3.style." + style.rawValue)
-                        .accessibilityAddTraits(settings.v3ArtworkPresentation == style ? .isSelected : [])
-                        .help(style.detail)
-                    }
+                V3ThemeSelectorView(settings: settings, preview: $hoveredStyle) {
+                    isStylePickerPresented = false
                 }
             }
             .padding(16)
@@ -1228,10 +1201,10 @@ struct AppleMusicImmersiveV3WindowView: View {
     private var aiReadingRequestDisabledReason: String? {
         guard settings.readingPreferences.aiAssistedCandidate else { return "开启 AI 优化后，可明确生成候选。" }
         guard canGenerateReadingHere else { return "载入当前播放歌曲的已保存歌词后可生成。" }
-        guard settings.aiTranslationConfiguration.engineID == TranslationEngineID.openAICompatible.rawValue else {
-            return "AI 读音目前仅支持兼容 API；GPT / ChatGPT 与 Gemini 仍可用于翻译。"
+        guard AIReadingCandidateService.supports(engineID: settings.aiTranslationConfiguration.engineID) else {
+            return "请选择兼容 API、GPT / ChatGPT 或 Gemini CLI 来优化读音。"
         }
-        guard settings.aiTranslationConfiguration.isConfigured else { return "请先在设置中配置兼容 API 地址与模型。" }
+        guard settings.aiTranslationConfiguration.isConfigured else { return "请先在设置中配置所选引擎与模型。" }
         guard LyricsLanguageGate.allowsJapaneseReadings(language: state.liveLyricsLanguage, text: state.liveLyrics.map(\.originalText).joined(separator: "\n")) else {
             return "AI 优化仅处理日语不确定读音，请先确认歌词语言。"
         }
@@ -1299,7 +1272,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             .accessibilityIdentifier("appearance.shortcut")
             .toolbarTooltip("外观背景", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
             .popover(isPresented: $isAppearancePresented, arrowEdge: .top) {
-                V3VisualTuningPopoverView(settings: settings, layoutStyleRawValue: $layoutStyleRawValue)
+                V3VisualTuningPopoverView(settings: settings, layoutStyleRawValue: $layoutStyleRawValue, preview: $hoveredStyle)
             }
             Button { isDisplayPresented.toggle() } label: {
                 iconLabel("character.bubble", description: "歌词显示")
@@ -3680,9 +3653,74 @@ private struct V3LyricsTimePopover: View {
     }
 }
 
+/// Shared theme navigation; existing style IDs and per-style preferences stay intact.
+private struct V3ThemeSelectorView: View {
+    @ObservedObject var settings: AppSettingsStore
+    @Binding var preview: V3ArtworkPresentation?
+    var onConfirm: () -> Void
+
+    private var ambientChoice: V3ArtworkPresentation { settings.v3RememberedAmbientVariant }
+
+    private func choose(_ style: V3ArtworkPresentation) {
+        settings.v3ArtworkPresentation = style
+        preview = nil
+        onConfirm()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                ForEach(V3ArtworkPresentation.themes) { theme in
+                    let style = theme == .ambient ? ambientChoice : theme
+                    Button { choose(style) } label: {
+                        VStack(spacing: 7) {
+                            Image(systemName: theme.symbolName).font(.system(size: 22))
+                            Text(theme.themeTitle).font(.system(size: 12, weight: .medium))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 64)
+                        .background(settings.v3ArtworkPresentation.theme == theme ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(alignment: .topTrailing) {
+                            if settings.v3ArtworkPresentation.theme == theme {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(Color.accentColor).padding(6)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { inside in if inside { preview = style } }
+                    .help(style.detail)
+                    .accessibilityIdentifier("v3.theme." + theme.rawValue)
+                    .accessibilityAddTraits(settings.v3ArtworkPresentation.theme == theme ? .isSelected : [])
+                }
+            }
+            if (preview ?? settings.v3ArtworkPresentation).theme == .ambient {
+                Text("环境光效果").font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 5) {
+                    ForEach(V3ArtworkPresentation.ambientVariants) { style in
+                        Button { choose(style) } label: {
+                            Text(style.variantTitle)
+                                .font(.system(size: 11, weight: .medium))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 9)
+                                .background(settings.v3ArtworkPresentation == style ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+                        }
+                        .buttonStyle(.plain)
+                        .onHover { inside in if inside { preview = style } }
+                        .help(style.detail)
+                        .accessibilityIdentifier("v3.style." + style.rawValue)
+                        .accessibilityAddTraits(settings.v3ArtworkPresentation == style ? .isSelected : [])
+                    }
+                }
+            }
+        }
+    }
+}
+
 private struct V3VisualTuningPopoverView: View {
     @ObservedObject var settings: AppSettingsStore
     @Binding var layoutStyleRawValue: String
+    @Binding var preview: V3ArtworkPresentation?
 
     private var blurPresetName: String {
         let r = settings.v3BackdropBlurRadius
@@ -3706,6 +3744,7 @@ private struct V3VisualTuningPopoverView: View {
         }
         .frame(width: 340)
         .frame(maxHeight: 680)
+        .onDisappear { preview = nil }
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
@@ -3738,21 +3777,7 @@ private struct V3VisualTuningPopoverView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 6) {
-                    ForEach(V3ArtworkPresentation.allCases) { presentation in
-                        Button {
-                            settings.v3ArtworkPresentation = presentation
-                        } label: {
-                            Text(presentation.title)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(settings.v3ArtworkPresentation == presentation ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(settings.v3ArtworkPresentation == presentation ? .isSelected : [])
-                    }
-                }
-                .font(.system(size: 12, weight: .medium))
+                V3ThemeSelectorView(settings: settings, preview: $preview) {}
 
                 Text(settings.v3ArtworkPresentation.detail)
                     .font(.system(size: 10))
@@ -3765,11 +3790,11 @@ private struct V3VisualTuningPopoverView: View {
                     Text("背景封面").font(.system(size: 12, weight: .medium))
                     Picker("背景封面", selection: $settings.v3AmbientBackgroundShowsCompleteArtwork) {
                         Text("铺满").tag(false)
-                        Text("完整").tag(true)
+                        Text("更多封面").tag(true)
                     }
                     .pickerStyle(.segmented)
                     .accessibilityIdentifier("v3.ambient.backgroundFraming")
-                    Text("完整显示保留封面全貌，余白延续专辑色彩与光晕。")
+                    Text("更多封面随窗口适应取景，边缘柔和延伸；前景封面大小单独调整。")
                         .font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

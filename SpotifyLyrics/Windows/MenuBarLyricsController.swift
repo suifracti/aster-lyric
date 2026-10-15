@@ -28,6 +28,7 @@ public struct MenuBarLyricsSnapshot: Equatable, Sendable {
     public var currentTranslationText: String? = nil
     public var currentKanaText: String? = nil
     public var currentRomajiText: String? = nil
+    public var currentRubyTokens: [LyricRubyToken]? = nil
     /// Playback controls follow the current provider capability, not just retained metadata.
     public var canControlPlayback: Bool = false
 }
@@ -51,16 +52,18 @@ public struct MenuBarLyricsAppearance: Equatable, Sendable {
     public var showsKana: Bool
     public var showsRomaji: Bool
     public var fontSize: Double
+    public var readingsAbove: Bool
 
     public init(showsFullLine: Bool = false, showsOriginal: Bool = true,
                 showsTranslation: Bool = false, showsKana: Bool = false,
-                showsRomaji: Bool = false, fontSize: Double = 13) {
+                showsRomaji: Bool = false, fontSize: Double = 13, readingsAbove: Bool = true) {
         self.showsFullLine = showsFullLine
         self.showsOriginal = showsOriginal
         self.showsTranslation = showsTranslation
         self.showsKana = showsKana
         self.showsRomaji = showsRomaji
         self.fontSize = fontSize
+        self.readingsAbove = readingsAbove
     }
 
     public var effectiveFontSize: CGFloat {
@@ -88,6 +91,61 @@ public enum MenuBarTextFormatter {
         return appearance.showsFullLine ? text : truncateToFit(
             text, font: .systemFont(ofSize: appearance.effectiveFontSize)
         )
+    }
+
+    /// Menu-bar height is fixed by macOS. Draw the existing token readings
+    /// above their surfaces in one template image, preserving native tint/clicks.
+    @MainActor public static func readingImage(snapshot: MenuBarLyricsSnapshot,
+                                              appearance: MenuBarLyricsAppearance) -> NSImage? {
+        guard appearance.readingsAbove, appearance.showsOriginal,
+              appearance.showsKana || appearance.showsRomaji,
+              let original = snapshot.currentLineText, !original.isEmpty else { return nil }
+        let baseFont = NSFont.systemFont(ofSize: min(14, appearance.effectiveFontSize))
+        let readingFont = NSFont.systemFont(ofSize: 7)
+        let baseAttributes: [NSAttributedString.Key: Any] = [.font: baseFont, .foregroundColor: NSColor.black]
+        let rubyAttributes: [NSAttributedString.Key: Any] = [.font: readingFont, .foregroundColor: NSColor.black]
+        func annotation(kana: String?, romaji: String?) -> String {
+            [appearance.showsKana ? kana : nil, appearance.showsRomaji ? romaji : nil]
+                .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        }
+        var pairs: [(String, String)] = []
+        if let tokens = snapshot.currentRubyTokens, !tokens.isEmpty,
+           tokens.map(\.surface).joined() == original {
+            pairs = tokens.map { ($0.surface, annotation(kana: $0.ruby, romaji: $0.romaji)) }
+        }
+        if pairs.isEmpty || pairs.allSatisfy({ $0.1.isEmpty }) {
+            pairs = [(original, annotation(kana: snapshot.currentKanaText, romaji: snapshot.currentRomajiText))]
+        }
+        guard pairs.contains(where: { !$0.1.isEmpty }) else { return nil }
+        if appearance.showsTranslation, let translated = snapshot.currentTranslationText, !translated.isEmpty {
+            pairs.append((" · " + translated, ""))
+        }
+        let widths = pairs.map { max(($0.0 as NSString).size(withAttributes: baseAttributes).width,
+                                      ($0.1 as NSString).size(withAttributes: rubyAttributes).width) + 1 }
+        let naturalWidth = widths.reduce(0, +) + 20
+        let width = appearance.showsFullLine ? naturalWidth : min(maxVisualWidth, naturalWidth)
+        let truncated = width < naturalWidth
+        let image = NSImage(size: NSSize(width: width, height: 22), flipped: false) { rect in
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(rect: NSRect(x: 0, y: 0, width: truncated ? max(0, rect.width - 12) : rect.width, height: rect.height)).addClip()
+            if let symbol = NSImage(systemSymbolName: statusItemSymbol(snapshot: snapshot), accessibilityDescription: nil) {
+                symbol.draw(in: NSRect(x: 1, y: 5, width: 12, height: 12))
+            }
+            var x: CGFloat = 18
+            for (index, pair) in pairs.enumerated() {
+                let surfaceWidth = (pair.0 as NSString).size(withAttributes: baseAttributes).width
+                let readingWidth = (pair.1 as NSString).size(withAttributes: rubyAttributes).width
+                (pair.0 as NSString).draw(at: NSPoint(x: x + (widths[index] - surfaceWidth) / 2, y: 0), withAttributes: baseAttributes)
+                (pair.1 as NSString).draw(at: NSPoint(x: x + (widths[index] - readingWidth) / 2, y: 14), withAttributes: rubyAttributes)
+                x += widths[index]
+                if x >= rect.width { break }
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            if truncated { ("…" as NSString).draw(at: NSPoint(x: rect.width - 12, y: 0), withAttributes: baseAttributes) }
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     public static func statusItemSymbol(snapshot: MenuBarLyricsSnapshot) -> String {
@@ -213,14 +271,14 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             settings.$menuBarLyricsShowsFullLine, settings.$menuBarLyricsShowsOriginal,
             settings.$menuBarLyricsShowsTranslation, settings.$menuBarLyricsShowsKana
         )
-        .combineLatest(settings.$menuBarLyricsShowsRomaji, settings.$menuBarLyricsFontSize)
+        .combineLatest(settings.$menuBarLyricsShowsRomaji, settings.$menuBarLyricsFontSize, settings.$menuBarLyricsReadingsAbove)
         .sink { [weak self] values in
             guard let self else { return }
-            let (flags, romaji, fontSize) = values
+            let (flags, romaji, fontSize, readingsAbove) = values
             self.appearance = MenuBarLyricsAppearance(
                 showsFullLine: flags.0, showsOriginal: flags.1,
                 showsTranslation: flags.2, showsKana: flags.3,
-                showsRomaji: romaji, fontSize: fontSize
+                showsRomaji: romaji, fontSize: fontSize, readingsAbove: readingsAbove
             )
             self.updateStatusItemButton(lyricsEnabled: self.settings.menuBarLyricsEnabled)
         }
@@ -418,6 +476,11 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             systemSymbolName: MenuBarTextFormatter.statusItemSymbol(snapshot: currentSnapshot),
             accessibilityDescription: "Lyric Island"
         )
+        if lyricsEnabled, let rubyImage = MenuBarTextFormatter.readingImage(snapshot: currentSnapshot, appearance: appearance) {
+            button.title = ""
+            button.image = rubyImage
+            button.imagePosition = .imageOnly
+        }
         let help = MenuBarTextFormatter.statusItemHelp(snapshot: currentSnapshot)
         button.toolTip = help
         button.setAccessibilityLabel("Lyric Island，歌词与播放")
@@ -564,6 +627,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 // after the original lyrics are immediately reflected in the UI.
                 let translated = lines[currentIndex].translationText?.trimmingCharacters(in: .whitespacesAndNewlines)
                 snapshot.currentTranslationText = translated?.isEmpty == true ? nil : translated
+                snapshot.currentRubyTokens = lines[currentIndex].rubyTokens
                 snapshot.currentKanaText = lines[currentIndex].kanaText
                 snapshot.currentRomajiText = lines[currentIndex].romajiText
                 return snapshot
@@ -583,6 +647,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 )
                 let translation = firstLine?.translationText?.trimmingCharacters(in: .whitespacesAndNewlines)
                 snapshot.currentTranslationText = translation?.isEmpty == true ? nil : translation
+                snapshot.currentRubyTokens = firstLine?.rubyTokens
                 snapshot.currentKanaText = firstLine?.kanaText
                 snapshot.currentRomajiText = firstLine?.romajiText
                 return snapshot

@@ -9,7 +9,7 @@ controller_source = (root/'SpotifyLyrics/Windows/MenuBarLyricsController.swift')
 hosting_type = re.search(r'pop\.contentViewController = (\w+)\(', controller_source).group(1)
 # Extract the actual persistence boundary for this setting, avoiding unrelated stores.
 keys = re.findall(r'public static let menuBarLyrics\w+ = [^\n]+', store)
-assert len(keys) == 7, 'Missing persistent menu-bar lyrics settings'
+assert len(keys) == 8, 'Missing persistent menu-bar lyrics settings'
 properties = re.findall(r'@Published public var menuBarLyrics\w+: (?:Bool|Double) \{\s*didSet \{[^\n]+\}\s*\}', store)
 initial = '\n'.join(re.findall(r'^        menuBarLyrics\w+ = [^\n]+', store, re.M))
 settings = '''import Foundation
@@ -127,7 +127,15 @@ import Combine
   let restored = AppSettingsStore(defaults: defaults)
   precondition(restored.menuBarLyricsShowsFullLine && !restored.menuBarLyricsShowsOriginal && restored.menuBarLyricsShowsTranslation && restored.menuBarLyricsShowsKana && restored.menuBarLyricsShowsRomaji && restored.menuBarLyricsFontSize == 16)
   withExtendedLifetime(observation) {}
-  print("PASS menu-bar first-click, opening focus, keyboard focus, layout, persistence, immediate toggle and content layers")
+  let rubySnapshot = MenuBarLyricsSnapshot(state: .synchronized(current: "空", next: nil), statusText: "空", trackTitle: "Song", artistName: nil, currentLineText: "空", nextLineText: nil, isPlaying: true, hasLiveTrack: true, artworkURL: nil, currentKanaText: "そら")
+  let rubyAppearance = MenuBarLyricsAppearance(showsKana: true)
+  let rubyImage = MenuBarTextFormatter.readingImage(snapshot: rubySnapshot, appearance: rubyAppearance)
+  precondition(rubyImage != nil && rubyImage!.size.height == 22 && rubyImage!.isTemplate)
+  var inline = rubyAppearance; inline.readingsAbove = false
+  precondition(MenuBarTextFormatter.readingImage(snapshot: rubySnapshot, appearance: inline) == nil)
+  settings.menuBarLyricsReadingsAbove = false
+  precondition(!AppSettingsStore(defaults: defaults).menuBarLyricsReadingsAbove)
+  print("PASS menu-bar ruby image, first-click, opening focus, keyboard focus, layout, persistence, immediate toggle and content layers")
  }
 }
 '''
