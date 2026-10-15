@@ -55,7 +55,9 @@ enum AITranslationRequestExecution {
         try Task.checkCancellation()
         var request = try await repository.beginTranslationRequest(key: key, explicitRetry: explicitRetry)
         try Task.checkCancellation()
-        try budget?.reserve(provider: configuration.engineID, trackKey: trackKey)
+        if configuration.engineID != TranslationEngineID.appleSystem.rawValue {
+            try budget?.reserve(provider: configuration.engineID, trackKey: trackKey)
+        }
         request.phase = .dispatching; request.updatedAt = Date()
         try await repository.updateTranslationRequest(request)
         try Task.checkCancellation()
@@ -274,10 +276,11 @@ public struct AppleSystemTranslationEngine: TranslationEngine, Sendable {
 /// inside the installed CLI; this service never reads or logs credential values.
 public struct CodexAppServerTranslationService: TranslationEngine, Sendable {
     public static let executablePaths = [
+        "/Applications/Codex.app/Contents/Resources/codex",
         "/Applications/ChatGPT.app/Contents/Resources/codex",
         "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
         "/usr/local/bin/codex", "/opt/homebrew/bin/codex"
-    ]
+    ] + TranslationCLIHost.searchDirectories.map { $0 + "/codex" }
     private let executableCandidates: [String]
     private let transport: any CodexTranslationTransport
 
@@ -503,7 +506,8 @@ final class CodexAppServerClient: @unchecked Sendable {
             "-c", "forced_login_method=\"chatgpt\"", "-c", "model_provider=\"openai\""]
         process.currentDirectoryURL = cwd
         // No inherited API keys, tokens, workspace paths or custom shell config.
-        var environment = ["PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin", "LANG": "en_US.UTF-8", "HOME": NSHomeDirectory()]
+        var environment = TranslationCLIHost.childEnvironment(from: ["LANG": "en_US.UTF-8"])
+        environment["CODEX_HOME"] = TranslationCLIHost.homeDirectory + "/.codex"
         if let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"], !codexHome.isEmpty {
             environment["CODEX_HOME"] = codexHome
         }

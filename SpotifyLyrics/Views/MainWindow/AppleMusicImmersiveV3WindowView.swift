@@ -1005,7 +1005,14 @@ struct AppleMusicImmersiveV3WindowView: View {
         return true
     }
 
+    private var usesSystemTranslation: Bool {
+        settings.aiTranslationConfiguration.engineID == TranslationEngineID.appleSystem.rawValue
+    }
+
+    private var allowsTranslationRequests: Bool { usesSystemTranslation || allowsModelRequests }
+
     private var allowsAutomaticTranslation: Bool {
+        if usesSystemTranslation { return true }
 #if DEBUG
         if DebugAcceptanceDataIsolation.isRequested { return false }
 #endif
@@ -1066,10 +1073,10 @@ struct AppleMusicImmersiveV3WindowView: View {
                     Button("翻译整首") { state.translateCurrentLyrics() }
                     Button("重新翻译") { state.retranslateCurrentLyrics() }
                 }
-                .disabled(!allowsModelRequests || !settings.aiTranslationConfiguration.isConfigured || state.liveLyrics.isEmpty)
+                .disabled(!allowsTranslationRequests || !settings.aiTranslationConfiguration.isConfigured || state.liveLyrics.isEmpty)
             }
-            if !allowsModelRequests {
-                Text("没有剩余新请求预算；仍可查看和采用已保存版本。")
+            if !allowsTranslationRequests {
+                Text("没有剩余模型请求预算；苹果系统翻译及已保存版本仍可使用。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let candidate = state.translationSessionPendingCandidate {

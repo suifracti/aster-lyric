@@ -760,7 +760,7 @@ private struct AISettingsView: View {
             Section("翻译默认行为") {
                 TextField("目标语言", text: configurationBinding(\.targetLanguage))
                     .textFieldStyle(.roundedBorder)
-                Picker("默认提示词预设", selection: configurationBinding(\.promptPresetID)) {
+                Picker("翻译风格", selection: stylePresetBinding) {
                     ForEach(TranslationPromptPresetCatalog.all, id: \.id) { preset in
                         Text(preset.displayName).tag(preset.id.rawValue)
                     }
@@ -787,7 +787,7 @@ private struct AISettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue {
-                    Label("由本机 Codex app-server 管理 ChatGPT 登录；不会读取或保存 auth.json / OAuth 原始凭据。首次使用会打开浏览器登录。", systemImage: "lock.shield")
+                    Label("由本机 Codex app-server 管理 ChatGPT 登录；不会读取或保存 auth.json / OAuth 原始凭据。复用既有登录；未登录时请先在 Codex 中完成登录，再刷新模型。", systemImage: "lock.shield")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -883,8 +883,10 @@ private struct AISettingsView: View {
                                 Text(strategy.title).tag(strategy)
                             }
                         }
-                        TextField("翻译风格（兼容旧设置）", text: configurationBinding(\.style))
-                            .textFieldStyle(.roundedBorder)
+                        if settings.aiTranslationConfiguration.promptPresetID == TranslationPromptPresetID.custom.rawValue {
+                            TextField("自定义风格说明", text: configurationBinding(\.style))
+                                .textFieldStyle(.roundedBorder)
+                        }
                         Button("管理个人翻译风格", systemImage: "person.crop.circle.badge.pencil") {
                             showProfileManager = true
                         }
@@ -958,6 +960,16 @@ private struct AISettingsView: View {
         }
     }
 
+    private var stylePresetBinding: Binding<String> {
+        Binding(get: { settings.aiTranslationConfiguration.promptPresetID }, set: { rawValue in
+            guard let preset = TranslationPromptPresetID(rawValue: rawValue) else { return }
+            var next = settings.aiTranslationConfiguration
+            next.promptPresetID = rawValue
+            next.style = preset.legacyStyle
+            settings.aiTranslationConfiguration = next
+        })
+    }
+
     private var profileBinding: Binding<String> {
         Binding(
             get: { settings.aiTranslationConfiguration.profileID?.uuidString ?? "" },
@@ -967,6 +979,7 @@ private struct AISettingsView: View {
                 if let profile = settings.translationProfiles.list(includeArchived: true).first(where: { $0.id.uuidString == value }) {
                     next.profileSnapshot = profile.snapshotString
                     next.promptPresetID = profile.basePresetID.rawValue
+                    next.style = profile.basePresetID.legacyStyle
                     next.targetLanguage = profile.targetLanguage
                     if let temperature = profile.temperatureOverride { next.temperature = temperature }
                 } else {

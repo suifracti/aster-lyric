@@ -9,6 +9,23 @@ struct TranslationCLIRuntimeSafetyContract {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: root) }
 
+        let previousCLIHome = ProcessInfo.processInfo.environment["SPOTIFYLYRICS_TRANSLATION_CLI_HOME"]
+        setenv("SPOTIFYLYRICS_TRANSLATION_CLI_HOME", root.path, 1)
+        defer {
+            if let previousCLIHome { setenv("SPOTIFYLYRICS_TRANSLATION_CLI_HOME", previousCLIHome, 1) }
+            else { unsetenv("SPOTIFYLYRICS_TRANSLATION_CLI_HOME") }
+        }
+        precondition(TranslationCLIHost.homeDirectory == root.path)
+        let child = TranslationCLIHost.childEnvironment(from: ["CFFIXED_USER_HOME": "/private/app-data", "TMPDIR": root.path])
+        precondition(child["HOME"] == root.path && child["CFFIXED_USER_HOME"] == nil)
+        precondition(child["TMPDIR"] == root.path, "CLI login home must not move application temporary files")
+        let grokBin = root.appendingPathComponent(".grok/bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: grokBin, withIntermediateDirectories: true)
+        let hostGrok = try makeFakeCLI(at: grokBin.appendingPathComponent("grok"), body: "exit 0\n")
+        precondition(GrokBuildTranslationService().resolveExecutable() == hostGrok.path,
+            "private app home hid the existing CLI installation")
+        precondition(Set(TranslationPromptPresetID.allCases.map(\.legacyStyle)).count == TranslationPromptPresetID.allCases.count)
+
         let marker = "SYNTHETIC_CLI_TOKEN_OUTPUT_DO_NOT_LEAK"
         let fakeFailure = try makeFakeCLI(
             at: root.appendingPathComponent("fake-failure"),

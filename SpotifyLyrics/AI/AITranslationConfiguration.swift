@@ -128,6 +128,30 @@ public struct AITranslationConfiguration: Equatable, Sendable {
     }
 }
 
+/// CLI authentication belongs to the existing CLI user, independently of the
+/// app's optional private lyrics library. The launcher can name that home
+/// without copying credentials or changing the app's data directory.
+enum TranslationCLIHost {
+    static var homeDirectory: String {
+        let configured = ProcessInfo.processInfo.environment["SPOTIFYLYRICS_TRANSLATION_CLI_HOME"] ?? ""
+        return configured.hasPrefix("/") ? configured : NSHomeDirectory()
+    }
+    static var searchDirectories: [String] {
+        [homeDirectory + "/.local/bin", homeDirectory + "/.npm-global/bin",
+         homeDirectory + "/Library/Application Support/SpotifyLyrics/TranslationCLI/bin",
+         "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+    }
+    static var path: String { searchDirectories.joined(separator: ":") }
+    static func childEnvironment(from inherited: [String: String]) -> [String: String] {
+        var result = inherited
+        result["HOME"] = homeDirectory
+        result["CFFIXED_USER_HOME"] = nil
+        result["SPOTIFYLYRICS_TRANSLATION_CLI_HOME"] = nil
+        result["PATH"] = path
+        return result
+    }
+}
+
 public struct AITranslationEndpoint: Equatable, Sendable {
     public let baseURL: String
 

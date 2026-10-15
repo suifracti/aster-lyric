@@ -133,8 +133,8 @@ private struct FoundationProviderCLIExecutor: ProviderCLIExecuting {
     private static var safeEnvironment:[String:String] {
         let blocked=["token","secret","password","api_key","apikey","authorization","credential","cookie","private_key"]
         var env=ProcessInfo.processInfo.environment.filter { key,_ in !blocked.contains(where:key.lowercased().contains) }
-        env["HOME"]=NSHomeDirectory();env["LANG"]=env["LANG"] ?? "en_US.UTF-8"
-        env["PATH"]=env["PATH"] ?? "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin";return env
+        env["LANG"]=env["LANG"] ?? "en_US.UTF-8"
+        return TranslationCLIHost.childEnvironment(from: env)
     }
 }
 
@@ -270,7 +270,7 @@ struct GrokBuildResponseParser {
 }
 
 public struct GrokBuildTranslationService: TranslationEngine, Sendable {
-    static let executablePaths = [NSHomeDirectory() + "/.grok/bin/grok", "/opt/homebrew/bin/grok", "/usr/local/bin/grok", NSHomeDirectory()+"/Library/Application Support/SpotifyLyrics/TranslationCLI/bin/grok"]
+    static let executablePaths = [TranslationCLIHost.homeDirectory + "/.grok/bin/grok"] + TranslationCLIHost.searchDirectories.map { $0 + "/grok" }
     private let candidates: [String]
     private let executor: any ProviderCLIExecuting
 
@@ -428,8 +428,7 @@ struct GeminiCLIStreamParser {
 }
 
 public struct GeminiCLITranslationService: TranslationEngine, Sendable {
-    static let executablePaths = [NSHomeDirectory() + "/.local/bin/gemini", NSHomeDirectory() + "/.npm-global/bin/gemini",
-                                  "/opt/homebrew/bin/gemini", "/usr/local/bin/gemini", NSHomeDirectory()+"/Library/Application Support/SpotifyLyrics/TranslationCLI/bin/gemini"]
+    static let executablePaths = TranslationCLIHost.searchDirectories.map { $0 + "/gemini" }
     private let candidates: [String]
     private let executor: any ProviderCLIExecuting
 
@@ -629,7 +628,7 @@ struct AntigravityCLIStreamParser {
 }
 
 public struct AntigravityCLITranslationService: TranslationEngine, Sendable {
-    static let executablePaths = [NSHomeDirectory() + "/.local/bin/agy", "/opt/homebrew/bin/agy", "/usr/local/bin/agy"]
+    static let executablePaths = TranslationCLIHost.searchDirectories.map { $0 + "/agy" }
     private let candidates: [String]
     private let executor: any ProviderCLIExecuting
 

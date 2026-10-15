@@ -155,6 +155,16 @@ public enum TranslationPromptPresetID: String, CaseIterable, Codable, Sendable {
     case contextAware = "translationPrompt.contextAware.v1"
     case custom = "translationPrompt.custom.v1"
 
+    public var legacyStyle: String {
+        switch self {
+        case .naturalSong: return "natural_song"
+        case .literalFaithful: return "literal_faithful"
+        case .poeticFlow: return "poetic_flow"
+        case .contextAware: return "context_aware"
+        case .custom: return "custom"
+        }
+    }
+
     public var displayName: String {
         switch self {
         case .naturalSong: return "自然歌曲"

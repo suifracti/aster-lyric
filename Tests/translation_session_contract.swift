@@ -328,6 +328,42 @@ struct TranslationSessionContract {
     }
 
     @MainActor
+    static func systemTranslationBudgetContract() async throws {
+        let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["SPOTIFYLYRICS_CONTRACT_ROOT"]!)
+        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("system-budget.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("system-budget-provenance"))
+        try await repository.prepare()
+        let track = makeTrack("system-budget", title: "Synthetic System Budget")
+        let identity = TrackIdentity(track: track)
+        let document = makeDocument(track: track, identity: identity)
+        let source = try await repository.save(track: track, identity: identity, document: document)
+        let config = AITranslationConfiguration(engineID: TranslationEngineID.appleSystem.rawValue)
+        let context = AITranslationContext(title: track.title, artist: track.artist, album: track.album,
+            sourceLanguage: "ja", targetLanguage: config.targetLanguage, style: config.style,
+            lines: document.lines.enumerated().map { AITranslationSourceLine(index: $0.offset, original: $0.element.originalText) })
+        let budgetURL = root.appendingPathComponent("stopped-model-budget.json")
+        let original = try JSONEncoder().encode(TranslationAcceptanceRequestBudget.State(maximum: 0, providers: [], trackKeys: [], stopped: true))
+        try original.write(to: budgetURL)
+        let budget = TranslationAcceptanceRequestBudget(fileURL: budgetURL)
+        let key = try AITranslationRequestExecution.key(identity: identity, versionID: source.versionID!,
+            sourceHash: source.sourceContentHash!, context: context, configuration: config)
+        let result = try await AITranslationRequestExecution.run(engine: SlowAppleTranslationEngine(), repository: repository,
+            key: key, explicitRetry: false, context: context, sourceHash: source.sourceContentHash!,
+            configuration: config, budget: budget, trackKey: identity.stableKey)
+        precondition(result.phase == .received, "system translation was blocked by the paid-model budget")
+        let after = try Data(contentsOf: budgetURL)
+        precondition(after == original, "system translation consumed the model budget")
+        var paid = config; paid.engineID = TranslationEngineID.codexChatGPT.rawValue; paid.model = "synthetic"
+        do {
+            _ = try await AITranslationRequestExecution.run(engine: SlowAppleTranslationEngine(), repository: repository,
+                key: key + "-paid", explicitRetry: false, context: context, sourceHash: source.sourceContentHash!,
+                configuration: paid, budget: budget, trackKey: identity.stableKey)
+            preconditionFailure("paid model bypassed its zero budget")
+        } catch AITranslationError.engineUnavailable { }
+        print("PASS Apple translation works with a stopped zero model budget; paid models stay blocked")
+    }
+
+    @MainActor
     static func selectionPersistenceContract() async throws {
         let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["SPOTIFYLYRICS_CONTRACT_ROOT"]!)
         precondition(FileManager.default.fileExists(atPath: root.path)) // recoveryContract created this private root
@@ -687,6 +723,7 @@ struct TranslationSessionContract {
             appleController.cancel()
         }
         try! await recoveryContract()
+        try! await systemTranslationBudgetContract()
         try! await selectionPersistenceContract()
         try! await settingsRequestBoundaryContract()
         try! await aiFirstEmbeddedTranslationContract()
