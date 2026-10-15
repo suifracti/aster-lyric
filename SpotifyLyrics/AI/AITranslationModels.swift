@@ -126,8 +126,8 @@ public enum TranslationEngineCatalog {
 
     /// Presentation groups never replace the persisted backend identity.
     public static var selectable: [TranslationEngineMetadata] {
-        let entries: [(TranslationEngineID,String)] = [(.codexChatGPT,"GPT"),(.grokBuild,"Grok"),
-            (.openAICompatible,"API"),(.appleSystem,"苹果翻译")]
+        let entries: [(TranslationEngineID,String)] = [(.codexChatGPT,"GPT / ChatGPT"),(.grokBuild,"Grok"),(.geminiCLI,"Gemini"),
+            (.openAICompatible,"兼容 API"),(.appleSystem,"苹果翻译")]
         return entries.compactMap { id,name in
             guard let old=metadata(for:id.rawValue) else { return nil }
             return .init(stableID:old.stableID,displayName:name,availability:old.availability,
@@ -138,6 +138,7 @@ public enum TranslationEngineCatalog {
     public static func topLevelID(for backend:String) -> String {
         switch TranslationEngineID(rawValue:backend) {
         case .deepSeekAPI:return TranslationEngineID.openAICompatible.rawValue
+        case .antigravityCLI:return TranslationEngineID.geminiCLI.rawValue
         default:return backend
         }
     }

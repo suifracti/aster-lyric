@@ -233,10 +233,7 @@ enum JapaneseReadingSupport {
     ) -> JapaneseReadingResult {
         let normalizedEntries = userEntries
             .filter { !$0.isArchived && $0.isEnabled && $0.language == .japanese && !$0.surface.isEmpty && !$0.reading.isEmpty }
-            .sorted {
-                if $0.priority != $1.priority { return $0.priority > $1.priority }
-                return $0.surface.count > $1.surface.count
-            }
+            .sorted(by: ReadingEngineSupport.precedesUserEntry)
         let pipeline = contextual
             ? JapaneseReadingPipeline.analyzeContextually(originalText: text)
             : JapaneseReadingPipeline.analyze(originalText: text)
@@ -342,6 +339,21 @@ enum JapaneseReadingSupport {
 }
 
 public enum ReadingEngineSupport {
+    /// A correction for this recording wins over an artist/global convention.
+    /// Priority only resolves competing entries within the same scope.
+    static func precedesUserEntry(_ lhs: ReadingDictionaryEntry, _ rhs: ReadingDictionaryEntry) -> Bool {
+        func specificity(_ entry: ReadingDictionaryEntry) -> Int {
+            if let song = entry.trackStableKey, !song.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return 2 }
+            if let artist = entry.artistScope, !artist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return 1 }
+            return 0
+        }
+        let left = specificity(lhs), right = specificity(rhs)
+        if left != right { return left > right }
+        if lhs.priority != rhs.priority { return lhs.priority > rhs.priority }
+        if lhs.surface.count != rhs.surface.count { return lhs.surface.count > rhs.surface.count }
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+
     /// Stable keys include rounded duration, which can differ by one second
     /// between integer playback snapshots and fractional metadata snapshots.
     /// Keep a song correction across that drift only with a shared Spotify ID
@@ -393,10 +405,7 @@ public enum ReadingEngineSupport {
                 }
             }
             return true
-        }.sorted {
-            if $0.priority != $1.priority { return $0.priority > $1.priority }
-            return $0.surface.count > $1.surface.count
-        }
+        }.sorted(by: precedesUserEntry)
     }
 
     public static func hashContext(_ values: [String]) -> String {

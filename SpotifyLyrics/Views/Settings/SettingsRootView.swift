@@ -662,6 +662,81 @@ private struct ServicesAndSourcesSettingsView: View {
     }
 }
 
+struct TranslationProviderControls: View {
+    @ObservedObject var settings: AppSettingsStore
+
+    private var provider: String { settings.aiTranslationConfiguration.engineID }
+    private var family: String { TranslationEngineCatalog.topLevelID(for: provider) }
+    private var modelBinding: Binding<String> {
+        Binding(get: { settings.aiTranslationConfiguration.model }, set: { model in
+            var next = settings.aiTranslationConfiguration
+            next.model = model
+            settings.aiTranslationConfiguration = next
+        })
+    }
+    private var backendBinding: Binding<String> {
+        Binding(get: { provider }, set: { settings.selectTranslationProvider($0) })
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("服务", selection: Binding(get: { family }, set: { settings.selectTranslationProvider($0) })) {
+                ForEach(TranslationEngineCatalog.selectable, id: \.stableID) { engine in
+                    Text(engine.displayName).tag(engine.stableID)
+                }
+            }
+            if family == TranslationEngineID.geminiCLI.rawValue {
+                Picker("连接方式", selection: backendBinding) {
+                    Text("Gemini CLI").tag(TranslationEngineID.geminiCLI.rawValue)
+                    Text("Antigravity CLI").tag(TranslationEngineID.antigravityCLI.rawValue)
+                }
+            } else if family == TranslationEngineID.openAICompatible.rawValue {
+                Picker("API 服务", selection: backendBinding) {
+                    Text("自定义兼容 API").tag(TranslationEngineID.openAICompatible.rawValue)
+                    Text("DeepSeek API").tag(TranslationEngineID.deepSeekAPI.rawValue)
+                }
+            }
+            if provider != TranslationEngineID.appleSystem.rawValue {
+                TextField("此服务的模型 ID", text: modelBinding)
+                    .textFieldStyle(.roundedBorder)
+                if !settings.aiCachedModels.isEmpty {
+                    Picker("已读取的模型", selection: modelBinding) {
+                        Text(settings.aiTranslationConfiguration.model.isEmpty ? "选择模型" : "保留当前输入")
+                            .tag(settings.aiTranslationConfiguration.model)
+                        ForEach(settings.aiCachedModels.filter { $0.id != settings.aiTranslationConfiguration.model }, id: \.id) { model in
+                            Text(model.displayName).tag(model.id)
+                        }
+                    }
+                }
+                if provider == TranslationEngineID.geminiCLI.rawValue {
+                    Text("Gemini CLI 暂无可读取的模型目录，请填写此连接支持的 Gemini 模型 ID。切换服务会保留各自配置。")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    HStack {
+                        Text(settings.aiModelDirectoryStatus.userFacingTitle)
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("刷新模型") { settings.refreshAIModelDirectory() }
+                            .disabled(settings.aiModelDirectoryStatus == .loading)
+                    }
+                    if case .unavailable(let reason) = settings.aiModelDirectoryStatus {
+                        Text(reason).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if settings.aiTranslationConfiguration.model.isEmpty {
+                    Text("尚未选择此服务的模型，不会沿用其他服务的模型。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if !settings.aiModelSelectionNotice.isEmpty {
+                    Text(settings.aiModelSelectionNotice)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .onAppear { _ = settings.translationModelSettings }
+    }
+}
+
 private struct AISettingsView: View {
     @EnvironmentObject private var settings: AppSettingsStore
     @EnvironmentObject private var playback: PlaybackState
@@ -705,11 +780,7 @@ private struct AISettingsView: View {
             }
 
             Section("服务配置") {
-                Picker("翻译引擎", selection: configurationBinding(\.engineID)) {
-                    ForEach(TranslationEngineCatalog.all, id: \.stableID) { engine in
-                        Text(engine.displayName).tag(engine.stableID)
-                    }
-                }
+                TranslationProviderControls(settings: settings)
                 let selectedEngine = TranslationEngineRegistry.make(stableID: settings.aiTranslationConfiguration.engineID).metadata
                 Text(engineAvailabilityText(selectedEngine))
                     .font(.caption)
@@ -725,31 +796,6 @@ private struct AISettingsView: View {
                     TextField("兼容接口地址（Base URL）", text: configurationBinding(\.baseURL))
                         .textFieldStyle(.roundedBorder)
                         .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
-                    TextField("模型（Model）", text: configurationBinding(\.model))
-                        .textFieldStyle(.roundedBorder)
-                        .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)
-                    HStack {
-                        Text("模型目录")
-                        Spacer()
-                        Text(settings.aiModelDirectoryDisplayStatus.userFacingTitle)
-                            .foregroundStyle(.secondary)
-                        Button("刷新") { settings.refreshAIModelDirectory() }
-                    }
-                    if !settings.aiTranslationConfiguration.model.isEmpty,
-                       !settings.aiCachedModels.contains(where: { $0.id == settings.aiTranslationConfiguration.model }) {
-                        Text("当前模型未出现在最近目录中，仍保留手动输入的模型 ID。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if !settings.aiCachedModels.isEmpty {
-                        Picker("手动选择模型", selection: configurationBinding(\.model)) {
-                            Text("保留当前输入").tag(settings.aiTranslationConfiguration.model)
-                            ForEach(settings.aiCachedModels, id: \.id) { model in
-                                Text(model.displayName).tag(model.id)
-                            }
-                        }
-                    }
                     SecureField("API Key（只保存到 Keychain）", text: $apiKeyDraft)
                         .textFieldStyle(.roundedBorder)
                         .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)

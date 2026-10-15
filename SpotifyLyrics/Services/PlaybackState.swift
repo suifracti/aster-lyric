@@ -334,9 +334,12 @@ public final class PlaybackState: ObservableObject {
             .store(in: &self.settingsCancellables)
         resolvedSettings.$readingPreferences
             .dropFirst()
-            .sink { [weak self] _ in
+            .sink { [weak self] preferences in
                 guard let self else { return }
-                self.readingSession.reload()
+                // Published emits before storage changes. An AI permission
+                // toggle reloads saved layers without generating a new layer.
+                self.readingSession.reload(allowAutomaticGeneration:
+                    preferences.aiAssistedCandidate == resolvedSettings.readingPreferences.aiAssistedCandidate)
                 self.objectWillChange.send()
             }
             .store(in: &self.settingsCancellables)
@@ -647,7 +650,7 @@ public final class PlaybackState: ObservableObject {
     /// so repository failures leave the current lyrics untouched.
     @discardableResult
     public func adoptCurrentLyricsVersion(versionID: UUID) async throws -> Bool {
-        guard hasLiveTrack,
+        guard !isShowingSearchPreview, hasLiveTrack,
               let identity = currentTrackIdentity,
               liveTrackIdentity == identity,
               let repository = lyricsRepository as? any LyricsEditingRepository else {
@@ -841,7 +844,23 @@ public final class PlaybackState: ObservableObject {
     public func selectTranslation(versionID: UUID) { translationSession.select(versionID: versionID) }
     public func selectNoTranslationVersion() { translationSession.selectNone() }
     public var liveLyricsCandidates: [LyricsCandidate] {
-        liveLyricsDocumentMatchesCurrentTrack ? lyricsSession.availableCandidates : []
+        guard liveLyricsDocumentMatchesCurrentTrack else { return [] }
+        if !lyricsSession.availableCandidates.isEmpty || !lyricsSession.additionalVersionsMessage.isEmpty {
+            return lyricsSession.availableCandidates
+        }
+        if case .candidates(_, let candidates) = lyricsSession.state { return candidates }
+        return []
+    }
+    public var isSearchingAdditionalLyricsVersions: Bool {
+        liveLyricsDocumentMatchesCurrentTrack && lyricsSession.isSearchingAdditionalVersions
+    }
+    public var additionalLyricsVersionsMessage: String {
+        liveLyricsDocumentMatchesCurrentTrack ? lyricsSession.additionalVersionsMessage : ""
+    }
+    public func searchAdditionalLyricsVersions() {
+        guard !isShowingSearchPreview, hasLiveTrack, let identity = liveTrackIdentity,
+              currentTrackIdentity == identity else { return }
+        lyricsSession.searchAdditionalVersions(track: currentTrack, identity: identity)
     }
     public var originalLiveLyrics: [LyricLine] {
         liveLyricsDocumentMatchesCurrentTrack ? (lyricsSession.activeDocument?.lines ?? []) : []

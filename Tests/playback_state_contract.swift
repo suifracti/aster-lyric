@@ -225,6 +225,11 @@ private actor PreviewFixtureProvider: LyricsProvider {
                 title: track.title + " feat Unverified", artist: track.artist, album: track.album,
                 duration: track.duration, lines: [LyricLine(timestamp: 0, originalText: "Self-authored preview text")],
                 source: .lrclib, confidence: 0.3)])
+        case "versions":
+            return .match(LyricsDocument(identity: identity, title: track.title, artist: track.artist,
+                album: track.album, duration: track.duration,
+                lines: [LyricLine(timestamp: 3, originalText: "Self-authored additional version")],
+                source: .lrclib, confidence: 0.99, providerSourceID: "additional-version"))
         default: return .noLyrics
         }
     }
@@ -286,6 +291,9 @@ struct PlaybackStateContract {
                 "search preview must not mark or clear the live track as instrumental")
             let rejected = try await state.adoptLyricsCandidate(candidate)
             precondition(rejected.versionID == nil, "old live candidate callback during preview must not write live")
+            state.searchAdditionalLyricsVersions()
+            precondition(!state.isSearchingAdditionalLyricsVersions && state.liveLyricsSessionRevision == revision,
+                "version browsing during a song preview must not start live search or change its generation")
             let after = try await repo.loadEditableVersions(track: live, identity: identity)
             precondition(after.count == before.count && state.liveLyricsSessionRevision == revision)
             precondition(state.currentTrack == live && provider.commandLog.isEmpty)
@@ -295,6 +303,18 @@ struct PlaybackStateContract {
         state.clearSearchPreview()
         let accepted = try await state.adoptLyricsCandidate(candidate)
         precondition(accepted.versionID != nil, "live candidate action must recover after ending preview")
+        await fixture.setScenario("versions")
+        let browsingVersionID = state.liveLyricsVersionID
+        let browsingRows = try await repo.versionCount(trackStableKey: identity.stableKey)
+        let browsingText = state.originalLiveLyrics.map(\.originalText)
+        state.searchAdditionalLyricsVersions()
+        let browsingDeadline = Date().addingTimeInterval(2)
+        while state.isSearchingAdditionalLyricsVersions && Date() < browsingDeadline { try await Task.sleep(nanoseconds: 5_000_000) }
+        precondition(!state.isSearchingAdditionalLyricsVersions && state.liveLyricsCandidates.count == 1)
+        precondition(state.liveLyricsVersionID == browsingVersionID && state.originalLiveLyrics.map(\.originalText) == browsingText)
+        let rowsAfterBrowsing = try await repo.versionCount(trackStableKey: identity.stableKey)
+        precondition(rowsAfterBrowsing == browsingRows)
+        print("PASS additional version browsing publishes exact candidate and preserves live source and saved row count")
         try await repo.markLyricsVersionLocked(versionID: accepted.versionID!, locked: true)
         let replacement = LyricsCandidate(id: "locked-live-confirmation", identity: identity, title: live.title,
             artist: live.artist, album: live.album, duration: live.duration,

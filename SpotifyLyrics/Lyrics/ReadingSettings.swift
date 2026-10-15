@@ -54,6 +54,15 @@ public struct ReadingPreferences: Codable, Equatable, Sendable {
         ScriptConversionID(rawValue: scriptConversionID) ?? .none
     }
 
+    /// Missing settings use local automatic generation. A persisted false is
+    /// an existing choice and must survive upgrades, regardless of its origin.
+    public static func persistedOrDefault(from data: Data?) -> ReadingPreferences {
+        guard let data, let saved = try? JSONDecoder().decode(ReadingPreferences.self, from: data) else {
+            return ReadingPreferences(automaticGeneration: true)
+        }
+        return saved
+    }
+
     /// Old and unknown Japanese engine IDs remain decodable so existing
     /// settings never fail to load, but the current product has one supported
     /// Japanese path. Normalize only that field and preserve every other

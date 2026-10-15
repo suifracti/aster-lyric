@@ -134,6 +134,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         providers: [IndexedProvider],
         metadata: TrackMetadata,
         variant: LyricsQueryVariant,
+        collectCandidatesOnly: Bool = false,
         onProvisional: (@Sendable (LyricsDocument) async -> Void)? = nil,
         onCandidates: (@Sendable ([LyricsCandidate]) async -> Void)? = nil
     ) async -> [ProviderProbeResult] {
@@ -156,7 +157,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
                     // A safely identified original can appear while preceding
                     // sources settle. Final ranking/persistence still occurs
                     // after the bounded group; no candidate confirmation needed.
-                    if !Task.isCancelled, let document = automaticProvisionalDocument(result, metadata: metadata, variant: variant) {
+                    if !collectCandidatesOnly, !Task.isCancelled, let document = automaticProvisionalDocument(result, metadata: metadata, variant: variant) {
                         await onProvisional?(document)
                     }
                     if !Task.isCancelled {
@@ -165,7 +166,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
                     }
                 }
                 if Task.isCancelled { group.cancelAll() }
-                else if !settled, let ready = results.filter({ hasAutomaticResult($0, metadata: metadata, variant: variant) }).min(by: { $0.index < $1.index }),
+                else if !collectCandidatesOnly, !settled, let ready = results.filter({ hasAutomaticResult($0, metadata: metadata, variant: variant) }).min(by: { $0.index < $1.index }),
                         providers.filter({ $0.index < ready.index }).allSatisfy({ prior in results.contains { $0.index == prior.index } }) {
                     // Once an eligible result and its preceding providers have
                     // resolved, unrelated lower-priority network work cannot
@@ -185,7 +186,9 @@ public final class LyricsSearchManager: @unchecked Sendable {
         switch probe.result {
         case .candidates(let candidates): list = candidates
         case .match(let document):
-            list = [LyricsCandidate(id: document.providerSourceID ?? "preview", identity: document.identity,
+            let candidateID = document.providerSourceID.map { "\(probe.provider.name):document:\($0)" }
+                ?? "\(probe.provider.name):document:\(document.title ?? variant.titleQuery)"
+            list = [LyricsCandidate(id: candidateID, identity: document.identity,
                 title: document.title ?? metadata.track.title, artist: document.artist ?? metadata.track.artist,
                 album: document.album ?? metadata.track.album, duration: document.duration ?? metadata.track.duration,
                 lines: document.lines, isSynchronized: document.isSynchronized, source: document.source,
@@ -294,6 +297,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         queryOverride: String? = nil,
         forceRefresh: Bool = false,
         aliases: [TrackAlias] = [],
+        collectCandidatesOnly: Bool = false,
         onProvisional: (@Sendable (LyricsDocument) async -> Void)? = nil,
         onCandidates: (@Sendable ([LyricsCandidate]) async -> Void)? = nil
     ) async -> SearchOutcome {
@@ -393,7 +397,8 @@ public final class LyricsSearchManager: @unchecked Sendable {
                         let enabled = networkProviders.filter { !unavailableProviders.contains($0.index) }
                         probeResults = await Self.probeNetworkProviders(
                             track: probeTrack, identity: identity, providers: enabled,
-                            metadata: meta, variant: variant, onProvisional: onProvisional,
+                            metadata: meta, variant: variant, collectCandidatesOnly: collectCandidatesOnly,
+                            onProvisional: onProvisional,
                             onCandidates: { candidates in
                                 LyricsE2ELog.log("SEARCH preview id=\(searchID) rank=\(variant.rank) elapsed=\(String(format: "%.3f", Date().timeIntervalSince(started)))s count=\(candidates.count)")
                                 await onCandidates?(candidates)
@@ -620,6 +625,14 @@ public final class LyricsSearchManager: @unchecked Sendable {
                 }
             }
             guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics) }
+
+            // Explicit version browsing collects all enabled sources for this
+            // query, but never turns a trusted result into an active selection.
+            // Only use broader fallback queries when this batch found nothing.
+            if collectCandidatesOnly, !acceptedCandidates.isEmpty {
+                let candidates = acceptedCandidates.values.sorted { $0.displayedConfidence > $1.displayedConfidence }
+                return SearchOutcome(result: .candidates(candidates), diagnostics: diagnostics, alternatives: candidates)
+            }
 
             if let selected = Self.bestAutomaticAdoption(in: automaticAdoptions) {
                 let enriched = Self.finalizeDocument(selected.document, identity: identity)

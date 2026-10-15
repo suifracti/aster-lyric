@@ -108,15 +108,40 @@ struct LyricsAndTextSettingsView: View {
 
 struct ReadingSettingsView: View {
     @EnvironmentObject private var settings: AppSettingsStore
+    @EnvironmentObject private var playback: PlaybackState
     @State private var isDictionaryExpanded = false
     @State private var dictionaryEntries: [ReadingDictionaryEntry] = []
     @State private var newSurface = ""
     @State private var newReading = ""
     @State private var newLanguage: ReadingLanguage = .japanese
-    @State private var newTrackScope = ""
-    @State private var newArtistScope = ""
+    @State private var newScope: DictionaryScope = .song
     @State private var newPriority = "0"
     @State private var newNotes = ""
+
+    private enum DictionaryScope: String, CaseIterable {
+        case song = "当前歌曲"
+        case artist = "当前歌手"
+        case allSongs = "所有歌曲"
+    }
+
+    private var currentSongScope: String? {
+        guard !playback.isShowingSearchPreview, playback.liveLyricsDocumentMatchesCurrentTrack else { return nil }
+        return playback.liveTrackIdentity?.stableKey
+    }
+
+    private var currentArtistScope: String? {
+        guard currentSongScope != nil else { return nil }
+        let artist = playback.currentTrack.artist.trimmingCharacters(in: .whitespacesAndNewlines)
+        return artist.isEmpty ? nil : artist
+    }
+
+    private var hasValidScope: Bool {
+        switch newScope {
+        case .song: return currentSongScope != nil
+        case .artist: return currentArtistScope != nil
+        case .allSongs: return true
+        }
+    }
 
     var body: some View {
         Form {
@@ -166,7 +191,7 @@ struct ReadingSettingsView: View {
 
             Section("AI 辅助读音") {
                 Toggle("允许 AI 辅助候选（仅明确调用）", isOn: readingBinding(\.aiAssistedCandidate))
-                Text("开启后，在当前歌曲的「AI 辅助读音候选…」中确认调用。仅处理日语不确定读音，可能产生 API 费用；候选须手动采用，不会自动重试。")
+                Text("在右上角 AI 面板中明确优化当前歌词。开启不会自动收费；关闭恢复本地展示，人工修改和已锁定读音保持，其他版本仍保留。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if settings.aiTranslationConfiguration.engineID != TranslationEngineID.openAICompatible.rawValue {
@@ -256,6 +281,15 @@ struct ReadingSettingsView: View {
                             }
                         }
 
+                        Picker("适用范围", selection: $newScope) {
+                            ForEach(DictionaryScope.allCases, id: \.self) { scope in
+                                Text(scope.rawValue).tag(scope)
+                            }
+                        }
+                        Text(scopeDescription)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
                         HStack {
                             TextField("原词", text: $newSurface)
                             TextField("读音", text: $newReading)
@@ -270,34 +304,33 @@ struct ReadingSettingsView: View {
                             Button("添加") {
                                 let surface = newSurface.trimmingCharacters(in: .whitespacesAndNewlines)
                                 let reading = newReading.trimmingCharacters(in: .whitespacesAndNewlines)
-                                guard !surface.isEmpty, !reading.isEmpty else { return }
-                                settings.readingUserDictionary.upsert(
-                                    ReadingDictionaryEntry(
+                                guard !surface.isEmpty, !reading.isEmpty, hasValidScope else { return }
+                                let entry = ReadingDictionaryEntry(
                                         surface: surface,
                                         reading: reading,
                                         language: newLanguage,
-                                        trackStableKey: newTrackScope.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : newTrackScope,
-                                        artistScope: newArtistScope.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : newArtistScope,
+                                        trackStableKey: newScope == .song ? currentSongScope : nil,
+                                        artistScope: newScope == .artist ? currentArtistScope : nil,
                                         priority: Int(newPriority) ?? 0,
                                         notes: newNotes
-                                    )
                                 )
+                                if newScope == .song {
+                                    settings.readingUserDictionary.rememberSongCorrection(entry)
+                                } else {
+                                    settings.readingUserDictionary.upsert(entry)
+                                }
                                 newSurface = ""
                                 newReading = ""
-                                newTrackScope = ""
-                                newArtistScope = ""
                                 newPriority = "0"
                                 newNotes = ""
                                 reloadDictionary()
                             }
-                            .disabled(newSurface.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newReading.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .disabled(!hasValidScope || newSurface.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newReading.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
 
-                        DisclosureGroup("适用范围与备注（可选）") {
-                            TextField("单曲 Spotify stableKey", text: $newTrackScope)
-                            TextField("歌手范围", text: $newArtistScope)
+                        DisclosureGroup("备注（可选）") {
                             TextField("备注", text: $newNotes)
-                            Text("留空时适用于所有歌曲；填写单曲或歌手可只修正指定范围。")
+                            Text("同词出现不同读法时，单曲词条优先于歌手词条，歌手词条优先于全局词条。")
                                 .foregroundStyle(.secondary)
                         }
                         .font(.caption)
@@ -362,5 +395,16 @@ struct ReadingSettingsView: View {
 
     private func reloadDictionary() {
         dictionaryEntries = settings.readingUserDictionary.load()
+    }
+
+    private var scopeDescription: String {
+        switch newScope {
+        case .song:
+            return currentSongScope == nil ? "先载入当前播放歌曲后添加单曲词条；搜索预览不会成为作用域。" : "仅用于「\(playback.currentTrack.title)」；其他歌曲中的同词保持原读法。"
+        case .artist:
+            return currentArtistScope.map { "用于歌手「\($0)」的歌曲；可由单曲词条覆盖。" } ?? "先载入有歌手信息的当前播放歌曲。"
+        case .allSongs:
+            return "用于所有歌曲。只建议在各首歌中读法一致时使用。"
+        }
     }
 }

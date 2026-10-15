@@ -9,6 +9,11 @@ private actor ProbeLedger {
     func end(_ name: String) { active -= 1; finishes.append(name) }
     func snapshot() -> (Int, Int, [String], [String]) { (active, peak, starts, finishes) }
 }
+private actor CandidatePreviewLedger {
+    private var ids: Set<String> = []
+    func record(_ candidates: [LyricsCandidate]) { ids.formUnion(candidates.map(\.id)) }
+    func snapshot() -> Set<String> { ids }
+}
 private struct ProbeProvider: LyricsProvider {
     let name: String
     let executionLane: LyricsProviderExecutionLane
@@ -127,6 +132,23 @@ private struct TypographyTitleProvider: LyricsProvider {
         precondition(visible.allSatisfy { $0.source == .lyricsOVH && $0.displayedConfidence == 0 })
         print("PASS peak3, configured selection priority, local-first execution, OVH manual-only visible candidate")
         fflush(stdout)
+
+        let versionsLedger = ProbeLedger()
+        let versionProviders = (0..<5).map { ProbeProvider(name: "version-\($0)", executionLane: .network,
+            delay: UInt64($0 + 1) * 10_000_000, ledger: versionsLedger, source: .lrclib) }
+        let previewLedger = CandidatePreviewLedger()
+        let versions = await LyricsSearchManager(providers: versionProviders).search(track: track, identity: identity,
+            collectCandidatesOnly: true,
+            onProvisional: { _ in fatalError("version browsing must never publish an adopted document") },
+            onCandidates: { await previewLedger.record($0) })
+        guard case .candidates(let alternatives) = versions.result else { fatalError("version browsing must return candidates even for exact matches") }
+        precondition(alternatives.count == 5 && versions.automaticDecision == nil)
+        let previewIDs = await previewLedger.snapshot()
+        precondition(previewIDs == Set(alternatives.map(\.id)), "progressive candidates must retain stable IDs when the final list arrives")
+        let versionsRun = await versionsLedger.snapshot()
+        precondition(versionsRun.0 == 0 && versionsRun.1 == 3 && versionsRun.2.count == 5 && versionsRun.3.count == 5,
+            "version browsing must collect every enabled source once, still bounded to three parallel probes")
+        print("PASS explicit version search collects all five sources with peak3; no provisional or automatic adoption")
 
         // One result finishes before cancellation while the bounded group is
         // still awaiting other providers. It must never be adopted afterward.

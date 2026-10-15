@@ -21,6 +21,16 @@ import Foundation
         precondition(scoped.romajiText?.contains("karada") == true)
         let other = JapaneseContextualReadingEngine.analyze(text: line.originalText, userEntries: [entry], trackStableKey: "song-b")
         precondition(other.kanaText?.contains("しんたい") == true)
+        let broad = ReadingDictionaryEntry(surface: "身体", reading: "しんたい", language: .japanese, priority: 999)
+        let artist = ReadingDictionaryEntry(surface: "身体", reading: "み", language: .japanese, artistScope: "Synthetic Artist", priority: 100)
+        let song = ReadingDictionaryEntry(surface: "身体", reading: "からだ", language: .japanese, trackStableKey: "song-a", priority: -100)
+        let rules = [broad, artist, song]
+        let exactSong = JapaneseContextualReadingEngine.analyze(text: line.originalText, userEntries: rules, trackStableKey: "song-a", artistDisplay: "Synthetic Artist")
+        precondition(exactSong.kanaText == "からだにしてあげよう", "A song correction must override broader high-priority rules")
+        let sameArtist = JapaneseContextualReadingEngine.analyze(text: line.originalText, userEntries: rules, trackStableKey: "song-b", artistDisplay: "Synthetic Artist")
+        precondition(sameArtist.kanaText == "みにしてあげよう", "An artist correction must override global rules only for that artist")
+        let unrelatedArtist = JapaneseContextualReadingEngine.analyze(text: line.originalText, userEntries: rules, trackStableKey: "song-c", artistDisplay: "Other")
+        precondition(unrelatedArtist.kanaText == "しんたいにしてあげよう", "Song and artist rules must not leak")
         let originalScope = "spotify-id:recording-a|metadata:夜の合図|kawasakirio|夜の合図|170"
         let driftedScope = "spotify-id:recording-a|metadata:夜の合図|kawasakirio|夜の合図|171"
         let remembered = try ReadingRubyCorrection.entry(surface: "身体", reading: "からだ", trackStableKey: originalScope)

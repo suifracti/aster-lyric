@@ -26,17 +26,81 @@ public struct MenuBarLyricsSnapshot: Equatable, Sendable {
     public let artworkURL: URL?
     /// Translation of the currently playing live line; never sourced from a search preview.
     public var currentTranslationText: String? = nil
+    public var currentKanaText: String? = nil
+    public var currentRomajiText: String? = nil
     /// Playback controls follow the current provider capability, not just retained metadata.
     public var canControlPlayback: Bool = false
 }
 
+/// Captured on the explicit read action, so selecting/copying text is stable
+/// while playback advances. This never changes the main window's preview.
+public struct MenuBarFullLyricsSnapshot: Equatable, Sendable {
+    public let trackTitle: String
+    public let artistName: String
+    public let lyricsText: String
+
+    public var copyText: String {
+        [trackTitle, artistName, lyricsText].filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+}
+
+public struct MenuBarLyricsAppearance: Equatable, Sendable {
+    public var showsFullLine: Bool
+    public var showsOriginal: Bool
+    public var showsTranslation: Bool
+    public var showsKana: Bool
+    public var showsRomaji: Bool
+    public var fontSize: Double
+
+    public init(showsFullLine: Bool = false, showsOriginal: Bool = true,
+                showsTranslation: Bool = false, showsKana: Bool = false,
+                showsRomaji: Bool = false, fontSize: Double = 13) {
+        self.showsFullLine = showsFullLine
+        self.showsOriginal = showsOriginal
+        self.showsTranslation = showsTranslation
+        self.showsKana = showsKana
+        self.showsRomaji = showsRomaji
+        self.fontSize = fontSize
+    }
+
+    public var effectiveFontSize: CGFloat {
+        CGFloat(fontSize.isFinite ? min(18, max(10, fontSize)) : 13)
+    }
+}
+
 public enum MenuBarTextFormatter {
-    public static func statusItemTitle(snapshot: MenuBarLyricsSnapshot, lyricsEnabled: Bool) -> String {
-        lyricsEnabled ? truncateToFit(snapshot.statusText) : ""
+    public static func statusItemTitle(snapshot: MenuBarLyricsSnapshot, lyricsEnabled: Bool,
+                                       appearance: MenuBarLyricsAppearance = .init()) -> String {
+        guard lyricsEnabled else { return "" }
+        let selected = [appearance.showsOriginal ? snapshot.currentLineText : nil,
+                        appearance.showsTranslation ? snapshot.currentTranslationText : nil,
+                        appearance.showsKana ? snapshot.currentKanaText : nil,
+                        appearance.showsRomaji ? snapshot.currentRomajiText : nil]
+        var parts: [String] = []
+        for value in selected.compactMap({ $0 }) {
+            let singleLine = value.components(separatedBy: .newlines).joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !singleLine.isEmpty && !parts.contains(singleLine) { parts.append(singleLine) }
+        }
+        let fallbackTitle = snapshot.trackTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let text = !parts.isEmpty ? "♪ " + parts.joined(separator: " · ")
+            : (!fallbackTitle.isEmpty ? "♪ " + fallbackTitle : snapshot.statusText)
+        return appearance.showsFullLine ? text : truncateToFit(
+            text, font: .systemFont(ofSize: appearance.effectiveFontSize)
+        )
     }
 
     public static func statusItemSymbol(snapshot: MenuBarLyricsSnapshot) -> String {
         snapshot.hasLiveTrack && !snapshot.isPlaying ? "pause.fill" : "music.note"
+    }
+
+    public static func statusItemHelp(snapshot: MenuBarLyricsSnapshot) -> String {
+        let parts = [snapshot.trackTitle, snapshot.artistName,
+                     snapshot.currentLineText, snapshot.currentTranslationText,
+                     snapshot.currentKanaText, snapshot.currentRomajiText]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return (parts.isEmpty ? ["Lyric Island"] : parts).joined(separator: "\n")
     }
 
     public static let maxVisualWidth: CGFloat = 240.0
@@ -76,6 +140,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     public static let shared = MenuBarLyricsController(settings: .shared)
 
     @Published public private(set) var currentSnapshot: MenuBarLyricsSnapshot
+    @Published public private(set) var fullLyricsSnapshot: MenuBarFullLyricsSnapshot?
 
     @Published public private(set) var statusItemTitle = ""
     public var menuBarLyricsEnabled: Bool {
@@ -83,8 +148,10 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         set { settings.menuBarLyricsEnabled = newValue }
     }
 
-    private let settings: AppSettingsStore
+    let settings: AppSettingsStore
     private var settingsSubscription: AnyCancellable?
+    private var appearanceSubscription: AnyCancellable?
+    private var appearance = MenuBarLyricsAppearance()
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private weak var playbackState: PlaybackState?
@@ -114,6 +181,21 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             .sink { [weak self] enabled in
                 self?.updateStatusItemButton(lyricsEnabled: enabled)
             }
+        appearanceSubscription = Publishers.CombineLatest4(
+            settings.$menuBarLyricsShowsFullLine, settings.$menuBarLyricsShowsOriginal,
+            settings.$menuBarLyricsShowsTranslation, settings.$menuBarLyricsShowsKana
+        )
+        .combineLatest(settings.$menuBarLyricsShowsRomaji, settings.$menuBarLyricsFontSize)
+        .sink { [weak self] values in
+            guard let self else { return }
+            let (flags, romaji, fontSize) = values
+            self.appearance = MenuBarLyricsAppearance(
+                showsFullLine: flags.0, showsOriginal: flags.1,
+                showsTranslation: flags.2, showsKana: flags.3,
+                showsRomaji: romaji, fontSize: fontSize
+            )
+            self.updateStatusItemButton(lyricsEnabled: self.settings.menuBarLyricsEnabled)
+        }
     }
 
     public func bind(playbackState: PlaybackState) {
@@ -178,6 +260,32 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             playbackState.clearSearchPreview()
         }
         openMainWindow()
+    }
+
+    public func showFullLyrics() {
+        guard let playbackState else { return }
+        fullLyricsSnapshot = Self.deriveFullLyricsSnapshot(from: playbackState)
+    }
+
+    public func closeFullLyrics() {
+        fullLyricsSnapshot = nil
+    }
+
+    public func toggleFloatingLyrics() {
+        guard let playbackState else { return }
+        popover?.performClose(nil)
+        WindowManager.shared.toggleFloatingLyrics(state: playbackState)
+    }
+
+    public func toggleCapsule() {
+        guard let playbackState else { return }
+        popover?.performClose(nil)
+        WindowManager.shared.toggleCapsule(state: playbackState)
+    }
+
+    public func restoreFloatingInteraction() {
+        guard let playbackState else { return }
+        WindowManager.shared.restoreFloatingInteractiveMode(state: playbackState)
     }
 
     public func openLibrary() {
@@ -254,6 +362,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         if popover.isShown {
             popover.performClose(sender)
         } else {
+            fullLyricsSnapshot = nil
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
@@ -271,14 +380,36 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
 
     private func updateStatusItemButton(lyricsEnabled: Bool) {
         statusItemTitle = MenuBarTextFormatter.statusItemTitle(
-            snapshot: currentSnapshot, lyricsEnabled: lyricsEnabled
+            snapshot: currentSnapshot, lyricsEnabled: lyricsEnabled, appearance: appearance
         )
         guard let button = statusItem?.button else { return }
         button.title = statusItemTitle
+        button.font = .systemFont(ofSize: appearance.effectiveFontSize)
         button.imagePosition = lyricsEnabled ? .imageLeft : .imageOnly
         button.image = NSImage(
             systemSymbolName: MenuBarTextFormatter.statusItemSymbol(snapshot: currentSnapshot),
             accessibilityDescription: "Lyric Island"
+        )
+        let help = MenuBarTextFormatter.statusItemHelp(snapshot: currentSnapshot)
+        button.toolTip = help
+        button.setAccessibilityLabel("Lyric Island，歌词与播放")
+        button.setAccessibilityValue(help)
+    }
+
+    public static func deriveFullLyricsSnapshot(from state: PlaybackState) -> MenuBarFullLyricsSnapshot? {
+        guard state.hasLiveTrack, !state.isMockPreviewMode,
+              state.liveLyricsDocumentMatchesCurrentTrack else { return nil }
+        let paragraphs = state.liveLyrics.compactMap { line -> String? in
+            let original = line.originalText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let translation = line.translationText?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = [original, translation].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
+            return text.isEmpty ? nil : text
+        }
+        guard !paragraphs.isEmpty else { return nil }
+        return MenuBarFullLyricsSnapshot(
+            trackTitle: state.currentTrack.title,
+            artistName: state.currentTrack.artist,
+            lyricsText: paragraphs.joined(separator: "\n\n")
         )
     }
 
@@ -403,10 +534,10 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 // The adopted live document is the sole source of popover translation.
                 // Include it in Equatable snapshot changes so translations arriving
                 // after the original lyrics are immediately reflected in the UI.
-                let translated = state.preferences.showTranslation
-                    ? lines[currentIndex].translationText?.trimmingCharacters(in: .whitespacesAndNewlines)
-                    : nil
+                let translated = lines[currentIndex].translationText?.trimmingCharacters(in: .whitespacesAndNewlines)
                 snapshot.currentTranslationText = translated?.isEmpty == true ? nil : translated
+                snapshot.currentKanaText = lines[currentIndex].kanaText
+                snapshot.currentRomajiText = lines[currentIndex].romajiText
                 return snapshot
             } else if !isSync {
                 let displayTitle = title.isEmpty ? "Lyric Island" : title
@@ -422,9 +553,10 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                     hasLiveTrack: true,
                     artworkURL: artworkURL
                 )
-                let translation = state.preferences.showTranslation
-                    ? firstLine?.translationText?.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+                let translation = firstLine?.translationText?.trimmingCharacters(in: .whitespacesAndNewlines)
                 snapshot.currentTranslationText = translation?.isEmpty == true ? nil : translation
+                snapshot.currentKanaText = firstLine?.kanaText
+                snapshot.currentRomajiText = firstLine?.romajiText
                 return snapshot
             } else {
                 let displayTitle = title.isEmpty ? "Lyric Island" : title

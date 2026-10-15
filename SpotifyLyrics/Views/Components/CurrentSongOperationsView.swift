@@ -75,6 +75,9 @@ struct CurrentSongOperationsView: View {
             showAIReadingConfirmation = false
             adoptingLyricsVersionID = nil
         }
+        .onChange(of: state.isShowingSearchPreview) { _, previewing in
+            if previewing { showLyricsVersionPicker = false }
+        }
         .onChange(of: state.liveLyricsVersionID) { _, _ in
             showAIReadingConfirmation = false
         }
@@ -148,6 +151,8 @@ struct CurrentSongOperationsView: View {
         .sheet(isPresented: $showLyricsVersionPicker) {
             LyricsVersionPickerView(
                 lines: state.liveLyrics,
+                originalLines: state.originalLiveLyrics,
+                isSynchronized: state.liveLyricsAreSynchronized,
                 title: state.currentTrack.title,
                 trackStableKey: state.currentTrackIdentity?.stableKey,
                 artistDisplay: state.currentTrack.artist,
@@ -159,14 +164,25 @@ struct CurrentSongOperationsView: View {
                 message: lyricsVersionMessage,
                 adoptingVersionID: adoptingLyricsVersionID,
                 onAdopt: adoptLyricsVersion,
+                candidates: state.liveLyricsCandidates,
+                isSearching: state.isSearchingAdditionalLyricsVersions,
+                searchMessage: state.additionalLyricsVersionsMessage,
+                onAdoptCandidate: { candidate in
+                    guard !state.isShowingSearchPreview else {
+                        return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("请先返回当前播放歌曲再采用"))
+                    }
+                    return try await state.adoptLyricsCandidate(candidate)
+                },
+                onConfirmLocked: { try await state.confirmPendingManualLyricsAdoption() },
+                onCancelLocked: { state.cancelPendingManualLyricsAdoption() },
+                onCandidateAdopted: loadLyricsVersions,
                 canEdit: state.canOpenLyricsEditor,
                 onEdit: {
                     showLyricsVersionPicker = false
                     openEditor()
                 },
                 onSearch: {
-                    showLyricsVersionPicker = false
-                    state.retryLyrics()
+                    state.searchAdditionalLyricsVersions()
                 }
             )
             .preferredColorScheme(.dark)
@@ -414,8 +430,11 @@ struct CurrentSongOperationsView: View {
                     .foregroundStyle(state.isTranslationSelectionEmpty ? .orange : .secondary)
             }
             VStack(alignment: .leading, spacing: 6) {
-                Picker("引擎", selection: configurationStringBinding(\.engineID)) {
-                    ForEach(TranslationEngineCatalog.all, id: \.stableID) { engine in
+                Picker("引擎", selection: Binding(
+                    get: { TranslationEngineCatalog.topLevelID(for: settings.aiTranslationConfiguration.engineID) },
+                    set: { settings.selectTranslationProvider($0) }
+                )) {
+                    ForEach(TranslationEngineCatalog.selectable, id: \.stableID) { engine in
                         Text(engine.displayName).tag(engine.stableID)
                     }
                 }
@@ -898,10 +917,13 @@ struct CurrentSongOperationsView: View {
 
     private func openLyricsVersionPicker() {
         lyricsVersions = []
+        showLyricsVersionPicker = true
+        loadLyricsVersions()
+    }
+
+    private func loadLyricsVersions() {
         lyricsVersionMessage = ""
         isLoadingLyricsVersions = true
-        showLyricsVersionPicker = true
-
         let identity = state.currentTrackIdentity
         Task { @MainActor in
             do {
@@ -930,7 +952,9 @@ struct CurrentSongOperationsView: View {
                 let adopted = try await state.adoptCurrentLyricsVersion(versionID: versionID)
                 guard state.currentTrackIdentity == identity else { return }
                 if adopted {
-                    showLyricsVersionPicker = false
+                    lyricsVersions = try await state.loadCurrentLyricsVersions()
+                    guard state.currentTrackIdentity == identity else { return }
+                    lyricsVersionMessage = "已采用所选歌词版本"
                 } else {
                     lyricsVersionMessage = "当前歌曲已变化，版本未采用"
                 }
@@ -1087,157 +1111,256 @@ private struct TranslationCandidatePreviewView: View {
 
 private struct LyricsVersionPickerView: View {
     let lines: [LyricLine]
+    let originalLines: [LyricLine]
+    let isSynchronized: Bool
     let title: String
     let trackStableKey: String?
     let artistDisplay: String?
     let language: String?
     let userEntries: [ReadingDictionaryEntry]
-    @State private var showCopy = false
     let versions: [StoredEditableLyricsVersion]
     let currentVersionID: UUID?
     let isLoading: Bool
     let message: String
     let adoptingVersionID: UUID?
     let onAdopt: (UUID) -> Void
+    let candidates: [LyricsCandidate]
+    let isSearching: Bool
+    let searchMessage: String
+    let onAdoptCandidate: (LyricsCandidate) async throws -> LyricsPersistenceSaveResult
+    let onConfirmLocked: () async throws -> LyricsPersistenceSaveResult?
+    let onCancelLocked: () -> Void
+    let onCandidateAdopted: () -> Void
     let canEdit: Bool
     let onEdit: () -> Void
     let onSearch: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var showCopy = false
+    @State private var selectedID: String?
+    @State private var isSavingCandidate = false
+    @State private var isLockConfirmationPresented = false
+    @State private var conflictingLockedVersionIDs: [UUID] = []
+    @State private var failureMessage: String?
+
+    private var selectedVersion: StoredEditableLyricsVersion? {
+        versions.first { selectedID == "saved:\($0.record.id)" }
+    }
+    private var selectedCandidate: LyricsCandidate? {
+        candidates.first { selectedID == "candidate:\($0.id)" }
+    }
+    private var isBusy: Bool { isSavingCandidate || adoptingVersionID != nil }
+    private var previewLines: [LyricLine]? { selectedVersion?.document.lines ?? selectedCandidate?.lines }
+    private var previewSynchronized: Bool { selectedVersion?.document.isSynchronized ?? selectedCandidate?.isSynchronized ?? false }
+    private var previewSource: String {
+        if let version = selectedVersion { return DatabaseSourceIdentifier.displayName(for: version.record.source) }
+        return selectedCandidate?.source.displayName ?? "所选版本"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("歌词版本与编辑")
-                        .font(.title3.weight(.semibold))
+                    Text("歌词版本").font(.title3.weight(.semibold))
                     Text([title, artistDisplay].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
-                Button("关闭") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
+                Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction).disabled(isBusy)
             }
+            Text("选择版本可预览对比，点击采用后才会切换。原版本会保留。")
+                .font(.caption).foregroundStyle(.secondary)
 
-            Text("采用版本会立即更新当前歌曲。编辑将保留原版，另存人工版本。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if isLoading {
-                ProgressView("正在读取已保存版本…")
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 24)
-            } else if versions.isEmpty {
-                Text(message.isEmpty ? "没有已保存的歌词版本" : message)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 28)
-            } else {
-                Text("已保存 \(versions.count) 个版本")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                if versions.count <= 2 {
-                    versionRows
-                } else {
-                    ScrollView {
-                        versionRows
-                    }
-                    .frame(height: 300)
+            HStack(alignment: .top, spacing: 16) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("已保存 · \(versions.count)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        if isLoading { ProgressView("正在读取…").controlSize(.small) }
+                        else if versions.isEmpty { Text("没有已保存版本").font(.caption).foregroundStyle(.secondary) }
+                        ForEach(versions, id: \.record.id) { version in savedRow(version) }
+                        Divider().padding(.vertical, 5)
+                        HStack {
+                            Text("搜索候选 · \(candidates.count)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            Spacer()
+                            if isSearching { ProgressView().controlSize(.small) }
+                        }
+                        ForEach(candidates) { candidate in candidateRow(candidate) }
+                        if !searchMessage.isEmpty {
+                            Text(searchMessage).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        } else if candidates.isEmpty {
+                            Text("点击“查找更多”获取候选版本。").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }.padding(.trailing, 3)
                 }
-            }
+                .frame(width: 240)
+                Divider()
+                VStack(alignment: .leading, spacing: 10) {
+                    if let previewLines {
+                        HStack(alignment: .top, spacing: 12) {
+                            lyricColumn("当前使用", lines: originalLines, synchronized: isSynchronized)
+                            Divider()
+                            lyricColumn(previewSource, lines: previewLines, synchronized: previewSynchronized)
+                        }
+                        if let candidate = selectedCandidate {
+                            Text("\(candidate.title) · \(candidate.artist)").font(.caption).foregroundStyle(.secondary)
+                            if let notice = candidate.arrangementNotice {
+                                Text(notice).font(.caption).foregroundStyle(.orange)
+                            }
+                            DisclosureGroup("来源与匹配详情") {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("\(candidate.source.displayName) · \(candidate.queryMethodLabel) · \(candidate.timelineLabel)")
+                                    ForEach(Array(candidate.matchExplanation.enumerated()), id: \.offset) { _, explanation in Text(explanation) }
+                                }.font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        HStack {
+                            Spacer()
+                            if selectedVersion?.record.id == currentVersionID, selectedVersion != nil {
+                                Label("当前版本", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
+                            } else {
+                                Button(isBusy ? "正在采用…" : "采用此版本") {
+                                    if let version = selectedVersion { onAdopt(version.record.id) }
+                                    else { adoptCandidate(confirmingLocks: false) }
+                                }
+                                .buttonStyle(.borderedProminent).disabled(isBusy)
+                            }
+                        }
+                    } else {
+                        ContentUnavailableView("选择一个版本", systemImage: "text.bubble",
+                            description: Text("左侧选择已保存版本或搜索候选，在这里与当前歌词对比。"))
+                    }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }.frame(maxHeight: .infinity)
 
-            if !message.isEmpty, !isLoading, !versions.isEmpty {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            if let failureMessage {
+                Text(failureMessage).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            } else if !message.isEmpty {
+                Text(message).font(.caption).foregroundStyle(.secondary)
             }
-
             Divider()
             HStack(spacing: 10) {
-                Button("编辑当前", systemImage: "square.and.pencil", action: onEdit)
-                    .disabled(!canEdit || adoptingVersionID != nil)
+                Button("编辑当前", systemImage: "square.and.pencil", action: onEdit).disabled(!canEdit || isBusy)
                     .help("保留原版，编辑后另存人工版本")
-                Button("复制歌词", systemImage: "doc.on.doc") { showCopy = true }
-                    .disabled(lines.isEmpty || adoptingVersionID != nil)
+                Button("复制当前歌词", systemImage: "doc.on.doc") { showCopy = true }.disabled(lines.isEmpty || isBusy)
                 Spacer(minLength: 0)
-                Button("查找更多", systemImage: "magnifyingglass", action: onSearch)
-                    .disabled(adoptingVersionID != nil)
-                    .help("重新查找当前歌曲的歌词版本")
-            }
-            .controlSize(.small)
+                Button(isSearching ? "正在查找…" : "查找更多", systemImage: "magnifyingglass") {
+                    selectedID = nil
+                    failureMessage = nil
+                    onSearch()
+                }.disabled(isBusy || isSearching)
+            }.controlSize(.small)
         }
         .padding(20)
-        .frame(width: 540)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: 920, height: 650)
+        .interactiveDismissDisabled(isBusy)
+        .onAppear { if let currentVersionID { selectedID = "saved:\(currentVersionID)" } }
+        .onChange(of: selectedID) { _, _ in
+            failureMessage = nil
+            onCancelLocked()
+            conflictingLockedVersionIDs = []
+        }
+        .onDisappear { onCancelLocked() }
         .sheet(isPresented: $showCopy) {
             LyricsCopyView(lines: lines, title: title, trackStableKey: trackStableKey,
                            artistDisplay: artistDisplay, language: language, userEntries: userEntries)
         }
-    }
-
-    private var versionRows: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(versions, id: \.record.id) { version in
-                versionRow(version)
-            }
+        .confirmationDialog("歌词版本已锁定", isPresented: $isLockConfirmationPresented, titleVisibility: .visible) {
+            Button("仍采用此版本", role: .destructive) { adoptCandidate(confirmingLocks: true) }
+            Button("取消", role: .cancel) { onCancelLocked(); conflictingLockedVersionIDs = [] }
+        } message: {
+            Text("当前歌曲有 \(conflictingLockedVersionIDs.count) 个锁定歌词版本。继续会采用此候选，并保留原版本及锁定标记。")
         }
     }
 
-    private func versionRow(_ version: StoredEditableLyricsVersion) -> some View {
-        let isCurrent = version.record.id == currentVersionID
+    private func savedRow(_ version: StoredEditableLyricsVersion) -> some View {
+        let key = "saved:\(version.record.id)"
         let source = DatabaseSourceIdentifier.displayName(for: version.record.source)
         let provenance = DatabaseSourceIdentifier.provenanceDescription(source: version.record.source,
             parentVersionID: version.record.parentVersionID) { id in
                 guard let parent = versions.first(where: { $0.record.id == id })?.record else { return nil }
                 return (parent.source, parent.parentVersionID)
             }
-        let timing = version.record.isSynced ? "已同步" : "纯文本"
-        let kind = version.record.isManuallyEdited ? "人工编辑" : "来源版本"
-
-        return HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
+        return Button { selectedID = key } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
                     LibraryVersionLabel(kind: "lyrics", id: version.record.id, originalTitle: source)
-                    if version.record.isLocked {
-                        Label("已锁定", systemImage: "lock.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+                    Spacer(minLength: 3)
+                    if version.record.id == currentVersionID { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
+                    if version.record.isLocked { Image(systemName: "lock.fill").foregroundStyle(.secondary) }
                 }
-                Text("\(timing) · \(kind) · \(version.record.updatedAt.formatted(date: .abbreviated, time: .shortened))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("来源：\(provenance)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .help(provenance)
-            }
+                Text("\(version.record.isSynced ? "已同步" : "纯文本") · \(version.record.isManuallyEdited ? "人工编辑" : "来源版本")")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(version.record.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2).foregroundStyle(.secondary)
+                Text("来源：\(provenance)").font(.caption2).foregroundStyle(.secondary).lineLimit(2).help(provenance)
+            }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                .background(selectedID == key ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+        }.buttonStyle(.plain).disabled(isBusy)
+    }
 
-            Spacer(minLength: 8)
+    private func candidateRow(_ candidate: LyricsCandidate) -> some View {
+        let key = "candidate:\(candidate.id)"
+        return Button { selectedID = key } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(candidate.source.displayName).font(.callout.weight(.medium))
+                Text(candidate.title).font(.caption).lineLimit(2)
+                Text("\(candidate.artist) · \(candidate.isSynchronized ? "已同步" : "纯文本")")
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                .background(selectedID == key ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+        }.buttonStyle(.plain).disabled(isBusy)
+    }
 
-            if adoptingVersionID == version.record.id {
-                ProgressView().controlSize(.small)
-                    .padding(.top, 3)
-            } else if isCurrent {
-                Label("当前版本", systemImage: "checkmark.circle.fill")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.green)
-            } else {
-                Button("采用此版本") { onAdopt(version.record.id) }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(adoptingVersionID != nil)
+    private func lyricColumn(_ heading: String, lines: [LyricLine], synchronized: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(heading).font(.headline).lineLimit(1)
+            Text("\(lines.count) 行 · \(synchronized ? "已同步" : "纯文本")").font(.caption).foregroundStyle(.secondary)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(synchronized ? timeLabel(line.timestamp) : "#\(index + 1)")
+                                .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                            Text(line.originalText.isEmpty ? "（空白原文）" : line.originalText)
+                                .font(.callout).textSelection(.enabled)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if lines.isEmpty { Text("暂无当前歌词").font(.callout).foregroundStyle(.secondary) }
+                }
             }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func timeLabel(_ timestamp: TimeInterval) -> String {
+        let seconds = max(0, Int(timestamp.rounded(.down)))
+        return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+
+    private func adoptCandidate(confirmingLocks: Bool) {
+        guard !isBusy, let candidate = selectedCandidate else { return }
+        isSavingCandidate = true
+        failureMessage = nil
+        Task { @MainActor in
+            defer { isSavingCandidate = false }
+            do {
+                let result = try await (confirmingLocks ? onConfirmLocked() : onAdoptCandidate(candidate))
+                guard let result else { failureMessage = "候选已失效，请重新查找。"; return }
+                switch result.disposition {
+                case .inserted, .duplicate:
+                    guard let versionID = result.versionID else { failureMessage = "歌词未能保存，请重试。"; return }
+                    onCancelLocked()
+                    selectedID = "saved:\(versionID)"
+                    onCandidateAdopted()
+                case .lockedConflict:
+                    conflictingLockedVersionIDs = result.conflictingLockedVersionIDs
+                    isLockConfirmationPresented = true
+                case .skippedLocked:
+                    failureMessage = "歌词仍受锁定保护，未采用。"
+                case .rejected(let reason):
+                    failureMessage = reason
+                }
+            } catch { failureMessage = "歌词未能保存：\(error.localizedDescription)" }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isCurrent ? Color.accentColor.opacity(0.08) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 

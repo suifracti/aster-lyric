@@ -142,6 +142,12 @@ public final class AppSettingsStore: ObservableObject {
         public static let mainWindowLayoutStyle = "mainWindowLayoutStyle"
         public static let automaticCompactLyricsFocus = "general.automaticCompactLyricsFocus"
         public static let menuBarLyricsEnabled = "menuBar.lyricsEnabled"
+        public static let menuBarLyricsShowsFullLine = "menuBar.showsFullLine.v1"
+        public static let menuBarLyricsShowsOriginal = "menuBar.showsOriginal.v1"
+        public static let menuBarLyricsShowsTranslation = "menuBar.showsTranslation.v1"
+        public static let menuBarLyricsShowsKana = "menuBar.showsKana.v1"
+        public static let menuBarLyricsShowsRomaji = "menuBar.showsRomaji.v1"
+        public static let menuBarLyricsFontSize = "menuBar.fontSize.v1"
         public static let connectSpotifyOnLaunch = "general.connectSpotifyOnLaunch"
         public static let playbackSourceMode = "playback.sourceMode"
         public static let autoSearchLyricsOnTrackChange = "general.autoSearchLyricsOnTrackChange"
@@ -243,6 +249,43 @@ public final class AppSettingsStore: ObservableObject {
     public static let currentSettingsVersion = 1
 
     private let defaults: UserDefaults
+    private var providerModelSettings: TranslationModelSettingsStore?
+    private var providerModelObservers: Set<AnyCancellable> = []
+
+    public var translationModelSettings: TranslationModelSettingsStore {
+        if let providerModelSettings { return providerModelSettings }
+        let store = TranslationModelSettingsStore(defaults: defaults, configuration: aiTranslationConfiguration)
+        providerModelSettings = store
+        store.$models.sink { [weak self] in self?.aiCachedModels = $0 }
+            .store(in: &providerModelObservers)
+        store.$status.sink { [weak self] in self?.aiModelDirectoryStatus = $0 }
+            .store(in: &providerModelObservers)
+        store.$selectionNotice.sink { [weak self] in self?.aiModelSelectionNotice = $0 }
+            .store(in: &providerModelObservers)
+        let restored = store.restored(aiTranslationConfiguration)
+        if restored != aiTranslationConfiguration { aiTranslationConfiguration = restored }
+        return store
+    }
+
+    /// Configuration-only: switching providers never refreshes a directory or
+    /// starts a model request. Each backend retains its own model and options.
+    public func selectTranslationProvider(_ engineID: String) {
+        let store = translationModelSettings
+        let current = aiTranslationConfiguration.engineID
+        var target = engineID
+        if engineID == TranslationEngineID.geminiCLI.rawValue,
+           TranslationEngineCatalog.topLevelID(for: current) != engineID {
+            target = defaults.string(forKey: "ai.lastGeminiBackend.v1") ?? engineID
+        } else if engineID == TranslationEngineID.openAICompatible.rawValue,
+                  TranslationEngineCatalog.topLevelID(for: current) != engineID {
+            target = store.preferredAPIBackend
+        }
+        guard TranslationEngineCatalog.metadata(for: target) != nil, current != target else { return }
+        aiTranslationConfiguration = store.selectProvider(from: aiTranslationConfiguration, to: target)
+        if TranslationEngineCatalog.topLevelID(for: target) == TranslationEngineID.geminiCLI.rawValue {
+            defaults.set(target, forKey: "ai.lastGeminiBackend.v1")
+        }
+    }
 
     /// Translation choices use the same injected preferences scope as settings.
     var translationSelectionDefaults: UserDefaults { defaults }
@@ -280,6 +323,24 @@ public final class AppSettingsStore: ObservableObject {
 
     @Published public var menuBarLyricsEnabled: Bool {
         didSet { defaults.set(menuBarLyricsEnabled, forKey: Key.menuBarLyricsEnabled) }
+    }
+    @Published public var menuBarLyricsShowsFullLine: Bool {
+        didSet { defaults.set(menuBarLyricsShowsFullLine, forKey: Key.menuBarLyricsShowsFullLine) }
+    }
+    @Published public var menuBarLyricsShowsOriginal: Bool {
+        didSet { defaults.set(menuBarLyricsShowsOriginal, forKey: Key.menuBarLyricsShowsOriginal) }
+    }
+    @Published public var menuBarLyricsShowsTranslation: Bool {
+        didSet { defaults.set(menuBarLyricsShowsTranslation, forKey: Key.menuBarLyricsShowsTranslation) }
+    }
+    @Published public var menuBarLyricsShowsKana: Bool {
+        didSet { defaults.set(menuBarLyricsShowsKana, forKey: Key.menuBarLyricsShowsKana) }
+    }
+    @Published public var menuBarLyricsShowsRomaji: Bool {
+        didSet { defaults.set(menuBarLyricsShowsRomaji, forKey: Key.menuBarLyricsShowsRomaji) }
+    }
+    @Published public var menuBarLyricsFontSize: Double {
+        didSet { defaults.set(menuBarLyricsFontSize, forKey: Key.menuBarLyricsFontSize) }
     }
 
     @Published public var connectSpotifyOnLaunch: Bool {
@@ -412,7 +473,10 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     @Published public var aiTranslationConfiguration: AITranslationConfiguration {
-        didSet { persistAITranslationConfiguration(aiTranslationConfiguration) }
+        didSet {
+            persistAITranslationConfiguration(aiTranslationConfiguration)
+            providerModelSettings?.remember(aiTranslationConfiguration)
+        }
     }
 
     /// This is only a non-secret status flag. The key material itself remains
@@ -582,6 +646,7 @@ public final class AppSettingsStore: ObservableObject {
     /// settings page can be browsed without touching Keychain.
     @Published public private(set) var aiModelDirectoryStatus: TranslationModelDirectoryStatus
     @Published public private(set) var aiCachedModels: [TranslationModelDescriptor]
+    @Published public private(set) var aiModelSelectionNotice = ""
 
     public init(defaults: UserDefaults = .lyricsQ) {
         self.defaults = defaults
@@ -671,6 +736,12 @@ public final class AppSettingsStore: ObservableObject {
         classicCompanionPresentationRawValue = classicPresentation
         automaticCompactLyricsFocus = defaults.object(forKey: Key.automaticCompactLyricsFocus) as? Bool ?? false
         menuBarLyricsEnabled = defaults.object(forKey: Key.menuBarLyricsEnabled) as? Bool ?? false
+        menuBarLyricsShowsFullLine = defaults.object(forKey: Key.menuBarLyricsShowsFullLine) as? Bool ?? false
+        menuBarLyricsShowsOriginal = defaults.object(forKey: Key.menuBarLyricsShowsOriginal) as? Bool ?? true
+        menuBarLyricsShowsTranslation = defaults.object(forKey: Key.menuBarLyricsShowsTranslation) as? Bool ?? false
+        menuBarLyricsShowsKana = defaults.object(forKey: Key.menuBarLyricsShowsKana) as? Bool ?? false
+        menuBarLyricsShowsRomaji = defaults.object(forKey: Key.menuBarLyricsShowsRomaji) as? Bool ?? false
+        menuBarLyricsFontSize = defaults.object(forKey: Key.menuBarLyricsFontSize) as? Double ?? 13
         connectSpotifyOnLaunch = defaults.object(forKey: Key.connectSpotifyOnLaunch) as? Bool ?? true
         if let rawMode = defaults.string(forKey: Key.playbackSourceMode),
            let mode = PlaybackSourceMode(rawValue: rawMode) {
@@ -826,51 +897,7 @@ public final class AppSettingsStore: ObservableObject {
     /// here that touches the API-key store; opening or browsing settings does
     /// not call this method.
     public func refreshAIModelDirectory() {
-        let configuration = aiTranslationConfiguration
-        guard configuration.engineID == TranslationEngineID.openAICompatible.rawValue else {
-            aiModelDirectoryStatus = .unavailable("当前翻译引擎不提供在线模型目录")
-            return
-        }
-        guard configuration.isConfigured else {
-            aiModelDirectoryStatus = .unavailable("请先填写 Base URL 和模型")
-            return
-        }
-        aiModelDirectoryStatus = .loading
-        let client = OpenAICompatibleClient()
-        let keyStore = KeychainAITranslationAPIKeyStore()
-        Task { [weak self] in
-            do {
-                guard let key = keyStore.read(), !key.isEmpty else {
-                    throw AITranslationError.missingAPIKey
-                }
-                let models = try await client.listModels(configuration: configuration, apiKey: key)
-                await MainActor.run { [weak self] in
-                    guard let self else { return }
-                    self.aiCachedModels = models
-                    self.aiModelDirectoryStatus = models.isEmpty ? .empty : .loaded(models)
-                    if let data = try? JSONEncoder().encode(models) {
-                        self.defaults.set(data, forKey: Key.aiModelDirectoryCache)
-                    }
-                    self.defaults.set(Date(), forKey: Key.aiModelDirectoryRefreshedAt)
-                }
-            } catch let error as AITranslationError {
-                await MainActor.run { [weak self] in
-                    guard let self else { return }
-                    switch error {
-                    case .server(404), .server(405):
-                        self.aiModelDirectoryStatus = .endpointUnsupported
-                    case .unauthorized:
-                        self.aiModelDirectoryStatus = .unauthorized
-                    default:
-                        self.aiModelDirectoryStatus = .unavailable(error.localizedDescription)
-                    }
-                }
-            } catch {
-                await MainActor.run { [weak self] in
-                    self?.aiModelDirectoryStatus = .unavailable("模型目录暂时不可用")
-                }
-            }
-        }
+        translationModelSettings.refresh(aiTranslationConfiguration)
     }
 
     /// Returns whether a catalog item can be applied to a live runtime
@@ -1072,10 +1099,7 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     private static func loadReadingPreferences(defaults: UserDefaults) -> ReadingPreferences {
-        guard let data = defaults.data(forKey: Key.readingPreferences),
-              let value = try? JSONDecoder().decode(ReadingPreferences.self, from: data) else {
-            return ReadingPreferences()
-        }
+        let value = ReadingPreferences.persistedOrDefault(from: defaults.data(forKey: Key.readingPreferences))
         let normalized = value.normalizedForCurrentEngines()
         if normalized != value,
            let normalizedData = try? JSONEncoder().encode(normalized) {

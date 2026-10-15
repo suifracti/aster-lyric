@@ -2,7 +2,7 @@ import SwiftUI
 import Combine
 struct ProbeTrack { var title = ""; var artist = ""; var artworkURL: URL? }
 struct ProbePreferences { var showTranslation = true }
-struct ProbeLine { var originalText = ""; var translationText: String? }
+struct ProbeLine { var originalText = ""; var translationText: String?; var kanaText: String?; var romajiText: String? }
 enum ProbeLoadState { case loading, noLyrics, noSelection, noMatch, failed, loaded, alignmentQueued, alignmentRunning, alignmentPreview, idle, candidates(Int, [Int]), mockPreview }
 @MainActor public final class PlaybackState: ObservableObject {
     @Published var selectedLibraryToolTab = Tab.library
@@ -22,6 +22,12 @@ enum ProbeLoadState { case loading, noLyrics, noSelection, noMatch, failed, load
     func togglePlayPause() {}
     func previousTrack() {}
     func nextTrack() {}
+}
+@MainActor final class WindowManager {
+    static let shared = WindowManager()
+    func toggleFloatingLyrics(state: PlaybackState) {}
+    func toggleCapsule(state: PlaybackState) {}
+    func restoreFloatingInteractiveMode(state: PlaybackState) {}
 }
 struct MenuBarLyricsPopoverView: View {
     var controller: MenuBarLyricsController

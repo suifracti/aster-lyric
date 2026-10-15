@@ -6,7 +6,7 @@ struct FloatingOutlineRenderContract {
     @MainActor static func main() {
         func render(width: CGFloat) -> (dark: Int, light: Int, clearCorner: Bool) {
             let view = OutlinedLyricTextView()
-            view.update(text: "Aa あが", font: .systemFont(ofSize: 40, weight: .bold), fill: .white, outline: .black, width: width)
+            view.update(text: "Aa あが", font: .systemFont(ofSize: 40, weight: .bold), fill: .white, outline: .black, width: width, drawOutline: true)
             let size = view.intrinsicContentSize
             let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height), bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
             NSGraphicsContext.saveGraphicsState()

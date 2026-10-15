@@ -101,6 +101,8 @@ struct AppleMusicImmersiveV3WindowView: View {
     @State private var isWindowMenuPresented = false
     @State private var isDisplayPresented = false
     @State private var isTranslationPresented = false
+    @State private var showsAIReadingControls = false
+    @State private var confirmsAIReadingRequest = false
     @State private var isTranslationComparisonPresented = false
     @State private var isVersionPickerPresented = false
     @State private var isAppearancePresented = false
@@ -1070,29 +1072,19 @@ struct AppleMusicImmersiveV3WindowView: View {
     }
 
     private var translationPanel: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 12) {
-            Label("AI 翻译", systemImage: "sparkles").font(.headline)
-            Picker("引擎", selection: Binding(
-                get: { settings.aiTranslationConfiguration.engineID },
-                set: { id in
-                    var next = settings.aiTranslationConfiguration
-                    next.engineID = id
-                    settings.aiTranslationConfiguration = next
-                }
-            )) {
-                ForEach(TranslationEngineCatalog.all, id: \.stableID) { engine in
-                    Text(engine.displayName).tag(engine.stableID)
-                }
+            Label("AI 与读音", systemImage: "sparkles").font(.headline)
+            Picker("功能", selection: $showsAIReadingControls) {
+                Text("翻译").tag(false)
+                Text("读音").tag(true)
             }
-            TextField("模型名称（沿用现有 GPT / Codex 配置）", text: Binding(
-                get: { settings.aiTranslationConfiguration.model },
-                set: { model in
-                    var next = settings.aiTranslationConfiguration
-                    next.model = model
-                    settings.aiTranslationConfiguration = next
-                }
-            ))
-            .textFieldStyle(.roundedBorder)
+            .pickerStyle(.segmented)
+            TranslationProviderControls(settings: settings)
+            Divider()
+            if showsAIReadingControls {
+                aiReadingControls
+            } else {
             Toggle("新歌词自动翻译", isOn: Binding(
                 get: { settings.aiTranslationConfiguration.autoTranslateNewLyrics },
                 set: { enabled in
@@ -1157,9 +1149,95 @@ struct AppleMusicImmersiveV3WindowView: View {
             }
             .disabled(state.translationVersions.count < 2 || state.originalLiveLyrics.isEmpty)
             .help("仅查看当前歌词的不同译文；采用时才改变当前显示，不调用翻译 AI")
+            }
         }
         .toggleStyle(.switch)
-        .padding(18).frame(width: 340)
+        .padding(18)
+        }
+        .frame(width: 380)
+        .frame(maxHeight: 620)
+        .confirmationDialog("优化当前歌曲读音？", isPresented: $confirmsAIReadingRequest, titleVisibility: .visible) {
+            Button("生成候选（可能收费）") {
+                guard aiReadingRequestDisabledReason == nil else { return }
+                state.requestAIReadingCandidate()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("使用兼容 API 模型「\(settings.aiTranslationConfiguration.model)」处理当前歌词的不确定读音，可能产生费用。候选须手动采用，不会自动重试。")
+        }
+        .onChange(of: state.liveLyricsVersionID) { _, _ in confirmsAIReadingRequest = false }
+        .onChange(of: state.liveTrackIdentity) { _, _ in confirmsAIReadingRequest = false }
+    }
+
+    private var aiReadingControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("本地自动生成读音", isOn: Binding(
+                get: { settings.readingPreferences.automaticGeneration },
+                set: { enabled in
+                    var next = settings.readingPreferences
+                    next.automaticGeneration = enabled
+                    settings.readingPreferences = next
+                }
+            ))
+            Text("本地生成不调用 AI。可在设置 → 读音调整自动生成与人工词典。")
+                .font(.caption).foregroundStyle(.secondary)
+            Toggle("使用 AI 优化读音", isOn: Binding(
+                get: { settings.readingPreferences.aiAssistedCandidate },
+                set: { enabled in
+                    var next = settings.readingPreferences
+                    next.aiAssistedCandidate = enabled
+                    settings.readingPreferences = next
+                }
+            ))
+            Text("开启不会自动请求；关闭恢复本地读音。人工修改和已锁定读音保持，其他版本仍保留。")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button("本地生成") { state.generateCurrentReading() }
+                    .disabled(!canGenerateReadingHere || state.isReadingGenerating)
+                Button("AI 优化当前歌词…", systemImage: "sparkles") { confirmsAIReadingRequest = true }
+                    .disabled(aiReadingRequestDisabledReason != nil)
+            }
+            if let reason = aiReadingRequestDisabledReason {
+                Text(reason).font(.caption).foregroundStyle(.secondary)
+            }
+            if state.isReadingGenerating {
+                ProgressView("正在生成读音…").controlSize(.small)
+            } else if !state.readingMessage.isEmpty {
+                Text(state.readingMessage).font(.caption).foregroundStyle(.secondary)
+            }
+            Menu("已保存的读音") {
+                ForEach(state.readingVersions.filter { !$0.record.isArchived }, id: \.record.id) { version in
+                    let name = ReadingRepresentationID(rawValue: version.record.representationID)?.displayName ?? "读音"
+                    let isAI = version.record.warningMetadata.contains(.aiCandidateOnly)
+                    let kind = version.record.isManuallyEdited ? "人工" : (isAI ? "AI 候选" : "本地")
+                    Button((state.selectedReadingVersion?.record.id == version.record.id ? "✓ " : "") + name + " · " + kind) {
+                        state.selectReadingVersion(versionID: version.record.id)
+                    }
+                    .disabled(isAI && !settings.readingPreferences.aiAssistedCandidate)
+                }
+            }
+            .disabled(state.readingVersions.isEmpty)
+        }
+    }
+
+    private var canGenerateReadingHere: Bool {
+        state.hasLiveTrack && !state.isMockPreviewMode && !state.isShowingSearchPreview
+            && state.liveLyricsDocumentMatchesCurrentTrack && state.readingSession.hasSource
+    }
+
+    private var aiReadingRequestDisabledReason: String? {
+        guard settings.readingPreferences.aiAssistedCandidate else { return "开启 AI 优化后，可明确生成候选。" }
+        guard canGenerateReadingHere else { return "载入当前播放歌曲的已保存歌词后可生成。" }
+        guard settings.aiTranslationConfiguration.engineID == TranslationEngineID.openAICompatible.rawValue else {
+            return "AI 读音目前仅支持兼容 API；GPT / ChatGPT 与 Gemini 仍可用于翻译。"
+        }
+        guard settings.aiTranslationConfiguration.isConfigured else { return "请先在设置中配置兼容 API 地址与模型。" }
+        guard LyricsLanguageGate.allowsJapaneseReadings(language: state.liveLyricsLanguage, text: state.liveLyrics.map(\.originalText).joined(separator: "\n")) else {
+            return "AI 优化仅处理日语不确定读音，请先确认歌词语言。"
+        }
+        if state.isReadingGenerating { return "请等待当前读音生成完成。" }
+        if !allowsModelRequests { return "当前没有新请求预算；可继续使用本地读音。" }
+        return nil
     }
 
     private var toolbarPanelIsPresented: Bool {
@@ -1198,11 +1276,11 @@ struct AppleMusicImmersiveV3WindowView: View {
             }
             if liveOnly || !state.isShowingSearchPreview {
                 Button { isTranslationPresented.toggle() } label: {
-                    iconLabel("sparkles", description: "AI 翻译")
+                    iconLabel("sparkles", description: "AI 翻译与读音")
                 }
                 .keyboardShortcut("t", modifiers: [.command, .option])
                 .accessibilityIdentifier("translation.shortcut")
-                .toolbarTooltip("AI 翻译", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
+                .toolbarTooltip("AI 翻译与读音", current: $hoveredToolbarItem, panelPresented: toolbarPanelIsPresented)
                 .popover(isPresented: $isTranslationPresented, arrowEdge: .top) {
                     translationPanel
                 }
@@ -1304,32 +1382,42 @@ struct AppleMusicImmersiveV3WindowView: View {
                 isWindowMenuPresented = false
             }
             if !liveOnly {
-            toolbarAction("桌面歌词", symbol: "rectangle.on.rectangle") {
-                WindowManager.shared.toggleFloatingLyrics(state: state)
-                isWindowMenuPresented = false
-            }
-            toolbarAction("顶部胶囊", symbol: "capsule") {
-                WindowManager.shared.toggleCapsule(state: state)
-                isWindowMenuPresented = false
-            }
+                toolbarAction("桌面歌词", symbol: "rectangle.on.rectangle") {
+                    WindowManager.shared.toggleFloatingLyrics(state: state)
+                    isWindowMenuPresented = false
+                }
+                toolbarAction("顶部胶囊", symbol: "capsule") {
+                    WindowManager.shared.toggleCapsule(state: state)
+                    isWindowMenuPresented = false
+                }
+                toolbarAction("菜单栏歌词与播放", symbol: "menubar.rectangle") {
+                    isWindowMenuPresented = false
+                    // Close this popover before opening the status-item one.
+                    DispatchQueue.main.async { MenuBarLyricsController.shared.togglePopover() }
+                }
             }
             toolbarAction(liveOnly ? "退出全屏" : "全屏歌词", symbol: "arrow.up.left.and.arrow.down.right") {
                 WindowManager.shared.toggleFullScreen(state: state, settings: settings)
                 isWindowMenuPresented = false
             }
             if !liveOnly {
-            Divider().padding(.vertical, 4)
-            Menu("桌面歌词交互") {
-                Button("可编辑 / 可拖动") { WindowManager.shared.setFloatingInteractionMode(.interactive, state: state) }
-                Button("锁定展示") { WindowManager.shared.setFloatingInteractionMode(.locked, state: state) }
-                Button("启用鼠标穿透") { WindowManager.shared.setFloatingInteractionMode(.passThrough, state: state) }
-                Button("解除鼠标穿透") { WindowManager.shared.restoreFloatingInteractiveMode(state: state) }
-            }
-            .padding(8)
+                Divider().padding(.vertical, 4)
+                Text("桌面歌词交互")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                ForEach(FloatingLyricsInteractionMode.allCases, id: \.rawValue) { mode in
+                    toolbarAction(mode.title, symbol: settings.floatingWindowInteractionMode == mode ? "checkmark.circle.fill" : "circle") {
+                        WindowManager.shared.setFloatingInteractionMode(mode, state: state)
+                    }
+                    .help(mode.detail)
+                    .accessibilityAddTraits(settings.floatingWindowInteractionMode == mode ? .isSelected : [])
+                }
             }
         }
         .padding(8)
-        .frame(width: 224)
+        .frame(width: 244)
     }
 
     private func toolbarAction(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {

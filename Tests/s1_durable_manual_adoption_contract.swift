@@ -47,6 +47,19 @@ private func makeTrack(_ suffix: String) -> Track {
     )
 }
 
+private struct VersionBrowsingProvider: LyricsProvider {
+    let name: String
+    let delay: UInt64
+    var executionLane: LyricsProviderExecutionLane { .network }
+    func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult {
+        try? await Task.sleep(nanoseconds: delay)
+        return .match(LyricsDocument(identity: identity, title: track.title, artist: track.artist,
+            album: track.album, duration: track.duration,
+            lines: [LyricLine(timestamp: 4, originalText: "Self-authored version \(name)")],
+            source: .lrclib, confidence: 0.99, providerSourceID: name))
+    }
+}
+
 private func makeCandidate(
     track: Track,
     source: LyricsSource,
@@ -231,7 +244,7 @@ struct S1DurableManualAdoptionContract {
 
         let scenario = CommandLine.arguments.dropFirst().first ?? "all"
         let scenarios = scenario == "all"
-            ? ["instrumental-mark", "force-refresh-protected", "stored-selection-read-fails", "lyrics-ovh-zero", "kugou-half", "timed-spans", "auto-search-timed-reopen", "auto-search-disabled-loads-selection", "locked-current", "selection-throws", "timing-throws", "invalid-content", "failed-results", "track-switch", "same-track-order"]
+            ? ["additional-versions", "instrumental-mark", "force-refresh-protected", "stored-selection-read-fails", "lyrics-ovh-zero", "kugou-half", "timed-spans", "auto-search-timed-reopen", "auto-search-disabled-loads-selection", "locked-current", "selection-throws", "timing-throws", "invalid-content", "failed-results", "track-switch", "same-track-order"]
             : [scenario]
         var failures = 0
         for item in scenarios {
@@ -248,6 +261,7 @@ struct S1DurableManualAdoptionContract {
 
     private static func run(_ scenario: String) async throws {
         switch scenario {
+        case "additional-versions": try await additionalVersionsContract()
         case "instrumental-mark": try await reversibleInstrumentalMarkContract()
         case "force-refresh-protected": try await forceRefreshProtectedSelectionContract()
         case "bilingual-auto-cache": try await bilingualAutomaticCacheContract()
@@ -271,6 +285,75 @@ struct S1DurableManualAdoptionContract {
         case "track-switch": try await lateAdoptionStaysBoundToItsTrack()
         case "same-track-order": try await newerSameTrackRequestWins()
         default: throw ContractFailure(description: "unknown scenario \(scenario)")
+        }
+    }
+
+    private static func additionalVersionsContract() async throws {
+        try await withTemporaryRoot { root in
+            let track = makeTrack("versions"), identity = TrackIdentity(track: makeTrack("versions"))
+            let repo = makeRepository(root: root)
+            try await repo.prepare()
+            let document = makeCandidate(track: track, source: .lrclib, confidence: 0.99, providerID: "original").makeDocument()
+            let id = try await repo.save(track: track, identity: identity, document: document).versionID!
+            let originalStored = try await repo.loadEditableVersion(versionID: id, track: track, identity: identity)!
+            let session = LyricsSessionController(providers: [VersionBrowsingProvider(name: "one", delay: 10_000_000),
+                VersionBrowsingProvider(name: "two", delay: 40_000_000)], repository: repo)
+            session.begin(track: track, identity: identity, automaticallySearch: false)
+            for _ in 0..<200 where session.isSearchInProgress { try await Task.sleep(nanoseconds: 5_000_000) }
+            try check(session.activeLyricsVersionID == id, "saved source failed to load")
+            let originalHash = session.activeSourceContentHash
+
+            for mode in ["automatic", "locked", "none", "instrumental", "revoked"] {
+                switch mode {
+                case "locked": try await repo.markLocked(versionID: id, locked: true)
+                case "none": session.selectNoVersion(identity: identity)
+                case "instrumental": session.markAsInstrumental(identity: identity)
+                case "revoked":
+                    try await repo.revokeLyricsVersionSelection(trackStableKey: identity.stableKey, lyricsVersionID: id)
+                    session.selectNoVersion(identity: identity)
+                default: break
+                }
+                let beforeID = session.activeLyricsVersionID, beforeText = session.lyrics.map(\.originalText)
+                let noSelection = session.isNoSelection, instrumental = session.isMarkedInstrumental
+                session.searchAdditionalVersions(track: track, identity: identity)
+                for _ in 0..<200 where session.isSearchingAdditionalVersions { try await Task.sleep(nanoseconds: 5_000_000) }
+                try check(!session.isSearchingAdditionalVersions && session.availableCandidates.count == 2, "candidate search did not finish all sources for \(mode)")
+                try check(session.activeLyricsVersionID == beforeID && session.lyrics.map(\.originalText) == beforeText, "candidate search changed active source for \(mode)")
+                try check(session.isNoSelection == noSelection && session.isMarkedInstrumental == instrumental, "candidate search changed explicit mark for \(mode)")
+                if beforeID != nil { try check(session.activeSourceContentHash == originalHash, "candidate search changed source hash") }
+                try check(try await repo.versionCount(trackStableKey: identity.stableKey) == 1, "candidate search silently saved an asset")
+                let stored = try await repo.loadEditableVersion(versionID: id, track: track, identity: identity)
+                try check(stored?.sourceContentHash == originalStored.sourceContentHash && stored?.lines == originalStored.lines,
+                    "candidate search changed original content")
+                if mode != "automatic" { try check(stored?.record.isLocked == true, "candidate search removed lock") }
+            }
+            try check(try await repo.isLyricsSelectionRevoked(identity: identity), "candidate search removed explicit revocation")
+
+            session.updateProviders([FixedLyricsProvider(name: "offline", result: .failed(.networkUnavailable))])
+            session.searchAdditionalVersions(track: track, identity: identity)
+            for _ in 0..<200 where session.isSearchingAdditionalVersions { try await Task.sleep(nanoseconds: 5_000_000) }
+            try check(session.isNoSelection && session.activeLyricsVersionID == nil && !session.additionalVersionsMessage.isEmpty,
+                "search failure changed selection or hid feedback")
+
+            session.updateProviders([VersionBrowsingProvider(name: "late", delay: 80_000_000)])
+            session.searchAdditionalVersions(track: track, identity: identity)
+            let next = makeTrack("versions-next")
+            session.begin(track: next, identity: TrackIdentity(track: next), automaticallySearch: false)
+            try await Task.sleep(nanoseconds: 150_000_000)
+            try check(session.activeIdentity == TrackIdentity(track: next) && session.availableCandidates.isEmpty && !session.isSearchingAdditionalVersions,
+                "old candidate search leaked across song change")
+            try check(try await repo.versionCount(trackStableKey: identity.stableKey) == 1, "stale search wrote original song")
+            let loadingSession = LyricsSessionController(providers: [VersionBrowsingProvider(name: "initial", delay: 10_000_000)], repository: repo)
+            loadingSession.begin(track: next, identity: TrackIdentity(track: next))
+            loadingSession.searchAdditionalVersions(track: next, identity: TrackIdentity(track: next))
+            for _ in 0..<200 where loadingSession.isSearchingAdditionalVersions { try await Task.sleep(nanoseconds: 5_000_000) }
+            guard case .candidates = loadingSession.state else {
+                throw ContractFailure(description: "browsing during initial load left a permanent loading state")
+            }
+            try check(loadingSession.activeLyricsVersionID == nil && loadingSession.lyrics.isEmpty,
+                "browsing during initial load adopted instead of showing candidates")
+            try check(try await repo.versionCount(trackStableKey: TrackIdentity(track: next).stableKey) == 0, "initial browsing saved an asset")
+            print("candidate-only search preserves automatic/locked/none/instrumental/revoked sources; failure and stale song remain read-only")
         }
     }
 

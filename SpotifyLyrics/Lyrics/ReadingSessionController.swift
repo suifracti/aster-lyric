@@ -157,7 +157,8 @@ public final class ReadingSessionController: ObservableObject {
         lines: [LyricLine],
         language: String?,
         trackStableKey: String? = nil,
-        artistDisplay: String? = nil
+        artistDisplay: String? = nil,
+        allowAutomaticGeneration: Bool = true
     ) {
         let nextLines = lines.enumerated().map { ReadingInputLine(lineIndex: $0.offset, originalText: $0.element.originalText) }
         let changed = sourceLyricsVersionID != lyricsVersionID
@@ -206,6 +207,7 @@ public final class ReadingSessionController: ObservableObject {
                     self.selectedVersion = self.chooseVersion(from: self.availableVersions)
                     self.rebuildProjection()
                     if self.selectedVersion == nil,
+                       allowAutomaticGeneration,
                        self.settings.readingPreferences.automaticGeneration,
                        self.noSelectionSource == nil {
                         self.generateCurrentReading()
@@ -239,7 +241,7 @@ public final class ReadingSessionController: ObservableObject {
         message = ""
     }
 
-    public func reload() {
+    public func reload(allowAutomaticGeneration: Bool = true) {
         guard let id = sourceLyricsVersionID, let hash = sourceContentHash else { return }
         let lines = sourceLines.map { LyricLine(timestamp: 0, originalText: $0.originalText) }
         let language = sourceLanguage
@@ -252,7 +254,8 @@ public final class ReadingSessionController: ObservableObject {
             lines: lines,
             language: language,
             trackStableKey: trackStableKey,
-            artistDisplay: artistDisplay
+            artistDisplay: artistDisplay,
+            allowAutomaticGeneration: allowAutomaticGeneration
         )
     }
 
@@ -666,7 +669,16 @@ public final class ReadingSessionController: ObservableObject {
     }
 
     private func chooseVersion(from versions: [StoredReadingVersion]) -> StoredReadingVersion? {
-        let active = versions.filter { !$0.record.isArchived }
+        // Disabling AI changes the display choice only. Keep saved candidates,
+        // locks and human edits intact so they remain available for later use.
+        let active = versions.filter { version in
+            guard !version.record.isArchived else { return false }
+            if settings.readingPreferences.aiAssistedCandidate || version.record.isManuallyEdited || version.record.isLocked { return true }
+            return !version.record.warningMetadata.contains(.aiCandidateOnly)
+                && !version.lines.contains { line in
+                    line.warnings.contains(.aiCandidateOnly) || line.tokens.contains { $0.source == .aiCandidate }
+                }
+        }
         let preferred = isChineseSource ? settings.readingPreferences.pinyinRepresentationID : settings.readingPreferences.japaneseRepresentationID
         let locked = active.filter(\.record.isLocked)
         let eligible = active.filter { !requiresConfirmation($0) }

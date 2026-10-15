@@ -77,6 +77,15 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
         }
     }
 
+    /// A dedicated native drag area avoids competition with the lyric
+    /// ribbon's horizontal reading gesture and the toolbar buttons.
+    func beginDragging(with event: NSEvent) {
+        guard interactionMode == .interactive,
+              let panel, panel.isMovable, !panel.ignoresMouseEvents,
+              event.window === panel, event.type == .leftMouseDown else { return }
+        panel.performDrag(with: event)
+    }
+
     func close() {
         hideStylePanel()
         panel?.orderOut(nil)

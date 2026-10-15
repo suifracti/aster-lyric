@@ -21,6 +21,8 @@ public final class LyricsSessionController: ObservableObject {
     @Published public private(set) var alignmentProvenanceAvailability: AlignmentProvenanceAvailability = .unavailable
     @Published public private(set) var revision: UInt64 = 0
     @Published public private(set) var isSearchInProgress = false
+    @Published public private(set) var isSearchingAdditionalVersions = false
+    @Published public private(set) var additionalVersionsMessage = ""
     @Published public private(set) var sourceFailureSummary: String?
     @Published public private(set) var persistenceStatusMessage: String?
     @Published public private(set) var activeSearchQuery: String?
@@ -394,6 +396,65 @@ public final class LyricsSessionController: ObservableObject {
 
     public func retry(track: Track, identity: TrackIdentity) {
         retry(track: track, identity: identity, queryOverride: nil)
+    }
+
+    /// Explicit browsing changes only the candidate list. The current lyrics,
+    /// saved selection, and session-only absence/instrumental mark stay intact.
+    public func searchAdditionalVersions(track: Track, identity: TrackIdentity) {
+        guard activeIdentity == identity, TrackIdentity(track: track) == identity else { return }
+        cancelCurrentRequest()
+        revision &+= 1
+        let requestRevision = revision
+        availableCandidates = []
+        isSearchingAdditionalVersions = true
+        additionalVersionsMessage = "正在查找更多歌词版本…"
+        requestTask = Task { [weak self, searchManager, repository] in
+            defer {
+                if let self, self.activeIdentity == identity, self.revision == requestRevision {
+                    self.isSearchingAdditionalVersions = false
+                }
+            }
+            let aliases = (try? await repository?.loadAliases(stableKey: identity.stableKey)) ?? []
+            guard !Task.isCancelled else { return }
+            let outcome = await searchManager.search(track: track, identity: identity,
+                forceRefresh: true, aliases: aliases, collectCandidatesOnly: true,
+                onCandidates: { [weak self] candidates in
+                    await MainActor.run { [weak self] in
+                        guard !Task.isCancelled, let self, self.activeIdentity == identity,
+                              self.revision == requestRevision else { return }
+                        var merged = Dictionary(self.availableCandidates.map { ($0.id, $0) }, uniquingKeysWith: { _, newest in newest })
+                        for candidate in candidates where candidate.identity == identity { merged[candidate.id] = candidate }
+                        self.availableCandidates = merged.values.sorted { $0.displayedConfidence > $1.displayedConfidence }
+                    }
+                })
+            guard !Task.isCancelled, let self, self.activeIdentity == identity,
+                  self.revision == requestRevision else { return }
+            switch outcome.result {
+            case .candidates(let candidates):
+                self.availableCandidates = candidates.filter { $0.identity == identity }
+                self.additionalVersionsMessage = "找到 \(self.availableCandidates.count) 个候选；预览后可采用。"
+                if let summary = outcome.sourceFailureSummary { self.additionalVersionsMessage += " \(summary)" }
+            case .failed(let failure):
+                self.additionalVersionsMessage = failure.userFacingMessage
+            case .noLyrics, .noMatch:
+                self.additionalVersionsMessage = "暂未找到其他歌词版本，可以稍后重试。"
+            case .match:
+                // Candidate-only searches must never enter a persistence path.
+                self.additionalVersionsMessage = "未取得可预览的候选，请重新查找。"
+            }
+            // Browsing can interrupt the initial automatic load. With no
+            // existing projection, finish its loading indicator as a review
+            // state; do not start automatic recovery or save a selection.
+            if self.lyrics.isEmpty, self.activeLyricsVersionID == nil, case .loading = self.state {
+                switch outcome.result {
+                case .candidates: self.state = .candidates(identity, self.availableCandidates)
+                case .noLyrics: self.state = .noLyrics(identity)
+                case .noMatch: self.state = .noMatch(identity)
+                case .failed(let failure): self.state = .failed(identity, failure)
+                case .match: break
+                }
+            }
+        }
     }
 
     public func retry(
@@ -975,6 +1036,8 @@ public final class LyricsSessionController: ObservableObject {
 
     private func cancelCurrentRequest() {
         isSearchInProgress = false
+        isSearchingAdditionalVersions = false
+        additionalVersionsMessage = ""
         requestTask?.cancel()
         requestTask = nil
         recoveryTask?.cancel()

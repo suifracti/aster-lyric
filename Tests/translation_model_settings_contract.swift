@@ -15,6 +15,32 @@ actor ModelGate {
   let defaults = UserDefaults(suiteName:suite)!; defer { defaults.removePersistentDomain(forName:suite) }
   let gate = ModelGate()
   let loader: TranslationModelSettingsStore.Loader = { c in try await gate.load(c) }
+  for (engine, oldModel) in [(TranslationEngineID.geminiCLI.rawValue, "gpt-6.1-sol"),
+                            (TranslationEngineID.antigravityCLI.rawValue, "codex-legacy")] {
+   let migrationSuite = "com.lyricsq.test.provider-model.migration." + UUID().uuidString
+   let migrationDefaults = UserDefaults(suiteName: migrationSuite)!
+   defer { migrationDefaults.removePersistentDomain(forName: migrationSuite) }
+   let legacy = AITranslationConfiguration(model: oldModel, engineID: engine)
+   let migrated = TranslationModelSettingsStore(defaults: migrationDefaults, configuration: legacy, loader: loader)
+   expect(migrated.restored(legacy).model.isEmpty, "unowned legacy Gemini GPT/Codex mismatch clears active model")
+   expect(migrated.selectionNotice.contains(oldModel), "old model remains visible for review")
+   expect(migrationDefaults.string(forKey: "ai.previousMismatchedModel." + engine) == oldModel,
+       "migration preserves original value")
+   var corrected = migrated.restored(legacy); corrected.model = "my-private-model"
+   migrated.remember(corrected)
+   expect(migrated.selectionNotice.isEmpty, "entering a replacement model clears stale mismatch notice")
+   corrected.model = "gpt-custom-alias"; migrated.remember(corrected)
+   let reopenedMigration = TranslationModelSettingsStore(defaults: migrationDefaults, configuration: corrected, loader: loader)
+   expect(reopenedMigration.restored(corrected).model == "gpt-custom-alias",
+       "existing provider record must not be guessed or cleared on reopen")
+  }
+  let customSuite = "com.lyricsq.test.provider-model.custom." + UUID().uuidString
+  let customDefaults = UserDefaults(suiteName: customSuite)!
+  defer { customDefaults.removePersistentDomain(forName: customSuite) }
+  let custom = AITranslationConfiguration(model: "my-private-model", engineID: TranslationEngineID.geminiCLI.rawValue)
+  let customStore = TranslationModelSettingsStore(defaults: customDefaults, configuration: custom, loader: loader)
+  expect(customStore.restored(custom).model == custom.model, "unowned custom Gemini model remains unchanged")
+  expect(await gate.count() == 0, "migration and reopen never fetch or verify a remote model")
   var c = AITranslationConfiguration(model:"codex-manual", engineID:TranslationEngineID.codexChatGPT.rawValue, codexReasoningEffort:"medium")
   let store = TranslationModelSettingsStore(defaults:defaults, configuration:c, loader:loader)
   expect(await gate.count() == 0, "opening settings must not fetch a directory")
@@ -50,6 +76,13 @@ actor ModelGate {
   expect(reopenedAPI.savedAPIEndpoints().contains(one.baseURL),"saved API services survive reopen")
   let legacyGemini=reopenedAPI.selectProvider(from:secondAgain,to:TranslationEngineID.geminiCLI.rawValue)
   expect(legacyGemini.model=="gemini-manual" && legacyGemini.geminiThinkingBudget==123,"hidden Gemini backend retained without silent migration to agy")
+  expect(await gate.count() == 0, "all provider/model/endpoint configuration changes must remain request-free")
+  expect(TranslationEngineCatalog.selectable.filter { $0.stableID == TranslationEngineID.geminiCLI.rawValue }.count == 1,
+      "Gemini has one top-level entry")
+  expect(!TranslationEngineCatalog.selectable.contains { $0.stableID == TranslationEngineID.antigravityCLI.rawValue },
+      "Gemini connection variants must not appear as duplicate top-level providers")
+  expect(TranslationEngineCatalog.topLevelID(for: TranslationEngineID.antigravityCLI.rawValue) == TranslationEngineID.geminiCLI.rawValue,
+      "legacy Gemini backend remains represented by its family")
   store.refresh(c)
   for _ in 0..<1000 { if await gate.count()>=1 { break }; await Task.yield() }
   expect(await gate.count()==1,"explicit refresh starts exactly one directory request")

@@ -2,15 +2,28 @@ import SwiftUI
 
 public struct MenuBarLyricsPopoverView: View {
     @ObservedObject var controller: MenuBarLyricsController
+    @State private var didCopyFullLyrics = false
+    @State private var isAppearanceExpanded = false
 
     public init(controller: MenuBarLyricsController) {
         self.controller = controller
     }
 
     public var body: some View {
+        Group {
+            if let fullLyrics = controller.fullLyricsSnapshot {
+                fullLyricsPage(fullLyrics)
+            } else {
+                playbackPage
+            }
+        }
+        .onChange(of: controller.fullLyricsSnapshot) { _, _ in didCopyFullLyrics = false }
+    }
+
+    private var playbackPage: some View {
         let snapshot = controller.currentSnapshot
         let artist = snapshot.artistName ?? ""
-        VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 artworkView(snapshot.artworkURL)
                 VStack(alignment: .leading, spacing: 4) {
@@ -31,11 +44,26 @@ public struct MenuBarLyricsPopoverView: View {
                 }
             }
 
-            lyricsContent(snapshot)
-                .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
+            ScrollView {
+                lyricsContent(snapshot)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+                .frame(height: isAppearanceExpanded ? 100 : 180)
                 .padding(14)
                 .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
                 .accessibilityElement(children: .contain)
+
+            // Keep the complete-song action reachable even when one lyric
+            // fills the scrollable preview above.
+            switch snapshot.state {
+            case .synchronized, .unsynchronized:
+                Button("查看完整歌词") { controller.showFullLyrics() }
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            default:
+                EmptyView()
+            }
 
             HStack(spacing: 18) {
                 Spacer()
@@ -66,6 +94,13 @@ public struct MenuBarLyricsPopoverView: View {
                 shortcut("设置", icon: "gearshape") { controller.openSettings() }
             }
 
+            HStack(spacing: 6) {
+                shortcut("桌面歌词", icon: "text.bubble") { controller.toggleFloatingLyrics() }
+                shortcut("顶部胶囊", icon: "capsule") { controller.toggleCapsule() }
+                shortcut("恢复拖动", icon: "hand.draw") { controller.restoreFloatingInteraction() }
+                    .help("解除桌面歌词的锁定或鼠标穿透，让窗口恢复拖动")
+            }
+
             HStack(spacing: 12) {
                 Toggle("菜单栏显示歌词", isOn: Binding(
                     get: { controller.menuBarLyricsEnabled },
@@ -87,9 +122,61 @@ public struct MenuBarLyricsPopoverView: View {
                 .help("更多操作")
                 .accessibilityLabel("更多操作")
             }
+
+            DisclosureGroup("状态栏文字外观", isExpanded: $isAppearanceExpanded) {
+                ScrollView {
+                    MenuBarLyricsAppearanceControls(settings: controller.settings)
+                        .padding(.top, 8)
+                }
+                .frame(height: 150)
+            }
+            .font(.system(size: 12, weight: .medium))
         }
         .padding(16)
         .frame(width: 340)
+    }
+
+    private func fullLyricsPage(_ lyrics: MenuBarFullLyricsSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Button {
+                    controller.closeFullLyrics()
+                } label: {
+                    Label("返回播放", systemImage: "chevron.left")
+                }
+                .buttonStyle(.borderless)
+                .keyboardShortcut(.escape, modifiers: [])
+                Spacer()
+                Button {
+                    NSPasteboard.general.clearContents()
+                    didCopyFullLyrics = NSPasteboard.general.setString(lyrics.copyText, forType: .string)
+                } label: {
+                    Label(didCopyFullLyrics ? "已复制" : "复制全部", systemImage: didCopyFullLyrics ? "checkmark" : "doc.on.doc")
+                }
+                .buttonStyle(.borderless)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(lyrics.trackTitle).font(.headline).lineLimit(2).help(lyrics.trackTitle)
+                if !lyrics.artistName.isEmpty {
+                    Text(lyrics.artistName).font(.subheadline).foregroundStyle(.secondary)
+                }
+            }
+            Divider()
+            ScrollView {
+                Text(lyrics.lyricsText)
+                    .font(.system(size: 15))
+                    .lineSpacing(6)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                    .padding(.trailing, 8)
+            }
+            .frame(height: 360)
+            Text("保留打开时的歌词，可选择文字复制。")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .frame(width: 400)
     }
 
     @ViewBuilder
@@ -123,13 +210,11 @@ public struct MenuBarLyricsPopoverView: View {
                             .font(.system(size: 10, weight: .medium))
                         Text(next)
                             .font(.system(size: 11))
-                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
                     }
                     .foregroundStyle(.secondary)
                 }
-                Button("查看完整歌词") { controller.openCurrentLyrics() }
-                    .buttonStyle(.borderless)
-                    .font(.system(size: 11))
             }
         case .unsynchronized:
             VStack(alignment: .leading, spacing: 10) {
@@ -139,9 +224,6 @@ public struct MenuBarLyricsPopoverView: View {
                 if let text = snapshot.currentLineText, !text.isEmpty {
                     lyricText(text, translation: snapshot.currentTranslationText)
                 }
-                Button("在主窗口查看完整歌词") { controller.openCurrentLyrics() }
-                    .buttonStyle(.borderless)
-                    .font(.system(size: 11))
             }
         case .candidates(_, let count):
             statusContent("找到 \(count) 份候选歌词", detail: "请在主窗口查看并选择要使用的版本。",
@@ -166,7 +248,7 @@ public struct MenuBarLyricsPopoverView: View {
             Text(original)
                 .font(.system(size: 17, weight: .semibold))
                 .lineSpacing(3)
-                .lineLimit(4)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
             if let translation, !translation.isEmpty {
@@ -174,7 +256,7 @@ public struct MenuBarLyricsPopoverView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .lineSpacing(3)
-                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
                     .accessibilityLabel("译文：\(translation)")
@@ -251,6 +333,44 @@ public struct MenuBarLyricsPopoverView: View {
             .frame(width: 44, height: 44)
             .background(Color.accentColor.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct MenuBarLyricsAppearanceControls: View {
+    @ObservedObject var settings: AppSettingsStore
+
+    private var fontSize: Double {
+        Double(MenuBarLyricsAppearance(fontSize: settings.menuBarLyricsFontSize).effectiveFontSize)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("显示长度", selection: $settings.menuBarLyricsShowsFullLine) {
+                Text("紧凑").tag(false)
+                Text("尽量完整").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .help("尽量完整会取消应用的长度限制，实际显示仍取决于系统菜单栏空间。")
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 6) {
+                Toggle("原文", isOn: $settings.menuBarLyricsShowsOriginal)
+                Toggle("译文", isOn: $settings.menuBarLyricsShowsTranslation)
+                Toggle("假名", isOn: $settings.menuBarLyricsShowsKana)
+                Toggle("罗马音 / 拼音", isOn: $settings.menuBarLyricsShowsRomaji)
+            }
+            .toggleStyle(.checkbox)
+            HStack(spacing: 8) {
+                Text("字号")
+                Slider(value: Binding(get: { fontSize }, set: { settings.menuBarLyricsFontSize = $0 }),
+                       in: 10...18, step: 1)
+                    .accessibilityLabel("状态栏歌词字号")
+                Text("\(Int(fontSize)) pt").monospacedDigit().frame(width: 36, alignment: .trailing)
+            }
+            Text("各层在同一行排列，只使用已有读音；所选内容为空时显示歌名。")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.system(size: 11))
     }
 }
 

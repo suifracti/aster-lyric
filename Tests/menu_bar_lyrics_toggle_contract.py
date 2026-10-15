@@ -6,10 +6,10 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 store = (root/'SpotifyLyrics/Settings/AppSettingsStore.swift').read_text()
 # Extract the actual persistence boundary for this setting, avoiding unrelated stores.
-key = re.search(r'public static let menuBarLyricsEnabled = [^\n]+', store)
-assert key, 'Missing persistent menu-bar lyrics setting'
-prop = re.search(r'@Published public var menuBarLyricsEnabled: Bool \{\s*didSet \{[^\n]+\}\s*\}', store).group()
-initial = re.search(r'^        menuBarLyricsEnabled = [^\n]+', store, re.M).group()
+keys = re.findall(r'public static let menuBarLyrics\w+ = [^\n]+', store)
+assert len(keys) == 7, 'Missing persistent menu-bar lyrics settings'
+properties = re.findall(r'@Published public var menuBarLyrics\w+: (?:Bool|Double) \{\s*didSet \{[^\n]+\}\s*\}', store)
+initial = '\n'.join(re.findall(r'^        menuBarLyrics\w+ = [^\n]+', store, re.M))
 settings = '''import Foundation
 import Combine
 public final class AppSettingsStore: ObservableObject {
@@ -19,7 +19,7 @@ public final class AppSettingsStore: ObservableObject {
  PROP
  init(defaults: UserDefaults) { self.defaults = defaults; INITIAL }
 }
-'''.replace('KEY', key.group()).replace('PROP', prop).replace('INITIAL', initial)
+'''.replace('KEY', '\n'.join(keys)).replace('PROP', '\n'.join(properties)).replace('INITIAL', initial)
 host = '''import AppKit
 import Combine
 @main struct Contract {
@@ -56,15 +56,59 @@ import Combine
   }
   state.preferences.showTranslation = true
   state.liveLyrics = [ProbeLine(originalText: "Current lyric", translationText: "当前中文"), ProbeLine(originalText: "Next lyric", translationText: "下一句中文")]
+  let full = MenuBarLyricsController.deriveFullLyricsSnapshot(from: state)!
+  precondition(full.lyricsText == "Current lyric\\n当前中文\\n\\nNext lyric\\n下一句中文", "full page preserves every adopted live line and translation")
+  precondition(full.copyText.contains("Song") && full.copyText.contains("Next lyric"), "copy includes the captured song and complete lyrics")
+  let longLyric = String(repeating: "完整歌词不截断 ", count: 120)
+  state.liveLyrics = [ProbeLine(originalText: longLyric)]
+  precondition(MenuBarLyricsController.deriveFullLyricsSnapshot(from: state)!.lyricsText == longLyric.trimmingCharacters(in: .whitespacesAndNewlines))
+  state.liveLyricsDocumentMatchesCurrentTrack = false
+  precondition(MenuBarLyricsController.deriveFullLyricsSnapshot(from: state) == nil, "a mismatched live document cannot appear in the full page")
+  state.liveLyricsDocumentMatchesCurrentTrack = true
+  state.isMockPreviewMode = true
+  precondition(MenuBarLyricsController.deriveFullLyricsSnapshot(from: state) == nil, "mock preview cannot appear in the live page")
+  state.isMockPreviewMode = false
+  state.liveLyrics = [ProbeLine(originalText: "Current lyric", translationText: "当前中文"), ProbeLine(originalText: "Next lyric", translationText: "下一句中文")]
   let translated = MenuBarLyricsController.deriveSnapshot(from: state)
   precondition(translated.currentTranslationText == "当前中文", "popover uses adopted current live line")
   state.preferences.showTranslation = false
+  precondition(MenuBarLyricsController.deriveFullLyricsSnapshot(from: state)!.lyricsText == full.lyricsText, "main-window visibility must not crop the independent complete lyrics page")
   let hidden = MenuBarLyricsController.deriveSnapshot(from: state)
-  precondition(hidden.currentTranslationText == nil, "display toggle hides translation without a request")
-  precondition(translated != hidden, "changing only the translation must repaint the popover")
+  precondition(hidden.currentTranslationText == "当前中文", "main-window display toggle must not remove available menu-bar translation")
+  precondition(translated == hidden, "main-window visibility must not change the independent menu-bar snapshot")
   state.preferences.showTranslation = true
   state.liveLyrics[0].translationText = nil
   precondition(MenuBarLyricsController.deriveSnapshot(from: state).currentTranslationText == nil, "next-line translation must never leak into current")
+  let help = MenuBarTextFormatter.statusItemHelp(snapshot: translated)
+  precondition(help.contains("Song") && help.contains("Current lyric") && help.contains("当前中文"), "tooltip keeps full metadata and line content")
+  state.liveLyrics = [ProbeLine(originalText: longLyric, translationText: "译文", kanaText: "かな", romajiText: "kana")]
+  let layered = MenuBarLyricsController.deriveSnapshot(from: state)
+  let fullAppearance = MenuBarLyricsAppearance(showsFullLine: true)
+  let completeTitle = MenuBarTextFormatter.statusItemTitle(snapshot: layered, lyricsEnabled: true, appearance: fullAppearance)
+  precondition(completeTitle == "♪ " + longLyric.trimmingCharacters(in: .whitespacesAndNewlines), "complete mode must not apply the 240pt crop")
+  let compactTitle = MenuBarTextFormatter.statusItemTitle(snapshot: layered, lyricsEnabled: true)
+  precondition(compactTitle.hasSuffix("…") && compactTitle.count < completeTitle.count, "compact mode retains its bounded title")
+  let readings = MenuBarLyricsAppearance(showsFullLine: true, showsOriginal: false, showsTranslation: true, showsKana: true, showsRomaji: true)
+  precondition(MenuBarTextFormatter.statusItemTitle(snapshot: layered, lyricsEnabled: true, appearance: readings) == "♪ 译文 · かな · kana")
+  var absent = layered
+  absent.currentTranslationText = nil; absent.currentKanaText = nil; absent.currentRomajiText = nil
+  precondition(MenuBarTextFormatter.statusItemTitle(snapshot: absent, lyricsEnabled: true, appearance: readings) == "♪ Song", "missing selected readings retain the song title")
+  for (input, expected) in [(Double.nan, 13.0), (Double.infinity, 13.0), (-10.0, 10.0), (999.0, 18.0)] {
+   precondition(MenuBarLyricsAppearance(fontSize: input).effectiveFontSize == expected, "invalid font preferences must be bounded before AppKit")
+  }
+  var titleUpdates = 0
+  let observation = controller.$statusItemTitle.sink { _ in titleUpdates += 1 }
+  let beforeChange = titleUpdates
+  settings.menuBarLyricsShowsFullLine = true
+  settings.menuBarLyricsShowsOriginal = false
+  settings.menuBarLyricsShowsTranslation = true
+  settings.menuBarLyricsShowsKana = true
+  settings.menuBarLyricsShowsRomaji = true
+  settings.menuBarLyricsFontSize = 16
+  precondition(titleUpdates >= beforeChange + 6, "every appearance change refreshes without a playback event")
+  let restored = AppSettingsStore(defaults: defaults)
+  precondition(restored.menuBarLyricsShowsFullLine && !restored.menuBarLyricsShowsOriginal && restored.menuBarLyricsShowsTranslation && restored.menuBarLyricsShowsKana && restored.menuBarLyricsShowsRomaji && restored.menuBarLyricsFontSize == 16)
+  withExtendedLifetime(observation) {}
   print("PASS menu-bar default, persistence, immediate toggle, unchanged snapshot, playing/paused icon policy")
  }
 }

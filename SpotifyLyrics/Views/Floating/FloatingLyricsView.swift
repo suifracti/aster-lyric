@@ -57,10 +57,20 @@ struct FloatingLyricsView: View {
             Button { state.nextTrack() } label: { Image(systemName: "forward.fill").frame(width: 24, height: 26) }
                 .help("下一首")
                 .accessibilityLabel("下一首")
-            Text(windowController.interactionMode == .locked ? "已锁定" : "拖动移动")
-                .font(.system(size: 10, weight: .medium))
-                .lineLimit(1)
-            Spacer(minLength: 4)
+            HStack(spacing: 5) {
+                Image(systemName: windowController.interactionMode == .locked ? "lock.fill" : "line.3.horizontal")
+                Text(windowController.interactionMode == .locked ? "已锁定" : "拖动移动")
+                    .lineLimit(1)
+            }
+            .font(.system(size: 10, weight: .medium))
+            .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
+            .overlay {
+                FloatingLyricsDragHandle(
+                    isEnabled: windowController.interactionMode == .interactive,
+                    onMouseDown: windowController.beginDragging
+                )
+            }
+            .help(windowController.interactionMode == .interactive ? "拖动这里移动桌面歌词" : "解锁后可移动桌面歌词")
             Button { windowController.toggleStylePanel(settings: settings) } label: { Image(systemName: "textformat.size").frame(width: 26, height: 26) }
                 .help("桌面歌词样式")
                 .accessibilityLabel("桌面歌词样式")
@@ -590,9 +600,14 @@ private struct FloatingDesktopRibbon<Content: View>: View {
     @State private var manualOffset: CGFloat?
     @State private var dragOrigin: CGFloat?
 
+    private var canScroll: Bool {
+        FloatingDesktopTypography.ribbonAlignment(
+            measuredWidth: measuredWidth.map(Double.init), viewport: Double(width)
+        ) == .leading
+    }
+
     private var frameAlignment: Alignment {
-        guard allowsMotion else { return .center }
-        return .leading
+        canScroll ? .leading : .center
     }
 
     private var automaticOffset: CGFloat {
@@ -605,7 +620,6 @@ private struct FloatingDesktopRibbon<Content: View>: View {
         ))
     }
     private var offset: CGFloat {
-        guard allowsMotion else { return 0 }
         guard let measuredWidth, measuredWidth > 0 else { return 0 }
         guard measuredWidth > width else { return 0 }
         let overflow = measuredWidth - width
@@ -613,6 +627,26 @@ private struct FloatingDesktopRibbon<Content: View>: View {
         return -scrollOffset
     }
     var body: some View {
+        Group {
+            if canScroll {
+                ribbon.gesture(DragGesture(minimumDistance: 4)
+                    .onChanged { value in
+                        if dragOrigin == nil { dragOrigin = manualOffset ?? max(0, -automaticOffset) }
+                        let overflow = max(0, (measuredWidth ?? 0) - width)
+                        manualOffset = min(overflow, max(0, (dragOrigin ?? 0) - value.translation.width))
+                    }
+                    .onEnded { _ in dragOrigin = nil })
+            } else {
+                // A short line must not consume the window's drag gesture.
+                ribbon
+            }
+        }
+        .help(canScroll ? "长句可左右拖动查看；移动窗口请拖动顶部把手" : "移动窗口请拖动顶部把手")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+    }
+
+    private var ribbon: some View {
         content()
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: true)
@@ -627,17 +661,37 @@ private struct FloatingDesktopRibbon<Content: View>: View {
                 guard value.isFinite, value > 0 else { return }
                 measuredWidth = value
             }
-            .gesture(DragGesture(minimumDistance: 4)
-                .onChanged { value in
-                    guard allowsMotion else { return }
-                    if dragOrigin == nil { dragOrigin = manualOffset ?? max(0, -automaticOffset) }
-                    let overflow = max(0, (measuredWidth ?? 0) - width)
-                    manualOffset = min(overflow, max(0, (dragOrigin ?? 0) - value.translation.width))
-                }
-                .onEnded { _ in dragOrigin = nil })
-            .help(allowsMotion ? "长句可左右拖动查看" : "")
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(label)
+    }
+}
+
+private struct FloatingLyricsDragHandle: NSViewRepresentable {
+    var isEnabled: Bool
+    var onMouseDown: (NSEvent) -> Void
+
+    func makeNSView(context: Context) -> FloatingLyricsDragHandleView {
+        FloatingLyricsDragHandleView()
+    }
+
+    func updateNSView(_ view: FloatingLyricsDragHandleView, context: Context) {
+        view.isEnabled = isEnabled
+        view.onMouseDown = onMouseDown
+        view.window?.invalidateCursorRects(for: view)
+    }
+}
+
+private final class FloatingLyricsDragHandleView: NSView {
+    var isEnabled = false
+    var onMouseDown: ((NSEvent) -> Void)?
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { isEnabled }
+    override var mouseDownCanMoveWindow: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { isEnabled ? super.hitTest(point) : nil }
+    override func resetCursorRects() {
+        if isEnabled { addCursorRect(bounds, cursor: .openHand) }
+    }
+    override func mouseDown(with event: NSEvent) {
+        guard isEnabled else { return }
+        onMouseDown?(event)
     }
 }
 private struct FloatingRibbonWidthKey: PreferenceKey {

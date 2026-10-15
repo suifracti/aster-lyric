@@ -61,7 +61,16 @@ public final class TranslationModelSettingsStore: ObservableObject {
         records=defaults.data(forKey:Self.recordsKey).flatMap { try? JSONDecoder().decode([String:Record].self,from:$0) } ?? [:]
         directories=defaults.data(forKey:Self.directoriesKey).flatMap { try? JSONDecoder().decode([String:[TranslationModelDescriptor]].self,from:$0) } ?? [:]
         directoryDates=defaults.data(forKey:"ai.providerDirectoryDates.v1").flatMap { try? JSONDecoder().decode([String:Date].self,from:$0) } ?? [:]
-        if records[configuration.engineID] == nil { records[configuration.engineID]=Record(configuration) }
+        if records[configuration.engineID] == nil {
+            var initial = configuration
+            let model = initial.model.lowercased()
+            if [TranslationEngineID.geminiCLI.rawValue, TranslationEngineID.antigravityCLI.rawValue].contains(initial.engineID),
+               model.hasPrefix("gpt-") || model.hasPrefix("codex-") {
+                defaults.set(initial.model, forKey: "ai.previousMismatchedModel." + initial.engineID)
+                initial.model = ""
+            }
+            records[configuration.engineID] = Record(initial)
+        }
         // Old directories carry no owner. Only migrate when the legacy owner is known.
         if defaults.data(forKey:Self.directoriesKey) == nil,
            configuration.engineID == TranslationEngineID.openAICompatible.rawValue,
@@ -92,10 +101,18 @@ public final class TranslationModelSettingsStore: ObservableObject {
             defaults.set(c.engineID,forKey:"ai.lastAPIBackend.v1")
         }
         if let data=try? JSONEncoder().encode(records) { defaults.set(data,forKey:Self.recordsKey) }
+        let previousMismatch = c.model.isEmpty
+            ? defaults.string(forKey: "ai.previousMismatchedModel." + c.engineID) : nil
+        if let previousMismatch {
+            selectionNotice = "旧设置中的模型「\(previousMismatch)」已保留供核对，未用于 Gemini。请填写此连接支持的模型；尚未验证远端能力。"
+        } else if selectionNotice.hasPrefix("旧设置中的模型") {
+            selectionNotice = ""
+        }
         let scope=Self.scope(c)
         guard activeScope != scope else { return }
         generation=UUID(); task?.cancel(); task=nil; activeScope=scope
-        cachedAt=directoryDates[scope]; selectionNotice=""
+        cachedAt=directoryDates[scope]
+        if previousMismatch == nil { selectionNotice="" }
         models=directories[scope] ?? []
         status=directories[scope].map { $0.isEmpty ? .empty : .loaded($0) } ?? .idle
     }

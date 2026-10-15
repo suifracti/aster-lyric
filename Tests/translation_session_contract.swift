@@ -458,6 +458,16 @@ struct TranslationSessionContract {
         try await load(document, version, hash, config)
         count = await fake.calls()
         precondition(count == 0, "same-source profile/rules settings dispatched a request")
+        config.engineID = TranslationEngineID.geminiCLI.rawValue
+        config.model = "synthetic-gemini"
+        try await load(document, version, hash, config)
+        count = await fake.calls()
+        precondition(count == 0, "same-source provider/model switch dispatched a request with auto enabled")
+        config.engineID = TranslationEngineID.openAICompatible.rawValue
+        config.model = "fixture-restored"
+        try await load(document, version, hash, config)
+        count = await fake.calls()
+        precondition(count == 0, "provider round trip must remain request-free")
         controller.translateCurrentLyrics()
         controller.translateCurrentLyrics()
         let explicitDeadline = Date().addingTimeInterval(2)
@@ -476,7 +486,7 @@ struct TranslationSessionContract {
         count = await fake.calls()
         precondition(count == 3 && controller.selectedVersion != nil, "eligible new song did not auto-translate exactly once")
         controller.cancel()
-        print("PASS settings boundary: language/profile/rules zero fake requests; explicit and retry retained/in-flight dedup; new song automatic exactly once")
+        print("PASS settings boundary: provider/model/language/profile/rules zero fake requests; explicit and retry retained/in-flight dedup; new song automatic exactly once")
     }
 
     @MainActor

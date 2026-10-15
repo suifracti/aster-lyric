@@ -36,7 +36,7 @@ public struct AIReadingCandidateService: Sendable {
 public final class AppSettingsStore: @unchecked Sendable {
     public let readingUserDictionary: ReadingUserDictionaryStore
     public let aiTranslationConfiguration = AITranslationConfiguration()
-    public let readingPreferences: ReadingPreferences
+    public var readingPreferences: ReadingPreferences
 
     public init(defaults: UserDefaults, automaticPolicy: ReadingUncertaintyPolicy = .needsConfirmation, aiEnabled: Bool = false, automatic: Bool = false) {
         readingUserDictionary = ReadingUserDictionaryStore(defaults: defaults)
@@ -185,6 +185,11 @@ struct R1ReadingTokenConsistencyContract {
     }
 
     private static func runExplicitAIGate() async throws {
+        try require(ReadingPreferences.persistedOrDefault(from: nil).automaticGeneration,
+            "missing preferences should enable only local automatic generation")
+        let explicitlyOff = try JSONEncoder().encode(ReadingPreferences(automaticGeneration: false))
+        try require(!ReadingPreferences.persistedOrDefault(from: explicitlyOff).automaticGeneration,
+            "persisted local automatic false must remain false")
         let root = try temporaryRoot("ai-gate")
         defer { try? FileManager.default.removeItem(at: root) }
         let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("fixture.sqlite3"),
@@ -246,7 +251,59 @@ struct R1ReadingTokenConsistencyContract {
         try await waitUntil("explicitly adopted AI reading did not survive independent repository reopen") {
             reopened.selectedVersion?.record.id == candidateID
         }
-        print("PASS reading automatic/local zero AI; explicit fake call; unconfirmed excluded and confirmed candidate survives reopen")
+        guard let sourceID = saved.versionID, let sourceHash = saved.sourceContentHash else {
+            throw ContractFailure("fixture source was not saved")
+        }
+        let now = Date()
+        let localRecord = ReadingVersionRecord(id: UUID(), lyricsVersionID: sourceID,
+            sourceContentHash: sourceHash, engineID: ReadingEngineID.japaneseContextual.rawValue,
+            representationID: ReadingRepresentationID.kana.rawValue, language: .japanese,
+            createdAt: now, updatedAt: now, isMachineGenerated: true, isManuallyEdited: false,
+            isCurrent: false, isLocked: false, isArchived: false, parentVersionID: nil,
+            confidence: 1, warningMetadata: [], contextHash: "safe-local-fixture")
+        let localLine = ReadingLineResult(lineIndex: 0, originalText: lines[0].originalText,
+            readingText: "ごうせいのつき", language: .japanese, tokens: [], warnings: [], confidence: 1)
+        let localVersion = try await repository.saveReadingVersion(.init(record: localRecord, lines: [localLine]))
+        let countBeforeToggle = try await repository.loadReadingVersions(lyricsVersionID: sourceID,
+            representationID: nil, sourceContentHash: sourceHash).count
+        await MainActor.run {
+            settings.readingPreferences.aiAssistedCandidate = false
+            reopened.reload(allowAutomaticGeneration: false)
+        }
+        try await waitUntil("AI off did not restore the saved local reading") {
+            reopened.selectedVersion?.record.id == localVersion.record.id
+        }
+        let afterDisable = try await repository.loadReadingVersions(lyricsVersionID: sourceID,
+            representationID: nil, sourceContentHash: sourceHash)
+        try require(afterDisable.count == countBeforeToggle && afterDisable.contains { $0.record.id == candidateID && $0.record.isCurrent },
+            "AI off must not generate, delete, or overwrite the adopted candidate")
+        await MainActor.run {
+            settings.readingPreferences.aiAssistedCandidate = true
+            reopened.reload(allowAutomaticGeneration: false)
+        }
+        try await waitUntil("AI re-enabled did not recover its prior adopted candidate") {
+            reopened.selectedVersion?.record.id == candidateID
+        }
+        try await repository.markReadingLocked(versionID: candidateID, locked: true)
+        await MainActor.run {
+            settings.readingPreferences.aiAssistedCandidate = false
+            reopened.reload(allowAutomaticGeneration: false)
+        }
+        try await waitUntil("AI off replaced an explicitly locked reading") {
+            reopened.selectedVersion?.record.id == candidateID && reopened.selectedVersion?.record.isLocked == true
+        }
+        let manualLine = ReadingLineResult(lineIndex: 0, originalText: lines[0].originalText,
+            readingText: "ごうせいのつきです", language: .japanese, tokens: [], warnings: [], confidence: 1)
+        try await reopened.saveManualEdit(localVersion, readingLines: [manualLine])
+        let manualID = await MainActor.run { reopened.selectedVersion?.record.id }
+        await MainActor.run { reopened.reload(allowAutomaticGeneration: false) }
+        try await waitUntil("AI off replaced a human reading edit") {
+            reopened.selectedVersion?.record.id == manualID && reopened.selectedVersion?.record.isManuallyEdited == true
+        }
+        let afterToggles = await ReadingAICallCounter.shared.count
+        try require(afterToggles == afterExplicit,
+            "disabling and re-enabling AI must never dispatch a new model request")
+        print("PASS reading defaults, local/explicit AI gate, off/on fallback, locked and manual preservation")
     }
 
     private static func runManualEditRoundTrip() async throws {
