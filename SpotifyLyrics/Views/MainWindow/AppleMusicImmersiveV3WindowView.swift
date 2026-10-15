@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 
 private struct V3PreviewPresentationKey: EnvironmentKey {
     static let defaultValue: V3ArtworkPresentation? = nil
@@ -1328,7 +1329,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                 .accessibilityIdentifier("translation.shortcut")
                 .help("AI 翻译与读音")
                 .onHover { inside in toolbarTriggerHover(.translation, inside: inside) }
-                .popover(isPresented: toolbarPopoverBinding(.translation), arrowEdge: .top) {
+                .v3ToolPopover(isPresented: toolbarPopoverBinding(.translation), onAnchorPress: { confirmToolbarPopover(.translation) }) {
                     hoverTrackedPanel(.translation) { translationPanel }
                 }
             }
@@ -1338,7 +1339,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             .accessibilityIdentifier("lyrics.time")
             .help("歌词时间")
             .onHover { inside in toolbarTriggerHover(.lyricsTime, inside: inside) }
-            .popover(isPresented: toolbarPopoverBinding(.lyricsTime), arrowEdge: .top) {
+            .v3ToolPopover(isPresented: toolbarPopoverBinding(.lyricsTime), onAnchorPress: { confirmToolbarPopover(.lyricsTime) }) {
                 hoverTrackedPanel(.lyricsTime) { V3LyricsTimePopover(settings: settings) }
             }
             Button { confirmToolbarPopover(.appearance) } label: {
@@ -1347,7 +1348,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             .accessibilityIdentifier("appearance.shortcut")
             .help("外观背景")
             .onHover { inside in toolbarTriggerHover(.appearance, inside: inside) }
-            .popover(isPresented: toolbarPopoverBinding(.appearance), arrowEdge: .top) {
+            .v3ToolPopover(isPresented: toolbarPopoverBinding(.appearance), onAnchorPress: { confirmToolbarPopover(.appearance) }) {
                 hoverTrackedPanel(.appearance) {
                     V3VisualTuningPopoverView(settings: settings, layoutStyleRawValue: $layoutStyleRawValue, preview: $hoveredStyle) {
                         activeToolbarPopover = nil
@@ -1359,7 +1360,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             }
             .help("歌词显示")
             .onHover { inside in toolbarTriggerHover(.display, inside: inside) }
-            .popover(isPresented: toolbarPopoverBinding(.display), arrowEdge: .top) {
+            .v3ToolPopover(isPresented: toolbarPopoverBinding(.display), onAnchorPress: { confirmToolbarPopover(.display) }) {
                 hoverTrackedPanel(.display) {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("歌词显示").font(.headline)
@@ -1532,6 +1533,138 @@ struct AppleMusicImmersiveV3WindowView: View {
             }
         }
         interactionToken &+= 1
+    }
+}
+
+/// Unlike a transient system popover, an application-defined popover does
+/// not swallow the first click on its own toolbar anchor. Hover lifetime is
+/// owned by the existing hover state; outside clicks and Escape still dismiss.
+private extension View {
+    func v3ToolPopover<Content: View>(isPresented: Binding<Bool>, onAnchorPress: @escaping () -> Void, @ViewBuilder content: () -> Content) -> some View {
+        background(V3ToolPopoverAnchor(isPresented: isPresented, onAnchorPress: onAnchorPress, content: content()))
+    }
+}
+
+private final class V3ToolAnchorView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+private struct V3ToolPopoverAnchor<Content: View>: NSViewRepresentable {
+    @Binding var isPresented: Bool
+    let onAnchorPress: () -> Void
+    let content: Content
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+    func makeNSView(context: Context) -> V3ToolAnchorView { V3ToolAnchorView() }
+
+    func updateNSView(_ anchor: V3ToolAnchorView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.parent = self
+        coordinator.anchor = anchor
+        guard isPresented, anchor.window != nil else {
+            coordinator.close()
+            return
+        }
+        if let hosting = coordinator.hosting {
+            hosting.rootView = content
+        } else {
+            let hosting = NSHostingController(rootView: content)
+            hosting.sizingOptions = []
+            coordinator.hosting = hosting
+            coordinator.popover.contentViewController = hosting
+        }
+        let height = min(700, max(260, (anchor.window?.screen?.visibleFrame.height ?? 800) - 100))
+        if let size = coordinator.hosting?.sizeThatFits(in: CGSize(width: 420, height: height)) {
+            let rounded = CGSize(width: ceil(size.width), height: ceil(size.height))
+            if coordinator.popover.contentSize != rounded { coordinator.popover.contentSize = rounded }
+        }
+        if !coordinator.popover.isShown {
+            coordinator.popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+            coordinator.startMonitoring()
+        }
+    }
+
+    static func dismantleNSView(_ nsView: V3ToolAnchorView, coordinator: Coordinator) {
+        coordinator.close()
+    }
+
+    final class Coordinator: NSObject, NSPopoverDelegate {
+        var parent: V3ToolPopoverAnchor
+        weak var anchor: NSView?
+        let popover = NSPopover()
+        var hosting: NSHostingController<Content>?
+        private var localMonitor: Any?
+        private var observers: [NSObjectProtocol] = []
+        private var trackingMenus = 0
+
+        init(parent: V3ToolPopoverAnchor) {
+            self.parent = parent
+            super.init()
+            popover.behavior = .applicationDefined
+            popover.animates = false
+            popover.appearance = NSAppearance(named: .darkAqua)
+            popover.delegate = self
+        }
+
+        func startMonitoring() {
+            guard localMonitor == nil else { return }
+            localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
+                guard let self else { return event }
+                return self.handle(event)
+            }
+            let center = NotificationCenter.default
+            observers = [
+                center.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { [weak self] _ in
+                    self?.trackingMenus += 1
+                },
+                center.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { [weak self] _ in
+                    guard let self else { return }
+                    self.trackingMenus = max(0, self.trackingMenus - 1)
+                },
+                center.addObserver(forName: NSApplication.didResignActiveNotification, object: NSApp, queue: .main) { [weak self] _ in
+                    self?.dismiss()
+                }
+            ]
+        }
+
+        func handle(_ event: NSEvent) -> NSEvent? {
+            guard trackingMenus == 0 else { return event }
+            if event.type == .keyDown {
+                if event.keyCode == 53 { dismiss(); return nil }
+                return event
+            }
+            // Let the anchor receive its FIRST click and confirm the panel.
+            // A content click (including its native menus) stays in place too.
+            if let anchor, event.window === anchor.window,
+               anchor.bounds.contains(anchor.convert(event.locationInWindow, from: nil)) {
+                if event.type == .leftMouseDown { parent.onAnchorPress() }
+                return event
+            }
+            if let contentView = popover.contentViewController?.view,
+               event.window === contentView.window { return event }
+            dismiss()
+            return event
+        }
+
+        private func dismiss() {
+            if parent.isPresented { parent.isPresented = false }
+            close()
+        }
+
+        func close() {
+            stopMonitoring()
+            popover.performClose(nil)
+        }
+
+        func popoverDidClose(_ notification: Notification) { stopMonitoring() }
+
+        private func stopMonitoring() {
+            if let localMonitor { NSEvent.removeMonitor(localMonitor) }
+            localMonitor = nil
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+            trackingMenus = 0
+        }
     }
 }
 
