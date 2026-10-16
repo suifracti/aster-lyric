@@ -261,6 +261,11 @@ public enum LyricsSafeMatcher {
 
             if missing.isEmpty && extra.isEmpty && !expectedFeatured.isEmpty {
                 add("featuredArtistsExact", 0.06)
+            } else if !metadata.verifiedSpotifyArtists.isEmpty && extra.isEmpty && !actualFeatured.isEmpty {
+                // When official Spotify metadata confirms that all candidate featured
+                // artists are verified collaborators on this recording, omitting a
+                // secondary contributor from provider tags is not an adoption barrier.
+                add("featuredArtistsVerifiedSubset", 0.03)
             } else {
                 if !missing.isEmpty {
                     incompleteArtistSet = true

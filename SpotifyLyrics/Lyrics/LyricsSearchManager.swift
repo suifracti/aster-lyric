@@ -598,7 +598,14 @@ public final class LyricsSearchManager: @unchecked Sendable {
                            || $0.decision.reasons.contains("featuredNameUnverified")
                            || $0.decision.reasons.contains("titleFeaturedBaseExact"))
                        && ($0.decision.reasons.contains("primaryArtistExact") || $0.decision.reasons.contains("primaryArtistAlias"))
-                       && ($0.decision.reasons.contains("titleExact") || $0.decision.reasons.contains("titleTypographyExact") || $0.decision.reasons.contains("titleFeaturedBaseExact"))
+                       && ($0.decision.reasons.contains("titleExact")
+                           || $0.decision.reasons.contains("titleTypographyExact")
+                           || $0.decision.reasons.contains("titleParallelExact")
+                           || $0.decision.reasons.contains("titleLatinSpacingExact")
+                           || $0.decision.reasons.contains("titleFeaturedBaseExact")
+                           || $0.decision.reasons.contains("titleProviderAliasConfirmed")
+                           || $0.decision.reasons.contains("titleAliasConfirmed")
+                           || $0.decision.reasons.contains("titleReadingExact"))
                }) {
                 attemptedArtistEnrichment = true
                 let enrichmentStarted = Date()
