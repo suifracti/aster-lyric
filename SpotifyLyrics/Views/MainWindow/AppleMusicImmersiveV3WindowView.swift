@@ -1557,7 +1557,15 @@ struct AppleMusicImmersiveV3WindowView: View {
 /// owned by the existing hover state; outside clicks and Escape still dismiss.
 private extension View {
     func v3ToolPopover<Content: View>(isPresented: Binding<Bool>, onAnchorPress: @escaping () -> Void, @ViewBuilder content: () -> Content) -> some View {
-        background(V3ToolPopoverAnchor(isPresented: isPresented, onAnchorPress: onAnchorPress, content: content()))
+        background(
+            V3ToolPopoverAnchor(
+                isPresented: isPresented,
+                onAnchorPress: onAnchorPress,
+                content: content()
+                    .preferredColorScheme(.dark)
+                    .environment(\.colorScheme, .dark)
+            )
+        )
     }
 }
 
@@ -1583,9 +1591,11 @@ private struct V3ToolPopoverAnchor<Content: View>: NSViewRepresentable {
         }
         if let hosting = coordinator.hosting {
             hosting.rootView = content
+            hosting.view.appearance = coordinator.popover.appearance
         } else {
             let hosting = NSHostingController(rootView: content)
             hosting.sizingOptions = []
+            hosting.view.appearance = coordinator.popover.appearance
             coordinator.hosting = hosting
             coordinator.popover.contentViewController = hosting
         }
@@ -4000,6 +4010,8 @@ private struct V3VisualTuningPopoverView: View {
         }
         .frame(width: 340)
         .frame(maxHeight: 680)
+        .preferredColorScheme(.dark)
+        .environment(\.colorScheme, .dark)
         .onDisappear { preview = nil }
     }
 
