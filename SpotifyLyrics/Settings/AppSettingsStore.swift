@@ -54,6 +54,7 @@ public enum V3ArtworkTheme: String, CaseIterable, Identifiable, Sendable {
 /// Stable V3 artwork compositions. These are presentation choices only and
 /// do not create separate playback or lyrics runtimes.
 public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, Sendable {
+    case authenticAmbient = "v3ArtworkPresentation.authenticAmbient.v1"
     case ambient = "v3ArtworkPresentation.ambient.v1"
     case stage = "v3ArtworkPresentation.stage.v1"
     case classic = "v3ArtworkPresentation.classic.v1"
@@ -66,6 +67,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
 
     public var title: String {
         switch self {
+        case .authenticAmbient: return "原版环境光"
         case .ambient: return "封面柔焦"
         case .stage: return "封面舞台"
         case .classic: return "柔和光晕"
@@ -78,6 +80,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
 
     public var detail: String {
         switch self {
+        case .authenticAmbient: return "忠实复现 v0.1.2 正式版环境光：全幅封面底图与独立色彩扩散光晕"
         case .ambient: return "放大封面随模糊柔化，保留封面的色彩和纹理"
         case .stage: return "完整封面居中显示，模糊背景补齐空余区域"
         case .classic: return "柔和、偏暗的封面光晕，随专辑色彩扩散"
@@ -88,12 +91,12 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
         }
     }
 
-    public static var ambientVariants: [Self] { [.classic, .ambientFeathered] }
+    public static var ambientVariants: [Self] { [.authenticAmbient, .classic, .ambientFeathered] }
     public static var enlargedVariants: [Self] { [.ambient, .classicGaussian] }
 
     public var theme: V3ArtworkTheme {
         switch self {
-        case .classic, .ambientFeathered: return .ambient
+        case .authenticAmbient, .classic, .ambientFeathered: return .ambient
         case .ambient, .classicGaussian: return .enlarged
         case .stage: return .stage
         case .lyricsOnly: return .lyricsOnly
@@ -105,6 +108,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
 
     public var symbolName: String {
         switch self {
+        case .authenticAmbient: return "sun.max.fill"
         case .ambient: return "sun.max"
         case .stage: return "rectangle.inset.filled"
         case .classic, .classicGaussian: return "square.dashed.inset.filled"
@@ -116,6 +120,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
 
     public var blurControlTitle: String {
         switch self {
+        case .authenticAmbient: return "环境光柔化程度"
         case .ambient: return "背景封面模糊"
         case .stage: return "补边背景柔化"
         case .classic: return "光晕柔化程度"
@@ -128,7 +133,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
 
     public var artworkSizeControlTitle: String {
         switch self {
-        case .ambient: return "前景封面尺寸"
+        case .authenticAmbient, .ambient: return "前景封面尺寸"
         case .stage: return "封面背景缩放"
         case .classic, .classicGaussian: return "前景封面尺寸"
         case .ambientFeathered: return "前景封面尺寸"
@@ -139,7 +144,7 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
 
     public var artworkPositionControlTitle: String {
         switch self {
-        case .ambient: return "封面与光源位置"
+        case .authenticAmbient, .ambient: return "封面与光源位置"
         case .stage: return "封面背景取景"
         case .classic: return "封面与光源位置"
         case .classicGaussian: return "封面与裁切位置"
@@ -267,6 +272,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let v3LyricsPositions = "v3.lyricsPositions.v1"
         public static let v3StageReadabilityEnabled = "v3.stageReadabilityEnabled"
         public static let v3BackdropBlurRadius = "v3.backdropBlurRadius"
+        public static let v3BackdropBlurAuthenticAmbient = "v3.backdropBlur.authenticAmbient.v1"
         public static let v3BackdropBlurAmbient = "v3.backdropBlur.ambient.v1"
         public static let v3BackdropBlurStage = "v3.backdropBlur.stage.v1"
         public static let v3BackdropBlurClassic = "v3.backdropBlur.classic.v1"
@@ -287,6 +293,8 @@ public final class AppSettingsStore: ObservableObject {
         public static let v3ClassicBackdropSizeScale = "v3.classicBackdropSizeScale.v1"
         public static let v3AmbientBackdropSizeScale = "v3.ambientBackdropScale.v1"
         public static let v3GaussianBackdropSizeScale = "v3.gaussianBackdropScale.v1"
+        public static let v3ArtworkPositionAuthenticAmbient = "v3.artworkPosition.authenticAmbient.v1"
+        public static let v3ArtworkSizeScaleAuthenticAmbient = "v3.artworkSizeScale.authenticAmbient.v1"
         public static let v3ArtworkPositionClassic = "v3.artworkPosition.classic.v1"
         public static let v3ArtworkSizeScaleClassic = "v3.artworkSizeScale.classic.v1"
         public static let v3ArtworkPositionAmbient = "v3.artworkPosition.ambient.v1"
@@ -706,6 +714,7 @@ public final class AppSettingsStore: ObservableObject {
 
     private static func v3BlurDefaultsKey(for presentation: V3ArtworkPresentation) -> String {
         switch presentation {
+        case .authenticAmbient: return Key.v3BackdropBlurAuthenticAmbient
         case .ambient: return Key.v3BackdropBlurAmbient
         case .stage: return Key.v3BackdropBlurStage
         case .classic: return Key.v3BackdropBlurClassic
@@ -718,6 +727,7 @@ public final class AppSettingsStore: ObservableObject {
 
     private static func v3PositionDefaultsKey(for presentation: V3ArtworkPresentation) -> String {
         switch presentation {
+        case .authenticAmbient: return Key.v3ArtworkPositionAuthenticAmbient
         case .ambient: return Key.v3ArtworkPositionAmbient
         case .stage: return Key.v3ArtworkPositionStage
         case .classic: return Key.v3ArtworkPositionClassic
@@ -730,6 +740,7 @@ public final class AppSettingsStore: ObservableObject {
 
     private static func v3ScaleDefaultsKey(for presentation: V3ArtworkPresentation) -> String {
         switch presentation {
+        case .authenticAmbient: return Key.v3ArtworkSizeScaleAuthenticAmbient
         case .ambient: return Key.v3ArtworkSizeScaleAmbient
         case .stage: return Key.v3ArtworkSizeScaleStage
         case .classic: return Key.v3ArtworkSizeScaleClassic
@@ -797,6 +808,7 @@ public final class AppSettingsStore: ObservableObject {
             self.v3ArtworkPresentationRawValue = selectedPresentation.rawValue
         }
         let blurDefaults: [V3ArtworkPresentation: Double] = [
+            .authenticAmbient: 25.0,
             .ambient: 58.0,
             .stage: 0.0,
             .classic: 36.0,

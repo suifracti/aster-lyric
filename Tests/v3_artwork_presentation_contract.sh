@@ -71,16 +71,17 @@ b = s.index('public enum PlaybackSourceMode:', a)
 host = s[a:b] + '\n' + r'''
 @main struct ThemeCheck {
     static func main() {
-        precondition(V3ArtworkPresentation.ambientVariants.count == 2)
+        precondition(V3ArtworkPresentation.ambientVariants.count == 3)
         precondition(V3ArtworkPresentation.enlargedVariants.count == 2)
         precondition(V3ArtworkPresentation.ambientVariants.allSatisfy { $0.theme == .ambient })
         precondition(V3ArtworkPresentation.enlargedVariants.allSatisfy { $0.theme == .enlarged })
+        precondition(V3ArtworkPresentation.authenticAmbient.theme == .ambient)
         precondition(V3ArtworkPresentation.classic.theme == .ambient)
         precondition(V3ArtworkPresentation.ambient.theme == .enlarged)
         precondition(Set(V3ArtworkPresentation.ambientVariants).isDisjoint(with: Set(V3ArtworkPresentation.enlargedVariants)))
-        precondition(V3ArtworkPresentation.allCases.count == 7)
+        precondition(V3ArtworkPresentation.allCases.count == 8)
         precondition(V3ArtworkTheme.allCases.suffix(2) == [.ambient, .enlarged])
-        print("PASS two ambient variants and two enlarged variants; legacy IDs remain distinct")
+        print("PASS three ambient variants and two enlarged variants; legacy IDs remain distinct")
     }
 }
 '''

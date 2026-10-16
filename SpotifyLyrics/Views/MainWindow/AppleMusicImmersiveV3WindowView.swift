@@ -4186,7 +4186,8 @@ private struct V3VisualTuningPopoverView: View {
                         .accessibilityLabel(settings.v3ArtworkPresentation.artworkPositionControlTitle)
                     }
 
-                    if settings.v3ArtworkPresentation == .ambient
+                    if settings.v3ArtworkPresentation == .authenticAmbient
+                        || settings.v3ArtworkPresentation == .ambient
                         || settings.v3ArtworkPresentation == .classicGaussian
                         || settings.v3ArtworkPresentation == .classic
                         || settings.v3ArtworkPresentation == .ambientFeathered {
