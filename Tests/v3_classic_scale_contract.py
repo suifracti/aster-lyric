@@ -10,7 +10,7 @@ import tempfile
 
 root = Path(__file__).resolve().parent.parent
 source = (root / "SpotifyLyrics/Settings/AppSettingsStore.swift").read_text()
-presentation = source[source.index("public enum V3ArtworkPresentation"):source.index("/// Active playback provider")]
+presentation = source[source.index("public enum V3ArtworkTheme:"):source.index("/// Active playback provider")]
 keys = source[source.index("    public enum Key {"):source.index("    public static let currentSettingsVersion")]
 properties = source[source.index("    @Published public var v3PlaybackDetailsOnHover"):source.index("    /// Model names are non-secret")]
 initialization = source[source.index("        let legacyBlur ="):source.index("        let storedLayout =")]
@@ -80,15 +80,15 @@ check(NSDictionary(dictionary: beforePreview).isEqual(to: defaults.persistentDom
 
 settings.v3ArtworkPresentation = .ambient
 settings.v3ArtworkSizeScale = 1.4
-check(settings.v3PreviewBackdropScale(for: .ambient) == 1.4, "other modes retain their scale behavior")
+check(settings.v3PreviewScale(for: .ambient) == 1.4, "other modes retain their scale behavior")
 check(settings.v3PreviewBackdropScale(for: .classic) == 1.1, "other mode edits do not change classic background")
 settings.v3ArtworkPresentation = .ambientFeathered
 settings.v3ArtworkSizeScale = 0.9
 settings.v3ArtworkPresentation = .classic
-check(settings.v3ArtworkSizeScale == 1.4, "classic retains the established shared foreground scale")
+check(settings.v3ArtworkSizeScale == 0.8, "classic retains its established independent foreground scale")
 check(settings.v3ClassicBackdropSizeScale == 1.1, "mode switching preserves independent background")
 let reopened = AppSettingsStore(defaults: defaults)
-check(reopened.v3ArtworkSizeScale == 1.4 && reopened.v3ClassicBackdropSizeScale == 1.1,
+check(reopened.v3ArtworkSizeScale == 0.8 && reopened.v3ClassicBackdropSizeScale == 1.1,
       "both dimensions survive restart independently")
 check(reopened.v3PreviewScale(for: .ambientFeathered) == 0.9, "feathered scale remains independent")
 check(!reopened.v3ExpandArtworkWhenDetailsHidden && reopened.v3AmbientBackgroundShowsCompleteArtwork,

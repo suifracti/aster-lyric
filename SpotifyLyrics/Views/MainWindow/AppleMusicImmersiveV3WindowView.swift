@@ -4011,22 +4011,6 @@ private struct V3VisualTuningPopoverView: View {
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 5) {
-                Toggle("悬停时显示播放信息", isOn: $settings.v3PlaybackDetailsOnHover)
-                Text("移入封面或播放区域时显示播放控制；移到顶部可打开工具。")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if settings.v3ArtworkPresentation == .ambient
-                    || settings.v3ArtworkPresentation == .classicGaussian
-                    || settings.v3ArtworkPresentation == .classic
-                    || settings.v3ArtworkPresentation == .ambientFeathered {
-                    Toggle("隐藏播放信息时舒展封面", isOn: $settings.v3ExpandArtworkWhenDetailsHidden)
-                        .disabled(!settings.v3PlaybackDetailsOnHover)
-                        .help("隐藏播放信息后，在可用空间内轻轻展开封面；关闭后保持设定的尺寸与位置。")
-                        .accessibilityIdentifier("v3.artwork.expandWhenDetailsHidden")
-                }
-            }
-
             VStack(alignment: .leading, spacing: 6) {
                 V3ThemeSelectorView(settings: settings, preview: $preview, onConfirm: onStyleConfirmed)
 
@@ -4036,70 +4020,103 @@ private struct V3VisualTuningPopoverView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if settings.v3ArtworkPresentation == .ambient {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("背景封面").font(.system(size: 12, weight: .medium))
-                    Picker("背景封面", selection: $settings.v3AmbientBackgroundShowsCompleteArtwork) {
-                        Text("铺满").tag(false)
-                        Text("更多封面").tag(true)
+            Divider()
+
+            // 1. 背景封面：取景方式、背景缩放、模糊／光效
+            VStack(alignment: .leading, spacing: 10) {
+                Text("背景封面")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.primary)
+
+                if settings.v3ArtworkPresentation == .ambient {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("取景方式")
+                            .font(.system(size: 12, weight: .medium))
+                        Picker("取景方式", selection: $settings.v3AmbientBackgroundShowsCompleteArtwork) {
+                            Text("铺满").tag(false)
+                            Text("尽量完整").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .accessibilityLabel("取景方式")
+                        .accessibilityIdentifier("v3.ambient.backgroundFraming")
+
+                        Text(settings.v3AmbientBackgroundShowsCompleteArtwork
+                            ? "优先展示更多画面并柔和补边；前景封面单独调整。"
+                            : "允许裁切以铺满背景空间；前景封面单独调整。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("v3.ambient.backgroundFraming")
-                    Text("更多封面随窗口适应取景，边缘柔和延伸；前景封面大小单独调整。")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
+
+                if settings.v3ArtworkPresentation == .classic || settings.v3ArtworkPresentation.theme == .enlarged {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("背景缩放")
+                                .font(.system(size: 12, weight: .medium))
+                            Spacer()
+                            Text("\(Int((settings.v3BackdropScale(for: settings.v3ArtworkPresentation) * 100).rounded()))%")
+                                .font(.system(size: 11, weight: .bold).monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: Binding(
+                            get: { settings.v3BackdropScale(for: settings.v3ArtworkPresentation) },
+                            set: { settings.setV3BackdropScale($0, for: settings.v3ArtworkPresentation) }
+                        ), in: 0.8...1.4, step: 0.05)
+                            .accessibilityLabel("背景缩放")
+                            .accessibilityIdentifier("v3.classic.backgroundScale")
+                        Text("只改变背景取景，不改变前景封面大小。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(settings.v3ArtworkPresentation.blurControlTitle)
+                            .font(.system(size: 12, weight: .medium))
+                        Spacer()
+                        Text("\(blurPresetName) · \(Int(settings.v3BackdropBlurRadius))%")
+                            .font(.system(size: 11, weight: .bold).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: $settings.v3BackdropBlurRadius, in: 0...100, step: 1)
+                        .accessibilityLabel(settings.v3ArtworkPresentation.blurControlTitle)
+
+                    HStack(spacing: 0) {
+                        blurPresetButton("清晰 0%", val: 0)
+                        Spacer()
+                        blurPresetButton("轻柔 25%", val: 25)
+                        Spacer()
+                        blurPresetButton("柔和 60%", val: 60)
+                        Spacer()
+                        blurPresetButton("弥散 100%", val: 100)
+                    }
+                }
+
+                if settings.v3ArtworkPresentation == .stage {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Toggle("增强歌词对比度", isOn: $settings.v3StageReadabilityEnabled)
+                        Text("为亮色封面增加柔和暗层，让白色歌词更清楚。")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Toggle("纯音乐极简通透沉浸", isOn: $settings.v3InstrumentalPureImmersion)
+                    .font(.system(size: 12, weight: .medium))
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("歌词位置与对齐").font(.system(size: 12, weight: .medium))
-                Picker("歌词位置与对齐", selection: Binding(
-                    get: { settings.v3LyricsPosition },
-                    set: { settings.v3LyricsPosition = $0 }
-                )) {
-                    Text("自动").tag("automatic")
-                    Text("左侧").tag("left")
-                    Text("居中").tag("center")
-                    Text("右侧").tag("right")
-                }
-                .pickerStyle(.segmented)
-                Text("每种模式单独记住选择，假名和译文一起对齐。")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(settings.v3ArtworkPresentation.blurControlTitle)
-                        .font(.system(size: 12, weight: .medium))
-                    Spacer()
-                    Text("\(blurPresetName) · \(Int(settings.v3BackdropBlurRadius))%")
-                        .font(.system(size: 11, weight: .bold).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-                Slider(value: $settings.v3BackdropBlurRadius, in: 0...100, step: 1)
-
-                HStack(spacing: 0) {
-                    blurPresetButton("清晰 0%", val: 0)
-                    Spacer()
-                    blurPresetButton("轻柔 25%", val: 25)
-                    Spacer()
-                    blurPresetButton("柔和 60%", val: 60)
-                    Spacer()
-                    blurPresetButton("弥散 100%", val: 100)
-                }
-            }
-
-            if settings.v3ArtworkPresentation == .stage {
-                VStack(alignment: .leading, spacing: 5) {
-                    Toggle("增强歌词对比度", isOn: $settings.v3StageReadabilityEnabled)
-                    Text("为亮色封面增加柔和暗层，让白色歌词更清楚。")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
+            // 2. 前景封面：尺寸、位置、隐藏播放信息时舒展
             if settings.v3ArtworkPresentation != .lyricsOnly && settings.v3ArtworkPresentation != .stage {
-                Group {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("前景封面")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.primary)
+
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text(settings.v3ArtworkPresentation.artworkSizeControlTitle)
@@ -4110,6 +4127,7 @@ private struct V3VisualTuningPopoverView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Slider(value: $settings.v3ArtworkSizeScale, in: 0.8...1.4, step: 0.05)
+                            .accessibilityLabel(settings.v3ArtworkPresentation.artworkSizeControlTitle)
 
                         HStack(spacing: 0) {
                             sizePresetButton("精巧 80%", val: 0.80)
@@ -4121,58 +4139,89 @@ private struct V3VisualTuningPopoverView: View {
                             sizePresetButton("巨幕 140%", val: 1.40)
                         }
                     }
-                }
 
-                if settings.v3ArtworkPresentation == .classic || settings.v3ArtworkPresentation.theme == .enlarged {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("背景封面缩放")
-                                .font(.system(size: 12, weight: .medium))
-                            Spacer()
-                            Text("\(Int((settings.v3BackdropScale(for: settings.v3ArtworkPresentation) * 100).rounded()))%")
-                                .font(.system(size: 11, weight: .bold).monospacedDigit())
-                                .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(settings.v3ArtworkPresentation.artworkPositionControlTitle)
+                            .font(.system(size: 12, weight: .medium))
+                        Picker(settings.v3ArtworkPresentation.artworkPositionControlTitle, selection: $settings.v3ArtworkPosition) {
+                            Text("居左").tag("left")
+                            if settings.v3ArtworkPresentation != .albumPoster {
+                                Text("居中").tag("center")
+                            }
+                            Text("居右").tag("right")
                         }
-                        Slider(value: Binding(
-                            get: { settings.v3BackdropScale(for: settings.v3ArtworkPresentation) },
-                            set: { settings.setV3BackdropScale($0, for: settings.v3ArtworkPresentation) }
-                        ), in: 0.8...1.4, step: 0.05)
-                            .accessibilityLabel("背景封面缩放")
-                            .accessibilityIdentifier("v3.classic.backgroundScale")
-                        Text("只改变背景取景，不改变前景封面大小。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .accessibilityLabel(settings.v3ArtworkPresentation.artworkPositionControlTitle)
                     }
-                }
 
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(settings.v3ArtworkPresentation.artworkPositionControlTitle)
-                        .font(.system(size: 12, weight: .medium))
-                    Picker("", selection: $settings.v3ArtworkPosition) {
-                        Text("居左").tag("left")
-                        if settings.v3ArtworkPresentation != .albumPoster {
-                            Text("居中").tag("center")
-                        }
-                        Text("居右").tag("right")
+                    if settings.v3ArtworkPresentation == .ambient
+                        || settings.v3ArtworkPresentation == .classicGaussian
+                        || settings.v3ArtworkPresentation == .classic
+                        || settings.v3ArtworkPresentation == .ambientFeathered {
+                        Toggle("隐藏播放信息时舒展封面", isOn: $settings.v3ExpandArtworkWhenDetailsHidden)
+                            .disabled(!settings.v3PlaybackDetailsOnHover)
+                            .help("隐藏播放信息后，在可用空间内轻轻展开封面；关闭后保持设定的尺寸与位置。")
+                            .accessibilityIdentifier("v3.artwork.expandWhenDetailsHidden")
                     }
-                    .pickerStyle(.segmented)
                 }
             }
 
-            Toggle("纯音乐极简通透沉浸", isOn: $settings.v3InstrumentalPureImmersion)
-                .font(.system(size: 12, weight: .medium))
+            Divider()
+
+            // 3. 歌词：位置和对齐
+            VStack(alignment: .leading, spacing: 10) {
+                Text("歌词")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.primary)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("位置与对齐").font(.system(size: 12, weight: .medium))
+                    Picker("歌词位置与对齐", selection: Binding(
+                        get: { settings.v3LyricsPosition },
+                        set: { settings.v3LyricsPosition = $0 }
+                    )) {
+                        Text("自动").tag("automatic")
+                        Text("左侧").tag("left")
+                        Text("居中").tag("center")
+                        Text("右侧").tag("right")
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .accessibilityLabel("歌词位置与对齐")
+
+                    Text("每种模式单独记住选择，假名和译文一起对齐。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text("切换主窗口布局")
-                    .font(.system(size: 12, weight: .medium))
-                Picker("", selection: $layoutStyleRawValue) {
-                    ForEach(MainWindowLayoutStyle.userSelectableCases) { style in
-                        Text(style.title).tag(style.rawValue)
-                    }
+            // 4. 播放：播放信息显隐等选项
+            VStack(alignment: .leading, spacing: 10) {
+                Text("播放")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.primary)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Toggle("悬停时显示播放信息", isOn: $settings.v3PlaybackDetailsOnHover)
+                    Text("移入封面或播放区域时显示播放控制；移到顶部可打开工具。")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .pickerStyle(.menu)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("主窗口布局")
+                        .font(.system(size: 12, weight: .medium))
+                    Picker("主窗口布局", selection: $layoutStyleRawValue) {
+                        ForEach(MainWindowLayoutStyle.userSelectableCases) { style in
+                            Text(style.title).tag(style.rawValue)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .accessibilityLabel("主窗口布局")
+                }
             }
         }
         .padding(14)
