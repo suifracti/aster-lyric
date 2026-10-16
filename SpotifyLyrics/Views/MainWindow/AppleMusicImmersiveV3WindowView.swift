@@ -4004,6 +4004,14 @@ private struct V3VisualTuningPopoverView: View {
         return "巨幕"
     }
 
+    private var backdropScalePresetName: String {
+        let s = settings.v3BackdropScale(for: settings.v3ArtworkPresentation)
+        if s <= 0.90 { return "精巧" }
+        if s <= 1.10 { return "标准" }
+        if s <= 1.30 { return "大图" }
+        return "巨幕"
+    }
+
     var body: some View {
         ScrollView {
             tuningControls
@@ -4068,7 +4076,7 @@ private struct V3VisualTuningPopoverView: View {
                             Text("背景缩放")
                                 .font(.system(size: 12, weight: .medium))
                             Spacer()
-                            Text("\(Int((settings.v3BackdropScale(for: settings.v3ArtworkPresentation) * 100).rounded()))%")
+                            Text("\(backdropScalePresetName) · \(Int((settings.v3BackdropScale(for: settings.v3ArtworkPresentation) * 100).rounded()))%")
                                 .font(.system(size: 11, weight: .bold).monospacedDigit())
                                 .foregroundStyle(.secondary)
                         }
@@ -4078,6 +4086,17 @@ private struct V3VisualTuningPopoverView: View {
                         ), in: 0.8...1.4, step: 0.05)
                             .accessibilityLabel("背景缩放")
                             .accessibilityIdentifier("v3.classic.backgroundScale")
+
+                        HStack(spacing: 0) {
+                            backdropScalePresetButton("精巧 80%", val: 0.80)
+                            Spacer()
+                            backdropScalePresetButton("标准 100%", val: 1.00)
+                            Spacer()
+                            backdropScalePresetButton("大图 120%", val: 1.20)
+                            Spacer()
+                            backdropScalePresetButton("巨幕 140%", val: 1.40)
+                        }
+
                         Text("只改变背景取景，不改变前景封面大小。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -4257,6 +4276,17 @@ private struct V3VisualTuningPopoverView: View {
         .buttonStyle(.plain)
         .font(.system(size: 10, weight: abs(settings.v3ArtworkSizeScale - val) < 0.04 ? .bold : .regular))
         .foregroundStyle(abs(settings.v3ArtworkSizeScale - val) < 0.04 ? Color.blue : Color.secondary)
+    }
+
+    @ViewBuilder
+    private func backdropScalePresetButton(_ title: String, val: Double) -> some View {
+        let currentScale = settings.v3BackdropScale(for: settings.v3ArtworkPresentation)
+        Button(title) {
+            settings.setV3BackdropScale(val, for: settings.v3ArtworkPresentation)
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 10, weight: abs(currentScale - val) < 0.04 ? .bold : .regular))
+        .foregroundStyle(abs(currentScale - val) < 0.04 ? Color.blue : Color.secondary)
     }
 }
 
