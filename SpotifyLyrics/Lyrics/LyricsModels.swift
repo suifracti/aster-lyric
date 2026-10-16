@@ -241,10 +241,12 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
 
     public var displayedConfidence: Double { matchScore ?? confidence }
 
-    /// Deterministic candidate precedence comparison ensuring stable total ordering.
+    /// Deterministic candidate precedence comparison ensuring stable total ordering with strict transitivity.
     public static func hasPrecedence(_ a: LyricsCandidate, over b: LyricsCandidate) -> Bool {
-        if abs(a.displayedConfidence - b.displayedConfidence) > 0.001 {
-            return a.displayedConfidence > b.displayedConfidence
+        let scoreA = a.displayedConfidence.isFinite ? a.displayedConfidence : 0.0
+        let scoreB = b.displayedConfidence.isFinite ? b.displayedConfidence : 0.0
+        if scoreA != scoreB {
+            return scoreA > scoreB
         }
         if a.isSynchronized != b.isSynchronized {
             return a.isSynchronized && !b.isSynchronized

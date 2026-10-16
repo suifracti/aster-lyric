@@ -417,7 +417,71 @@ struct QueryIdentityContract {
         )
         let sorted1 = [candA, candB].sorted(by: LyricsCandidate.hasPrecedence)
         let sorted2 = [candB, candA].sorted(by: LyricsCandidate.hasPrecedence)
-        require(sorted1.map { $0.id } == sorted2.map { $0.id }, "Candidate sort order must be strictly deterministic")
+        require(sorted1.map { $0.id } == sorted2.map { $0.id }, "Candidate sort order for equal scores must be strictly deterministic")
+
+        // P0 regression: Candidate sorting must satisfy strict transitivity and permutation invariance
+        let candLow = LyricsCandidate(
+            id: "id-low",
+            identity: TrackIdentity(track: hachiBiDamaTrack),
+            title: "ビー玉",
+            artist: "HACHI",
+            album: "Close to heart",
+            duration: 196.39,
+            lines: [],
+            isSynchronized: true,
+            source: .neteaseExperimental,
+            confidence: 0.9000
+        )
+        let candMid = LyricsCandidate(
+            id: "id-mid",
+            identity: TrackIdentity(track: hachiBiDamaTrack),
+            title: "ビー玉",
+            artist: "HACHI",
+            album: "Close to heart",
+            duration: 196.39,
+            lines: [],
+            isSynchronized: false,
+            source: .lrclib,
+            confidence: 0.9006
+        )
+        let candHigh = LyricsCandidate(
+            id: "id-high",
+            identity: TrackIdentity(track: hachiBiDamaTrack),
+            title: "ビー玉",
+            artist: "HACHI",
+            album: "Close to heart",
+            duration: 196.39,
+            lines: [],
+            isSynchronized: false,
+            source: .lrclib,
+            confidence: 0.9012
+        )
+
+        // Strict pairwise precedence & transitivity verification
+        require(LyricsCandidate.hasPrecedence(candHigh, over: candMid), "0.9012 has precedence over 0.9006")
+        require(LyricsCandidate.hasPrecedence(candMid, over: candLow), "0.9006 has precedence over 0.9000")
+        require(LyricsCandidate.hasPrecedence(candHigh, over: candLow), "0.9012 has precedence over 0.9000 (transitivity)")
+        require(!LyricsCandidate.hasPrecedence(candLow, over: candHigh), "asymmetry: low does not precede high")
+        require(!LyricsCandidate.hasPrecedence(candMid, over: candHigh), "asymmetry: mid does not precede high")
+        require(!LyricsCandidate.hasPrecedence(candLow, over: candMid), "asymmetry: low does not precede mid")
+
+        // Permutation consistency across all 6 permutations of [0.9000, 0.9006, 0.9012]
+        let permutations = [
+            [candLow, candMid, candHigh],
+            [candLow, candHigh, candMid],
+            [candMid, candLow, candHigh],
+            [candMid, candHigh, candLow],
+            [candHigh, candLow, candMid],
+            [candHigh, candMid, candLow],
+        ]
+        let expectedOrder = ["id-high", "id-mid", "id-low"]
+        for (idx, perm) in permutations.enumerated() {
+            let sortedPerm = perm.sorted(by: LyricsCandidate.hasPrecedence)
+            require(
+                sortedPerm.map { $0.id } == expectedOrder,
+                "Permutation \(idx) must sort to identical expected precedence order"
+            )
+        }
 
         print("query identity contract passed")
     }
