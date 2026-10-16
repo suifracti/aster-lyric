@@ -110,11 +110,15 @@ public enum LyricsSafeMatcher {
 
         let metadataTitle = TrackTextNormalizer.normalize(metadata.track.title)
         let candidateTitle = TrackTextNormalizer.normalize(candidate.title)
-        let featuredTitleVariation = !declaredFeaturedArtists(in: metadata.track.title).isEmpty
-            && !declaredFeaturedArtists(in: candidate.title).isEmpty
+        let metadataFeaturedInTitle = declaredFeaturedArtists(in: metadata.track.title)
+        let candidateFeaturedInTitle = declaredFeaturedArtists(in: candidate.title)
+        let featuredTitleVariation = !metadataFeaturedInTitle.isEmpty
+            && !candidateFeaturedInTitle.isEmpty
             && metadataTitle != candidateTitle
             && featuredBaseTitle(metadata.track.title) == featuredBaseTitle(candidate.title)
             && !featuredBaseTitle(candidate.title).isEmpty
+        let declaredFeaturedMatches = !metadataFeaturedInTitle.isEmpty
+            && Set(metadataFeaturedInTitle.map(TrackTextNormalizer.normalizeArtistToken)) == Set(candidateFeaturedInTitle.map(TrackTextNormalizer.normalizeArtistToken))
         let metadataBaseTitle = TrackTextNormalizer.normalize(TrackTextNormalizer.stripVersionMarkers(fromTitle: metadata.track.title))
         let candidateBaseTitle = TrackTextNormalizer.normalize(TrackTextNormalizer.stripVersionMarkers(fromTitle: candidate.title))
         let manualQueryTitle = queryVariant?.queryKind == .manualOverride
@@ -126,12 +130,13 @@ public enum LyricsSafeMatcher {
             .map { (value: TrackTextNormalizer.normalize($0.value), alias: $0) }
 
         // A trusted full-title alias explicitly binds its guest spelling to this recording.
-        // An arbitrary artist alias or generated title is not guest-equivalence evidence.
-        let hasConfirmedFeaturedAlias = featuredTitleVariation && titleAliases.contains {
+        // If metadata and candidate titles have a syntax variation (e.g. feat. vs ft.)
+        // but declare the exact same guest artist, that identity is confirmed.
+        let hasConfirmedFeaturedAlias = featuredTitleVariation && (declaredFeaturedMatches || titleAliases.contains {
             $0.value == candidateTitle && $0.alias.confidence >= 0.9
                 && [.user, .spotifyMetadata, .importedTable, .provider].contains($0.alias.source)
                 && ($0.alias.isOfficial || $0.alias.source == .user)
-        }
+        })
 
         if candidateTitle == metadataTitle, !candidateTitle.isEmpty {
             add("titleExact", 0.30)
@@ -244,10 +249,13 @@ public enum LyricsSafeMatcher {
             } ?? metadataArtists.first
             // Spotify may expose the primary artist alone and declare guests
             // in the title. Those explicit guests are not extra provider artists.
+            // Similarly, providers may declare guests in candidate.title or candidate.artist.
             let titleGuests = declaredFeaturedArtists(in: metadata.track.title)
             let expectedFeatured = Set(((metadataGroup?.featured ?? []) + titleGuests)
                 .map(TrackTextNormalizer.normalizeArtistToken).filter { !$0.isEmpty })
-            let actualFeatured = Set(candidateArtists.featured.map(TrackTextNormalizer.normalizeArtistToken).filter { !$0.isEmpty })
+            let candidateTitleGuests = declaredFeaturedArtists(in: candidate.title)
+            let actualFeatured = Set(((candidateArtists.featured) + candidateTitleGuests)
+                .map(TrackTextNormalizer.normalizeArtistToken).filter { !$0.isEmpty })
             let missing = expectedFeatured.subtracting(actualFeatured)
             let extra = actualFeatured.subtracting(expectedFeatured)
 
@@ -360,6 +368,8 @@ public enum LyricsSafeMatcher {
             var tier = tierFor(score: score, primaryArtistMatches: tierPrimaryMatch, hardReject: hardReject)
             if hardReject {
                 tier = .reject
+            } else if reasons.contains("titleMismatch") && !hasStrongIndependentIdentity && queryVariant?.queryKind != .manualOverride {
+                tier = .reject
             } else if tempoTextPreview {
                 tier = .candidates
             } else if versionConflict {
@@ -405,6 +415,8 @@ public enum LyricsSafeMatcher {
         var tier: LyricsMatchTier
         let tierPrimaryMatch = metadataPrimaryMatches || metadataPrimaryReadingMatches || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity)
         if hardReject {
+            tier = .reject
+        } else if reasons.contains("titleMismatch") && !hasStrongIndependentIdentity && queryVariant?.queryKind != .manualOverride {
             tier = .reject
         } else if tempoTextPreview {
             tier = .candidates

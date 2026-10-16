@@ -241,6 +241,34 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
 
     public var displayedConfidence: Double { matchScore ?? confidence }
 
+    /// Deterministic candidate precedence comparison ensuring stable total ordering.
+    public static func hasPrecedence(_ a: LyricsCandidate, over b: LyricsCandidate) -> Bool {
+        if abs(a.displayedConfidence - b.displayedConfidence) > 0.001 {
+            return a.displayedConfidence > b.displayedConfidence
+        }
+        if a.isSynchronized != b.isSynchronized {
+            return a.isSynchronized && !b.isSynchronized
+        }
+        let aMatchesQuery = a.queryTitle.map { TrackTextNormalizer.normalize(a.title) == TrackTextNormalizer.normalize($0) } ?? false
+        let bMatchesQuery = b.queryTitle.map { TrackTextNormalizer.normalize(b.title) == TrackTextNormalizer.normalize($0) } ?? false
+        if aMatchesQuery != bMatchesQuery {
+            return aMatchesQuery && !bMatchesQuery
+        }
+        if a.title != b.title {
+            return a.title < b.title
+        }
+        if a.artist != b.artist {
+            return a.artist < b.artist
+        }
+        if a.source.rawValue != b.source.rawValue {
+            return a.source.rawValue < b.source.rawValue
+        }
+        if let aid = a.providerSourceID, let bid = b.providerSourceID, aid != bid {
+            return aid < bid
+        }
+        return a.id < b.id
+    }
+
     /// Full provider result promoted to a document without rewriting its
     /// source, confidence, independent identity claims or lyric lines.
     public func makeDocument() -> LyricsDocument {

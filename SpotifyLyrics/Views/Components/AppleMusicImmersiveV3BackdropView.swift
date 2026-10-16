@@ -668,47 +668,32 @@ struct AppleMusicImmersiveV3BackdropView: View {
         // Both the full 80–140% range and crop position now affect this image.
         GeometryReader { geometry in
             let scale = min(1.4, max(0.8, artworkSizeScale))
-            let mainSubstrateImage = Image(nsImage: image)
+            let effectiveScale = style.artworkScale * scale
+            let offset = classicArtworkOffset(for: geometry.size.width, scale: scale, effectiveScale: effectiveScale)
+
+            Image(nsImage: image)
                 .resizable()
                 .scaledToFill()
                 .frame(width: geometry.size.width, height: geometry.size.height)
-                .scaleEffect(style.artworkScale * scale)
-                .offset(x: classicArtworkOffset(for: geometry.size.width))
+                .scaleEffect(effectiveScale)
+                .offset(x: offset)
                 .blur(radius: effectiveBlurRadius)
                 .opacity(min(1, style.artworkOpacity * style.textureIntensity))
-
-            if artworkPosition == "left" {
-                mainSubstrateImage
-                    .mask(
-                        LinearGradient(
-                            stops: [
-                                .init(color: .black, location: 0.00),
-                                .init(color: .black, location: 0.35),
-                                .init(color: .black.opacity(0.88), location: 0.55),
-                                .init(color: .black.opacity(0.65), location: 0.72),
-                                .init(color: .black.opacity(0.42), location: 0.88),
-                                .init(color: .black.opacity(0.24), location: 1.00)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-            } else {
-                mainSubstrateImage
-            }
         }
 
         // Layer 3: Specular Screen Light Bloom Pass (Only active when blur > 0 to avoid obscuring 0% clear artwork)
         if effectiveScreenBlurRadius > 0 {
             GeometryReader { geometry in
                 let scale = min(1.4, max(0.8, artworkSizeScale))
+                let effectiveScale = style.artworkScale * scale
+                let offset = classicArtworkOffset(for: geometry.size.width, scale: scale, effectiveScale: effectiveScale)
 
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFill()
                     .frame(width: geometry.size.width, height: geometry.size.height)
-                    .scaleEffect(style.artworkScreenScale * scale)
-                    .offset(x: classicArtworkOffset(for: geometry.size.width))
+                    .scaleEffect(effectiveScale)
+                    .offset(x: offset)
                     .blur(radius: effectiveScreenBlurRadius)
                     .blendMode(.screen)
                     .opacity(0.40 * style.textureIntensity * perceptualBlur)
@@ -731,16 +716,20 @@ struct AppleMusicImmersiveV3BackdropView: View {
         .blendMode(.overlay)
 
         // Layer 5: Soft Continuous Spatial Light Falloff towards lyrics reading area
-        let lightDecayOpacity = min(0.18, max(0.05, palette.luminance * 0.15))
-        LinearGradient(
-            colors: [
-                .clear,
-                Color.black.opacity(lightDecayOpacity * 0.40),
-                Color.black.opacity(lightDecayOpacity)
-            ],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
+        let lightDecayOpacity = min(0.22, max(0.06, palette.luminance * 0.18))
+        let veilStart: UnitPoint = artworkPosition == "right" ? .trailing : .leading
+        let veilEnd: UnitPoint = artworkPosition == "right" ? .leading : .trailing
+        if artworkPosition != "center" {
+            LinearGradient(
+                colors: [
+                    .clear,
+                    Color.black.opacity(lightDecayOpacity * 0.40),
+                    Color.black.opacity(lightDecayOpacity)
+                ],
+                startPoint: veilStart,
+                endPoint: veilEnd
+            )
+        }
 
         // Layer 6: Edge Vignette Darkening (restrained to avoid harsh dark borders)
         RadialGradient(
@@ -763,11 +752,23 @@ struct AppleMusicImmersiveV3BackdropView: View {
     }
 
     private func classicArtworkOffset(for width: CGFloat) -> CGFloat {
+        let scale = min(1.4, max(0.8, artworkSizeScale))
+        let effectiveScale = presentationStyle.artworkScale * scale
+        return classicArtworkOffset(for: width, scale: scale, effectiveScale: effectiveScale)
+    }
+
+    private func classicArtworkOffset(for width: CGFloat, scale: CGFloat, effectiveScale: CGFloat) -> CGFloat {
+        guard scale > 0.8 else { return 0 }
+        let progress = (scale - 0.8) / (1.4 - 0.8)
+        let targetRatio: CGFloat
         switch artworkPosition {
-        case "right": return width * 0.10
-        case "center": return 0
-        default: return width * -0.10
+        case "right": targetRatio = 0.10
+        case "center": targetRatio = 0
+        default: targetRatio = -0.10
         }
+        let requestedOffset = targetRatio * width * progress
+        let availableOverscan = max(0, (effectiveScale - 1.0) * width * 0.5)
+        return min(availableOverscan, max(-availableOverscan, requestedOffset))
     }
 
     @MainActor

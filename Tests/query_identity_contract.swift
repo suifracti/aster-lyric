@@ -330,6 +330,95 @@ struct QueryIdentityContract {
         require(exactIdentityDecision.explanation.contains { $0.contains("isrcExact") }, "ISRC evidence")
         require(exactIdentityDecision.tier == .autoHigh, "strong identity can auto adopt")
 
+        // P0 regression: Koineiro (feat. 沙葉) where candidate title declares same guest must auto-adopt
+        let koineiroTrack = Track(
+            title: "コイネイロ (feat. 沙葉)",
+            artist: "sommeil sommeil",
+            album: "sommeil sommeil",
+            duration: 195
+        )
+        let koineiroMetadata = TrackMetadata.bootstrap(from: koineiroTrack)
+        let koineiroCandidate = candidate(
+            identity: TrackIdentity(track: koineiroTrack),
+            title: "コイネイロ (feat. 沙葉)",
+            artist: "sommeil sommeil",
+            album: "sommeil sommeil",
+            duration: 195
+        )
+        let koineiroDecision = LyricsSafeMatcher.decide(
+            candidate: koineiroCandidate,
+            metadata: koineiroMetadata
+        )
+        require(
+            koineiroDecision.tier == .autoHigh || koineiroDecision.tier == .autoMedium,
+            "Koineiro with feat in title on both track and candidate must auto-adopt without manual intervention"
+        )
+        require(
+            !koineiroDecision.reasons.contains("missingFeaturedArtist"),
+            "candidate with matching feat in title must not report missingFeaturedArtist"
+        )
+        require(
+            !koineiroDecision.reasons.contains("featuredNameUnverified"),
+            "candidate with matching feat in title must not report featuredNameUnverified"
+        )
+
+        // P0 regression: HACHI Close to heart different track title must be rejected, not surfaced as candidate
+        let hachiBiDamaTrack = Track(
+            title: "ビー玉",
+            artist: "HACHI",
+            album: "Close to heart",
+            duration: 196.39
+        )
+        let hachiMetadata = TrackMetadata.bootstrap(from: hachiBiDamaTrack)
+        let sayonaraFrequencyCandidate = candidate(
+            identity: TrackIdentity(track: hachiBiDamaTrack),
+            title: "さよなら frequency",
+            artist: "HACHI",
+            album: "Close to heart",
+            duration: 220
+        )
+        let sayonaraDecision = LyricsSafeMatcher.decide(
+            candidate: sayonaraFrequencyCandidate,
+            metadata: hachiMetadata
+        )
+        require(
+            sayonaraDecision.tier == .reject,
+            "Different track from same album and artist with titleMismatch must be rejected, never offered as candidate"
+        )
+        require(
+            sayonaraDecision.reasons.contains("titleMismatch"),
+            "sayonara frequency has titleMismatch against bi-dama"
+        )
+
+        // P0 regression: Candidate sorting must be strictly deterministic regardless of input order
+        let candA = LyricsCandidate(
+            id: "id-b",
+            identity: TrackIdentity(track: hachiBiDamaTrack),
+            title: "ビー玉",
+            artist: "HACHI",
+            album: "Close to heart",
+            duration: 196.39,
+            lines: [],
+            isSynchronized: true,
+            source: .neteaseExperimental,
+            confidence: 0.90
+        )
+        let candB = LyricsCandidate(
+            id: "id-a",
+            identity: TrackIdentity(track: hachiBiDamaTrack),
+            title: "ビー玉",
+            artist: "HACHI",
+            album: "Close to heart",
+            duration: 196.39,
+            lines: [],
+            isSynchronized: true,
+            source: .lrclib,
+            confidence: 0.90
+        )
+        let sorted1 = [candA, candB].sorted(by: LyricsCandidate.hasPrecedence)
+        let sorted2 = [candB, candA].sorted(by: LyricsCandidate.hasPrecedence)
+        require(sorted1.map { $0.id } == sorted2.map { $0.id }, "Candidate sort order must be strictly deterministic")
+
         print("query identity contract passed")
     }
 }

@@ -205,7 +205,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
                 acceptCandidate(item, provider: probe.provider.name, variant: variant, decision: decision, into: &accepted)
             }
         }
-        return accepted.values.sorted { $0.displayedConfidence > $1.displayedConfidence }
+        return accepted.values.sorted(by: LyricsCandidate.hasPrecedence)
     }
 
     private static func hasAutomaticResult(_ probe: ProviderProbeResult, metadata: TrackMetadata, variant: LyricsQueryVariant) -> Bool {
@@ -593,9 +593,12 @@ public final class LyricsSearchManager: @unchecked Sendable {
                variant.queryKind != .manualOverride, variant.queryKind != .titleOnlyLoose,
                evaluatedCandidates.contains(where: {
                    !$0.decision.hardReject && !$0.decision.versionConflict
-                       && $0.decision.reasons.contains("extraFeaturedArtist")
-                       && $0.decision.reasons.contains("primaryArtistExact")
-                       && ($0.decision.reasons.contains("titleExact") || $0.decision.reasons.contains("titleTypographyExact"))
+                       && ($0.decision.reasons.contains("extraFeaturedArtist")
+                           || $0.decision.reasons.contains("missingFeaturedArtist")
+                           || $0.decision.reasons.contains("featuredNameUnverified")
+                           || $0.decision.reasons.contains("titleFeaturedBaseExact"))
+                       && ($0.decision.reasons.contains("primaryArtistExact") || $0.decision.reasons.contains("primaryArtistAlias"))
+                       && ($0.decision.reasons.contains("titleExact") || $0.decision.reasons.contains("titleTypographyExact") || $0.decision.reasons.contains("titleFeaturedBaseExact"))
                }) {
                 attemptedArtistEnrichment = true
                 let enrichmentStarted = Date()
@@ -658,7 +661,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
             // query, but never turns a trusted result into an active selection.
             // Only use broader fallback queries when this batch found nothing.
             if collectCandidatesOnly, !acceptedCandidates.isEmpty {
-                let candidates = acceptedCandidates.values.sorted { $0.displayedConfidence > $1.displayedConfidence }
+                let candidates = acceptedCandidates.values.sorted(by: LyricsCandidate.hasPrecedence)
                 return SearchOutcome(result: .candidates(candidates), diagnostics: diagnostics, alternatives: candidates)
             }
 
@@ -667,14 +670,14 @@ public final class LyricsSearchManager: @unchecked Sendable {
                 let selectionPath = selected.cameFromCandidates ? "from-candidates" : "provider-result"
                 LyricsE2ELog.log("MANAGER AUTO_ADOPT \(selectionPath) provider=\(selected.providerName) strategy=\(variant.strategy.rawValue) kind=\(variant.queryKind.rawValue) tier=\(selected.decision.tier) score=\(selected.decision.score) timingPriority=\(selected.timingPriority) evidence=\(selected.decision.explanation.joined(separator: ";")) lines=\(enriched.lines.count) sync=\(enriched.isSynchronized)")
                 return SearchOutcome(result: .match(enriched), diagnostics: diagnostics,
-                    alternatives: acceptedCandidates.values.sorted { $0.displayedConfidence > $1.displayedConfidence },
+                    alternatives: acceptedCandidates.values.sorted(by: LyricsCandidate.hasPrecedence),
                     automaticDecision: selected.decision)
             }
         }
 
         if !acceptedCandidates.isEmpty {
             let sorted = acceptedCandidates.values
-                .sorted { $0.displayedConfidence > $1.displayedConfidence }
+                .sorted(by: LyricsCandidate.hasPrecedence)
             return SearchOutcome(result: .candidates(sorted), diagnostics: diagnostics)
         }
 

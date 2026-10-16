@@ -237,8 +237,11 @@ public final class LyricsSessionController: ObservableObject {
                                       !Task.isCancelled else { return }
                                 var previews = Dictionary(self.availableCandidates.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
                                 for candidate in candidates where candidate.identity == identity { previews[candidate.id] = candidate }
-                                let sorted = previews.values.sorted { $0.displayedConfidence > $1.displayedConfidence }
-                                if self.lyrics.isEmpty { self.apply(.candidates(sorted), identity: identity, requestRevision: requestRevision) }
+                                let sorted = previews.values.sorted(by: LyricsCandidate.hasPrecedence)
+                                let isManual = reviewOnly || (queryOverrideSnapshot != nil && !queryOverrideSnapshot!.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                if isManual && self.lyrics.isEmpty {
+                                    self.apply(.candidates(sorted), identity: identity, requestRevision: requestRevision)
+                                }
                                 self.availableCandidates = sorted
                             }
                         }
@@ -424,7 +427,7 @@ public final class LyricsSessionController: ObservableObject {
                               self.revision == requestRevision else { return }
                         var merged = Dictionary(self.availableCandidates.map { ($0.id, $0) }, uniquingKeysWith: { _, newest in newest })
                         for candidate in candidates where candidate.identity == identity { merged[candidate.id] = candidate }
-                        self.availableCandidates = merged.values.sorted { $0.displayedConfidence > $1.displayedConfidence }
+                        self.availableCandidates = merged.values.sorted(by: LyricsCandidate.hasPrecedence)
                     }
                 })
             guard !Task.isCancelled, let self, self.activeIdentity == identity,
