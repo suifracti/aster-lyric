@@ -1979,6 +1979,7 @@ private struct AppleMusicImmersiveV3TransportControls: View {
             .padding(.horizontal, 2)
 
             V3PlaybackButtons(state: state)
+                .frame(maxWidth: progressMaxWidth ?? .infinity, alignment: .center)
                 .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: alignment == .center ? .center : .leading)
