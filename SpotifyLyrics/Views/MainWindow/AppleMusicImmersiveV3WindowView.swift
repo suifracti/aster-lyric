@@ -4070,7 +4070,9 @@ private struct V3VisualTuningPopoverView: View {
                     }
                 }
 
-                if settings.v3ArtworkPresentation == .classic || settings.v3ArtworkPresentation.theme == .enlarged {
+                if settings.v3ArtworkPresentation == .authenticAmbient
+                    || settings.v3ArtworkPresentation == .classic
+                    || settings.v3ArtworkPresentation.theme == .enlarged {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text("背景缩放")

@@ -86,10 +86,16 @@ settings.v3ArtworkPresentation = .ambientFeathered
 settings.v3ArtworkSizeScale = 0.9
 settings.v3ArtworkPresentation = .classic
 check(settings.v3ArtworkSizeScale == 0.8, "classic retains its established independent foreground scale")
-check(settings.v3ClassicBackdropSizeScale == 1.1, "mode switching preserves independent background")
+settings.setV3BackdropScale(1.2, for: .authenticAmbient)
+check(settings.v3BackdropScale(for: .authenticAmbient) == 1.2, "authentic ambient backdrop scale updates")
+check(settings.v3AuthenticAmbientBackdropSizeScale == 1.2, "authentic ambient backdrop property reflects update")
+check(settings.v3PreviewBackdropScale(for: .authenticAmbient) == 1.2, "authentic ambient preview backdrop scale reflects update")
+check(settings.v3ClassicBackdropSizeScale == 1.1, "authentic ambient backdrop change does not affect classic backdrop")
+
 let reopened = AppSettingsStore(defaults: defaults)
 check(reopened.v3ArtworkSizeScale == 0.8 && reopened.v3ClassicBackdropSizeScale == 1.1,
       "both dimensions survive restart independently")
+check(reopened.v3BackdropScale(for: .authenticAmbient) == 1.2, "authentic ambient backdrop scale survives restart")
 check(reopened.v3PreviewScale(for: .ambientFeathered) == 0.9, "feathered scale remains independent")
 check(!reopened.v3ExpandArtworkWhenDetailsHidden && reopened.v3AmbientBackgroundShowsCompleteArtwork,
       "expansion and ambient fit choices survive style switching and restart independently")

@@ -293,6 +293,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let v3ClassicBackdropSizeScale = "v3.classicBackdropSizeScale.v1"
         public static let v3AmbientBackdropSizeScale = "v3.ambientBackdropScale.v1"
         public static let v3GaussianBackdropSizeScale = "v3.gaussianBackdropScale.v1"
+        public static let v3AuthenticAmbientBackdropSizeScale = "v3.authenticAmbientBackdropScale.v1"
         public static let v3ArtworkPositionAuthenticAmbient = "v3.artworkPosition.authenticAmbient.v1"
         public static let v3ArtworkSizeScaleAuthenticAmbient = "v3.artworkSizeScale.authenticAmbient.v1"
         public static let v3ArtworkPositionClassic = "v3.artworkPosition.classic.v1"
@@ -667,6 +668,8 @@ public final class AppSettingsStore: ObservableObject {
 
     public func v3PreviewBackdropScale(for style: V3ArtworkPresentation) -> Double {
         switch style {
+        case .authenticAmbient:
+            return v3AuthenticAmbientBackdropSizeScale
         case .classic:
             return v3ClassicBackdropSizeScale
         case .ambient:
@@ -680,6 +683,7 @@ public final class AppSettingsStore: ObservableObject {
 
     public func v3BackdropScale(for presentation: V3ArtworkPresentation) -> Double {
         switch presentation {
+        case .authenticAmbient: return v3AuthenticAmbientBackdropSizeScale
         case .classic: return v3ClassicBackdropSizeScale
         case .ambient: return v3AmbientBackdropSizeScale
         case .classicGaussian: return v3GaussianBackdropSizeScale
@@ -689,6 +693,7 @@ public final class AppSettingsStore: ObservableObject {
 
     public func setV3BackdropScale(_ value: Double, for presentation: V3ArtworkPresentation) {
         switch presentation {
+        case .authenticAmbient: v3AuthenticAmbientBackdropSizeScale = value
         case .classic: v3ClassicBackdropSizeScale = value
         case .ambient: v3AmbientBackdropSizeScale = value
         case .classicGaussian: v3GaussianBackdropSizeScale = value
@@ -773,6 +778,10 @@ public final class AppSettingsStore: ObservableObject {
         didSet { defaults.set(v3ClassicBackdropSizeScale, forKey: Key.v3ClassicBackdropSizeScale) }
     }
 
+    @Published public var v3AuthenticAmbientBackdropSizeScale: Double {
+        didSet { defaults.set(v3AuthenticAmbientBackdropSizeScale, forKey: Key.v3AuthenticAmbientBackdropSizeScale) }
+    }
+
     @Published public var v3AmbientBackdropSizeScale: Double {
         didSet { defaults.set(v3AmbientBackdropSizeScale, forKey: Key.v3AmbientBackdropSizeScale) }
     }
@@ -851,6 +860,9 @@ public final class AppSettingsStore: ObservableObject {
         let gaussianBackdropScale = storedGaussianBackdropScale
             ?? (zoomScale.isFinite ? min(1.4, max(0.8, zoomScale)) : 1.0)
         self.v3GaussianBackdropSizeScale = gaussianBackdropScale
+        let storedAuthenticAmbientBackdropScale = defaults.object(forKey: Key.v3AuthenticAmbientBackdropSizeScale) as? Double
+        let authenticAmbientBackdropScale = storedAuthenticAmbientBackdropScale ?? 1.0
+        self.v3AuthenticAmbientBackdropSizeScale = authenticAmbientBackdropScale
         if storedClassicBackdropScale == nil {
             defaults.set(classicBackdropScale, forKey: Key.v3ClassicBackdropSizeScale)
         }
@@ -859,6 +871,9 @@ public final class AppSettingsStore: ObservableObject {
         }
         if storedGaussianBackdropScale == nil {
             defaults.set(gaussianBackdropScale, forKey: Key.v3GaussianBackdropSizeScale)
+        }
+        if storedAuthenticAmbientBackdropScale == nil {
+            defaults.set(authenticAmbientBackdropScale, forKey: Key.v3AuthenticAmbientBackdropSizeScale)
         }
         self.v3InstrumentalPureImmersion = defaults.object(forKey: Key.v3InstrumentalPureImmersion) as? Bool ?? true
         let storedLayout = defaults.string(forKey: Key.mainWindowLayoutStyle)

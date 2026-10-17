@@ -393,7 +393,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 .resizable()
                 .interpolation(.high)
                 .scaledToFill()
-                .scaleEffect(1.12)
+                .scaleEffect(1.12 * artworkSizeScale)
                 .blur(radius: diffusionRadius, opaque: true)
                 .saturation(saturation)
                 .opacity(0.56)
