@@ -17,6 +17,7 @@ struct FullScreenLyricsView: View {
         GeometryReader { geometry in
             AppleMusicImmersiveV3WindowView(state: state, settings: settings,
                 layoutStyleRawValue: layoutBinding, liveOnly: true)
+                .equatable()
                 .environmentObject(settings)
                 .environment(\.lyricPresentationScale, min(1.5, max(1, geometry.size.height / 900)))
         }

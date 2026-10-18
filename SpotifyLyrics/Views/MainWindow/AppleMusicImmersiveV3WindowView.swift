@@ -99,14 +99,31 @@ final class V3PlaybackInteractionRelay: Equatable {
     func callAsFunction(_ value: Bool) { action?(value) }
 }
 
+private final class V3ContentRefreshQueue { var scheduled = false }
+
 private final class V3PointerLocationBox {
     var location: CGPoint?
 }
 
 /// Independent Apple Music-inspired main canvas. V2 and Lyrics Focus remain
 /// separate layouts; this view owns only the V3 canvas and its transient tools.
-struct AppleMusicImmersiveV3WindowView: View {
-    @ObservedObject var state: PlaybackState
+struct AppleMusicImmersiveV3WindowView: View, Equatable {
+    let state: PlaybackState
+    @State private var contentRevision: UInt64 = 0
+    @State private var contentRefreshQueue = V3ContentRefreshQueue()
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.state === rhs.state && lhs.settings === rhs.settings && lhs.liveOnly == rhs.liveOnly
+    }
+
+    private func refreshForContentChange() {
+        guard !state.isPublishingPlaybackClockTick, !contentRefreshQueue.scheduled else { return }
+        contentRefreshQueue.scheduled = true
+        DispatchQueue.main.async {
+            contentRefreshQueue.scheduled = false
+            contentRevision &+= 1
+        }
+    }
     @ObservedObject var settings: AppSettingsStore
     @Binding var layoutStyleRawValue: String
     var liveOnly: Bool = false
@@ -242,6 +259,7 @@ struct AppleMusicImmersiveV3WindowView: View {
     }
 
     var body: some View {
+        let _ = contentRevision
         let _ = playbackInteractionRelay.action = { isPlaybackInteracting = $0 }
         GeometryReader { geometry in
             let inspectorWidth: CGFloat = usesDockedInspector && geometry.size.width >= 1_180 ? 340 : 0
@@ -421,6 +439,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         .preferredColorScheme(.dark)
         .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: liveOnly ? state.liveLyrics : state.lyrics))
         .environment(\.v3PlaybackInteractionChanged, playbackInteractionRelay)
+        .onReceive(state.objectWillChange) { _ in refreshForContentChange() }
         .sheet(isPresented: $isAlignmentDetailsPresented) {
             if let report = state.liveLyricsState.alignmentReport {
                 AlignmentPreviewView(report: report)

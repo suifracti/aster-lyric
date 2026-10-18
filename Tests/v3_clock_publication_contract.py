@@ -1,0 +1,34 @@
+from pathlib import Path
+import subprocess,tempfile
+r=Path(__file__).resolve().parents[1]
+s=(r/'SpotifyLyrics/Services/PlaybackState.swift').read_text()
+a=s.index('    private func publishTickTime(');b=s.index('\n    private enum LineIndexSource',a)
+method=s[a:b].replace('private func','func')
+program='''import Foundation
+import Combine
+struct PlaybackTickTimeUpdatePolicy { static func shouldPublish(currentTime:Double,nextTime:Double)->Bool { currentTime != nextTime } }
+final class Probe:ObservableObject {
+ @Published var currentTime:Double = 0
+ @Published var lineIndex = 0
+ var isPublishingPlaybackClockTick = false
+ METHOD
+}
+let p=Probe()
+var refreshes=0, ticks=0
+let a=p.objectWillChange.sink { if !p.isPublishingPlaybackClockTick { refreshes += 1 } }
+let b=p.$currentTime.dropFirst().sink { _ in ticks += 1 }
+for n in 1...5 { p.publishTickTime(Double(n)/5) }
+precondition(ticks == 5 && refreshes == 0, "all clock consumers stay live without rebuilding the large surface")
+precondition(!p.isPublishingPlaybackClockTick, "tick scope must end synchronously")
+p.lineIndex=1
+precondition(refreshes == 1, "lyric boundary still refreshes")
+p.currentTime=20
+precondition(refreshes == 2 && ticks == 6, "authoritative seek/reset still refreshes both")
+p.publishTickTime(20)
+precondition(ticks == 6 && refreshes == 2, "unchanged clock remains silent")
+print("PASS: five clock publications, no broad refresh; lyric boundary and seek remain live")
+'''.replace('METHOD',method)
+with tempfile.TemporaryDirectory(prefix='lyrics-clock-filter-') as d:
+ p=Path(d);(p/'main.swift').write_text(program)
+ subprocess.run(['swiftc',str(p/'main.swift'),'-o',str(p/'probe')],check=True)
+ subprocess.run([str(p/'probe')],check=True)

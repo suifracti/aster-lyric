@@ -22,6 +22,9 @@ public final class PlaybackState: ObservableObject {
 #endif
     @Published public private(set) var currentTrack: Track = .emptyPlaybackPlaceholder
     @Published public private(set) var currentTime: TimeInterval = 0
+    /// Current-time subscribers still receive every tick. Large surfaces can
+    /// ignore only this synchronous objectWillChange; real content events remain live.
+    public private(set) var isPublishingPlaybackClockTick = false
     /// Published only when the playhead crosses a lyric-line boundary, on
     /// seek/pause/resume/track change, or when the lyric document changes.
     /// Not updated by the 5 Hz `currentTime` tick.
@@ -2746,6 +2749,8 @@ public final class PlaybackState: ObservableObject {
         guard PlaybackTickTimeUpdatePolicy.shouldPublish(currentTime: currentTime, nextTime: nextTime) else {
             return
         }
+        isPublishingPlaybackClockTick = true
+        defer { isPublishingPlaybackClockTick = false }
         currentTime = nextTime
     }
 

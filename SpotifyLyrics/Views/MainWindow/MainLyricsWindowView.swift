@@ -38,6 +38,7 @@ struct MainLyricsWindowView: View {
                     settings: settings,
                     layoutStyleRawValue: layoutStyleBinding
                 )
+                .equatable()
             } else if layoutStyle == .directionDV4 {
                 DirectionDMainWindowPresentationFactory.makeMainWindow(
                     stableID: MainWindowLayoutStyle.directionDV4.presentationStableID,
