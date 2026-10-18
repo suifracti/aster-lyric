@@ -5,7 +5,7 @@ import AppKit
 /// Every command is forwarded to the existing PlaybackState/session methods;
 /// this view owns no repository, search task, timer, or playback command.
 struct CurrentSongOperationsView: View {
-    @ObservedObject var state: PlaybackState
+    @V3ContentPlaybackState var state: PlaybackState
     var versionShortcutOnly = false
     var iconOnly = false
     var embeddedInInspector = false

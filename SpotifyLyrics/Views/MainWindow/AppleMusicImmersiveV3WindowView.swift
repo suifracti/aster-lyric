@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import AppKit
+import Combine
 
 private struct V3PreviewPresentationKey: EnvironmentKey {
     static let defaultValue: V3ArtworkPresentation? = nil
@@ -97,6 +98,32 @@ final class V3PlaybackInteractionRelay: Equatable {
     var action: ((Bool) -> Void)?
     static func == (lhs: V3PlaybackInteractionRelay, rhs: V3PlaybackInteractionRelay) -> Bool { lhs === rhs }
     func callAsFunction(_ value: Bool) { action?(value) }
+}
+
+/// Player controls use the independently advancing presentation clock. Observe
+/// content changes without subscribing their whole layouts to the coarse time tick.
+@MainActor
+final class V3PlaybackContentObserver: ObservableObject {
+    let objectWillChange = ObservableObjectPublisher()
+    let state: PlaybackState
+    private var subscription: AnyCancellable?
+    init(_ state: PlaybackState) {
+        self.state = state
+        subscription = state.objectWillChange.sink { [weak self, weak state] _ in
+            guard let self, let state, !state.isPublishingPlaybackClockTick else { return }
+            self.objectWillChange.send()
+        }
+    }
+}
+
+@MainActor
+@propertyWrapper
+struct V3ContentPlaybackState: DynamicProperty {
+    @StateObject private var observer: V3PlaybackContentObserver
+    init(wrappedValue: PlaybackState) {
+        _observer = StateObject(wrappedValue: V3PlaybackContentObserver(wrappedValue))
+    }
+    var wrappedValue: PlaybackState { observer.state }
 }
 
 private final class V3ContentRefreshQueue { var scheduled = false }
@@ -2105,7 +2132,7 @@ private enum AppleMusicImmersiveV3ProgressDensity: Equatable {
 /// clock and only sends an explicit seek after the user finishes editing.
 private struct AppleMusicImmersiveV3PlaybackProgress: View {
     @Environment(\.v3PlaybackVisible) private var playbackVisible
-    @ObservedObject var state: PlaybackState
+    @V3ContentPlaybackState var state: PlaybackState
     let density: AppleMusicImmersiveV3ProgressDensity
     let maxWidth: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -2319,7 +2346,7 @@ private final class V3PlaybackSliderCell: NSSliderCell {
 }
 
 private struct AppleMusicImmersiveV3TransportControls: View {
-    @ObservedObject var state: PlaybackState
+    @V3ContentPlaybackState var state: PlaybackState
     let alignment: HorizontalAlignment
     let progressDensity: AppleMusicImmersiveV3ProgressDensity
     let progressMaxWidth: CGFloat?
@@ -2386,7 +2413,7 @@ private struct V3PlaybackSurface: View {
 }
 
 private struct StageHUDView: View {
-    @ObservedObject var state: PlaybackState
+    @V3ContentPlaybackState var state: PlaybackState
     let width: CGFloat
 
     var body: some View {
@@ -2425,7 +2452,7 @@ private struct StageHUDView: View {
 }
 
 private struct V3PlaybackButtons: View {
-    @ObservedObject var state: PlaybackState
+    @V3ContentPlaybackState var state: PlaybackState
 
     var body: some View {
         HStack(spacing: 8) {
@@ -2497,7 +2524,7 @@ struct V3BounceButtonStyle: ButtonStyle {
 }
 
 private struct AppleMusicImmersiveV3FocusTransportControls: View {
-    @ObservedObject var state: PlaybackState
+    @V3ContentPlaybackState var state: PlaybackState
     let reduceMotion: Bool
 
     var body: some View {
@@ -4404,7 +4431,7 @@ private enum V3AdjustmentTab: String, CaseIterable, Identifiable {
 
 private struct V3VisualTuningPopoverView: View {
     @ObservedObject var settings: AppSettingsStore
-    @ObservedObject var state: PlaybackState
+    @V3ContentPlaybackState var state: PlaybackState
     var liveOnly: Bool
     let currentSongWorkflow: AnyView
     @Binding var layoutStyleRawValue: String
