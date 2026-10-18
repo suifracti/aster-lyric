@@ -264,3 +264,226 @@ public struct LibraryLyricsRevisionDraft: Identifiable {
         )
     }
 }
+
+/// A translation edit stays attached to the exact lyric version it came from.
+/// Saving creates a manual child translation; it never rewrites the parent.
+public struct LibraryTranslationRevisionDraft: Identifiable {
+    public let id = UUID()
+    public let track: Track
+    public let lyricsSource: StoredEditableLyricsVersion
+    public let source: StoredTranslationVersion
+    public var lines: [String]
+    private let originalLines: [String]
+
+    public init(track: Track, lyricsSource: StoredEditableLyricsVersion, source: StoredTranslationVersion) {
+        self.track = track
+        self.lyricsSource = lyricsSource
+        self.source = source
+        let lines = source.lines.sorted { $0.lineIndex < $1.lineIndex }.map(\.translatedText)
+        self.lines = lines
+        self.originalLines = lines
+    }
+
+    public var hasChanges: Bool { lines != originalLines }
+
+    public func saveRequest() throws -> LyricsEditSaveRequest {
+        guard hasChanges else { throw LyricsEditingRepositoryError.noChanges }
+        guard source.record.lyricsVersionID == lyricsSource.record.id,
+              source.record.sourceContentHash == lyricsSource.sourceContentHash else {
+            throw LyricsEditingRepositoryError.sourceContentMismatch
+        }
+        return LyricsEditSaveRequest(
+            track: track,
+            identity: lyricsSource.document.identity,
+            sourceVersionID: lyricsSource.record.id,
+            sourceContentHash: lyricsSource.sourceContentHash,
+            document: lyricsSource.document,
+            createLyricsVersion: false,
+            preserveCurrentLyricsSelection: true,
+            translation: ManualTranslationEdit(
+                targetLanguage: source.record.targetLanguage,
+                model: source.record.model,
+                baseURLHost: source.record.baseURLHost,
+                promptHash: source.record.promptHash,
+                lines: lines,
+                parentVersionID: source.record.id
+            )
+        )
+    }
+}
+
+/// A reading edit creates an unlocked manual child on the same source lyrics.
+public struct LibraryReadingRevisionDraft: Identifiable {
+    public let id = UUID()
+    public let track: Track
+    public let lyricsSource: StoredEditableLyricsVersion
+    public let source: StoredReadingVersion
+    public var lines: [String]
+    private let originalLines: [String]
+
+    public init(track: Track, lyricsSource: StoredEditableLyricsVersion, source: StoredReadingVersion) {
+        self.track = track
+        self.lyricsSource = lyricsSource
+        self.source = source
+        let lines = source.lines.sorted { $0.lineIndex < $1.lineIndex }.map { $0.readingText ?? "" }
+        self.lines = lines
+        self.originalLines = lines
+    }
+
+    public var hasChanges: Bool { lines != originalLines }
+
+    public func saveRequest() throws -> ReadingVersionSaveRequest {
+        guard hasChanges else { throw LyricsEditingRepositoryError.noChanges }
+        guard source.record.lyricsVersionID == lyricsSource.record.id,
+              source.record.sourceContentHash == lyricsSource.sourceContentHash else {
+            throw LyricsEditingRepositoryError.sourceContentMismatch
+        }
+        let now = Date()
+        let record = ReadingVersionRecord(
+            id: UUID(),
+            lyricsVersionID: source.record.lyricsVersionID,
+            sourceContentHash: source.record.sourceContentHash,
+            engineID: source.record.engineID,
+            representationID: source.record.representationID,
+            sourceKind: .manualEdit,
+            language: source.record.language,
+            createdAt: now,
+            updatedAt: now,
+            isMachineGenerated: false,
+            isManuallyEdited: true,
+            isCurrent: false,
+            isLocked: false,
+            isArchived: false,
+            parentVersionID: source.record.id,
+            confidence: 1,
+            warningMetadata: [],
+            contextHash: source.record.contextHash
+        )
+        return ReadingVersionSaveRequest(
+            record: record,
+            lines: ReadingManualEdit.lines(from: source.lines, drafts: lines)
+        )
+    }
+}
+
+public struct LibraryTimingSpanDraft: Identifiable, Equatable {
+    public let source: TimedTextSpan
+    public var startTime: TimeInterval
+    public var endTime: TimeInterval
+
+    public var id: Int { source.id }
+
+    public init(source: TimedTextSpan) {
+        self.source = source
+        self.startTime = source.startTime
+        self.endTime = source.endTime
+    }
+
+    public var updatedSpan: TimedTextSpan {
+        TimedTextSpan(
+            id: source.id,
+            text: source.text,
+            trailingWhitespace: source.trailingWhitespace,
+            startTime: startTime,
+            endTime: endTime,
+            utf16Start: source.utf16Start,
+            utf16Length: source.utf16Length,
+            granularity: source.granularity
+        )
+    }
+}
+
+public struct LibraryTimingLineDraft: Identifiable, Equatable {
+    public let lineIndex: Int
+    public let originalText: String
+    public let performerID: String?
+    public var spans: [LibraryTimingSpanDraft]
+
+    public var id: Int { lineIndex }
+
+    public init(lineIndex: Int, originalText: String, performerID: String?, spans: [TimedTextSpan]) {
+        self.lineIndex = lineIndex
+        self.originalText = originalText
+        self.performerID = performerID
+        self.spans = spans.map(LibraryTimingSpanDraft.init(source:))
+    }
+
+    public var payload: LineTimingPayload {
+        LineTimingPayload(lineIndex: lineIndex, performerID: performerID, spans: spans.map(\.updatedSpan))
+    }
+}
+
+public struct LibraryTimingRevisionSaveRequest: Sendable, Equatable {
+    public let track: Track
+    public let identity: TrackIdentity
+    public let sourceTimingVersionID: UUID
+    public let lines: [LineTimingPayload]
+
+    public init(track: Track, identity: TrackIdentity, sourceTimingVersionID: UUID, lines: [LineTimingPayload]) {
+        self.track = track
+        self.identity = identity
+        self.sourceTimingVersionID = sourceTimingVersionID
+        self.lines = lines
+    }
+}
+
+/// Fine timing remains a separate immutable asset on the same lyrics version.
+public struct LibraryTimingRevisionDraft: Identifiable {
+    public let id = UUID()
+    public let track: Track
+    public let lyricsSource: StoredEditableLyricsVersion
+    public let source: DatabaseLyricsTimingVersionRecord
+    public var lines: [LibraryTimingLineDraft]
+    private let originalLines: [LibraryTimingLineDraft]
+
+    public init?(track: Track, lyricsSource: StoredEditableLyricsVersion, source: DatabaseLyricsTimingVersionRecord) {
+        guard source.lyricsVersionID == lyricsSource.record.id,
+              source.sourceContentHash == lyricsSource.sourceContentHash,
+              let timingMap = DocumentTimingPayload.decode(source.spansPayload) else { return nil }
+        let lines = timingMap.keys.sorted().compactMap { lineIndex -> LibraryTimingLineDraft? in
+            guard lyricsSource.document.lines.indices.contains(lineIndex),
+                  let timing = timingMap[lineIndex] else { return nil }
+            return LibraryTimingLineDraft(
+                lineIndex: lineIndex,
+                originalText: lyricsSource.document.lines[lineIndex].originalText,
+                performerID: timing.performerID,
+                spans: timing.spans
+            )
+        }
+        guard !lines.isEmpty,
+              lines.count == timingMap.count,
+              Self.hasCompatibleSpans(lines, source: lyricsSource) else { return nil }
+        self.track = track
+        self.lyricsSource = lyricsSource
+        self.source = source
+        self.lines = lines
+        self.originalLines = lines
+    }
+
+    public var hasChanges: Bool { lines != originalLines }
+
+    public func saveRequest() throws -> LibraryTimingRevisionSaveRequest {
+        guard hasChanges else { throw LyricsEditingRepositoryError.noChanges }
+        return LibraryTimingRevisionSaveRequest(
+            track: track,
+            identity: lyricsSource.document.identity,
+            sourceTimingVersionID: source.id,
+            lines: lines.map(\.payload)
+        )
+    }
+
+    private static func hasCompatibleSpans(_ timingLines: [LibraryTimingLineDraft], source: StoredEditableLyricsVersion) -> Bool {
+        var documentLines = source.document.lines.map { line -> LyricLine in
+            var line = line
+            line.timedSpans = nil
+            line.performerID = nil
+            return line
+        }
+        for timingLine in timingLines {
+            guard documentLines.indices.contains(timingLine.lineIndex) else { return false }
+            documentLines[timingLine.lineIndex].timedSpans = timingLine.spans.map(\.updatedSpan)
+            documentLines[timingLine.lineIndex].performerID = timingLine.performerID
+        }
+        return LyricsTimingCompatibility.hasOnlyCompatibleSpans(in: source.document.replacingLines(documentLines))
+    }
+}

@@ -316,14 +316,26 @@ public final class LyricsSearchManager: @unchecked Sendable {
             aliases: mergedAliases,
             versionTags: metadata.versionTags
         )
-        let variants = LyricsQueryPlanner.plan(for: meta, manualQuery: queryOverride)
+        var attemptedSpotifyAliasEnrichment = false
+        if collectCandidatesOnly,
+           (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let spotifyArtistResolver {
+            if let verifiedNames = await spotifyArtistResolver.artists(for: track) {
+                meta.verifiedSpotifyArtists = verifiedNames
+            }
+            let officialAliases = await spotifyArtistResolver.aliases(for: track)
+            guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: []) }
+            meta.aliases = Self.mergeAliases(meta.aliases, officialAliases)
+            attemptedSpotifyAliasEnrichment = true
+        }
+        var variants = LyricsQueryPlanner.plan(for: meta, manualQuery: queryOverride)
         let cacheKey = Self.negativeCacheKey(
             identity: identity,
             queryOverride: queryOverride
         )
         if forceRefresh {
             removeNegativeCache(for: cacheKey)
-        } else if let cached = cachedNegativeResult(for: cacheKey) {
+        } else if !collectCandidatesOnly, let cached = cachedNegativeResult(for: cacheKey) {
             LyricsE2ELog.log("MANAGER negative-cache hit identity=\(identity.stableKey) result=\(cached)")
             return SearchOutcome(result: cached.lookupResult, diagnostics: [])
         }
@@ -338,14 +350,17 @@ public final class LyricsSearchManager: @unchecked Sendable {
         // Only this search: next user/recovery search gets a fresh probe.
         var unavailableProviders: Set<Int> = []
         var probeCache: [String: [ProviderProbeResult]] = [:]
-        var attemptedArtistEnrichment = false
+        var queriedVariants = Set(variants.map { $0.titleQuery + "\u{1F}" + ($0.artistQuery ?? "") })
 
         func alias(for variant: LyricsQueryVariant) -> TrackAlias? {
             guard let id = variant.aliasIDs.first else { return nil }
             return meta.aliases.first { $0.id == id }
         }
 
-        for variant in variants {
+        var variantCursor = 0
+        while variantCursor < variants.count {
+            let variant = variants[variantCursor]
+            variantCursor += 1
             if Task.isCancelled {
                 return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics)
             }
@@ -586,40 +601,42 @@ public final class LyricsSearchManager: @unchecked Sendable {
 
             }
 
-            // Desktop can expose only the primary artist. Consult the exact
-            // official recording only when that omission blocks an otherwise
-            // matching candidate; reuse these results without another lyric request.
-            if (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-               automaticAdoptions.isEmpty, !attemptedArtistEnrichment, let spotifyArtistResolver,
-               variant.queryKind != .manualOverride, variant.queryKind != .titleOnlyLoose,
-               evaluatedCandidates.contains(where: {
-                   !$0.decision.hardReject && !$0.decision.versionConflict
-                       && ($0.decision.reasons.contains("extraFeaturedArtist")
-                           || $0.decision.reasons.contains("missingFeaturedArtist")
-                           || $0.decision.reasons.contains("featuredNameUnverified")
-                           || $0.decision.reasons.contains("titleFeaturedBaseExact"))
-                       && ($0.decision.reasons.contains("primaryArtistExact") || $0.decision.reasons.contains("primaryArtistAlias"))
-                       && ($0.decision.reasons.contains("titleExact")
-                           || $0.decision.reasons.contains("titleTypographyExact")
-                           || $0.decision.reasons.contains("titleParallelExact")
-                           || $0.decision.reasons.contains("titleLatinSpacingExact")
-                           || $0.decision.reasons.contains("titleFeaturedBaseExact")
-                           || $0.decision.reasons.contains("titleProviderAliasConfirmed")
-                           || $0.decision.reasons.contains("titleAliasConfirmed")
-                           || $0.decision.reasons.contains("titleReadingExact"))
-               }) {
-                attemptedArtistEnrichment = true
+            // If the first exact query did not settle automatically, consult
+            // Spotify's exact recording even when no source candidate exists.
+            // Its title and credited artist spellings both expand bounded,
+            // artist-scoped queries; any result still passes SafeMatcher.
+            if !collectCandidatesOnly,
+               (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               automaticAdoptions.isEmpty, !attemptedSpotifyAliasEnrichment,
+               variantCursor == 1, let spotifyArtistResolver {
+                attemptedSpotifyAliasEnrichment = true
                 let enrichmentStarted = Date()
-                if let names = await spotifyArtistResolver.artists(for: track), !Task.isCancelled {
-                    meta.verifiedSpotifyArtists = names
+                if let verifiedNames = await spotifyArtistResolver.artists(for: track) {
+                    meta.verifiedSpotifyArtists = verifiedNames
+                }
+                let officialAliases = await spotifyArtistResolver.aliases(for: track)
+                guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics) }
+                if !officialAliases.isEmpty {
+                    meta.aliases = Self.mergeAliases(meta.aliases, officialAliases)
+                    var officialPlan = LyricsQueryPlanner.plan(for: meta, manualQuery: queryOverride)
+                        .filter { variant in
+                            variant.aliasIDs.contains { $0.hasPrefix("spotify-entity-") }
+                        }
+                    officialPlan = officialPlan.filter { queriedVariants.insert($0.titleQuery + "\u{1F}" + ($0.artistQuery ?? "")).inserted }
+                        .prefix(7).map { $0 }
+                    let additions = officialPlan.enumerated().map { offset, item in
+                        LyricsQueryVariant(rank: variantCursor + offset + 1, strategy: item.strategy,
+                            queryKind: item.queryKind, titleQuery: item.titleQuery,
+                            artistQuery: item.artistQuery, aliasIDs: item.aliasIDs)
+                    }
+                    variants.insert(contentsOf: additions, at: variantCursor)
+
                     var verifiedDecisions: [LyricsMatchDecision] = []
                     for item in evaluatedCandidates {
                         let decision = LyricsSafeMatcher.decide(candidate: item.candidate, metadata: meta,
                             aliasUsed: alias(for: variant), queryVariant: variant)
                         verifiedDecisions.append(decision)
-                        if decision.tier == .reject {
-                            acceptedCandidates.removeValue(forKey: item.candidate.id)
-                        } else {
+                        if decision.tier != .reject {
                             acceptedCandidates[item.candidate.id] = Self.enrichCandidate(item.candidate,
                                 providerName: item.providerName, variant: variant, decision: decision)
                         }
@@ -630,52 +647,16 @@ public final class LyricsSearchManager: @unchecked Sendable {
                                 cameFromCandidates: item.cameFromCandidates))
                         }
                     }
-                    diagnostics.append(LyricsProviderDiagnostic(provider: "Spotify official artist metadata",
+                    diagnostics.append(LyricsProviderDiagnostic(provider: "Spotify exact-track aliases",
                         outcome: .match, duration: Date().timeIntervalSince(enrichmentStarted), matchDecisions: verifiedDecisions))
-                    LyricsE2ELog.log("SEARCH official artists verified count=\(names.count) rescored=\(verifiedDecisions.count)")
-                }
-            }
-            // A romanized Desktop name and a localized official name need
-            // evidence from the exact Spotify entity, not a lower match score.
-            if (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-               automaticAdoptions.isEmpty, !attemptedArtistEnrichment, let spotifyArtistResolver,
-               variant.queryKind != .manualOverride, variant.queryKind != .titleOnlyLoose,
-               evaluatedCandidates.contains(where: {
-                   $0.decision.reasons.contains("durationClose")
-                       && ($0.decision.reasons.contains("primaryArtistConflict") || $0.decision.reasons.contains("titleMismatch"))
-                       && ScriptDetector.detect(track.title + track.artist) != ScriptDetector.detect($0.candidate.title + $0.candidate.artist)
-               }) {
-                attemptedArtistEnrichment = true
-                let officialAliases = await spotifyArtistResolver.aliases(for: track)
-                meta.aliases = Self.mergeAliases(meta.aliases, officialAliases)
-                for item in evaluatedCandidates where !officialAliases.isEmpty {
-                    let decision = LyricsSafeMatcher.decide(candidate: item.candidate, metadata: meta,
-                        aliasUsed: alias(for: variant), queryVariant: variant)
-                    if decision.tier != .reject {
-                        acceptedCandidates[item.candidate.id] = Self.enrichCandidate(item.candidate,
-                            providerName: item.providerName, variant: variant, decision: decision)
-                    }
-                    if decision.tier == .autoHigh || decision.tier == .autoMedium {
-                        automaticAdoptions.append(AutomaticAdoption(document: item.document, decision: decision,
-                            timingPriority: Self.timingPriority(of: item.candidate), providerIndex: item.providerIndex,
-                            candidateIndex: item.candidateIndex, providerName: item.providerName,
-                            cameFromCandidates: item.cameFromCandidates))
-                    }
+                    LyricsE2ELog.log("SEARCH Spotify aliases titleAndArtists=\(officialAliases.count) rescored=\(verifiedDecisions.count) appendedQueries=\(additions.count)")
                 }
             }
             guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics) }
 
             rejectedForExplanation.append(contentsOf: evaluatedCandidates.filter { $0.decision.tier == .reject })
 
-            // Explicit version browsing collects all enabled sources for this
-            // query, but never turns a trusted result into an active selection.
-            // Only use broader fallback queries when this batch found nothing.
-            if collectCandidatesOnly, !acceptedCandidates.isEmpty {
-                let candidates = acceptedCandidates.values.sorted(by: LyricsCandidate.hasPrecedence)
-                return SearchOutcome(result: .candidates(candidates), diagnostics: diagnostics, alternatives: candidates)
-            }
-
-            if let selected = Self.bestAutomaticAdoption(in: automaticAdoptions) {
+            if !collectCandidatesOnly, let selected = Self.bestAutomaticAdoption(in: automaticAdoptions) {
                 let enriched = Self.finalizeDocument(selected.document, identity: identity)
                 let selectionPath = selected.cameFromCandidates ? "from-candidates" : "provider-result"
                 LyricsE2ELog.log("MANAGER AUTO_ADOPT \(selectionPath) provider=\(selected.providerName) strategy=\(variant.strategy.rawValue) kind=\(variant.queryKind.rawValue) tier=\(selected.decision.tier) score=\(selected.decision.score) timingPriority=\(selected.timingPriority) evidence=\(selected.decision.explanation.joined(separator: ";")) lines=\(enriched.lines.count) sync=\(enriched.isSynchronized)")

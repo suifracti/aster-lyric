@@ -24,6 +24,9 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     @Published public private(set) var isSyncing = false
 
     @Published public var revisionDraft: LibraryLyricsRevisionDraft?
+    @Published public var translationRevisionDraft: LibraryTranslationRevisionDraft?
+    @Published public var readingRevisionDraft: LibraryReadingRevisionDraft?
+    @Published public var timingRevisionDraft: LibraryTimingRevisionDraft?
     @Published public private(set) var revisionError: String?
     @Published public private(set) var revisionBusy = false
 
@@ -64,9 +67,153 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         }
     }
 
+    public func beginTranslationRevision(version: PersonalTranslationVersionItem, entry: PersonalLyricsLibraryEntry) {
+        guard !revisionBusy else { return }
+        revisionBusy = true
+        revisionError = nil
+        Task {
+            defer { revisionBusy = false }
+            do {
+                let track = libraryTrack(for: entry)
+                let identity = TrackIdentity(track: track)
+                try await repository.prepare()
+                guard let lyricsSource = try await repository.loadEditableVersion(
+                    versionID: version.lyricsVersionID, track: track, identity: identity
+                ) else { throw LyricsEditingRepositoryError.sourceNotFound }
+                let versions = try await repository.loadTranslationVersions(
+                    lyricsVersionID: version.lyricsVersionID,
+                    targetLanguage: version.targetLanguage,
+                    sourceContentHash: lyricsSource.sourceContentHash
+                )
+                guard let source = versions.first(where: { $0.record.id == version.id }) else {
+                    throw TranslationRepositoryError.versionNotFound
+                }
+                translationRevisionDraft = LibraryTranslationRevisionDraft(
+                    track: track, lyricsSource: lyricsSource, source: source
+                )
+            } catch {
+                statusMessage = "打开译文编辑失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    public func saveTranslationRevision(_ draft: LibraryTranslationRevisionDraft) {
+        guard !revisionBusy else { return }
+        revisionBusy = true
+        revisionError = nil
+        Task {
+            defer { revisionBusy = false }
+            do {
+                let result = try await repository.saveManualEdit(draft.saveRequest())
+                guard result.translationVersion != nil else { throw LyricsEditingRepositoryError.sourceNotFound }
+                translationRevisionDraft = nil
+                refreshTrackDetail(stableKey: draft.lyricsSource.record.trackStableKey)
+                refresh()
+            } catch { revisionError = error.localizedDescription }
+        }
+    }
+
+    public func beginReadingRevision(version: PersonalReadingVersionItem, entry: PersonalLyricsLibraryEntry) {
+        guard !revisionBusy else { return }
+        revisionBusy = true
+        revisionError = nil
+        Task {
+            defer { revisionBusy = false }
+            do {
+                let track = libraryTrack(for: entry)
+                let identity = TrackIdentity(track: track)
+                try await repository.prepare()
+                guard let lyricsSource = try await repository.loadEditableVersion(
+                    versionID: version.lyricsVersionID, track: track, identity: identity
+                ) else { throw LyricsEditingRepositoryError.sourceNotFound }
+                let versions = try await repository.loadReadingVersions(
+                    lyricsVersionID: version.lyricsVersionID,
+                    representationID: version.representationID,
+                    sourceContentHash: lyricsSource.sourceContentHash
+                )
+                guard let source = versions.first(where: { $0.record.id == version.id }) else {
+                    throw ReadingRepositoryError.versionNotFound
+                }
+                readingRevisionDraft = LibraryReadingRevisionDraft(
+                    track: track, lyricsSource: lyricsSource, source: source
+                )
+            } catch {
+                statusMessage = "打开读音编辑失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    public func saveReadingRevision(_ draft: LibraryReadingRevisionDraft) {
+        guard !revisionBusy else { return }
+        revisionBusy = true
+        revisionError = nil
+        Task {
+            defer { revisionBusy = false }
+            do {
+                _ = try await repository.saveReadingVersion(draft.saveRequest())
+                readingRevisionDraft = nil
+                refreshTrackDetail(stableKey: draft.lyricsSource.record.trackStableKey)
+                refresh()
+            } catch { revisionError = error.localizedDescription }
+        }
+    }
+
+    public func beginTimingRevision(version: PersonalTimingVersionItem, entry: PersonalLyricsLibraryEntry) {
+        guard !revisionBusy else { return }
+        revisionBusy = true
+        revisionError = nil
+        Task {
+            defer { revisionBusy = false }
+            do {
+                let track = libraryTrack(for: entry)
+                let identity = TrackIdentity(track: track)
+                try await repository.prepare()
+                guard let lyricsSource = try await repository.loadEditableVersion(
+                    versionID: version.lyricsVersionID, track: track, identity: identity
+                ), let source = try await repository.loadPersonalLibraryTimingVersion(id: version.id),
+                   source.lyricsVersionID == lyricsSource.record.id,
+                   source.sourceContentHash == lyricsSource.sourceContentHash,
+                   let draft = LibraryTimingRevisionDraft(track: track, lyricsSource: lyricsSource, source: source) else {
+                    throw LyricsEditingRepositoryError.sourceNotFound
+                }
+                timingRevisionDraft = draft
+            } catch {
+                statusMessage = "打开逐字时间编辑失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    public func saveTimingRevision(_ draft: LibraryTimingRevisionDraft) {
+        guard !revisionBusy else { return }
+        revisionBusy = true
+        revisionError = nil
+        Task {
+            defer { revisionBusy = false }
+            do {
+                _ = try await repository.savePersonalLibraryTimingRevision(draft.saveRequest())
+                timingRevisionDraft = nil
+                refreshTrackDetail(stableKey: draft.lyricsSource.record.trackStableKey)
+                refresh()
+            } catch { revisionError = error.localizedDescription }
+        }
+    }
+
     private let repository: SQLiteLyricsRepository
     private let defaults: UserDefaults
     private var pendingSyncFolderURL: URL?
+
+    private func libraryTrack(for entry: PersonalLyricsLibraryEntry) -> Track {
+        Track(
+            title: entry.title,
+            artist: entry.artist,
+            album: entry.album ?? "",
+            duration: entry.duration,
+            isrc: entry.isrc,
+            spotifyId: entry.spotifyTrackID,
+            artworkURL: entry.artworkURL,
+            spotifyURL: entry.spotifyURI.flatMap(URL.init(string:))
+        )
+    }
 
     public init(
         repository: SQLiteLyricsRepository = SQLiteLyricsRepository(),

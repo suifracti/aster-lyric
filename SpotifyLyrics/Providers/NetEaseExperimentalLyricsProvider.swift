@@ -33,7 +33,11 @@ public final class NetEaseExperimentalLyricsProvider: LyricsProvider, @unchecked
 
             var candidates: [LyricsCandidate] = []
             var exactMetadataOnlySong: NetEaseSong?
-            for song in songs.prefix(5) {
+            // The web search endpoint caps this response at eight records. A
+            // localized exact recording can rank sixth or later when the
+            // display artist uses another language, so inspect the complete
+            // bounded result page instead of silently dropping its tail.
+            for song in songs {
                 if Task.isCancelled { return .failed(.cancelled) }
                 guard let lyric = try await fetchLyric(songID: song.id) else {
                     if exactMetadataOnlySong == nil,

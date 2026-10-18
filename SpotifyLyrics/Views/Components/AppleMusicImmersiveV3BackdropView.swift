@@ -19,6 +19,12 @@ enum AppleMusicImmersiveV3BackdropKey {
 
 /// Bounded, centered image geometry: resizing a background never changes canvas layout.
 enum V3BackdropArtworkGeometry {
+    /// Shared framing baseline; individual themes retain their own lighting passes.
+    static func imageScale(requested: Double, complete: Bool) -> Double {
+        let scale = requested.isFinite ? min(1.4, max(0.8, requested)) : 1
+        return scale * (complete ? 1 : 1.12)
+    }
+
     static func rect(canvas: CGSize, artwork: CGSize, scale: Double, complete: Bool) -> CGRect {
         let aspect = max(0.01, artwork.width / max(1, artwork.height))
         let fitHeight = min(canvas.height, canvas.width / aspect)
@@ -53,6 +59,9 @@ struct AppleMusicImmersiveV3BackdropView: View {
     private var artworkPosition: String { settings.v3PreviewPosition(for: artworkPresentation) }
     private var artworkSizeScale: Double { settings.v3PreviewBackdropScale(for: artworkPresentation) }
     private var showsCompleteArtwork: Bool { settings.v3BackgroundShowsCompleteArtwork(for: artworkPresentation) }
+    private var backdropImageScale: Double {
+        V3BackdropArtworkGeometry.imageScale(requested: artworkSizeScale, complete: showsCompleteArtwork)
+    }
 
     var body: some View {
         ZStack {
@@ -263,7 +272,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             quietArtworkColors
         case .albumPoster:
             quietArtworkColors
-            framedArtwork(image: ambientImage ?? image, scale: artworkSizeScale,
+            framedArtwork(image: ambientImage ?? image, scale: backdropImageScale,
                           blur: 18 + perceptualBlur * 46)
                 .saturation(0.65)
                 .opacity(reduceTransparency ? 0.08 : 0.20)
@@ -296,7 +305,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
     @ViewBuilder
     private func stageArtworkLayers(image: NSImage, ambientImage: NSImage?) -> some View {
         if !showsCompleteArtwork {
-            framedArtwork(image: image, scale: artworkSizeScale, blur: 0)
+            framedArtwork(image: image, scale: backdropImageScale, blur: 0)
         } else {
             GeometryReader { geometry in
                 let aspect = image.size.width > 0 && image.size.height > 0
@@ -386,7 +395,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
         )
     }
 
-    // Faithful reproduction of Release v0.1.2 ambientArtworkLayers (blob 5f6d828636ca7fb36381219b96ced4c2bd01739a)
+    // Original ambient light composition with the shared percentage response and framing.
     @ViewBuilder
     private func authenticAmbientArtworkLayers(image: NSImage, ambientImage: NSImage?) -> some View {
         let style = presentationStyle
@@ -394,7 +403,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             1.3,
             style.paletteSaturation * 1.18 + (increaseContrast ? 0.06 : 0)
         )
-        let diffusionRadius = normalizedBlur * 48.0
+        let diffusionRadius = perceptualBlur * 48.0
 
         // A luminance-clamped album field keeps very bright artwork legible
         // without falling back to an unrelated black canvas.
@@ -411,7 +420,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
         // Retain album structure before applying the user-controlled diffusion.
         // Keep image visibility independent of diffusion, including at 0%.
         // The full-resolution snapshot avoids baked-in blur at the clear endpoint.
-        framedArtwork(image: image, scale: 1.12 * artworkSizeScale, blur: diffusionRadius)
+        framedArtwork(image: image, scale: backdropImageScale, blur: diffusionRadius)
             .saturation(saturation)
             .opacity(0.56)
 
@@ -425,7 +434,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             ],
             center: coverLightCenter,
             startRadius: 18,
-            endRadius: 680 + normalizedBlur * 220
+            endRadius: 680 + perceptualBlur * 220
         )
         .blendMode(.screen)
 
@@ -474,7 +483,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
         // Retain album structure before applying the user-controlled diffusion.
         // Full opacity and vivid colors prevent grayish/muddy appearance.
-        framedArtwork(image: image, scale: showsCompleteArtwork ? artworkSizeScale : 1.12 * artworkSizeScale,
+        framedArtwork(image: image, scale: backdropImageScale,
                       blur: diffusionRadius)
             .saturation(saturation)
             .opacity(0.85)
@@ -549,9 +558,11 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
         // Show the complete cover as a softly feathered source of ambient light.
         GeometryReader { canvas in
-            let side = min(canvas.size.height * 1.02, canvas.size.width * 0.86) * artworkSizeScale
-            let sourceWidth = showsCompleteArtwork ? side : canvas.size.width * artworkSizeScale
-            let sourceHeight = showsCompleteArtwork ? side : canvas.size.height * artworkSizeScale
+            let rect = V3BackdropArtworkGeometry.rect(canvas: canvas.size, artwork: image.size,
+                                                       scale: backdropImageScale, complete: showsCompleteArtwork)
+            let side = min(rect.width, rect.height)
+            let sourceWidth = rect.width
+            let sourceHeight = rect.height
             let imageX: CGFloat = artworkPosition == "right" ? 0.56
                 : (artworkPosition == "center" ? 0.50 : 0.44)
 
@@ -646,8 +657,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
     /// is retained above as an ambient variant rather than renamed Gaussian.
     private func gaussianArtworkLayers(image: NSImage) -> some View {
         GeometryReader { geometry in
-            let scale = 1 + (min(1.4, max(0.8, artworkSizeScale)) - 0.8) * 0.6
-            framedArtwork(image: image, scale: showsCompleteArtwork ? artworkSizeScale : scale * 1.04,
+            framedArtwork(image: image, scale: backdropImageScale,
                           blur: effectiveBlurRadius,
                           horizontalOffset: showsCompleteArtwork ? 0 : classicArtworkOffset(for: geometry.size.width))
 
@@ -706,7 +716,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
         // Both the full 80–140% range and crop position now affect this image.
         GeometryReader { geometry in
             let scale = min(1.4, max(0.8, artworkSizeScale))
-            let effectiveScale = style.artworkScale * scale
+            let effectiveScale = backdropImageScale
             let offset = classicArtworkOffset(for: geometry.size.width, scale: scale, effectiveScale: effectiveScale)
 
             framedArtwork(image: image, scale: showsCompleteArtwork ? scale : effectiveScale,
@@ -718,7 +728,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
         if effectiveScreenBlurRadius > 0 {
             GeometryReader { geometry in
                 let scale = min(1.4, max(0.8, artworkSizeScale))
-                let effectiveScale = style.artworkScale * scale
+                let effectiveScale = backdropImageScale
                 let offset = classicArtworkOffset(for: geometry.size.width, scale: scale, effectiveScale: effectiveScale)
 
                 framedArtwork(image: image, scale: showsCompleteArtwork ? scale : effectiveScale,
@@ -820,7 +830,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
     private func classicArtworkOffset(for width: CGFloat) -> CGFloat {
         let scale = min(1.4, max(0.8, artworkSizeScale))
-        let effectiveScale = presentationStyle.artworkScale * scale
+        let effectiveScale = backdropImageScale
         return classicArtworkOffset(for: width, scale: scale, effectiveScale: effectiveScale)
     }
 

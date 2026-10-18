@@ -24,7 +24,7 @@ def test_geometry():
         "Layer 2 must not use asymmetric mask that creates one-sided blank"
 
     # 2. Mathematical simulation of geometry across 80%, 100%, 140%
-    style_artwork_scale = 1.36  # BackdropPresentationID.defaultV1.style.artworkScale
+    style_artwork_scale = 1.12  # Shared fill framing baseline; theme lighting no longer multiplies size.
     window_widths = [1000.0, 1200.0, 1579.0, 1920.0, 2560.0]
 
     for w in window_widths:
@@ -41,7 +41,7 @@ def test_geometry():
 
             # Test at 80% (scale = 0.8)
             scale_80 = 0.8
-            eff_scale_80 = style_artwork_scale * scale_80  # 1.088
+            eff_scale_80 = style_artwork_scale * scale_80  # 0.896
             offset_80 = calc_offset(scale_80, eff_scale_80)
             assert offset_80 == 0.0, f"Offset at 80% must be exactly 0, got {offset_80}"
 
@@ -51,11 +51,11 @@ def test_geometry():
             right_margin_80 = right_edge_80 - w
             diff_80 = abs(left_margin_80 - right_margin_80)
             assert diff_80 < 1e-9, f"Left/right margin difference at 80% must be 0, got {diff_80}"
-            assert left_edge_80 <= 0.0 and right_edge_80 >= w, "Image at 80% must cover full viewport"
+            assert left_edge_80 > 0.0 and right_edge_80 < w, "80% must shrink the source; the separate backdrop fill covers edges"
 
             # Test at 100% (scale = 1.0)
             scale_100 = 1.0
-            eff_scale_100 = style_artwork_scale * scale_100  # 1.36
+            eff_scale_100 = style_artwork_scale * scale_100  # 1.12
             offset_100 = calc_offset(scale_100, eff_scale_100)
             left_edge_100 = w / 2.0 - (w * eff_scale_100) / 2.0 + offset_100
             right_edge_100 = w / 2.0 + (w * eff_scale_100) / 2.0 + offset_100
@@ -64,7 +64,7 @@ def test_geometry():
 
             # Test at 140% (scale = 1.4)
             scale_140 = 1.4
-            eff_scale_140 = style_artwork_scale * scale_140  # 1.904
+            eff_scale_140 = style_artwork_scale * scale_140  # 1.568
             offset_140 = calc_offset(scale_140, eff_scale_140)
             left_edge_140 = w / 2.0 - (w * eff_scale_140) / 2.0 + offset_140
             right_edge_140 = w / 2.0 + (w * eff_scale_140) / 2.0 + offset_140

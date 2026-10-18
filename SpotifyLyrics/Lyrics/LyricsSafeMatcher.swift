@@ -128,6 +128,11 @@ public enum LyricsSafeMatcher {
         let titleAliases = metadata.aliases
             .filter { $0.field == .title }
             .map { (value: TrackTextNormalizer.normalize($0.value), alias: $0) }
+        let exactSpotifyTitleAliasMatchesCandidate = metadata.aliases.contains { alias in
+            alias.field == .title && alias.source == .spotifyMetadata && alias.isOfficial
+                && (TrackTextNormalizer.normalize(alias.value) == candidateTitle
+                    || titlesHaveSameTypography(alias.value, candidate.title))
+        }
 
         // A trusted full-title alias explicitly binds its guest spelling to this recording.
         // If metadata and candidate titles have a syntax variation (e.g. feat. vs ft.)
@@ -155,16 +160,20 @@ public enum LyricsSafeMatcher {
             add(hasConfirmedFeaturedAlias ? "featuredNameAliasConfirmed" : "featuredNameUnverified", 0)
         } else if candidate.declaredTitleAliases.contains(where: { TrackTextNormalizer.normalize($0) == metadataTitle }), !metadataTitle.isEmpty {
             add("titleProviderAliasConfirmed", 0.22)
-        } else if let matchingAlias = titleAliases.first(where: { $0.value == candidateTitle }), !candidateTitle.isEmpty {
+        } else if let matchingAlias = titleAliases.first(where: {
+            $0.value == candidateTitle || titlesHaveSameTypography($0.alias.value, candidate.title)
+        }), !candidateTitle.isEmpty {
             let delta = matchingAlias.alias.isOfficial || matchingAlias.alias.source == .spotifyMetadata ? 0.22 : 0.16
             add("titleAliasConfirmed", delta)
         } else if let aliasUsed,
                   aliasUsed.field == .title,
-                  TrackTextNormalizer.normalize(aliasUsed.value) == candidateTitle {
+                  (TrackTextNormalizer.normalize(aliasUsed.value) == candidateTitle
+                      || titlesHaveSameTypography(aliasUsed.value, candidate.title)) {
             add("titleAliasQuery", 0.16)
         } else if let queryVariant,
                   queryVariant.queryKind.isAlias,
-                  TrackTextNormalizer.normalize(queryVariant.titleQuery) == candidateTitle {
+                  (TrackTextNormalizer.normalize(queryVariant.titleQuery) == candidateTitle
+                      || titlesHaveSameTypography(queryVariant.titleQuery, candidate.title)) {
             // Generated aliases (most notably deterministic romaji) may not
             // have a persisted TrackAlias record. They still expand recall,
             // but receive less title evidence than a confirmed alias.
@@ -206,6 +215,9 @@ public enum LyricsSafeMatcher {
         let metadataPrimaryReadingMatches = metadataArtists.contains {
             titlesHaveSameReading($0.primary, candidateArtists.primary)
         }
+        let spotifyCreditedArtistReadingMatches = (metadata.verifiedSpotifyArtists + metadata.aliases
+            .filter { $0.field == .artist && $0.source == .spotifyMetadata && $0.isOfficial }
+            .map(\.value)).contains { artistsHaveSameReading($0, candidateArtists.primary) }
         let metadataPrimaryMatches = metadataArtists.contains {
             TrackTextNormalizer.normalizeArtistToken($0.primary) == candidatePrimary && !candidatePrimary.isEmpty
         }
@@ -222,8 +234,11 @@ public enum LyricsSafeMatcher {
 
         if metadataPrimaryMatches {
             add("primaryArtistExact", 0.30)
-        } else if metadataPrimaryReadingMatches {
+        } else if metadataPrimaryReadingMatches || spotifyCreditedArtistReadingMatches {
             add("primaryArtistReadingExact", 0.28)
+            if spotifyCreditedArtistReadingMatches && !metadataPrimaryReadingMatches {
+                add("spotifyCreditedArtistReadingExact", 0)
+            }
         } else if let artistAlias {
             let delta = artistAlias.isOfficial || artistAlias.source == .spotifyMetadata ? 0.24 : 0.16
             add("primaryArtistAlias", delta)
@@ -349,6 +364,16 @@ public enum LyricsSafeMatcher {
             && metadataTags.symmetricDifference(candidateTags).subtracting([.spedUp, .remaster]).isEmpty
             && candidate.lines.contains { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
+        func constrainSpotifyCreditedArtistReading(_ tier: LyricsMatchTier) -> LyricsMatchTier {
+            guard reasons.contains("spotifyCreditedArtistReadingExact") else { return tier }
+            let exactTitle = reasons.contains("titleExact") || reasons.contains("titleTypographyExact")
+                || exactSpotifyTitleAliasMatchesCandidate
+            guard exactTitle, reasons.contains("durationClose"), !versionConflict, !hardReject else {
+                return Self.minTier(tier, .candidates)
+            }
+            return Self.minTier(tier, .autoMedium)
+        }
+
         if let queryVariant {
             switch queryVariant.queryKind {
             case .titleOnlyLoose:
@@ -372,7 +397,8 @@ public enum LyricsSafeMatcher {
                 evidence.append(LyricsMatchEvidence(code: "machineAliasCeiling", delta: 0))
             }
 
-            let tierPrimaryMatch = metadataPrimaryMatches || metadataPrimaryReadingMatches || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity)
+            let tierPrimaryMatch = metadataPrimaryMatches || metadataPrimaryReadingMatches || spotifyCreditedArtistReadingMatches
+                || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity)
             var tier = tierFor(score: score, primaryArtistMatches: tierPrimaryMatch, hardReject: hardReject)
             if hardReject {
                 tier = .reject
@@ -412,6 +438,7 @@ public enum LyricsSafeMatcher {
             }
             tier = minTier(tier, ceiling)
             if reasons.contains("titleProviderAliasConfirmed") || metadataPrimaryReadingMatches || reasons.contains("titleReadingExact") || reasons.contains("titleTypographyExact") { tier = minTier(tier, .autoMedium) }
+            tier = constrainSpotifyCreditedArtistReading(tier)
             return LyricsMatchDecision(
                 tier: tier,
                 score: clamp(score),
@@ -424,7 +451,8 @@ public enum LyricsSafeMatcher {
         }
 
         var tier: LyricsMatchTier
-        let tierPrimaryMatch = metadataPrimaryMatches || metadataPrimaryReadingMatches || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity)
+        let tierPrimaryMatch = metadataPrimaryMatches || metadataPrimaryReadingMatches || spotifyCreditedArtistReadingMatches
+            || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity)
         if hardReject {
             tier = .reject
         } else if reasons.contains("titleMismatch") && !hasStrongIndependentIdentity && queryVariant?.queryKind != .manualOverride {
@@ -476,6 +504,7 @@ public enum LyricsSafeMatcher {
         if reasons.contains("shortTitleReading") && !hasStrongIndependentIdentity {
             tier = minTier(tier, metadataPrimaryMatches && reasons.contains("durationClose") ? .autoMedium : .candidates)
         }
+        tier = constrainSpotifyCreditedArtistReading(tier)
         return LyricsMatchDecision(
             tier: tier,
             score: clamp(score),
@@ -627,6 +656,45 @@ public enum LyricsSafeMatcher {
         if let latin = latinKey(lhs), let japanese = readingKey(rhs) { return latin == japanese }
         if let latin = latinKey(rhs), let japanese = readingKey(lhs) { return latin == japanese }
         return false
+    }
+
+    /// Artist romanizations sometimes use opposite name order (Hikaru Utada /
+    /// Utada Hikaru) and different long-vowel notation (Toko / Touko). Only
+    /// compare this way against exact Spotify-credited artist names above, and
+    /// require a complete Japanese reading with no unknown tokens.
+    private static func artistsHaveSameReading(_ lhs: String, _ rhs: String) -> Bool {
+        func normalizedTokens(_ text: String) -> [String]? {
+            let folded = text.folding(options: [.diacriticInsensitive, .caseInsensitive, .widthInsensitive],
+                                      locale: Locale(identifier: "en_US_POSIX"))
+            guard folded.unicodeScalars.allSatisfy(\.isASCII) else { return nil }
+            let words = folded.components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { !$0.isEmpty }
+            guard !words.isEmpty else { return nil }
+            return words.map { word in
+                String(word)
+                    .replacingOccurrences(of: "ou", with: "o")
+                    .replacingOccurrences(of: "oo", with: "o")
+                    .replacingOccurrences(of: "aa", with: "a")
+                    .replacingOccurrences(of: "ii", with: "i")
+                    .replacingOccurrences(of: "uu", with: "u")
+                    .replacingOccurrences(of: "ee", with: "e")
+            }.sorted()
+        }
+
+        func readingTokens(_ text: String) -> [String]? {
+            guard text.count <= 256,
+                  text.unicodeScalars.contains(where: { (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value) }) else { return nil }
+            let reading = JapaneseReadingPipeline.analyze(originalText: text)
+            guard !reading.containsUnknown else { return nil }
+            let tokens = reading.tokens.compactMap(\.romaji)
+            guard !tokens.isEmpty, tokens.count == reading.tokens.count else { return nil }
+            return normalizedTokens(tokens.joined(separator: " "))
+        }
+
+        let left = readingTokens(lhs) ?? normalizedTokens(lhs)
+        let right = readingTokens(rhs) ?? normalizedTokens(rhs)
+        guard let left, let right, left.count == right.count, !left.isEmpty else { return false }
+        return left == right
     }
 
     private static func featuredBaseTitle(_ title: String) -> String {

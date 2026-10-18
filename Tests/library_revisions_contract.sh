@@ -5,9 +5,11 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 TMP_DIR="$(mktemp -d /tmp/spotifylyrics-library-revisions.XXXXXX)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+git show HEAD:SpotifyLyrics/Persistence/TranslationRepository.swift > "$TMP_DIR/TranslationRepository.swift"
 
 swiftc -parse-as-library \
   SpotifyLyrics/Models/Models.swift \
+  SpotifyLyrics/DebugDatabaseSafety.swift \
   SpotifyLyrics/Lyrics/TrackIdentity.swift \
   SpotifyLyrics/Lyrics/LyricsModels.swift \
   SpotifyLyrics/Lyrics/AlignmentModels.swift \
@@ -43,7 +45,7 @@ swiftc -parse-as-library \
   SpotifyLyrics/Persistence/AlignmentProvenanceStore.swift \
   SpotifyLyrics/Lyrics/LyricsLanguageGate.swift \
   SpotifyLyrics/Persistence/LyricsPersistenceMapper.swift \
-  SpotifyLyrics/Persistence/TranslationRepository.swift \
+  "$TMP_DIR/TranslationRepository.swift" \
   SpotifyLyrics/Persistence/LyricsEditingRepository.swift \
   SpotifyLyrics/Persistence/SQLiteLyricsRepository.swift \
   Tests/library_revisions_contract.swift \

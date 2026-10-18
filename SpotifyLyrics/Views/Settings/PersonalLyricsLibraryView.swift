@@ -91,6 +91,15 @@ public struct PersonalLyricsLibraryView: View {
         .sheet(item: $service.revisionDraft) { draft in
             LibraryLyricsRevisionSheet(service: service, initialDraft: draft)
         }
+        .sheet(item: $service.translationRevisionDraft) { draft in
+            LibraryTranslationRevisionSheet(service: service, initialDraft: draft)
+        }
+        .sheet(item: $service.readingRevisionDraft) { draft in
+            LibraryReadingRevisionSheet(service: service, initialDraft: draft)
+        }
+        .sheet(item: $service.timingRevisionDraft) { draft in
+            LibraryTimingRevisionSheet(service: service, initialDraft: draft)
+        }
         .sheet(isPresented: $service.showImportPreviewSheet) {
             if let preview = service.importPreview {
                 PersonalLibraryImportPreviewSheet(preview: preview, onConfirm: {
@@ -463,7 +472,7 @@ public struct PersonalLibraryTrackDetailView: View {
                                     emptyPlaceholder("暂无保存的逐字时间轴")
                                 } else {
                                     ForEach(detail.timingVersions) { tm in
-                                        timingVersionCard(tm)
+                                        timingVersionCard(tm, entry: detail.entry)
                                     }
                                 }
                             }
@@ -646,6 +655,13 @@ public struct PersonalLibraryTrackDetailView: View {
                 Spacer()
 
                 HStack(spacing: 8) {
+                    Button("编辑为新版本") {
+                        service.beginTranslationRevision(version: tv, entry: entry)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(service.revisionBusy)
+
                     if !tv.isCurrent && !tv.isArchived {
                         Button("设为当前") {
                             service.adoptTranslation(versionID: tv.id, trackStableKey: entry.trackStableKey)
@@ -697,6 +713,13 @@ public struct PersonalLibraryTrackDetailView: View {
                 Spacer()
 
                 HStack(spacing: 8) {
+                    Button("编辑为新版本") {
+                        service.beginReadingRevision(version: rv, entry: entry)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(service.revisionBusy)
+
                     if !rv.isCurrent && !rv.isArchived {
                         Button("设为当前") {
                             service.adoptReading(versionID: rv.id, trackStableKey: entry.trackStableKey)
@@ -724,7 +747,7 @@ public struct PersonalLibraryTrackDetailView: View {
         .cornerRadius(8)
     }
 
-    private func timingVersionCard(_ tm: PersonalTimingVersionItem) -> some View {
+    private func timingVersionCard(_ tm: PersonalTimingVersionItem, entry: PersonalLyricsLibraryEntry) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 LibraryVersionLabel(kind: "timing", id: tm.id, originalTitle: tm.source.uppercased())
@@ -736,6 +759,12 @@ public struct PersonalLibraryTrackDetailView: View {
                 Text(formattedDate(tm.createdAt))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Button("编辑为新版本") {
+                    service.beginTimingRevision(version: tm, entry: entry)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(service.revisionBusy)
             }
         }
         .padding(12)
@@ -1197,5 +1226,207 @@ private struct LibraryLyricsRevisionSheet: View {
         }
         timingLossPendingDraft = draft
         showTimingLossConfirmation = true
+    }
+}
+
+private struct LibraryTranslationRevisionSheet: View {
+    @ObservedObject var service: PersonalLyricsLibraryService
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: LibraryTranslationRevisionDraft
+
+    init(service: PersonalLyricsLibraryService, initialDraft: LibraryTranslationRevisionDraft) {
+        self.service = service
+        _draft = State(initialValue: initialDraft)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("编辑译文为新版本").font(.title2.bold())
+            Text("\(draft.track.title) · \(draft.track.artist) · \(draft.source.record.targetLanguage)")
+                .font(.headline)
+            Text("原译文会保留；保存后可在歌词库中选择要采用的版本。")
+                .font(.callout).foregroundStyle(.secondary)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach(draft.lines.indices, id: \.self) { index in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(sourceLine(at: index))
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            TextField("译文", text: $draft.lines[index], axis: .vertical)
+                                .lineLimit(1...5)
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityLabel("第 \(index + 1) 行译文")
+                        }
+                        .padding(10)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+            }
+            .frame(maxHeight: .infinity)
+            .disabled(service.revisionBusy)
+            revisionError
+            HStack {
+                Spacer()
+                if service.revisionBusy { ProgressView().controlSize(.small) }
+                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("保存为新版本") { service.saveTranslationRevision(draft) }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!draft.hasChanges || service.revisionBusy)
+            }
+        }
+        .padding(24)
+        .frame(width: 700, height: 600)
+        .interactiveDismissDisabled(service.revisionBusy)
+    }
+
+    private func sourceLine(at index: Int) -> String {
+        guard draft.lyricsSource.document.lines.indices.contains(index) else { return "第 \(index + 1) 行" }
+        return draft.lyricsSource.document.lines[index].originalText
+    }
+
+    @ViewBuilder private var revisionError: some View {
+        if let error = service.revisionError {
+            Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+        }
+    }
+}
+
+private struct LibraryReadingRevisionSheet: View {
+    @ObservedObject var service: PersonalLyricsLibraryService
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: LibraryReadingRevisionDraft
+
+    init(service: PersonalLyricsLibraryService, initialDraft: LibraryReadingRevisionDraft) {
+        self.service = service
+        _draft = State(initialValue: initialDraft)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("编辑读音为新版本").font(.title2.bold())
+            Text("\(draft.track.title) · \(draft.track.artist) · \(draft.source.record.representationID)")
+                .font(.headline)
+            Text("原读音会保留；保存后可在歌词库中选择要采用的版本。")
+                .font(.callout).foregroundStyle(.secondary)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach(draft.lines.indices, id: \.self) { index in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(sourceLine(at: index))
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            TextField("读音", text: $draft.lines[index], axis: .vertical)
+                                .lineLimit(1...4)
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityLabel("第 \(index + 1) 行读音")
+                        }
+                        .padding(10)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+            }
+            .frame(maxHeight: .infinity)
+            .disabled(service.revisionBusy)
+            if let error = service.revisionError {
+                Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+            }
+            HStack {
+                Spacer()
+                if service.revisionBusy { ProgressView().controlSize(.small) }
+                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("保存为新版本") { service.saveReadingRevision(draft) }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!draft.hasChanges || service.revisionBusy)
+            }
+        }
+        .padding(24)
+        .frame(width: 700, height: 600)
+        .interactiveDismissDisabled(service.revisionBusy)
+    }
+
+    private func sourceLine(at index: Int) -> String {
+        guard draft.lyricsSource.document.lines.indices.contains(index) else { return "第 \(index + 1) 行" }
+        return draft.lyricsSource.document.lines[index].originalText
+    }
+}
+
+private struct LibraryTimingRevisionSheet: View {
+    @ObservedObject var service: PersonalLyricsLibraryService
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: LibraryTimingRevisionDraft
+    private static let secondsFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 3
+        return formatter
+    }()
+
+    init(service: PersonalLyricsLibraryService, initialDraft: LibraryTimingRevisionDraft) {
+        self.service = service
+        _draft = State(initialValue: initialDraft)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("编辑逐字时间轴为新版本").font(.title2.bold())
+            Text("\(draft.track.title) · \(draft.track.artist)").font(.headline)
+            Text("修改时间会保留原时间轴。保存后歌词仍关联原歌词版本。")
+                .font(.callout).foregroundStyle(.secondary)
+            HStack {
+                Text("原文与字词")
+                Spacer()
+                Text("开始（秒）").frame(width: 105)
+                Text("结束（秒）").frame(width: 105)
+            }
+            .font(.caption).foregroundStyle(.secondary)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach($draft.lines) { $line in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(line.originalText)
+                                .font(.callout.weight(.medium))
+                                .textSelection(.enabled)
+                            ForEach($line.spans) { $span in
+                                HStack(spacing: 8) {
+                                    Text(span.source.text + span.source.trailingWhitespace)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    TextField("开始", value: $span.startTime, formatter: Self.secondsFormatter)
+                                        .frame(width: 105)
+                                        .accessibilityLabel("\(span.source.text) 开始时间")
+                                    TextField("结束", value: $span.endTime, formatter: Self.secondsFormatter)
+                                        .frame(width: 105)
+                                        .accessibilityLabel("\(span.source.text) 结束时间")
+                                }
+                                .textFieldStyle(.roundedBorder)
+                            }
+                        }
+                        .padding(10)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+            }
+            .frame(maxHeight: .infinity)
+            .disabled(service.revisionBusy)
+            if let error = service.revisionError {
+                Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+            }
+            HStack {
+                Spacer()
+                if service.revisionBusy { ProgressView().controlSize(.small) }
+                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("保存为新版本") { service.saveTimingRevision(draft) }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!draft.hasChanges || service.revisionBusy)
+            }
+        }
+        .padding(24)
+        .frame(width: 760, height: 620)
+        .interactiveDismissDisabled(service.revisionBusy)
     }
 }

@@ -4,6 +4,9 @@ umask 077
 ROOT="${0:A:h}/.."
 BUILD="${TMPDIR:-/tmp}/lyrics-provider-runtime-safety"
 mkdir -p "$BUILD"
+git -C "$ROOT" show HEAD:SpotifyLyrics/Persistence/TranslationRepository.swift > "$BUILD/TranslationRepository.swift"
+export CFFIXED_USER_HOME="$BUILD/home"
+mkdir -p "$CFFIXED_USER_HOME"
 cat > "$BUILD/logger.swift" <<'SWIFT'
 import Foundation
 enum LyricsE2ELog { static func log(_ message: String) { print(message) } }
@@ -31,7 +34,7 @@ SOURCES=(
   "$ROOT/SpotifyLyrics/Persistence/AlignmentProvenanceStore.swift"
   "$ROOT/SpotifyLyrics/Lyrics/LyricsLanguageGate.swift"
   "$ROOT/SpotifyLyrics/Persistence/LyricsPersistenceMapper.swift"
-  "$ROOT/SpotifyLyrics/Persistence/TranslationRepository.swift"
+  "$BUILD/TranslationRepository.swift"
   "$ROOT/SpotifyLyrics/Persistence/LyricsEditingRepository.swift"
   "$ROOT/SpotifyLyrics/Persistence/SQLiteLyricsRepository.swift"
   "$ROOT/SpotifyLyrics/Lyrics/ListeningHistoryModels.swift"

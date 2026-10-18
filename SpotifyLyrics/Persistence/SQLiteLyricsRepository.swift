@@ -1410,9 +1410,12 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
               draft.lines.map(\.index) == Array(source.lines.indices) else {
             throw TranslationRepositoryError.invalidLines("行数或 index 不匹配")
         }
-        let allowsSparseProviderText = draft.sourceKind == .providerEmbedded &&
-            !draft.isMachineGenerated && !draft.isManuallyEdited
-        if allowsSparseProviderText,
+        let allowsSparseRows = allowsSparseTranslationRows(
+            sourceKind: draft.sourceKind,
+            isMachineGenerated: draft.isMachineGenerated,
+            isManuallyEdited: draft.isManuallyEdited
+        )
+        if allowsSparseRows,
            !draft.lines.contains(where: { !$0.translation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
             throw TranslationRepositoryError.invalidLines("词源译文不能为空")
         }
@@ -1420,8 +1423,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             let sourceText = source.lines[line.index].originalText
             let sourceBlank = sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let translationBlank = line.translation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            let sparseProviderRow = allowsSparseProviderText && !sourceBlank && line.translation.isEmpty
-            guard sourceBlank == translationBlank || sparseProviderRow,
+            let sparseRow = allowsSparseRows && !sourceBlank && line.translation.isEmpty
+            guard sourceBlank == translationBlank || sparseRow,
                   !sourceBlank || line.translation.isEmpty,
                   !line.translation.contains("\n"),
                   !line.translation.contains("\r") else {
@@ -1773,6 +1776,92 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         return StoredEditableLyricsVersion(record: record, lines: lines, document: document, lockedReadingLayers: readings)
     }
 
+    public func loadPersonalLibraryTimingVersion(id: UUID) throws -> DatabaseLyricsTimingVersionRecord? {
+        try ensurePrepared()
+        return try fetchTimingVersion(id: id)
+    }
+
+    /// Saves an immutable timing child on the same lyrics version. The exact
+    /// lyric identity/hash is checked again before the new payload is stored.
+    public func savePersonalLibraryTimingRevision(
+        _ request: LibraryTimingRevisionSaveRequest
+    ) throws -> DatabaseLyricsTimingVersionRecord {
+        try ensurePrepared()
+        guard TrackIdentity(track: request.track) == request.identity else {
+            throw LyricsEditingRepositoryError.identityMismatch
+        }
+        guard let sourceTiming = try fetchTimingVersion(id: request.sourceTimingVersionID),
+              let sourceVersion = try fetchLyricsVersion(versionID: sourceTiming.lyricsVersionID) else {
+            throw LyricsEditingRepositoryError.sourceNotFound
+        }
+        let canonicalKey = try resolvedCanonicalStableKey(request.identity.stableKey)
+        guard try resolvedCanonicalStableKey(sourceVersion.trackStableKey) == canonicalKey else {
+            throw LyricsEditingRepositoryError.identityMismatch
+        }
+
+        let sourceRows = try fetchLines(versionID: sourceVersion.id)
+        let sourceHash = LyricsSourceContentHasher.hash(isSynchronized: sourceVersion.isSynced, lines: sourceRows)
+        guard sourceTiming.sourceContentHash == sourceHash else {
+            throw LyricsEditingRepositoryError.sourceContentMismatch
+        }
+        guard try fetchTrack(stableKey: sourceVersion.trackStableKey) != nil else {
+            throw LyricsEditingRepositoryError.sourceNotFound
+        }
+        let baseDocument = Self.documentForTimingValidation(
+            identity: request.identity,
+            track: request.track,
+            version: sourceVersion,
+            lines: sourceRows
+        )
+
+        let orderedPayload = request.lines.sorted { $0.lineIndex < $1.lineIndex }
+        guard !orderedPayload.isEmpty,
+              Set(orderedPayload.map(\.lineIndex)).count == orderedPayload.count,
+              orderedPayload.allSatisfy({
+                  baseDocument.lines.indices.contains($0.lineIndex) && !$0.spans.isEmpty
+              }) else {
+            throw LyricsEditingRepositoryError.invalidTimeline("逐字时间行号重复、越界或没有时间片段")
+        }
+        guard let oldMap = DocumentTimingPayload.decode(sourceTiming.spansPayload) else {
+            throw LyricsEditingRepositoryError.sourceContentMismatch
+        }
+        let oldPayload = oldMap.keys.sorted().compactMap { index -> LineTimingPayload? in
+            guard let value = oldMap[index] else { return nil }
+            return LineTimingPayload(lineIndex: index, performerID: value.performerID, spans: value.spans)
+        }
+        guard orderedPayload != oldPayload else {
+            throw LyricsEditingRepositoryError.noChanges
+        }
+
+        var updatedLines = baseDocument.lines.map { line -> LyricLine in
+            var line = line
+            line.timedSpans = nil
+            line.performerID = nil
+            return line
+        }
+        for payload in orderedPayload {
+            updatedLines[payload.lineIndex].timedSpans = payload.spans
+            updatedLines[payload.lineIndex].performerID = payload.performerID
+        }
+        let updatedDocument = baseDocument.replacingLines(updatedLines, timingVersionID: sourceTiming.id)
+        guard LyricsTimingCompatibility.hasOnlyCompatibleSpans(in: updatedDocument),
+              let spansPayload = DocumentTimingPayload.encode(updatedLines) else {
+            throw LyricsEditingRepositoryError.invalidTimeline("逐字时间与原文或行时间不兼容")
+        }
+
+        let record = DatabaseLyricsTimingVersionRecord(
+            id: UUID(),
+            lyricsVersionID: sourceVersion.id,
+            source: DatabaseSourceIdentifier.identifier(for: .manualEdit),
+            granularity: sourceTiming.granularity,
+            sourceContentHash: sourceHash,
+            spansPayload: spansPayload,
+            createdAt: Date()
+        )
+        try withTransaction { try insertTimingVersion(record) }
+        return record
+    }
+
     public func saveManualEdit(_ request: LyricsEditSaveRequest) throws -> LyricsEditSaveResult {
         try ensurePrepared()
         guard request.document.identity == request.identity else {
@@ -1969,11 +2058,17 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         guard translation.lines.count == targetDocument.lines.count else {
             throw LyricsEditingRepositoryError.invalidTranslation("翻译行数与歌词不一致")
         }
+        guard translation.lines.contains(where: {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) else {
+            throw LyricsEditingRepositoryError.invalidTranslation("至少保留一行译文")
+        }
         for index in targetDocument.lines.indices {
             let originalBlank = targetDocument.lines[index].originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let translationText = translation.lines[index]
             let translationBlank = translationText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            guard originalBlank == translationBlank,
+            let sparseManualRow = !originalBlank && translationText.isEmpty
+            guard originalBlank == translationBlank || sparseManualRow,
                   (!originalBlank || translationText.isEmpty),
                   !translationText.contains("\n"), !translationText.contains("\r") else {
                 throw LyricsEditingRepositoryError.invalidTranslation("第 \(index + 1) 行为空白或包含换行")
@@ -2650,25 +2745,37 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         return metadata
     }
 
+    private func allowsSparseTranslationRows(
+        sourceKind: AITranslationSourceKind,
+        isMachineGenerated: Bool,
+        isManuallyEdited: Bool
+    ) -> Bool {
+        (sourceKind == .providerEmbedded && !isMachineGenerated && !isManuallyEdited)
+            || (sourceKind == .manualEdit && !isMachineGenerated && isManuallyEdited)
+    }
+
     private func validateStoredTranslation(
         record: DatabaseTranslationVersionRecord,
         lines: [DatabaseTranslationLineRecord],
         sourceLines: [DatabaseLyricLineRecord]
     ) -> Bool {
-        let allowsSparseProviderText = record.sourceKind == .providerEmbedded &&
-            !record.isMachineGenerated && !record.isManuallyEdited
+        let allowsSparseRows = allowsSparseTranslationRows(
+            sourceKind: record.sourceKind,
+            isMachineGenerated: record.isMachineGenerated,
+            isManuallyEdited: record.isManuallyEdited
+        )
         guard record.status == .complete,
               lines.count == sourceLines.count,
               lines.map(\.lineIndex) == Array(sourceLines.indices),
-              !allowsSparseProviderText || lines.contains(where: {
+              !allowsSparseRows || lines.contains(where: {
                   !$0.translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
               }) else { return false }
         return lines.allSatisfy { translation in
             let original = sourceLines[translation.lineIndex].originalText
             let sourceBlank = original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let translationBlank = translation.translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            let sparseProviderRow = allowsSparseProviderText && !sourceBlank && translation.translatedText.isEmpty
-            return (sourceBlank == translationBlank || sparseProviderRow) &&
+            let sparseRow = allowsSparseRows && !sourceBlank && translation.translatedText.isEmpty
+            return (sourceBlank == translationBlank || sparseRow) &&
                 (!sourceBlank || translation.translatedText.isEmpty) &&
                 !translation.translatedText.contains("\n") &&
                 !translation.translatedText.contains("\r")

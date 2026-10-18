@@ -29,6 +29,8 @@ struct AITranslationContract {
                 let prompt = try AITranslationPromptBuilder().build(context: context, configuration: config)
                 let payload = try JSONSerialization.jsonObject(with: Data(prompt.user.utf8)) as! [String: Any]
                 precondition(payload["sourceLanguage"] as? String == language)
+                precondition(prompt.system.contains("Treat this as an independent song request"),
+                    "reused provider conversations must not carry lyric content across songs")
                 precondition(!prompt.system.contains("especially in Japanese"))
                 hashes.insert(prompt.promptHash)
             }

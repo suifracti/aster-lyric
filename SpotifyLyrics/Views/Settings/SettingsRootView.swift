@@ -713,22 +713,38 @@ struct TranslationProviderControls: View {
          TranslationEngineID.deepSeekAPI.rawValue].contains(provider)
     }
 
-    private var reasoningOptions: [String] {
-        let native: [String]
-        if let advertised = settings.aiCachedModels.first(where: { $0.id == settings.aiTranslationConfiguration.model })?.reasoningEfforts {
-            native = advertised
+    private var advertisedReasoningOptions: [String]? {
+        let descriptor = settings.aiCachedModels.first(where: {
+            $0.id == settings.aiTranslationConfiguration.model
+        })
+        let values: [String]?
+        if let cached = descriptor?.reasoningEfforts {
+            values = cached
+        } else if provider == TranslationEngineID.grokBuild.rawValue {
+            // Older model directories contain IDs only; the local Grok cache
+            // carries the provider's per-model capability fields.
+            values = GrokBuildTranslationService.cachedReasoningEfforts(
+                for: settings.aiTranslationConfiguration.model)
         } else {
-            switch TranslationEngineID(rawValue: provider) {
-            case .codexChatGPT: native = ["low", "medium", "high", "xhigh", "max"]
-            case .grokBuild: native = ["low", "high"]
-            case .geminiCLI: native = ["minimal", "low", "medium", "high"]
-            case .antigravityCLI: native = ["low", "medium", "high", "xhigh", "max"]
-            case .deepSeekAPI: native = ["none", "low", "high", "max"]
-            default: native = []
-            }
+            values = nil
         }
-        let current = TranslationReasoningPolicy.value(settings.aiTranslationConfiguration)
-        return native + (current.isEmpty || native.contains(current) ? [] : [current])
+        guard let values else { return nil }
+        var seen = Set<String>()
+        return values.filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+
+    private var reasoningSelectionLabel: String {
+        let value = reasoningBinding.wrappedValue
+        guard !value.isEmpty else { return "待选择" }
+        if let custom = customReasoningOverride, custom.value == value { return custom.label }
+        if advertisedReasoningOptions?.contains(value) == true { return reasoningLabel(value) }
+        let status: String
+        switch advertisedReasoningOptions {
+        case nil: status = "能力未核实"
+        case .some(let values) where values.isEmpty: status = "模型未公布此能力"
+        default: status = "当前模型未支持"
+        }
+        return "已保存 · \(reasoningLabel(value))（\(status)）"
     }
 
     private func reasoningLabel(_ value: String) -> String {
@@ -767,18 +783,31 @@ struct TranslationProviderControls: View {
                     }
                 }
                 if supportsReasoningControl {
-                    Picker("思考强度", selection: reasoningBinding) {
-                        Text("自动 · 服务默认").tag("")
-                        if let custom = customReasoningOverride {
-                            Text(custom.label).tag(custom.value)
+                    Menu {
+                        ForEach(advertisedReasoningOptions ?? [], id: \.self) { effort in
+                            Button(reasoningLabel(effort)) {
+                                reasoningBinding.wrappedValue = effort
+                            }
                         }
-                        ForEach(reasoningOptions, id: \.self) { effort in
-                            Text(reasoningLabel(effort)).tag(effort)
+                    } label: {
+                        HStack {
+                            Text("思考强度")
+                            Spacer()
+                            Text(reasoningSelectionLabel)
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
                         }
                     }
+                    .disabled((advertisedReasoningOptions ?? []).isEmpty)
                     .accessibilityIdentifier("ai.reasoningEffort")
-                    Text("翻译与 AI 读音共用此设置；各服务分别记住，具体支持以所选模型为准。")
+                    Text("选项只来自当前模型明确公布的推理强度。当前没有已验证的选项时，请先刷新模型目录或检查此服务的能力说明。")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+                if [TranslationEngineID.codexChatGPT.rawValue, TranslationEngineID.grokBuild.rawValue,
+                    TranslationEngineID.geminiCLI.rawValue, TranslationEngineID.antigravityCLI.rawValue].contains(provider) {
+                    ProviderConversationControls(provider: provider)
                 }
                 if provider == TranslationEngineID.geminiCLI.rawValue {
                     Text("Gemini CLI 暂无可读取的模型目录，请填写此连接支持的 Gemini 模型 ID。切换服务会保留各自配置。")
@@ -806,6 +835,67 @@ struct TranslationProviderControls: View {
             }
         }
         .onAppear { _ = settings.translationModelSettings }
+    }
+}
+
+private struct ProviderConversationControls: View {
+    private let provider: String
+    @AppStorage private var reuseConversation: Bool
+    @AppStorage private var showConversation: Bool
+    @State private var conversationNotice = ""
+
+    init(provider: String) {
+        self.provider = provider
+        _reuseConversation = AppStorage(wrappedValue: true,
+            "ai.conversationReuse.v1." + provider, store: .lyricsQ)
+        _showConversation = AppStorage(wrappedValue: true,
+            "ai.conversationVisible.v1." + provider, store: .lyricsQ)
+    }
+
+    private var canControlVisibility: Bool { provider == TranslationEngineID.codexChatGPT.rawValue }
+    private var providerName: String {
+        switch TranslationEngineID(rawValue: provider) {
+        case .codexChatGPT: return "Codex"
+        case .grokBuild: return "Grok CLI"
+        case .geminiCLI: return "Gemini CLI"
+        case .antigravityCLI: return "Antigravity CLI"
+        default: return "此服务"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("复用同一对话", isOn: $reuseConversation)
+            if canControlVisibility {
+                Toggle("在服务中显示对话", isOn: $showConversation)
+            } else {
+                Text("\(providerName) 的会话记录由 CLI 自身管理；应用不提供隐藏或删除服务记录的功能。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 12) {
+                Button("新建对话") {
+                    AIConversationStore.shared.startNew(for: provider)
+                    conversationNotice = "下次翻译会开启新对话；已有服务记录会保留。"
+                }
+                .buttonStyle(.borderless)
+                .help("下一次翻译会开启新对话；已有服务记录会保留。")
+                if canControlVisibility {
+                    Button("查看对话") {
+                        guard let id = AIConversationStore.shared.threadID(for: provider),
+                              let url = URL(string: "codex://threads/\(id)") else {
+                            conversationNotice = "尚未建立 Codex 对话。"
+                            return
+                        }
+                        _ = NSWorkspace.shared.open(url)
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+            if !conversationNotice.isEmpty {
+                Text(conversationNotice).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .font(.callout)
     }
 }
 

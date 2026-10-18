@@ -2614,7 +2614,17 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
     }
 }
 
+/// Keep the environment callback stable across playback ticks. Updating its
+/// target must not invalidate every ruby token in an otherwise unchanged song.
+private final class V3RubyActionRelay {
+    var action: ((String, String) -> Void)?
+    lazy var handler: (String, String) -> Void = { [weak self] surface, reading in
+        self?.action?(surface, reading)
+    }
+}
+
 private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
+    @State private var rubyActionRelay = V3RubyActionRelay()
     @Environment(\.lyricTextAlignment) private var textAlignment
     @EnvironmentObject private var settings: AppSettingsStore
 
@@ -2654,10 +2664,15 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             && lhs.availableWidth == rhs.availableWidth
             && lhs.compact == rhs.compact
             && lhs.preferences == rhs.preferences
-            && lhs.presentationClock == rhs.presentationClock
+            && (!lhs.needsWordClock || lhs.presentationClock == rhs.presentationClock)
             && lhs.documentRevision == rhs.documentRevision
             && lhs.verticalPadding == rhs.verticalPadding
             && lhs.isPreview == rhs.isPreview
+    }
+
+    private var needsWordClock: Bool {
+        guard synchronized, let currentIndex, lines.indices.contains(currentIndex) else { return false }
+        return lines[currentIndex].timedSpans?.isEmpty == false
     }
 
     private var rowSpacing: CGFloat {
@@ -2670,6 +2685,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     }
 
     var body: some View {
+        let _ = rubyActionRelay.action = onRuby
         VStack(alignment: textAlignment.lyricHorizontalAlignment, spacing: rowSpacing) {
             ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
                 row(for: line, index: index)
@@ -2704,7 +2720,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
         )
         .equatable()
         .environmentObject(settings)
-        .environment(\.rubyCorrectionAction, onRuby)
+        .environment(\.rubyCorrectionAction, onRuby == nil ? nil : rubyActionRelay.handler)
         .contextMenu {
             Button("复制这一行", systemImage: "doc.on.doc") {
                 onCopyLine(line.originalText)
@@ -3158,6 +3174,8 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
             && lhs.language == rhs.language
             && lhs.trackStableKey == rhs.trackStableKey
             && lhs.artistDisplay == rhs.artistDisplay
+            && (!lhs.isActive || lhs.line.timedSpans?.isEmpty != false
+                || lhs.presentationClock == rhs.presentationClock)
     }
 
     private var clampedDistance: Int {

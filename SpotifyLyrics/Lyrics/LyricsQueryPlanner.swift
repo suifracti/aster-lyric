@@ -313,6 +313,31 @@ public enum LyricsQueryPlanner {
             )
         }
 
+        // Spotify's exact-track entity can expose the canonical localized
+        // title and every credited artist while Desktop shows one localized
+        // artist spelling. Query a small title/artist cross-product so sources
+        // such as NetEase can find the same recording without title-specific
+        // lookup rules. Keep these queries artist-scoped and bounded.
+        let officialSpotifyArtists = metadata.aliases
+            .filter { $0.field == .artist && $0.source == .spotifyMetadata && $0.isOfficial }
+            .prefix(3)
+        let officialSpotifyTitles = metadata.aliases
+            .filter { $0.field == .title && $0.source == .spotifyMetadata && $0.isOfficial }
+        for artistAlias in officialSpotifyArtists {
+            add(.primaryArtist, kind: .exactTitlePrimaryArtist, title: originalTitle,
+                artist: artistAlias.value, aliasIDs: [artistAlias.id])
+        }
+        var officialAliasPairs = 0
+        for titleAlias in officialSpotifyTitles {
+            for artistAlias in officialSpotifyArtists {
+                guard officialAliasPairs < 4 else { break }
+                officialAliasPairs += 1
+                add(.knownAliases, kind: .confirmedAlias, title: titleAlias.value,
+                    artist: artistAlias.value, aliasIDs: [titleAlias.id, artistAlias.id])
+            }
+            if officialAliasPairs >= 4 { break }
+        }
+
         // 6: only at the end may a version-stripped title be searched without
         // an artist. This is deliberately marked loose so it cannot auto
         // adopt a same-title Live/remix/cover result.

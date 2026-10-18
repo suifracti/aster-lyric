@@ -706,6 +706,10 @@ private struct RubyTokenBlock: View, Equatable {
         lhs.token == rhs.token
             && lhs.timedToken == rhs.timedToken
             && lhs.currentTime == rhs.currentTime
+            && lhs.baseFont == rhs.baseFont
+            && lhs.rubyFont == rhs.rubyFont
+            && lhs.baseNSFont == rhs.baseNSFont
+            && lhs.rubyNSFont == rhs.rubyNSFont
             && lhs.baseColor == rhs.baseColor
             && lhs.rubyColor == rhs.rubyColor
             && lhs.rubySpacing == rhs.rubySpacing

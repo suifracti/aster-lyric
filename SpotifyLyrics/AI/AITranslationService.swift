@@ -375,7 +375,7 @@ public struct CodexAppServerTranslationService: TranslationEngine, Sendable {
 
     public init(executableCandidates: [String] = Self.executablePaths) {
         self.executableCandidates = executableCandidates
-        self.transport = CodexAppServerTransport()
+        self.transport = CodexAppServerTransport(conversationStore: .shared)
     }
 
     // Internal dependency seam: production registry never supplies a transport.
@@ -487,6 +487,66 @@ struct CodexTranslationResult: Sendable {
     }
 }
 
+private actor AIConversationQueue {
+    private var busy = Set<String>()
+    private var waiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+    func acquire(_ provider: String) async {
+        if busy.contains(provider) {
+            await withCheckedContinuation { waiters[provider, default: []].append($0) }
+        } else { busy.insert(provider) }
+    }
+    func release(_ provider: String) {
+        if var queued = waiters[provider], !queued.isEmpty {
+            let next = queued.removeFirst()
+            waiters[provider] = queued
+            next.resume()
+        } else { busy.remove(provider); waiters.removeValue(forKey: provider) }
+    }
+}
+
+/// Only conversation IDs and display preferences; provider credentials stay in their CLIs.
+final class AIConversationStore: @unchecked Sendable {
+    static let shared = AIConversationStore(defaults: .lyricsQ)
+    private let defaults: UserDefaults
+    private let sessionLock = NSRecursiveLock()
+    private let queue = AIConversationQueue()
+    init(defaults: UserDefaults) { self.defaults = defaults }
+    func reuseEnabled(for provider: String) -> Bool {
+        defaults.object(forKey: "ai.conversationReuse.v1." + provider) as? Bool ?? true
+    }
+    func visible(for provider: String) -> Bool {
+        defaults.object(forKey: "ai.conversationVisible.v1." + provider) as? Bool ?? true
+    }
+    func threadID(for provider: String) -> String? {
+        defaults.string(forKey: "ai.conversationThread.v1." + provider)
+    }
+    func remember(_ id: String, for provider: String) {
+        defaults.set(id, forKey: "ai.conversationThread.v1." + provider)
+        setArchived(false, for: provider)
+    }
+    func isArchived(for provider: String) -> Bool {
+        defaults.bool(forKey: "ai.conversationArchived.v1." + provider)
+    }
+    func setArchived(_ archived: Bool, for provider: String) {
+        defaults.set(archived, forKey: "ai.conversationArchived.v1." + provider)
+    }
+    func startNew(for provider: String) {
+        defaults.removeObject(forKey: "ai.conversationThread.v1." + provider)
+        defaults.removeObject(forKey: "ai.conversationArchived.v1." + provider)
+    }
+    func withProviderSession<T: Sendable>(provider: String,
+        operation: @Sendable () async throws -> T) async throws -> T {
+        await queue.acquire(provider)
+        defer { Task { await queue.release(provider) } }
+        try Task.checkCancellation()
+        return try await operation()
+    }
+    func serialized<T>(_ work: () throws -> T) rethrows -> T {
+        sessionLock.lock(); defer { sessionLock.unlock() }
+        return try work()
+    }
+}
+
 protocol CodexTranslationTransport: Sendable {
     func run(executable: String, prompt: AITranslationPrompt, model: String, reasoningEffort: String,
              timeout: TimeInterval, outputSchema: [String: Any]) async throws -> CodexTranslationResult
@@ -496,6 +556,7 @@ protocol CodexTranslationTransport: Sendable {
 /// CLI manages its normal configuration and existing authentication. Empty cwd,
 /// read-only tool policy and event rejection are not proof of zero tool capability.
 struct CodexAppServerTransport: CodexTranslationTransport {
+    var conversationStore: AIConversationStore? = nil
     var diagnosticSink: CodexRPCDiagnostic.Sink = { try CodexRPCDiagnostic.log($0) }
     func run(executable: String, prompt: AITranslationPrompt, model: String, reasoningEffort: String,
              timeout: TimeInterval, outputSchema: [String: Any]) async throws -> CodexTranslationResult {
@@ -504,17 +565,22 @@ struct CodexAppServerTransport: CodexTranslationTransport {
         return try await withTaskCancellationHandler(operation: {
             try Task.checkCancellation()
             return try await Task.detached(priority: .userInitiated) {
-                let job = FileManager.default.temporaryDirectory.appendingPathComponent("lyrics-translation-" + UUID().uuidString)
-                try FileManager.default.createDirectory(at: job, withIntermediateDirectories: false,
-                    attributes: [.posixPermissions: 0o700])
-                defer { try? FileManager.default.removeItem(at: job) }
-                let client = try CodexAppServerClient(executable: executable, cwd: job, timeout: timeout,
-                    diagnosticSink: diagnosticSink, attemptID: attemptID)
-                owner.install(client)
-                defer { client.stop() }
-                try client.initialize()
-                try client.ensureAuthenticated()
-                return try client.translate(prompt: prompt, model: model, reasoningEffort: reasoningEffort, outputSchema: outputSchema)
+                let work = { () throws -> CodexTranslationResult in
+                    try owner.checkCancellation()
+                    let job = FileManager.default.temporaryDirectory.appendingPathComponent("lyrics-translation-" + UUID().uuidString)
+                    try FileManager.default.createDirectory(at: job, withIntermediateDirectories: false,
+                        attributes: [.posixPermissions: 0o700])
+                    defer { try? FileManager.default.removeItem(at: job) }
+                    let client = try CodexAppServerClient(executable: executable, cwd: job, timeout: timeout,
+                        diagnosticSink: diagnosticSink, attemptID: attemptID, conversationStore: conversationStore)
+                    owner.install(client)
+                    defer { client.stop() }
+                    try client.initialize()
+                    try client.ensureAuthenticated()
+                    return try client.translate(prompt: prompt, model: model, reasoningEffort: reasoningEffort, outputSchema: outputSchema)
+                }
+                if let conversationStore { return try conversationStore.serialized(work) }
+                return try work()
             }.value
         }, onCancel: { owner.cancel() })
     }
@@ -548,6 +614,10 @@ private final class CodexProcessOwner: @unchecked Sendable {
         lock.lock(); client = value; let shouldCancel = cancelled; lock.unlock()
         if shouldCancel { value.abort(.cancelled) }
     }
+    func checkCancellation() throws {
+        lock.lock(); defer { lock.unlock() }
+        if cancelled { throw AITranslationError.cancelled }
+    }
     func cancel() {
         lock.lock(); cancelled = true; let value = client; lock.unlock()
         value?.abort(.cancelled)
@@ -571,6 +641,7 @@ final class CodexAppServerClient: @unchecked Sendable {
     private let diagnosticLock = NSLock()
     private let traceID = UUID()
     private let attemptID: UUID?
+    private let conversationStore: AIConversationStore?
     private let startedAt = ProcessInfo.processInfo.systemUptime
     private var phase = "launch"
     private var activeMethod: String?
@@ -580,7 +651,8 @@ final class CodexAppServerClient: @unchecked Sendable {
 
     init(executable: String, cwd: URL, timeout: TimeInterval,
          diagnosticSink: @escaping CodexRPCDiagnostic.Sink = { try CodexRPCDiagnostic.log($0) },
-         attemptID: UUID? = nil) throws {
+         attemptID: UUID? = nil, conversationStore: AIConversationStore? = nil) throws {
+        self.conversationStore = conversationStore
         self.diagnosticSink = diagnosticSink
         self.attemptID = attemptID
         self.cwd = cwd
@@ -781,9 +853,13 @@ final class CodexAppServerClient: @unchecked Sendable {
         }
         var recoverable = false
 #if DEBUG
-        recoverable = DebugAcceptanceDataIsolation.isRequested && ProcessInfo.processInfo.environment["SPOTIFYLYRICS_ACCEPTANCE_TRANSLATION_GRANT"] == "6119898076"
+        // Reading turns share the conversation but have no translation ledger attempt.
+        recoverable = attemptID != nil && DebugAcceptanceDataIsolation.isRequested && ProcessInfo.processInfo.environment["SPOTIFYLYRICS_ACCEPTANCE_TRANSLATION_GRANT"] == "6119898076"
 #endif
-        var params: [String: Any] = ["cwd": cwd.path, "ephemeral": !recoverable,
+        let provider = TranslationEngineID.codexChatGPT.rawValue
+        let reuseConversation = conversationStore?.reuseEnabled(for: provider) ?? false
+        let persistent = reuseConversation || (conversationStore?.visible(for: provider) ?? false) || recoverable
+        var params: [String: Any] = ["cwd": cwd.path, "ephemeral": !persistent,
             "serviceName": "spotifylyrics", "approvalPolicy": "never", "sandbox": "read-only",
             // Pinned 0.160.0 exposes failed built-in calls only in raw events.
             // This observes calls and stops the owned process; it is not an
@@ -801,13 +877,39 @@ final class CodexAppServerClient: @unchecked Sendable {
             config["model_reasoning_effort"] = requestedEffort
             params["config"] = config
         }
-        let result = try request(method: "thread/start", params: params)
+        let result: [String: Any]
+        if reuseConversation, let threadID = conversationStore?.threadID(for: provider) {
+            // Archived conversations remain resumable; unarchive before loading.
+            if conversationStore?.isArchived(for: provider) == true {
+                _ = try request(method: "thread/unarchive", params: ["threadId": threadID])
+                conversationStore?.setArchived(false, for: provider)
+            }
+            let resumeKeys: Set<String> = ["cwd", "model", "approvalPolicy", "sandbox", "config", "runtimeWorkspaceRoots"]
+            var resume = params.filter { resumeKeys.contains($0.key) }
+            resume["threadId"] = threadID
+            resume["excludeTurns"] = true
+            result = try request(method: "thread/resume", params: resume)
+        } else {
+            result = try request(method: "thread/start", params: params)
+        }
         guard let thread = result["thread"] as? [String: Any], let threadID = thread["id"] as? String,
               let actualModel = result["model"] as? String, !actualModel.isEmpty else {
             throw AITranslationError.codexResponseInvalid("未返回会话或实际模型 ID")
         }
         guard model.isEmpty || actualModel == model else {
             throw AITranslationError.codexUnavailable("所选模型与实际会话模型不一致；未发送翻译请求")
+        }
+        if persistent {
+            if reuseConversation { conversationStore?.remember(threadID, for: provider) }
+            _ = try? request(method: "thread/name/set", params: ["threadId": threadID, "name": "Lyric Island · 翻译与读音"])
+        }
+        defer {
+            if persistent, conversationStore?.visible(for: provider) == false {
+                if (try? request(method: "thread/archive", params: ["threadId": threadID])) != nil,
+                   reuseConversation {
+                    conversationStore?.setArchived(true, for: provider)
+                }
+            }
         }
         let selectedEffort = result["reasoningEffort"] as? String
         guard requestedEffort.isEmpty || selectedEffort == requestedEffort else {
@@ -991,7 +1093,13 @@ public enum TranslationEngineRegistry {
             return AppleSystemTranslationEngine()
         case .codexChatGPT:
             return CodexAppServerTranslationService()
-        case .grokBuild, .geminiCLI, .antigravityCLI, .deepSeekAPI:
+        case .grokBuild:
+            return GrokBuildTranslationService()
+        case .geminiCLI:
+            return GeminiCLITranslationService()
+        case .antigravityCLI:
+            return AntigravityCLITranslationService()
+        case .deepSeekAPI:
             let catalog=TranslationEngineCatalog.metadata(for:stableID)
             let metadata=TranslationEngineMetadata(
                 stableID:stableID,

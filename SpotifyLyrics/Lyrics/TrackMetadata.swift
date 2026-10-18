@@ -173,12 +173,15 @@ public actor SpotifyTrackArtistResolver {
     public func aliases(for track: Track) async -> [TrackAlias] {
         guard let result = await metadata(for: track), track.duration.isFinite,
               track.duration > 0, abs(result.duration - track.duration) <= 2 else { return [] }
-        let values: [(TrackAliasField, String)] = [(.title, result.title), (.artist, result.names.joined(separator: ", "))]
-        return values.map { field, value in
-            TrackAlias(id: "spotify-entity-" + field.rawValue, field: field, kind: .localizedTitle,
-                value: value, script: ScriptDetector.detect(value), source: .spotifyMetadata,
+        let title = TrackAlias(id: "spotify-entity-title", field: .title, kind: .localizedTitle,
+            value: result.title, script: ScriptDetector.detect(result.title), source: .spotifyMetadata,
+            confidence: 1, isOfficial: true)
+        let artists = result.names.enumerated().map { index, name in
+            TrackAlias(id: "spotify-entity-artist-\(index)", field: .artist, kind: .localizedTitle,
+                value: name, script: ScriptDetector.detect(name), source: .spotifyMetadata,
                 confidence: 1, isOfficial: true)
         }
+        return [title] + artists
     }
 
     private func metadata(for track: Track) async -> TrackArtists? {

@@ -28,6 +28,13 @@ struct ProviderTranslationOutput: Sendable {
     let model: String
     let tokenUsage: AITranslationTokenUsage?
     let reasoningSetting: String
+    let conversationID: String?
+
+    init(lines: [AITranslationLine], model: String, tokenUsage: AITranslationTokenUsage?,
+         reasoningSetting: String, conversationID: String? = nil) {
+        self.lines = lines; self.model = model; self.tokenUsage = tokenUsage
+        self.reasoningSetting = reasoningSetting; self.conversationID = conversationID
+    }
 }
 
 struct ProviderCLIResult: Sendable {
@@ -200,6 +207,24 @@ private func withProviderJob<T>(_ operation: (URL) async throws -> T) async thro
     return try await operation(directory)
 }
 
+private func providerConversationDirectory(_ provider: String) throws -> URL {
+    let directory = URL(fileURLWithPath: TranslationCLIHost.homeDirectory, isDirectory: true)
+        .appendingPathComponent("Library/Application Support/SpotifyLyrics/AIConversations", isDirectory: true)
+        .appendingPathComponent(provider, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700])
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+    return directory
+}
+
+private func validatedProviderConversationID(_ value: String) -> String? {
+    guard !value.isEmpty, value.utf8.count <= 256,
+          value.rangeOfCharacter(from: .whitespacesAndNewlines.union(.controlCharacters)) == nil else {
+        return nil
+    }
+    return value
+}
+
 private func writePrivate(_ text: String, to url: URL) throws {
     try Data(text.utf8).write(to: url, options: .atomic)
     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
@@ -273,15 +298,25 @@ public struct GrokBuildTranslationService: TranslationEngine, Sendable {
     static let executablePaths = [TranslationCLIHost.homeDirectory + "/.grok/bin/grok"] + TranslationCLIHost.searchDirectories.map { $0 + "/grok" }
     private let candidates: [String]
     private let executor: any ProviderCLIExecuting
+    private let conversationStore: AIConversationStore?
 
     public init(executableCandidates: [String]? = nil) {
         candidates = executableCandidates ?? Self.executablePaths
         executor = FoundationProviderCLIExecutor()
+        conversationStore = .shared
     }
 
-    init(executableCandidates: [String], executor: any ProviderCLIExecuting) {
+    init(executableCandidates: [String], executor: any ProviderCLIExecuting,
+         conversationStore: AIConversationStore? = nil) {
         candidates = executableCandidates
         self.executor = executor
+        self.conversationStore = conversationStore
+    }
+
+    init(executableCandidates: [String], conversationStore: AIConversationStore?) {
+        candidates = executableCandidates
+        executor = FoundationProviderCLIExecutor()
+        self.conversationStore = conversationStore
     }
 
     func resolveExecutable() -> String? { candidates.first { FileManager.default.isExecutableFile(atPath: $0) } }
@@ -298,11 +333,36 @@ public struct GrokBuildTranslationService: TranslationEngine, Sendable {
             let result=try await executor.execute(executable:executable, arguments:["--no-subagents","models"],
                 cwd:job, timeout:timeout, stdin:nil, environmentOverrides:[:])
             guard result.exitCode == 0 else { throw AITranslationError.engineUnavailable("Grok 模型目录读取失败（退出码 \(result.exitCode)）；未发翻译请求") }
-            return try Self.parseModelDirectory(result.stdout)
+            let cacheURL = URL(fileURLWithPath: TranslationCLIHost.homeDirectory)
+                .appendingPathComponent(".grok/models_cache.json")
+            let cache = try? Data(contentsOf: cacheURL)
+            return try Self.parseModelDirectory(result.stdout, modelCacheData: cache)
         }
     }
 
-    static func parseModelDirectory(_ data:Data) throws -> [TranslationModelDescriptor] {
+    private struct ModelCache: Decodable {
+        struct Model: Decodable {
+            struct Info: Decodable {
+                struct Effort: Decodable { let value: String? }
+                let supports_reasoning_effort: Bool?
+                let reasoning_efforts: [Effort]?
+            }
+            let info: Info?
+        }
+        let models: [String: Model]
+
+        func efforts(for modelID: String) -> [String]? {
+            guard let info = models[modelID]?.info else { return nil }
+            if info.supports_reasoning_effort == false { return [] }
+            guard info.supports_reasoning_effort == true, let advertised = info.reasoning_efforts else { return nil }
+            let values = advertised.compactMap(\.value)
+            guard values.allSatisfy({ $0.range(of: #"^[a-z][a-z0-9_-]*$"#, options: .regularExpression) != nil }),
+                  Set(values).count == values.count else { return nil }
+            return values
+        }
+    }
+
+    static func parseModelDirectory(_ data:Data, modelCacheData: Data? = nil) throws -> [TranslationModelDescriptor] {
         guard let text=String(data:data,encoding:.utf8) else { throw AITranslationError.invalidResponse("Grok 模型目录编码无效") }
         if text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { throw AITranslationError.invalidResponse("Grok 未返回模型目录；不能判定为没有模型") }
         // Fixed CLI's `models` command emits a human-readable model table.
@@ -311,14 +371,27 @@ public struct GrokBuildTranslationService: TranslationEngine, Sendable {
         let matches = try NSRegularExpression(pattern:pattern).matches(in:text,range:NSRange(text.startIndex...,in:text))
         let ids = Set(matches.compactMap { Range($0.range,in:text).map { String(text[$0]) } }).sorted()
         guard !ids.isEmpty else { throw AITranslationError.invalidResponse("无法解析 Grok 模型目录；不能判定为没有模型") }
-        return ids.map { .init(id:$0,source:"grok-models") }
+        let cache = modelCacheData.flatMap { try? JSONDecoder().decode(ModelCache.self, from: $0) }
+        return ids.map { id in
+            .init(id:id, source:"grok-models", reasoningEfforts:cache?.efforts(for: id))
+        }
     }
 
-    static func arguments(configuration: AITranslationConfiguration, promptFile: String, cwd: String) -> [String] {
+    static func cachedReasoningEfforts(for modelID: String) -> [String]? {
+        let url = URL(fileURLWithPath: TranslationCLIHost.homeDirectory)
+            .appendingPathComponent(".grok/models_cache.json")
+        guard let data = try? Data(contentsOf: url),
+              let cache = try? JSONDecoder().decode(ModelCache.self, from: data) else { return nil }
+        return cache.efforts(for: modelID)
+    }
+
+    static func arguments(configuration: AITranslationConfiguration, promptFile: String, cwd: String,
+                          sessionID: String? = nil, resume: Bool = false) -> [String] {
         var args = ["--prompt-file", promptFile, "--model", configuration.model, "--output-format", "json",
                     "--json-schema", "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"lines\"],\"properties\":{\"lines\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"lineID\",\"translation\"],\"properties\":{\"lineID\":{\"type\":\"string\"},\"translation\":{\"type\":\"string\"}}}}}}",
                     "--cwd", cwd, "--permission-mode", "plan", "--no-subagents", "--disable-web-search"]
         if !configuration.grokReasoningEffort.isEmpty { args += ["--reasoning-effort", configuration.grokReasoningEffort] }
+        if let sessionID { args += [resume ? "--resume" : "--session-id", sessionID] }
         return args
     }
 
@@ -327,16 +400,47 @@ public struct GrokBuildTranslationService: TranslationEngine, Sendable {
         guard configuration.isConfigured, let executable = resolveExecutable() else {
             throw AITranslationError.engineUnavailable("Grok Build CLI 未安装或未填写模型")
         }
+        if !configuration.grokReasoningEffort.isEmpty,
+           let supported = Self.cachedReasoningEfforts(for: configuration.model),
+           !supported.contains(configuration.grokReasoningEffort) {
+            throw AITranslationError.invalidResponse("所选 Grok 模型未公布此推理强度；请刷新模型目录后选择受支持的值")
+        }
         let prompt = try AITranslationPromptBuilder().build(context: context, configuration: configuration)
+        let store = conversationStore
+        let operation: @Sendable () async throws -> AITranslationDraft = {
+            try await self.translate(prompt: prompt, executable: executable, context: context,
+                sourceContentHash: sourceContentHash, configuration: configuration, store: store)
+        }
+        if let store {
+            return try await store.withProviderSession(provider: TranslationEngineID.grokBuild.rawValue, operation: operation)
+        }
+        return try await operation()
+    }
+
+    private func translate(prompt: AITranslationPrompt, executable: String, context: AITranslationContext,
+                           sourceContentHash: String, configuration: AITranslationConfiguration,
+                           store: AIConversationStore?) async throws -> AITranslationDraft {
+        let provider = TranslationEngineID.grokBuild.rawValue
+        let reuse = store?.reuseEnabled(for: provider) ?? false
+        let previousID = reuse ? store?.threadID(for: provider) : nil
+        let sessionID = previousID ?? UUID().uuidString.lowercased()
         return try await withProviderJob { job in
+            let directory: URL
+            if reuse {
+                directory = try providerConversationDirectory(provider)
+            } else {
+                directory = job
+            }
             let promptFile = job.appendingPathComponent("prompt.txt")
             try writePrivate(prompt.system + "\n\n" + prompt.user, to: promptFile)
             let result = try await executor.execute(executable: executable,
-                arguments: Self.arguments(configuration: configuration, promptFile: promptFile.path, cwd: job.path),
-                cwd: job, timeout: configuration.timeout, stdin: nil, environmentOverrides: [:])
+                arguments: Self.arguments(configuration: configuration, promptFile: promptFile.path,
+                    cwd: directory.path, sessionID: sessionID, resume: previousID != nil),
+                cwd: directory, timeout: configuration.timeout, stdin: nil, environmentOverrides: [:])
             guard result.exitCode == 0 else { throw AITranslationError.engineUnavailable("Grok CLI 失败（退出码 \(result.exitCode)；\(result.failureSummary ?? "phase=unclassified；无可分类诊断")），未创建候选") }
             let output = try GrokBuildResponseParser.parse(result.stdout, expectedLines: context.lines,
                 requestedModel: configuration.model, reasoningEffort: configuration.grokReasoningEffort)
+            if reuse { store?.remember(sessionID, for: provider) }
             return Self.draft(output, context: context, sourceContentHash: sourceContentHash, configuration: configuration)
         }
     }
@@ -378,6 +482,7 @@ struct GeminiCLIStreamParser {
         let text: String
         let model: String
         let usage: AITranslationTokenUsage?
+        let sessionID: String?
     }
 
     static func completedResponse(_ data: Data) throws -> Completion {
@@ -385,13 +490,18 @@ struct GeminiCLIStreamParser {
         var model = ""
         var response = ""
         var usage: AITranslationTokenUsage?
+        var sessionID: String?
         for rawLine in text.split(whereSeparator: \.isNewline) {
             guard let event = try JSONSerialization.jsonObject(with: Data(rawLine.utf8)) as? [String: Any],
                   let type = event["type"] as? String else {
                 throw AITranslationError.invalidResponse("Gemini stream 含无效 JSONL 事件")
             }
             switch type {
-            case "init": model = (event["model"] as? String) ?? (event["modelId"] as? String) ?? model
+            case "init":
+                model = (event["model"] as? String) ?? (event["modelId"] as? String) ?? model
+                if let value = event["session_id"] as? String {
+                    sessionID = validatedProviderConversationID(value)
+                }
             case "message":
                 if let role = event["role"] as? String, role != "assistant" { continue }
                 if let delta = event["delta"] as? String { response += delta }
@@ -415,7 +525,7 @@ struct GeminiCLIStreamParser {
             }
         }
         guard !model.isEmpty, !response.isEmpty else { throw AITranslationError.invalidResponse("Gemini 未返回实际模型或最终文本") }
-        return Completion(text: response, model: model, usage: usage)
+        return Completion(text: response, model: model, usage: usage, sessionID: sessionID)
     }
 
     private static func parseUsage(_ value: Any?) -> AITranslationTokenUsage? {
@@ -431,15 +541,25 @@ public struct GeminiCLITranslationService: TranslationEngine, Sendable {
     static let executablePaths = TranslationCLIHost.searchDirectories.map { $0 + "/gemini" }
     private let candidates: [String]
     private let executor: any ProviderCLIExecuting
+    private let conversationStore: AIConversationStore?
 
     public init(executableCandidates: [String]? = nil) {
         candidates = executableCandidates ?? Self.executablePaths
         executor = FoundationProviderCLIExecutor()
+        conversationStore = .shared
     }
 
-    init(executableCandidates: [String], executor: any ProviderCLIExecuting) {
+    init(executableCandidates: [String], executor: any ProviderCLIExecuting,
+         conversationStore: AIConversationStore? = nil) {
         candidates = executableCandidates
         self.executor = executor
+        self.conversationStore = conversationStore
+    }
+
+    init(executableCandidates: [String], conversationStore: AIConversationStore?) {
+        candidates = executableCandidates
+        executor = FoundationProviderCLIExecutor()
+        self.conversationStore = conversationStore
     }
 
     func resolveExecutable() -> String? { candidates.first { FileManager.default.isExecutableFile(atPath: $0) } }
@@ -463,9 +583,11 @@ public struct GeminiCLITranslationService: TranslationEngine, Sendable {
         return String(decoding: data, as: UTF8.self)
     }
 
-    static func arguments(alias: String, prompt: String) -> [String] {
-        ["--model", alias, "--output-format", "stream-json", "--prompt", prompt,
-         "--approval-mode", "plan", "--extensions", "none"]
+    static func arguments(alias: String, prompt: String, resumeSessionID: String? = nil) -> [String] {
+        var args = ["--model", alias, "--output-format", "stream-json", "--prompt", prompt,
+            "--approval-mode", "plan", "--extensions", "none"]
+        if let resumeSessionID { args += ["--resume", resumeSessionID] }
+        return args
     }
 
     public func translate(context: AITranslationContext, sourceContentHash: String,
@@ -490,7 +612,7 @@ public struct GeminiCLITranslationService: TranslationEngine, Sendable {
     }
 
     func complete(prompt: AITranslationPrompt, configuration: AITranslationConfiguration) async throws -> Data {
-        Data(try await completeResponse(prompt: prompt, configuration: configuration).text.utf8)
+        Data(try await completeStateless(prompt: prompt, configuration: configuration).text.utf8)
     }
 
     private func completeResponse(prompt: AITranslationPrompt, configuration: AITranslationConfiguration) async throws -> GeminiCLIStreamParser.Completion {
@@ -498,10 +620,68 @@ public struct GeminiCLITranslationService: TranslationEngine, Sendable {
             throw AITranslationError.engineUnavailable("Gemini CLI 未安装或未填写模型")
         }
         try Task.checkCancellation()
+        let store = conversationStore
+        let operation: @Sendable () async throws -> GeminiCLIStreamParser.Completion = {
+            try await self.completeTranslation(prompt: prompt, configuration: configuration,
+                executable: executable, store: store)
+        }
+        if let store {
+            return try await store.withProviderSession(provider: TranslationEngineID.geminiCLI.rawValue, operation: operation)
+        }
+        return try await operation()
+    }
+
+    private func completeTranslation(prompt: AITranslationPrompt, configuration: AITranslationConfiguration,
+                                     executable: String, store: AIConversationStore?) async throws -> GeminiCLIStreamParser.Completion {
+        let provider = TranslationEngineID.geminiCLI.rawValue
+        let reuse = store?.reuseEnabled(for: provider) ?? false
+        let previousID = reuse ? store?.threadID(for: provider) : nil
+        if reuse {
+            let directory = try providerConversationDirectory(provider)
+            return try await runTranslation(prompt: prompt, configuration: configuration, executable: executable,
+                directory: directory, resumeSessionID: previousID, reuseConversation: true, store: store)
+        }
+        return try await withProviderJob { job in
+            try await self.runTranslation(prompt: prompt, configuration: configuration, executable: executable,
+                directory: job, resumeSessionID: nil, reuseConversation: false, store: store)
+        }
+    }
+
+    private func runTranslation(prompt: AITranslationPrompt, configuration: AITranslationConfiguration,
+                                executable: String, directory: URL, resumeSessionID: String?,
+                                reuseConversation: Bool,
+                                store: AIConversationStore?) async throws -> GeminiCLIStreamParser.Completion {
+        let provider = TranslationEngineID.geminiCLI.rawValue
+        let geminiDirectory = directory.appendingPathComponent(".gemini", isDirectory: true)
+        try FileManager.default.createDirectory(at: geminiDirectory, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: geminiDirectory.path)
+        let alias = "spotifylyrics-translation"
+        let settings = try Self.settingsFileContents(model: configuration.model,
+            thinkingLevel: configuration.geminiThinkingLevel, thinkingBudget: configuration.geminiThinkingBudget, alias: alias)
+        try writePrivate(settings, to: geminiDirectory.appendingPathComponent("settings.json"))
+        let result = try await executor.execute(executable: executable,
+            arguments: Self.arguments(alias: alias, prompt: prompt.system + "\n\n" + prompt.user,
+                resumeSessionID: resumeSessionID), cwd: directory,
+            timeout: configuration.timeout, stdin: nil, environmentOverrides: [:])
+        guard result.exitCode == 0 else { throw AITranslationError.engineUnavailable("Gemini CLI 失败（退出码 \(result.exitCode)），未创建候选") }
+        let output = try GeminiCLIStreamParser.completedResponse(result.stdout)
+        guard output.model == configuration.model else { throw AITranslationError.invalidResponse("Gemini 实际模型与设置模型不一致") }
+        if reuseConversation, let sessionID = output.sessionID { store?.remember(sessionID, for: provider) }
+        try Task.checkCancellation()
+        return output
+    }
+
+    private func completeStateless(prompt: AITranslationPrompt, configuration: AITranslationConfiguration) async throws -> GeminiCLIStreamParser.Completion {
+        guard configuration.isConfigured, let executable = resolveExecutable() else {
+            throw AITranslationError.engineUnavailable("Gemini CLI 未安装或未填写模型")
+        }
+        try Task.checkCancellation()
         return try await withProviderJob { job in
             let alias = "spotifylyrics-" + UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
             let geminiDirectory = job.appendingPathComponent(".gemini", isDirectory: true)
-            try FileManager.default.createDirectory(at: geminiDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try FileManager.default.createDirectory(at: geminiDirectory, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
             let settings = try Self.settingsFileContents(model: configuration.model,
                 thinkingLevel: configuration.geminiThinkingLevel, thinkingBudget: configuration.geminiThinkingBudget, alias: alias)
             try writePrivate(settings, to: geminiDirectory.appendingPathComponent("settings.json"))
@@ -538,6 +718,16 @@ struct AntigravityCLIStreamParser {
     private static func stop(category: String, event: String, step: String = "n/a", state: String = "n/a") -> AITranslationError {
         .engineUnavailable("Antigravity 客户端工具/协议检查停止：event=\(event); step=\(step); state=\(state); category=\(category); phase=stream-monitor。未自动重试或切换提供方")
     }
+    private static func captureConversationID(_ value: Any?, current: inout String?) throws {
+        guard let raw = value as? String else { return }
+        guard let id = validatedProviderConversationID(raw) else {
+            throw AITranslationError.invalidResponse("Antigravity conversation_id 格式无效")
+        }
+        if let current, current != id {
+            throw AITranslationError.invalidResponse("Antigravity 对话 ID 在同一轮中不一致")
+        }
+        current = id
+    }
     static func validateEvent(_ data:Data) throws {
         guard let event=try JSONSerialization.jsonObject(with:data) as? [String:Any],let kind=event["event"] as? String else {
             throw AITranslationError.invalidResponse("Antigravity stream 含无效事件；phase=stream-monitor; category=invalid-event")
@@ -572,6 +762,7 @@ struct AntigravityCLIStreamParser {
         var model = ""
         var resultPayload: [String: Any]?
         var sawResult = false
+        var conversationID: String?
         for rawLine in text.split(whereSeparator: \.isNewline) {
             try validateEvent(Data(rawLine.utf8))
             guard let event = try JSONSerialization.jsonObject(with: Data(rawLine.utf8)) as? [String: Any],
@@ -580,10 +771,12 @@ struct AntigravityCLIStreamParser {
             }
             switch kind {
             case "init":
+                try captureConversationID(event["conversation_id"], current: &conversationID)
                 let initPayload = event["init"] as? [String: Any] ?? [:]
                 if let actual = initPayload["model"] as? String { model = actual }
             case "step_update":
                 let step = event["step_update"] as? [String: Any] ?? [:]
+                try captureConversationID(step["conversation_id"], current: &conversationID)
                 if step["subagent_info"] != nil || (step["step_type"] as? String) == "tool" {
                     throw AITranslationError.engineUnavailable("Antigravity 尝试调用工具或子代理；本次候选已停止")
                 }
@@ -596,6 +789,7 @@ struct AntigravityCLIStreamParser {
                 guard (result["status"] as? String) == "SUCCESS" else {
                     throw AITranslationError.engineUnavailable("Antigravity 未成功完成：\(result["status"] as? String ?? "unknown")")
                 }
+                try captureConversationID(result["conversation_id"], current: &conversationID)
                 resultPayload = result
             default:
                 throw AITranslationError.engineUnavailable("Antigravity 返回未知事件；本次候选已停止")
@@ -623,7 +817,7 @@ struct AntigravityCLIStreamParser {
             usage = nil
         }
         return ProviderTranslationOutput(lines: validated, model: model, tokenUsage: usage,
-            reasoningSetting: "effort=" + (effort.isEmpty ? "model-default" : effort))
+            reasoningSetting: "effort=" + (effort.isEmpty ? "model-default" : effort), conversationID: conversationID)
     }
 }
 
@@ -631,15 +825,25 @@ public struct AntigravityCLITranslationService: TranslationEngine, Sendable {
     static let executablePaths = TranslationCLIHost.searchDirectories.map { $0 + "/agy" }
     private let candidates: [String]
     private let executor: any ProviderCLIExecuting
+    private let conversationStore: AIConversationStore?
 
     public init(executableCandidates: [String]? = nil) {
         candidates = executableCandidates ?? Self.executablePaths
         executor = FoundationProviderCLIExecutor(antigravityEvents:true)
+        conversationStore = .shared
     }
 
-    init(executableCandidates: [String], executor: any ProviderCLIExecuting) {
+    init(executableCandidates: [String], executor: any ProviderCLIExecuting,
+         conversationStore: AIConversationStore? = nil) {
         candidates = executableCandidates
         self.executor = executor
+        self.conversationStore = conversationStore
+    }
+
+    init(executableCandidates: [String], conversationStore: AIConversationStore?) {
+        candidates = executableCandidates
+        executor = FoundationProviderCLIExecutor(antigravityEvents: true)
+        self.conversationStore = conversationStore
     }
 
     func resolveExecutable() -> String? { candidates.first { FileManager.default.isExecutableFile(atPath: $0) } }
@@ -681,11 +885,12 @@ public struct AntigravityCLITranslationService: TranslationEngine, Sendable {
     {"type":"object","additionalProperties":false,"required":["lines"],"properties":{"lines":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["lineID","translation"],"properties":{"lineID":{"type":"string"},"translation":{"type":"string"}}}}}}
     """
 
-    static func arguments(configuration: AITranslationConfiguration) -> [String] {
+    static func arguments(configuration: AITranslationConfiguration, conversationID: String? = nil) -> [String] {
         var args = ["--input-format", "stream-json", "--output-format", "stream-json",
                     "--json-schema", jsonSchema, "--model", configuration.model, "--sandbox",
                     "--mode", "plan", "--disable-slash-commands", "--print-timeout", "\(Int(configuration.timeout))s"]
         if !configuration.antigravityEffort.isEmpty { args += ["--effort", configuration.antigravityEffort] }
+        if let conversationID { args += ["--conversation", conversationID] }
         return args
     }
 
@@ -701,23 +906,58 @@ public struct AntigravityCLITranslationService: TranslationEngine, Sendable {
         let message = try JSONSerialization.data(withJSONObject: [
             "event": "user", "message": ["content": prompt.system + "\n\n" + prompt.user]
         ], options: [.sortedKeys]) + Data([0x0A])
-        return try await withProviderJob { job in
-            let result = try await executor.execute(executable: executable,
-                arguments: Self.arguments(configuration: configuration), cwd: job,
-                timeout: configuration.timeout, stdin: message, environmentOverrides: [:])
-            guard result.exitCode == 0 else {
-                throw AITranslationError.engineUnavailable("Antigravity CLI 失败（退出码 \(result.exitCode)），未创建候选")
-            }
-            let output = try AntigravityCLIStreamParser.parse(result.stdout, expectedLines: context.lines,
-                requestedModel: configuration.model, effort: configuration.antigravityEffort)
-            return AITranslationDraft(lines: output.lines, targetLanguage: configuration.targetLanguage,
-                model: output.model, baseURLHost: "antigravity-cli", promptHash: prompt.promptHash,
-                sourceContentHash: sourceContentHash, engineID: TranslationEngineID.antigravityCLI.rawValue,
-                promptPresetID: configuration.promptPresetID, profileID: configuration.profileID,
-                profileSnapshot: configuration.profileSnapshot, temperature: 0, workflowID: configuration.workflowID,
-                fallbackStrategy: .none, isDraft: true, tokenUsage: output.tokenUsage,
-                providerReasoningSetting: output.reasoningSetting)
+        let store = conversationStore
+        let operation: @Sendable () async throws -> AITranslationDraft = {
+            try await self.translate(prompt: prompt, message: message, executable: executable, context: context,
+                sourceContentHash: sourceContentHash, configuration: configuration, store: store)
         }
+        if let store {
+            return try await store.withProviderSession(provider: TranslationEngineID.antigravityCLI.rawValue, operation: operation)
+        }
+        return try await operation()
+    }
+
+    private func translate(prompt: AITranslationPrompt, message: Data, executable: String,
+                           context: AITranslationContext, sourceContentHash: String,
+                           configuration: AITranslationConfiguration, store: AIConversationStore?) async throws -> AITranslationDraft {
+        let provider = TranslationEngineID.antigravityCLI.rawValue
+        let reuse = store?.reuseEnabled(for: provider) ?? false
+        let previousID = reuse ? store?.threadID(for: provider) : nil
+        if reuse {
+            let directory = try providerConversationDirectory(provider)
+            return try await runTranslation(prompt: prompt, message: message, executable: executable, context: context,
+                sourceContentHash: sourceContentHash, configuration: configuration,
+                directory: directory, conversationID: previousID, reuseConversation: true, store: store)
+        }
+        return try await withProviderJob { job in
+            try await self.runTranslation(prompt: prompt, message: message, executable: executable, context: context,
+                sourceContentHash: sourceContentHash, configuration: configuration,
+                directory: job, conversationID: nil, reuseConversation: false, store: store)
+        }
+    }
+
+    private func runTranslation(prompt: AITranslationPrompt, message: Data, executable: String, context: AITranslationContext,
+                                sourceContentHash: String, configuration: AITranslationConfiguration,
+                                directory: URL, conversationID: String?,
+                                reuseConversation: Bool,
+                                store: AIConversationStore?) async throws -> AITranslationDraft {
+        let provider = TranslationEngineID.antigravityCLI.rawValue
+        let result = try await executor.execute(executable: executable,
+            arguments: Self.arguments(configuration: configuration, conversationID: conversationID), cwd: directory,
+            timeout: configuration.timeout, stdin: message, environmentOverrides: [:])
+        guard result.exitCode == 0 else {
+            throw AITranslationError.engineUnavailable("Antigravity CLI 失败（退出码 \(result.exitCode)），未创建候选")
+        }
+        let output = try AntigravityCLIStreamParser.parse(result.stdout, expectedLines: context.lines,
+            requestedModel: configuration.model, effort: configuration.antigravityEffort)
+        if reuseConversation, let conversationID = output.conversationID { store?.remember(conversationID, for: provider) }
+        return AITranslationDraft(lines: output.lines, targetLanguage: configuration.targetLanguage,
+            model: output.model, baseURLHost: "antigravity-cli", promptHash: prompt.promptHash,
+            sourceContentHash: sourceContentHash, engineID: TranslationEngineID.antigravityCLI.rawValue,
+            promptPresetID: configuration.promptPresetID, profileID: configuration.profileID,
+            profileSnapshot: configuration.profileSnapshot, temperature: 0, workflowID: configuration.workflowID,
+            fallbackStrategy: .none, isDraft: true, tokenUsage: output.tokenUsage,
+            providerReasoningSetting: output.reasoningSetting)
     }
 
     public func testConnection(configuration: AITranslationConfiguration) async throws {
