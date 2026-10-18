@@ -3289,6 +3289,10 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
             && lhs.dictionaryRevision == rhs.dictionaryRevision
             && lhs.presentationScale == rhs.presentationScale
             && lhs.textAlignment == rhs.textAlignment
+            // Only active word-timed rows consume the clock. Refresh them for
+            // same-line pause/seek/offset changes without rebuilding static rows.
+            && (!lhs.isActive || lhs.line.timedSpans?.isEmpty != false
+                || lhs.presentationClock == rhs.presentationClock)
     }
 
     private var layerCount: Int {

@@ -468,10 +468,10 @@ struct ProviderFailureContract {
             result: .candidates([translatedTitle("涙の意味")]))]).search(track: translatedTitleTrack, identity: translatedTitleIdentity)
         guard case .match = inferred.result else { fatalError("unique cross-script title with same artist and recording duration must auto-select") }
         precondition(inferred.automaticDecision?.reasons.contains("localizedTitleArtistDuration") == true)
-        for list in [[translatedTitle("涙の意味"), translatedTitle("別の曲")], [translatedTitle("涙の意味", duration: 239)], [translatedTitle("Unrelated Song")]] {
+        for list in [[translatedTitle("涙の意味"), translatedTitle("別の曲")], [translatedTitle("涙の意味", duration: 239)], [translatedTitle("Unrelated Song")], [translatedTitle("2024")], [translatedTitle("☆")]] {
             let result = await LyricsSearchManager(providers: [FixedLyricsProvider(name: "source", result: .candidates(list))])
                 .search(track: translatedTitleTrack, identity: translatedTitleIdentity)
-            precondition(result.automaticDecision == nil, "ambiguous, distant or same-script different titles must not use localization inference")
+            precondition(result.automaticDecision == nil, "ambiguous, distant, same-script or non-letter titles must not use localization inference")
         }
         let localizedTrack = Track(title: "ai", artist: "LOVELY BOMB", album: "ai", duration: 168.58)
         let localizedIdentity = TrackIdentity(track: localizedTrack)

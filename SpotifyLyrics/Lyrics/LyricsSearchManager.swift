@@ -696,6 +696,9 @@ public final class LyricsSearchManager: @unchecked Sendable {
                     && track.duration > 0 && item.candidate.duration > 0
                     && abs(track.duration - item.candidate.duration) <= 1
                     && item.candidate.source != .lyricsOVH
+                    // Digits/symbols are not evidence of a translated title.
+                    && track.title.unicodeScalars.contains { CharacterSet.letters.contains($0) }
+                    && item.candidate.title.unicodeScalars.contains { CharacterSet.letters.contains($0) }
                     && ScriptDetector.detect(track.title) != ScriptDetector.detect(item.candidate.title)
                     && item.candidate.lines.contains { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             }

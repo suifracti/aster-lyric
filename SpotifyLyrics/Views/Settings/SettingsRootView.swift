@@ -677,8 +677,27 @@ struct TranslationProviderControls: View {
         Binding(get: { provider }, set: { settings.selectTranslationProvider($0) })
     }
 
+    // Legacy native overrides must not appear as "automatic" while still sent.
+    private var customReasoningOverride: (value: String, label: String)? {
+        let configuration = settings.aiTranslationConfiguration
+        if provider == TranslationEngineID.geminiCLI.rawValue,
+           configuration.geminiThinkingLevel.isEmpty, let budget = configuration.geminiThinkingBudget {
+            return ("thinkingBudget=\(budget)", "自定义预算 · \(budget)")
+        }
+        if provider == TranslationEngineID.deepSeekAPI.rawValue,
+           configuration.deepSeekReasoningEffort.isEmpty {
+            switch configuration.deepSeekThinkingMode {
+            case "enabled": return ("thinking=enabled", "已开启思考 · 默认强度")
+            case "disabled": return ("thinking=disabled", "已关闭思考")
+            default: break
+            }
+        }
+        return nil
+    }
+
     private var reasoningBinding: Binding<String> {
-        Binding(get: { TranslationReasoningPolicy.value(settings.aiTranslationConfiguration) }, set: { value in
+        Binding(get: { customReasoningOverride?.value ?? TranslationReasoningPolicy.value(settings.aiTranslationConfiguration) }, set: { value in
+            guard value != customReasoningOverride?.value else { return }
             var next = TranslationReasoningPolicy.setting(value, in: settings.aiTranslationConfiguration)
             if provider == TranslationEngineID.deepSeekAPI.rawValue {
                 next.deepSeekThinkingMode = value.isEmpty ? "model-default" : (value == "none" ? "disabled" : "enabled")
@@ -750,6 +769,9 @@ struct TranslationProviderControls: View {
                 if supportsReasoningControl {
                     Picker("思考强度", selection: reasoningBinding) {
                         Text("自动 · 服务默认").tag("")
+                        if let custom = customReasoningOverride {
+                            Text(custom.label).tag(custom.value)
+                        }
                         ForEach(reasoningOptions, id: \.self) { effort in
                             Text(reasoningLabel(effort)).tag(effort)
                         }
