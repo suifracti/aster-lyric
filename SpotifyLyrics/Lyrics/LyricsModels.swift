@@ -347,9 +347,11 @@ public enum LyricsFailure: Error, Equatable, Sendable {
     case parseFailure
     case cancelled
     case identityUnconfirmed(Int, String)
+    case lyricsBodyUnavailable(String)
     case unknown(String)
 
     public var userFacingTitle: String {
+        if case .lyricsBodyUnavailable = self { return "已找到歌曲，暂无歌词正文" }
         if case .identityUnconfirmed = self { return "歌词身份待确认" }
         return "歌词暂不可用"
     }
@@ -358,6 +360,7 @@ public enum LyricsFailure: Error, Equatable, Sendable {
     /// The underlying failure remains available for recovery and diagnostics.
     public var recoveryMessage: String {
         switch self {
+        case .lyricsBodyUnavailable(let details): return details
         case .identityUnconfirmed(_, let details):
             return "搜索结果未能确认与当前歌曲一致，可查找更多版本或手动搜索核对。"
                 + (details.isEmpty ? "" : " " + details)
@@ -373,6 +376,7 @@ public enum LyricsFailure: Error, Equatable, Sendable {
 
     public var userFacingMessage: String {
         switch self {
+        case .lyricsBodyUnavailable(let details): return details
         case .networkUnavailable:
             return "网络不可用"
         case .timedOut:

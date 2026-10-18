@@ -471,6 +471,7 @@ public struct PersonalLibraryTrackDetailView: View {
                     }
                     .padding(20)
                 }
+                .id(stableKey)
             } else {
                 VStack {
                     ProgressView()
@@ -479,49 +480,47 @@ public struct PersonalLibraryTrackDetailView: View {
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onAppear {
-                    service.selectTrack(stableKey: stableKey)
-                }
             }
         }
-        .onChange(of: stableKey) { _, newKey in
-            service.selectTrack(stableKey: newKey)
+        .task(id: stableKey) {
+            service.selectTrack(stableKey: stableKey)
         }
     }
 
     private func trackHeader(_ entry: PersonalLyricsLibraryEntry) -> some View {
-        HStack(spacing: 16) {
-            AsyncImage(url: entry.artworkURL) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFill()
-                default:
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.secondary.opacity(0.15))
-                        .overlay(
-                            Image(systemName: "music.note")
-                                .font(.system(size: 28))
-                                .foregroundStyle(.secondary)
-                        )
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 16) {
+                AsyncImage(url: entry.artworkURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    default:
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.secondary.opacity(0.15))
+                            .overlay(
+                                Image(systemName: "music.note")
+                                    .font(.system(size: 28))
+                                    .foregroundStyle(.secondary)
+                            )
+                    }
+                }
+                .frame(width: 72, height: 72)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(entry.title)
+                        .font(.title2.bold())
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(entry.artist)
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                    if let album = entry.album, !album.isEmpty {
+                        Text(album)
+                            .font(.subheadline)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             }
-            .frame(width: 72, height: 72)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(entry.title)
-                    .font(.title2.bold())
-                Text(entry.artist)
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-                if let album = entry.album, !album.isEmpty {
-                    Text(album)
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-
-            Spacer()
 
             Button {
                 service.exportPackage(for: entry.trackStableKey)
@@ -957,12 +956,14 @@ public struct UnifiedLibraryHistoryWindowView: View {
     public init() {}
 
     public var body: some View {
-        VStack(spacing: 0) {
-            topBar
-            Divider()
-            contentArea
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+        contentArea
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    topBar
+                    Divider()
+                }
+            }
         .frame(minWidth: 880, minHeight: 560)
         .background(Color(nsColor: .windowBackgroundColor))
     }

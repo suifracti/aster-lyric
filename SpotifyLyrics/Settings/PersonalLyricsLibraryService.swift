@@ -10,6 +10,8 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     @Published public var searchQuery: String = ""
 
     @Published public var selectedTrackDetail: PersonalLyricsLibraryTrackDetail?
+    private var detailRequestID = UUID()
+    private var requestedTrackStableKey: String?
     @Published public var importPreview: PersonalLibraryImportPreview?
     @Published public var pendingImportPackage: PersonalLyricsLibraryPackage?
     @Published public var showImportPreviewSheet = false
@@ -56,7 +58,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
                 )
                 guard result.lyricsVersion != nil else { throw LyricsEditingRepositoryError.sourceNotFound }
                 revisionDraft = nil
-                selectTrack(stableKey: draft.source.record.trackStableKey)
+                refreshTrackDetail(stableKey: draft.source.record.trackStableKey)
                 refresh()
             } catch { revisionError = error.localizedDescription }
         }
@@ -93,15 +95,24 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     }
 
     public func selectTrack(stableKey: String) {
+        let requestID = UUID()
+        detailRequestID = requestID
+        requestedTrackStableKey = stableKey
         Task {
             do {
-                if let detail = try await repository.loadPersonalLibraryTrackDetail(stableKey: stableKey) {
-                    self.selectedTrackDetail = detail
-                }
+                let detail = try await repository.loadPersonalLibraryTrackDetail(stableKey: stableKey)
+                guard detailRequestID == requestID else { return }
+                selectedTrackDetail = detail
             } catch {
-                self.statusMessage = "获取歌曲详情失败：\(error.localizedDescription)"
+                guard detailRequestID == requestID else { return }
+                statusMessage = "获取歌曲详情失败：\(error.localizedDescription)"
             }
         }
+    }
+
+    private func refreshTrackDetail(stableKey: String) {
+        guard requestedTrackStableKey == stableKey else { return }
+        selectTrack(stableKey: stableKey)
     }
 
     // MARK: - Version Actions
@@ -111,7 +122,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
             do {
                 try await repository.setPersonalLibraryActiveLyrics(trackStableKey: trackStableKey, lyricsVersionID: versionID)
                 _ = try await applyToPlayback?(versionID)
-                selectTrack(stableKey: trackStableKey)
+                refreshTrackDetail(stableKey: trackStableKey)
                 refresh()
             } catch {
                 self.statusMessage = "切换歌词版本失败：\(error.localizedDescription)"
@@ -123,7 +134,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         Task {
             do {
                 try await repository.toggleLyricsLocked(versionID: versionID, locked: !currentLocked)
-                selectTrack(stableKey: trackStableKey)
+                refreshTrackDetail(stableKey: trackStableKey)
                 refresh()
             } catch {
                 self.statusMessage = "锁定歌词失败：\(error.localizedDescription)"
@@ -135,7 +146,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         Task {
             do {
                 try await repository.adoptTranslation(versionID: versionID)
-                selectTrack(stableKey: trackStableKey)
+                refreshTrackDetail(stableKey: trackStableKey)
                 refresh()
             } catch {
                 self.statusMessage = "采用翻译失败：\(error.localizedDescription)"
@@ -147,7 +158,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         Task {
             do {
                 try await repository.markTranslationLocked(versionID: versionID, locked: !currentLocked)
-                selectTrack(stableKey: trackStableKey)
+                refreshTrackDetail(stableKey: trackStableKey)
                 refresh()
             } catch {
                 self.statusMessage = "锁定翻译失败：\(error.localizedDescription)"
@@ -159,7 +170,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         Task {
             do {
                 try await repository.archiveTranslation(versionID: versionID, archived: !currentArchived)
-                selectTrack(stableKey: trackStableKey)
+                refreshTrackDetail(stableKey: trackStableKey)
                 refresh()
             } catch {
                 self.statusMessage = "归档翻译失败：\(error.localizedDescription)"
@@ -171,7 +182,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         Task {
             do {
                 try await repository.adoptReadingVersion(versionID: versionID)
-                selectTrack(stableKey: trackStableKey)
+                refreshTrackDetail(stableKey: trackStableKey)
                 refresh()
             } catch {
                 self.statusMessage = "采用读音失败：\(error.localizedDescription)"
@@ -183,7 +194,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         Task {
             do {
                 try await repository.markReadingLocked(versionID: versionID, locked: !currentLocked)
-                selectTrack(stableKey: trackStableKey)
+                refreshTrackDetail(stableKey: trackStableKey)
                 refresh()
             } catch {
                 self.statusMessage = "锁定读音失败：\(error.localizedDescription)"
@@ -195,7 +206,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         Task {
             do {
                 try await repository.archiveReadingVersion(versionID: versionID, archived: !currentArchived)
-                selectTrack(stableKey: trackStableKey)
+                refreshTrackDetail(stableKey: trackStableKey)
                 refresh()
             } catch {
                 self.statusMessage = "归档读音失败：\(error.localizedDescription)"

@@ -1309,17 +1309,22 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 targetLanguage: "und", sourceContentHash: sourceContentHash)
             guard !existing.contains(where: { $0.isEmbeddedTranslation }) else { return }
             let lines = source.lines.map { AITranslationLine(index: $0.lineIndex, translation: $0.translationText ?? "") }
+            let manual = version.isManuallyEdited || [LyricsSource.manualEdit.rawValue,
+                LyricsSource.manualImport.rawValue, LyricsSource.manualCreate.rawValue].contains(version.source)
             // Incomplete native text remains in lyric_lines; never manufacture
-            // missing translations or label a partial result complete.
+            // missing translations. Source-provided text may be sparse, while
+            // manually authored source text still has to be complete.
             guard lines.contains(where: { !$0.translation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
                   source.lines.allSatisfy({ line in
                       let originalBlank = line.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                       let text = line.translationText ?? ""
-                      return originalBlank == text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-                          (!originalBlank || text.isEmpty) && !text.contains("\n") && !text.contains("\r")
+                      let translationBlank = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                      let validTranslation = manual
+                          ? originalBlank == translationBlank
+                          : (originalBlank == translationBlank || (!originalBlank && text.isEmpty))
+                      return validTranslation && (!originalBlank || text.isEmpty) &&
+                          !text.contains("\n") && !text.contains("\r")
                   }) else { return }
-            let manual = version.isManuallyEdited || [LyricsSource.manualEdit.rawValue,
-                LyricsSource.manualImport.rawValue, LyricsSource.manualCreate.rawValue].contains(version.source)
             let draft = AITranslationDraft(lines: lines, targetLanguage: "und",
                 model: manual ? "人工已有译文" : "词源自带译文", baseURLHost: "", promptHash: "",
                 sourceContentHash: sourceContentHash, sourceKind: manual ? .manualImport : .providerEmbedded,
@@ -1405,11 +1410,18 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
               draft.lines.map(\.index) == Array(source.lines.indices) else {
             throw TranslationRepositoryError.invalidLines("行数或 index 不匹配")
         }
+        let allowsSparseProviderText = draft.sourceKind == .providerEmbedded &&
+            !draft.isMachineGenerated && !draft.isManuallyEdited
+        if allowsSparseProviderText,
+           !draft.lines.contains(where: { !$0.translation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            throw TranslationRepositoryError.invalidLines("词源译文不能为空")
+        }
         for line in draft.lines {
             let sourceText = source.lines[line.index].originalText
             let sourceBlank = sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let translationBlank = line.translation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            guard sourceBlank == translationBlank,
+            let sparseProviderRow = allowsSparseProviderText && !sourceBlank && line.translation.isEmpty
+            guard sourceBlank == translationBlank || sparseProviderRow,
                   !sourceBlank || line.translation.isEmpty,
                   !line.translation.contains("\n"),
                   !line.translation.contains("\r") else {
@@ -2643,14 +2655,20 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         lines: [DatabaseTranslationLineRecord],
         sourceLines: [DatabaseLyricLineRecord]
     ) -> Bool {
+        let allowsSparseProviderText = record.sourceKind == .providerEmbedded &&
+            !record.isMachineGenerated && !record.isManuallyEdited
         guard record.status == .complete,
               lines.count == sourceLines.count,
-              lines.map(\.lineIndex) == Array(sourceLines.indices) else { return false }
+              lines.map(\.lineIndex) == Array(sourceLines.indices),
+              !allowsSparseProviderText || lines.contains(where: {
+                  !$0.translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              }) else { return false }
         return lines.allSatisfy { translation in
             let original = sourceLines[translation.lineIndex].originalText
             let sourceBlank = original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let translationBlank = translation.translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            return sourceBlank == translationBlank &&
+            let sparseProviderRow = allowsSparseProviderText && !sourceBlank && translation.translatedText.isEmpty
+            return (sourceBlank == translationBlank || sparseProviderRow) &&
                 (!sourceBlank || translation.translatedText.isEmpty) &&
                 !translation.translatedText.contains("\n") &&
                 !translation.translatedText.contains("\r")

@@ -101,6 +101,18 @@ check(!reopened.v3ExpandArtworkWhenDetailsHidden && reopened.v3AmbientBackground
       "expansion and ambient fit choices survive style switching and restart independently")
 check(reopened.v3PreviewBlur(for: .classic) == settings.v3PreviewBlur(for: .classic),
       "ambient fit and cover expansion must not change remembered blur")
+for (index, mode) in V3ArtworkPresentation.allCases.enumerated() {
+    let foreground = settings.v3PreviewScale(for: mode)
+    let value = 0.8 + Double(index) * 0.05
+    settings.setV3BackdropScale(value, for: mode)
+    settings.setV3BackgroundShowsCompleteArtwork(index % 2 == 0, for: mode)
+    check(settings.v3PreviewScale(for: mode) == foreground, "every background scale must leave foreground unchanged")
+}
+let allReopened = AppSettingsStore(defaults: defaults)
+for (index, mode) in V3ArtworkPresentation.allCases.enumerated() {
+    check(abs(allReopened.v3BackdropScale(for: mode) - (0.8 + Double(index) * 0.05)) < 0.001, "each background scale is independently persistent")
+    check(allReopened.v3BackgroundShowsCompleteArtwork(for: mode) == (index % 2 == 0), "each framing choice is independently persistent")
+}
 print("PASS: independent V3 preferences, classic migration, legacy keys, read-only previews")
 """
 

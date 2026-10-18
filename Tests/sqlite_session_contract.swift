@@ -4,6 +4,88 @@ private final class Counter: @unchecked Sendable {
     var value = 0
 }
 
+private struct SaveReleaseError: LocalizedError, Sendable {
+    let message: String
+    var errorDescription: String? { message }
+}
+
+private actor SaveOrderGate {
+    private var blocked: [String: CheckedContinuation<Void, Error>] = [:]
+    private var completed: Set<String> = []
+    private var results: [String: LyricsPersistenceSaveResult] = [:]
+
+    func waitUntilReleased(_ key: String) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            blocked[key] = continuation
+        }
+    }
+
+    func waitForBlockedCount(_ count: Int) async {
+        for _ in 0..<500 {
+            if blocked.count >= count { return }
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+        fatalError("timed out waiting for \(count) blocked saves")
+    }
+
+    func release(_ key: String, error: String? = nil) {
+        guard let continuation = blocked.removeValue(forKey: key) else {
+            fatalError("no blocked save for \(key)")
+        }
+        if let error { continuation.resume(throwing: SaveReleaseError(message: error)) }
+        else { continuation.resume() }
+    }
+
+    func recordCompletion(_ key: String, result: LyricsPersistenceSaveResult? = nil) {
+        completed.insert(key)
+        if let result { results[key] = result }
+    }
+
+    func waitForCompletion(_ key: String) async {
+        for _ in 0..<500 {
+            if completed.contains(key) { return }
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+        fatalError("timed out waiting for save completion: \(key)")
+    }
+
+    func waitForResult(_ key: String) async -> LyricsPersistenceSaveResult {
+        for _ in 0..<500 {
+            if let result = results[key] { return result }
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+        fatalError("timed out waiting for save result: \(key)")
+    }
+}
+
+private struct DelayedSaveLyricsRepository: LyricsRepository {
+    let base: SQLiteLyricsRepository
+    let gate: SaveOrderGate
+
+    func prepare() async throws { try await base.prepare() }
+
+    func loadBest(track: Track, identity: TrackIdentity) async throws -> LyricsDocument? {
+        try await base.loadBest(track: track, identity: identity)
+    }
+
+    func save(track: Track, identity: TrackIdentity, document: LyricsDocument) async throws -> LyricsPersistenceSaveResult {
+        let key = document.lines.first?.originalText ?? "empty"
+        do {
+            try await gate.waitUntilReleased(key)
+        } catch {
+            await gate.recordCompletion(key)
+            throw error
+        }
+        let result = try await base.save(track: track, identity: identity, document: document)
+        await gate.recordCompletion(key, result: result)
+        return result
+    }
+
+    func markLocked(versionID: UUID, locked: Bool) async throws {
+        try await base.markLocked(versionID: versionID, locked: locked)
+    }
+}
+
 private struct CountingProvider: LyricsProvider {
     let counter: Counter
     let resultBuilder: @Sendable (Track, TrackIdentity) -> LyricsLookupResult
@@ -48,6 +130,21 @@ private func makeDocument(track: Track, identity: TrackIdentity, source: LyricsS
         source: source,
         confidence: 1,
         providerSourceID: "contract:\(track.spotifyId ?? track.title)"
+    )
+}
+
+private func makeAdoptionDocument(track: Track, identity: TrackIdentity, text: String) -> LyricsDocument {
+    LyricsDocument(
+        identity: identity,
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        duration: track.duration,
+        lines: [LyricLine(timestamp: 0, originalText: text)],
+        isSynchronized: false,
+        source: .asrMachineGenerated,
+        confidence: 1,
+        providerSourceID: "adoption-contract:\(text)"
     )
 }
 
@@ -172,6 +269,68 @@ struct SQLiteSessionContract {
         let bVersionCount = try await repository.versionCount(trackStableKey: TrackIdentity(track: trackB).stableKey)
         precondition(aVersionCount == 0)
         precondition(bVersionCount == 1)
+
+        let adoptionTrack = Track(
+            title: "Same Track Adoption",
+            artist: "Fixture",
+            album: "Fixture",
+            duration: 90,
+            spotifyId: "same-track-adoption-race"
+        )
+        let adoptionIdentity = TrackIdentity(track: adoptionTrack)
+        let saveGate = SaveOrderGate()
+        let delayedRepository = DelayedSaveLyricsRepository(base: repository, gate: saveGate)
+        let adoptionSession = LyricsSessionController(providers: [], repository: delayedRepository)
+        adoptionSession.begin(track: adoptionTrack, identity: adoptionIdentity, automaticallySearch: false)
+        for _ in 0..<100 where adoptionSession.isSearchInProgress {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        precondition(!adoptionSession.isSearchInProgress)
+
+        let oldSuccessText = "older successful save"
+        let newSuccessText = "newer successful save"
+        adoptionSession.adopt(document: makeAdoptionDocument(track: adoptionTrack, identity: adoptionIdentity, text: oldSuccessText))
+        await saveGate.waitForBlockedCount(1)
+        adoptionSession.adopt(document: makeAdoptionDocument(track: adoptionTrack, identity: adoptionIdentity, text: newSuccessText))
+        await saveGate.waitForBlockedCount(2)
+
+        await saveGate.release(newSuccessText)
+        let newSuccess = await saveGate.waitForResult(newSuccessText)
+        guard let newSuccessVersionID = newSuccess.versionID, let newSuccessHash = newSuccess.sourceContentHash else {
+            fatalError("newer save must return its persisted binding")
+        }
+        for _ in 0..<100 where adoptionSession.activeLyricsVersionID != newSuccessVersionID {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        precondition(adoptionSession.activeLyricsVersionID == newSuccessVersionID)
+
+        await saveGate.release(oldSuccessText)
+        _ = await saveGate.waitForResult(oldSuccessText)
+        try await Task.sleep(nanoseconds: 80_000_000)
+        precondition(adoptionSession.activeLyricsVersionID == newSuccessVersionID, "late same-track success must not replace the newer active version")
+        precondition(adoptionSession.activeSourceContentHash == newSuccessHash, "late same-track success must not replace the newer source hash")
+
+        let oldFailureText = "older failed save"
+        let newFailureScenarioText = "newer save before old failure"
+        adoptionSession.adopt(document: makeAdoptionDocument(track: adoptionTrack, identity: adoptionIdentity, text: oldFailureText))
+        await saveGate.waitForBlockedCount(1)
+        adoptionSession.adopt(document: makeAdoptionDocument(track: adoptionTrack, identity: adoptionIdentity, text: newFailureScenarioText))
+        await saveGate.waitForBlockedCount(2)
+        await saveGate.release(newFailureScenarioText)
+        let latestBeforeOldFailure = await saveGate.waitForResult(newFailureScenarioText)
+        guard let latestBeforeOldFailureID = latestBeforeOldFailure.versionID else {
+            fatalError("newer save before old failure must persist")
+        }
+        for _ in 0..<100 where adoptionSession.activeLyricsVersionID != latestBeforeOldFailureID {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        precondition(adoptionSession.activeLyricsVersionID == latestBeforeOldFailureID)
+
+        await saveGate.release(oldFailureText, error: "stale save failure")
+        await saveGate.waitForCompletion(oldFailureText)
+        try await Task.sleep(nanoseconds: 80_000_000)
+        precondition(adoptionSession.activeLyricsVersionID == latestBeforeOldFailureID, "late same-track failure must not change the current binding")
+        precondition(adoptionSession.persistenceStatusMessage == nil, "late same-track failure must not replace current-session status")
 
         // Round 1: an unprotected plain cache is provisional; a selected
         // original is stable even when a synchronized source later exists.

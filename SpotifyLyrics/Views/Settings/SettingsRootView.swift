@@ -669,13 +669,52 @@ struct TranslationProviderControls: View {
     private var family: String { TranslationEngineCatalog.topLevelID(for: provider) }
     private var modelBinding: Binding<String> {
         Binding(get: { settings.aiTranslationConfiguration.model }, set: { model in
-            var next = settings.aiTranslationConfiguration
-            next.model = model
-            settings.aiTranslationConfiguration = next
+            settings.aiTranslationConfiguration = settings.translationModelSettings.selectingModel(
+                model, in: settings.aiTranslationConfiguration)
         })
     }
     private var backendBinding: Binding<String> {
         Binding(get: { provider }, set: { settings.selectTranslationProvider($0) })
+    }
+
+    private var reasoningBinding: Binding<String> {
+        Binding(get: { TranslationReasoningPolicy.value(settings.aiTranslationConfiguration) }, set: { value in
+            var next = TranslationReasoningPolicy.setting(value, in: settings.aiTranslationConfiguration)
+            if provider == TranslationEngineID.deepSeekAPI.rawValue {
+                next.deepSeekThinkingMode = value.isEmpty ? "model-default" : (value == "none" ? "disabled" : "enabled")
+            }
+            settings.translationModelSettings.acknowledgeReasoningSelection()
+            settings.aiTranslationConfiguration = next
+        })
+    }
+
+    private var supportsReasoningControl: Bool {
+        [TranslationEngineID.codexChatGPT.rawValue, TranslationEngineID.grokBuild.rawValue,
+         TranslationEngineID.geminiCLI.rawValue, TranslationEngineID.antigravityCLI.rawValue,
+         TranslationEngineID.deepSeekAPI.rawValue].contains(provider)
+    }
+
+    private var reasoningOptions: [String] {
+        let native: [String]
+        if let advertised = settings.aiCachedModels.first(where: { $0.id == settings.aiTranslationConfiguration.model })?.reasoningEfforts {
+            native = advertised
+        } else {
+            switch TranslationEngineID(rawValue: provider) {
+            case .codexChatGPT: native = ["low", "medium", "high", "xhigh", "max"]
+            case .grokBuild: native = ["low", "high"]
+            case .geminiCLI: native = ["minimal", "low", "medium", "high"]
+            case .antigravityCLI: native = ["low", "medium", "high", "xhigh", "max"]
+            case .deepSeekAPI: native = ["none", "low", "high", "max"]
+            default: native = []
+            }
+        }
+        let current = TranslationReasoningPolicy.value(settings.aiTranslationConfiguration)
+        return native + (current.isEmpty || native.contains(current) ? [] : [current])
+    }
+
+    private func reasoningLabel(_ value: String) -> String {
+        ["none": "不思考", "minimal": "极低", "low": "低", "medium": "中", "high": "高",
+         "xhigh": "很高", "max": "最高", "ultra": "超高"][value] ?? value
     }
 
     var body: some View {
@@ -707,6 +746,17 @@ struct TranslationProviderControls: View {
                             Text(model.displayName).tag(model.id)
                         }
                     }
+                }
+                if supportsReasoningControl {
+                    Picker("思考强度", selection: reasoningBinding) {
+                        Text("自动 · 服务默认").tag("")
+                        ForEach(reasoningOptions, id: \.self) { effort in
+                            Text(reasoningLabel(effort)).tag(effort)
+                        }
+                    }
+                    .accessibilityIdentifier("ai.reasoningEffort")
+                    Text("翻译与 AI 读音共用此设置；各服务分别记住，具体支持以所选模型为准。")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 if provider == TranslationEngineID.geminiCLI.rawValue {
                     Text("Gemini CLI 暂无可读取的模型目录，请填写此连接支持的 Gemini 模型 ID。切换服务会保留各自配置。")

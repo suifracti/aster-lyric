@@ -32,9 +32,24 @@ public final class NetEaseExperimentalLyricsProvider: LyricsProvider, @unchecked
             guard !songs.isEmpty else { return .noMatch }
 
             var candidates: [LyricsCandidate] = []
+            var exactMetadataOnlySong: NetEaseSong?
             for song in songs.prefix(5) {
                 if Task.isCancelled { return .failed(.cancelled) }
-                guard let lyric = try await fetchLyric(songID: song.id) else { continue }
+                guard let lyric = try await fetchLyric(songID: song.id) else {
+                    if exactMetadataOnlySong == nil,
+                       hasExactCatalogIdentity(
+                           title: song.name,
+                           titleAliases: song.declaredTitleAliases,
+                           artist: song.artists.joined(separator: ", "),
+                           album: song.album,
+                           duration: song.duration,
+                           track: track,
+                           identity: identity
+                       ) {
+                        exactMetadataOnlySong = song
+                    }
+                    continue
+                }
                 let parsed = parse(lyric: lyric, track: track, song: song, identity: identity)
                 guard let document = parsed else { continue }
                 candidates.append(
@@ -49,9 +64,28 @@ public final class NetEaseExperimentalLyricsProvider: LyricsProvider, @unchecked
                         isSynchronized: document.isSynchronized,
                         source: .neteaseExperimental,
                         confidence: score(song: song, track: track),
-                        providerSourceID: "netease:\(song.id)"
+                        providerSourceID: "netease:\(song.id)",
+                        declaredTitleAliases: song.declaredTitleAliases
                     )
                 )
+            }
+
+            if let exactMetadataOnlySong,
+               !candidates.contains(where: {
+                   hasExactCatalogIdentity(
+                       title: $0.title,
+                       titleAliases: $0.declaredTitleAliases,
+                       artist: $0.artist,
+                       album: $0.album,
+                       duration: $0.duration,
+                       track: track,
+                       identity: identity
+                   )
+               }) {
+                let artist = exactMetadataOnlySong.artists.joined(separator: ", ")
+                return .failed(.lyricsBodyUnavailable(
+                    "目录命中“\(exactMetadataOnlySong.name)”（\(artist)），但该来源没有歌词正文。"
+                ))
             }
 
             if candidates.isEmpty {
@@ -238,11 +272,51 @@ public final class NetEaseExperimentalLyricsProvider: LyricsProvider, @unchecked
         }
         return min(1, max(0.05, score))
     }
+
+    private func hasExactCatalogIdentity(
+        title: String,
+        titleAliases: [String],
+        artist: String,
+        album: String,
+        duration: TimeInterval,
+        track: Track,
+        identity: TrackIdentity
+    ) -> Bool {
+        let candidate = LyricsCandidate(
+            id: "netease-metadata-only",
+            identity: identity,
+            title: title,
+            artist: artist,
+            album: album,
+            duration: duration,
+            lines: [],
+            source: .neteaseExperimental,
+            confidence: 0,
+            declaredTitleAliases: titleAliases
+        )
+        let decision = LyricsSafeMatcher.decide(
+            candidate: candidate,
+            metadata: TrackMetadata.bootstrap(from: track)
+        )
+        let reasons = Set(decision.reasons)
+        let hasExactTitleEvidence = !reasons.isDisjoint(with: [
+            "titleExact", "titleTypographyExact", "titleParallelExact", "titleLatinSpacingExact",
+            "titleProviderAliasConfirmed", "titleReadingExact"
+        ])
+        let hasExactArtistEvidence = reasons.contains("primaryArtistExact")
+            || reasons.contains("primaryArtistReadingExact")
+        return !decision.hardReject
+            && !decision.versionConflict
+            && hasExactTitleEvidence
+            && hasExactArtistEvidence
+            && reasons.contains("durationClose")
+    }
 }
 
 private struct NetEaseSong {
     let id: Int
     let name: String
+    let declaredTitleAliases: [String]
     let artists: [String]
     let album: String
     let duration: TimeInterval
@@ -265,14 +339,27 @@ private struct NetEaseSearchResult: Decodable {
 private struct NetEaseSongDTO: Decodable {
     let id: Int
     let name: String
+    let alias: [String]?
+    let transNames: [String]?
     let artists: [NetEaseArtistDTO]?
     let album: NetEaseAlbumDTO?
     let duration: Int?
 
     var asSong: NetEaseSong {
-        NetEaseSong(
+        var seen = Set<String>()
+        let titleAliases = ((alias ?? []) + (transNames ?? []))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { value in
+                let normalized = TrackTextNormalizer.normalize(value)
+                guard !normalized.isEmpty,
+                      normalized != TrackTextNormalizer.normalize(name),
+                      seen.insert(normalized).inserted else { return false }
+                return true
+            }
+        return NetEaseSong(
             id: id,
             name: name,
+            declaredTitleAliases: titleAliases,
             artists: (artists ?? []).map(\.name),
             album: album?.name ?? "",
             duration: TimeInterval(duration ?? 0) / 1000.0

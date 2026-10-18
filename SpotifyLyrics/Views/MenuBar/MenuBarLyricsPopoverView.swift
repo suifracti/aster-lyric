@@ -2,11 +2,13 @@ import SwiftUI
 
 public struct MenuBarLyricsPopoverView: View {
     @ObservedObject var controller: MenuBarLyricsController
+    @ObservedObject private var settings: AppSettingsStore
     @State private var didCopyFullLyrics = false
     @State private var isAppearanceExpanded = false
 
     public init(controller: MenuBarLyricsController) {
         self.controller = controller
+        self.settings = controller.settings
     }
 
     public var body: some View {
@@ -102,10 +104,7 @@ public struct MenuBarLyricsPopoverView: View {
             }
 
             HStack(spacing: 12) {
-                Toggle("菜单栏显示歌词", isOn: Binding(
-                    get: { controller.menuBarLyricsEnabled },
-                    set: { controller.menuBarLyricsEnabled = $0 }
-                ))
+                Toggle("菜单栏显示歌词", isOn: $settings.menuBarLyricsEnabled)
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .font(.system(size: 11))
@@ -125,7 +124,7 @@ public struct MenuBarLyricsPopoverView: View {
 
             DisclosureGroup("状态栏文字外观", isExpanded: $isAppearanceExpanded) {
                 ScrollView {
-                    MenuBarLyricsAppearanceControls(settings: controller.settings)
+                    MenuBarLyricsAppearanceControls(settings: settings)
                         .padding(.top, 8)
                 }
                 .frame(height: 150)

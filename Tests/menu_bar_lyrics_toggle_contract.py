@@ -6,6 +6,11 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 store = (root/'SpotifyLyrics/Settings/AppSettingsStore.swift').read_text()
 controller_source = (root/'SpotifyLyrics/Windows/MenuBarLyricsController.swift').read_text()
+popover_source = (root/'SpotifyLyrics/Views/MenuBar/MenuBarLyricsPopoverView.swift').read_text()
+assert re.search(r'@ObservedObject private var settings: AppSettingsStore', popover_source), \
+    'the popover must observe the object that owns the menu-bar setting'
+assert re.search(r'Toggle\("菜单栏显示歌词", isOn: \$settings\.menuBarLyricsEnabled\)', popover_source), \
+    'the menu-bar toggle must bind directly to the published setting'
 hosting_type = re.search(r'pop\.contentViewController = (\w+)\(', controller_source).group(1)
 # Extract the actual persistence boundary for this setting, avoiding unrelated stores.
 keys = re.findall(r'public static let menuBarLyrics\w+ = [^\n]+', store)

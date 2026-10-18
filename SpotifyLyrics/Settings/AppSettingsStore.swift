@@ -569,6 +569,23 @@ public final class AppSettingsStore: ObservableObject {
         didSet { defaults.set(v3AmbientBackgroundShowsCompleteArtwork, forKey: Key.v3AmbientBackgroundShowsCompleteArtwork) }
     }
 
+    @Published private var v3BackgroundFraming: [String: Bool] = [:] {
+        didSet { defaults.set(v3BackgroundFraming, forKey: "v3.backgroundFramingByPresentation.v1") }
+    }
+    @Published private var v3AdditionalBackdropScales: [String: Double] = [:] {
+        didSet { defaults.set(v3AdditionalBackdropScales, forKey: "v3.additionalBackdropScales.v1") }
+    }
+
+    public func v3BackgroundShowsCompleteArtwork(for style: V3ArtworkPresentation) -> Bool {
+        if style == .ambient { return v3AmbientBackgroundShowsCompleteArtwork }
+        return v3BackgroundFraming[style.rawValue] ?? (style == .stage || style == .ambientFeathered)
+    }
+
+    public func setV3BackgroundShowsCompleteArtwork(_ value: Bool, for style: V3ArtworkPresentation) {
+        if style == .ambient { v3AmbientBackgroundShowsCompleteArtwork = value }
+        else { v3BackgroundFraming[style.rawValue] = value }
+    }
+
     /// Old global setting remains available only for an explicit history note.
     /// Reading this value never assigns it to a song or lyrics version.
     public var legacyLyricsPresentationOffset: Double? {
@@ -677,7 +694,7 @@ public final class AppSettingsStore: ObservableObject {
         case .classicGaussian:
             return v3GaussianBackdropSizeScale
         default:
-            return v3PreviewScale(for: style)
+            return v3AdditionalBackdropScales[style.rawValue] ?? 1
         }
     }
 
@@ -687,17 +704,18 @@ public final class AppSettingsStore: ObservableObject {
         case .classic: return v3ClassicBackdropSizeScale
         case .ambient: return v3AmbientBackdropSizeScale
         case .classicGaussian: return v3GaussianBackdropSizeScale
-        default: return v3ArtworkSizeScale
+        default: return v3AdditionalBackdropScales[presentation.rawValue] ?? 1
         }
     }
 
     public func setV3BackdropScale(_ value: Double, for presentation: V3ArtworkPresentation) {
+        let value = value.isFinite ? min(1.4, max(0.8, value)) : 1
         switch presentation {
         case .authenticAmbient: v3AuthenticAmbientBackdropSizeScale = value
         case .classic: v3ClassicBackdropSizeScale = value
         case .ambient: v3AmbientBackdropSizeScale = value
         case .classicGaussian: v3GaussianBackdropSizeScale = value
-        default: v3ArtworkSizeScale = value
+        default: v3AdditionalBackdropScales[presentation.rawValue] = value
         }
     }
 
@@ -837,6 +855,16 @@ public final class AppSettingsStore: ObservableObject {
         self.v3PlaybackDetailsOnHover = defaults.bool(forKey: Key.v3PlaybackDetailsOnHover)
         self.v3ExpandArtworkWhenDetailsHidden = defaults.object(forKey: Key.v3ExpandArtworkWhenDetailsHidden) as? Bool ?? true
         self.v3AmbientBackgroundShowsCompleteArtwork = defaults.bool(forKey: Key.v3AmbientBackgroundShowsCompleteArtwork)
+        self.v3BackgroundFraming = defaults.dictionary(forKey: "v3.backgroundFramingByPresentation.v1") as? [String: Bool] ?? [:]
+        var backgroundScales = defaults.dictionary(forKey: "v3.additionalBackdropScales.v1") as? [String: Double] ?? [:]
+        for mode in [V3ArtworkPresentation.stage, .ambientFeathered, .lyricsOnly, .albumPoster] {
+            let previous = backgroundScales[mode.rawValue]
+                ?? (defaults.object(forKey: Self.v3ScaleDefaultsKey(for: mode)) as? Double)
+                ?? (defaults.object(forKey: Key.v3ArtworkSizeScale) as? Double) ?? 1
+            backgroundScales[mode.rawValue] = previous.isFinite ? min(1.4, max(0.8, previous)) : 1
+        }
+        self.v3AdditionalBackdropScales = backgroundScales
+        defaults.set(backgroundScales, forKey: "v3.additionalBackdropScales.v1")
         self.v3StageReadabilityEnabled = defaults.bool(forKey: Key.v3StageReadabilityEnabled)
         self.v3BackdropBlurRadius = self.v3BlurByPresentation[selectedPresentation] ?? legacyBlur
         let positionKey = Self.v3PositionDefaultsKey(for: selectedPresentation)

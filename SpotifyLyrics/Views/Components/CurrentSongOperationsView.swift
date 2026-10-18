@@ -1166,6 +1166,7 @@ private struct LyricsVersionPickerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showCopy = false
     @State private var selectedID: String?
+    @State private var showSourceTranslation = false
     @State private var isSavingCandidate = false
     @State private var isLockConfirmationPresented = false
     @State private var conflictingLockedVersionIDs: [UUID] = []
@@ -1183,6 +1184,9 @@ private struct LyricsVersionPickerView: View {
     private var previewSource: String {
         if let version = selectedVersion { return DatabaseSourceIdentifier.displayName(for: version.record.source) }
         return selectedCandidate?.source.displayName ?? "所选版本"
+    }
+    private var previewTranslationLineCount: Int {
+        previewLines?.filter { hasText($0.translationText) }.count ?? 0
     }
 
     var body: some View {
@@ -1224,10 +1228,23 @@ private struct LyricsVersionPickerView: View {
                 Divider()
                 VStack(alignment: .leading, spacing: 10) {
                     if let previewLines {
+                        HStack {
+                            if previewTranslationLineCount > 0 {
+                                Toggle("显示词源译文", isOn: $showSourceTranslation)
+                                    .toggleStyle(.checkbox)
+                                Text("词源译文 \(previewTranslationLineCount)/\(previewLines.count) 行")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                Label("此版本没有词源译文", systemImage: "text.bubble")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
                         HStack(alignment: .top, spacing: 12) {
-                            lyricColumn("当前使用", lines: originalLines, synchronized: isSynchronized)
+                            lyricColumn("当前使用", lines: originalLines, synchronized: isSynchronized, showTranslation: false)
                             Divider()
-                            lyricColumn(previewSource, lines: previewLines, synchronized: previewSynchronized)
+                            lyricColumn(previewSource, lines: previewLines, synchronized: previewSynchronized,
+                                        showTranslation: showSourceTranslation)
                         }
                         if let candidate = selectedCandidate {
                             Text("\(candidate.title) · \(candidate.artist)").font(.caption).foregroundStyle(.secondary)
@@ -1284,6 +1301,7 @@ private struct LyricsVersionPickerView: View {
         .onAppear { if let currentVersionID { selectedID = "saved:\(currentVersionID)" } }
         .onChange(of: selectedID) { _, _ in
             failureMessage = nil
+            showSourceTranslation = false
             onCancelLocked()
             conflictingLockedVersionIDs = []
         }
@@ -1339,7 +1357,7 @@ private struct LyricsVersionPickerView: View {
         }.buttonStyle(.plain).disabled(isBusy)
     }
 
-    private func lyricColumn(_ heading: String, lines: [LyricLine], synchronized: Bool) -> some View {
+    private func lyricColumn(_ heading: String, lines: [LyricLine], synchronized: Bool, showTranslation: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(heading).font(.headline).lineLimit(1)
             Text("\(lines.count) 行 · \(synchronized ? "已同步" : "纯文本")").font(.caption).foregroundStyle(.secondary)
@@ -1351,6 +1369,12 @@ private struct LyricsVersionPickerView: View {
                                 .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
                             Text(line.originalText.isEmpty ? "（空白原文）" : line.originalText)
                                 .font(.callout).textSelection(.enabled)
+                            if showTranslation, hasText(line.translationText), let translation = line.translationText {
+                                Text(translation)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if lines.isEmpty { Text("暂无当前歌词").font(.callout).foregroundStyle(.secondary) }
@@ -1362,6 +1386,10 @@ private struct LyricsVersionPickerView: View {
     private func timeLabel(_ timestamp: TimeInterval) -> String {
         let seconds = max(0, Int(timestamp.rounded(.down)))
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+
+    private func hasText(_ text: String?) -> Bool {
+        !(text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
     }
 
     private func adoptCandidate(confirmingLocks: Bool) {

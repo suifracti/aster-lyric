@@ -8,7 +8,9 @@ trap 'rm -rf "$TMP"' EXIT
 swiftc -parse-as-library \
   "$ROOT/SpotifyLyrics/Models/Models.swift" \
   "$ROOT/SpotifyLyrics/Lyrics/TrackIdentity.swift" \
+  "$ROOT/SpotifyLyrics/Lyrics/TrackAlias.swift" \
   "$ROOT/SpotifyLyrics/Lyrics/LyricsModels.swift" \
+  "$ROOT/SpotifyLyrics/Lyrics/TrackTextNormalizer.swift" \
   "$ROOT/SpotifyLyrics/Lyrics/AlignmentModels.swift" \
   "$ROOT/SpotifyLyrics/Design/CurrentSongOperationState.swift" \
   "$ROOT/Tests/current_song_operations_contract.swift" \
@@ -33,6 +35,18 @@ if grep -Eq 'SQLite|Timer\(|currentTime\s*=|\.seek\(' "$VIEW"; then
   echo "FAIL: current-song view owns persistence, timers, or implicit seek" >&2
   exit 1
 fi
+
+python3 - "$VIEW" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1]).read_text()
+picker = source[source.index('private struct LyricsVersionPickerView:'):source.index('/// Formats the selected saved/displayed layers')]
+assert '@State private var showSourceTranslation = false' in picker, 'version preview must hide provider translations by default'
+assert 'Toggle("显示词源译文", isOn: $showSourceTranslation)' in picker, 'version preview must let the user reveal provider translations'
+assert 'line.translationText' in picker, 'version preview must render stored provider translations when enabled'
+assert '词源译文' in picker and '此版本没有词源译文' in picker, 'preview must distinguish available and absent provider translations'
+PY
 
 RECOVERY_VIEW="$ROOT/SpotifyLyrics/Views/Components/ManualLyricsActionsView.swift"
 grep -q 'LyricsDiscoverySite' "$RECOVERY_VIEW"

@@ -2016,16 +2016,7 @@ private struct V3PlaybackSurface: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color.black.opacity(0.12))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
-            )
-            .shadow(color: Color.black.opacity(0.12), radius: 14, y: 5)
+            .fill(Color.black.opacity(0.24))
     }
 }
 
@@ -2101,30 +2092,12 @@ private struct V3TransportIconButton: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
 
-    private var restingFillOpacity: Double {
-        enabled ? (prominent ? 0.12 : 0.055) : 0.025
-    }
-
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: prominent ? 20 : 15, weight: .semibold))
-                .foregroundStyle(.white.opacity(enabled ? (prominent ? 1.0 : 0.88) : 0.35))
+                .foregroundStyle(.white.opacity(enabled ? (isHovered || prominent ? 1.0 : 0.88) : 0.35))
                 .frame(width: prominent ? 40 : 34, height: prominent ? 40 : 34)
-                .background {
-                    Circle()
-                        .fill(Color.white.opacity(restingFillOpacity))
-
-                    if isHovered && enabled {
-                        Circle()
-                            .fill(.thinMaterial)
-                            .overlay(
-                                Circle()
-                                    .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.8)
-                            )
-                    }
-                }
-                .background(.thinMaterial, in: Circle())
                 .contentShape(Circle())
         }
         .buttonStyle(V3BounceButtonStyle())
@@ -3657,7 +3630,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
         let baseFont = Font.system(size: baseSize, weight: rowWeight, design: .rounded)
         let rubyFont = Font.system(size: rubySize, weight: .regular, design: .rounded)
         if isActive {
-            TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !presentationClock.isPlaying)) { _ in
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !presentationClock.isPlaying)) { _ in
                 let presentationTime = presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
                 RubyLineView(
                     originalText: effectiveOriginalText,
@@ -4045,15 +4018,18 @@ private struct V3VisualTuningPopoverView: View {
 
             // 1. 背景封面：取景方式、背景缩放、模糊／光效
             VStack(alignment: .leading, spacing: 10) {
-                Text("背景封面")
+                Text(settings.v3ArtworkPresentation == .lyricsOnly ? "背景光场" : "背景封面")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(.primary)
 
-                if settings.v3ArtworkPresentation == .ambient {
+                if settings.v3ArtworkPresentation != .lyricsOnly {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("取景方式")
                             .font(.system(size: 12, weight: .medium))
-                        Picker("取景方式", selection: $settings.v3AmbientBackgroundShowsCompleteArtwork) {
+                        Picker("取景方式", selection: Binding(
+                            get: { settings.v3BackgroundShowsCompleteArtwork(for: settings.v3ArtworkPresentation) },
+                            set: { settings.setV3BackgroundShowsCompleteArtwork($0, for: settings.v3ArtworkPresentation) }
+                        )) {
                             Text("铺满").tag(false)
                             Text("尽量完整").tag(true)
                         }
@@ -4062,7 +4038,7 @@ private struct V3VisualTuningPopoverView: View {
                         .accessibilityLabel("取景方式")
                         .accessibilityIdentifier("v3.ambient.backgroundFraming")
 
-                        Text(settings.v3AmbientBackgroundShowsCompleteArtwork
+                        Text(settings.v3BackgroundShowsCompleteArtwork(for: settings.v3ArtworkPresentation)
                             ? "优先展示更多画面并柔和补边；前景封面单独调整。"
                             : "允许裁切以铺满背景空间；前景封面单独调整。")
                             .font(.caption)
@@ -4071,12 +4047,10 @@ private struct V3VisualTuningPopoverView: View {
                     }
                 }
 
-                if settings.v3ArtworkPresentation == .authenticAmbient
-                    || settings.v3ArtworkPresentation == .classic
-                    || settings.v3ArtworkPresentation.theme == .enlarged {
+                Group {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            Text("背景缩放")
+                            Text(settings.v3ArtworkPresentation == .lyricsOnly ? "背景光场缩放" : "背景缩放")
                                 .font(.system(size: 12, weight: .medium))
                             Spacer()
                             Text("\(backdropScalePresetName) · \(Int((settings.v3BackdropScale(for: settings.v3ArtworkPresentation) * 100).rounded()))%")

@@ -83,6 +83,55 @@ private final class Counter: @unchecked Sendable {
     var value = 0
 }
 
+private final class NetEaseFixtureStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var searchBody = Data()
+    private var lyricBodies: [String: Data] = [:]
+
+    func reset(searchBody: Data, lyricBodies: [String: Data]) {
+        lock.lock()
+        self.searchBody = searchBody
+        self.lyricBodies = lyricBodies
+        lock.unlock()
+    }
+
+    func body(for request: URLRequest) -> Data {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let url = request.url,
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return Data() }
+        if url.path.hasSuffix("/api/search/get/web") { return searchBody }
+        if url.path.hasSuffix("/api/song/lyric"),
+           let id = components.queryItems?.first(where: { $0.name == "id" })?.value {
+            return lyricBodies[id] ?? Data("{}".utf8)
+        }
+        return Data("{}".utf8)
+    }
+}
+
+private final class NetEaseFixtureURLProtocol: URLProtocol, @unchecked Sendable {
+    static let store = NetEaseFixtureStore()
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host == "music.163.com"
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let body = Self.store.body(for: request)
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
 @main
 struct ProviderFailureContract {
     static func main() async {
@@ -93,6 +142,87 @@ struct ProviderFailureContract {
             duration: 210
         )
         let identity = TrackIdentity(track: track)
+
+        // NetEase catalog title aliases are independent metadata, not query echoes.
+        let neteaseConfig = URLSessionConfiguration.ephemeral
+        neteaseConfig.protocolClasses = [NetEaseFixtureURLProtocol.self]
+        let neteaseSession = URLSession(configuration: neteaseConfig)
+        let fireworkTrack = Track(title: "Fireworks", artist: "Fixture Artist", album: "Fixture Album", duration: 120)
+        let fireworkIdentity = TrackIdentity(track: fireworkTrack)
+        let fireworkSearch = try! JSONSerialization.data(withJSONObject: ["result": ["songs": [[
+            "id": 9001, "name": "花火", "alias": [], "transNames": ["Fireworks"],
+            "artists": [["name": "Fixture Artist"]], "album": ["name": "Fixture Album"], "duration": 120_000
+        ]]]])
+        let lyricBody = try! JSONSerialization.data(withJSONObject: ["lrc": ["lyric": "[00:01.00]fixture line"],
+            "tlyric": ["lyric": ""], "yrc": ["lyric": ""]])
+        NetEaseFixtureURLProtocol.store.reset(searchBody: fireworkSearch, lyricBodies: ["9001": lyricBody])
+        let fireworkResult = await NetEaseExperimentalLyricsProvider(session: neteaseSession)
+            .lookup(track: fireworkTrack, identity: fireworkIdentity)
+        guard case .candidates(let fireworkCandidates) = fireworkResult,
+              let fireworkCandidate = fireworkCandidates.first else {
+            fatalError("NetEase provider should return a translated-title candidate, got \(fireworkResult)")
+        }
+        precondition(fireworkCandidate.declaredTitleAliases == ["Fireworks"],
+            "NetEase transNames should be retained as independent title metadata")
+        let fireworkDecision = LyricsSafeMatcher.decide(
+            candidate: fireworkCandidate,
+            metadata: TrackMetadata.bootstrap(from: fireworkTrack)
+        )
+        precondition(fireworkDecision.tier == .autoMedium
+            && fireworkDecision.reasons.contains("titleProviderAliasConfirmed"),
+            "a provider-declared English title with matching artist and duration should auto-match")
+
+        let echoSearch = try! JSONSerialization.data(withJSONObject: ["result": ["songs": [[
+            "id": 9002, "name": "花火", "alias": [], "transNames": [],
+            "artists": [["name": "Fixture Artist"]], "album": ["name": "Fixture Album"], "duration": 120_000
+        ]]]])
+        NetEaseFixtureURLProtocol.store.reset(searchBody: echoSearch, lyricBodies: ["9002": lyricBody])
+        let echoResult = await NetEaseExperimentalLyricsProvider(session: neteaseSession)
+            .lookup(track: fireworkTrack, identity: fireworkIdentity)
+        guard case .candidates(let echoCandidates) = echoResult, let echoCandidate = echoCandidates.first else {
+            fatalError("unaliased NetEase title should remain a candidate for matcher rejection, got \(echoResult)")
+        }
+        precondition(echoCandidate.declaredTitleAliases.isEmpty,
+            "the query title must not be copied into provider-declared aliases")
+        let echoDecision = LyricsSafeMatcher.decide(candidate: echoCandidate, metadata: TrackMetadata.bootstrap(from: fireworkTrack))
+        precondition(echoDecision.tier == .reject && echoDecision.reasons.contains("titleMismatch"),
+            "an absent provider alias must not turn a translated-title guess into a match")
+
+        let hanabiTrack = Track(title: "HANABI", artist: "SACBEN", album: "はなび", duration: 120.086)
+        let hanabiIdentity = TrackIdentity(track: hanabiTrack)
+        let exactHanabiSearch = try! JSONSerialization.data(withJSONObject: ["result": ["songs": [[
+            "id": 2086887456, "name": "はなび", "alias": [], "transNames": ["花火"],
+            "artists": [["name": "SACBEN"]], "album": ["name": "はなび"], "duration": 120_085
+        ]]]])
+        let noLyricsBody = try! JSONSerialization.data(withJSONObject: ["lrc": ["lyric": ""],
+            "tlyric": ["lyric": ""], "yrc": ["lyric": ""]])
+        NetEaseFixtureURLProtocol.store.reset(searchBody: exactHanabiSearch, lyricBodies: ["2086887456": noLyricsBody])
+        let metadataOnlyResult = await NetEaseExperimentalLyricsProvider(session: neteaseSession)
+            .lookup(track: hanabiTrack, identity: hanabiIdentity)
+        guard case .failed(.lyricsBodyUnavailable(let metadataOnlyMessage)) = metadataOnlyResult else {
+            fatalError("exact NetEase metadata without a lyric body must be reported distinctly, got \(metadataOnlyResult)")
+        }
+        precondition(metadataOnlyMessage.contains("目录命中") && metadataOnlyMessage.contains("没有歌词正文"),
+            "metadata-only result must not be presented as instrumental")
+
+        let wrongHanabi = LyricsCandidate(id: "wrong-hanabi", identity: hanabiIdentity,
+            title: "Hanabi", artist: "黒川沙良", album: "Other Album", duration: 321.506,
+            lines: [LyricLine(timestamp: 0, originalText: "fixture")], source: .neteaseExperimental, confidence: 1)
+        let splitDiagnosis = await LyricsSearchManager(providers: [
+            FixedLyricsProvider(name: "wrong same-title source", result: .candidates([wrongHanabi])),
+            FixedLyricsProvider(name: "NetEase Experimental", result: metadataOnlyResult)
+        ]).search(track: hanabiTrack, identity: hanabiIdentity)
+        guard case .failed(let splitFailure) = splitDiagnosis.result,
+              case .lyricsBodyUnavailable = splitFailure else {
+            fatalError("exact catalog without text must remain distinct from unrelated same-title candidates")
+        }
+        precondition(splitFailure.recoveryMessage.contains("目录命中")
+            && splitFailure.recoveryMessage.contains("没有歌词正文")
+            && splitFailure.userFacingTitle == "已找到歌曲，暂无歌词正文",
+            "diagnostics should distinguish exact metadata-only source from wrong same-title results")
+        precondition(!splitFailure.recoveryMessage.contains("黒川沙良")
+            && !splitFailure.recoveryMessage.contains("322 秒"),
+            "a candidate wrong on both artist and duration must not dominate the identity warning")
 
         // 200 success with synced lyrics
         let okPayload = """

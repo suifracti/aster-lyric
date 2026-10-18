@@ -17,6 +17,18 @@ enum AppleMusicImmersiveV3BackdropKey {
     }
 }
 
+/// Bounded, centered image geometry: resizing a background never changes canvas layout.
+enum V3BackdropArtworkGeometry {
+    static func rect(canvas: CGSize, artwork: CGSize, scale: Double, complete: Bool) -> CGRect {
+        let aspect = max(0.01, artwork.width / max(1, artwork.height))
+        let fitHeight = min(canvas.height, canvas.width / aspect)
+        let fillHeight = max(canvas.height, canvas.width / aspect)
+        let height = (complete ? min(fillHeight, fitHeight * 1.15) : fillHeight) * scale
+        let width = height * aspect
+        return CGRect(x: (canvas.width - width) / 2, y: (canvas.height - height) / 2, width: width, height: height)
+    }
+}
+
 /// The V3 backdrop is deliberately track-bound rather than playback-bound.
 /// Cover data is reduced and sampled once per TrackIdentity/artwork key; the
 /// SwiftUI view never rebuilds a full-resolution blur on every time tick.
@@ -40,6 +52,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
     private var backdropBlurRadius: Double { settings.v3PreviewBlur(for: artworkPresentation) }
     private var artworkPosition: String { settings.v3PreviewPosition(for: artworkPresentation) }
     private var artworkSizeScale: Double { settings.v3PreviewBackdropScale(for: artworkPresentation) }
+    private var showsCompleteArtwork: Bool { settings.v3BackgroundShowsCompleteArtwork(for: artworkPresentation) }
 
     var body: some View {
         ZStack {
@@ -250,16 +263,10 @@ struct AppleMusicImmersiveV3BackdropView: View {
             quietArtworkColors
         case .albumPoster:
             quietArtworkColors
-            GeometryReader { canvas in
-                Image(nsImage: ambientImage ?? image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: canvas.size.width, height: canvas.size.height)
-                    .blur(radius: 18 + perceptualBlur * 46)
-                    .saturation(0.65)
-                    .opacity(reduceTransparency ? 0.08 : 0.20)
-            }
-            .clipped()
+            framedArtwork(image: ambientImage ?? image, scale: artworkSizeScale,
+                          blur: 18 + perceptualBlur * 46)
+                .saturation(0.65)
+                .opacity(reduceTransparency ? 0.08 : 0.20)
             ambientReadingVeil
         }
     }
@@ -281,44 +288,60 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 colors: [ambientColor(palette.glow, saturation: 0.40, maximumLuminance: 0.34).opacity(0.16), .clear],
                 center: coverLightCenter,
                 startRadius: 20,
-                endRadius: 380 + perceptualBlur * 360
+                endRadius: (380 + perceptualBlur * 360) * artworkSizeScale
             )
         }
     }
 
     @ViewBuilder
     private func stageArtworkLayers(image: NSImage, ambientImage: NSImage?) -> some View {
-        GeometryReader { geometry in
-            let aspect = image.size.width > 0 && image.size.height > 0
-                ? image.size.width / image.size.height : 1.0
-            let artworkRect = stageArtworkPlaneSize(canvas: geometry.size, artworkAspectRatio: aspect)
-            ZStack {
-                if artworkRect.minX > 0.5 {
-                    stageEdgeExtension(image: image, horizontal: true, leading: true)
-                        .frame(width: artworkRect.minX, height: artworkRect.height)
-                        .position(x: artworkRect.minX / 2, y: artworkRect.midY)
-                    stageEdgeExtension(image: image, horizontal: true, leading: false)
-                        .frame(width: artworkRect.minX, height: artworkRect.height)
-                        .position(x: artworkRect.maxX + artworkRect.minX / 2, y: artworkRect.midY)
+        if !showsCompleteArtwork {
+            framedArtwork(image: image, scale: artworkSizeScale, blur: 0)
+        } else {
+            GeometryReader { geometry in
+                let aspect = image.size.width > 0 && image.size.height > 0
+                    ? image.size.width / image.size.height : 1.0
+                let artworkRect = stageArtworkPlaneSize(canvas: geometry.size, artworkAspectRatio: aspect)
+                ZStack {
+                    Image(nsImage: image)
+                        .resizable().scaledToFill()
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .clipped().blur(radius: 18 + perceptualBlur * 42)
+                        .opacity(0.3)
+
+                    if artworkRect.minX > 0.5 {
+                        stageEdgeExtension(image: image, horizontal: true, leading: true)
+                            .frame(width: artworkRect.minX, height: artworkRect.height)
+                            .position(x: artworkRect.minX / 2, y: artworkRect.midY)
+                    }
+                    if geometry.size.width - artworkRect.maxX > 0.5 {
+                        let remaining = geometry.size.width - artworkRect.maxX
+                        stageEdgeExtension(image: image, horizontal: true, leading: false)
+                            .frame(width: remaining, height: artworkRect.height)
+                            .position(x: artworkRect.maxX + remaining / 2, y: artworkRect.midY)
+                    }
+                    if artworkRect.minY > 0.5 {
+                        stageEdgeExtension(image: image, horizontal: false, leading: true)
+                            .frame(width: artworkRect.width, height: artworkRect.minY)
+                            .position(x: artworkRect.midX, y: artworkRect.minY / 2)
+                    }
+                    if geometry.size.height - artworkRect.maxY > 0.5 {
+                        let remaining = geometry.size.height - artworkRect.maxY
+                        stageEdgeExtension(image: image, horizontal: false, leading: false)
+                            .frame(width: artworkRect.width, height: remaining)
+                            .position(x: artworkRect.midX, y: artworkRect.maxY + remaining / 2)
+                    }
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(width: artworkRect.width, height: artworkRect.height)
+                        .position(x: artworkRect.midX, y: artworkRect.midY)
                 }
-                if artworkRect.minY > 0.5 {
-                    stageEdgeExtension(image: image, horizontal: false, leading: true)
-                        .frame(width: artworkRect.width, height: artworkRect.minY)
-                        .position(x: artworkRect.midX, y: artworkRect.minY / 2)
-                    stageEdgeExtension(image: image, horizontal: false, leading: false)
-                        .frame(width: artworkRect.width, height: artworkRect.minY)
-                        .position(x: artworkRect.midX, y: artworkRect.maxY + artworkRect.minY / 2)
-                }
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .frame(width: artworkRect.width, height: artworkRect.height)
-                    .position(x: artworkRect.midX, y: artworkRect.midY)
+                .frame(width: geometry.size.width, height: geometry.size.height)
             }
-            .frame(width: geometry.size.width, height: geometry.size.height)
+            .clipped()
         }
-        .clipped()
         // Full original cover over a diffuse extension; lyric layout is unchanged.
         Color.black.opacity(settings.v3StageReadabilityEnabled ? 0.56 : (increaseContrast ? 0.40 : 0.24))
         LinearGradient(colors: [.black.opacity(0.08), .clear, .black.opacity(0.30)],
@@ -388,16 +411,9 @@ struct AppleMusicImmersiveV3BackdropView: View {
         // Retain album structure before applying the user-controlled diffusion.
         // Keep image visibility independent of diffusion, including at 0%.
         // The full-resolution snapshot avoids baked-in blur at the clear endpoint.
-        Group {
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.high)
-                .scaledToFill()
-                .scaleEffect(1.12 * artworkSizeScale)
-                .blur(radius: diffusionRadius, opaque: true)
-                .saturation(saturation)
-                .opacity(0.56)
-        }
+        framedArtwork(image: image, scale: 1.12 * artworkSizeScale, blur: diffusionRadius)
+            .saturation(saturation)
+            .opacity(0.56)
 
         RadialGradient(
             colors: [
@@ -458,57 +474,10 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
         // Retain album structure before applying the user-controlled diffusion.
         // Full opacity and vivid colors prevent grayish/muddy appearance.
-        Group {
-            if settings.v3AmbientBackgroundShowsCompleteArtwork {
-                GeometryReader { geometry in
-                    let aspect = max(0.01, image.size.width / max(1, image.size.height))
-                    let fitHeight = min(geometry.size.height, geometry.size.width / aspect)
-                    let fillHeight = max(geometry.size.height, geometry.size.width / aspect)
-                    let height = min(fillHeight, fitHeight * 1.15) * artworkSizeScale
-                    let backgroundFillBlur = diffusionRadius * 1.25
-                    let backgroundFillOpacity = 0.70 * min(1.0, 0.35 + perceptualBlur * 0.65)
-                    ZStack {
-                        Image(nsImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: geometry.size.width, height: geometry.size.height)
-                            .clipped()
-                            .blur(radius: backgroundFillBlur)
-                            .opacity(backgroundFillOpacity)
-                        Image(nsImage: image)
-                            .resizable()
-                            .interpolation(.high)
-                            .frame(width: height * aspect, height: height)
-                            .blur(radius: diffusionRadius)
-                            .mask {
-                                LinearGradient(stops: [
-                                    .init(color: .clear, location: 0),
-                                    .init(color: .white, location: 0.05),
-                                    .init(color: .white, location: 0.95),
-                                    .init(color: .clear, location: 1)
-                                ], startPoint: .leading, endPoint: .trailing)
-                                .mask(LinearGradient(stops: [
-                                    .init(color: .clear, location: 0),
-                                    .init(color: .white, location: 0.04),
-                                    .init(color: .white, location: 0.96),
-                                    .init(color: .clear, location: 1)
-                                ], startPoint: .top, endPoint: .bottom))
-                            }
-                    }
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                }
-                .clipped()
-            } else {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFill()
-                    .scaleEffect(1.12 * artworkSizeScale)
-                    .blur(radius: diffusionRadius, opaque: true)
-            }
-        }
-        .saturation(saturation)
-        .opacity(0.85)
+        framedArtwork(image: image, scale: showsCompleteArtwork ? artworkSizeScale : 1.12 * artworkSizeScale,
+                      blur: diffusionRadius)
+            .saturation(saturation)
+            .opacity(0.85)
 
         RadialGradient(
             colors: [
@@ -553,7 +522,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
         )
         let diffusionRadius = perceptualBlur * 64.0
         let washBlur = diffusionRadius * 1.30
-        let washOpacity = 0.38 * min(1.0, perceptualBlur * 1.6)
+        let washOpacity = 0.38 * min(1.0, 0.35 + perceptualBlur * 1.6)
 
         LinearGradient(
             colors: [
@@ -580,15 +549,18 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
         // Show the complete cover as a softly feathered source of ambient light.
         GeometryReader { canvas in
-            let side = min(canvas.size.height * 1.02, canvas.size.width * 0.86)
+            let side = min(canvas.size.height * 1.02, canvas.size.width * 0.86) * artworkSizeScale
+            let sourceWidth = showsCompleteArtwork ? side : canvas.size.width * artworkSizeScale
+            let sourceHeight = showsCompleteArtwork ? side : canvas.size.height * artworkSizeScale
             let imageX: CGFloat = artworkPosition == "right" ? 0.56
                 : (artworkPosition == "center" ? 0.50 : 0.44)
 
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)
-                .scaledToFit()
-                .frame(width: side, height: side)
+                .aspectRatio(contentMode: showsCompleteArtwork ? .fit : .fill)
+                .frame(width: sourceWidth, height: sourceHeight)
+                .clipped()
                 .blur(radius: diffusionRadius)
                 .saturation(saturation)
                 .opacity(palette.luminance > 0.58 ? 0.72 : 0.86)
@@ -675,18 +647,10 @@ struct AppleMusicImmersiveV3BackdropView: View {
     private func gaussianArtworkLayers(image: NSImage) -> some View {
         GeometryReader { geometry in
             let scale = 1 + (min(1.4, max(0.8, artworkSizeScale)) - 0.8) * 0.6
-            let aspect = max(0.01, image.size.width / max(1, image.size.height))
-            let coverWidth = max(geometry.size.width, geometry.size.height * aspect)
-            let extraWidth = max(0, (coverWidth * scale - geometry.size.width) / 2)
-            let offset = min(extraWidth, max(-extraWidth, classicArtworkOffset(for: geometry.size.width)))
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.high)
-                .scaledToFill()
-                .frame(width: geometry.size.width, height: geometry.size.height)
-                .scaleEffect(scale * 1.04)
-                .offset(x: offset)
-                .blur(radius: effectiveBlurRadius)
+            framedArtwork(image: image, scale: showsCompleteArtwork ? artworkSizeScale : scale * 1.04,
+                          blur: effectiveBlurRadius,
+                          horizontalOffset: showsCompleteArtwork ? 0 : classicArtworkOffset(for: geometry.size.width))
+
         }
         .clipped()
     }
@@ -745,13 +709,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
             let effectiveScale = style.artworkScale * scale
             let offset = classicArtworkOffset(for: geometry.size.width, scale: scale, effectiveScale: effectiveScale)
 
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: geometry.size.width, height: geometry.size.height)
-                .scaleEffect(effectiveScale)
-                .offset(x: offset)
-                .blur(radius: effectiveBlurRadius)
+            framedArtwork(image: image, scale: showsCompleteArtwork ? scale : effectiveScale,
+                          blur: effectiveBlurRadius, horizontalOffset: showsCompleteArtwork ? 0 : offset)
                 .opacity(min(1, style.artworkOpacity * style.textureIntensity))
         }
 
@@ -762,13 +721,9 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 let effectiveScale = style.artworkScale * scale
                 let offset = classicArtworkOffset(for: geometry.size.width, scale: scale, effectiveScale: effectiveScale)
 
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    .scaleEffect(effectiveScale)
-                    .offset(x: offset)
-                    .blur(radius: effectiveScreenBlurRadius)
+                framedArtwork(image: image, scale: showsCompleteArtwork ? scale : effectiveScale,
+                              blur: effectiveScreenBlurRadius, horizontalOffset: showsCompleteArtwork ? 0 : offset,
+                              fillsEdges: false)
                     .blendMode(.screen)
                     .opacity(0.40 * style.textureIntensity * perceptualBlur)
             }
@@ -822,6 +777,44 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 .resizable(resizingMode: .tile)
                 .blendMode(.overlay)
                 .opacity(style.noiseIntensity * 0.8)
+        }
+    }
+
+    private func framedArtwork(image: NSImage, scale: Double, blur: Double,
+                               horizontalOffset: CGFloat = 0, fillsEdges: Bool = true) -> some View {
+        GeometryReader { canvas in
+            let rect = V3BackdropArtworkGeometry.rect(canvas: canvas.size, artwork: image.size,
+                                                      scale: scale, complete: showsCompleteArtwork)
+            let featherEdges = showsCompleteArtwork || scale < 1
+            let overscan = max(0, (rect.width - canvas.size.width) / 2)
+            let offset = min(overscan, max(-overscan, horizontalOffset))
+            ZStack {
+                if fillsEdges && featherEdges {
+                    Image(nsImage: image)
+                        .resizable().scaledToFill()
+                        .frame(width: canvas.size.width, height: canvas.size.height)
+                        .clipped()
+                        .blur(radius: blur * 1.25)
+                        .opacity(showsCompleteArtwork ? 0.70 * min(1, 0.35 + perceptualBlur * 0.65) : 0.70)
+                }
+                Image(nsImage: image)
+                    .resizable().interpolation(.high)
+                    .frame(width: rect.width, height: rect.height)
+                    .blur(radius: blur)
+                    .mask {
+                        if featherEdges {
+                            LinearGradient(stops: [.init(color: .clear, location: 0),
+                                .init(color: .white, location: 0.05), .init(color: .white, location: 0.95),
+                                .init(color: .clear, location: 1)], startPoint: .leading, endPoint: .trailing)
+                                .mask(LinearGradient(stops: [.init(color: .clear, location: 0),
+                                    .init(color: .white, location: 0.04), .init(color: .white, location: 0.96),
+                                    .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
+                        } else { Color.white }
+                    }
+                    .position(x: canvas.size.width / 2 + offset, y: canvas.size.height / 2)
+            }
+            .frame(width: canvas.size.width, height: canvas.size.height)
+            .clipped()
         }
     }
 

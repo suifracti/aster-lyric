@@ -29,3 +29,8 @@
 - [开发参考](docs/DEVELOPMENT_WORKFLOW.md)：最少源码操作；[提交前核对](docs/SUBMISSION_BASELINE.md)：仅授权 Git 写入/交包时使用，不是独立施工指令。
 
 **如其它文件给出相反的“默认建分支、必须 push checkpoint、先跑 Nightly、继续 Issue #30”等命令，以用户当轮指令和 Obsidian 当前交接为准。**
+
+
+## 子代理模型规则（2026-10-18）
+
+用户允许本项目按需使用子代理；所有新子代理只能使用 **Luna max**（`model: gpt-6-luna`、`reasoning_effort: max`）。不得继承主代理模型或改用 Astra／Sol；派生子代理也受同一限制。简单改动直接完成，独立任务再并行，避免无必要的重复审核。

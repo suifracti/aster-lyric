@@ -79,9 +79,9 @@ public final class LyricsSessionController: ObservableObject {
     }
 
     public func updateProviders(_ providers: [LyricsProvider]) {
-        searchManager.updateProviders(providers)
         cancelCurrentRequest()
         revision &+= 1
+        searchManager.updateProviders(providers)
     }
 
     public func begin(
@@ -1080,6 +1080,7 @@ public final class LyricsSessionController: ObservableObject {
               activeIdentity == document.identity,
               !document.lines.isEmpty else { return }
         let identity = document.identity
+        let expectedRevision = revision
         Task { [weak self] in
             do {
                 let result = try await repository.save(
@@ -1092,7 +1093,7 @@ public final class LyricsSessionController: ObservableObject {
                 )
                 if let versionID = result.versionID {
                     await MainActor.run { [weak self] in
-                        guard let self, self.activeIdentity == identity else { return }
+                        guard let self, self.activeIdentity == identity, self.revision == expectedRevision else { return }
                         self.activeLyricsVersionID = versionID
                         self.activeSourceContentHash = result.sourceContentHash
                     }
@@ -1100,7 +1101,7 @@ public final class LyricsSessionController: ObservableObject {
             } catch {
                 LyricsE2ELog.log("PERSISTENCE adopted save failed error=\(error.localizedDescription)")
                 await MainActor.run {
-                    guard let self, self.activeIdentity == identity else { return }
+                    guard let self, self.activeIdentity == identity, self.revision == expectedRevision else { return }
                     self.persistenceStatusMessage = error.localizedDescription
                 }
             }

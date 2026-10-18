@@ -691,6 +691,16 @@ public final class LyricsSearchManager: @unchecked Sendable {
             return SearchOutcome(result: .candidates(sorted), diagnostics: diagnostics)
         }
 
+        // Exact catalog metadata without text is distinct from wrong same-title songs.
+        // All enabled sources have already had the chance to supply real lyrics.
+        if let bodyMissing = diagnostics.compactMap({ diagnostic -> LyricsFailure? in
+            if case .failed(let failure) = diagnostic.outcome,
+               case .lyricsBodyUnavailable = failure { return failure }
+            return nil
+        }).first {
+            return SearchOutcome(result: .failed(bodyMissing), diagnostics: diagnostics)
+        }
+
         let rejected = diagnostics.flatMap(\.matchDecisions).filter { $0.tier == .reject }
         if !rejected.isEmpty {
             var details = Self.identityRejectionDetail(rejectedForExplanation, track: track)
@@ -718,14 +728,29 @@ public final class LyricsSearchManager: @unchecked Sendable {
     private static func identityRejectionDetail(_ evaluated: [EvaluatedCandidate], track: Track) -> String {
         func relevance(_ item: EvaluatedCandidate) -> Int {
             let reasons = item.decision.reasons
+            if reasons.contains("primaryArtistConflict") && reasons.contains("durationFar") {
+                return 0
+            }
             if !item.decision.hardReject, reasons.contains("primaryArtistExact"), reasons.contains("durationClose") { return 2 }
             if reasons.contains("titleExact") || reasons.contains("titleReadingExact") || reasons.contains("titleTypographyExact") { return 1 }
             return 0
         }
-        guard let closest = evaluated.filter({ $0.decision.tier == .reject && relevance($0) > 0 }).max(by: {
+        let rejected = evaluated.filter { $0.decision.tier == .reject }
+        guard let closest = rejected.filter({ relevance($0) > 0 }).max(by: {
             if relevance($0) != relevance($1) { return relevance($0) < relevance($1) }
             return $0.decision.score < $1.decision.score
-        }) else { return "" }
+        }) else {
+            let hasSameTitleConflict = rejected.contains { item in
+                let reasons = Set(item.decision.reasons)
+                return (reasons.contains("titleExact") || reasons.contains("titleReadingExact")
+                    || reasons.contains("titleTypographyExact"))
+                    && reasons.contains("primaryArtistConflict")
+                    && reasons.contains("durationFar")
+            }
+            return hasSameTitleConflict
+                ? "有同名候选，但歌手和时长均与当前歌曲不符，未自动采用。"
+                : ""
+        }
         let item = closest.candidate
         let reasons = closest.decision.reasons
         var differences: [String] = []
