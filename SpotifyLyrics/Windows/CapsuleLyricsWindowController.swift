@@ -145,6 +145,8 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         savePosition()
         panel?.ignoresMouseEvents = false
         panel?.orderOut(nil)
+        panel?.contentView = nil
+        envelopeHostingView = nil
         isVisible = false
         presentationState = .collapsed
         settings?.capsuleWindowWasVisible = false
@@ -163,12 +165,15 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         removeMouseMonitors()
         panel?.ignoresMouseEvents = false
         panel?.orderOut(nil)
+        panel?.contentView = nil
+        envelopeHostingView = nil
         isVisible = false
         playbackState?.showCapsulePlayer = false
     }
 
     func restoreAfterFullScreen() {
         guard let panel, !isVisible else { return }
+        if panel.contentView == nil, let state = playbackState { installContent(on: panel, state: state) }
         settledHitState = presentationState
         if let settings { applyFrame(for: presentationState, settings: settings) }
         panel.isMovable = !isTopAttachedEnvelope && presentationState == .expanded
@@ -309,7 +314,6 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
                     }
                 }
         }
-        if panel == nil { panel = makePanel(state: state) }
     }
 
     private func makePanel(state: PlaybackState) -> CapsuleLyricsPanel {
@@ -329,6 +333,11 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]
         panel.isMovable = false
         panel.isMovableByWindowBackground = false
+        installContent(on: panel, state: state)
+        return panel
+    }
+
+    private func installContent(on panel: NSPanel, state: PlaybackState) {
         let hostedView = NSHostingView(rootView: CapsuleLyricsView(state: state, windowController: self))
         let envelopeView = CapsuleEnvelopeHostingView(hostedView: hostedView)
         envelopeView.interactivePointProvider = { [weak self] point in
@@ -337,11 +346,13 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         }
         envelopeHostingView = envelopeView
         panel.contentView = envelopeView
-        return panel
     }
 
     private func show() {
-        guard let panel, let settings else { return }
+        guard let settings, let state = playbackState else { return }
+        if panel == nil { panel = makePanel(state: state) }
+        guard let panel else { return }
+        if panel.contentView == nil, let state = playbackState { installContent(on: panel, state: state) }
         cancelHoverCollapse()
         removeOutsideClickMonitors()
         pointerIsInside = false

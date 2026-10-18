@@ -12,9 +12,8 @@ private final class FloatingLyricsStylePanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// Owns exactly one retained floating panel. Hiding orders it out instead of
-/// closing or releasing the panel, so repeated toggles cannot create a second
-/// window or a second SwiftUI state tree.
+/// Retains one panel/frame, but creates its SwiftUI content only while shown.
+/// Hidden desktop lyrics must not keep observing playback in the background.
 @MainActor
 final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindowDelegate {
     @Published private(set) var isVisible = false
@@ -89,6 +88,7 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
     func close() {
         hideStylePanel()
         panel?.orderOut(nil)
+        panel?.contentView = nil
         isVisible = false
         settings?.floatingWindowWasVisible = false
         playbackState?.showFloatingWindow = false
@@ -101,12 +101,16 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
         guard isVisible else { return }
         hideStylePanel()
         panel?.orderOut(nil)
+        panel?.contentView = nil
         isVisible = false
         playbackState?.showFloatingWindow = false
     }
 
     func restoreAfterFullScreen() {
         guard let panel, !isVisible else { return }
+        if panel.contentView == nil, let state = playbackState, let configuration = settings {
+            installContent(on: panel, state: state, settings: configuration)
+        }
         applyInteractionMode()
         applyWindowLevel()
         panel.orderFrontRegardless()
@@ -181,12 +185,7 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
         playbackState = state
         self.settings = settings
 
-        if panel == nil {
-            let panel = makePanel(state: state, settings: settings)
-            self.panel = panel
-            interactionMode = settings.floatingWindowInteractionMode
-            applyInteractionMode()
-        }
+        if panel == nil { interactionMode = settings.floatingWindowInteractionMode }
 
         if settingsCancellables.isEmpty {
             settings.$floatingWindowAlwaysOnTop
@@ -241,17 +240,26 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]
         panel.minSize = persistence.minimumSize
         panel.maxSize = persistence.maximumSize
-        panel.contentView = NSHostingView(
-            rootView: FloatingLyricsView(state: state, windowController: self)
-                .environmentObject(settings)
-        )
+        installContent(on: panel, state: state, settings: settings)
         applyWindowLevel(to: panel, settings: settings)
         panel.alphaValue = CGFloat(FloatingDesktopTypography.panelOpacity(value: settings.floatingWindowOpacity, transparent: settings.floatingLyricsPresentation == .transparentV2, keepsTextOpaque: settings.floatingDesktopKeepsTextOpaque))
         return panel
     }
 
+    private func installContent(on panel: NSPanel, state: PlaybackState, settings: AppSettingsStore) {
+        panel.contentView = NSHostingView(
+            rootView: FloatingLyricsView(state: state, windowController: self)
+                .environmentObject(settings)
+        )
+    }
+
     private func show() {
+        guard let state = playbackState, let configuration = settings else { return }
+        if panel == nil { panel = makePanel(state: state, settings: configuration) }
         guard let panel else { return }
+        if panel.contentView == nil, let state = playbackState, let configuration = settings {
+            installContent(on: panel, state: state, settings: configuration)
+        }
         if let settings {
             panel.setFrame(persistence.restoreFrame(settings: settings), display: false)
             applyWindowLevel(to: panel, settings: settings)
@@ -268,6 +276,7 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
         hideStylePanel()
         saveFrame(panel)
         panel.orderOut(nil)
+        panel.contentView = nil
         isVisible = false
         settings?.floatingWindowWasVisible = false
         playbackState?.showFloatingWindow = false
