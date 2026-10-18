@@ -1645,6 +1645,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                         .background(.quaternary.opacity(0.5), in: Circle())
                 }
                 .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
                 .help("关闭")
             }
             .padding(.horizontal, 18)
@@ -4367,6 +4368,7 @@ private struct V3VisualTuningPopoverView: View {
                         .background(.quaternary.opacity(0.5), in: Circle())
                 }
                 .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
                 .help("关闭")
             }
             .padding(.horizontal, 16)
