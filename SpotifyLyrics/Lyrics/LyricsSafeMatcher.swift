@@ -293,7 +293,7 @@ public enum LyricsSafeMatcher {
                     // Desktop playback often exposes only the primary artist.
                     // Additional release credits alone do not change an otherwise
                     // exact recording; explicit guest disagreements still do.
-                    let sameRelease = expectedFeatured.isEmpty && missing.isEmpty
+                    let sameRelease = metadataPrimaryMatches && expectedFeatured.isEmpty && missing.isEmpty
                         && candidateFeaturedInTitle.isEmpty && metadataFeaturedInTitle.isEmpty
                         && metadata.verifiedSpotifyArtists.isEmpty
                         && (reasons.contains("titleExact") || reasons.contains("titleTypographyExact"))

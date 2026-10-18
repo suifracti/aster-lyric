@@ -372,13 +372,23 @@ private struct MenuBarLyricsAppearanceControls: View {
                 Text("尽量完整").tag(true)
             }
             .pickerStyle(.segmented)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
             .help("尽量完整会取消应用的长度限制，实际显示仍取决于系统菜单栏空间。")
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 6) {
                 Toggle("原文", isOn: $settings.menuBarLyricsShowsOriginal)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 Toggle("译文", isOn: $settings.menuBarLyricsShowsTranslation)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 Toggle("假名", isOn: $settings.menuBarLyricsShowsKana)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 Toggle("罗马音 / 拼音", isOn: $settings.menuBarLyricsShowsRomaji)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
             }
             .toggleStyle(.checkbox)
             Picker("注音位置", selection: $settings.menuBarLyricsReadingsAbove) {
@@ -386,11 +396,15 @@ private struct MenuBarLyricsAppearanceControls: View {
                 Text("同一行").tag(false)
             }
             .pickerStyle(.segmented)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
             .disabled(!settings.menuBarLyricsShowsOriginal || (!settings.menuBarLyricsShowsKana && !settings.menuBarLyricsShowsRomaji))
             HStack(spacing: 8) {
                 Text("字号")
                 Slider(value: Binding(get: { fontSize }, set: { settings.menuBarLyricsFontSize = $0 }),
                        in: 10...18, step: 1)
+                    .frame(maxWidth: .infinity, minHeight: 28)
+                    .contentShape(Rectangle())
                     .accessibilityLabel("状态栏歌词字号")
                 Text("\(Int(fontSize)) pt").monospacedDigit().frame(width: 36, alignment: .trailing)
             }

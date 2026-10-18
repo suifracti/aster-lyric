@@ -83,6 +83,11 @@ enum MainWindowResponsiveThresholds {
     static let toolbarRevealHeight: CGFloat = 96
 }
 
+private final class V3PlaybackInteractionRelay {
+    var action: ((Bool) -> Void)?
+    lazy var handler: (Bool) -> Void = { [weak self] value in self?.action?(value) }
+}
+
 private final class V3PointerLocationBox {
     var location: CGPoint?
 }
@@ -129,6 +134,7 @@ struct AppleMusicImmersiveV3WindowView: View {
     @State private var isPointerInsideCanvas = false
     @State private var isPointerInsidePlaybackRegion = false
     @State private var pointerLocationBox = V3PointerLocationBox()
+    @State private var playbackInteractionRelay = V3PlaybackInteractionRelay()
     @State private var playbackRegion = CGRect.null
     @State private var isPlaybackInteracting = false
     @State private var lastWindowExitPoint: CGPoint?
@@ -225,6 +231,7 @@ struct AppleMusicImmersiveV3WindowView: View {
     }
 
     var body: some View {
+        let _ = playbackInteractionRelay.action = { isPlaybackInteracting = $0 }
         GeometryReader { geometry in
             let inspectorWidth: CGFloat = usesDockedInspector && geometry.size.width >= 1_180 ? 340 : 0
             let canvasWidth = max(1, geometry.size.width - inspectorWidth)
@@ -402,7 +409,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
         .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: liveOnly ? state.liveLyrics : state.lyrics))
-        .environment(\.v3PlaybackInteractionChanged, { isPlaybackInteracting = $0 })
+        .environment(\.v3PlaybackInteractionChanged, playbackInteractionRelay.handler)
         .sheet(isPresented: $isAlignmentDetailsPresented) {
             if let report = state.liveLyricsState.alignmentReport {
                 AlignmentPreviewView(report: report)
@@ -1099,6 +1106,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             liveOnly: liveOnly,
             stage: stage
         )
+        .equatable()
         .environmentObject(settings)
         .environment(\.v3PreviewPresentation, hoveredStyle)
         .environment(\.lyricTextAlignment, compositionLyricsPosition == "center" ? .center : compositionLyricsPosition == "right" ? .trailing : .leading)
@@ -1800,9 +1808,14 @@ private struct V3ToolPopoverAnchor<Content: View>: NSViewRepresentable {
             coordinator.popover.contentViewController = hosting
         }
         let height = min(700, max(260, (anchor.window?.screen?.visibleFrame.height ?? 800) - 100))
-        if let size = coordinator.hosting?.sizeThatFits(in: CGSize(width: 420, height: height)) {
-            let rounded = CGSize(width: ceil(size.width), height: ceil(size.height))
-            if coordinator.popover.contentSize != rounded { coordinator.popover.contentSize = rounded }
+        // The panel contains its own scroll view. Measuring the entire hosted
+        // tree for every playback tick causes synchronous layout on main.
+        if !coordinator.popover.isShown || coordinator.measuredHeight != height {
+            coordinator.measuredHeight = height
+            if let size = coordinator.hosting?.sizeThatFits(in: CGSize(width: 420, height: height)) {
+                let rounded = CGSize(width: ceil(size.width), height: ceil(size.height))
+                if coordinator.popover.contentSize != rounded { coordinator.popover.contentSize = rounded }
+            }
         }
         if !coordinator.popover.isShown {
             coordinator.popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
@@ -1818,6 +1831,7 @@ private struct V3ToolPopoverAnchor<Content: View>: NSViewRepresentable {
         var parent: V3ToolPopoverAnchor
         weak var anchor: NSView?
         let popover = NSPopover()
+        var measuredHeight: CGFloat?
         var hosting: NSHostingController<Content>?
         private var localMonitor: Any?
         private var observers: [NSObjectProtocol] = []
@@ -2557,9 +2571,57 @@ private struct V3LyricsCopyRequest: Identifiable {
     let language: String?
 }
 
-private struct AppleMusicImmersiveV3LyricsViewport: View {
+private struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
     @Environment(\.lyricTextAlignment) private var textAlignment
-    @ObservedObject var state: PlaybackState
+    let state: PlaybackState
+    @State private var renderedSignature: RenderSignature?
+    @State private var refreshQueue = RefreshQueue()
+
+    private final class RefreshQueue { var isScheduled = false }
+    private struct RenderSignature: Equatable {
+        let lines: [LyricLine]
+        let track: Track
+        let currentIndex: Int?
+        let synchronized: Bool
+        let revision: UInt64
+        let loadState: LyricsLoadState
+        let language: String?
+        let preferences: DisplayPreferences
+        let preview: Bool
+        let instrumental: Bool
+        let wordClock: LyricsPresentationClock?
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.state === rhs.state && lhs.availableWidth == rhs.availableWidth
+            && lhs.compact == rhs.compact && lhs.lyricsFocus == rhs.lyricsFocus
+            && lhs.liveOnly == rhs.liveOnly && lhs.stage == rhs.stage
+            && (lhs.onSearch == nil) == (rhs.onSearch == nil)
+    }
+
+    private var renderSignature: RenderSignature {
+        let lines = documentLines
+        let index = liveOnly ? state.liveCurrentLineIndex : state.currentLineIndex
+        let sync = liveOnly ? state.liveLyricsAreSynchronized : state.lyricsAreSynchronized
+        let usesWordClock = sync && index.map { lines.indices.contains($0) && lines[$0].timedSpans?.isEmpty == false } == true
+        return RenderSignature(lines: lines, track: documentTrack, currentIndex: index,
+            synchronized: sync, revision: documentRevision, loadState: documentState,
+            language: isPreview ? nil : state.liveLyricsLanguage, preferences: state.preferences,
+            preview: isPreview, instrumental: hasExplicitInstrumentalMark,
+            wordClock: usesWordClock ? state.presentationClock : nil)
+    }
+
+    private func scheduleContentRefresh() {
+        guard !refreshQueue.isScheduled else { return }
+        refreshQueue.isScheduled = true
+        // objectWillChange arrives before the new values are stored. Coalesce
+        // one main-turn read, then invalidate only for visible lyric changes.
+        DispatchQueue.main.async {
+            refreshQueue.isScheduled = false
+            let next = renderSignature
+            if next != renderedSignature { renderedSignature = next }
+        }
+    }
     @State private var rubyCorrection: RubyCorrectionRequest?
     @State private var copyRequest: V3LyricsCopyRequest?
     let availableWidth: CGFloat
@@ -2590,6 +2652,7 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
     @Environment(\.lyricPresentationScale) private var presentationScale
 
     var body: some View {
+        let _ = renderedSignature
         // PlaybackState publishes time at a high cadence. Resolve the active
         // main-window document once for this render pass. Catalog selections
         // use the preview session; live-only projections belong to secondary
@@ -2652,6 +2715,8 @@ private struct AppleMusicImmersiveV3LyricsViewport: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.v3ExplicitInstrumentalMark, hasExplicitInstrumentalMark)
+        .onAppear { renderedSignature = renderSignature }
+        .onReceive(state.objectWillChange) { _ in scheduleContentRefresh() }
         .background {
             EmptyView()
                 .sheet(item: $rubyCorrection) { request in

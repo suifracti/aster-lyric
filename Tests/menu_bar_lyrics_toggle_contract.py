@@ -152,5 +152,7 @@ with tempfile.TemporaryDirectory(prefix='lyrics-menu-toggle-') as temporary:
  stub=(root/'Tests/fixtures/settings_playback_stub.swift').read_text()
  stub=stub[:stub.index('struct MenuBarLyricsPopoverView: View')]
  (t/'playback.swift').write_text(stub)
- subprocess.run(['swiftc','-parse-as-library',str(t/'settings.swift'),str(t/'playback.swift'),str(root/'SpotifyLyrics/Windows/MenuBarLyricsController.swift'),str(root/'SpotifyLyrics/Views/MenuBar/MenuBarLyricsPopoverView.swift'),str(t/'host.swift'),'-o',str(t/'contract')],check=True)
+ # Palette loading is a separate concern; keep this control/lifecycle fixture offline.
+ (t/'palette.swift').write_text('import SwiftUI\nextension View { func lyricIslandSongTint(artworkURL: URL?, accent: Binding<Color>) -> some View { self } }')
+ subprocess.run(['swiftc','-parse-as-library',str(t/'settings.swift'),str(t/'playback.swift'),str(t/'palette.swift'),str(root/'SpotifyLyrics/Windows/MenuBarLyricsController.swift'),str(root/'SpotifyLyrics/Views/MenuBar/MenuBarLyricsPopoverView.swift'),str(t/'host.swift'),'-o',str(t/'contract')],check=True)
  subprocess.run([str(t/'contract')],check=True)

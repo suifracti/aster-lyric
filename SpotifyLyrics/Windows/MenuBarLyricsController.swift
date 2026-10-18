@@ -240,6 +240,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     private var appearance = MenuBarLyricsAppearance()
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
+    private var applicationBeforePopover: NSRunningApplication?
     private weak var playbackState: PlaybackState?
     private var cancellables = Set<AnyCancellable>()
     private var openMainWindowHandler: (@MainActor () -> Void)?
@@ -361,12 +362,26 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         guard let playbackState else { return }
         popover?.performClose(nil)
         WindowManager.shared.toggleFloatingLyrics(state: playbackState)
+        restoreApplicationAfterAuxiliaryAction()
     }
 
     public func toggleCapsule() {
         guard let playbackState else { return }
         popover?.performClose(nil)
         WindowManager.shared.toggleCapsule(state: playbackState)
+        restoreApplicationAfterAuxiliaryAction()
+    }
+
+    /// Closing a key popover must return to the prior app, rather than let
+    /// AppKit promote this app's previously key main window with desktop lyrics.
+    private func restoreApplicationAfterAuxiliaryAction() {
+        let previous = applicationBeforePopover
+        applicationBeforePopover = nil
+        guard let previous, previous.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              !previous.isTerminated else { return }
+        DispatchQueue.main.async {
+            _ = previous.activate(options: [])
+        }
     }
 
     public func restoreFloatingInteraction() {
@@ -449,7 +464,13 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             popover.performClose(sender)
         } else {
             fullLyricsSnapshot = nil
+            let frontmost = NSWorkspace.shared.frontmostApplication
+            applicationBeforePopover = frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : frontmost
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            // Native checkbox, slider and segmented controls need a key host.
+            // Auxiliary actions restore the app that was active before opening.
+            popover.contentViewController?.view.window?.makeKey()
+            _ = NSRunningApplication.current.activate(options: [])
             (popover.contentViewController as? MenuBarPopoverHostingController<MenuBarLyricsPopoverView>)?.clearOpeningFocus()
         }
     }

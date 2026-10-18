@@ -991,13 +991,26 @@ private struct RubyTokenFlowLayout: Layout {
     let maxWidth: CGFloat?
     var alignmentFraction: CGFloat = 0
 
-    private struct Item {
+    struct Cache {
+        fileprivate var items: [Item]
+        fileprivate var rows: [CGFloat: [Row]] = [:]
+    }
+
+    func makeCache(subviews: Subviews) -> Cache {
+        Cache(items: subviews.indices.map { measuredItem(index: $0, subview: subviews[$0]) })
+    }
+
+    func updateCache(_ cache: inout Cache, subviews: Subviews) {
+        cache = makeCache(subviews: subviews)
+    }
+
+    fileprivate struct Item {
         let index: Int
         let size: CGSize
         let baseline: CGFloat
     }
 
-    private struct Row {
+    fileprivate struct Row {
         var items: [Item] = []
         var width: CGFloat = 0
 
@@ -1013,10 +1026,10 @@ private struct RubyTokenFlowLayout: Layout {
     func sizeThatFits(
         proposal: ProposedViewSize,
         subviews: Subviews,
-        cache: inout ()
+        cache: inout Cache
     ) -> CGSize {
-        let width = proposedWidth(proposal, subviews: subviews)
-        let rows = makeRows(width: width, subviews: subviews)
+        let width = proposedWidth(proposal, items: cache.items)
+        let rows = cachedRows(width: width, cache: &cache)
         let contentWidth = width > 0 ? width : rows.map(\.width).max() ?? 0
         let contentHeight = rows.reduce(0) { partial, row in
             partial + row.height
@@ -1028,17 +1041,18 @@ private struct RubyTokenFlowLayout: Layout {
         in bounds: CGRect,
         proposal: ProposedViewSize,
         subviews: Subviews,
-        cache: inout ()
+        cache: inout Cache
     ) {
-        let rows = makeRows(width: max(1, bounds.width), subviews: subviews)
+        let rows = cachedRows(width: max(1, bounds.width), cache: &cache)
         var y = bounds.minY
 
         for row in rows {
+            let baseline = row.baseline
             var x = bounds.minX + max(0, bounds.width - row.width) * alignmentFraction
             for item in row.items {
                 let subview = subviews[item.index]
                 subview.place(
-                    at: CGPoint(x: x, y: y + row.baseline - item.baseline),
+                    at: CGPoint(x: x, y: y + baseline - item.baseline),
                     anchor: .topLeading,
                     proposal: ProposedViewSize(width: item.size.width, height: item.size.height)
                 )
@@ -1048,7 +1062,7 @@ private struct RubyTokenFlowLayout: Layout {
         }
     }
 
-    private func proposedWidth(_ proposal: ProposedViewSize, subviews: Subviews) -> CGFloat {
+    private func proposedWidth(_ proposal: ProposedViewSize, items: [Item]) -> CGFloat {
         let proposalWidth = proposal.width.flatMap { width in
             width.isFinite && width > 0 ? width : nil
         }
@@ -1064,19 +1078,25 @@ private struct RubyTokenFlowLayout: Layout {
         if let explicitWidth {
             return explicitWidth
         }
-        return subviews.reduce(0) { partial, subview in
-            partial + subview.sizeThatFits(.unspecified).width
-        }
+        return items.reduce(0) { $0 + $1.size.width }
     }
 
-    private func makeRows(width: CGFloat, subviews: Subviews) -> [Row] {
-        guard !subviews.isEmpty else { return [] }
+    private func cachedRows(width: CGFloat, cache: inout Cache) -> [Row] {
+        if let rows = cache.rows[width] { return rows }
+        let rows = makeRows(width: width, items: cache.items)
+        // SwiftUI asks a few width proposals during a pass; bound the cache.
+        if cache.rows.count >= 4 { cache.rows.removeAll(keepingCapacity: true) }
+        cache.rows[width] = rows
+        return rows
+    }
+
+    private func makeRows(width: CGFloat, items: [Item]) -> [Row] {
+        guard !items.isEmpty else { return [] }
         let maxWidth = max(1, width)
         var rows: [Row] = []
         var current = Row()
 
-        for index in subviews.indices {
-            let item = measuredItem(index: index, subview: subviews[index])
+        for item in items {
             let nextWidth = current.items.isEmpty
                 ? item.size.width
                 : current.width + horizontalSpacing + item.size.width
@@ -1099,8 +1119,8 @@ private struct RubyTokenFlowLayout: Layout {
     }
 
     private func measuredItem(index: Int, subview: LayoutSubview) -> Item {
-        let size = subview.sizeThatFits(.unspecified)
         let dimensions = subview.dimensions(in: .unspecified)
+        let size = CGSize(width: dimensions.width, height: dimensions.height)
         let baseline = dimensions[.lastTextBaseline]
         return Item(
             index: index,
