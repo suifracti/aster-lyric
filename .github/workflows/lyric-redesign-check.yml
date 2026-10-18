@@ -1,0 +1,27 @@
+name: Lyric Island isolated source check
+on:
+  workflow_dispatch:
+  push:
+    branches: [chatgpt/redesign-performance-safe-20261018]
+    paths: [.github/workflows/lyric-redesign-check.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Export the exact tracked source, not user data
+        shell: bash
+        run: |
+          mkdir -p /tmp/lyric-export
+          git rev-parse HEAD > /tmp/lyric-export/SOURCE_SHA.txt
+          git archive --format=zip HEAD SpotifyLyrics SpotifyLyrics.xcodeproj Tests Scripts Tools generate_xcodeproj.py AGENTS.md docs/design > /tmp/lyric-export/source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lyric-island-tracked-source
+          path: /tmp/lyric-export/
+          retention-days: 1
