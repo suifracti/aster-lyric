@@ -24,21 +24,22 @@ struct V3ResponsiveGeometryContract {
             coverSize: 320, availableWidth: 430, availableHeight: 656,
             compact: false, portrait: false
         )
-        precondition(landscapeHiddenScale > 1.055 && landscapeHiddenScale <= 1.14)
+        precondition(landscapeHiddenScale > 1.14 && landscapeHiddenScale <= 1.24)
         precondition(landscapeHiddenScale * 320 <= 430.001)
         let shortWindowScale = V3ResponsiveGeometry.ambientHiddenCoverScale(
             coverSize: 220, availableWidth: 280, availableHeight: 520,
             compact: true, portrait: false
         )
-        precondition(shortWindowScale > 1 && shortWindowScale <= 1.06,
-                     "short windows must cap the hidden-cover expansion")
+        precondition(shortWindowScale > 1.14 && shortWindowScale <= 1.24,
+                     "short windows share the expansion while respecting their space")
         let portraitHiddenScale = V3ResponsiveGeometry.ambientHiddenCoverScale(
             coverSize: 180, availableWidth: 220, availableHeight: 236,
             compact: false, portrait: true
         )
-        precondition(portraitHiddenScale > 1 && portraitHiddenScale <= 1.14)
+        precondition(portraitHiddenScale > 1.14 && portraitHiddenScale <= 1.24)
         precondition(portraitHiddenScale * 180 <= 220.001)
-        precondition(V3ResponsiveGeometry.ambientHiddenCoverOffset(containerWidth: 480, coverSize: 320, scale: 1, alignment: "left") == 0)
+        precondition(V3ResponsiveGeometry.ambientHiddenCoverOffset(containerWidth: 480, coverSize: 320, scale: 1, alignment: "left") == 80,
+                     "a height-bounded cover still centers when it cannot grow")
         precondition(abs(V3ResponsiveGeometry.ambientHiddenCoverOffset(containerWidth: 480, coverSize: 320, scale: 1.1, alignment: "left") - 80) < 0.001)
         precondition(abs(V3ResponsiveGeometry.ambientHiddenCoverOffset(containerWidth: 480, coverSize: 320, scale: 1.1, alignment: "right") + 80) < 0.001)
         for compact in [false, true] {
@@ -55,8 +56,8 @@ struct V3ResponsiveGeometryContract {
                         )
                         let oldCenter = (height - detailsHeight) / 2
                         let newCenter = oldCenter + offset
-                        precondition(offset >= 0 && offset <= (compact ? 88 : 113), "centering has a restrained travel limit")
-                        precondition(newCenter >= oldCenter && newCenter <= height / 2 + 0.001, "centering approaches the column middle without overshoot")
+                        precondition(offset >= 0, "centering reclaims hidden details space")
+                        precondition(abs(newCenter - height / 2) < 0.001, "hidden cover centers in the media column")
                         precondition(newCenter - coverSize * scale / 2 >= -0.001, "expanded cover stays below the top boundary")
                         precondition(newCenter + coverSize * scale / 2 <= height + 0.001, "expanded cover stays above the bottom boundary")
                     }

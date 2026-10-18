@@ -258,8 +258,8 @@ enum V3ResponsiveGeometry {
 
     /// Scale the foreground cover only while playback details are hidden.
     /// The layout frame remains unchanged, so the lyrics column and the hover
-    /// anchor never move with the visual animation. Short windows get a
-    /// smaller cap; portrait uses the fixed header as its vertical budget.
+    /// anchor never move with the visual animation. All layouts share the
+    /// same expansion, bounded by their actual available space.
     static func ambientHiddenCoverScale(
         coverSize: CGFloat,
         availableWidth: CGFloat,
@@ -272,16 +272,7 @@ enum V3ResponsiveGeometry {
         let height = finitePositive(availableHeight)
         let widthLimit = max(1, width / size)
         let heightLimit = max(1, height / size)
-        let cap: CGFloat
-        if portrait {
-            cap = 1.14
-        } else if compact {
-            cap = 1.06
-        } else {
-            let heightProgress = min(1, max(0, (height - 520) / 140))
-            cap = 1.06 + heightProgress * 0.08
-        }
-        return min(cap, widthLimit, heightLimit)
+        return min(1.24, widthLimit, heightLimit)
     }
 
     /// Visual-only centering for the enlarged cover. The measured frame and
@@ -295,8 +286,6 @@ enum V3ResponsiveGeometry {
     ) -> CGFloat {
         let width = finitePositive(containerWidth)
         let size = finitePositive(coverSize)
-        let safeScale = max(1, finiteValue(scale))
-        guard safeScale > 1.0001 else { return 0 }
         let slack = max(0, width - size)
         switch alignment {
         case "right": return -slack / 2
@@ -305,7 +294,7 @@ enum V3ResponsiveGeometry {
         }
     }
 
-    /// Reclaim only part of the hidden metadata's space. The intrinsic
+    /// Reclaim the hidden metadata's space to center the cover. The intrinsic
     /// composition stays measured in place, preserving the hover target and
     /// lyric layout while the complete cover moves toward the column center.
     static func hiddenCoverVerticalOffset(
@@ -323,7 +312,7 @@ enum V3ResponsiveGeometry {
         guard scaledHalfSize <= height / 2, originalCenter >= 0 else { return 0 }
         let desiredOffset = max(0, height / 2 - originalCenter)
         let bottomLimit = max(0, height - scaledHalfSize - originalCenter)
-        return min(compact ? 88 : 113, desiredOffset, bottomLimit)
+        return min(desiredOffset, bottomLimit)
     }
 
     /// Stage playback controls use the full player canvas as their hit area.

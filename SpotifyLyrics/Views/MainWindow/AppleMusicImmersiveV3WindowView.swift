@@ -155,7 +155,7 @@ struct AppleMusicImmersiveV3WindowView: View {
     }
 
     private var expandsHiddenArtwork: Bool {
-        settings.v3ExpandArtworkWhenDetailsHidden && !playbackDetailsVisible && !reduceMotion
+        settings.v3ExpandArtworkWhenDetailsHidden && !playbackDetailsVisible
     }
 
     private func immersiveCoverScale(
@@ -165,10 +165,8 @@ struct AppleMusicImmersiveV3WindowView: View {
         compact: Bool,
         portrait: Bool = false
     ) -> CGFloat {
-        // Restore the earlier bounded breathing motion without changing the
-        // user's stored foreground size or the surrounding layout.
-        guard compositionStyle != .ambientFeathered,
-              compositionStyle != .albumPoster else { return 1 }
+        // Every theme with this control uses the same bounded expansion.
+        guard compositionStyle != .albumPoster else { return 1 }
         guard expandsHiddenArtwork else { return 1 }
         return V3ResponsiveGeometry.ambientHiddenCoverScale(
             coverSize: size,
@@ -890,7 +888,6 @@ struct AppleMusicImmersiveV3WindowView: View {
         )
         let alignmentKey = alignment == .center ? "center" : (alignment == .trailing ? "right" : "left")
         let centersHiddenCover = expandsHiddenArtwork
-            && (compositionStyle == .classic || compositionStyle == .ambientFeathered)
         let verticalOffset = centersHiddenCover ? V3ResponsiveGeometry.hiddenCoverVerticalOffset(
             containerHeight: availableHeight,
             compositionHeight: playbackRegion.isNull ? 0 : playbackRegion.height,
@@ -910,12 +907,12 @@ struct AppleMusicImmersiveV3WindowView: View {
                 // Scale the artwork itself, preserving the column's bounds.
                 .scaleEffect(visualScale)
                 .frame(maxWidth: width, alignment: alignment == .center ? .center : .leading)
-                .offset(x: V3ResponsiveGeometry.ambientHiddenCoverOffset(
+                .offset(x: centersHiddenCover ? V3ResponsiveGeometry.ambientHiddenCoverOffset(
                     containerWidth: width,
                     coverSize: coverSize,
                     scale: visualScale,
                     alignment: alignmentKey
-                ), y: verticalOffset)
+                ) : 0, y: verticalOffset)
                 .shadow(color: .black.opacity(0.22), radius: compact ? 14 : 24, y: 10)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: playbackDetailsVisible)
 
@@ -4192,7 +4189,7 @@ private struct V3VisualTuningPopoverView: View {
                         || settings.v3ArtworkPresentation == .ambientFeathered {
                         Toggle("隐藏播放信息时舒展封面", isOn: $settings.v3ExpandArtworkWhenDetailsHidden)
                             .disabled(!settings.v3PlaybackDetailsOnHover)
-                            .help("隐藏播放信息后，在可用空间内轻轻展开封面；关闭后保持设定的尺寸与位置。")
+                            .help("隐藏播放信息后，统一放大封面并在封面区域居中；关闭后保持设定的尺寸与位置。")
                             .accessibilityIdentifier("v3.artwork.expandWhenDetailsHidden")
                     }
                 }
