@@ -21,8 +21,9 @@ clock = block(models, "public struct LyricsPresentationClock:")
 equality = block(source, "static func == (lhs: AppleMusicImmersiveV3LyricRow,")
 equality = equality.replace("AppleMusicImmersiveV3LyricRow", "Row")
 equality = equality.replace("AppleMusicImmersiveV3LyricRowContent", "Row")
-relay = block(source, "private final class V3RubyActionRelay").replace("private final class", "final class")
-program = "import Foundation\n" + clock + "\n" + relay + "\n" + r'''
+relay = block((root / "SpotifyLyrics/Views/Components/ReadingVersionEditorView.swift").read_text(), "final class RubyCorrectionAction:")
+interaction = block(source, "final class V3PlaybackInteractionRelay:")
+program = "import Foundation\n" + clock + "\n" + relay + "\n" + interaction + "\n" + r'''
 struct Line: Equatable { var timedSpans: [Int]? = [1] }
 struct Row: Equatable {
     var line = Line()
@@ -48,8 +49,10 @@ EQUALITY
 func expect(_ condition: Bool, _ message: String) {
     if !condition { print("FAIL: " + message); exit(1) }
 }
-let relay = V3RubyActionRelay()
-let stableHandler = relay.handler
+let relay = RubyCorrectionAction()
+let stableHandler = relay
+expect(relay == stableHandler, "environment callback identity must be stable")
+expect(relay != RubyCorrectionAction(), "different document callbacks must not alias")
 var corrected = ""
 relay.action = { surface, _ in corrected = "A:" + surface }
 stableHandler("first", "")
@@ -57,6 +60,14 @@ expect(corrected == "A:first", "correction callback must reach original document
 relay.action = { surface, _ in corrected = "B:" + surface }
 stableHandler("second", "")
 expect(corrected == "B:second", "stable callback must forward to current document, not stale lyrics")
+let playbackAction = V3PlaybackInteractionRelay()
+let samePlaybackAction = playbackAction
+var interacting = false
+playbackAction.action = { interacting = $0 }
+samePlaybackAction(true)
+expect(interacting && playbackAction == samePlaybackAction, "stable playback interaction still reaches the owner")
+samePlaybackAction(false)
+expect(!interacting, "gesture completion must clear playback interaction")
 let original = Row()
 var changed = original
 changed.presentationClock = LyricsPresentationClock(authoritativePosition: 11,

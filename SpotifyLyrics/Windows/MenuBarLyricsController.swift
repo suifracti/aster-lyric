@@ -200,10 +200,13 @@ final class MenuBarPopoverHostingView<Content: View>: NSHostingView<Content> {
 }
 
 @MainActor
-final class MenuBarPopoverHostingController<Content: View>: NSHostingController<Content> {
-    override init(rootView: Content) {
-        super.init(rootView: rootView)
-        view = MenuBarPopoverHostingView(rootView: rootView)
+final class MenuBarPopoverHostingController<Content: View>: NSViewController {
+    init(rootView: Content) {
+        super.init(nibName: nil, bundle: nil)
+        let host = MenuBarPopoverHostingView(rootView: rootView)
+        host.autoresizingMask = [.width, .height]
+        host.sizingOptions = [.intrinsicContentSize]
+        view = host
     }
 
     @available(*, unavailable)
@@ -466,12 +469,27 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             fullLyricsSnapshot = nil
             let frontmost = NSWorkspace.shared.frontmostApplication
             applicationBeforePopover = frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : frontmost
+            resizePopoverToContent()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            // Native checkbox, slider and segmented controls need a key host.
-            // Auxiliary actions restore the app that was active before opening.
+            // Give the popover keyboard focus without activating all app windows.
+            // Desktop lyrics remain independent of the main player.
             popover.contentViewController?.view.window?.makeKey()
             _ = NSRunningApplication.current.activate(options: [])
             (popover.contentViewController as? MenuBarPopoverHostingController<MenuBarLyricsPopoverView>)?.clearOpeningFocus()
+        }
+    }
+
+    /// Disclosure/full-song navigation changes the visible host's intrinsic
+    /// height. Resize only for those events, never on playback ticks.
+    func resizePopoverToContent() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let popover = self.popover,
+                  let view = popover.contentViewController?.view else { return }
+            view.invalidateIntrinsicContentSize()
+            let size = view.fittingSize
+            guard size.width.isFinite, size.height.isFinite, size.height > 0 else { return }
+            popover.contentSize = size
+            view.frame.size = size
         }
     }
 

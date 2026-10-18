@@ -22,8 +22,12 @@ private extension EnvironmentValues {
     }
 }
 
+private struct V3PlaybackVisibilityKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
 private struct V3PlaybackInteractionKey: EnvironmentKey {
-    static let defaultValue: (Bool) -> Void = { _ in }
+    static let defaultValue = V3PlaybackInteractionRelay()
 }
 
 private struct V3PlaybackRegionPreferenceKey: PreferenceKey {
@@ -54,7 +58,12 @@ private extension View {
 }
 
 extension EnvironmentValues {
-    var v3PlaybackInteractionChanged: (Bool) -> Void {
+    fileprivate var v3PlaybackVisible: Bool {
+        get { self[V3PlaybackVisibilityKey.self] }
+        set { self[V3PlaybackVisibilityKey.self] = newValue }
+    }
+
+    var v3PlaybackInteractionChanged: V3PlaybackInteractionRelay {
         get { self[V3PlaybackInteractionKey.self] }
         set { self[V3PlaybackInteractionKey.self] = newValue }
     }
@@ -64,7 +73,8 @@ private struct V3PlaybackVisibility: ViewModifier {
     let visible: Bool
     let reduceMotion: Bool
     func body(content: Content) -> some View {
-        content.opacity(visible ? 1 : 0)
+        content.environment(\.v3PlaybackVisible, visible)
+            .opacity(visible ? 1 : 0)
             .allowsHitTesting(visible)
             .accessibilityHidden(!visible)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: visible)
@@ -83,9 +93,10 @@ enum MainWindowResponsiveThresholds {
     static let toolbarRevealHeight: CGFloat = 96
 }
 
-private final class V3PlaybackInteractionRelay {
+final class V3PlaybackInteractionRelay: Equatable {
     var action: ((Bool) -> Void)?
-    lazy var handler: (Bool) -> Void = { [weak self] value in self?.action?(value) }
+    static func == (lhs: V3PlaybackInteractionRelay, rhs: V3PlaybackInteractionRelay) -> Bool { lhs === rhs }
+    func callAsFunction(_ value: Bool) { action?(value) }
 }
 
 private final class V3PointerLocationBox {
@@ -409,7 +420,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
         .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: liveOnly ? state.liveLyrics : state.lyrics))
-        .environment(\.v3PlaybackInteractionChanged, playbackInteractionRelay.handler)
+        .environment(\.v3PlaybackInteractionChanged, playbackInteractionRelay)
         .sheet(isPresented: $isAlignmentDetailsPresented) {
             if let report = state.liveLyricsState.alignmentReport {
                 AlignmentPreviewView(report: report)
@@ -1769,9 +1780,11 @@ private extension View {
             V3ToolPopoverAnchor(
                 isPresented: isPresented,
                 onAnchorPress: onAnchorPress,
-                content: content()
-                    .preferredColorScheme(.dark)
-                    .environment(\.colorScheme, .dark)
+                // Closed panels must not construct/copy every settings page on
+                // each playback tick. Keep the anchor, build the page on demand.
+                content: isPresented.wrappedValue
+                    ? AnyView(content().preferredColorScheme(.dark).environment(\.colorScheme, .dark))
+                    : AnyView(EmptyView())
             )
         )
     }
@@ -1781,10 +1794,10 @@ private final class V3ToolAnchorView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-private struct V3ToolPopoverAnchor<Content: View>: NSViewRepresentable {
+private struct V3ToolPopoverAnchor: NSViewRepresentable {
     @Binding var isPresented: Bool
     let onAnchorPress: () -> Void
-    let content: Content
+    let content: AnyView
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
     func makeNSView(context: Context) -> V3ToolAnchorView { V3ToolAnchorView() }
@@ -1832,7 +1845,7 @@ private struct V3ToolPopoverAnchor<Content: View>: NSViewRepresentable {
         weak var anchor: NSView?
         let popover = NSPopover()
         var measuredHeight: CGFloat?
-        var hosting: NSHostingController<Content>?
+        var hosting: NSHostingController<AnyView>?
         private var localMonitor: Any?
         private var observers: [NSObjectProtocol] = []
         private var trackingMenus = 0
@@ -2072,6 +2085,7 @@ private enum AppleMusicImmersiveV3ProgressDensity: Equatable {
 /// A restrained playback rail shared by every V3 size projection. It owns no
 /// clock and only sends an explicit seek after the user finishes editing.
 private struct AppleMusicImmersiveV3PlaybackProgress: View {
+    @Environment(\.v3PlaybackVisible) private var playbackVisible
     @ObservedObject var state: PlaybackState
     let density: AppleMusicImmersiveV3ProgressDensity
     let maxWidth: CGFloat?
@@ -2114,7 +2128,7 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
     var body: some View {
         TimelineView(.animation(
             minimumInterval: 1.0 / 30.0,
-            paused: !state.isPlaying || isEditing || reduceMotion
+            paused: !playbackVisible || !state.isPlaying || isEditing || reduceMotion
         )) { _ in
             progressRail
         }
@@ -2324,11 +2338,12 @@ private struct AppleMusicImmersiveV3TransportControls: View {
 }
 
 private struct V3TransportClockLabel: View {
+    @Environment(\.v3PlaybackVisible) private var playbackVisible
     let clock: LyricsPresentationClock
     let isPlaying: Bool
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.25, paused: !isPlaying)) { _ in
+        TimelineView(.animation(minimumInterval: 0.25, paused: !playbackVisible || !isPlaying)) { _ in
             Text(Self.formatTime(clock.playbackTime(at: ProcessInfo.processInfo.systemUptime)))
         }
     }
@@ -2996,17 +3011,8 @@ private struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
     }
 }
 
-/// Keep the environment callback stable across playback ticks. Updating its
-/// target must not invalidate every ruby token in an otherwise unchanged song.
-private final class V3RubyActionRelay {
-    var action: ((String, String) -> Void)?
-    lazy var handler: (String, String) -> Void = { [weak self] surface, reading in
-        self?.action?(surface, reading)
-    }
-}
-
 private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
-    @State private var rubyActionRelay = V3RubyActionRelay()
+    @State private var rubyActionRelay = RubyCorrectionAction()
     @Environment(\.lyricTextAlignment) private var textAlignment
     @EnvironmentObject private var settings: AppSettingsStore
 
@@ -3102,7 +3108,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
         )
         .equatable()
         .environmentObject(settings)
-        .environment(\.rubyCorrectionAction, onRuby == nil ? nil : rubyActionRelay.handler)
+        .environment(\.rubyCorrectionAction, onRuby == nil ? nil : rubyActionRelay)
         .contextMenu {
             Button("复制这一行", systemImage: "doc.on.doc") {
                 onCopyLine(line.originalText)

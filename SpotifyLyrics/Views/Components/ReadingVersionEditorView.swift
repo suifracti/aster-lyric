@@ -137,11 +137,19 @@ private struct ReadingRecordMark: View {
     }
 }
 
+/// Reference identity is stable in SwiftUI's environment, unlike a closure.
+/// Updating its target keeps correction actions current without relaying out tokens.
+final class RubyCorrectionAction: Equatable {
+    var action: ((String, String) -> Void)?
+    static func == (lhs: RubyCorrectionAction, rhs: RubyCorrectionAction) -> Bool { lhs === rhs }
+    func callAsFunction(_ surface: String, _ reading: String) { action?(surface, reading) }
+}
+
 struct RubyCorrectionActionKey: EnvironmentKey {
-    static let defaultValue: ((String, String) -> Void)? = nil
+    static let defaultValue: RubyCorrectionAction? = nil
 }
 extension EnvironmentValues {
-    var rubyCorrectionAction: ((String, String) -> Void)? {
+    var rubyCorrectionAction: RubyCorrectionAction? {
         get { self[RubyCorrectionActionKey.self] }
         set { self[RubyCorrectionActionKey.self] = newValue }
     }

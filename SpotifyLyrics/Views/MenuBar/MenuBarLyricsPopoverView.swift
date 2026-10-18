@@ -20,7 +20,11 @@ public struct MenuBarLyricsPopoverView: View {
                 playbackPage
             }
         }
-        .onChange(of: controller.fullLyricsSnapshot) { _, _ in didCopyFullLyrics = false }
+        .onChange(of: controller.fullLyricsSnapshot) { _, _ in
+            didCopyFullLyrics = false
+            controller.resizePopoverToContent()
+        }
+        .onChange(of: isAppearanceExpanded) { _, _ in controller.resizePopoverToContent() }
         .lyricIslandSongTint(artworkURL: controller.currentSnapshot.artworkURL, accent: $islandAccent)
     }
 
