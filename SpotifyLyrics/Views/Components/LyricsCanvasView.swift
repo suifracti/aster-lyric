@@ -618,7 +618,7 @@ struct LyricsCanvasView: View {
 /// the shared lyric session remains the owner of candidates. No timer or
 /// preview session is created here.
 struct LyricsStateContentFirstView: View {
-    @ObservedObject var state: PlaybackState
+    @V3ContentPlaybackState var state: PlaybackState
     var compact = false
     var lyricsFocus = false
     var compactLabel: String? = nil
@@ -626,6 +626,8 @@ struct LyricsStateContentFirstView: View {
 
     @State private var candidateToPreview: LyricsCandidate?
     @State private var manualLyricsSearchQuery = ""
+    @State private var diagnosticExpanded = false
+    @State private var manualSearchExpanded = false
 
     var body: some View {
         Group {
@@ -687,109 +689,95 @@ struct LyricsStateContentFirstView: View {
     }
 
     private var statusContent: some View {
-        VStack(spacing: compact ? 12 : 16) {
-            Spacer(minLength: compact ? 8 : 24)
-
-            Image(systemName: stateIcon)
-                .font(.system(size: compact ? 22 : 28, weight: .medium))
-                .foregroundStyle(LyricsDesignTokens.mutedText)
-
-            Text(stateTitle)
-                .font(.system(size: compact ? 22 : 28, weight: .semibold, design: .rounded))
-                .foregroundStyle(LyricsDesignTokens.primaryText)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-
-            Text(stateDetail)
-                .font(.system(size: compact ? 12 : 14, design: .rounded))
-                .foregroundStyle(LyricsDesignTokens.mutedText)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: compact ? 420 : 520)
-
-            primaryAction
-            secondaryActions
-
-            Spacer(minLength: compact ? 8 : 24)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 11) {
+                Image(systemName: stateIcon)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.72)).frame(width: 24)
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(stateTitle)
+                        .font(.system(size: compact ? 17 : 20, weight: .semibold))
+                        .foregroundStyle(.white).fixedSize(horizontal: false, vertical: true)
+                    Text(conciseDetail)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.76))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            HStack(spacing: 12) {
+                primaryAction
+                if offersRecovery {
+                    Button("搜索其他版本") { manualSearchExpanded.toggle() }
+                        .buttonStyle(.borderless).font(.system(size: 12))
+                    Menu {
+                        if state.canCreateManualLyrics {
+                            ManualLyricsActionsView(state: state, compact: true, compactLabel: "导入或创建")
+                        }
+                        Button("确认这首是纯音乐…", systemImage: "music.note") {
+                            state.markCurrentTrackAsInstrumental()
+                        }
+                        Button("本次不显示歌词", systemImage: "rectangle.slash") {
+                            state.selectNoLyricsVersion()
+                        }
+                        Button("导入本地音频 · ASR 草稿", systemImage: "waveform") {
+                            state.importLocalAudioForASR()
+                        }
+                    } label: { Image(systemName: "ellipsis").accessibilityLabel("更多歌词操作") }
+                    .menuStyle(.borderlessButton).fixedSize()
+                }
+            }
+            if manualSearchExpanded && offersRecovery { manualLyricsQueryEntry }
+            if case .failed = state.lyricsState {
+                DisclosureGroup("来源详情", isExpanded: $diagnosticExpanded) {
+                    Text(stateDetail)
+                        .font(.system(size: 11)).foregroundStyle(.white.opacity(0.72))
+                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 5)
+                }.font(.system(size: 11)).foregroundStyle(.white.opacity(0.76))
+            }
         }
-        .padding(.horizontal, compact ? 20 : LyricsDesignTokens.Spacing.xl)
+        .padding(compact ? 16 : 20)
+        .frame(maxWidth: compact ? 420 : 510, alignment: .leading)
+        .background(Color.black.opacity(0.68), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.10), lineWidth: 0.5))
+        .padding(.horizontal, compact ? 16 : 28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .combine)
+        .onChange(of: state.currentTrackIdentity) { _, _ in
+            diagnosticExpanded = false; manualSearchExpanded = false
+        }
     }
 
+    private var offersRecovery: Bool {
+        switch state.lyricsState {
+        case .noLyrics, .noMatch, .failed: return true
+        default: return false
+        }
+    }
+    private var conciseDetail: String {
+        guard case .failed(_, let failure) = state.lyricsState else { return stateDetail }
+        switch failure {
+        case .lyricsBodyUnavailable:
+            return "找到了发行记录，但这项来源还没有可用正文。可继续播放并查找其他来源；这不表示歌曲是纯音乐。"
+        case .serverError, .timedOut, .networkUnavailable, .rateLimited:
+            return "部分歌词来源暂时不可用。可以继续听歌，稍后重试；失败请求不会被当作歌曲没有歌词。"
+        default:
+            return "当前结果还不足以安全显示正确歌词。查看来源详情或搜索其他版本；已保存的版本不会被删除。"
+        }
+    }
     @ViewBuilder
     private var primaryAction: some View {
         switch state.lyricsState {
         case .noLyrics, .noMatch, .failed:
-            HStack(spacing: 8) {
-                Button("重新搜索歌词") { state.retryLyrics() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(LyricsDesignTokens.accent)
-                Button("标记为纯音乐", systemImage: "music.note") {
-                    state.markCurrentTrackAsInstrumental()
-                }
-                .buttonStyle(.bordered)
-            }
+            Button("重试查找") { state.retryLyrics() }
+                .buttonStyle(.borderedProminent).tint(LyricsDesignTokens.accent)
         case .noSelection:
-            if let onSearch {
-                Button("搜索歌词", action: onSearch)
-                    .buttonStyle(.borderedProminent)
-                    .tint(LyricsDesignTokens.accent)
-            }
+            if let onSearch { Button("查找歌词", action: onSearch).buttonStyle(.borderedProminent) }
         case .idle where state.isAutomaticSearchDisabledForDisplayedSession:
-            if let onSearch {
-                Button("手动搜索歌词", action: onSearch)
-                    .buttonStyle(.borderedProminent)
-                    .tint(LyricsDesignTokens.accent)
-            }
+            if let onSearch { Button("手动搜索", action: onSearch).buttonStyle(.borderedProminent) }
         case .idle where state.providerStatus != .ready:
-            Button("重试连接") { state.reconnectSpotify() }
-                .buttonStyle(.borderedProminent)
-                .tint(LyricsDesignTokens.accent)
-        default:
-            EmptyView()
+            Button("重试连接") { state.reconnectSpotify() }.buttonStyle(.borderedProminent)
+        default: EmptyView()
         }
-    }
-
-    @ViewBuilder
-    private var secondaryActions: some View {
-        HStack(spacing: LyricsDesignTokens.Spacing.sm) {
-            switch state.lyricsState {
-            case .noLyrics, .noMatch, .failed:
-                manualLyricsQueryEntry
-            default:
-                EmptyView()
-            }
-            if state.canCreateManualLyrics {
-                ManualLyricsActionsView(
-                    state: state,
-                    compact: true,
-                    compactLabel: compactLabel ?? (lyricsFocus || compact ? "导入" : "导入或创建")
-                )
-            }
-
-            if case .noLyrics = state.lyricsState {
-                Menu {
-                    Button("导入本地音频 · ASR 草稿", systemImage: "waveform") {
-                        state.importLocalAudioForASR()
-                    }
-                } label: {
-                    Label("更多", systemImage: "ellipsis")
-                }
-                .menuStyle(.borderlessButton)
-            } else if case .noMatch = state.lyricsState {
-                Menu {
-                    Button("导入本地音频 · ASR 草稿", systemImage: "waveform") {
-                        state.importLocalAudioForASR()
-                    }
-                } label: {
-                    Label("更多", systemImage: "ellipsis")
-                }
-                .menuStyle(.borderlessButton)
-            }
-        }
-        .font(.system(size: 12, weight: .medium, design: .rounded))
-        .foregroundStyle(LyricsDesignTokens.mutedText)
     }
 
     private var stateIcon: String {
@@ -850,9 +838,9 @@ struct LyricsStateContentFirstView: View {
         case .loading:
             return "正在搜索歌词"
         case .noLyrics:
-            return "暂无歌词"
+            return "当前来源暂无正文"
         case .noMatch:
-            return "没有找到歌词"
+            return "暂未找到可靠版本"
         case .noSelection:
             return "暂不使用歌词"
         case .failed(_, let failure):
@@ -937,10 +925,10 @@ struct LyricsStateContentFirstView: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: LyricsDesignTokens.Spacing.sm) {
                 Spacer(minLength: compact ? 8 : 20)
-                Text("选择歌词版本")
+                Text("核对歌词版本")
                     .font(.system(size: compact ? 20 : 26, weight: .semibold, design: .rounded))
                     .foregroundStyle(LyricsDesignTokens.primaryText)
-                Text("找到这些版本。请先核对歌曲和歌手，预览后采用；之后仍可随时切换。")
+                Text("这些结果仍有身份或编曲差异，未自动替你采用。选择一次会保存，后续可继续复用。")
                     .font(.system(size: compact ? 12 : 14, design: .rounded))
                     .foregroundStyle(LyricsDesignTokens.mutedText)
 
@@ -1034,13 +1022,13 @@ struct LyricsStateContentFirstView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(Color.black.opacity(0.62))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(Color.white.opacity(0.18), lineWidth: 0.8)
             )
-            .shadow(color: Color.black.opacity(0.25), radius: 10, x: 0, y: 4)
+
         }
         .buttonStyle(.plain)
         .accessibilityLabel("歌词候选：\(candidate.title)，\(candidate.artist)")

@@ -603,6 +603,33 @@ public final class LyricsSearchManager: @unchecked Sendable {
 
             }
 
+            if !collectCandidatesOnly, automaticAdoptions.isEmpty,
+               configuredProviders.contains(where: { $0 is LinkCoreLyricsProvider }),
+               (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let publisherAliases = await LinkCoreCatalog.shared.cachedAliases(for: track)
+                if !publisherAliases.isEmpty {
+                    meta.aliases = Self.mergeAliases(meta.aliases, publisherAliases)
+                    var rescored: [LyricsMatchDecision] = []
+                    for item in evaluatedCandidates {
+                        let decision = LyricsSafeMatcher.decide(candidate: item.candidate, metadata: meta,
+                            aliasUsed: alias(for: variant), queryVariant: variant)
+                        rescored.append(decision)
+                        if decision.tier != .reject {
+                            acceptedCandidates[item.candidate.id] = Self.enrichCandidate(item.candidate,
+                                providerName: item.providerName, variant: variant, decision: decision)
+                        }
+                        if decision.tier == .autoHigh || decision.tier == .autoMedium {
+                            automaticAdoptions.append(AutomaticAdoption(document: item.document, decision: decision,
+                                timingPriority: Self.timingPriority(of: item.candidate), providerIndex: item.providerIndex,
+                                candidateIndex: item.candidateIndex, providerName: item.providerName,
+                                cameFromCandidates: item.cameFromCandidates))
+                        }
+                    }
+                    diagnostics.append(LyricsProviderDiagnostic(provider: "LinkCore verified artist entity",
+                        outcome: .match, duration: 0, matchDecisions: rescored))
+                }
+            }
+
             // If the first exact query did not settle automatically, consult
             // Spotify's exact recording even when no source candidate exists.
             // Its title and credited artist spellings both expand bounded,

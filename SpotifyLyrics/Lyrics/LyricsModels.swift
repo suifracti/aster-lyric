@@ -7,6 +7,7 @@ public enum LyricsSource: String, CaseIterable, Codable, Sendable {
     case neteaseExperimental
     case qqExperimental
     case lyricsOVH
+    case linkcore
     case kuwoExperimental
     case kugouExperimental
     case unknown
@@ -25,6 +26,7 @@ public enum LyricsSource: String, CaseIterable, Codable, Sendable {
         case .neteaseExperimental: return "网易云（实验）"
         case .qqExperimental: return "QQ音乐（实验）"
         case .lyricsOVH: return "lyrics.ovh"
+        case .linkcore: return "LinkCore / TuneCore（发行方）"
         case .kuwoExperimental: return "酷我音乐（实验）"
         case .kugouExperimental: return "酷狗音乐（实验）"
         case .unknown: return "未知来源"

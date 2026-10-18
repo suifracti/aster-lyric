@@ -417,6 +417,9 @@ public final class PlaybackState: ObservableObject {
                     continue
                 }
                 providers.append(QQExperimentalLyricsProvider())
+            case .linkcore:
+                guard ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_LINKCORE"] != "1" else { continue }
+                providers.append(LinkCoreLyricsProvider())
             case .lyricsOVH:
                 guard ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_LYRICSOVH"] != "1" else { continue }
                 providers.append(LyricsOVHProvider())

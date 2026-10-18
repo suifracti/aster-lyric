@@ -13,6 +13,7 @@ public enum DatabaseSourceIdentifier {
         case "netEaseExperimental", "neteaseExperimental": return "网易云音乐"
         case "qqExperimental": return "QQ音乐"
         case "lyricsOVH": return "Lyrics.ovh"
+        case "linkcore": return "LinkCore / TuneCore（发行方）"
         case "kugouExperimental": return "酷狗音乐"
         case "kuwoExperimental": return "酷我音乐"
         case "asrMachineGenerated": return "语音识别草稿"
@@ -53,6 +54,7 @@ public enum DatabaseSourceIdentifier {
         switch source {
         case .unknown: return "unknown"
         case .lyricsOVH: return "lyricsOVH"
+        case .linkcore: return "linkcore"
         case .kuwoExperimental: return "kuwoExperimental"
         case .kugouExperimental: return "kugouExperimental"
         case .local: return "localLRC"
@@ -72,6 +74,7 @@ public enum DatabaseSourceIdentifier {
     public static func source(for identifier: String) -> LyricsSource {
         switch identifier {
         case "lyricsOVH": return .lyricsOVH
+        case "linkcore": return .linkcore
         case "kuwoExperimental": return .kuwoExperimental
         case "kugouExperimental": return .kugouExperimental
         case "localLRC", "localDatabase", "local": return .local

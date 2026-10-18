@@ -171,8 +171,13 @@ struct TranslationCLISetupBackend: Sendable {
                 posix_spawn_file_actions_adddup2(&actions,writeFD,STDERR_FILENO)
                 posix_spawn_file_actions_addclose(&actions,readFD)
                 posix_spawn_file_actions_addclose(&actions,writeFD)
+                #if compiler(>=6.2)
                 if #available(macOS 26,*) { posix_spawn_file_actions_addchdir(&actions,cwd.path) }
                 else { posix_spawn_file_actions_addchdir_np(&actions,cwd.path) }
+                #else
+                // Older SDKs expose only the equivalent non-portable name.
+                posix_spawn_file_actions_addchdir_np(&actions,cwd.path)
+                #endif
                 var pid:pid_t=0
                 let error=Self.withCStringPointers([executable]+arguments) { argv in
                     Self.withCStringPointers(Self.environment.map { $0.key+"="+$0.value }) { env in

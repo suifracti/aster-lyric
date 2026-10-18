@@ -38,7 +38,7 @@ public enum LyricsSourceMode: String, CaseIterable, Codable, Identifiable, Senda
         case .standardFree:
             return "使用本地歌词、已保存版本、AMLL、LRCLIB、lyrics.ovh 与用户导入/创建。不调用实验接口。"
         case .experimentalFree:
-            return "在标准免费能力之上，额外尝试网易云、QQ 音乐、酷我与酷狗实验源。可能失效，不保证覆盖率，不建议正式商业发行。"
+            return "在标准免费能力之上，额外尝试网易云、QQ 音乐、酷我、酷狗及 LinkCore 发行方公开正文。可能失效，不保证覆盖率，不建议正式商业发行。"
         }
     }
 
@@ -114,6 +114,7 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
     case kuwoExperimental
     case kugouExperimental
     case lyricsOVH
+    case linkcore
 
     public var id: String { rawValue }
 
@@ -128,6 +129,7 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
         case .kuwoExperimental: return "酷我音乐实验源"
         case .kugouExperimental: return "酷狗音乐实验源"
         case .lyricsOVH: return "lyrics.ovh"
+        case .linkcore: return "LinkCore 官方发行"
         }
     }
 
@@ -141,6 +143,7 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
         case .qqExperimental: return "bubble.left.and.bubble.right"
         case .kuwoExperimental, .kugouExperimental: return "music.note.list"
         case .lyricsOVH: return "globe"
+        case .linkcore: return "person.crop.rectangle.stack"
         }
     }
 
@@ -149,13 +152,13 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
     }
 
     public var isExperimental: Bool {
-        [Self.netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental].contains(self)
+        [Self.netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental, .linkcore].contains(self)
     }
 
     public var stabilityLabel: String {
         switch self {
         case .localFiles, .sqliteDatabase: return "稳定"
-        case .amll, .lrclib, .lyricsOVH: return "在线"
+        case .amll, .lrclib, .lyricsOVH, .linkcore: return "在线"
         case .netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental: return "实验"
         }
     }
@@ -175,7 +178,9 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
         case .qqExperimental, .kuwoExperimental, .kugouExperimental:
             return "实验源；结果必须经过版本匹配；仅扩展免费实验模式可用"
         case .lyricsOVH:
-            return "国际歌曲纯文本补充；没有时间轴，需手动核对后采用"
+            return "国际歌曲纯文本补充；没有时间轴，需独立证据或手动核对后采用"
+        case .linkcore:
+            return "按发行方艺人实体及歌曲目录补查公开正文；非同步歌词，保留原站署名与权利限制"
         }
     }
 
@@ -214,6 +219,11 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
                 allowedInStandardFree: true,
                 allowedInExperimentalFree: true
             )
+        case .linkcore:
+            return LyricsProviderPolicy(capabilityClass: .experimentalFree,
+                allowsAutomaticSearch: true, allowsLyricsBody: true, allowsLocalCache: true,
+                allowsExport: false, outboundOnly: false,
+                allowedInStandardFree: false, allowedInExperimentalFree: true)
         case .netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental:
             return LyricsProviderPolicy(
                 capabilityClass: .experimentalFree,
@@ -321,6 +331,7 @@ public struct LyricsProviderConfiguration: Equatable, Sendable {
             .qqExperimental,
             .kuwoExperimental,
             .kugouExperimental,
+            .linkcore,
             .lyricsOVH
         ]
     )
@@ -347,7 +358,7 @@ public struct LyricsProviderConfiguration: Equatable, Sendable {
             }
         }
         // Missing IDs distinguish pre-expansion preferences from explicit disables.
-        for id in [LyricsProviderID.kuwoExperimental, .kugouExperimental, .lyricsOVH]
+        for id in [LyricsProviderID.kuwoExperimental, .kugouExperimental, .lyricsOVH, .linkcore]
             where !order.contains(id) && !enabled.contains(id) {
             enabled.insert(id)
             order.append(id)
