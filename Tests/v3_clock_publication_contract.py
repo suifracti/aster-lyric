@@ -4,6 +4,8 @@ r=Path(__file__).resolve().parents[1]
 s=(r/'SpotifyLyrics/Services/PlaybackState.swift').read_text()
 a=s.index('    private func publishTickTime(');b=s.index('\n    private enum LineIndexSource',a)
 method=s[a:b].replace('private func','func')
+a=s.index('    private func resetPlaybackAnchor(');b=s.index('\n    private var presentationTimeNow:',a)
+anchor=s[a:b].replace('private func','func')
 view=(r/'SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift').read_text()
 a=view.index('final class V3PlaybackContentObserver:')
 b=view.index('\n@MainActor\n@propertyWrapper',a)
@@ -15,7 +17,17 @@ final class Probe:ObservableObject {
  @Published var currentTime:Double = 0
  @Published var lineIndex = 0
  var isPublishingPlaybackClockTick = false
+ enum LineIndexSource { case poll, seek }
+ struct Track { var duration:Double=300 }
+ var currentTrack=Track()
+ var playbackAnchorPosition:Double=0
+ var playbackAnchorDate=Date()
+ var playbackAnchorMonotonic:Double=0
+ var presentationTimeNow:Double { currentTime }
+ var boundaryFlags:[Bool]=[]
+ func syncPublishedLineIndex(source:LineIndexSource,previousTime:Double,incomingTime:Double) { boundaryFlags.append(isPublishingPlaybackClockTick) }
  METHOD
+ ANCHOR
 }
 typealias PlaybackState = Probe
 OBSERVER
@@ -32,18 +44,23 @@ p.currentTime=20
 precondition(refreshes == 2 && ticks == 6, "authoritative seek/reset still refreshes both")
 p.publishTickTime(20)
 precondition(ticks == 6 && refreshes == 2, "unchanged clock remains silent")
+p.resetPlaybackAnchor(to:21,source:.poll)
+precondition(ticks == 7 && refreshes == 2, "ordinary provider calibration must update time without a broad refresh")
+p.resetPlaybackAnchor(to:21,source:.seek)
+precondition(ticks == 8 && refreshes == 3, "an explicit seek must refresh even at the same position")
+precondition(p.boundaryFlags == [false,false], "lyric boundary synchronization must remain outside clock-only scope")
 MainActor.assumeIsolated {
  let controls=V3PlaybackContentObserver(p)
  var updates=0
  let c=controls.objectWillChange.sink { updates += 1 }
- p.publishTickTime(21)
+ p.publishTickTime(22)
  precondition(updates == 0, "controls must ignore a pure clock tick")
  p.lineIndex=2
  precondition(updates == 1, "controls must still observe content changes")
  withExtendedLifetime(c) {}
 }
 print("PASS: clock consumers stay live; main and control observers skip only pure ticks")
-'''.replace('METHOD',method).replace('OBSERVER',observer)
+'''.replace('METHOD',method).replace('ANCHOR',anchor).replace('OBSERVER',observer)
 with tempfile.TemporaryDirectory(prefix='lyrics-clock-filter-') as d:
  p=Path(d);(p/'main.swift').write_text(program)
  subprocess.run(['swiftc',str(p/'main.swift'),'-o',str(p/'probe')],check=True)

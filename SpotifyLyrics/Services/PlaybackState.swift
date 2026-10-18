@@ -2438,7 +2438,7 @@ public final class PlaybackState: ObservableObject {
         guard snapshot.status.isReady, let providerTrack = snapshot.track else {
             guard hasLiveTrack else {
                 transientProviderFailureStartedAt = nil
-                providerStatus = snapshot.status
+                if providerStatus != snapshot.status { providerStatus = snapshot.status }
                 clearLiveTrackIfNeeded()
                 return
             }
@@ -2452,13 +2452,13 @@ public final class PlaybackState: ObservableObject {
             }
 
             transientProviderFailureStartedAt = nil
-            providerStatus = snapshot.status
+            if providerStatus != snapshot.status { providerStatus = snapshot.status }
             clearLiveTrackIfNeeded()
             return
         }
 
         transientProviderFailureStartedAt = nil
-        providerStatus = snapshot.status
+        if providerStatus != snapshot.status { providerStatus = snapshot.status }
 
         let nextTrack = Track(providerTrack: providerTrack)
         let nextIdentity = TrackIdentity(track: nextTrack)
@@ -2509,7 +2509,7 @@ public final class PlaybackState: ObservableObject {
         }
 
         let wasPlaying = isPlaying
-        isPlaying = snapshot.isPlaying
+        if isPlaying != snapshot.isPlaying { isPlaying = snapshot.isPlaying }
         // S2 live-capture continuity: Desktop position can jump after a user
         // seek without going through seek(to:). Product auto-align reuses this.
         let previousPosition = currentTime
@@ -2775,7 +2775,13 @@ public final class PlaybackState: ObservableObject {
         playbackAnchorPosition = max(0, min(position, currentTrack.duration))
         playbackAnchorDate = Date()
         playbackAnchorMonotonic = observedAtMonotonic ?? ProcessInfo.processInfo.systemUptime
-        currentTime = playbackAnchorPosition
+        if source == .poll {
+            // Ordinary calibration updates the clock and its time subscribers,
+            // not the whole reading surface. Boundary publication stays outside.
+            publishTickTime(playbackAnchorPosition)
+        } else {
+            currentTime = playbackAnchorPosition
+        }
         syncPublishedLineIndex(
             source: source,
             previousTime: previous,

@@ -104,14 +104,14 @@ final class V3PlaybackInteractionRelay: Equatable {
 /// content changes without subscribing their whole layouts to the coarse time tick.
 @MainActor
 final class V3PlaybackContentObserver: ObservableObject {
-    let objectWillChange = ObservableObjectPublisher()
+    @Published private var revision: UInt64 = 0
     let state: PlaybackState
     private var subscription: AnyCancellable?
     init(_ state: PlaybackState) {
         self.state = state
         subscription = state.objectWillChange.sink { [weak self, weak state] _ in
             guard let self, let state, !state.isPublishingPlaybackClockTick else { return }
-            self.objectWillChange.send()
+            self.revision &+= 1
         }
     }
 }
@@ -2360,7 +2360,7 @@ private struct AppleMusicImmersiveV3TransportControls: View {
             )
 
             HStack {
-                V3TransportClockLabel(clock: state.presentationClock, isPlaying: state.isPlaying)
+                V3TransportClockLabel(state: state)
                 Spacer()
                 Text(formatTime(state.currentTrack.duration))
             }
@@ -2385,12 +2385,11 @@ private struct AppleMusicImmersiveV3TransportControls: View {
 
 private struct V3TransportClockLabel: View {
     @Environment(\.v3PlaybackVisible) private var playbackVisible
-    let clock: LyricsPresentationClock
-    let isPlaying: Bool
+    @V3ContentPlaybackState var state: PlaybackState
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.25, paused: !playbackVisible || !isPlaying)) { _ in
-            Text(Self.formatTime(clock.playbackTime(at: ProcessInfo.processInfo.systemUptime)))
+        TimelineView(.animation(minimumInterval: 0.25, paused: !playbackVisible || !state.isPlaying)) { _ in
+            Text(Self.formatTime(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime)))
         }
     }
 
@@ -2429,7 +2428,7 @@ private struct StageHUDView: View {
             VStack(spacing: 0) {
                 AppleMusicImmersiveV3PlaybackProgress(state: state, density: .small, maxWidth: nil)
                 HStack {
-                    V3TransportClockLabel(clock: state.presentationClock, isPlaying: state.isPlaying)
+                    V3TransportClockLabel(state: state)
                     Spacer()
                     Text(formatTime(state.currentTrack.duration))
                 }
@@ -2554,7 +2553,7 @@ private struct AppleMusicImmersiveV3FocusTransportControls: View {
             )
 
             HStack(spacing: 4) {
-                V3TransportClockLabel(clock: state.presentationClock, isPlaying: state.isPlaying)
+                V3TransportClockLabel(state: state)
                 Text("/ \(formatTime(state.currentTrack.duration))")
             }
                 .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
