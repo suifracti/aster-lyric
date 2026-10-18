@@ -155,6 +155,98 @@ public enum V3ArtworkPresentation: String, CaseIterable, Codable, Identifiable, 
     }
 }
 
+
+/// Product scenes are not renderer IDs. Legacy presets remain separately addressable.
+/// Only the selected renderer is constructed; this catalog owns no playback runtime.
+public enum V3ListeningScene: String, CaseIterable, Codable, Identifiable, Sendable {
+    case originalAmbient = "scene.originalAmbient.v1"
+    case flowingField = "scene.flowingField.v1"
+    case coverPhoto = "scene.coverPhoto.v1"
+    case linerNotes = "scene.linerNotes.v1"
+    case focusedLyrics = "scene.focusedLyrics.v1"
+    public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .originalAmbient: return "原版环境光"
+        case .flowingField: return "流动光场"
+        case .coverPhoto: return "封面写真"
+        case .linerNotes: return "唱片内页"
+        case .focusedLyrics: return "专注歌词"
+        }
+    }
+    public var detail: String {
+        switch self {
+        case .originalAmbient: return "完整封面，保留已认可的自然光色"
+        case .flowingField: return "独立色场，或保留完整的柔光羽化"
+        case .coverPhoto: return "画面成为舞台，歌词落在局部阅读区域"
+        case .linerNotes: return "歌曲题头、版心与段落，像打开唱片内页"
+        case .focusedLyrics: return "安静底色与受控行宽，连续阅读优先"
+        }
+    }
+    public var symbolName: String {
+        switch self {
+        case .originalAmbient: return "sun.max"
+        case .flowingField: return "sparkles"
+        case .coverPhoto: return "photo.fill"
+        case .linerNotes: return "book.pages"
+        case .focusedLyrics: return "text.alignleft"
+        }
+    }
+    public var renderers: [V3ArtworkPresentation] {
+        switch self {
+        case .originalAmbient: return [.authenticAmbient]
+        case .flowingField: return [.classic, .ambientFeathered]
+        case .coverPhoto: return [.ambient, .classicGaussian, .stage]
+        case .linerNotes: return [.albumPoster]
+        case .focusedLyrics: return [.lyricsOnly]
+        }
+    }
+    public var defaultRenderer: V3ArtworkPresentation { renderers[0] }
+    public func rendererTitle(_ renderer: V3ArtworkPresentation) -> String {
+        if self == .flowingField && renderer == .classic { return "独立色场" }
+        if self == .coverPhoto && renderer == .stage { return "完整舞台" }
+        return renderer.title
+    }
+}
+
+public enum V3ReadingProtection: String, CaseIterable, Identifiable, Codable, Sendable {
+    case automatic, enhanced, off
+    public var id: String { rawValue }
+    public var title: String {
+        switch self { case .automatic: return "自动"; case .enhanced: return "加强"; case .off: return "关闭" }
+    }
+}
+
+/// Finite, independent scene+renderer presets. Does not mutate any of the eight old keys.
+public struct V3ScenePreset: Codable, Equatable, Sendable {
+    public var blur: Double
+    public var foregroundScale: Double
+    public var foregroundPosition: String
+    public var foregroundVisible: Bool
+    public var backdropScale: Double
+    public var completeArtwork: Bool
+    public var lyricsPosition: String
+    public var atmosphere: Int
+    public static func initial(scene: V3ListeningScene, renderer: V3ArtworkPresentation) -> Self {
+        Self(blur: renderer == .authenticAmbient ? 25 : renderer == .stage ? 0 : renderer == .classicGaussian ? 58 : 36,
+             foregroundScale: 1, foregroundPosition: "left",
+             foregroundVisible: scene == .originalAmbient || scene == .flowingField || scene == .linerNotes,
+             backdropScale: 1, completeArtwork: renderer == .stage || renderer == .ambientFeathered,
+             lyricsPosition: scene == .coverPhoto ? "right" : "automatic",
+             atmosphere: scene == .flowingField && renderer == .classic ? 1 : 0)
+    }
+    public func normalized() -> Self {
+        var p = self
+        p.blur = blur.isFinite ? min(100, max(0, blur)) : 25
+        p.foregroundScale = foregroundScale.isFinite ? min(1.4, max(0.8, foregroundScale)) : 1
+        p.backdropScale = backdropScale.isFinite ? min(1.4, max(0.8, backdropScale)) : 1
+        p.foregroundPosition = ["left", "center", "right"].contains(foregroundPosition) ? foregroundPosition : "left"
+        p.lyricsPosition = ["automatic", "left", "center", "right"].contains(lyricsPosition) ? lyricsPosition : "automatic"
+        p.atmosphere = min(2, max(0, atmosphere))
+        return p
+    }
+}
+
 /// Active playback provider source mode.
 public enum PlaybackSourceMode: String, CaseIterable, Codable, Identifiable, Sendable {
     case auto = "auto"
@@ -188,6 +280,15 @@ public final class AppSettingsStore: ObservableObject {
 
     public enum Key {
         public static let settingsVersion = "settings.version"
+        public static let v3ListeningScene = "v3.scene.selected.v1"
+        public static let v3ScenePresets = "v3.scene.presets.v1"
+        public static let v3SceneRenderers = "v3.scene.renderers.v1"
+        public static let v3SceneHoverPreviewEnabled = "v3.scene.hoverPreview.v1"
+        public static let v3PictureAdvancedExpanded = "v3.picture.advancedExpanded.v1"
+        public static let v3ReadingProtection = "v3.readingProtection.v2"
+        public static let menuBarWidthMode = "menuBar.widthMode.v1"
+        public static let menuBarWidth = "menuBar.width.v1"
+        public static let menuBarOverflow = "menuBar.overflow.v1"
         public static let mainWindowLayoutStyle = "mainWindowLayoutStyle"
         public static let automaticCompactLyricsFocus = "general.automaticCompactLyricsFocus"
         public static let menuBarLyricsEnabled = "menuBar.lyricsEnabled"
@@ -320,6 +421,103 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     public static let currentSettingsVersion = 1
+
+    @Published public private(set) var v3ListeningSceneRawValue = "" {
+        didSet { defaults.set(v3ListeningSceneRawValue, forKey: Key.v3ListeningScene) }
+    }
+    @Published private var scenePresets: [String: V3ScenePreset] = [:] {
+        didSet {
+            guard oldValue != scenePresets, let data = try? JSONEncoder().encode(scenePresets) else { return }
+            defaults.set(data, forKey: Key.v3ScenePresets)
+        }
+    }
+    private var sceneRenderers: [String: String] = [:]
+    private var isProjectingScene = false
+    @Published public var v3SceneHoverPreviewEnabled = false {
+        didSet { defaults.set(v3SceneHoverPreviewEnabled, forKey: Key.v3SceneHoverPreviewEnabled) }
+    }
+    @Published public var v3PictureAdvancedExpanded = true {
+        didSet { defaults.set(v3PictureAdvancedExpanded, forKey: Key.v3PictureAdvancedExpanded) }
+    }
+    @Published public var v3ReadingProtection: V3ReadingProtection = .automatic {
+        didSet { defaults.set(v3ReadingProtection.rawValue, forKey: Key.v3ReadingProtection) }
+    }
+    @Published public var menuBarWidthMode = "adaptive" {
+        didSet { defaults.set(menuBarWidthMode, forKey: Key.menuBarWidthMode) }
+    }
+    @Published public var menuBarWidth: Double = 240 {
+        didSet {
+            let bounded = menuBarWidth.isFinite ? min(480, max(120, menuBarWidth)) : 240
+            if bounded != menuBarWidth { menuBarWidth = bounded; return }
+            defaults.set(bounded, forKey: Key.menuBarWidth)
+        }
+    }
+    @Published public var menuBarOverflow = "scroll" {
+        didSet { defaults.set(menuBarOverflow, forKey: Key.menuBarOverflow) }
+    }
+
+    public var v3ListeningScene: V3ListeningScene? { V3ListeningScene(rawValue: v3ListeningSceneRawValue) }
+    private static func sceneKey(_ scene: V3ListeningScene, _ renderer: V3ArtworkPresentation) -> String {
+        scene.rawValue + "/" + renderer.rawValue
+    }
+    public func v3Renderer(for scene: V3ListeningScene) -> V3ArtworkPresentation {
+        if let raw = sceneRenderers[scene.rawValue], let renderer = V3ArtworkPresentation(rawValue: raw),
+           scene.renderers.contains(renderer) { return renderer }
+        return scene.defaultRenderer
+    }
+    public func v3Preset(for scene: V3ListeningScene, renderer: V3ArtworkPresentation? = nil) -> V3ScenePreset {
+        let renderer = renderer ?? v3Renderer(for: scene)
+        return (scenePresets[Self.sceneKey(scene, renderer)] ?? .initial(scene: scene, renderer: renderer)).normalized()
+    }
+    private func updateScenePreset(_ change: (inout V3ScenePreset) -> Void) {
+        guard !isProjectingScene, let scene = v3ListeningScene else { return }
+        let renderer = v3ArtworkPresentation
+        var preset = v3Preset(for: scene, renderer: renderer)
+        change(&preset)
+        let key = Self.sceneKey(scene, renderer)
+        let next = preset.normalized()
+        if scenePresets[key] != next { scenePresets[key] = next }
+    }
+    public func selectV3Scene(_ scene: V3ListeningScene, renderer: V3ArtworkPresentation? = nil) {
+        let renderer = renderer.flatMap { scene.renderers.contains($0) ? $0 : nil } ?? v3Renderer(for: scene)
+        sceneRenderers[scene.rawValue] = renderer.rawValue
+        defaults.set(sceneRenderers, forKey: Key.v3SceneRenderers)
+        if v3ListeningSceneRawValue != scene.rawValue { v3ListeningSceneRawValue = scene.rawValue }
+        applySceneProjection(scene, renderer: renderer)
+    }
+    private func applySceneProjection(_ scene: V3ListeningScene, renderer: V3ArtworkPresentation) {
+        let p = v3Preset(for: scene, renderer: renderer)
+        isProjectingScene = true
+        defer { isProjectingScene = false }
+        if v3ArtworkPresentationRawValue != renderer.rawValue { v3ArtworkPresentationRawValue = renderer.rawValue }
+        if v3BackdropBlurRadius != p.blur { v3BackdropBlurRadius = p.blur }
+        if v3ArtworkSizeScale != p.foregroundScale { v3ArtworkSizeScale = p.foregroundScale }
+        if v3ArtworkPosition != p.foregroundPosition { v3ArtworkPosition = p.foregroundPosition }
+        if v3ShowForegroundArtwork != p.foregroundVisible { v3ShowForegroundArtwork = p.foregroundVisible }
+    }
+    public func selectLegacyV3Presentation(_ renderer: V3ArtworkPresentation) {
+        // Restore original proxy values WITHOUT writing the active new scene into old keys.
+        isProjectingScene = true
+        v3ListeningSceneRawValue = ""
+        v3ArtworkPresentationRawValue = renderer.rawValue
+        v3BackdropBlurRadius = v3BlurByPresentation[renderer] ?? 36
+        v3ArtworkSizeScale = v3PreviewScale(for: renderer, scene: nil)
+        v3ArtworkPosition = v3PreviewPosition(for: renderer, scene: nil)
+        v3ShowForegroundArtwork = defaults.object(forKey: Key.v3ShowForegroundArtwork) as? Bool ?? true
+        isProjectingScene = false
+        defaults.set(renderer.rawValue, forKey: Key.v3ArtworkPresentation)
+    }
+    public func resetCurrentV3Scene() {
+        guard let scene = v3ListeningScene else { return }
+        let renderer = v3ArtworkPresentation
+        scenePresets[Self.sceneKey(scene, renderer)] = .initial(scene: scene, renderer: renderer)
+        applySceneProjection(scene, renderer: renderer)
+    }
+    public func v3ShowsForegroundArtwork(scene: V3ListeningScene?, renderer: V3ArtworkPresentation) -> Bool {
+        if let scene { return v3Preset(for: scene, renderer: renderer).foregroundVisible }
+        return defaults.object(forKey: Key.v3ShowForegroundArtwork) as? Bool ?? true
+    }
+
 
     private let defaults: UserDefaults
     private var providerModelSettings: TranslationModelSettingsStore?
@@ -570,7 +768,11 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     @Published public var v3ShowForegroundArtwork: Bool {
-        didSet { defaults.set(v3ShowForegroundArtwork, forKey: Key.v3ShowForegroundArtwork) }
+        didSet {
+            guard !isProjectingScene else { return }
+            if v3ListeningScene != nil { updateScenePreset { $0.foregroundVisible = v3ShowForegroundArtwork } }
+            else { defaults.set(v3ShowForegroundArtwork, forKey: Key.v3ShowForegroundArtwork) }
+        }
     }
 
     @Published public var v3EdgeProgressEnabled: Bool {
@@ -598,11 +800,16 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     public func v3BackgroundShowsCompleteArtwork(for style: V3ArtworkPresentation) -> Bool {
+        v3BackgroundShowsCompleteArtwork(for: style, scene: v3ListeningScene)
+    }
+    public func v3BackgroundShowsCompleteArtwork(for style: V3ArtworkPresentation, scene: V3ListeningScene?) -> Bool {
+        if let scene { return v3Preset(for: scene, renderer: style).completeArtwork }
         if style == .ambient { return v3AmbientBackgroundShowsCompleteArtwork }
         return v3BackgroundFraming[style.rawValue] ?? (style == .stage || style == .ambientFeathered)
     }
 
     public func setV3BackgroundShowsCompleteArtwork(_ value: Bool, for style: V3ArtworkPresentation) {
+        if v3ListeningScene != nil { updateScenePreset { $0.completeArtwork = value }; return }
         if style == .ambient { v3AmbientBackgroundShowsCompleteArtwork = value }
         else { v3BackgroundFraming[style.rawValue] = value }
     }
@@ -619,6 +826,8 @@ public final class AppSettingsStore: ObservableObject {
 
     @Published public var v3BackdropBlurRadius: Double {
         didSet {
+            guard !isProjectingScene else { return }
+            if v3ListeningScene != nil { updateScenePreset { $0.blur = v3BackdropBlurRadius }; return }
             let presentation = V3ArtworkPresentation(rawValue: v3ArtworkPresentationRawValue) ?? .ambient
             if presentation != .lyricsOnly && presentation != .albumPoster {
                 defaults.set(v3BackdropBlurRadius, forKey: Key.v3BackdropBlurRadius)
@@ -631,6 +840,12 @@ public final class AppSettingsStore: ObservableObject {
 
     @Published public var v3ArtworkPresentationRawValue: String {
         didSet {
+            guard !isProjectingScene else { return }
+            if let scene = v3ListeningScene, let renderer = V3ArtworkPresentation(rawValue: v3ArtworkPresentationRawValue) {
+                if scene.renderers.contains(renderer) { selectV3Scene(scene, renderer: renderer) }
+                else { selectLegacyV3Presentation(renderer) }
+                return
+            }
             defaults.set(v3ArtworkPresentationRawValue, forKey: Key.v3ArtworkPresentation)
             guard let presentation = V3ArtworkPresentation(rawValue: v3ArtworkPresentationRawValue) else { return }
 
@@ -687,10 +902,18 @@ public final class AppSettingsStore: ObservableObject {
 
     // Hover previews read stored style values without changing preferences.
     public func v3PreviewBlur(for style: V3ArtworkPresentation) -> Double {
-        v3BlurByPresentation[style] ?? v3BackdropBlurRadius
+        v3PreviewBlur(for: style, scene: v3ListeningScene)
+    }
+    public func v3PreviewBlur(for style: V3ArtworkPresentation, scene: V3ListeningScene?) -> Double {
+        if let scene { return v3Preset(for: scene, renderer: style).blur }
+        return v3BlurByPresentation[style] ?? 36
     }
 
     public func v3PreviewPosition(for style: V3ArtworkPresentation) -> String {
+        v3PreviewPosition(for: style, scene: v3ListeningScene)
+    }
+    public func v3PreviewPosition(for style: V3ArtworkPresentation, scene: V3ListeningScene?) -> String {
+        if let scene { return v3Preset(for: scene, renderer: style).foregroundPosition }
         let isNewComposition = style == .lyricsOnly || style == .albumPoster
         return defaults.string(forKey: Self.v3PositionDefaultsKey(for: style))
             ?? defaults.string(forKey: Key.v3ArtworkPosition)
@@ -698,6 +921,10 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     public func v3PreviewScale(for style: V3ArtworkPresentation) -> Double {
+        v3PreviewScale(for: style, scene: v3ListeningScene)
+    }
+    public func v3PreviewScale(for style: V3ArtworkPresentation, scene: V3ListeningScene?) -> Double {
+        if let scene { return v3Preset(for: scene, renderer: style).foregroundScale }
         let isNewComposition = style == .lyricsOnly || style == .albumPoster
         return defaults.object(forKey: Self.v3ScaleDefaultsKey(for: style)) as? Double
             ?? defaults.object(forKey: Key.v3ArtworkSizeScale) as? Double
@@ -705,6 +932,10 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     public func v3PreviewBackdropScale(for style: V3ArtworkPresentation) -> Double {
+        v3PreviewBackdropScale(for: style, scene: v3ListeningScene)
+    }
+    public func v3PreviewBackdropScale(for style: V3ArtworkPresentation, scene: V3ListeningScene?) -> Double {
+        if let scene { return v3Preset(for: scene, renderer: style).backdropScale }
         switch style {
         case .authenticAmbient:
             return v3AuthenticAmbientBackdropSizeScale
@@ -720,17 +951,12 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     public func v3BackdropScale(for presentation: V3ArtworkPresentation) -> Double {
-        switch presentation {
-        case .authenticAmbient: return v3AuthenticAmbientBackdropSizeScale
-        case .classic: return v3ClassicBackdropSizeScale
-        case .ambient: return v3AmbientBackdropSizeScale
-        case .classicGaussian: return v3GaussianBackdropSizeScale
-        default: return v3AdditionalBackdropScales[presentation.rawValue] ?? 1
-        }
+        v3PreviewBackdropScale(for: presentation, scene: v3ListeningScene)
     }
 
     public func setV3BackdropScale(_ value: Double, for presentation: V3ArtworkPresentation) {
         let value = value.isFinite ? min(1.4, max(0.8, value)) : 1
+        if v3ListeningScene != nil { updateScenePreset { $0.backdropScale = value }; return }
         switch presentation {
         case .authenticAmbient: v3AuthenticAmbientBackdropSizeScale = value
         case .classic: v3ClassicBackdropSizeScale = value
@@ -741,7 +967,11 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     public func v3PreviewLyricsPosition(for style: V3ArtworkPresentation) -> String {
-        v3LyricsPositions[style.rawValue] ?? "automatic"
+        v3PreviewLyricsPosition(for: style, scene: v3ListeningScene)
+    }
+    public func v3PreviewLyricsPosition(for style: V3ArtworkPresentation, scene: V3ListeningScene?) -> String {
+        if let scene { return v3Preset(for: scene, renderer: style).lyricsPosition }
+        return v3LyricsPositions[style.rawValue] ?? "automatic"
     }
 
     @Published private var v3LyricsPositions: [String: String] = [:]
@@ -750,20 +980,26 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     public func v3AtmosphereLevel(for presentation: V3ArtworkPresentation) -> Int {
-        min(2, max(0, v3AtmosphereLevels[presentation.rawValue] ?? 0))
+        v3AtmosphereLevel(for: presentation, scene: v3ListeningScene)
+    }
+    public func v3AtmosphereLevel(for presentation: V3ArtworkPresentation, scene: V3ListeningScene?) -> Int {
+        if let scene { return v3Preset(for: scene, renderer: presentation).atmosphere }
+        return min(2, max(0, v3AtmosphereLevels[presentation.rawValue] ?? 0))
     }
 
     public func setV3AtmosphereLevel(_ level: Int, for presentation: V3ArtworkPresentation) {
         let storedLevel = min(2, max(0, level))
+        if v3ListeningScene != nil { updateScenePreset { $0.atmosphere = storedLevel }; return }
         guard v3AtmosphereLevels[presentation.rawValue] != storedLevel else { return }
         v3AtmosphereLevels[presentation.rawValue] = storedLevel
     }
 
     /// Reading placement is remembered per composition, independently of artwork.
     public var v3LyricsPosition: String {
-        get { v3LyricsPositions[v3ArtworkPresentation.rawValue] ?? "automatic" }
+        get { v3PreviewLyricsPosition(for: v3ArtworkPresentation) }
         set {
             let value = ["automatic", "left", "center", "right"].contains(newValue) ? newValue : "automatic"
+            if v3ListeningScene != nil { updateScenePreset { $0.lyricsPosition = value }; return }
             v3LyricsPositions[v3ArtworkPresentation.rawValue] = value
             defaults.set(v3LyricsPositions, forKey: Key.v3LyricsPositions)
         }
@@ -810,6 +1046,8 @@ public final class AppSettingsStore: ObservableObject {
 
     @Published public var v3ArtworkPosition: String {
         didSet {
+            guard !isProjectingScene else { return }
+            if v3ListeningScene != nil { updateScenePreset { $0.foregroundPosition = v3ArtworkPosition }; return }
             let key = Self.v3PositionDefaultsKey(for: v3ArtworkPresentation)
             defaults.set(v3ArtworkPosition, forKey: key)
         }
@@ -817,6 +1055,8 @@ public final class AppSettingsStore: ObservableObject {
 
     @Published public var v3ArtworkSizeScale: Double {
         didSet {
+            guard !isProjectingScene else { return }
+            if v3ListeningScene != nil { updateScenePreset { $0.foregroundScale = v3ArtworkSizeScale }; return }
             let key = Self.v3ScaleDefaultsKey(for: v3ArtworkPresentation)
             defaults.set(v3ArtworkSizeScale, forKey: key)
         }
@@ -895,7 +1135,7 @@ public final class AppSettingsStore: ObservableObject {
         self.v3EdgeProgressEnabled = defaults.object(forKey: Key.v3EdgeProgressEnabled) as? Bool ?? false
         self.v3EdgeProgressColorHex = defaults.string(forKey: Key.v3EdgeProgressColorHex) ?? "FFFFFF"
         let edgeColorMode = defaults.string(forKey: Key.v3EdgeProgressColorMode) ?? "randomSong"
-        self.v3EdgeProgressColorMode = ["manual", "flow", "randomSong"].contains(edgeColorMode) ? edgeColorMode : "randomSong"
+        self.v3EdgeProgressColorMode = ["manual", "flow", "randomSong", "artwork"].contains(edgeColorMode) ? edgeColorMode : "randomSong"
         self.v3AmbientBackgroundShowsCompleteArtwork = defaults.bool(forKey: Key.v3AmbientBackgroundShowsCompleteArtwork)
         self.v3BackgroundFraming = defaults.dictionary(forKey: "v3.backgroundFramingByPresentation.v1") as? [String: Bool] ?? [:]
         var backgroundScales = defaults.dictionary(forKey: "v3.additionalBackdropScales.v1") as? [String: Double] ?? [:]
@@ -1039,6 +1279,25 @@ public final class AppSettingsStore: ObservableObject {
 
         if defaults.object(forKey: Key.settingsVersion) == nil {
             defaults.set(Self.currentSettingsVersion, forKey: Key.settingsVersion)
+        }
+
+        // Upgrade never rewrites the last selected legacy renderer. New scenes are opt-in.
+        self.v3SceneHoverPreviewEnabled = defaults.object(forKey: Key.v3SceneHoverPreviewEnabled) as? Bool
+            ?? (defaults.object(forKey: Key.v3ArtworkPresentation) != nil)
+        self.v3PictureAdvancedExpanded = defaults.object(forKey: Key.v3PictureAdvancedExpanded) as? Bool ?? true
+        self.v3ReadingProtection = V3ReadingProtection(rawValue: defaults.string(forKey: Key.v3ReadingProtection) ?? "automatic") ?? .automatic
+        self.menuBarWidthMode = defaults.string(forKey: Key.menuBarWidthMode) == "fixed" ? "fixed" : "adaptive"
+        let requestedWidth = defaults.object(forKey: Key.menuBarWidth) as? Double ?? 240
+        self.menuBarWidth = requestedWidth.isFinite ? min(480, max(120, requestedWidth)) : 240
+        self.menuBarOverflow = defaults.string(forKey: Key.menuBarOverflow) == "ellipsis" ? "ellipsis" : "scroll"
+        if let data = defaults.data(forKey: Key.v3ScenePresets),
+           let stored = try? JSONDecoder().decode([String: V3ScenePreset].self, from: data) {
+            self.scenePresets = stored.mapValues { $0.normalized() }
+        }
+        self.sceneRenderers = defaults.dictionary(forKey: Key.v3SceneRenderers) as? [String: String] ?? [:]
+        if let raw = defaults.string(forKey: Key.v3ListeningScene), let scene = V3ListeningScene(rawValue: raw) {
+            self.v3ListeningSceneRawValue = scene.rawValue
+            applySceneProjection(scene, renderer: v3Renderer(for: scene))
         }
     }
 

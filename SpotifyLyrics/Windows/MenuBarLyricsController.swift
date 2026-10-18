@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import Combine
 import SwiftUI
 
@@ -53,10 +54,15 @@ public struct MenuBarLyricsAppearance: Equatable, Sendable {
     public var showsRomaji: Bool
     public var fontSize: Double
     public var readingsAbove: Bool
+    public var widthMode: String
+    public var width: Double
+    public var overflow: String
+    public var contentWidth: CGFloat { CGFloat(min(480, max(120, width.isFinite ? width : 240))) - 16 }
 
     public init(showsFullLine: Bool = false, showsOriginal: Bool = true,
                 showsTranslation: Bool = false, showsKana: Bool = false,
-                showsRomaji: Bool = false, fontSize: Double = 13, readingsAbove: Bool = true) {
+                showsRomaji: Bool = false, fontSize: Double = 13, readingsAbove: Bool = true,
+                widthMode: String = "adaptive", width: Double = 240, overflow: String = "scroll") {
         self.showsFullLine = showsFullLine
         self.showsOriginal = showsOriginal
         self.showsTranslation = showsTranslation
@@ -64,6 +70,7 @@ public struct MenuBarLyricsAppearance: Equatable, Sendable {
         self.showsRomaji = showsRomaji
         self.fontSize = fontSize
         self.readingsAbove = readingsAbove
+        self.widthMode = widthMode; self.width = width; self.overflow = overflow
     }
 
     public var effectiveFontSize: CGFloat {
@@ -89,7 +96,7 @@ public enum MenuBarTextFormatter {
         let text = !parts.isEmpty ? "♪ " + parts.joined(separator: " · ")
             : (!fallbackTitle.isEmpty ? "♪ " + fallbackTitle : snapshot.statusText)
         return appearance.showsFullLine ? text : truncateToFit(
-            text, font: .systemFont(ofSize: appearance.effectiveFontSize)
+            text, maxWidth: appearance.contentWidth, font: .systemFont(ofSize: appearance.effectiveFontSize)
         )
     }
 
@@ -123,7 +130,7 @@ public enum MenuBarTextFormatter {
         let widths = pairs.map { max(($0.0 as NSString).size(withAttributes: baseAttributes).width,
                                       ($0.1 as NSString).size(withAttributes: rubyAttributes).width) + 1 }
         let naturalWidth = widths.reduce(0, +) + 20
-        let width = appearance.showsFullLine ? naturalWidth : min(maxVisualWidth, naturalWidth)
+        let width = appearance.showsFullLine ? min(4096, naturalWidth) : min(appearance.contentWidth, naturalWidth)
         let truncated = width < naturalWidth
         let image = NSImage(size: NSSize(width: width, height: 22), flipped: false) { rect in
             NSGraphicsContext.saveGraphicsState()
@@ -231,6 +238,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     @Published public private(set) var currentSnapshot: MenuBarLyricsSnapshot
     @Published public private(set) var fullLyricsSnapshot: MenuBarFullLyricsSnapshot?
 
+    @Published public private(set) var presentationGeneration: UInt64 = 0
     @Published public private(set) var statusItemTitle = ""
     public var menuBarLyricsEnabled: Bool {
         get { settings.menuBarLyricsEnabled }
@@ -240,6 +248,11 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     let settings: AppSettingsStore
     private var settingsSubscription: AnyCancellable?
     private var appearanceSubscription: AnyCancellable?
+    private var widthSubscription: AnyCancellable?
+    private var accessibilitySubscription: AnyCancellable?
+    private var marqueeView: LyricIslandStatusTextView?
+    private var lastStatusImageKey: String?
+    private var lastStatusImage: NSImage?
     private var appearance = MenuBarLyricsAppearance()
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
@@ -282,10 +295,27 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             self.appearance = MenuBarLyricsAppearance(
                 showsFullLine: flags.0, showsOriginal: flags.1,
                 showsTranslation: flags.2, showsKana: flags.3,
-                showsRomaji: romaji, fontSize: fontSize, readingsAbove: readingsAbove
+                showsRomaji: romaji, fontSize: fontSize, readingsAbove: readingsAbove,
+                widthMode: self.appearance.widthMode, width: self.appearance.width,
+                overflow: self.appearance.overflow
             )
             self.updateStatusItemButton(lyricsEnabled: self.settings.menuBarLyricsEnabled)
         }
+        widthSubscription = Publishers.CombineLatest3(settings.$menuBarWidthMode,
+            settings.$menuBarWidth, settings.$menuBarOverflow)
+            .sink { [weak self] mode, width, overflow in
+                guard let self else { return }
+                self.appearance.widthMode = mode
+                self.appearance.width = width
+                self.appearance.overflow = overflow
+                self.updateStatusItemButton(lyricsEnabled: self.settings.menuBarLyricsEnabled)
+            }
+        accessibilitySubscription = NotificationCenter.default.publisher(
+            for: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateStatusItemButton(lyricsEnabled: self.settings.menuBarLyricsEnabled)
+            }
     }
 
     public func bind(playbackState: PlaybackState) {
@@ -296,6 +326,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         setupPopoverIfNeeded()
 
         playbackState.objectWillChange
+            .filter { [weak playbackState] _ in playbackState?.isPublishingPlaybackClockTick != true }
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.handlePlaybackStateChange()
@@ -467,6 +498,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             popover.performClose(sender)
         } else {
             fullLyricsSnapshot = nil
+            presentationGeneration &+= 1
             let frontmost = NSWorkspace.shared.frontmostApplication
             applicationBeforePopover = frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : frontmost
             resizePopoverToContent()
@@ -504,26 +536,68 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     }
 
     private func updateStatusItemButton(lyricsEnabled: Bool) {
-        statusItemTitle = MenuBarTextFormatter.statusItemTitle(
-            snapshot: currentSnapshot, lyricsEnabled: lyricsEnabled, appearance: appearance
-        )
+        var complete = appearance
+        complete.showsFullLine = true
+        let fullTitle = MenuBarTextFormatter.statusItemTitle(
+            snapshot: currentSnapshot, lyricsEnabled: lyricsEnabled, appearance: complete)
+        if statusItemTitle != fullTitle { statusItemTitle = fullTitle }
         guard let button = statusItem?.button else { return }
-        button.title = statusItemTitle
-        button.font = .systemFont(ofSize: appearance.effectiveFontSize)
-        button.imagePosition = lyricsEnabled ? .imageLeft : .imageOnly
-        button.image = NSImage(
-            systemSymbolName: MenuBarTextFormatter.statusItemSymbol(snapshot: currentSnapshot),
-            accessibilityDescription: "Lyric Island"
-        )
-        if lyricsEnabled, let rubyImage = MenuBarTextFormatter.readingImage(snapshot: currentSnapshot, appearance: appearance) {
-            button.title = ""
-            button.image = rubyImage
-            button.imagePosition = .imageOnly
-        }
         let help = MenuBarTextFormatter.statusItemHelp(snapshot: currentSnapshot)
         button.toolTip = help
         button.setAccessibilityLabel("Lyric Island，歌词与播放")
         button.setAccessibilityValue(help)
+        guard lyricsEnabled else {
+            marqueeView?.removeFromSuperview(); marqueeView = nil
+            lastStatusImage = nil; lastStatusImageKey = nil
+            statusItem?.length = NSStatusItem.squareLength
+            button.title = ""; button.imagePosition = .imageOnly
+            button.image = NSImage(systemSymbolName: MenuBarTextFormatter.statusItemSymbol(snapshot: currentSnapshot),
+                                   accessibilityDescription: "Lyric Island")
+            return
+        }
+        let scrollRequested = appearance.overflow == "scroll"
+        var renderAppearance = appearance
+        renderAppearance.showsFullLine = scrollRequested
+        // The key changes on lyric/appearance changes, not on playback time.
+        let tokenKey = currentSnapshot.currentRubyTokens?.map { "\($0.surface):\($0.ruby ?? ""): \($0.romaji ?? "")" }.joined(separator: "|") ?? ""
+        let key = [fullTitle, tokenKey, String(appearance.fontSize), String(appearance.showsKana),
+                   String(appearance.showsRomaji), String(appearance.readingsAbove),
+                   String(appearance.showsTranslation), String(appearance.showsOriginal), String(appearance.width), appearance.overflow].joined(separator: "\u{1F}")
+        let image: NSImage
+        if key == lastStatusImageKey, let cached = lastStatusImage { image = cached }
+        else {
+            if let ruby = MenuBarTextFormatter.readingImage(snapshot: currentSnapshot, appearance: renderAppearance) {
+                image = ruby
+            } else {
+                let font = NSFont.systemFont(ofSize: appearance.effectiveFontSize)
+                let text = scrollRequested ? fullTitle : MenuBarTextFormatter.truncateToFit(
+                    fullTitle, maxWidth: appearance.contentWidth, font: font)
+                let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.black]
+                let natural = (text as NSString).size(withAttributes: attrs)
+                let imageSize = NSSize(width: max(1, min(4096, ceil(natural.width))), height: 22)
+                image = NSImage(size: imageSize, flipped: false) { rect in
+                    (text as NSString).draw(at: NSPoint(x: 0, y: max(0, (22 - natural.height) / 2)), withAttributes: attrs)
+                    return true
+                }
+                image.isTemplate = true
+            }
+            lastStatusImageKey = key; lastStatusImage = image
+        }
+        let requested = CGFloat(appearance.width.isFinite ? min(480, max(120, appearance.width)) : 240)
+        let length = appearance.widthMode == "fixed" ? requested : min(requested, max(44, image.size.width + 16))
+        if statusItem?.length != length { statusItem?.length = length }
+        button.title = ""; button.image = nil; button.imagePosition = .noImage
+        let view: LyricIslandStatusTextView
+        if let current = marqueeView { view = current }
+        else {
+            view = LyricIslandStatusTextView(frame: .zero)
+            button.addSubview(view)
+            marqueeView = view
+        }
+        let frame = NSRect(x: 8, y: max(0, (button.bounds.height - 22) / 2), width: max(1, length - 16), height: 22)
+        view.configure(image: image, key: key, frame: frame,
+                       animate: scrollRequested && currentSnapshot.isPlaying
+                           && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
     }
 
     public static func deriveFullLyricsSnapshot(from state: PlaybackState) -> MenuBarFullLyricsSnapshot? {
@@ -731,4 +805,89 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             isPlaying: isPlaying, hasLiveTrack: true, artworkURL: artworkURL
         )
     }
+}
+
+/// Clip one cached template image. Core Animation moves the layer without
+/// publishing SwiftUI state or measuring text for every animation frame.
+@MainActor
+private final class LyricIslandStatusTextView: NSView {
+    private let imageView = NSImageView(frame: .zero)
+    private var contentKey = ""
+    private var requestedAnimation = false
+    private var observers: [NSObjectProtocol] = []
+    private var animationDistance: CGFloat = 0
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.masksToBounds = true
+        imageView.wantsLayer = true
+        imageView.imageScaling = .scaleNone
+        imageView.imageAlignment = .alignLeft
+        imageView.contentTintColor = .labelColor
+        imageView.setAccessibilityElement(false)
+        addSubview(imageView)
+        setAccessibilityElement(false)
+    }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 22) }
+
+    func configure(image: NSImage, key: String, frame: NSRect, animate: Bool) {
+        let contentChanged = contentKey != key || self.frame.size != frame.size
+        if self.frame != frame { self.frame = frame }
+        if contentChanged {
+            contentKey = key
+            imageView.layer?.removeAnimation(forKey: "lyric.marquee")
+            imageView.layer?.transform = CATransform3DIdentity
+            imageView.image = image
+            imageView.frame = NSRect(x: 0, y: 0, width: image.size.width, height: 22)
+            animationDistance = max(0, image.size.width - frame.width)
+        }
+        requestedAnimation = animate
+        refreshAnimation()
+    }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        observers.forEach(NotificationCenter.default.removeObserver); observers.removeAll()
+        guard let window else {
+            imageView.layer?.removeAnimation(forKey: "lyric.marquee"); return
+        }
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main) { [weak self] _ in
+                self?.refreshAnimation()
+            })
+        refreshAnimation()
+    }
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        imageView.contentTintColor = .labelColor
+        imageView.needsDisplay = true
+    }
+    private func refreshAnimation() {
+        guard let layer = imageView.layer else { return }
+        let visible = window.map { $0.isVisible && $0.occlusionState.contains(.visible) } ?? false
+        let active = requestedAnimation && visible && animationDistance > 1
+        if !active {
+            if let presented = layer.presentation() { layer.transform = presented.transform }
+            layer.removeAnimation(forKey: "lyric.marquee")
+            return
+        }
+        guard layer.animation(forKey: "lyric.marquee") == nil else { return }
+        layer.transform = CATransform3DIdentity
+        let travel = min(60, max(2, Double(animationDistance) / 22))
+        let hold = 1.4
+        let duration = 2 * (travel + hold)
+        let animation = CAKeyframeAnimation(keyPath: "transform.translation.x")
+        animation.values = [0, 0, -animationDistance, -animationDistance, 0]
+        animation.keyTimes = [0, NSNumber(value: hold / duration),
+            NSNumber(value: (hold + travel) / duration),
+            NSNumber(value: (hold * 2 + travel) / duration), 1]
+        animation.duration = duration
+        animation.repeatCount = .infinity
+        animation.calculationMode = .linear
+        layer.add(animation, forKey: "lyric.marquee")
+    }
+    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
 }

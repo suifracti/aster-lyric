@@ -156,7 +156,7 @@ if not compiler:
 with tempfile.TemporaryDirectory(prefix='lyric-edge-contract-') as temp:
     temp = Path(temp)
     main = temp / 'main.swift'
-    main.write_text('import Foundation\n' + core + '\n' + TESTS, encoding='utf-8')
+    main.write_text('import Foundation\n#if canImport(CoreGraphics)\nimport CoreGraphics\n#endif\n' + core + '\n' + TESTS, encoding='utf-8')
     for flags in (['-Onone'], ['-O']):
         exe = temp / ('test' + flags[0])
         subprocess.run([compiler, '-swift-version', '5', *flags, str(main), '-o', str(exe)], check=True, timeout=60)

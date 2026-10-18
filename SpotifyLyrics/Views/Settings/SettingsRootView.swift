@@ -394,14 +394,13 @@ private struct AppearanceSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 if settings.mainWindowLayoutStyleRawValue == MainWindowLayoutStyle.appleMusicImmersiveV3.rawValue {
-                    Picker("画面风格", selection: $settings.v3ArtworkPresentationRawValue) {
-                        ForEach(V3ArtworkPresentation.allCases) { presentation in
-                            Text(presentation.title).tag(presentation.rawValue)
-                        }
+                    LyricIslandSceneSettingsPicker(settings: settings)
+                    Picker("歌词清晰度保护", selection: $settings.v3ReadingProtection) {
+                        ForEach(V3ReadingProtection.allCases) { policy in Text(policy.title).tag(policy) }
                     }
-                    Text(settings.v3ArtworkPresentation.detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text("画面精细调整在独立工具窗中完成，不会改变主窗尺寸。")
+                        .font(.caption).foregroundStyle(.secondary)
+
                 }
                 DisclosureGroup("经典伴随布局") {
                     Picker("经典伴随呈现", selection: $settings.classicCompanionPresentationRawValue) {
@@ -436,10 +435,10 @@ private struct AppearanceSettingsView: View {
                     Picker("桌面歌词行数", selection: $settings.floatingDesktopLineMode) {
                         ForEach(FloatingDesktopLineMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                     }
-                    HStack {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("桌面歌词字号")
-                        Slider(value: $settings.floatingDesktopFontSize, in: 22...64, step: 1)
-                        Text("\(Int(settings.floatingDesktopFontSize))").monospacedDigit().frame(width: 30)
+                        V3NumericSlider(value: $settings.floatingDesktopFontSize, in: 22...64, step: 1, unit: "pt")
+                            .accessibilityLabel("桌面歌词字号")
                     }
                     FloatingDesktopColorControls(settings: settings)
                     Toggle("悬浮歌词保持置顶", isOn: $settings.floatingWindowAlwaysOnTop)
@@ -448,12 +447,10 @@ private struct AppearanceSettingsView: View {
                             Text(mode.title).tag(mode)
                         }
                     }
-                    HStack {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text(settings.floatingLyricsPresentation == .transparentV2 && settings.floatingDesktopKeepsTextOpaque ? "背景不透明度" : "整个悬浮窗透明度")
-                        Slider(value: $settings.floatingWindowOpacity, in: 0.45...1, step: 0.01)
-                        Text(String(format: "%.0f%%", settings.floatingWindowOpacity * 100))
-                            .font(.system(.caption, design: .monospaced))
-                            .frame(width: 48, alignment: .trailing)
+                        V3NumericSlider(value: $settings.floatingWindowOpacity, in: 0.45...1, step: 0.01, unit: "%", displayScale: 100)
+                            .accessibilityLabel("桌面歌词透明度")
                     }
                 }
                 Text("悬浮歌词复用主播放状态和歌词显示设置；关闭后不会退出 App。启用“启动时恢复上次窗口状态”时，会恢复上次可见的悬浮窗位置和尺寸。")
@@ -464,6 +461,7 @@ private struct AppearanceSettingsView: View {
 
             Section("菜单栏") {
                 Toggle("在菜单栏显示歌词", isOn: $settings.menuBarLyricsEnabled)
+                MenuBarLyricsAppearanceControls(settings: settings)
                 Text("关闭后仅显示播放状态图标，点击图标仍可打开歌词与播放控制。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -1087,19 +1085,15 @@ private struct AISettingsView: View {
             Section {
                 DisclosureGroup("高级模型参数与提示词", isExpanded: $isAdvancedAIExpanded) {
                     VStack(alignment: .leading, spacing: 14) {
-                        HStack {
+                        VStack(alignment: .leading, spacing: 6) {
                             Text("随机度（Temperature）")
-                            Slider(value: configurationDoubleBinding(\.temperature), in: 0...2, step: 0.1)
-                            Text(String(format: "%.1f", settings.aiTranslationConfiguration.temperature))
-                                .monospacedDigit()
-                                .frame(width: 40, alignment: .trailing)
+                            V3NumericSlider(value: configurationDoubleBinding(\.temperature), in: 0...2, step: 0.1)
+                                .accessibilityLabel("模型随机度")
                         }
-                        HStack {
+                        VStack(alignment: .leading, spacing: 6) {
                             Text("请求超时")
-                            Slider(value: configurationDoubleBinding(\.timeout), in: 5...600, step: 5)
-                            Text("\(Int(settings.aiTranslationConfiguration.timeout)) 秒")
-                                .monospacedDigit()
-                                .frame(width: 70, alignment: .trailing)
+                            V3NumericSlider(value: configurationDoubleBinding(\.timeout), in: 5...600, step: 5, unit: "秒")
+                                .accessibilityLabel("模型请求超时")
                         }
                         Picker("失败后的策略", selection: fallbackBinding) {
                             ForEach(TranslationFallbackStrategy.allCases, id: \.self) { strategy in

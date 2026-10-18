@@ -562,10 +562,10 @@ struct FloatingLyricsStylePanelView: View {
                     ForEach(FloatingDesktopLineMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                 }
                 .pickerStyle(.segmented)
-                HStack {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("字号")
-                    Slider(value: $settings.floatingDesktopFontSize, in: 22...64, step: 1)
-                    Text("\(Int(settings.floatingDesktopFontSize))").monospacedDigit().frame(width: 26)
+                    V3NumericSlider(value: $settings.floatingDesktopFontSize, in: 22...64, step: 1, unit: "pt")
+                        .accessibilityLabel("桌面歌词字号")
                 }
                 FloatingDesktopColorControls(settings: settings)
                 Picker("第二行", selection: $settings.floatingDesktopCompanion) {
@@ -849,10 +849,10 @@ struct FloatingDesktopColorControls: View {
             colorPicker("假名 / 读音", value: $settings.floatingDesktopRubyColorHex, fallback: "E5F3FF")
             colorPicker("译文", value: $settings.floatingDesktopTranslationColorHex, fallback: "FFFFFF")
             colorPicker("文字描边", value: $settings.floatingDesktopOutlineColorHex, fallback: "10131A")
-            HStack {
+            VStack(alignment: .leading, spacing: 6) {
                 Text("描边宽度")
-                Slider(value: $settings.floatingDesktopOutlineWidth, in: 0...3, step: 0.25)
-                Text(String(format: "%.2g", settings.floatingDesktopOutlineWidth)).monospacedDigit().frame(width: 28)
+                V3NumericSlider(value: $settings.floatingDesktopOutlineWidth, in: 0...3, step: 0.25, unit: "pt")
+                    .accessibilityLabel("桌面歌词描边宽度")
             }
             Toggle("文字保持不透明", isOn: $settings.floatingDesktopKeepsTextOpaque)
             Text("透明桌面模式下，开启后透明度只影响背景；关闭后影响整个悬浮窗。")

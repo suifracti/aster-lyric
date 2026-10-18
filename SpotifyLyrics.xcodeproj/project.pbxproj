@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CC7BDEF42026101800000001 /* LyricIslandControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC7BDEF42026101800000002 /* LyricIslandControls.swift */; };
 		110000012D83400100000001 /* Main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000012D83400100000000 /* Main.swift */; };
 		110000022D83400100000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000022D83400100000000 /* Models.swift */; };
 		110000032D83400100000001 /* MockData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000032D83400100000000 /* MockData.swift */; };
@@ -220,6 +221,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		CC7BDEF42026101800000002 /* LyricIslandControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Components/LyricIslandControls.swift; sourceTree = "<group>"; };
 		110000002D83400000000000 /* SpotifyLyrics.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpotifyLyrics.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		110000012D83400100000000 /* Main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Main.swift; sourceTree = "<group>"; };
 		110000022D83400100000000 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/Models.swift; sourceTree = "<group>"; };
@@ -450,6 +452,7 @@
 		110000002D83400000000002 /* SpotifyLyrics */ = {
 			isa = PBXGroup;
 			children = (
+				CC7BDEF42026101800000002 /* LyricIslandControls.swift */,
 				110000412D83400100000000 /* Resources */,
 				110000012D83400100000000 /* Main.swift */,
 				110000892D83400100000000 /* DebugDatabaseSafety.swift */,
@@ -861,6 +864,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CC7BDEF42026101800000001 /* LyricIslandControls.swift in Sources */,
 				110000012D83400100000001 /* Main.swift in Sources */,
 				110000892D83400100000001 /* DebugDatabaseSafety.swift in Sources */,
 				110000022D83400100000001 /* Models.swift in Sources */,

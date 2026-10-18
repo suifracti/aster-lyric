@@ -4,7 +4,7 @@ import SwiftUI
 /// Draws playback progress around the main window and keeps transport controls
 /// anchored to the current approaching edge, without publishing every mouse move.
 struct V3WindowEdgePlaybackOverlay: View {
-    @ObservedObject var state: PlaybackState
+    @V3ContentPlaybackState var state: PlaybackState
     let colorHex: String
     let colorMode: String
     let exitPoint: CGPoint?
@@ -15,37 +15,25 @@ struct V3WindowEdgePlaybackOverlay: View {
     @State private var edgeInteraction = V3WindowEdgeInteractionState()
     @State private var draftFraction: Double?
     @State private var dragTrackKey: String?
+    @State private var windowVisible = false
+    @State private var coverAccent = Color.accentColor
+    @State private var colorElapsed: TimeInterval = 0
+    @State private var colorStartedAt: Date?
 
     private let borderInset: CGFloat = 1.5
     private let borderRadius: CGFloat = 12
     private var controlsVisible: Bool {
         edgeInteraction.isVisible && edgeInteraction.pointerInside
     }
-    private var animatesColor: Bool { colorMode == "flow" && !reduceMotion }
+    private var animatesColor: Bool { colorMode == "flow" && !reduceMotion && state.isPlaying && windowVisible }
 
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
             let songHue = V3WindowEdgeSongColor.hue(for: state.currentTrackIdentity?.stableKey ?? "no-track")
-            let controlsAccent = accent(at: .now, songHue: songHue)
             let controlPosition = edgeInteraction.layout(size: size, fallbackExitPoint: exitPoint)
 
             ZStack(alignment: .topLeading) {
-                TimelineView(.animation(
-                    minimumInterval: reduceMotion ? 0.5 : 1.0 / 30.0,
-                    paused: !state.isPlaying && !animatesColor
-                )) { context in
-                    let color = accent(at: context.date, songHue: songHue)
-                    ZStack {
-                        border.stroke(color.opacity(0.22), style: StrokeStyle(lineWidth: 2.1, lineCap: .round))
-                        border.trim(from: 0, to: progressFraction)
-                            .stroke(color, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
-                    }
-                    .transaction { $0.animation = nil }
-                }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-
                 // Only the thin edge band takes pointer events; the lyric canvas stays interactive.
                 V3WindowEdgeHitBand(inset: borderInset, cornerRadius: borderRadius)
                     .fill(Color.clear)
@@ -62,20 +50,41 @@ struct V3WindowEdgePlaybackOverlay: View {
                                            state.currentTrack.duration), source: "v3-edge-progress-keyboard")
                     }
 
-                V3WindowEdgeTransportButtons(state: state, accent: controlsAccent,
-                                              isVertical: controlPosition.isVertical)
-                    .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
-                    .scaleEffect(controlPosition.scale)
-                    .opacity(controlsVisible ? 1 : 0)
-                    .allowsHitTesting(controlsVisible)
-                    .accessibilityHidden(!controlsVisible)
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: controlsVisible)
-                    .position(controlPosition.center)
+                // One local timeline/color value for both the progress and its
+                // buttons. The transparent hit band remains separate and narrow.
+                TimelineView(.animation(
+                    minimumInterval: reduceMotion ? 0.5 : 1.0 / 30.0,
+                    paused: !windowVisible || (!state.isPlaying && !animatesColor)
+                )) { context in
+                    let color = accent(at: context.date, songHue: songHue)
+                    ZStack(alignment: .topLeading) {
+                        ZStack {
+                            border.stroke(color.opacity(0.22), style: StrokeStyle(lineWidth: 2.1, lineCap: .round))
+                            border.trim(from: 0, to: progressFraction)
+                                .stroke(color, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                        }
+                        .transaction { $0.animation = nil }
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                        V3WindowEdgeTransportButtons(state: state, accent: color,
+                                                     isVertical: controlPosition.isVertical)
+                            .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
+                            .scaleEffect(controlPosition.scale)
+                            .opacity(controlsVisible ? 1 : 0)
+                            .allowsHitTesting(controlsVisible)
+                            .accessibilityHidden(!controlsVisible)
+                            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: controlsVisible)
+                            .position(controlPosition.center)
+                    }
+                }
+
             }
             .frame(width: size.width, height: size.height, alignment: .topLeading)
             .background(V3WindowEdgePointerTracker { point in
                 updatePointer(point, size: size, dragging: draftFraction != nil)
             })
+            .background(alignment: .topLeading) {
+                V3WindowVisibilityProbe(isVisible: $windowVisible).frame(width: 0, height: 0)
+            }
         }
         .onChange(of: pointerInsideWindow) { _, inside in
             // The local activeAlways tracker is authoritative for non-key windows.
@@ -91,7 +100,19 @@ struct V3WindowEdgePlaybackOverlay: View {
                 interactionChanged(false)
             }
         }
+        .task(id: "\(state.currentTrack.artworkURL?.absoluteString ?? "none")|\(colorMode == "artwork")") {
+            guard colorMode == "artwork" else { return }
+            let palette = await LyricIslandArtworkColors.palette(for: state.currentTrack.artworkURL)
+            guard !Task.isCancelled else { return }
+            coverAccent = LyricIslandArtworkColors.edgeAccent(palette)
+        }
+        .onChange(of: animatesColor) { _, active in
+            if let colorStartedAt { colorElapsed += max(0, Date().timeIntervalSince(colorStartedAt)) }
+            colorStartedAt = active ? .now : nil
+        }
+        .onChange(of: windowVisible) { _, visible in if !visible { clearPointer() } }
         .onDisappear {
+            colorStartedAt = nil
             cancelDraft()
             clearPointer()
         }
@@ -158,8 +179,10 @@ struct V3WindowEdgePlaybackOverlay: View {
         switch colorMode {
         case "randomSong": return Color(hue: songHue, saturation: 0.68, brightness: 0.98)
         case "flow":
-            let hue = reduceMotion ? songHue : (songHue + date.timeIntervalSinceReferenceDate / 36).truncatingRemainder(dividingBy: 1)
+            let running = colorStartedAt.map { max(0, date.timeIntervalSince($0)) } ?? 0
+            let hue = reduceMotion ? songHue : (songHue + (colorElapsed + running) / 36).truncatingRemainder(dividingBy: 1)
             return Color(hue: hue, saturation: 0.68, brightness: 0.98)
+        case "artwork": return coverAccent
         default: return V3WindowEdgeColor.color(from: colorHex)
         }
     }
@@ -255,6 +278,7 @@ struct V3WindowEdgeProgressSettings: View {
                 Text("固定颜色").tag("manual")
                 Text("自动流转").tag("flow")
                 Text("每首随机").tag("randomSong")
+                Text("跟随封面").tag("artwork")
             }
             .disabled(!enabled)
             if colorMode == "manual" {
@@ -271,7 +295,7 @@ struct V3WindowEdgeProgressSettings: View {
 }
 
 private struct V3WindowEdgeTransportButtons: View {
-    @ObservedObject var state: PlaybackState
+    @V3ContentPlaybackState var state: PlaybackState
     let accent: Color
     let isVertical: Bool
 
@@ -367,11 +391,11 @@ private struct V3WindowEdgeTransportButton: View {
                     .opacity(enabled ? 0.96 : 0.40))
                 .frame(width: 30, height: 30)
                 .background(
-                    Circle().fill(primary ? accent.opacity(enabled ? 0.92 : 0.34) : Color.black.opacity(0.28))
+                    Circle().fill(primary ? accent.opacity(enabled ? 0.92 : 0.34) : Color.clear)
                 )
                 .overlay(
                     Circle().strokeBorder(
-                        Color.white.opacity(isHovered ? 0.46 : 0.14),
+                        Color.white.opacity(isHovered ? 0.32 : 0),
                         lineWidth: 0.8
                     )
                 )

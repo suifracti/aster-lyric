@@ -40,6 +40,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
     var isPlaying: Bool = true
     @ObservedObject var settings: AppSettingsStore
     var presentationOverride: V3ArtworkPresentation? = nil
+    var sceneOverride: V3ListeningScene? = nil
+    private var listeningScene: V3ListeningScene? { presentationOverride == nil ? settings.v3ListeningScene : sceneOverride }
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var artworkImage: NSImage?
@@ -52,10 +54,10 @@ struct AppleMusicImmersiveV3BackdropView: View {
     @State private var isWindowVisible = false
 
     private var artworkPresentation: V3ArtworkPresentation { presentationOverride ?? settings.v3ArtworkPresentation }
-    private var backdropBlurRadius: Double { settings.v3PreviewBlur(for: artworkPresentation) }
-    private var artworkPosition: String { settings.v3PreviewPosition(for: artworkPresentation) }
-    private var artworkSizeScale: Double { settings.v3PreviewBackdropScale(for: artworkPresentation) }
-    private var showsCompleteArtwork: Bool { settings.v3BackgroundShowsCompleteArtwork(for: artworkPresentation) }
+    private var backdropBlurRadius: Double { settings.v3PreviewBlur(for: artworkPresentation, scene: listeningScene) }
+    private var artworkPosition: String { settings.v3PreviewPosition(for: artworkPresentation, scene: listeningScene) }
+    private var artworkSizeScale: Double { settings.v3PreviewBackdropScale(for: artworkPresentation, scene: listeningScene) }
+    private var showsCompleteArtwork: Bool { settings.v3BackgroundShowsCompleteArtwork(for: artworkPresentation, scene: listeningScene) }
     private var backdropImageScale: Double {
         V3BackdropArtworkGeometry.imageScale(requested: artworkSizeScale, complete: showsCompleteArtwork)
     }
@@ -64,23 +66,27 @@ struct AppleMusicImmersiveV3BackdropView: View {
         ZStack {
             neutralBackground
 
-            if let outgoingArtworkImage {
-                artworkLayers(
-                    image: outgoingArtworkImage,
-                    ambientImage: outgoingAmbientArtworkImage
-                )
-                    .opacity(0.28)
-                    .transition(.opacity)
-            }
-
-            if let artworkImage {
-                artworkLayers(image: artworkImage, ambientImage: ambientArtworkImage)
-                    .transition(.opacity)
-            }
-
-            // The veil is intentionally independent of playback position.
-            if artworkPresentation != .stage {
-                Color.black.opacity(readabilityVeilOpacity)
+            if listeningScene == .flowingField && artworkPresentation == .classic {
+                // This scene is a color field, not another enlarged/blurred portrait.
+                flowingArtworkColors
+            } else if listeningScene == .focusedLyrics || listeningScene == .linerNotes {
+                quietArtworkColors
+                if listeningScene == .linerNotes {
+                    LinearGradient(colors: [.white.opacity(0.045), .clear, .black.opacity(0.10)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                }
+            } else {
+                if let outgoingArtworkImage {
+                    artworkLayers(image: outgoingArtworkImage, ambientImage: outgoingAmbientArtworkImage)
+                        .opacity(0.28).transition(.opacity)
+                }
+                if let artworkImage {
+                    artworkLayers(image: artworkImage, ambientImage: ambientArtworkImage)
+                        .transition(.opacity)
+                }
+                // Legacy exposure and the accepted original look stay unchanged.
+                // The common *local* reading protection is applied by the text host.
+                if artworkPresentation != .stage { Color.black.opacity(readabilityVeilOpacity) }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -219,9 +225,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
         max(0, min(100, backdropBlurRadius)) / 100.0
     }
 
-    /// Non-linear perceptual blur response (power curve ~1.35) gives finer precision
-    /// in the lower range (retaining artwork sharpness/legibility) while ensuring distinct,
-    /// noticeable visual progression between 60%, 80%, and 100%.
+    /// Existing renderer response retained for compatibility. Physical radius
+    /// differences are not a guarantee of equal perceived changes near the upper end.
     private var perceptualBlur: Double {
         pow(normalizedBlur, 1.35)
     }
@@ -285,7 +290,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
     @ViewBuilder
     private func atmosphereField(for presentation: V3ArtworkPresentation) -> some View {
-        let level = settings.v3AtmosphereLevel(for: presentation)
+        let level = settings.v3AtmosphereLevel(for: presentation, scene: listeningScene)
         if level > 0, let kind = atmosphereKind(for: presentation) {
             V3AtmosphereFieldView(
                 kind: kind,
@@ -310,6 +315,24 @@ struct AppleMusicImmersiveV3BackdropView: View {
         case .lyricsOnly: return .lyricsOnly
         case .albumPoster: return .albumPoster
         case .classicGaussian: return nil
+        }
+    }
+
+    private var flowingArtworkColors: some View {
+        ZStack {
+            LinearGradient(colors: [ambientColor(palette.primary, saturation: 0.70, maximumLuminance: 0.26),
+                                    ambientColor(palette.secondary, saturation: 0.72, maximumLuminance: 0.18)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            V3AtmosphereFieldView(
+                kind: .flowingField,
+                primary: ambientColor(palette.primary, saturation: 0.88, maximumLuminance: 0.58),
+                secondary: ambientColor(palette.secondary, saturation: 0.78, maximumLuminance: 0.40),
+                glow: ambientColor(palette.glow, saturation: 0.84, maximumLuminance: 0.62),
+                level: settings.v3AtmosphereLevel(for: artworkPresentation, scene: listeningScene),
+                isPlaying: isPlaying, isVisible: isWindowVisible,
+                reduceMotion: accessibilityReduceMotion || reduceTransparency,
+                softness: normalizedBlur
+            )
         }
     }
 
@@ -386,7 +409,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
         }
         atmosphereField(for: .stage)
         // Full original cover over a diffuse extension; lyric layout is unchanged.
-        Color.black.opacity(settings.v3StageReadabilityEnabled ? 0.56 : (increaseContrast ? 0.40 : 0.24))
+        Color.black.opacity(listeningScene == .coverPhoto ? 0.08 : (settings.v3StageReadabilityEnabled ? 0.56 : (increaseContrast ? 0.40 : 0.24)))
         LinearGradient(colors: [.black.opacity(0.08), .clear, .black.opacity(0.30)],
                        startPoint: .top, endPoint: .bottom)
     }
@@ -918,6 +941,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
 }
 
 enum V3AtmosphereFieldKind {
+    case flowingField
     case classic
     case authenticAmbient
     case ambient
@@ -938,8 +962,9 @@ struct V3AtmosphereFieldView: View {
     let isVisible: Bool
     let reduceMotion: Bool
 
-    @State private var phase = 0.0
-    @State private var lastTick: Date?
+    var softness: Double = 0.25
+    @State private var elapsed = 0.0
+    @State private var segmentStart: Date?
 
     private var isPaused: Bool {
         level == 0 || !isPlaying || !isVisible || reduceMotion
@@ -952,15 +977,22 @@ struct V3AtmosphereFieldView: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: isPaused)) { timeline in
             GeometryReader { geometry in
+                // The timeline redraws this small field only. No per-frame State
+                // writes, image decoding, lyric work or global notifications.
+                let running = segmentStart.map { max(0, timeline.date.timeIntervalSince($0)) } ?? 0
+                let phase = (elapsed + (isPaused ? 0 : running)) * (level <= 1 ? 0.11 : 0.15)
                 field(size: geometry.size, phase: phase)
             }
-            .onChange(of: timeline.date) { _, date in
-                advancePhase(at: date)
-            }
         }
-        .onChange(of: isPaused) { _, _ in lastTick = nil }
-        .onAppear { lastTick = nil }
-        .onDisappear { lastTick = nil }
+        .onChange(of: isPaused) { _, paused in
+            if let segmentStart { elapsed += max(0, Date().timeIntervalSince(segmentStart)) }
+            segmentStart = paused ? nil : .now
+        }
+        .onAppear { if !isPaused { segmentStart = .now } }
+        .onDisappear {
+            if let segmentStart { elapsed += max(0, Date().timeIntervalSince(segmentStart)) }
+            segmentStart = nil
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -972,6 +1004,22 @@ struct V3AtmosphereFieldView: View {
         let strength = level == 1 ? 0.24 : 0.40
 
         switch kind {
+        case .flowingField:
+            let spread = 0.36 + min(1, max(0, softness)) * 0.32
+            ZStack {
+                RadialGradient(colors: [glow.opacity(0.62), primary.opacity(0.24), .clear],
+                    center: point(x: 0.24 + sin(phase * 0.55) * 0.12,
+                                  y: 0.40 + cos(phase * 0.45) * 0.12),
+                    startRadius: extent * 0.035, endRadius: extent * spread)
+                RadialGradient(colors: [secondary.opacity(0.48), .clear],
+                    center: point(x: 0.74 + cos(phase * 0.43) * 0.12,
+                                  y: 0.63 + sin(phase * 0.35) * 0.14),
+                    startRadius: extent * 0.025, endRadius: extent * (spread + 0.10))
+                RadialGradient(colors: [primary.opacity(0.32), .clear],
+                    center: point(x: 0.62 + sin(phase * 0.31) * 0.13,
+                                  y: 0.19 + cos(phase * 0.28) * 0.10),
+                    startRadius: 1, endRadius: extent * spread * 0.76)
+            }.blendMode(.screen)
         case .classic:
             ZStack {
                 RadialGradient(
@@ -1061,23 +1109,10 @@ struct V3AtmosphereFieldView: View {
         }
     }
 
-    private func advancePhase(at date: Date) {
-        guard !isPaused else {
-            lastTick = nil
-            return
-        }
-        guard let lastTick else {
-            self.lastTick = date
-            return
-        }
-        let elapsed = min(0.10, max(0, date.timeIntervalSince(lastTick)))
-        let rate = level == 1 ? 0.11 : 0.15
-        phase += elapsed * rate
-        self.lastTick = date
-    }
+
 }
 
-private struct V3WindowVisibilityProbe: NSViewRepresentable {
+struct V3WindowVisibilityProbe: NSViewRepresentable {
     @Binding var isVisible: Bool
 
     func makeNSView(context: Context) -> V3WindowVisibilityTrackingView {
@@ -1098,7 +1133,7 @@ private struct V3WindowVisibilityProbe: NSViewRepresentable {
     }
 }
 
-private final class V3WindowVisibilityTrackingView: NSView {
+final class V3WindowVisibilityTrackingView: NSView {
     var onVisibilityChange: ((Bool) -> Void)?
     private weak var observedWindow: NSWindow?
     private var observers: [NSObjectProtocol] = []
@@ -1201,6 +1236,8 @@ public actor AppleMusicImmersiveV3BackdropCache {
     private let capacity = 48
 
     public init() {}
+
+    public func cachedPalette(for key: String) -> BackdropPalette? { values[key]?.palette }
 
     public func snapshot(
         for key: String,

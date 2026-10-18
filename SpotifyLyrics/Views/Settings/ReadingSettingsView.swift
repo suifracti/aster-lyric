@@ -94,13 +94,12 @@ struct LyricsAndTextSettingsView: View {
         format: String,
         scale: Double = 1
     ) -> some View {
-        HStack {
+        VStack(alignment: .leading, spacing: 6) {
             Text(title)
-            Slider(value: value, in: range)
-            Text(String(format: format, value.wrappedValue * scale))
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .frame(width: 58, alignment: .trailing)
+            V3NumericSlider(value: value, in: range, step: scale == 100 ? 0.01 : 1,
+                            unit: format.contains("pt") ? "pt" : (scale == 100 ? "%" : ""),
+                            displayScale: scale)
+                .accessibilityLabel(title)
         }
     }
 
@@ -362,13 +361,12 @@ struct ReadingSettingsView: View {
         format: String,
         scale: Double = 1
     ) -> some View {
-        HStack {
+        VStack(alignment: .leading, spacing: 6) {
             Text(title)
-            Slider(value: value, in: range)
-            Text(String(format: format, value.wrappedValue * scale))
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .frame(width: 58, alignment: .trailing)
+            V3NumericSlider(value: value, in: range, step: scale == 100 ? 0.01 : 1,
+                            unit: format.contains("pt") ? "pt" : (scale == 100 ? "%" : ""),
+                            displayScale: scale)
+                .accessibilityLabel(title)
         }
     }
 

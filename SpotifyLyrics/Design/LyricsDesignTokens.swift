@@ -378,13 +378,9 @@ private struct LyricIslandSongTint: ViewModifier {
         content.environment(\.lyricIslandAccent, accent)
             .task(id: artworkURL) {
                 accent = .accentColor
-                guard let artworkURL,
-                      let image = await ArtworkImageLoader.shared.image(for: artworkURL),
-                      !Task.isCancelled, let data = image.tiffRepresentation else { return }
-                let snapshot = await AppleMusicImmersiveV3BackdropCache.shared.snapshot(
-                    for: "artwork|" + artworkURL.absoluteString, artworkData: data)
+                let palette = await LyricIslandArtworkColors.palette(for: artworkURL)
                 guard !Task.isCancelled else { return }
-                let value = snapshot.palette.glow
+                let value = palette.glow
                 // Menu sheets can be light while listening windows are dark.
                 // Resolve the same song hue against each surface appearance.
                 accent = Color(nsColor: NSColor(name: nil) { appearance in
