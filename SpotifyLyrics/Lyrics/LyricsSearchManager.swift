@@ -685,6 +685,38 @@ public final class LyricsSearchManager: @unchecked Sendable {
             }
         }
 
+        // Localized release titles may have no literal/reading alias at all.
+        // One cross-script result from the same artist and near-identical recording
+        // length is useful evidence; do not fabricate an "official" title alias.
+        if !collectCandidatesOnly, (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let localized = rejectedForExplanation.filter { item in
+                !item.decision.hardReject && !item.decision.versionConflict
+                    && item.decision.reasons.contains("titleMismatch")
+                    && item.decision.reasons.contains("primaryArtistExact")
+                    && track.duration > 0 && item.candidate.duration > 0
+                    && abs(track.duration - item.candidate.duration) <= 1
+                    && item.candidate.source != .lyricsOVH
+                    && ScriptDetector.detect(track.title) != ScriptDetector.detect(item.candidate.title)
+                    && item.candidate.lines.contains { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            }
+            let titleKeys = Set(localized.map { TrackTextNormalizer.normalize($0.candidate.title) })
+            if titleKeys.count == 1, let selected = localized.max(by: {
+                let lhs = Self.timingPriority(of: $0.candidate), rhs = Self.timingPriority(of: $1.candidate)
+                if lhs != rhs { return lhs < rhs }
+                return $0.decision.score < $1.decision.score
+            }) {
+                let score = max(0.58, selected.decision.score)
+                let decision = LyricsMatchDecision(tier: .autoMedium, score: score, versionConflict: false,
+                    queryKind: selected.decision.queryKind,
+                    reasons: selected.decision.reasons + ["localizedTitleArtistDuration"],
+                    evidence: selected.decision.evidence + [LyricsMatchEvidence(code: "localizedTitleArtistDuration", delta: score - selected.decision.score)])
+                let document = Self.finalizeDocument(selected.document, identity: identity)
+                LyricsE2ELog.log("MANAGER AUTO_ADOPT localized-title provider=\(selected.providerName) durationDelta=\(abs(track.duration - selected.candidate.duration)) lines=\(document.lines.count)")
+                return SearchOutcome(result: .match(document), diagnostics: diagnostics,
+                    alternatives: [selected.candidate], automaticDecision: decision)
+            }
+        }
+
         if !acceptedCandidates.isEmpty {
             let sorted = acceptedCandidates.values
                 .sorted(by: LyricsCandidate.hasPrecedence)

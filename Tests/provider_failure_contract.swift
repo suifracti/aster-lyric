@@ -435,7 +435,7 @@ struct ProviderFailureContract {
         precondition(identityFailure.recoveryMessage.contains("未能确认") && identityFailure.recoveryMessage.contains("限流"))
         precondition(unconfirmed.alternatives.isEmpty && unconfirmed.automaticDecision == nil,
             "presentation repair must not expose or auto-adopt a hard-rejected wrong artist")
-        let nearbyTitle = LyricsCandidate(id: "nearby-title", identity: identity, title: "另一种标题",
+        let nearbyTitle = LyricsCandidate(id: "nearby-title", identity: identity, title: "Different Title",
             artist: track.artist, album: track.album, duration: track.duration + 0.1,
             lines: [LyricLine(timestamp: 0, originalText: "Self-authored title mismatch fixture")],
             source: .neteaseExperimental, confidence: 1)
@@ -449,7 +449,7 @@ struct ProviderFailureContract {
         guard case .failed(let titleFailure) = titleMismatch.result else {
             fatalError("title mismatch must remain a failed identity check")
         }
-        precondition(titleFailure.recoveryMessage.contains("另一种标题")
+        precondition(titleFailure.recoveryMessage.contains("Different Title")
             && titleFailure.recoveryMessage.contains(track.title)
             && titleFailure.recoveryMessage.contains("标题"),
             "identity refusal must explain the nearest result's title mismatch")
@@ -457,6 +457,22 @@ struct ProviderFailureContract {
         precondition(titleFailure.recoveryMessage.contains("限流"), "identity detail must retain source failures")
         precondition(titleMismatch.alternatives.isEmpty && titleMismatch.automaticDecision == nil,
             "explanations must not loosen candidate or automatic adoption eligibility")
+        let translatedTitleTrack = Track(title: "meaning of tears", artist: "tear", album: "meaning of tears", duration: 234.66)
+        let translatedTitleIdentity = TrackIdentity(track: translatedTitleTrack)
+        func translatedTitle(_ title: String, duration: Double = 234.659) -> LyricsCandidate {
+            LyricsCandidate(id: title, identity: translatedTitleIdentity, title: title, artist: "TEAR", album: title,
+                duration: duration, lines: [LyricLine(timestamp: 1, originalText: "Self-authored fixture")],
+                isSynchronized: true, source: .neteaseExperimental, confidence: 0.5)
+        }
+        let inferred = await LyricsSearchManager(providers: [FixedLyricsProvider(name: "localized-source",
+            result: .candidates([translatedTitle("涙の意味")]))]).search(track: translatedTitleTrack, identity: translatedTitleIdentity)
+        guard case .match = inferred.result else { fatalError("unique cross-script title with same artist and recording duration must auto-select") }
+        precondition(inferred.automaticDecision?.reasons.contains("localizedTitleArtistDuration") == true)
+        for list in [[translatedTitle("涙の意味"), translatedTitle("別の曲")], [translatedTitle("涙の意味", duration: 239)], [translatedTitle("Unrelated Song")]] {
+            let result = await LyricsSearchManager(providers: [FixedLyricsProvider(name: "source", result: .candidates(list))])
+                .search(track: translatedTitleTrack, identity: translatedTitleIdentity)
+            precondition(result.automaticDecision == nil, "ambiguous, distant or same-script different titles must not use localization inference")
+        }
         let localizedTrack = Track(title: "ai", artist: "LOVELY BOMB", album: "ai", duration: 168.58)
         let localizedIdentity = TrackIdentity(track: localizedTrack)
         let localizedCandidate = LyricsCandidate(id: "localized-title", identity: localizedIdentity, title: "愛",
