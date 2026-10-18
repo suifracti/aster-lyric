@@ -20,7 +20,7 @@ struct V3WindowEdgePlaybackOverlay: View {
 
     private let borderInset: CGFloat = 1.5
     private let borderRadius: CGFloat = 12
-    private var progressVisible: Bool {
+    private var controlsVisible: Bool {
         (trackedPointerInside ?? pointerInsideWindow) && (edgeHovered || controlsHovered || draftFraction != nil)
     }
     private var animatesColor: Bool { colorMode == "flow" && !reduceMotion }
@@ -35,7 +35,7 @@ struct V3WindowEdgePlaybackOverlay: View {
             ZStack(alignment: .topLeading) {
                 TimelineView(.animation(
                     minimumInterval: reduceMotion ? 0.5 : 1.0 / 30.0,
-                    paused: !progressVisible || (!state.isPlaying && !animatesColor)
+                    paused: !state.isPlaying && !animatesColor
                 )) { context in
                     let color = accent(at: context.date, songHue: songHue)
                     ZStack {
@@ -45,8 +45,6 @@ struct V3WindowEdgePlaybackOverlay: View {
                     }
                     .transaction { $0.animation = nil }
                 }
-                .opacity(progressVisible ? 1 : 0)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: progressVisible)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
 
@@ -70,15 +68,15 @@ struct V3WindowEdgePlaybackOverlay: View {
                                               isVertical: controlPosition.isVertical)
                     .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
                     .scaleEffect(controlPosition.scale)
-                    .opacity(progressVisible ? 1 : 0)
-                    .allowsHitTesting(progressVisible)
-                    .accessibilityHidden(!progressVisible)
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: progressVisible)
+                    .opacity(controlsVisible ? 1 : 0)
+                    .allowsHitTesting(controlsVisible)
+                    .accessibilityHidden(!controlsVisible)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: controlsVisible)
                     .position(controlPosition.center)
             }
             .frame(width: size.width, height: size.height, alignment: .topLeading)
             .background(V3WindowEdgePointerTracker { point in
-                let wasVisible = progressVisible
+                let wasVisible = controlsVisible
                 let inside = point != nil
                 if trackedPointerInside != inside { trackedPointerInside = inside }
                 let onEdge = point.map {
@@ -262,7 +260,7 @@ struct V3WindowEdgeProgressSettings: View {
                 ), supportsOpacity: false)
                 .disabled(!enabled)
             }
-            Text("靠近窗口边缘时显示进度，点击或拖动边缘可跳转。")
+            Text("进度常驻显示；靠近边缘时显示播放按钮，点击或拖动边缘可跳转。")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
