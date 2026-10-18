@@ -4,6 +4,71 @@ import Foundation
 struct V3ResponsiveGeometryContract {
     static func main() {
         let canvas = CGRect(x: 0, y: 0, width: 1200, height: 800)
+        func edgeFraction(
+            _ point: CGPoint,
+            _ size: CGSize,
+            inset: CGFloat = 1.5,
+            cornerRadius: CGFloat = 12
+        ) -> Double {
+            guard let fraction = V3ResponsiveGeometry.edgeProgressFraction(
+                at: point,
+                canvasSize: size,
+                inset: inset,
+                cornerRadius: cornerRadius
+            ) else {
+                preconditionFailure("valid edge progress geometry must return a fraction")
+            }
+            precondition((0..<1).contains(fraction), "edge progress must stay in [0, 1)")
+            return fraction
+        }
+        func assertNear(_ actual: Double, _ expected: Double, _ message: String) {
+            precondition(abs(actual - expected) < 0.0001, message)
+        }
+
+        let squareEdge = CGSize(width: 120, height: 120)
+        assertNear(edgeFraction(CGPoint(x: 60, y: 1.5), squareEdge), 0,
+                   "the top midpoint starts the clockwise perimeter")
+        assertNear(edgeFraction(CGPoint(x: 118.5, y: 60), squareEdge), 0.25,
+                   "the right midpoint is one quarter around a square")
+        assertNear(edgeFraction(CGPoint(x: 60, y: 118.5), squareEdge), 0.5,
+                   "the bottom midpoint is halfway around a square")
+        assertNear(edgeFraction(CGPoint(x: 1.5, y: 60), squareEdge), 0.75,
+                   "the left midpoint is three quarters around a square")
+
+        let rectangleEdge = CGSize(width: 240, height: 120)
+        let squareTopPoint = edgeFraction(CGPoint(x: 90, y: 1.5), squareEdge)
+        let rectangleTopPoint = edgeFraction(CGPoint(x: 180, y: 1.5), rectangleEdge)
+        precondition(rectangleTopPoint > squareTopPoint,
+                     "the same fraction of a wide top edge uses its actual perimeter length")
+        precondition(rectangleTopPoint > 0.08 && rectangleTopPoint < 0.10,
+                     "a point 60pt clockwise from the top midpoint follows the wide rounded perimeter")
+        let rectangleTopRightCurveMidpoint = edgeFraction(
+            CGPoint(x: 232.5, y: 7.5), rectangleEdge
+        )
+        precondition(rectangleTopRightCurveMidpoint > rectangleTopPoint
+                     && rectangleTopRightCurveMidpoint < 0.25,
+                     "the top-right corner follows the cubic curve before the right midpoint")
+        assertNear(edgeFraction(CGPoint(x: 300, y: 60), rectangleEdge), 0.25,
+                   "a drag beyond the right edge projects onto the nearest edge")
+        assertNear(edgeFraction(CGPoint(x: 60, y: -40), squareEdge), 0,
+                   "a drag beyond the top edge clamps to the top perimeter")
+
+        precondition(V3ResponsiveGeometry.edgeProgressFraction(
+            at: CGPoint(x: 0, y: 0), canvasSize: .zero
+        ) == nil, "zero-sized canvases have no perimeter")
+        precondition(V3ResponsiveGeometry.edgeProgressFraction(
+            at: CGPoint(x: 0, y: 0), canvasSize: CGSize(width: 120, height: 0)
+        ) == nil, "a zero-height canvas has no perimeter")
+        precondition(V3ResponsiveGeometry.edgeProgressFraction(
+            at: CGPoint(x: 0, y: 0), canvasSize: CGSize(width: CGFloat.nan, height: 120)
+        ) == nil, "non-finite canvas sizes are invalid")
+        precondition(V3ResponsiveGeometry.edgeProgressFraction(
+            at: CGPoint(x: CGFloat.nan, y: 20), canvasSize: squareEdge
+        ) == nil, "non-finite pointer positions are invalid")
+        precondition(V3ResponsiveGeometry.edgeProgressFraction(
+            at: CGPoint(x: 20, y: CGFloat.infinity), canvasSize: squareEdge
+        ) == nil, "infinite pointer positions are invalid")
+
         for region in [CGRect(x: 40, y: 32, width: 460, height: 736), CGRect(x: 700, y: 32, width: 460, height: 736), CGRect(x: 32, y: 72, width: 696, height: 280)] {
             let reveal = V3ResponsiveGeometry.playbackRevealRect(region: region, canvas: canvas)
             precondition(reveal.contains(CGPoint(x: region.midX, y: region.midY)))

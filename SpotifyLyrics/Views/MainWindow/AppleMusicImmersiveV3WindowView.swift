@@ -229,6 +229,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                     V3WindowEdgePlaybackOverlay(
                         state: state,
                         colorHex: settings.v3EdgeProgressColorHex,
+                        colorMode: settings.v3EdgeProgressColorMode,
                         exitPoint: lastWindowExitPoint
                     )
                     .frame(width: geometry.size.width, height: geometry.size.height)
@@ -4276,7 +4277,8 @@ private struct V3VisualTuningPopoverView: View {
 
                 V3WindowEdgeProgressSettings(
                     enabled: $settings.v3EdgeProgressEnabled,
-                    colorHex: $settings.v3EdgeProgressColorHex
+                    colorHex: $settings.v3EdgeProgressColorHex,
+                    colorMode: $settings.v3EdgeProgressColorMode
                 )
 
                 VStack(alignment: .leading, spacing: 5) {

@@ -6,86 +6,189 @@ import SwiftUI
 struct V3WindowEdgePlaybackOverlay: View {
     @ObservedObject var state: PlaybackState
     let colorHex: String
+    let colorMode: String
     let exitPoint: CGPoint?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.v3PlaybackInteractionChanged) private var interactionChanged
+    @State private var edgeHovered = false
+    @State private var controlsHovered = false
+    @State private var draftFraction: Double?
+    @State private var dragTrackKey: String?
 
     private let borderInset: CGFloat = 1.5
     private let borderRadius: CGFloat = 12
+    private var progressVisible: Bool { edgeHovered || controlsHovered || draftFraction != nil }
+    private var animatesColor: Bool { colorMode == "flow" && !reduceMotion }
 
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
-            let accent = V3WindowEdgeColor.color(from: colorHex)
-            let controlPosition = V3WindowEdgeControlPositioner.layout(
-                size: size,
-                exitPoint: exitPoint
-            )
+            let songHue = V3WindowEdgeSongColor.hue(for: state.currentTrackIdentity?.stableKey ?? "no-track")
+            let controlsAccent = accent(at: .now, songHue: songHue)
+            let controlPosition = V3WindowEdgeControlPositioner.layout(size: size, exitPoint: exitPoint)
 
             ZStack(alignment: .topLeading) {
-                V3WindowEdgeRoundedRectShape(inset: borderInset, cornerRadius: borderRadius)
-                    .stroke(
-                        accent.opacity(0.22),
-                        style: StrokeStyle(lineWidth: 2.1, lineCap: .round, lineJoin: .round)
-                    )
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-
                 TimelineView(.animation(
                     minimumInterval: reduceMotion ? 0.5 : 1.0 / 30.0,
-                    paused: !state.isPlaying
-                )) { _ in
-                    V3WindowEdgeRoundedRectShape(inset: borderInset, cornerRadius: borderRadius)
-                        .trim(from: 0, to: progressFraction)
-                        .stroke(
-                            accent,
-                            style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
-                        )
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
+                    paused: !progressVisible || (!state.isPlaying && !animatesColor)
+                )) { context in
+                    let color = accent(at: context.date, songHue: songHue)
+                    ZStack {
+                        border.stroke(color.opacity(0.22), style: StrokeStyle(lineWidth: 2.1, lineCap: .round))
+                        border.trim(from: 0, to: progressFraction)
+                            .stroke(color, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                    }
+                    .transaction { $0.animation = nil }
                 }
-                .transaction { $0.animation = nil }
+                .opacity(progressVisible ? 1 : 0)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: progressVisible)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
 
-                V3WindowEdgeTransportButtons(
-                    state: state,
-                    accent: accent,
-                    isVertical: controlPosition.isVertical
-                )
-                .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
-                .scaleEffect(controlPosition.scale)
-                .position(controlPosition.center)
+                // Only the thin edge band takes pointer events; the lyric canvas stays interactive.
+                V3WindowEdgeHitBand(inset: borderInset, cornerRadius: borderRadius)
+                    .fill(Color.clear)
+                    .contentShape(V3WindowEdgeHitBand(inset: borderInset, cornerRadius: borderRadius))
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            let inside = V3WindowEdgeHitBand(inset: borderInset, cornerRadius: borderRadius)
+                                .path(in: CGRect(origin: .zero, size: size)).contains(location)
+                            if edgeHovered != inside { edgeHovered = inside }
+                        case .ended: edgeHovered = false
+                        }
+                    }
+                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                        .onChanged { value in updateDraft(at: value.location, size: size) }
+                        .onEnded { value in finishSeek(at: value.location, size: size) })
+                    .accessibilityLabel("窗口边缘播放进度")
+                    .accessibilityValue("\(Int(progressFraction * 100))%")
+                    .accessibilityAdjustableAction { direction in
+                        guard canSeek else { return }
+                        let delta: Double = direction == .increment ? 5 : -5
+                        state.seek(to: min(max(0, Double(progressFraction) * state.currentTrack.duration + delta),
+                                           state.currentTrack.duration), source: "v3-edge-progress-keyboard")
+                    }
+
+                V3WindowEdgeTransportButtons(state: state, accent: controlsAccent,
+                                              isVertical: controlPosition.isVertical)
+                    .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
+                    .scaleEffect(controlPosition.scale)
+                    .position(controlPosition.center)
+                    .onHover { controlsHovered = $0 }
             }
             .frame(width: size.width, height: size.height, alignment: .topLeading)
         }
+        .onChange(of: state.currentTrackIdentity) { _, _ in
+            if dragTrackKey != nil {
+                // Keep the original gesture identity until release so a track
+                // change cannot redirect an unfinished drag onto the new song.
+                draftFraction = nil
+                interactionChanged(false)
+            }
+        }
+        .onDisappear { cancelDraft() }
+    }
+
+    private var border: V3WindowEdgeRoundedRectShape {
+        V3WindowEdgeRoundedRectShape(inset: borderInset, cornerRadius: borderRadius)
+    }
+
+    private var canSeek: Bool {
+        state.currentTrackIdentity != nil && state.canInteractWithPlayback
+            && state.currentTrack.duration.isFinite && state.currentTrack.duration > 0
     }
 
     private var progressFraction: CGFloat {
+        if let draftFraction { return CGFloat(draftFraction) }
         let duration = state.currentTrack.duration
         guard duration.isFinite, duration > 0 else { return 0 }
-
-        let position = state.presentationClock.playbackTime(
-            at: ProcessInfo.processInfo.systemUptime
-        )
+        let position = state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime)
         guard position.isFinite else { return 0 }
         return CGFloat(min(max(position / duration, 0), 1))
     }
+
+    private func updateDraft(at point: CGPoint, size: CGSize) {
+        guard canSeek, let fraction = V3ResponsiveGeometry.edgeProgressFraction(at: point, canvasSize: size) else { return }
+        if dragTrackKey == nil {
+            dragTrackKey = state.currentTrackIdentity?.stableKey
+            interactionChanged(true)
+        }
+        guard dragTrackKey == state.currentTrackIdentity?.stableKey else { return }
+        draftFraction = fraction
+    }
+
+    private func finishSeek(at point: CGPoint, size: CGSize) {
+        defer { cancelDraft() }
+        guard canSeek, dragTrackKey == state.currentTrackIdentity?.stableKey,
+              let fraction = V3ResponsiveGeometry.edgeProgressFraction(at: point, canvasSize: size) else { return }
+        state.seek(to: fraction * state.currentTrack.duration, source: "v3-edge-progress")
+    }
+
+    private func cancelDraft() {
+        if dragTrackKey != nil { interactionChanged(false) }
+        draftFraction = nil
+        dragTrackKey = nil
+    }
+
+    private func accent(at date: Date, songHue: Double) -> Color {
+        switch colorMode {
+        case "randomSong": return Color(hue: songHue, saturation: 0.68, brightness: 0.98)
+        case "flow":
+            let hue = reduceMotion ? songHue : (songHue + date.timeIntervalSinceReferenceDate / 36).truncatingRemainder(dividingBy: 1)
+            return Color(hue: hue, saturation: 0.68, brightness: 0.98)
+        default: return V3WindowEdgeColor.color(from: colorHex)
+        }
+    }
 }
 
-/// Settings content that can be embedded alongside the existing playback
-/// preferences without coupling this view to AppSettingsStore.
+private struct V3WindowEdgeHitBand: Shape {
+    let inset: CGFloat
+    let cornerRadius: CGFloat
+    func path(in rect: CGRect) -> Path {
+        V3WindowEdgeRoundedRectShape(inset: inset, cornerRadius: cornerRadius)
+            .path(in: rect).strokedPath(StrokeStyle(lineWidth: 22))
+    }
+}
+
+@MainActor
+private enum V3WindowEdgeSongColor {
+    private static var trackKey: String?
+    private static var currentHue = Double.random(in: 0..<1)
+    static func hue(for key: String) -> Double {
+        if key != trackKey {
+            // Pick once per song; opening a panel or toggling the border must not recolor it.
+            currentHue = (currentHue + Double.random(in: 0.19...0.81)).truncatingRemainder(dividingBy: 1)
+            trackKey = key
+        }
+        return currentHue
+    }
+}
+
 struct V3WindowEdgeProgressSettings: View {
     @Binding var enabled: Bool
     @Binding var colorHex: String
+    @Binding var colorMode: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Toggle("窗口边缘播放进度", isOn: $enabled)
-
-            ColorPicker("进度颜色", selection: Binding(
-                get: { V3WindowEdgeColor.color(from: colorHex) },
-                set: { colorHex = V3WindowEdgeColor.hex(from: $0, keepPrefix: colorHex.hasPrefix("#")) }
-            ), supportsOpacity: false)
+            Picker("颜色模式", selection: $colorMode) {
+                Text("固定颜色").tag("manual")
+                Text("自动流转").tag("flow")
+                Text("每首随机").tag("randomSong")
+            }
             .disabled(!enabled)
+            if colorMode == "manual" {
+                ColorPicker("进度颜色", selection: Binding(
+                    get: { V3WindowEdgeColor.color(from: colorHex) },
+                    set: { colorHex = V3WindowEdgeColor.hex(from: $0, keepPrefix: colorHex.hasPrefix("#")) }
+                ), supportsOpacity: false)
+                .disabled(!enabled)
+            }
+            Text("靠近窗口边缘时显示进度，点击或拖动边缘可跳转。")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }
@@ -183,7 +286,8 @@ private struct V3WindowEdgeTransportButton: View {
         Button(action: action) {
             Image(systemName: image)
                 .font(.system(size: primary ? 14 : 12, weight: .semibold))
-                .foregroundStyle(.white.opacity(enabled ? 0.96 : 0.40))
+                .foregroundStyle((primary ? V3WindowEdgeColor.foreground(on: accent) : .white)
+                    .opacity(enabled ? 0.96 : 0.40))
                 .frame(width: 30, height: 30)
                 .background(
                     Circle().fill(primary ? accent.opacity(enabled ? 0.92 : 0.34) : Color.black.opacity(0.28))
@@ -342,6 +446,12 @@ private enum V3WindowEdgeControlPositioner {
 }
 
 private enum V3WindowEdgeColor {
+    static func foreground(on color: Color) -> Color {
+        guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return .white }
+        let brightness = rgb.redComponent * 0.2126 + rgb.greenComponent * 0.7152 + rgb.blueComponent * 0.0722
+        return brightness > 0.58 ? .black : .white
+    }
+
     static func color(from hex: String) -> Color {
         var value = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.hasPrefix("#") { value.removeFirst() }

@@ -46,6 +46,7 @@ check(settings.v3ExpandArtworkWhenDetailsHidden, "hidden playback restores bound
 check(settings.v3ShowForegroundArtwork, "foreground artwork remains visible until the user hides it")
 check(!settings.v3EdgeProgressEnabled, "edge playback progress remains off by default")
 check(settings.v3EdgeProgressColorHex == "FFFFFF", "edge progress has a readable white default")
+check(settings.v3EdgeProgressColorMode == "randomSong", "edge progress picks a color per song by default")
 check(!settings.v3AmbientBackgroundShowsCompleteArtwork, "ambient background retains fill by default")
 check(settings.v3ArtworkSizeScale == 1.3, "migration preserves foreground appearance")
 check(settings.v3ClassicBackdropSizeScale == 1.3, "migration preserves background appearance")
@@ -58,6 +59,7 @@ settings.v3ArtworkSizeScale = 0.8
 settings.v3ShowForegroundArtwork = false
 settings.v3EdgeProgressEnabled = true
 settings.v3EdgeProgressColorHex = "20A0FF"
+settings.v3EdgeProgressColorMode = "randomSong"
 check(settings.v3ClassicBackdropSizeScale == 1.3, "foreground resize must not resize background")
 let afterForeground = AppSettingsStore(defaults: defaults)
 check(afterForeground.v3ClassicBackdropSizeScale == 1.3,
@@ -104,6 +106,7 @@ check(reopened.v3ArtworkSizeScale == 0.8 && reopened.v3ClassicBackdropSizeScale 
 check(!reopened.v3ShowForegroundArtwork, "foreground cover visibility survives restart")
 check(reopened.v3EdgeProgressEnabled && reopened.v3EdgeProgressColorHex == "20A0FF",
       "edge progress settings survive restart")
+check(reopened.v3EdgeProgressColorMode == "randomSong", "per-song color mode survives restart")
 check(reopened.v3BackdropScale(for: .authenticAmbient) == 1.2, "authentic ambient backdrop scale survives restart")
 check(reopened.v3PreviewScale(for: .ambientFeathered) == 0.9, "feathered scale remains independent")
 check(!reopened.v3ExpandArtworkWhenDetailsHidden && reopened.v3AmbientBackgroundShowsCompleteArtwork,

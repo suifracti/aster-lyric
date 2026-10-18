@@ -245,6 +245,135 @@ enum V3ResponsiveGeometry {
         return expanded.intersection(canvas)
     }
 
+    /// Map a pointer to its nearest point on the rounded window-edge path,
+    /// measured clockwise from the top midpoint. Cubic corners use the same
+    /// kappa and control points as V3WindowEdgeRoundedRectShape.
+    static func edgeProgressFraction(
+        at point: CGPoint,
+        canvasSize: CGSize,
+        inset: CGFloat = 1.5,
+        cornerRadius: CGFloat = 12
+    ) -> Double? {
+        guard canvasSize.width.isFinite, canvasSize.height.isFinite,
+              canvasSize.width > 0, canvasSize.height > 0,
+              point.x.isFinite, point.y.isFinite,
+              inset.isFinite, cornerRadius.isFinite, cornerRadius >= 0 else {
+            return nil
+        }
+
+        let bounds = CGRect(origin: .zero, size: canvasSize).insetBy(dx: inset, dy: inset)
+        guard bounds.width.isFinite, bounds.height.isFinite,
+              bounds.width > 0, bounds.height > 0,
+              bounds.minX.isFinite, bounds.minY.isFinite,
+              bounds.maxX.isFinite, bounds.maxY.isFinite else {
+            return nil
+        }
+
+        let radius = min(cornerRadius, min(bounds.width, bounds.height) / 2)
+        let curve = radius * 0.55228475
+        let minX = bounds.minX
+        let minY = bounds.minY
+        let maxX = bounds.maxX
+        let maxY = bounds.maxY
+        let topMidpoint = CGPoint(x: (minX + maxX) / 2, y: minY)
+        var pathPoints = [topMidpoint]
+
+        func appendLine(to end: CGPoint) {
+            pathPoints.append(end)
+        }
+        func appendCurve(control1: CGPoint, control2: CGPoint, to end: CGPoint) {
+            let start = pathPoints[pathPoints.count - 1]
+            for step in 1...16 {
+                let t = CGFloat(step) / 16
+                let inverse = 1 - t
+                let startWeight = inverse * inverse * inverse
+                let control1Weight = 3 * inverse * inverse * t
+                let control2Weight = 3 * inverse * t * t
+                let endWeight = t * t * t
+                pathPoints.append(CGPoint(
+                    x: start.x * startWeight + control1.x * control1Weight
+                        + control2.x * control2Weight + end.x * endWeight,
+                    y: start.y * startWeight + control1.y * control1Weight
+                        + control2.y * control2Weight + end.y * endWeight
+                ))
+            }
+        }
+
+        appendLine(to: CGPoint(x: maxX - radius, y: minY))
+        appendCurve(
+            control1: CGPoint(x: maxX - radius + curve, y: minY),
+            control2: CGPoint(x: maxX, y: minY + radius - curve),
+            to: CGPoint(x: maxX, y: minY + radius)
+        )
+        appendLine(to: CGPoint(x: maxX, y: maxY - radius))
+        appendCurve(
+            control1: CGPoint(x: maxX, y: maxY - radius + curve),
+            control2: CGPoint(x: maxX - radius + curve, y: maxY),
+            to: CGPoint(x: maxX - radius, y: maxY)
+        )
+        appendLine(to: CGPoint(x: minX + radius, y: maxY))
+        appendCurve(
+            control1: CGPoint(x: minX + radius - curve, y: maxY),
+            control2: CGPoint(x: minX, y: maxY - radius + curve),
+            to: CGPoint(x: minX, y: maxY - radius)
+        )
+        appendLine(to: CGPoint(x: minX, y: minY + radius))
+        appendCurve(
+            control1: CGPoint(x: minX, y: minY + radius - curve),
+            control2: CGPoint(x: minX + radius - curve, y: minY),
+            to: CGPoint(x: minX + radius, y: minY)
+        )
+        appendLine(to: topMidpoint)
+
+        var segments: [(start: CGPoint, end: CGPoint, length: CGFloat, offset: CGFloat)] = []
+        var perimeter: CGFloat = 0
+        for index in 0..<(pathPoints.count - 1) {
+            let start = pathPoints[index]
+            let end = pathPoints[index + 1]
+            let dx = end.x - start.x
+            let dy = end.y - start.y
+            let length = hypot(dx, dy)
+            guard start.x.isFinite, start.y.isFinite, end.x.isFinite, end.y.isFinite,
+                  length.isFinite else {
+                return nil
+            }
+            guard length > 0 else { continue }
+            segments.append((start, end, length, perimeter))
+            perimeter += length
+            guard perimeter.isFinite else { return nil }
+        }
+        guard perimeter > 0 else { return nil }
+
+        var nearestDistance = CGFloat.greatestFiniteMagnitude
+        var nearestOffset: CGFloat = 0
+        for segment in segments {
+            let dx = segment.end.x - segment.start.x
+            let dy = segment.end.y - segment.start.y
+            let pointX = point.x - segment.start.x
+            let pointY = point.y - segment.start.y
+            guard pointX.isFinite, pointY.isFinite else { return nil }
+            let unitX = dx / segment.length
+            let unitY = dy / segment.length
+            let along = pointX * unitX + pointY * unitY
+            guard along.isFinite else { return nil }
+            let progress = min(1, max(0, along / segment.length))
+            let projected = CGPoint(
+                x: segment.start.x + dx * progress,
+                y: segment.start.y + dy * progress
+            )
+            let distance = hypot(point.x - projected.x, point.y - projected.y)
+            guard projected.x.isFinite, projected.y.isFinite, distance.isFinite else { return nil }
+            if distance < nearestDistance {
+                nearestDistance = distance
+                nearestOffset = segment.offset + segment.length * progress
+            }
+        }
+
+        let fraction = Double(nearestOffset / perimeter)
+        guard fraction.isFinite, fraction >= 0, fraction < 1 else { return nil }
+        return fraction
+    }
+
     /// Shared visibility policy for the playback details in every V3 layout.
     /// Toolbar visibility deliberately remains a separate state machine.
     static func playbackDetailsVisible(
