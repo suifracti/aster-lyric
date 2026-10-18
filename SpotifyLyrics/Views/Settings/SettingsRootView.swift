@@ -1,6 +1,29 @@
 import SwiftUI
 import AppKit
 
+extension Notification.Name {
+    static let lyricIslandOpenAISettings = Notification.Name("lyricIslandOpenAISettings")
+}
+
+@MainActor
+final class SettingsNavigationRoute: ObservableObject {
+    static let shared = SettingsNavigationRoute()
+
+    @Published private(set) var pendingAISettings = false
+
+    func requestAISettings() {
+        pendingAISettings = true
+        NotificationCenter.default.post(name: .lyricIslandOpenAISettings, object: nil)
+    }
+
+    @discardableResult
+    func consumePendingAISettingsRequest() -> Bool {
+        guard pendingAISettings else { return false }
+        pendingAISettings = false
+        return true
+    }
+}
+
 private enum SettingsCategory: String, CaseIterable, Identifiable {
     case general = "播放"
     case lyricsAndText = "歌词与翻译"
@@ -77,12 +100,15 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
 
 struct SettingsRootView: View {
     @EnvironmentObject private var settings: AppSettingsStore
+    @StateObject private var navigationRoute = SettingsNavigationRoute.shared
     @State private var selection: SettingsCategory = .general
     @State private var searchText = ""
 
     private var visibleCategories: [SettingsCategory] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return query.isEmpty ? SettingsCategory.primaryCases : SettingsCategory.allCases.filter { $0.matches(query) }
+        if !query.isEmpty { return SettingsCategory.allCases.filter { $0.matches(query) } }
+        if selection == .aiTranslation { return SettingsCategory.primaryCases + [.aiTranslation] }
+        return SettingsCategory.primaryCases
     }
 
     var body: some View {
@@ -107,7 +133,7 @@ struct SettingsRootView: View {
                     }
                 }
                 .padding(8)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7))
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
                 .padding(12)
 
                 List(selection: $selection) {
@@ -159,6 +185,20 @@ struct SettingsRootView: View {
         }
         .frame(minWidth: 800, idealWidth: 920, minHeight: 540, idealHeight: 650)
         .background(SettingsWindowBehavior())
+        .onReceive(NotificationCenter.default.publisher(for: .lyricIslandOpenAISettings)) { _ in
+            navigateToAISettings()
+        }
+        .onAppear {
+            if navigationRoute.consumePendingAISettingsRequest() {
+                navigateToAISettings()
+            }
+        }
+    }
+
+    private func navigateToAISettings() {
+        _ = navigationRoute.consumePendingAISettingsRequest()
+        searchText = ""
+        selection = .aiTranslation
     }
 }
 
@@ -255,15 +295,34 @@ struct SettingsPageHeader: View {
     let detail: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 7) {
+                SettingsRecordMark()
+                Text("LYRIC ISLAND · SETTINGS")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .tracking(1.1)
+                    .foregroundStyle(.secondary)
+            }
             Text(title)
-                .font(.system(size: 25, weight: .semibold, design: .rounded))
+                .font(.system(size: 25, weight: .semibold))
             Text(detail)
-                .font(.system(size: 12, design: .rounded))
+                .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.bottom, 10)
+    }
+}
+
+private struct SettingsRecordMark: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Capsule().frame(width: 16, height: 2)
+            Capsule().frame(width: 11, height: 2)
+        }
+        .frame(width: 16, height: 7)
+        .foregroundStyle(.secondary)
+        .accessibilityHidden(true)
     }
 }
 
@@ -944,7 +1003,7 @@ private struct AISettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("服务配置") {
+            Section("当前服务与模型") {
                 TranslationProviderControls(settings: settings)
                 let selectedEngine = TranslationEngineRegistry.make(stableID: settings.aiTranslationConfiguration.engineID).metadata
                 Text(engineAvailabilityText(selectedEngine))
@@ -957,7 +1016,7 @@ private struct AISettingsView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                DisclosureGroup("配置服务、模型与连接测试") {
+                DisclosureGroup("API 地址、Key 与连接测试") {
                     TextField("兼容接口地址（Base URL）", text: configurationBinding(\.baseURL))
                         .textFieldStyle(.roundedBorder)
                         .disabled(selectedEngine.stableID == TranslationEngineID.codexChatGPT.rawValue)

@@ -48,6 +48,7 @@ struct CapsuleLyricsView: View {
     @ObservedObject var windowController: CapsuleLyricsWindowController
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @State private var islandAccent: Color = .accentColor
     @State private var draftPosition: Double?
 
     private var selection: CapsuleLyricsSelection {
@@ -136,6 +137,7 @@ struct CapsuleLyricsView: View {
         .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: state.liveLyrics))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("顶部胶囊")
+        .lyricIslandSongTint(artworkURL: state.currentTrack.artworkURL, accent: $islandAccent)
     }
 
     @ViewBuilder
@@ -207,19 +209,9 @@ struct CapsuleLyricsView: View {
                     shellShape
                         .stroke(Color.white.opacity(0.105), lineWidth: 0.75)
                 }
-                .overlay(alignment: .top) {
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.08),
-                            Color.white.opacity(0.015),
-                            Color.clear
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(height: 1)
-                    .padding(.horizontal, shellCornerRadius)
-                    .clipShape(Capsule())
+                .overlay(alignment: .leading) {
+                    capsuleAccentRail
+                        .padding(.leading, max(8, shellCornerRadius * 0.55))
                 }
         } else {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -228,7 +220,17 @@ struct CapsuleLyricsView: View {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .stroke(Color.white.opacity(0.12), lineWidth: 1)
                 }
+                .overlay(alignment: .leading) {
+                    capsuleAccentRail.padding(.leading, 10)
+                }
         }
+    }
+
+    private var capsuleAccentRail: some View {
+        Capsule()
+            .fill(islandAccent.opacity(state.hasLiveTrack ? 0.95 : 0.58))
+            .frame(width: 2, height: windowController.presentationState == .expanded ? 28 : 12)
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -264,6 +266,8 @@ struct CapsuleLyricsView: View {
                     .help("展开灵动岛")
                     .accessibilityLabel("展开灵动岛")
                 }
+            } else if presentation == .hover {
+                v4HoverContent
             } else {
                 v4CollapsedContent
             }
@@ -459,11 +463,11 @@ struct CapsuleLyricsView: View {
                     .frame(height: 3)
 
                 Capsule(style: .continuous)
-                    .fill(Color.white.opacity(0.82))
+                    .fill(islandAccent.opacity(0.92))
                     .frame(width: max(3, travel * fraction + thumbSize / 2), height: 3)
 
                 Circle()
-                    .fill(Color.white.opacity(0.96))
+                    .fill(islandAccent)
                     .frame(width: thumbSize, height: thumbSize)
                     .offset(x: travel * fraction)
 
@@ -501,7 +505,7 @@ struct CapsuleLyricsView: View {
             HStack(spacing: 8) {
                 Image(systemName: selection.isSynchronized ? "music.note" : "text.quote")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.62))
+                    .foregroundStyle(islandAccent)
                 Text(v4StatusText(status))
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.white.opacity(0.78))

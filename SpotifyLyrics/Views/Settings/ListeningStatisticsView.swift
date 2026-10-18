@@ -9,12 +9,19 @@ public struct ListeningStatisticsView: View {
 
     public var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 7) {
+                        StatisticsRecordMark()
+                        Text("LYRIC ISLAND · LISTENING NOTES")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .tracking(1.2)
+                            .foregroundStyle(.secondary)
+                    }
                     Text("听歌统计")
-                        .font(.system(size: 25, weight: .semibold, design: .rounded))
+                        .font(.system(size: 25, weight: .semibold))
                     Text("仅统计应用运行期间观察到的播放；新版会分别记录单曲循环，旧记录中合并的循环次数无法还原。")
-                        .font(.system(size: 12, design: .rounded))
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -93,17 +100,19 @@ public struct ListeningStatisticsView: View {
     }
 
     private func summary(_ statistics: ListeningStatistics) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 0) {
             summaryCard(
                 title: "总听歌时长",
                 value: formattedDuration(statistics.totalListeningTime),
                 icon: "clock"
             )
+            Divider().frame(height: 44).padding(.horizontal, 16)
             summaryCard(
                 title: "播放记录",
                 value: "\(statistics.sessionCount)",
                 icon: "music.note.list"
             )
+            Divider().frame(height: 44).padding(.horizontal, 16)
             summaryCard(
                 title: "独立歌曲数",
                 value: "\(statistics.uniqueSongCount)",
@@ -113,17 +122,16 @@ public struct ListeningStatisticsView: View {
     }
 
     private func summaryCard(title: String, value: String, icon: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(value)
+                .font(.system(size: 24, weight: .semibold, design: .rounded))
+                .monospacedDigit()
             Label(title, systemImage: icon)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text(value)
-                .font(.system(size: 22, weight: .semibold, design: .rounded))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(.vertical, 8)
     }
 
     private func trendSection(_ dailyCounts: [ListeningStatisticsDailyCount]) -> some View {
@@ -163,9 +171,7 @@ public struct ListeningStatisticsView: View {
                     .frame(maxWidth: .infinity)
                 }
             }
-            .padding(14)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .padding(.vertical, 8)
         }
     }
 
@@ -195,6 +201,7 @@ public struct ListeningStatisticsView: View {
                             .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
+                    .padding(.vertical, 8)
                     if song.id != displaySongs.last?.id {
                         Divider()
                     }
@@ -212,7 +219,7 @@ public struct ListeningStatisticsView: View {
     private func topArtists(_ artists: [ListeningStatisticsArtist]) -> some View {
         let displayArtists = Array(artists.prefix(5))
         if !displayArtists.isEmpty {
-            statisticsGroup(title: "Top Artists", icon: "person.2") {
+            statisticsGroup(title: "艺人排行", icon: "person.2") {
                 ForEach(Array(displayArtists.enumerated()), id: \.element.id) { index, artist in
                     HStack(spacing: 10) {
                         Text("\(index + 1)")
@@ -227,6 +234,7 @@ public struct ListeningStatisticsView: View {
                             .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
+                    .padding(.vertical, 8)
                     if artist.id != displayArtists.last?.id {
                         Divider()
                     }
@@ -243,13 +251,12 @@ public struct ListeningStatisticsView: View {
         VStack(alignment: .leading, spacing: 10) {
             Label(title, systemImage: icon)
                 .font(.headline)
-            VStack(spacing: 8) {
+            VStack(spacing: 0) {
                 content()
             }
-            .padding(14)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .padding(.top, 2)
         }
+        .padding(.top, 4)
     }
 
     private func formattedDuration(_ duration: TimeInterval) -> String {
@@ -264,5 +271,16 @@ public struct ListeningStatisticsView: View {
             return "\(minutes)分 \(seconds)秒"
         }
         return "\(seconds)秒"
+    }
+}
+
+private struct StatisticsRecordMark: View {
+    var body: some View {
+        VStack(spacing: 3) {
+            Capsule().frame(width: 16, height: 2)
+            Capsule().frame(width: 11, height: 2).frame(width: 16, alignment: .leading)
+        }
+        .foregroundStyle(.secondary)
+        .accessibilityHidden(true)
     }
 }

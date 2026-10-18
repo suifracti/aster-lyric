@@ -7,15 +7,22 @@ public struct ListeningHistoryView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 7) {
+                    ListeningRecordMark()
+                    Text("LYRIC ISLAND · LISTENING JOURNAL")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .tracking(1.2)
+                        .foregroundStyle(.secondary)
+                }
                 Text("最近播放")
-                    .font(.system(size: 25, weight: .semibold, design: .rounded))
-                Text("仅记录 Lyric Island 运行期间实际观察到的歌曲，不代表 Spotify 完整播放历史。")
-                    .font(.system(size: 12, design: .rounded))
+                    .font(.system(size: 25, weight: .semibold))
+                Text("这里只记录 Lyric Island 运行期间观察到的播放，不代表 Spotify 的完整播放历史。")
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.bottom, 10)
+            .padding(.bottom, 16)
 
             if let error = playback.listeningHistoryError {
                 HStack {
@@ -49,39 +56,45 @@ public struct ListeningHistoryView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
-                List(playback.listeningHistory) { entry in
-                    HStack(spacing: 12) {
-                        ListeningArtwork(url: entry.artworkURL)
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(playback.listeningHistory.enumerated()), id: \.element.id) { index, entry in
+                            HStack(spacing: 12) {
+                                ListeningArtwork(url: entry.artworkURL)
 
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(entry.title)
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .lineLimit(1)
+                                    Text(entry.artist)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
 
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(entry.title)
-                                .font(.system(size: 13, weight: .semibold))
-                                .lineLimit(1)
-                            Text(entry.artist)
-                                .font(.system(size: 11))
+                                Spacer(minLength: 12)
+
+                                VStack(alignment: .trailing, spacing: 4) {
+                                    Text(entry.startedAt, format: .dateTime
+                                        .year().month(.twoDigits).day(.twoDigits)
+                                        .hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
+                                        .font(.system(size: 11, design: .monospaced))
+                                    Text("本次聆听 · \(formattedDuration(entry.observedPlaybackDuration))")
+                                        .font(.system(size: 11))
+                                }
+                                .monospacedDigit()
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                                .multilineTextAlignment(.trailing)
+                                .fixedSize(horizontal: true, vertical: false)
+                            }
+                            .padding(.vertical, 11)
+                            .overlay(alignment: .bottom) {
+                                if index < playback.listeningHistory.count - 1 { Divider() }
+                            }
                         }
-
-                        Spacer(minLength: 12)
-
-                        VStack(alignment: .trailing, spacing: 4) {
-                            Text(entry.startedAt, format: .dateTime
-                                .year().month(.twoDigits).day(.twoDigits)
-                                .hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits))
-                                .font(.system(size: 11))
-                            Text("本次已听 \(formattedDuration(entry.observedPlaybackDuration))")
-                                .font(.system(size: 11))
-                        }
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.trailing)
-                        .fixedSize(horizontal: true, vertical: false)
                     }
-                    .padding(.vertical, 4)
                 }
-                .listStyle(.inset)
+                .scrollIndicators(.automatic)
             }
         }
         .padding(28)
@@ -133,5 +146,16 @@ struct ListeningArtwork: View {
             guard !Task.isCancelled else { return }
             image = loaded
         }
+    }
+}
+
+private struct ListeningRecordMark: View {
+    var body: some View {
+        VStack(spacing: 3) {
+            Capsule().frame(width: 16, height: 2)
+            Capsule().frame(width: 11, height: 2).frame(width: 16, alignment: .leading)
+        }
+        .foregroundStyle(.secondary)
+        .accessibilityHidden(true)
     }
 }

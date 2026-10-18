@@ -30,13 +30,28 @@ struct ReadingVersionEditorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("编辑读音")
-                .font(.title3.weight(.semibold))
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 7) {
+                    ReadingRecordMark()
+                    Text("LYRIC ISLAND · READING")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .tracking(1.1)
+                        .foregroundStyle(.secondary)
+                }
+                Text("编辑读音")
+                    .font(.system(size: 21, weight: .semibold, design: .serif))
+                if state.hasLiveTrack {
+                    Text("\(state.currentTrack.title) · \(state.currentTrack.artist)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
             Text("保存后采用新的人工读音版本，原版本保留。原文、翻译与时间轴保持不变。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             HStack(spacing: 8) {
-                Text(ReadingRepresentationID(rawValue: version.record.representationID)?.displayName ?? "读音")
+                Text("表示 · \(ReadingRepresentationID(rawValue: version.record.representationID)?.displayName ?? "读音")")
                 if version.record.isLocked {
                     Label("原版本已锁定", systemImage: "lock.fill")
                 }
@@ -75,13 +90,14 @@ struct ReadingVersionEditorView: View {
                     .padding(.vertical, 4)
                 }
             }
+            .listStyle(.plain)
             HStack {
                 Spacer()
                 Button("取消") { dismiss() }
                     .disabled(saving)
                     .keyboardShortcut(.cancelAction)
                 if saving { ProgressView().controlSize(.small) }
-                Button("保存并采用人工版本") {
+                Button("保存并采用新版本") {
                     save()
                 }
                 .buttonStyle(.borderedProminent)
@@ -90,7 +106,6 @@ struct ReadingVersionEditorView: View {
         }
         .padding(20)
         .frame(minWidth: 560, minHeight: 460)
-        .preferredColorScheme(.dark)
         .interactiveDismissDisabled(saving)
     }
 
@@ -108,6 +123,17 @@ struct ReadingVersionEditorView: View {
                 saving = false
             }
         }
+    }
+}
+
+private struct ReadingRecordMark: View {
+    var body: some View {
+        VStack(spacing: 3) {
+            Capsule().frame(width: 16, height: 2)
+            Capsule().frame(width: 11, height: 2).frame(width: 16, alignment: .leading)
+        }
+        .foregroundStyle(.secondary)
+        .accessibilityHidden(true)
     }
 }
 
@@ -145,7 +171,23 @@ struct RubyCorrectionEditorView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("修改「\(request.surface)」的读音").font(.headline)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 7) {
+                    ReadingRecordMark()
+                    Text("LYRIC ISLAND · READING")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .tracking(1.1)
+                        .foregroundStyle(.secondary)
+                }
+                Text("修改「\(request.surface)」的读音")
+                    .font(.system(size: 18, weight: .semibold, design: .serif))
+                if state.hasLiveTrack {
+                    Text("\(state.currentTrack.title) · \(state.currentTrack.artist)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
             TextField("假名，例如：からだ", text: $draft)
                 .textFieldStyle(.roundedBorder).focused($focused)
                 .onSubmit { save() }
@@ -158,7 +200,7 @@ struct RubyCorrectionEditorView: View {
                     .keyboardShortcut(.cancelAction)
                 Spacer()
                 if saving { ProgressView().controlSize(.small) }
-                Button("保存读音") { save() }
+                Button("保存为新版本") { save() }
                     .buttonStyle(.borderedProminent).disabled(saving || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }

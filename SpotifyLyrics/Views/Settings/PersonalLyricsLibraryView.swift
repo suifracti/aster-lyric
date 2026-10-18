@@ -75,15 +75,16 @@ public struct PersonalLyricsLibraryView: View {
                 PersonalLibraryTrackDetailView(service: service, stableKey: stableKey)
             } else {
                 VStack(spacing: 12) {
-                    Image(systemName: "books.vertical")
-                        .font(.system(size: 48))
+                    RecordShelfMark()
+                        .frame(width: 48, height: 30)
                         .foregroundStyle(.tertiary)
-                    Text("找回你保存的歌词与译文")
+                    Text("选择一张唱片")
                         .font(.headline)
                         .foregroundStyle(.secondary)
-                    Text("从左侧选一首歌，查看、切换或编辑已保存的版本。")
+                    Text("从左侧记录架打开歌曲档案，查看、切换或编辑保存的版本。")
                         .font(.subheadline)
                         .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -272,7 +273,6 @@ public struct PersonalLyricsLibraryView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.65))
     }
 }
 
@@ -282,7 +282,6 @@ private struct PersonalLibraryEntryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 10) {
-                // Artwork thumbnail
                 AsyncImage(url: entry.artworkURL) { phase in
                     switch phase {
                     case .success(let image):
@@ -319,34 +318,29 @@ private struct PersonalLibraryEntryRow: View {
                 }
             }
 
-            // Asset Badges
             HStack(spacing: 6) {
                 if entry.lyricsVersionCount > 0 {
                     AssetBadge(
                         title: "歌词 \(entry.lyricsVersionCount)",
-                        icon: entry.hasLockedLyrics ? "lock.fill" : (entry.hasManualLyrics ? "pencil" : nil),
-                        color: .blue
+                        icon: entry.hasLockedLyrics ? "lock.fill" : (entry.hasManualLyrics ? "pencil" : nil)
                     )
                 }
                 if entry.translationVersionCount > 0 {
                     AssetBadge(
                         title: "译文 \(entry.translationVersionCount)",
-                        icon: entry.hasLockedTranslation ? "lock.fill" : (entry.hasManualTranslation ? "pencil" : nil),
-                        color: .green
+                        icon: entry.hasLockedTranslation ? "lock.fill" : (entry.hasManualTranslation ? "pencil" : nil)
                     )
                 }
                 if entry.hasReading {
                     AssetBadge(
                         title: "读音",
-                        icon: nil,
-                        color: .orange
+                        icon: nil
                     )
                 }
                 if entry.hasFineTiming {
                     AssetBadge(
                         title: "逐字",
-                        icon: nil,
-                        color: .purple
+                        icon: nil
                     )
                 }
                 Spacer()
@@ -359,7 +353,6 @@ private struct PersonalLibraryEntryRow: View {
 private struct AssetBadge: View {
     let title: String
     let icon: String?
-    let color: Color
 
     var body: some View {
         HStack(spacing: 3) {
@@ -368,13 +361,19 @@ private struct AssetBadge: View {
                     .font(.system(size: 9))
             }
             Text(title)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 10, weight: .regular))
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(color.opacity(0.12))
-        .foregroundStyle(color)
-        .clipShape(Capsule())
+        .foregroundStyle(.secondary)
+    }
+}
+
+private struct RecordShelfMark: View {
+    var body: some View {
+        VStack(spacing: 5) {
+            Capsule().frame(width: 38, height: 3)
+            Capsule().frame(width: 28, height: 3).frame(width: 38, alignment: .leading)
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -394,9 +393,24 @@ public struct PersonalLibraryTrackDetailView: View {
     public var body: some View {
         Group {
             if let detail = service.selectedTrackDetail, detail.entry.trackStableKey == stableKey {
+                let lyricsVersions = detail.lyricsVersions.sorted { lhs, rhs in
+                    if lhs.isCurrent != rhs.isCurrent { return lhs.isCurrent }
+                    return lhs.updatedAt > rhs.updatedAt
+                }
+                let translationVersions = detail.translationVersions.sorted { lhs, rhs in
+                    if lhs.isCurrent != rhs.isCurrent { return lhs.isCurrent }
+                    return lhs.updatedAt > rhs.updatedAt
+                }
+                let readingVersions = detail.readingVersions.sorted { lhs, rhs in
+                    if lhs.isCurrent != rhs.isCurrent { return lhs.isCurrent }
+                    return lhs.updatedAt > rhs.updatedAt
+                }
+                let timingVersions = detail.timingVersions.sorted { lhs, rhs in
+                    if lhs.isCurrent != rhs.isCurrent { return lhs.isCurrent }
+                    return lhs.createdAt > rhs.createdAt
+                }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
-                        // Header
                         trackHeader(detail.entry)
 
                         Picker("版本类型", selection: $selectedSection) {
@@ -412,16 +426,12 @@ public struct PersonalLibraryTrackDetailView: View {
 
                         // Section 1: Lyrics Versions
                         if selectedSection == .all || selectedSection == .lyrics {
-                            versionSection(
-                                title: "歌词版本 (\(detail.lyricsVersions.count))",
-                                icon: "text.quote",
-                                color: .blue
-                            ) {
-                                if detail.lyricsVersions.isEmpty {
+                            versionSection(title: "歌词版本", count: lyricsVersions.count, icon: "text.quote") {
+                                if lyricsVersions.isEmpty {
                                     emptyPlaceholder("暂无保存的歌词版本")
                                 } else {
-                                    ForEach(detail.lyricsVersions) { lv in
-                                        lyricsVersionCard(lv, entry: detail.entry, versions: detail.lyricsVersions)
+                                    ForEach(lyricsVersions) { lv in
+                                        lyricsVersionCard(lv, entry: detail.entry, versions: lyricsVersions)
                                     }
                                 }
                             }
@@ -429,15 +439,11 @@ public struct PersonalLibraryTrackDetailView: View {
 
                         // Section 2: Translation Versions
                         if selectedSection == .all || selectedSection == .translations {
-                            versionSection(
-                                title: "翻译版本 (\(detail.translationVersions.count))",
-                                icon: "character.bubble",
-                                color: .green
-                            ) {
-                                if detail.translationVersions.isEmpty {
+                            versionSection(title: "翻译版本", count: translationVersions.count, icon: "character.bubble") {
+                                if translationVersions.isEmpty {
                                     emptyPlaceholder("暂无保存的翻译版本")
                                 } else {
-                                    ForEach(detail.translationVersions) { tv in
+                                    ForEach(translationVersions) { tv in
                                         translationVersionCard(tv, entry: detail.entry)
                                     }
                                 }
@@ -446,15 +452,11 @@ public struct PersonalLibraryTrackDetailView: View {
 
                         // Section 3: Reading Versions
                         if selectedSection == .all || selectedSection == .readings {
-                            versionSection(
-                                title: "读音版本 (\(detail.readingVersions.count))",
-                                icon: "character.book.closed",
-                                color: .orange
-                            ) {
-                                if detail.readingVersions.isEmpty {
+                            versionSection(title: "读音版本", count: readingVersions.count, icon: "character.book.closed") {
+                                if readingVersions.isEmpty {
                                     emptyPlaceholder("暂无保存的读音版本")
                                 } else {
-                                    ForEach(detail.readingVersions) { rv in
+                                    ForEach(readingVersions) { rv in
                                         readingVersionCard(rv, entry: detail.entry)
                                     }
                                 }
@@ -463,15 +465,11 @@ public struct PersonalLibraryTrackDetailView: View {
 
                         // Section 4: Timing Versions
                         if selectedSection == .all || selectedSection == .timing {
-                            versionSection(
-                                title: "逐字时间轴 (\(detail.timingVersions.count))",
-                                icon: "waveform",
-                                color: .purple
-                            ) {
-                                if detail.timingVersions.isEmpty {
+                            versionSection(title: "逐字时间轴", count: timingVersions.count, icon: "waveform") {
+                                if timingVersions.isEmpty {
                                     emptyPlaceholder("暂无保存的逐字时间轴")
                                 } else {
-                                    ForEach(detail.timingVersions) { tm in
+                                    ForEach(timingVersions) { tm in
                                         timingVersionCard(tm, entry: detail.entry)
                                     }
                                 }
@@ -497,63 +495,72 @@ public struct PersonalLibraryTrackDetailView: View {
     }
 
     private func trackHeader(_ entry: PersonalLyricsLibraryEntry) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 16) {
-                AsyncImage(url: entry.artworkURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.secondary.opacity(0.15))
-                            .overlay(
-                                Image(systemName: "music.note")
-                                    .font(.system(size: 28))
-                                    .foregroundStyle(.secondary)
-                            )
-                    }
-                }
-                .frame(width: 72, height: 72)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(entry.title)
-                        .font(.title2.bold())
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(entry.artist)
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                    if let album = entry.album, !album.isEmpty {
-                        Text(album)
-                            .font(.subheadline)
-                            .foregroundStyle(.tertiary)
-                    }
+        HStack(alignment: .center, spacing: 18) {
+            AsyncImage(url: entry.artworkURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().scaledToFill()
+                default:
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.secondary.opacity(0.12))
+                        .overlay(Image(systemName: "music.note").font(.system(size: 28)).foregroundStyle(.secondary))
                 }
             }
+            .frame(width: 88, height: 88)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 7) {
+                    RecordShelfMark()
+                        .frame(width: 38, height: 12)
+                        .foregroundStyle(.secondary)
+                    Text("LYRIC ISLAND · RECORD")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .tracking(1.1)
+                        .foregroundStyle(.secondary)
+                }
+                Text(entry.title)
+                    .font(.system(size: 27, weight: .semibold, design: .serif))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(entry.artist)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+                if let album = entry.album, !album.isEmpty {
+                    Text(album)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            Spacer(minLength: 8)
 
             Button {
                 service.exportPackage(for: entry.trackStableKey)
             } label: {
-                Label("导出资产包 (.lyricisland)", systemImage: "square.and.arrow.up")
+                Label("导出资产包", systemImage: "square.and.arrow.up")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.bordered)
             .controlSize(.regular)
         }
+        .padding(.bottom, 4)
     }
 
     @ViewBuilder
     private func versionSection<Content: View>(
         title: String,
+        count: Int,
         icon: String,
-        color: Color,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .foregroundStyle(color)
+                    .foregroundStyle(.secondary)
                 Text(title)
                     .font(.headline)
+                Text("\(count)")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.tertiary)
             }
             content()
         }
@@ -566,7 +573,7 @@ public struct PersonalLibraryTrackDetailView: View {
             .padding(.vertical, 8)
     }
 
-    // MARK: - Version Cards
+    // MARK: - Version Rows
 
     private func lyricsVersionCard(_ lv: PersonalLyricsVersionItem, entry: PersonalLyricsLibraryEntry, versions: [PersonalLyricsVersionItem]) -> some View {
         let provenance = DatabaseSourceIdentifier.provenanceDescription(source: lv.source, parentVersionID: lv.parentVersionID) { id in
@@ -575,33 +582,15 @@ public struct PersonalLibraryTrackDetailView: View {
         }
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        LibraryVersionLabel(kind: "lyrics", id: lv.id, originalTitle: DatabaseSourceIdentifier.displayName(for: lv.source))
-                        if lv.parentVersionID != nil { statusTag("修订版", color: .orange) }
-                        if lv.isCurrent {
-                            statusTag("当前采用", color: .blue)
-                        }
-                        if lv.isLocked {
-                            statusTag("已锁定", color: .indigo)
-                        }
-                        if lv.isManuallyEdited {
-                            statusTag("人工编辑", color: .orange)
-                        }
-                        if lv.isSynced {
-                            statusTag("时间轴", color: .teal)
-                        }
-                    }
-                    Text("来源：\(provenance)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("行数: \(lv.lineCount) · 语言: \(lv.language) · 更新于 \(formattedDate(lv.updatedAt))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    LibraryVersionLabel(kind: "lyrics", id: lv.id, originalTitle: DatabaseSourceIdentifier.displayName(for: lv.source))
+                    if lv.parentVersionID != nil { statusTag("修订版", color: .orange) }
+                    if lv.isCurrent { statusTag("当前采用", color: .accentColor) }
+                    if lv.isLocked { statusTag("已锁定", color: .secondary) }
+                    if lv.isManuallyEdited { statusTag("人工编辑", color: .secondary) }
+                    if lv.isSynced { statusTag("时间轴", color: .secondary) }
                 }
-
-                Spacer()
-
+                Spacer(minLength: 8)
                 HStack(spacing: 8) {
                     Button("编辑为新版本") { service.beginRevision(versionID: lv.id, entry: entry) }
                         .buttonStyle(.bordered)
@@ -614,7 +603,6 @@ public struct PersonalLibraryTrackDetailView: View {
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                     }
-
                     Button(lv.isLocked ? "解锁" : "锁定") {
                         service.toggleLyricsLock(versionID: lv.id, currentLocked: lv.isLocked, trackStableKey: entry.trackStableKey)
                     }
@@ -622,38 +610,34 @@ public struct PersonalLibraryTrackDetailView: View {
                     .controlSize(.small)
                 }
             }
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
+                GridRow {
+                    metadataLabel("来源")
+                    Text(provenance).foregroundStyle(.secondary).gridCellColumns(3)
+                }
+                GridRow {
+                    metadataLabel("内容")
+                    Text("\(lv.lineCount) 行 · \(lv.language)").foregroundStyle(.secondary)
+                    metadataLabel("更新")
+                    Text(formattedDate(lv.updatedAt)).foregroundStyle(.secondary).monospacedDigit()
+                }
+            }
+            .font(.caption)
         }
-        .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
+        .versionRowSurface(isCurrent: lv.isCurrent)
     }
 
     private func translationVersionCard(_ tv: PersonalTranslationVersionItem, entry: PersonalLyricsLibraryEntry) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        LibraryVersionLabel(kind: "translation", id: tv.id, originalTitle: tv.sourceKind.uppercased())
-                        if tv.isCurrent {
-                            statusTag("当前采用", color: .green)
-                        }
-                        if tv.isLocked {
-                            statusTag("已锁定", color: .indigo)
-                        }
-                        if tv.isArchived {
-                            statusTag("已归档", color: .secondary)
-                        }
-                        if tv.isManuallyEdited {
-                            statusTag("人工编辑", color: .orange)
-                        }
-                    }
-                    Text("目标语言: \(tv.targetLanguage) · 行数: \(tv.lineCount) · 更新于 \(formattedDate(tv.updatedAt))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    LibraryVersionLabel(kind: "translation", id: tv.id, originalTitle: tv.sourceKind.uppercased())
+                    if tv.isCurrent { statusTag("当前采用", color: .accentColor) }
+                    if tv.isLocked { statusTag("已锁定", color: .secondary) }
+                    if tv.isArchived { statusTag("已归档", color: .secondary.opacity(0.7)) }
+                    if tv.isManuallyEdited { statusTag("人工编辑", color: .secondary) }
                 }
-
-                Spacer()
-
+                Spacer(minLength: 8)
                 HStack(spacing: 8) {
                     Button("编辑为新版本") {
                         service.beginTranslationRevision(version: tv, entry: entry)
@@ -661,21 +645,16 @@ public struct PersonalLibraryTrackDetailView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(service.revisionBusy)
-
                     if !tv.isCurrent && !tv.isArchived {
-                        Button("设为当前") {
-                            service.adoptTranslation(versionID: tv.id, trackStableKey: entry.trackStableKey)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        Button("设为当前") { service.adoptTranslation(versionID: tv.id, trackStableKey: entry.trackStableKey) }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                     }
-
                     Button(tv.isLocked ? "解锁" : "锁定") {
                         service.toggleTranslationLock(versionID: tv.id, currentLocked: tv.isLocked, trackStableKey: entry.trackStableKey)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-
                     Button(tv.isArchived ? "恢复" : "归档") {
                         service.toggleTranslationArchive(versionID: tv.id, currentArchived: tv.isArchived, trackStableKey: entry.trackStableKey)
                     }
@@ -683,57 +662,48 @@ public struct PersonalLibraryTrackDetailView: View {
                     .controlSize(.small)
                 }
             }
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
+                GridRow {
+                    metadataLabel("目标语言")
+                    Text(tv.targetLanguage).foregroundStyle(.secondary)
+                    metadataLabel("内容")
+                    Text("\(tv.lineCount) 行").foregroundStyle(.secondary)
+                }
+                GridRow {
+                    metadataLabel("更新")
+                    Text(formattedDate(tv.updatedAt)).foregroundStyle(.secondary).monospacedDigit().gridCellColumns(3)
+                }
+            }
+            .font(.caption)
         }
-        .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
+        .versionRowSurface(isCurrent: tv.isCurrent)
     }
 
     private func readingVersionCard(_ rv: PersonalReadingVersionItem, entry: PersonalLyricsLibraryEntry) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        LibraryVersionLabel(kind: "reading", id: rv.id, originalTitle: rv.representationID.contains("kana") ? "假名 (KANA)" : "罗马音 (ROMAJI)")
-                        if rv.isCurrent {
-                            statusTag("当前采用", color: .orange)
-                        }
-                        if rv.isLocked {
-                            statusTag("已锁定", color: .indigo)
-                        }
-                        if rv.isArchived {
-                            statusTag("已归档", color: .secondary)
-                        }
-                    }
-                    Text("来源: \(rv.sourceKind) · 行数: \(rv.lineCount) · 更新于 \(formattedDate(rv.updatedAt))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    LibraryVersionLabel(kind: "reading", id: rv.id, originalTitle: rv.representationID.contains("kana") ? "假名 (KANA)" : "罗马音 (ROMAJI)")
+                    if rv.isCurrent { statusTag("当前采用", color: .accentColor) }
+                    if rv.isLocked { statusTag("已锁定", color: .secondary) }
+                    if rv.isArchived { statusTag("已归档", color: .secondary.opacity(0.7)) }
                 }
-
-                Spacer()
-
+                Spacer(minLength: 8)
                 HStack(spacing: 8) {
-                    Button("编辑为新版本") {
-                        service.beginReadingRevision(version: rv, entry: entry)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(service.revisionBusy)
-
-                    if !rv.isCurrent && !rv.isArchived {
-                        Button("设为当前") {
-                            service.adoptReading(versionID: rv.id, trackStableKey: entry.trackStableKey)
-                        }
+                    Button("编辑为新版本") { service.beginReadingRevision(version: rv, entry: entry) }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .disabled(service.revisionBusy)
+                    if !rv.isCurrent && !rv.isArchived {
+                        Button("设为当前") { service.adoptReading(versionID: rv.id, trackStableKey: entry.trackStableKey) }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                     }
-
                     Button(rv.isLocked ? "解锁" : "锁定") {
                         service.toggleReadingLock(versionID: rv.id, currentLocked: rv.isLocked, trackStableKey: entry.trackStableKey)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-
                     Button(rv.isArchived ? "恢复" : "归档") {
                         service.toggleReadingArchive(versionID: rv.id, currentArchived: rv.isArchived, trackStableKey: entry.trackStableKey)
                     }
@@ -741,45 +711,59 @@ public struct PersonalLibraryTrackDetailView: View {
                     .controlSize(.small)
                 }
             }
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
+                GridRow {
+                    metadataLabel("来源")
+                    Text(rv.sourceKind).foregroundStyle(.secondary)
+                    metadataLabel("行数")
+                    Text("\(rv.lineCount)").foregroundStyle(.secondary)
+                }
+                GridRow {
+                    metadataLabel("更新")
+                    Text(formattedDate(rv.updatedAt)).foregroundStyle(.secondary).monospacedDigit().gridCellColumns(3)
+                }
+            }
+            .font(.caption)
         }
-        .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
+        .versionRowSurface(isCurrent: rv.isCurrent)
     }
 
     private func timingVersionCard(_ tm: PersonalTimingVersionItem, entry: PersonalLyricsLibraryEntry) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                LibraryVersionLabel(kind: "timing", id: tm.id, originalTitle: tm.source.uppercased())
-                if tm.isCurrent {
-                    statusTag("当前", color: .purple)
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    LibraryVersionLabel(kind: "timing", id: tm.id, originalTitle: tm.source.uppercased())
+                    if tm.isCurrent { statusTag("当前采用", color: .accentColor) }
                 }
-                statusTag(tm.granularity, color: .secondary)
-                Spacer()
-                Text(formattedDate(tm.createdAt))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button("编辑为新版本") {
-                    service.beginTimingRevision(version: tm, entry: entry)
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
+                    GridRow {
+                        metadataLabel("粒度")
+                        Text(tm.granularity).foregroundStyle(.secondary)
+                        metadataLabel("创建")
+                        Text(formattedDate(tm.createdAt)).foregroundStyle(.secondary).monospacedDigit()
+                    }
                 }
+                .font(.caption)
+            }
+            Spacer(minLength: 8)
+            Button("编辑为新版本") { service.beginTimingRevision(version: tm, entry: entry) }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(service.revisionBusy)
-            }
         }
-        .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
+        .versionRowSurface(isCurrent: tm.isCurrent)
+    }
+
+    private func metadataLabel(_ title: String) -> some View {
+        Text(title)
+            .foregroundStyle(.tertiary)
+            .frame(minWidth: 52, alignment: .leading)
     }
 
     private func statusTag(_ text: String, color: Color) -> some View {
         Text(text)
             .font(.system(size: 10, weight: .semibold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.15))
             .foregroundStyle(color)
-            .clipShape(Capsule())
     }
 
     private func formattedDate(_ date: Date) -> String {
@@ -789,7 +773,46 @@ public struct PersonalLibraryTrackDetailView: View {
     }
 }
 
+private extension View {
+    func versionRowSurface(isCurrent: Bool) -> some View {
+        self
+            .padding(.horizontal, isCurrent ? 12 : 0)
+            .padding(.vertical, 12)
+            .background(isCurrent ? Color.accentColor.opacity(0.06) : Color.clear)
+            .overlay(alignment: .bottom) { Divider() }
+            .overlay(alignment: .leading) {
+                if isCurrent {
+                    Rectangle()
+                        .fill(Color.accentColor.opacity(0.8))
+                        .frame(width: 2)
+                        .padding(.vertical, 8)
+                }
+            }
+    }
+}
+
 // MARK: - Import Preview Sheet
+
+private struct LibraryEditorHeading: View {
+    let context: String
+    let title: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 7) {
+                RecordShelfMark()
+                    .frame(width: 38, height: 12)
+                    .foregroundStyle(.secondary)
+                Text("LYRIC ISLAND · \(context)")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .tracking(1.1)
+                    .foregroundStyle(.secondary)
+            }
+            Text(title)
+                .font(.system(size: 21, weight: .semibold, design: .serif))
+        }
+    }
+}
 
 public struct PersonalLibraryImportPreviewSheet: View {
     let preview: PersonalLibraryImportPreview
@@ -1157,7 +1180,7 @@ private struct LibraryLyricsRevisionSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("编辑为新版本").font(.title2.bold())
+            LibraryEditorHeading(context: "LYRICS REVISION", title: "编辑歌词为新版本")
             Text("\(draft.track.title) · \(draft.track.artist)").font(.headline)
             Text("保存后生成独立修订版，原版保留，当前采用不变。回到歌词库可选择任一版本“设为当前”。")
                 .font(.callout).foregroundStyle(.secondary)
@@ -1241,7 +1264,7 @@ private struct LibraryTranslationRevisionSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("编辑译文为新版本").font(.title2.bold())
+            LibraryEditorHeading(context: "TRANSLATION REVISION", title: "编辑译文为新版本")
             Text("\(draft.track.title) · \(draft.track.artist) · \(draft.source.record.targetLanguage)")
                 .font(.headline)
             Text("原译文会保留；保存后可在歌词库中选择要采用的版本。")
@@ -1259,9 +1282,8 @@ private struct LibraryTranslationRevisionSheet: View {
                                 .textFieldStyle(.roundedBorder)
                                 .accessibilityLabel("第 \(index + 1) 行译文")
                         }
-                        .padding(10)
-                        .background(Color(nsColor: .controlBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .padding(.vertical, 12)
+                        .overlay(alignment: .bottom) { Divider() }
                     }
                 }
             }
@@ -1306,7 +1328,7 @@ private struct LibraryReadingRevisionSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("编辑读音为新版本").font(.title2.bold())
+            LibraryEditorHeading(context: "READING REVISION", title: "编辑读音为新版本")
             Text("\(draft.track.title) · \(draft.track.artist) · \(draft.source.record.representationID)")
                 .font(.headline)
             Text("原读音会保留；保存后可在歌词库中选择要采用的版本。")
@@ -1324,9 +1346,8 @@ private struct LibraryReadingRevisionSheet: View {
                                 .textFieldStyle(.roundedBorder)
                                 .accessibilityLabel("第 \(index + 1) 行读音")
                         }
-                        .padding(10)
-                        .background(Color(nsColor: .controlBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .padding(.vertical, 12)
+                        .overlay(alignment: .bottom) { Divider() }
                     }
                 }
             }
@@ -1373,7 +1394,7 @@ private struct LibraryTimingRevisionSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("编辑逐字时间轴为新版本").font(.title2.bold())
+            LibraryEditorHeading(context: "TIMING REVISION", title: "编辑逐字时间轴为新版本")
             Text("\(draft.track.title) · \(draft.track.artist)").font(.headline)
             Text("修改时间会保留原时间轴。保存后歌词仍关联原歌词版本。")
                 .font(.callout).foregroundStyle(.secondary)
@@ -1405,9 +1426,8 @@ private struct LibraryTimingRevisionSheet: View {
                                 .textFieldStyle(.roundedBorder)
                             }
                         }
-                        .padding(10)
-                        .background(Color(nsColor: .controlBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .padding(.vertical, 12)
+                        .overlay(alignment: .bottom) { Divider() }
                     }
                 }
             }

@@ -96,6 +96,7 @@ struct AppleMusicImmersiveV3WindowView: View {
     var liveOnly: Bool = false
     @Environment(\.lyricPresentationScale) private var presentationScale
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var isSearchPresented = false
@@ -111,11 +112,13 @@ struct AppleMusicImmersiveV3WindowView: View {
     private var compositionArtworkPosition: String { settings.v3PreviewPosition(for: compositionStyle) }
     private var compositionLyricsPosition: String { settings.v3PreviewLyricsPosition(for: compositionStyle) }
     private var compositionArtworkScale: Double { settings.v3PreviewScale(for: compositionStyle) }
-    private enum ToolbarPopover: Equatable { case translation, lyricsTime, appearance, display }
+    private enum ToolbarPopover: Equatable { case adjust, more }
     @State private var activeToolbarPopover: ToolbarPopover?
     @State private var hoveredToolbarTrigger: ToolbarPopover?
     @State private var hoveredToolbarPanel: ToolbarPopover?
-    @State private var confirmedToolbarPanel: ToolbarPopover?
+    @State private var pinnedToolbarPanel: ToolbarPopover?
+    @State private var adjustmentTab: V3AdjustmentTab = .picture
+    @State private var toolbarMenuDepth = 0
     @State private var toolbarDismissTask: Task<Void, Never>?
     // Keep listening unobstructed. Tools reveal at the top edge and stay
     // available while their popover is open.
@@ -194,12 +197,26 @@ struct AppleMusicImmersiveV3WindowView: View {
             : min(1.4, max(0.8, compositionArtworkScale))
     }
 
+    private var foregroundArtworkCornerRadiusRatio: CGFloat {
+        switch compositionStyle {
+        case .authenticAmbient: return 0.075
+        case .classic: return 0.12
+        case .ambientFeathered: return 0.18
+        case .ambient: return 0.015
+        case .classicGaussian: return 0.025
+        case .stage: return 0.035
+        case .lyricsOnly: return 0.12
+        case .albumPoster: return 0.02
+        }
+    }
+
     private var usesDocumentComposition: Bool {
         compositionStyle == .lyricsOnly || compositionStyle == .albumPoster
     }
 
     private var compositionTrack: Track { liveOnly ? state.currentTrack : state.displayedTrack }
     private var isCompositionPreview: Bool { !liveOnly && state.isShowingSearchPreview }
+    private var usesDockedInspector: Bool { pinnedToolbarPanel != nil && !liveOnly }
 
     private var compositionPreviewLabel: some View {
         Label("歌词预览", systemImage: "doc.text.magnifyingglass")
@@ -209,12 +226,15 @@ struct AppleMusicImmersiveV3WindowView: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let inspectorWidth: CGFloat = usesDockedInspector && geometry.size.width >= 1_180 ? 340 : 0
+            let canvasWidth = max(1, geometry.size.width - inspectorWidth)
             ZStack(alignment: .topTrailing) {
                 let isInst = !state.isShowingSearchPreview && state.liveTrackIsMarkedInstrumental
                 AppleMusicImmersiveV3BackdropView(
                     track: usesDocumentComposition ? compositionTrack : state.currentTrack,
                     identity: usesDocumentComposition && isCompositionPreview ? nil : state.currentTrackIdentity,
                     isInstrumental: isInst,
+                    isPlaying: state.isPlaying,
                     settings: settings,
                     presentationOverride: hoveredStyle
                 )
@@ -223,7 +243,35 @@ struct AppleMusicImmersiveV3WindowView: View {
                 // the canvas so it cannot shift the top-trailing foreground.
                 .frame(width: geometry.size.width, height: geometry.size.height)
 
-                layout(for: geometry)
+                GeometryReader { canvasGeometry in
+                    ZStack(alignment: .topTrailing) {
+                        layout(for: canvasGeometry)
+
+                        HStack(spacing: 16) {
+                            Spacer(minLength: 0)
+                            toolBar(for: canvasGeometry.size)
+                                .opacity(toolsVisible || toolbarPanelIsPresented ? 1 : 0)
+                                .allowsHitTesting(toolsVisible || toolbarPanelIsPresented)
+                                .accessibilityHidden(!(toolsVisible || toolbarPanelIsPresented))
+                                .animation(
+                                    LyricsDesignTokens.Motion.animation(reduceMotion: reduceMotion),
+                                    value: toolsVisible || toolbarPanelIsPresented
+                                )
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.top, 18)
+                    }
+                    .frame(width: canvasGeometry.size.width, height: canvasGeometry.size.height)
+                }
+                .frame(width: canvasWidth, height: geometry.size.height)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if inspectorWidth > 0, let panel = pinnedToolbarPanel {
+                    inspectorSurface(for: panel)
+                        .frame(width: inspectorWidth, height: geometry.size.height)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
 
                 if settings.v3EdgeProgressEnabled {
                     V3WindowEdgePlaybackOverlay(
@@ -236,19 +284,21 @@ struct AppleMusicImmersiveV3WindowView: View {
                     .frame(width: geometry.size.width, height: geometry.size.height)
                 }
 
-                HStack(spacing: 16) {
-                    Spacer(minLength: 0)
-                    toolBar(for: geometry.size)
-                        .opacity(toolsVisible || toolbarPanelIsPresented ? 1 : 0)
-                        .allowsHitTesting(toolsVisible || toolbarPanelIsPresented)
-                        .accessibilityHidden(!(toolsVisible || toolbarPanelIsPresented))
-                        .animation(
-                            LyricsDesignTokens.Motion.animation(reduceMotion: reduceMotion),
-                            value: toolsVisible || toolbarPanelIsPresented
-                        )
+                if pinnedToolbarPanel != nil, inspectorWidth == 0 {
+                    V3PinnedInspectorPanelHost(
+                        isPresented: Binding(
+                            get: { pinnedToolbarPanel != nil && inspectorWidth == 0 },
+                            set: { presented in
+                                if !presented && inspectorWidth == 0 {
+                                    dismissPinnedToolbarPanel()
+                                }
+                            }
+                        ),
+                        title: pinnedToolbarPanel == .more ? "更多" : "调整",
+                        content: inspectorPanelContent(for: pinnedToolbarPanel ?? .adjust)
+                    )
+                    .frame(width: 0, height: 0)
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 18)
 
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
@@ -310,6 +360,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             .onChange(of: toolbarPanelIsPresented) { _, presented in
                 if !presented && !isPointerInToolbarRegion { toolsVisible = false }
             }
+            .onExitCommand { dismissPinnedToolbarPanel() }
             .task(id: interactionToken) {
                 guard interactionToken > 0 else { return }
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
@@ -539,6 +590,18 @@ struct AppleMusicImmersiveV3WindowView: View {
         let cardInset: CGFloat = compact ? 18 : 26
         let coverSize = min(metrics.coverSize, max(1, metrics.artworkWidth - cardInset * 2))
         let card = VStack(alignment: .leading, spacing: compact ? 18 : 24) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("LYRIC ISLAND · LISTENING EDITION")
+                    .font(.system(size: 9, weight: .medium, design: .serif))
+                    .tracking(1.1)
+                    .foregroundStyle(.white.opacity(0.72))
+                Spacer(minLength: 8)
+                Text("SIDE A")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.58))
+            }
+            Rectangle().fill(.white.opacity(0.28)).frame(height: 1)
+
             HStack {
                 ArtworkView(track: compositionTrack, size: coverSize,
                             showsAlbumLabel: false, cornerRadiusRatio: 0.025,
@@ -551,6 +614,16 @@ struct AppleMusicImmersiveV3WindowView: View {
                                  titleSize: compact ? 22 : 28, alignment: .leading,
                                  progressDensity: compact ? .small : .medium, usesDisplayedTrack: true)
                 .modifier(V3PlaybackVisibility(visible: isCompositionPreview || playbackDetailsVisible, reduceMotion: reduceMotion))
+
+            Rectangle().fill(.white.opacity(0.18)).frame(height: 1)
+            HStack(spacing: 6) {
+                Capsule().fill(Color.accentColor.opacity(0.9)).frame(width: 18, height: 2)
+                Capsule().fill(Color.accentColor.opacity(0.45)).frame(width: 10, height: 2)
+                Text("ORIGINAL · TRANSLATION · READING")
+                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .tracking(0.4)
+                    .foregroundStyle(.white.opacity(0.52))
+            }
         }
         .padding(cardInset)
         .frame(width: metrics.artworkWidth)
@@ -581,7 +654,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         )
         let cover = ArtworkView(
             track: usesDisplayedTrack ? compositionTrack : state.currentTrack, size: metrics.coverSize,
-            showsAlbumLabel: false, cornerRadiusRatio: 0.06,
+            showsAlbumLabel: false, cornerRadiusRatio: foregroundArtworkCornerRadiusRatio,
             preservesCompleteArtwork: true
         )
         .scaleEffect(
@@ -846,7 +919,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                     track: state.currentTrack,
                     size: coverSize,
                     showsAlbumLabel: false,
-                    cornerRadiusRatio: 0.06,
+                    cornerRadiusRatio: foregroundArtworkCornerRadiusRatio,
                     preservesCompleteArtwork: true
                 )
                 .shadow(color: Color.black.opacity(0.32), radius: 20, x: 0, y: 8)
@@ -1059,7 +1132,6 @@ struct AppleMusicImmersiveV3WindowView: View {
     }
 
     private var translationPanel: some View {
-        ScrollView {
         VStack(alignment: .leading, spacing: 12) {
             Label("AI 与读音", systemImage: "sparkles").font(.headline)
             HStack(spacing: 8) {
@@ -1072,7 +1144,6 @@ struct AppleMusicImmersiveV3WindowView: View {
                 .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
                 Spacer()
             }
-            TranslationProviderControls(settings: settings)
             Divider()
             if displaysAIReadingControls {
                 aiReadingControls
@@ -1150,10 +1221,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             }
         }
         .toggleStyle(.switch)
-        .padding(18)
-        }
-        .frame(width: 380)
-        .frame(maxHeight: 620)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .confirmationDialog("优化当前歌曲读音？", isPresented: $confirmsAIReadingRequest, titleVisibility: .visible) {
             Button("生成候选（可能收费）") {
                 guard aiReadingRequestDisabledReason == nil else { return }
@@ -1171,7 +1239,6 @@ struct AppleMusicImmersiveV3WindowView: View {
         Button {
             showsAIReadingControls = reading
             hoveredAIReadingControls = nil
-            confirmToolbarPopover(.translation)
         } label: {
             Text(title)
                 .font(.system(size: 12, weight: .medium))
@@ -1268,28 +1335,47 @@ struct AppleMusicImmersiveV3WindowView: View {
     }
 
     private var toolbarPanelIsPresented: Bool {
-        isWindowMenuPresented || isSearchPresented || isVersionPickerPresented || activeToolbarPopover != nil
+        isWindowMenuPresented || isSearchPresented || isVersionPickerPresented
+            || activeToolbarPopover != nil || pinnedToolbarPanel != nil
     }
 
     private func presentToolbarPopover(_ panel: ToolbarPopover) {
         toolbarDismissTask?.cancel()
+        guard pinnedToolbarPanel == nil else { return }
         guard activeToolbarPopover != panel else { return }
-        confirmedToolbarPanel = nil
         hoveredToolbarPanel = nil
         isWindowMenuPresented = false
         isSearchPresented = false
-        if panel != .appearance { hoveredStyle = nil }
+        if panel != .adjust { hoveredStyle = nil }
         activeToolbarPopover = panel
     }
 
-    private func confirmToolbarPopover(_ panel: ToolbarPopover) {
-        // A click confirms the hover-opened panel. Repeated clicks remain
-        // idempotent instead of turning confirmation into a close action.
-        presentToolbarPopover(panel)
-        confirmedToolbarPanel = panel
+    private func togglePinnedToolbarPanel(_ panel: ToolbarPopover) {
+        toolbarDismissTask?.cancel()
+        hoveredToolbarTrigger = nil
+        hoveredToolbarPanel = nil
+        if pinnedToolbarPanel == panel {
+            dismissPinnedToolbarPanel()
+        } else {
+            activeToolbarPopover = nil
+            isWindowMenuPresented = false
+            isSearchPresented = false
+            hoveredStyle = nil
+            pinnedToolbarPanel = panel
+        }
+    }
+
+    private func dismissPinnedToolbarPanel() {
+        pinnedToolbarPanel = nil
+        if activeToolbarPopover == .adjust || activeToolbarPopover == .more {
+            activeToolbarPopover = nil
+        }
+        hoveredStyle = nil
+        toolbarDismissTask?.cancel()
     }
 
     private func toolbarTriggerHover(_ panel: ToolbarPopover, inside: Bool) {
+        guard pinnedToolbarPanel == nil else { return }
         if inside {
             hoveredToolbarTrigger = panel
             presentToolbarPopover(panel)
@@ -1306,7 +1392,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             try? await Task.sleep(for: .milliseconds(180))
             guard !Task.isCancelled, activeToolbarPopover == panel,
                   hoveredToolbarTrigger != panel, hoveredToolbarPanel != panel,
-                  confirmedToolbarPanel != panel else { return }
+                  pinnedToolbarPanel == nil, toolbarMenuDepth == 0 else { return }
             hoveredStyle = nil
             activeToolbarPopover = nil
         }
@@ -1324,13 +1410,12 @@ struct AppleMusicImmersiveV3WindowView: View {
                     scheduleToolbarDismissal(panel)
                 }
             }
-            .simultaneousGesture(TapGesture().onEnded {
-                if activeToolbarPopover == panel { confirmedToolbarPanel = panel }
-            })
             .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
-                // Clicking a native menu is an explicit interaction; keep its
-                // parent available while the pointer moves into that menu.
-                if activeToolbarPopover == panel { confirmedToolbarPanel = panel }
+                if activeToolbarPopover == panel { toolbarMenuDepth += 1; toolbarDismissTask?.cancel() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
+                toolbarMenuDepth = max(0, toolbarMenuDepth - 1)
+                if activeToolbarPopover == panel { scheduleToolbarDismissal(panel) }
             }
     }
 
@@ -1342,112 +1427,29 @@ struct AppleMusicImmersiveV3WindowView: View {
     }
 
     private func toolBar(for size: CGSize) -> some View {
-        HStack(spacing: 4) {
-            Button { activeToolbarPopover = nil; isWindowMenuPresented.toggle() } label: {
-                iconLabel("macwindow", description: "窗口模式")
-            }
-            .help("窗口模式")
-            .popover(isPresented: $isWindowMenuPresented, arrowEdge: .top) {
-                windowModePanel
-            }
-            searchButton
-            Rectangle()
-                .fill(.white.opacity(0.18))
-                .frame(width: 1, height: 18)
-                .padding(.horizontal, 3)
-                .accessibilityHidden(true)
+        HStack(spacing: 3) {
             Button {
+                dismissPinnedToolbarPanel()
                 if liveOnly { MenuBarLyricsController.shared.openLibrary() }
                 else { openWindow(id: "personal-library-activity") }
             } label: {
-                iconLabel("books.vertical", description: "歌词库")
+                toolbarEntry("歌词库", symbol: "books.vertical")
             }
             .help("歌词库")
-            if liveOnly || !state.isShowingSearchPreview {
-                CurrentSongOperationsView(state: state, versionShortcutOnly: true, iconOnly: true,
-                    onVersionPickerPresentationChange: { presented in
-                        isVersionPickerPresented = presented
-                        if presented { activeToolbarPopover = nil }
-                    },
-                    onOpenEditor: liveOnly ? { MenuBarLyricsController.shared.openEditor() } : nil)
-                    .environmentObject(settings)
-                    .help("歌词版本")
-            }
-            if liveOnly || !state.isShowingSearchPreview {
-                Button { confirmToolbarPopover(.translation) } label: {
-                    iconLabel("sparkles", description: "AI 翻译与读音")
-                }
-                .keyboardShortcut("t", modifiers: [.command, .option])
-                .accessibilityIdentifier("translation.shortcut")
-                .help("AI 翻译与读音")
-                .onHover { inside in toolbarTriggerHover(.translation, inside: inside) }
-                .v3ToolPopover(isPresented: toolbarPopoverBinding(.translation), onAnchorPress: { confirmToolbarPopover(.translation) }) {
-                    hoverTrackedPanel(.translation) { translationPanel }
-                }
-            }
-            Button { confirmToolbarPopover(.lyricsTime) } label: {
-                iconLabel("clock.arrow.2.circlepath", description: lyricsTimeToolbarLabel)
-            }
-            .accessibilityIdentifier("lyrics.time")
-            .help("歌词时间")
-            .onHover { inside in toolbarTriggerHover(.lyricsTime, inside: inside) }
-            .v3ToolPopover(isPresented: toolbarPopoverBinding(.lyricsTime), onAnchorPress: { confirmToolbarPopover(.lyricsTime) }) {
-                hoverTrackedPanel(.lyricsTime) { V3LyricsTimePopover(settings: settings) }
-            }
-            Button { confirmToolbarPopover(.appearance) } label: {
-                iconLabel("slider.horizontal.3", description: "外观")
-            }
-            .accessibilityIdentifier("appearance.shortcut")
-            .help("外观背景")
-            .onHover { inside in toolbarTriggerHover(.appearance, inside: inside) }
-            .v3ToolPopover(isPresented: toolbarPopoverBinding(.appearance), onAnchorPress: { confirmToolbarPopover(.appearance) }) {
-                hoverTrackedPanel(.appearance) {
-                    V3VisualTuningPopoverView(settings: settings, layoutStyleRawValue: $layoutStyleRawValue, preview: $hoveredStyle) {
-                        activeToolbarPopover = nil
-                    }
-                }
-            }
-            Button { confirmToolbarPopover(.display) } label: {
-                iconLabel("character.bubble", description: "歌词显示")
-            }
-            .help("歌词显示")
-            .onHover { inside in toolbarTriggerHover(.display, inside: inside) }
-            .v3ToolPopover(isPresented: toolbarPopoverBinding(.display), onAnchorPress: { confirmToolbarPopover(.display) }) {
-                hoverTrackedPanel(.display) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("歌词显示").font(.headline)
-                        Toggle("显示假名", isOn: displayBinding(\.showKana))
-                        Toggle("显示罗马音", isOn: displayBinding(\.showRomaji))
-                        Toggle("显示拼音", isOn: displayBinding(\.showPinyin))
-                        Toggle("显示翻译", isOn: displayBinding(\.showTranslation))
-                        if settings.displayPreferences.showKana || settings.displayPreferences.showPinyin {
-                            Picker("注音排版", selection: displayBinding(\.kanaDisplayMode)) {
-                                Text("汉字上方注音").tag(KanaDisplayMode.inlineRuby)
-                                Text("独立注音行").tag(KanaDisplayMode.independentLine)
-                                Text("注音替换").tag(KanaDisplayMode.kanaReplacement)
-                            }
-                        }
-                        Divider()
-                        Picker("繁简转换", selection: readingBinding(\.scriptConversionID)) {
-                            Text("不转换").tag(ScriptConversionID.none.rawValue)
-                            Text("繁体转简体").tag(ScriptConversionID.traditionalToSimplified.rawValue)
-                            Text("简体转繁体").tag(ScriptConversionID.simplifiedToTraditional.rawValue)
-                        }
-                    }
-                    .padding(18)
-                    .frame(width: 300)
-                }
-            }
-            if liveOnly {
-                Button { MenuBarLyricsController.shared.openSettings() } label: {
-                    iconLabel("gearshape", description: "设置")
-                }
-                .help("设置")
-            } else {
-                SettingsLink { iconLabel("gearshape", description: "设置") }
-                    .help("设置")
-            }
 
+            searchButton
+
+            toolbarPanelButton("调整", symbol: "slider.horizontal.3", panel: .adjust)
+                .accessibilityIdentifier("appearance.shortcut")
+            toolbarPanelButton("更多", symbol: "ellipsis", panel: .more)
+        }
+        .background {
+            Button("翻译与读音") {
+                adjustmentTab = .currentSong
+                if pinnedToolbarPanel != .adjust { togglePinnedToolbarPanel(.adjust) }
+            }
+            .keyboardShortcut("t", modifiers: [.command, .option])
+            .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
         }
         .buttonStyle(QuietToolbarButtonStyle())
         .padding(5)
@@ -1455,17 +1457,41 @@ struct AppleMusicImmersiveV3WindowView: View {
         .overlay(Capsule().strokeBorder(Color.white.opacity(0.16), lineWidth: 0.7))
         .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 4)
         .onChange(of: activeToolbarPopover) { _, panel in
-            if panel != .appearance { hoveredStyle = nil }
-            if panel != .translation { hoveredAIReadingControls = nil }
+            if panel != .adjust { hoveredStyle = nil }
+            if panel != .adjust { hoveredAIReadingControls = nil }
             if panel == nil {
                 toolbarDismissTask?.cancel()
                 hoveredToolbarTrigger = nil
                 hoveredToolbarPanel = nil
-                confirmedToolbarPanel = nil
             }
         }
         .onDisappear { toolbarDismissTask?.cancel(); hoveredStyle = nil }
+    }
 
+    private func toolbarPanelButton(_ title: String, symbol: String, panel: ToolbarPopover) -> some View {
+        Button { togglePinnedToolbarPanel(panel) } label: {
+            toolbarEntry(title, symbol: symbol, selected: pinnedToolbarPanel == panel)
+        }
+        .help(title == "调整" ? "歌词、文字与当前歌曲调整" : "窗口、歌词版本、时间与设置")
+        .onHover { inside in toolbarTriggerHover(panel, inside: inside) }
+        .v3ToolPopover(
+            isPresented: toolbarPopoverBinding(panel),
+            // The native anchor monitor only passes mouse-down through; the
+            // SwiftUI button owns the single click-to-pin toggle.
+            onAnchorPress: {}
+        ) {
+            hoverTrackedPanel(panel) { inspectorPanelContent(for: panel) }
+        }
+    }
+
+    private func toolbarEntry(_ title: String, symbol: String, selected: Bool = false) -> some View {
+        Label(title, systemImage: symbol)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.white.opacity(0.94))
+            .padding(.horizontal, 10)
+            .frame(height: 36)
+            .background(selected ? Color.white.opacity(0.14) : .clear, in: Capsule())
+            .contentShape(Capsule())
     }
 
     private func displayBinding<Value>(_ keyPath: WritableKeyPath<DisplayPreferences, Value>) -> Binding<Value> {
@@ -1554,15 +1580,150 @@ struct AppleMusicImmersiveV3WindowView: View {
     }
 
     @ViewBuilder private var searchButton: some View {
-        if !liveOnly {
-            Button { activeToolbarPopover = nil; isSearchPresented.toggle() } label: {
-                iconLabel("magnifyingglass", description: "搜索")
-            }
-            .help("搜索")
-            .popover(isPresented: $isSearchPresented, arrowEdge: .top) {
-                SongSearchPopover(manager: state.songSearchManager, playbackState: state)
-            }
+        Button {
+            dismissPinnedToolbarPanel()
+            activeToolbarPopover = nil
+            isSearchPresented.toggle()
+        } label: {
+            toolbarEntry("搜索", symbol: "magnifyingglass")
         }
+        .help("搜索")
+        .popover(isPresented: $isSearchPresented, arrowEdge: .top) {
+            SongSearchPopover(manager: state.songSearchManager, playbackState: state)
+        }
+    }
+
+    @ViewBuilder
+    private func inspectorPanelContent(for panel: ToolbarPopover) -> some View {
+        switch panel {
+        case .more:
+            moreInspectorContent
+        default:
+            V3VisualTuningPopoverView(
+                settings: settings,
+                state: state,
+                liveOnly: liveOnly,
+                currentSongWorkflow: AnyView(translationPanel),
+                layoutStyleRawValue: $layoutStyleRawValue,
+                preview: $hoveredStyle,
+                onOpenAISettings: openAISettings,
+                onDismiss: dismissPinnedToolbarPanel,
+                selectedTab: $adjustmentTab
+            )
+            .environmentObject(settings)
+        }
+    }
+
+    private func inspectorSurface(for panel: ToolbarPopover) -> some View {
+        VStack(spacing: 0) {
+            inspectorPanelContent(for: panel)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.regularMaterial)
+        .overlay(alignment: .leading) {
+            Rectangle().fill(Color.white.opacity(0.12)).frame(width: 1)
+        }
+        .onExitCommand { dismissPinnedToolbarPanel() }
+    }
+
+    private var moreInspectorContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("LYRIC ISLAND")
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .tracking(1.5)
+                        .foregroundStyle(.secondary)
+                    Text("更多")
+                        .font(.system(size: 19, weight: .semibold, design: .rounded))
+                }
+                Spacer(minLength: 4)
+                Button(action: dismissPinnedToolbarPanel) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 26, height: 26)
+                        .background(.quaternary.opacity(0.5), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help("关闭")
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        sectionEyebrow("窗口与播放面")
+                        windowModePanel
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 9) {
+                        sectionEyebrow("当前歌曲快捷操作")
+                        CurrentSongOperationsView(
+                            state: state,
+                            versionShortcutOnly: true,
+                            iconOnly: false,
+                            onVersionPickerPresentationChange: { isVersionPickerPresented = $0 },
+                            onOpenEditor: liveOnly ? { MenuBarLyricsController.shared.openEditor() } : nil
+                        )
+                        .environmentObject(settings)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        LyricsPresentationOffsetControl(settings: settings)
+                            .padding(.top, 4)
+                        Button("恢复歌词时间") { settings.lyricsOffsetStore.resetActiveValue() }
+                            .font(.caption)
+                            .buttonStyle(.borderless)
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        sectionEyebrow("服务与设置")
+                        Text(settings.aiTranslationConfiguration.isConfigured
+                             ? "AI 服务已配置 · \(settings.aiTranslationConfiguration.model)"
+                             : "AI 服务尚未完成配置")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                        Button("打开 AI 设置", systemImage: "sparkles") { openAISettings() }
+                            .buttonStyle(.bordered)
+                        if liveOnly {
+                            Button("打开设置", systemImage: "gearshape") {
+                                MenuBarLyricsController.shared.openSettings()
+                            }
+                            .buttonStyle(.borderless)
+                        } else {
+                            Button("打开设置", systemImage: "gearshape") { openSettings() }
+                                .buttonStyle(.borderless)
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .scrollIndicators(.hidden)
+        }
+        .frame(width: 340)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .preferredColorScheme(.dark)
+    }
+
+    private func sectionEyebrow(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.system(size: 9, weight: .semibold, design: .rounded))
+            .tracking(1.1)
+            .foregroundStyle(.secondary)
+    }
+
+    private func openAISettings() {
+        SettingsNavigationRoute.shared.requestAISettings()
+        if liveOnly { MenuBarLyricsController.shared.openSettings() }
+        else { openSettings() }
     }
 
     private var preferencesButton: some View {
@@ -1728,6 +1889,123 @@ private struct V3ToolPopoverAnchor<Content: View>: NSViewRepresentable {
             observers.forEach(NotificationCenter.default.removeObserver)
             observers = []
             trackingMenus = 0
+        }
+    }
+}
+
+/// Narrow main windows keep a pinned inspector in its own ordinary panel so
+/// lyric geometry stays usable instead of squeezing below the wide layout.
+private struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
+    @Binding var isPresented: Bool
+    let title: String
+    let content: Content
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+    func makeNSView(context: Context) -> V3ToolAnchorView { V3ToolAnchorView() }
+
+    func updateNSView(_ anchor: V3ToolAnchorView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.parent = self
+        coordinator.anchor = anchor
+        coordinator.updatePanel()
+    }
+
+    static func dismantleNSView(_ nsView: V3ToolAnchorView, coordinator: Coordinator) {
+        coordinator.close(notifyBinding: false)
+    }
+
+    final class Coordinator: NSObject, NSWindowDelegate {
+        var parent: V3PinnedInspectorPanelHost
+        weak var anchor: NSView?
+        private var panel: NSPanel?
+        private var hosting: NSHostingController<Content>?
+        private var escapeMonitor: Any?
+
+        init(parent: V3PinnedInspectorPanelHost) {
+            self.parent = parent
+            super.init()
+        }
+
+        func updatePanel() {
+            guard parent.isPresented, let anchor else {
+                close(notifyBinding: false)
+                return
+            }
+            if let hosting {
+                hosting.rootView = parent.content
+                hosting.view.appearance = NSAppearance(named: .darkAqua)
+            } else {
+                let controller = NSHostingController(rootView: parent.content)
+                controller.sizingOptions = []
+                controller.view.appearance = NSAppearance(named: .darkAqua)
+                hosting = controller
+            }
+
+            if panel == nil {
+                let candidate = NSPanel(
+                    contentRect: NSRect(x: 0, y: 0, width: 360, height: 700),
+                    styleMask: [.titled, .closable, .resizable, .utilityWindow],
+                    backing: .buffered,
+                    defer: false
+                )
+                candidate.title = parent.title
+                candidate.isReleasedWhenClosed = false
+                candidate.isFloatingPanel = true
+                candidate.level = .floating
+                candidate.minSize = NSSize(width: 340, height: 420)
+                candidate.contentViewController = hosting
+                candidate.delegate = self
+                panel = candidate
+            }
+
+            guard let panel else { return }
+            panel.title = parent.title
+            let availableHeight = max(500, min(780, (anchor.window?.screen?.visibleFrame.height ?? 900) - 90))
+            if let size = hosting?.sizeThatFits(in: CGSize(width: 360, height: availableHeight)) {
+                let height = min(availableHeight, max(500, ceil(size.height)))
+                if abs((hosting?.view.frame.height ?? 0) - height) > 1
+                    || abs((hosting?.view.frame.width ?? 0) - 360) > 1 {
+                    panel.setContentSize(NSSize(width: 360, height: height))
+                }
+            }
+            if !panel.isVisible {
+                panel.center()
+                panel.makeKeyAndOrderFront(nil)
+                startEscapeMonitoring()
+            }
+        }
+
+        func windowWillClose(_ notification: Notification) {
+            if parent.isPresented { parent.isPresented = false }
+            panel?.delegate = nil
+            panel = nil
+            hosting = nil
+            stopEscapeMonitoring()
+        }
+
+        func close(notifyBinding: Bool) {
+            let oldPanel = panel
+            oldPanel?.delegate = nil
+            panel = nil
+            hosting = nil
+            stopEscapeMonitoring()
+            oldPanel?.close()
+            if notifyBinding, parent.isPresented { parent.isPresented = false }
+        }
+
+        private func startEscapeMonitoring() {
+            guard escapeMonitor == nil else { return }
+            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, event.keyCode == 53, event.window === self.panel else { return event }
+                if self.parent.isPresented { self.parent.isPresented = false }
+                self.close(notifyBinding: false)
+                return nil
+            }
+        }
+
+        private func stopEscapeMonitoring() {
+            if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+            escapeMonitor = nil
         }
     }
 }
@@ -3965,50 +4243,55 @@ private struct V3ThemeSelectorView: View {
         .accessibilityAddTraits(settings.v3ArtworkPresentation.theme == theme ? .isSelected : [])
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                themeButton(.stage)
-                themeButton(.lyricsOnly)
-            }
-            themeButton(.albumPoster, height: 46)
-            Divider().padding(.vertical, 3)
-            HStack(spacing: 8) {
-                themeButton(.ambient)
-                themeButton(.enlarged)
-            }
-            ZStack(alignment: .leading) {
-                if !variants.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(displayedTheme.title + "方案").font(.caption).foregroundStyle(.secondary)
-                        HStack(spacing: 5) {
-                            ForEach(variants) { style in
-                                Button { choose(style, closePanel: false) } label: {
-                                    Text(style.variantTitle)
-                                        .font(.system(size: 11, weight: .medium))
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 9)
-                                        .background(settings.v3ArtworkPresentation == style ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
-                                }
-                                .buttonStyle(.plain)
-                                .onHover { inside in
-                                    if inside { if preview != style { preview = style } }
-                                    else if preview == style { preview = nil }
-                                }
-                                .help(style.detail)
-                                .accessibilityIdentifier("v3.style." + style.rawValue)
-                                .accessibilityAddTraits(settings.v3ArtworkPresentation == style ? .isSelected : [])
-                            }
-                        }
-                    }
-                } else {
-                    Text(displayedStyle.detail)
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+    private func presentationButton(_ style: V3ArtworkPresentation) -> some View {
+        let selected = settings.v3ArtworkPresentation == style
+        return Button {
+            settings.v3ArtworkPresentation = style
+            preview = nil
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: style.symbolName)
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(width: 22)
+                    .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(style.title)
+                        .font(.system(size: 11, weight: selected ? .semibold : .medium))
+                        .lineLimit(1)
+                    Text(style.detail)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                 }
+                Spacer(minLength: 0)
+                if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor) }
             }
-            .frame(height: 64)
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+            .background(selected ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.035),
+                        in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(selected ? Color.accentColor.opacity(0.45) : Color.primary.opacity(0.055), lineWidth: 0.8)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { inside in
+            if inside { preview = style }
+            else if preview == style { preview = nil }
+        }
+        .help(style.detail)
+        .accessibilityIdentifier("v3.style." + style.rawValue)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 7), GridItem(.flexible(), spacing: 7)], spacing: 7) {
+            ForEach(V3ArtworkPresentation.allCases) { style in
+                presentationButton(style)
+            }
         }
         .onHover { inside in
             if !inside { preview = nil; browsedTheme = nil }
@@ -4016,11 +4299,30 @@ private struct V3ThemeSelectorView: View {
     }
 }
 
+private enum V3AdjustmentTab: String, CaseIterable, Identifiable {
+        case picture, text, currentSong
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .picture: return "画面"
+            case .text: return "文字"
+            case .currentSong: return "当前歌曲"
+            }
+        }
+    }
+
 private struct V3VisualTuningPopoverView: View {
     @ObservedObject var settings: AppSettingsStore
+    @ObservedObject var state: PlaybackState
+    var liveOnly: Bool
+    let currentSongWorkflow: AnyView
     @Binding var layoutStyleRawValue: String
     @Binding var preview: V3ArtworkPresentation?
-    var onStyleConfirmed: () -> Void
+    var onOpenAISettings: () -> Void
+    var onDismiss: () -> Void
+    @Binding var selectedTab: V3AdjustmentTab
+    @State private var pictureAdvancedExpanded = false
+    @State private var textAdvancedExpanded = false
 
     private var blurPresetName: String {
         let r = settings.v3BackdropBlurRadius
@@ -4047,263 +4349,474 @@ private struct V3VisualTuningPopoverView: View {
     }
 
     var body: some View {
-        ScrollView {
-            tuningControls
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("LYRIC ISLAND")
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .tracking(1.5)
+                        .foregroundStyle(.secondary)
+                    Text(selectedTab.title)
+                        .font(.system(size: 19, weight: .semibold, design: .rounded))
+                }
+                Spacer(minLength: 4)
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 26, height: 26)
+                        .background(.quaternary.opacity(0.5), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help("关闭")
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
+
+            Picker("调整类别", selection: $selectedTab) {
+                ForEach(V3AdjustmentTab.allCases) { tab in
+                    Text(tab.title).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 10)
+
+            Divider()
+
+            ScrollView {
+                tabContent
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .scrollIndicators(.hidden)
         }
         .frame(width: 340)
-        .frame(maxHeight: 680)
+        .frame(maxHeight: 760)
         .preferredColorScheme(.dark)
         .environment(\.colorScheme, .dark)
         .onDisappear { preview = nil }
+        .onExitCommand(perform: onDismiss)
     }
 
-    private var tuningControls: some View {
+    @ViewBuilder
+    private var tabContent: some View {
+        switch selectedTab {
+        case .picture:
+            picturePage
+        case .text:
+            textPage
+        case .currentSong:
+            currentSongPage
+        }
+    }
+
+    private var picturePage: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("外观与布局")
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
+            sectionLabel("场景")
+            V3ThemeSelectorView(settings: settings, preview: $preview, onConfirm: {})
+            Text(settings.v3ArtworkPresentation.detail)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                sectionLabel("氛围")
+                if settings.v3ArtworkPresentation == .classicGaussian {
+                    Label("纯高斯场景保持静态", systemImage: "circle.lefthalf.filled")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    HStack(spacing: 6) {
+                        atmosphereButton("关闭", level: 0)
+                        atmosphereButton("轻柔", level: 1)
+                        atmosphereButton("鲜明", level: 2)
+                    }
+                }
+            }
+
+            Toggle("显示前景封面", isOn: $settings.v3ShowForegroundArtwork)
+                .help("关闭后，有前景封面的主题会展开歌词布局；舞台与纯净歌词保持原布局。")
+                .accessibilityIdentifier("v3.artwork.showForeground")
+
+            blurControls
+            Picker("播放样式", selection: $settings.v3EdgeProgressEnabled) {
+                Text("标准播放栏").tag(false)
+                Text("窗口边缘").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .help("边缘模式的进度常驻，只有播放按钮按悬停显示")
+
+            DisclosureGroup("更多画面选项", isExpanded: $pictureAdvancedExpanded) {
+                pictureAdvancedControls
+                    .padding(.top, 10)
+            }
+            .font(.system(size: 12, weight: .medium))
+        }
+    }
+
+    private var blurControls: some View {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(settings.v3ArtworkPresentation.blurControlTitle)
+                        .font(.system(size: 12, weight: .medium))
+                    Spacer()
+                    Text("\(blurPresetName) · \(Int(settings.v3BackdropBlurRadius))%")
+                        .font(.system(size: 11, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: $settings.v3BackdropBlurRadius, in: 0...100, step: 1)
+                    .accessibilityLabel(settings.v3ArtworkPresentation.blurControlTitle)
+                HStack(spacing: 0) {
+                    blurPresetButton("清晰 0%", val: 0)
+                    Spacer()
+                    blurPresetButton("轻柔 25%", val: 25)
+                    Spacer()
+                    blurPresetButton("柔和 60%", val: 60)
+                    Spacer()
+                    blurPresetButton("弥散 100%", val: 100)
+                }
+            }
+
+    }
+
+    private var pictureAdvancedControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if settings.v3ArtworkPresentation != .lyricsOnly {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("背景取景方式").font(.system(size: 12, weight: .medium))
+                    Picker("取景方式", selection: Binding(
+                        get: { settings.v3BackgroundShowsCompleteArtwork(for: settings.v3ArtworkPresentation) },
+                        set: { settings.setV3BackgroundShowsCompleteArtwork($0, for: settings.v3ArtworkPresentation) }
+                    )) {
+                        Text("铺满").tag(false)
+                        Text("尽量完整").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .accessibilityLabel("取景方式")
+                    .accessibilityIdentifier("v3.ambient.backgroundFraming")
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(settings.v3ArtworkPresentation == .lyricsOnly ? "背景光场缩放" : "背景缩放")
+                        .font(.system(size: 12, weight: .medium))
+                    Spacer()
+                    Text("\(backdropScalePresetName) · \(Int((settings.v3BackdropScale(for: settings.v3ArtworkPresentation) * 100).rounded()))%")
+                        .font(.system(size: 11, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: Binding(
+                    get: { settings.v3BackdropScale(for: settings.v3ArtworkPresentation) },
+                    set: { settings.setV3BackdropScale($0, for: settings.v3ArtworkPresentation) }
+                ), in: 0.8...1.4, step: 0.05)
+                    .accessibilityLabel("背景缩放")
+                    .accessibilityIdentifier("v3.classic.backgroundScale")
+                HStack(spacing: 0) {
+                    backdropScalePresetButton("精巧 80%", val: 0.80)
+                    Spacer()
+                    backdropScalePresetButton("标准 100%", val: 1.00)
+                    Spacer()
+                    backdropScalePresetButton("大图 120%", val: 1.20)
+                    Spacer()
+                    backdropScalePresetButton("巨幕 140%", val: 1.40)
+                }
+                Text("只改变背景取景，不改变前景封面大小。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+
+            if settings.v3ArtworkPresentation == .stage {
+                VStack(alignment: .leading, spacing: 5) {
+                    Toggle("增强歌词对比度", isOn: $settings.v3StageReadabilityEnabled)
+                    Text("为亮色封面增加柔和暗层，让白色歌词更清楚。")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Toggle("纯音乐极简通透沉浸", isOn: $settings.v3InstrumentalPureImmersion)
+
+            if settings.v3ArtworkPresentation != .lyricsOnly && settings.v3ArtworkPresentation != .stage {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(settings.v3ArtworkPresentation.artworkSizeControlTitle)
+                            .font(.system(size: 12, weight: .medium))
+                        Spacer()
+                        Text("\(sizePresetName) · \(Int(settings.v3ArtworkSizeScale * 100))%")
+                            .font(.system(size: 11, weight: .bold).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: $settings.v3ArtworkSizeScale, in: 0.8...1.4, step: 0.05)
+                        .accessibilityLabel(settings.v3ArtworkPresentation.artworkSizeControlTitle)
+                    HStack(spacing: 0) {
+                        sizePresetButton("精巧 80%", val: 0.80)
+                        Spacer()
+                        sizePresetButton("标准 100%", val: 1.00)
+                        Spacer()
+                        sizePresetButton("大图 120%", val: 1.20)
+                        Spacer()
+                        sizePresetButton("巨幕 140%", val: 1.40)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(settings.v3ArtworkPresentation.artworkPositionControlTitle)
+                        .font(.system(size: 12, weight: .medium))
+                    Picker(settings.v3ArtworkPresentation.artworkPositionControlTitle, selection: $settings.v3ArtworkPosition) {
+                        Text("居左").tag("left")
+                        if settings.v3ArtworkPresentation != .albumPoster { Text("居中").tag("center") }
+                        Text("居右").tag("right")
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .accessibilityLabel(settings.v3ArtworkPresentation.artworkPositionControlTitle)
+                }
+                if settings.v3ArtworkPresentation == .authenticAmbient
+                    || settings.v3ArtworkPresentation == .ambient
+                    || settings.v3ArtworkPresentation == .classicGaussian
+                    || settings.v3ArtworkPresentation == .classic
+                    || settings.v3ArtworkPresentation == .ambientFeathered {
+                    Toggle("隐藏播放信息时舒展封面", isOn: $settings.v3ExpandArtworkWhenDetailsHidden)
+                        .disabled(!settings.v3PlaybackDetailsOnHover && !settings.v3EdgeProgressEnabled)
+                        .help("隐藏播放信息后，统一放大封面并按窗口画布居中；关闭后保持设定的尺寸与位置。")
+                        .accessibilityIdentifier("v3.artwork.expandWhenDetailsHidden")
+                }
+            }
 
             Divider()
 
             VStack(alignment: .leading, spacing: 6) {
-                V3ThemeSelectorView(settings: settings, preview: $preview, onConfirm: onStyleConfirmed)
-
-                Text(settings.v3ArtworkPresentation.detail)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                Toggle("悬停时显示播放信息", isOn: $settings.v3PlaybackDetailsOnHover)
+                Text("移入封面或播放区域时显示播放控制；移到顶部可打开工具。")
+                    .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Divider()
+            V3WindowEdgeProgressSettings(
+                enabled: $settings.v3EdgeProgressEnabled,
+                colorHex: $settings.v3EdgeProgressColorHex,
+                colorMode: $settings.v3EdgeProgressColorMode,
+                showsModeToggle: false
+            )
 
-            // 1. 背景封面：取景方式、背景缩放、模糊／光效
-            VStack(alignment: .leading, spacing: 10) {
-                Text(settings.v3ArtworkPresentation == .lyricsOnly ? "背景光场" : "背景封面")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.primary)
-
-                if settings.v3ArtworkPresentation != .lyricsOnly {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("取景方式")
-                            .font(.system(size: 12, weight: .medium))
-                        Picker("取景方式", selection: Binding(
-                            get: { settings.v3BackgroundShowsCompleteArtwork(for: settings.v3ArtworkPresentation) },
-                            set: { settings.setV3BackgroundShowsCompleteArtwork($0, for: settings.v3ArtworkPresentation) }
-                        )) {
-                            Text("铺满").tag(false)
-                            Text("尽量完整").tag(true)
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .accessibilityLabel("取景方式")
-                        .accessibilityIdentifier("v3.ambient.backgroundFraming")
-
-                        Text(settings.v3BackgroundShowsCompleteArtwork(for: settings.v3ArtworkPresentation)
-                            ? "优先展示更多画面并柔和补边；前景封面单独调整。"
-                            : "允许裁切以铺满背景空间；前景封面单独调整。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 5) {
+                Text("主窗口布局").font(.system(size: 12, weight: .medium))
+                Picker("主窗口布局", selection: $layoutStyleRawValue) {
+                    ForEach(MainWindowLayoutStyle.userSelectableCases) { style in
+                        Text(style.title).tag(style.rawValue)
                     }
                 }
-
-                Group {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text(settings.v3ArtworkPresentation == .lyricsOnly ? "背景光场缩放" : "背景缩放")
-                                .font(.system(size: 12, weight: .medium))
-                            Spacer()
-                            Text("\(backdropScalePresetName) · \(Int((settings.v3BackdropScale(for: settings.v3ArtworkPresentation) * 100).rounded()))%")
-                                .font(.system(size: 11, weight: .bold).monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-                        Slider(value: Binding(
-                            get: { settings.v3BackdropScale(for: settings.v3ArtworkPresentation) },
-                            set: { settings.setV3BackdropScale($0, for: settings.v3ArtworkPresentation) }
-                        ), in: 0.8...1.4, step: 0.05)
-                            .accessibilityLabel("背景缩放")
-                            .accessibilityIdentifier("v3.classic.backgroundScale")
-
-                        HStack(spacing: 0) {
-                            backdropScalePresetButton("精巧 80%", val: 0.80)
-                            Spacer()
-                            backdropScalePresetButton("标准 100%", val: 1.00)
-                            Spacer()
-                            backdropScalePresetButton("大图 120%", val: 1.20)
-                            Spacer()
-                            backdropScalePresetButton("巨幕 140%", val: 1.40)
-                        }
-
-                        Text("只改变背景取景，不改变前景封面大小。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(settings.v3ArtworkPresentation.blurControlTitle)
-                            .font(.system(size: 12, weight: .medium))
-                        Spacer()
-                        Text("\(blurPresetName) · \(Int(settings.v3BackdropBlurRadius))%")
-                            .font(.system(size: 11, weight: .bold).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                    Slider(value: $settings.v3BackdropBlurRadius, in: 0...100, step: 1)
-                        .accessibilityLabel(settings.v3ArtworkPresentation.blurControlTitle)
-
-                    HStack(spacing: 0) {
-                        blurPresetButton("清晰 0%", val: 0)
-                        Spacer()
-                        blurPresetButton("轻柔 25%", val: 25)
-                        Spacer()
-                        blurPresetButton("柔和 60%", val: 60)
-                        Spacer()
-                        blurPresetButton("弥散 100%", val: 100)
-                    }
-                }
-
-                if settings.v3ArtworkPresentation == .stage {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Toggle("增强歌词对比度", isOn: $settings.v3StageReadabilityEnabled)
-                        Text("为亮色封面增加柔和暗层，让白色歌词更清楚。")
-                            .font(.caption).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
-                Toggle("纯音乐极简通透沉浸", isOn: $settings.v3InstrumentalPureImmersion)
-                    .font(.system(size: 12, weight: .medium))
-            }
-
-            // 2. 前景封面：尺寸、位置、隐藏播放信息时舒展
-            Divider()
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("前景封面")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.primary)
-
-                Toggle("显示前景封面", isOn: $settings.v3ShowForegroundArtwork)
-                    .help("关闭后，有前景封面的主题会展开歌词布局；舞台与纯净歌词保持原布局。")
-                    .accessibilityIdentifier("v3.artwork.showForeground")
-
-                if settings.v3ArtworkPresentation != .lyricsOnly && settings.v3ArtworkPresentation != .stage {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text(settings.v3ArtworkPresentation.artworkSizeControlTitle)
-                                .font(.system(size: 12, weight: .medium))
-                            Spacer()
-                            Text("\(sizePresetName) · \(Int(settings.v3ArtworkSizeScale * 100))%")
-                                .font(.system(size: 11, weight: .bold).monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-                        Slider(value: $settings.v3ArtworkSizeScale, in: 0.8...1.4, step: 0.05)
-                            .accessibilityLabel(settings.v3ArtworkPresentation.artworkSizeControlTitle)
-
-                        HStack(spacing: 0) {
-                            sizePresetButton("精巧 80%", val: 0.80)
-                            Spacer()
-                            sizePresetButton("标准 100%", val: 1.00)
-                            Spacer()
-                            sizePresetButton("大图 120%", val: 1.20)
-                            Spacer()
-                            sizePresetButton("巨幕 140%", val: 1.40)
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(settings.v3ArtworkPresentation.artworkPositionControlTitle)
-                            .font(.system(size: 12, weight: .medium))
-                        Picker(settings.v3ArtworkPresentation.artworkPositionControlTitle, selection: $settings.v3ArtworkPosition) {
-                            Text("居左").tag("left")
-                            if settings.v3ArtworkPresentation != .albumPoster {
-                                Text("居中").tag("center")
-                            }
-                            Text("居右").tag("right")
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .accessibilityLabel(settings.v3ArtworkPresentation.artworkPositionControlTitle)
-                    }
-
-                    if settings.v3ArtworkPresentation == .authenticAmbient
-                        || settings.v3ArtworkPresentation == .ambient
-                        || settings.v3ArtworkPresentation == .classicGaussian
-                        || settings.v3ArtworkPresentation == .classic
-                        || settings.v3ArtworkPresentation == .ambientFeathered {
-                        Toggle("隐藏播放信息时舒展封面", isOn: $settings.v3ExpandArtworkWhenDetailsHidden)
-                            .disabled(!settings.v3PlaybackDetailsOnHover && !settings.v3EdgeProgressEnabled)
-                            .help("隐藏播放信息后，统一放大封面并按窗口画布居中；关闭后保持设定的尺寸与位置。")
-                            .accessibilityIdentifier("v3.artwork.expandWhenDetailsHidden")
-                    }
-                }
-            }
-
-            Divider()
-
-            // 3. 歌词：位置和对齐
-            VStack(alignment: .leading, spacing: 10) {
-                Text("歌词")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.primary)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("位置与对齐").font(.system(size: 12, weight: .medium))
-                    Picker("歌词位置与对齐", selection: Binding(
-                        get: { settings.v3LyricsPosition },
-                        set: { settings.v3LyricsPosition = $0 }
-                    )) {
-                        Text("自动").tag("automatic")
-                        Text("左侧").tag("left")
-                        Text("居中").tag("center")
-                        Text("右侧").tag("right")
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .accessibilityLabel("歌词位置与对齐")
-
-                    Text("每种模式单独记住选择，假名和译文一起对齐。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-
-            Divider()
-
-            // 4. 播放：播放信息显隐等选项
-            VStack(alignment: .leading, spacing: 10) {
-                Text("播放")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.primary)
-
-                V3WindowEdgeProgressSettings(
-                    enabled: $settings.v3EdgeProgressEnabled,
-                    colorHex: $settings.v3EdgeProgressColorHex,
-                    colorMode: $settings.v3EdgeProgressColorMode
-                )
-
-                VStack(alignment: .leading, spacing: 5) {
-                    Toggle("悬停时显示播放信息", isOn: $settings.v3PlaybackDetailsOnHover)
-                    Text("移入封面或播放区域时显示播放控制；移到顶部可打开工具。")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("主窗口布局")
-                        .font(.system(size: 12, weight: .medium))
-                    Picker("主窗口布局", selection: $layoutStyleRawValue) {
-                        ForEach(MainWindowLayoutStyle.userSelectableCases) { style in
-                            Text(style.title).tag(style.rawValue)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .accessibilityLabel("主窗口布局")
-                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .accessibilityLabel("主窗口布局")
             }
         }
-        .padding(14)
+        .font(.system(size: 12))
+    }
+
+    private var textPage: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            sectionLabel("文字层")
+            VStack(alignment: .leading, spacing: 6) {
+                Text("歌词位置与对齐")
+                    .font(.system(size: 12, weight: .medium))
+                Picker("歌词位置与对齐", selection: Binding(
+                    get: { settings.v3LyricsPosition },
+                    set: { settings.v3LyricsPosition = $0 }
+                )) {
+                    Text("自动").tag("automatic")
+                    Text("左侧").tag("left")
+                    Text("居中").tag("center")
+                    Text("右侧").tag("right")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .accessibilityLabel("歌词位置与对齐")
+                Text("假名、原文与译文会一起对齐。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 10) {
+                Toggle("原文", isOn: displayBinding(\.showOriginal))
+                Toggle("译文", isOn: displayBinding(\.showTranslation))
+            }
+            HStack(spacing: 10) {
+                Toggle("罗马音", isOn: displayBinding(\.showRomaji))
+                Toggle("拼音", isOn: displayBinding(\.showPinyin))
+            }
+            Picker("注音排版", selection: displayBinding(\.kanaDisplayMode)) {
+                Text("汉字上方").tag(KanaDisplayMode.inlineRuby)
+                Text("独立一行").tag(KanaDisplayMode.independentLine)
+                Text("替换汉字").tag(KanaDisplayMode.kanaReplacement)
+                Text("隐藏").tag(KanaDisplayMode.hidden)
+            }
+            .accessibilityIdentifier("v3.display.kanaMode")
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("原文与译文字号")
+                    Spacer()
+                    Text("\(Int(settings.displayPreferences.fontSize.rounded())) pt").monospacedDigit()
+                }
+                Slider(value: displayDoubleBinding(\.fontSize), in: 14...42, step: 1)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("读音与辅助字")
+                    Spacer()
+                    Text("\(Int(settings.displayPreferences.assistantFontSize.rounded())) pt").monospacedDigit()
+                }
+                Slider(value: displayDoubleBinding(\.assistantFontSize), in: 10...24, step: 1)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("假名字号")
+                    Spacer()
+                    Text("\(Int(settings.displayPreferences.rubyFontSize.rounded())) pt").monospacedDigit()
+                }
+                Slider(value: displayDoubleBinding(\.rubyFontSize), in: 8...18, step: 1)
+            }
+
+            DisclosureGroup("更多文字选项", isExpanded: $textAdvancedExpanded) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Picker("繁简转换", selection: readingBinding(\.scriptConversionID)) {
+                        Text("不转换").tag(ScriptConversionID.none.rawValue)
+                        Text("繁体转简体").tag(ScriptConversionID.traditionalToSimplified.rawValue)
+                        Text("简体转繁体").tag(ScriptConversionID.simplifiedToTraditional.rawValue)
+                    }
+                    Toggle("远处歌词隐藏辅助读音", isOn: displayBinding(\.hideDistantAuxiliary))
+                    HStack {
+                        Text("非当前歌词透明度")
+                        Spacer()
+                        Text("\(Int(settings.displayPreferences.opacity * 100))%").monospacedDigit()
+                    }
+                    Slider(value: displayBinding(\.opacity), in: 0.15...1, step: 0.05)
+                }
+                .padding(.top, 8)
+            }
+            .font(.system(size: 12, weight: .medium))
+
+            Text("原文、译文与读音按同一行节奏排列；关闭某层只影响显示，不会删除版本。")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var currentSongPage: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            VStack(alignment: .leading, spacing: 4) {
+                sectionLabel("当前播放")
+                Text(state.currentTrack.title)
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .lineLimit(2)
+                Text(state.currentTrack.artist)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text("歌词来源 · " + (state.liveLyricsSource?.displayName ?? "尚未采用"))
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(state.liveLyricsVersionID == nil ? "暂无已保存歌词版本" : "已采用保存版本 · \(state.liveLyrics.count) 行")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                sectionLabel("翻译服务")
+                Text(TranslationEngineCatalog.metadata(for: settings.aiTranslationConfiguration.engineID)?.displayName
+                     ?? settings.aiTranslationConfiguration.engineID)
+                    .font(.system(size: 12, weight: .medium))
+                Text(settings.aiTranslationConfiguration.model.isEmpty
+                     ? "尚未选择模型"
+                     : "模型 · \(settings.aiTranslationConfiguration.model)")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                let reasoning = TranslationReasoningPolicy.value(settings.aiTranslationConfiguration)
+                if !reasoning.isEmpty {
+                    Text("思考强度 · " + (["low": "低", "medium": "中", "high": "高", "xhigh": "很高", "max": "最高", "ultra": "超高", "none": "关闭"][reasoning] ?? reasoning))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Button("在设置中调整服务", systemImage: "sparkles", action: onOpenAISettings)
+                    .buttonStyle(.bordered)
+            }
+
+            Divider()
+
+            DisclosureGroup("版本、语言与更多操作") {
+                CurrentSongOperationsView(
+                    state: state,
+                    embeddedInInspector: true,
+                    onVersionPickerPresentationChange: { _ in },
+                    onOpenEditor: liveOnly ? { MenuBarLyricsController.shared.openEditor() } : nil
+                )
+                .environmentObject(settings)
+                .padding(.top, 8)
+            }
+
+            Divider()
+
+            currentSongWorkflow
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 7) {
+                sectionLabel("歌词时间")
+                LyricsPresentationOffsetControl(settings: settings)
+                Button("恢复默认时间") { settings.lyricsOffsetStore.resetActiveValue() }
+                    .font(.caption)
+                    .buttonStyle(.borderless)
+            }
+        }
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.system(size: 9, weight: .semibold, design: .rounded))
+            .tracking(1.1)
+            .foregroundStyle(.secondary)
+    }
+
+    private func atmosphereButton(_ title: String, level: Int) -> some View {
+        let selected = settings.v3AtmosphereLevel(for: settings.v3ArtworkPresentation) == level
+        return Button(title) {
+            settings.setV3AtmosphereLevel(level, for: settings.v3ArtworkPresentation)
+        }
+        .font(.system(size: 11, weight: selected ? .semibold : .regular))
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(selected ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8))
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func displayBinding<Value>(_ keyPath: WritableKeyPath<DisplayPreferences, Value>) -> Binding<Value> {
+        Binding(get: { settings.displayPreferences[keyPath: keyPath] }, set: { value in
+            var next = settings.displayPreferences
+            next[keyPath: keyPath] = value
+            settings.displayPreferences = next
+        })
+    }
+
+    private func displayDoubleBinding(_ keyPath: WritableKeyPath<DisplayPreferences, CGFloat>) -> Binding<Double> {
+        Binding(
+            get: { Double(settings.displayPreferences[keyPath: keyPath]) },
+            set: { value in
+                var next = settings.displayPreferences
+                next[keyPath: keyPath] = CGFloat(value)
+                settings.displayPreferences = next
+            }
+        )
+    }
+
+    private func readingBinding<Value>(_ keyPath: WritableKeyPath<ReadingPreferences, Value>) -> Binding<Value> {
+        Binding(get: { settings.readingPreferences[keyPath: keyPath] }, set: { value in
+            var next = settings.readingPreferences
+            next[keyPath: keyPath] = value
+            settings.readingPreferences = next
+        })
     }
 
     @ViewBuilder

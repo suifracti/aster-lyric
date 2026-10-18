@@ -30,7 +30,6 @@ struct LyricsEditorWindowView: View {
             footer
         }
         .frame(minWidth: 980, minHeight: 620)
-        .preferredColorScheme(.dark)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
             if editor.draft == nil { state.prepareLyricsEditorForOpening() }
@@ -86,25 +85,22 @@ struct LyricsEditorWindowView: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text("歌词编辑")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(LyricsDesignTokens.primaryText)
-                    let title = editor.draft?.title ?? (editor.draft?.identity == nil ? "" : state.currentTrack.title)
-                    if !title.isEmpty {
-                        Text("·")
-                            .foregroundStyle(LyricsDesignTokens.mutedText)
-                        Text(title)
-                            .font(.headline.weight(.medium))
-                            .foregroundStyle(LyricsDesignTokens.primaryText)
-                            .lineLimit(1)
-                    }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 7) {
+                    LyricsEditorRecordMark()
+                    Text("LYRIC ISLAND · EDITOR")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .tracking(1.1)
+                        .foregroundStyle(.secondary)
                 }
+                let title = editor.draft?.title ?? (editor.draft?.identity == nil ? "" : state.currentTrack.title)
+                Text(title.isEmpty ? "歌词编辑" : title)
+                    .font(.system(size: 17, weight: .semibold, design: .serif))
+                    .lineLimit(1)
                 let artistText = editor.draft?.artist ?? (editor.draft?.identity == nil ? "未关联播放曲目" : state.currentTrack.artist)
                 Text(artistText)
                     .font(.caption)
-                    .foregroundStyle(LyricsDesignTokens.secondaryText)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer()
@@ -150,7 +146,7 @@ struct LyricsEditorWindowView: View {
         .buttonStyle(.borderless)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color.black.opacity(0.12))
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var versionPicker: some View {
@@ -224,10 +220,10 @@ struct LyricsEditorWindowView: View {
                     .frame(width: 360, alignment: .leading)
             }
             .font(.caption.weight(.semibold))
-            .foregroundStyle(LyricsDesignTokens.secondaryText)
+            .foregroundStyle(.secondary)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(Color.white.opacity(0.04))
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
             ScrollView {
                 LazyVStack(spacing: 4) {
                     ForEach(Array(draft.lines.enumerated()), id: \.element.id) { index, line in
@@ -263,12 +259,12 @@ struct LyricsEditorWindowView: View {
                 } else {
                     Text(editor.hasUnsavedChanges ? "有未保存修改" : "尚未修改")
                         .font(.caption)
-                        .foregroundStyle(LyricsDesignTokens.secondaryText)
+                        .foregroundStyle(.secondary)
                 }
-                Button("保存人工版本") { editor.save() }
+                Button("保存为新版本") { editor.save() }
                     .buttonStyle(.borderedProminent)
                     .disabled(editor.draft?.identity == nil || !editor.canSave)
-                Button("保存并锁定", systemImage: "lock.fill") { editor.save(lockLyrics: true, lockTranslation: true) }
+                Button("保存并锁定新版本", systemImage: "lock.fill") { editor.save(lockLyrics: true, lockTranslation: true) }
                     .disabled(editor.draft?.identity == nil || !editor.canSave)
             }
             .disabled(editor.state == .saving)
@@ -290,7 +286,7 @@ struct LyricsEditorWindowView: View {
                         .disabled(!canUsePlaybackTiming)
                         Text(Self.formatTime(state.currentTime) + " / " + Self.formatTime(state.currentTrack.duration))
                             .font(.caption.monospacedDigit())
-                            .foregroundStyle(LyricsDesignTokens.secondaryText)
+                            .foregroundStyle(.secondary)
                         Spacer()
                         Toggle("标记后自动前进", isOn: Binding(
                             get: { editor.assistAutoAdvance },
@@ -314,7 +310,7 @@ struct LyricsEditorWindowView: View {
                         Spacer()
                         Text(canUsePlaybackTiming ? "空格：标记时间 · N：下一条未排" : "播放此编辑稿对应的歌曲后可标记时间")
                             .font(.caption)
-                            .foregroundStyle(LyricsDesignTokens.secondaryText)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .padding(.top, 6)
@@ -324,7 +320,7 @@ struct LyricsEditorWindowView: View {
                     Label("时间轴与播放", systemImage: "clock")
                     if let draft = editor.draft {
                         Text("已排 \(draft.timedNonBlankLineCount) · 未排 \(draft.untimedNonBlankLineCount)")
-                            .foregroundStyle(LyricsDesignTokens.secondaryText)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .font(.caption)
@@ -334,7 +330,7 @@ struct LyricsEditorWindowView: View {
         .controlSize(.small)
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(Color.white.opacity(0.02))
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private func lineRow(index: Int, line: LyricsEditorLineDraft, total: Int) -> some View {
@@ -347,21 +343,21 @@ struct LyricsEditorWindowView: View {
                 HStack(spacing: 4) {
                     Text("\(index + 1)")
                         .font(.caption.monospacedDigit())
-                        .foregroundStyle(LyricsDesignTokens.mutedText)
+                        .foregroundStyle(.secondary)
                         .frame(width: 28, alignment: .trailing)
                     if isSuggested {
                         Text("建议")
                             .font(.caption2.weight(.semibold))
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(Color.orange.opacity(0.25))
+                            .background(Color.orange.opacity(0.12))
                             .clipShape(Capsule())
                     } else if isUntimed {
                         Text("未排")
                             .font(.caption2.weight(.semibold))
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(Color.secondary.opacity(0.2))
+                            .background(Color.secondary.opacity(0.12))
                             .clipShape(Capsule())
                     }
                 }
@@ -369,7 +365,7 @@ struct LyricsEditorWindowView: View {
                     timeField(lineID: line.id, placeholder: isUntimed ? "未排" : "开始")
                     Text("→")
                         .font(.caption2.monospaced())
-                        .foregroundStyle(LyricsDesignTokens.mutedText)
+                        .foregroundStyle(.secondary)
                     timeField(lineID: line.id, placeholder: "结束", isEnd: true)
                 }
                 .frame(width: 156)
@@ -384,7 +380,7 @@ struct LyricsEditorWindowView: View {
                 HStack(spacing: 8) {
                     Text(line.kanaText ?? "—")
                     Text(line.romajiText ?? "—")
-                        .foregroundStyle(LyricsDesignTokens.secondaryText)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                     Spacer()
                     Button("试听") {
@@ -423,9 +419,9 @@ struct LyricsEditorWindowView: View {
         .background(
             isFocused
                 ? Color.accentColor.opacity(0.12)
-                : (index.isMultiple(of: 2) ? Color.white.opacity(0.03) : Color.clear)
+                : (index.isMultiple(of: 2) ? Color(nsColor: .controlBackgroundColor).opacity(0.42) : Color.clear)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(alignment: .bottom) { Divider().opacity(0.65) }
         .contentShape(Rectangle())
         .onTapGesture { focusedLineID = line.id }
     }
@@ -520,24 +516,24 @@ struct LyricsEditorWindowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(editor.validation.isSynchronized ? "同步歌词时间轴有效" : "纯文本或部分时间轴：不会自动平均铺开")
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(LyricsDesignTokens.primaryText)
+                    .foregroundStyle(.primary)
                 if !editor.validation.issues.isEmpty {
                     Text(editor.validation.issues.map(\.message).joined(separator: "；"))
                         .font(.caption2)
-                        .foregroundStyle(LyricsDesignTokens.secondaryText)
+                        .foregroundStyle(.secondary)
                         .lineLimit(2)
                 } else if let message = editor.message {
-                    Text(message).font(.caption2).foregroundStyle(LyricsDesignTokens.secondaryText)
+                    Text(message).font(.caption2).foregroundStyle(.secondary)
                 }
             }
             Spacer()
             Text(editor.state.userFacingMessage)
                 .font(.caption)
-                .foregroundStyle(LyricsDesignTokens.secondaryText)
+                .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color.black.opacity(0.15))
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private func importPreview(_ preview: LyricsEditorImportPreview) -> some View {
@@ -739,5 +735,16 @@ struct LyricsEditorWindowView: View {
         } catch {
             editor.reportExportResult("导出失败：\(error.localizedDescription)")
         }
+    }
+}
+
+private struct LyricsEditorRecordMark: View {
+    var body: some View {
+        VStack(spacing: 3) {
+            Capsule().frame(width: 16, height: 2)
+            Capsule().frame(width: 11, height: 2).frame(width: 16, alignment: .leading)
+        }
+        .foregroundStyle(.secondary)
+        .accessibilityHidden(true)
     }
 }

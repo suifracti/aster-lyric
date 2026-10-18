@@ -8,6 +8,7 @@ struct CurrentSongOperationsView: View {
     @ObservedObject var state: PlaybackState
     var versionShortcutOnly = false
     var iconOnly = false
+    var embeddedInInspector = false
     var onVersionPickerPresentationChange: (Bool) -> Void = { _ in }
     var onOpenEditor: (() -> Void)? = nil
     @ObservedObject private var autoAlign = AutomaticAlignmentJobController.shared
@@ -190,11 +191,21 @@ struct CurrentSongOperationsView: View {
         }
     }
 
+    @ViewBuilder
     private var operationsPanel: some View {
-        ScrollView(.vertical) {
+        if embeddedInInspector {
+            operationsContent
+        } else {
+            ScrollView(.vertical) { operationsContent.padding(18) }
+                .scrollIndicators(.hidden)
+                .frame(width: 360, alignment: .leading)
+                .frame(maxHeight: 560, alignment: .leading)
+        }
+    }
+
+    private var operationsContent: some View {
             VStack(alignment: .leading, spacing: 14) {
-                header
-                Divider()
+                if !embeddedInInspector { header; Divider() }
                 lyricsSection
                 versionStatusSection
                 Divider()
@@ -220,11 +231,6 @@ struct CurrentSongOperationsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(18)
-        }
-        .scrollIndicators(.hidden)
-        .frame(width: 360, alignment: .leading)
-        .frame(maxHeight: 560, alignment: .leading)
     }
 
     private var header: some View {
@@ -431,6 +437,7 @@ struct CurrentSongOperationsView: View {
                     .foregroundStyle(state.isTranslationSelectionEmpty ? .orange : .secondary)
             }
             VStack(alignment: .leading, spacing: 6) {
+                if !embeddedInInspector {
                 Picker("引擎", selection: Binding(
                     get: { TranslationEngineCatalog.topLevelID(for: settings.aiTranslationConfiguration.engineID) },
                     set: { settings.selectTranslationProvider($0) }
@@ -447,6 +454,7 @@ struct CurrentSongOperationsView: View {
                 Text("模型：\(settings.aiTranslationConfiguration.model.isEmpty ? "手动输入" : settings.aiTranslationConfiguration.model)")
                     .font(.system(size: 10, design: .rounded))
                     .foregroundStyle(.secondary)
+                }
                 if !state.translationProgressMessage.isEmpty {
                     Label(state.translationProgressMessage, systemImage: translationStatusIcon)
                         .font(.system(size: 10, design: .rounded))
@@ -1193,7 +1201,9 @@ private struct LyricsVersionPickerView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("歌词版本").font(.title3.weight(.semibold))
+                    Text("LYRIC ISLAND / 版本档案")
+                        .font(.system(size: 10, weight: .semibold)).tracking(1.6).foregroundStyle(.secondary)
+                    Text("同一首歌，不同记录").font(.system(size: 24, weight: .semibold, design: .serif))
                     Text([title, artistDisplay].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
@@ -1284,7 +1294,7 @@ private struct LyricsVersionPickerView: View {
             }
             Divider()
             HStack(spacing: 10) {
-                Button("编辑当前", systemImage: "square.and.pencil", action: onEdit).disabled(!canEdit || isBusy)
+                Button("编辑当前为新版本", systemImage: "square.and.pencil", action: onEdit).disabled(!canEdit || isBusy)
                     .help("保留原版，编辑后另存人工版本")
                 Button("复制当前歌词", systemImage: "doc.on.doc") { showCopy = true }.disabled(lines.isEmpty || isBusy)
                 Spacer(minLength: 0)
@@ -1359,10 +1369,17 @@ private struct LyricsVersionPickerView: View {
 
     private func lyricColumn(_ heading: String, lines: [LyricLine], synchronized: Bool, showTranslation: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(heading).font(.headline).lineLimit(1)
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Capsule().frame(width: 20, height: 2)
+                    Capsule().frame(width: 12, height: 2).opacity(0.45)
+                }.foregroundStyle(Color.accentColor).accessibilityHidden(true)
+                Text(heading).font(.headline).lineLimit(1)
+            }
             Text("\(lines.count) 行 · \(synchronized ? "已同步" : "纯文本")").font(.caption).foregroundStyle(.secondary)
+            Divider()
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: 16) {
                     ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(synchronized ? timeLabel(line.timestamp) : "#\(index + 1)")

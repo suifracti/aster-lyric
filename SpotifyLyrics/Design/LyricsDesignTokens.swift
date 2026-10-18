@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Stable, presentation-only policies for lyric row reflow.  The policy
 /// owns neither playback state nor a scroll position; it only chooses how an
@@ -351,4 +352,49 @@ struct LyricEmphasis {
     let opacity: Double
     let blurRadius: CGFloat
     let verticalPadding: CGFloat
+}
+
+// Song colour is shared by listening surfaces; management windows retain their
+// stable semantic palette. The cache is also used by the main backdrop.
+private struct LyricIslandAccentKey: EnvironmentKey {
+    static let defaultValue: Color = .accentColor
+}
+extension EnvironmentValues {
+    var lyricIslandAccent: Color {
+        get { self[LyricIslandAccentKey.self] }
+        set { self[LyricIslandAccentKey.self] = newValue }
+    }
+}
+extension View {
+    func lyricIslandSongTint(artworkURL: URL?, accent: Binding<Color>) -> some View {
+        modifier(LyricIslandSongTint(artworkURL: artworkURL, accent: accent))
+    }
+}
+private struct LyricIslandSongTint: ViewModifier {
+    let artworkURL: URL?
+    @Binding var accent: Color
+
+    func body(content: Content) -> some View {
+        content.environment(\.lyricIslandAccent, accent)
+            .task(id: artworkURL) {
+                accent = .accentColor
+                guard let artworkURL,
+                      let image = await ArtworkImageLoader.shared.image(for: artworkURL),
+                      !Task.isCancelled, let data = image.tiffRepresentation else { return }
+                let snapshot = await AppleMusicImmersiveV3BackdropCache.shared.snapshot(
+                    for: "artwork|" + artworkURL.absoluteString, artworkData: data)
+                guard !Task.isCancelled else { return }
+                let value = snapshot.palette.glow
+                // Menu sheets can be light while listening windows are dark.
+                // Resolve the same song hue against each surface appearance.
+                accent = Color(nsColor: NSColor(name: nil) { appearance in
+                    let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                    let scale = dark ? 0.76 : 0.48
+                    let lift = dark ? 0.24 : 0.0
+                    return NSColor(red: value.red * scale + lift,
+                                   green: value.green * scale + lift,
+                                   blue: value.blue * scale + lift, alpha: 1)
+                })
+            }
+    }
 }

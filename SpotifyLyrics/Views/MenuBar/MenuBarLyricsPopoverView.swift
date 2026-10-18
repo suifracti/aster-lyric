@@ -3,6 +3,7 @@ import SwiftUI
 public struct MenuBarLyricsPopoverView: View {
     @ObservedObject var controller: MenuBarLyricsController
     @ObservedObject private var settings: AppSettingsStore
+    @State private var islandAccent: Color = .accentColor
     @State private var didCopyFullLyrics = false
     @State private var isAppearanceExpanded = false
 
@@ -20,20 +21,28 @@ public struct MenuBarLyricsPopoverView: View {
             }
         }
         .onChange(of: controller.fullLyricsSnapshot) { _, _ in didCopyFullLyrics = false }
+        .lyricIslandSongTint(artworkURL: controller.currentSnapshot.artworkURL, accent: $islandAccent)
     }
 
     private var playbackPage: some View {
         let snapshot = controller.currentSnapshot
         let artist = snapshot.artistName ?? ""
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
                 artworkView(snapshot.artworkURL)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        pairedLineMark
+                        Text("LYRIC ISLAND")
+                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                            .tracking(0.8)
+                            .foregroundStyle(.secondary)
+                    }
                     Text(snapshot.trackTitle ?? "等待播放音乐")
                         .font(.system(size: 14, weight: .semibold))
-                        .lineLimit(2)
-                    Text(artist.isEmpty ? "Lyric Island" : artist)
-                        .font(.system(size: 12))
+                        .lineLimit(1)
+                    Text(artist.isEmpty ? "当前播放" : artist)
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -46,14 +55,18 @@ public struct MenuBarLyricsPopoverView: View {
                 }
             }
 
-            ScrollView {
-                lyricsContent(snapshot)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-                .frame(height: isAppearanceExpanded ? 100 : 180)
-                .padding(14)
-                .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+            HStack(alignment: .top, spacing: 10) {
+                Capsule()
+                    .fill(islandAccent.opacity(0.9))
+                    .frame(width: 2, height: 30)
+                    .padding(.top, 4)
+                ScrollView {
+                    lyricsContent(snapshot)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(height: isAppearanceExpanded ? 100 : 128)
                 .accessibilityElement(children: .contain)
+            }
 
             // Keep the complete-song action reachable even when one lyric
             // fills the scrollable preview above.
@@ -90,13 +103,13 @@ public struct MenuBarLyricsPopoverView: View {
 
             Divider()
 
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 shortcut("主窗口", icon: "macwindow") { controller.openMainWindow() }
                 shortcut("歌词库", icon: "books.vertical") { controller.openLibrary() }
                 shortcut("设置", icon: "gearshape") { controller.openSettings() }
             }
 
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 shortcut("桌面歌词", icon: "text.bubble") { controller.toggleFloatingLyrics() }
                 shortcut("顶部胶囊", icon: "capsule") { controller.toggleCapsule() }
                 shortcut("恢复拖动", icon: "hand.draw") { controller.restoreFloatingInteraction() }
@@ -131,7 +144,7 @@ public struct MenuBarLyricsPopoverView: View {
             }
             .font(.system(size: 12, weight: .medium))
         }
-        .padding(16)
+        .padding(14)
         .frame(width: 340)
     }
 
@@ -205,8 +218,9 @@ public struct MenuBarLyricsPopoverView: View {
                 }
                 if let next, !next.isEmpty {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(current.isEmpty ? "即将开始" : "下一句")
+                        Text("下一句")
                             .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(islandAccent)
                         Text(next)
                             .font(.system(size: 11))
                             .fixedSize(horizontal: false, vertical: true)
@@ -296,12 +310,21 @@ public struct MenuBarLyricsPopoverView: View {
     private func shortcut(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: icon)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 10, weight: .medium))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+                .padding(.vertical, 5)
                 .contentShape(Rectangle())
         }
         .buttonStyle(HoverRowButtonStyle())
+    }
+
+    private var pairedLineMark: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Capsule().frame(width: 10, height: 1.5)
+            Capsule().frame(width: 7, height: 1.5)
+        }
+        .foregroundStyle(islandAccent)
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -328,9 +351,9 @@ public struct MenuBarLyricsPopoverView: View {
     private var fallbackArtwork: some View {
         Image(systemName: "music.note")
             .font(.system(size: 18, weight: .semibold))
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(islandAccent)
             .frame(width: 44, height: 44)
-            .background(Color.accentColor.opacity(0.12))
+            .background(islandAccent.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }

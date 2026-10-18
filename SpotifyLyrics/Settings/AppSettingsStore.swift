@@ -274,6 +274,7 @@ public final class AppSettingsStore: ObservableObject {
         /// `lyricsOffsetStore`; this key is never migrated or overwritten.
         public static let lyricsPresentationOffset = "lyrics.presentationOffset.v1"
         public static let v3LyricsPositions = "v3.lyricsPositions.v1"
+        public static let v3AtmosphereLevels = "v3.atmosphere.levels.v1"
         public static let v3StageReadabilityEnabled = "v3.stageReadabilityEnabled"
         public static let v3BackdropBlurRadius = "v3.backdropBlurRadius"
         public static let v3BackdropBlurAuthenticAmbient = "v3.backdropBlur.authenticAmbient.v1"
@@ -744,6 +745,19 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     @Published private var v3LyricsPositions: [String: String] = [:]
+    @Published private var v3AtmosphereLevels: [String: Int] = [:] {
+        didSet { defaults.set(v3AtmosphereLevels, forKey: Key.v3AtmosphereLevels) }
+    }
+
+    public func v3AtmosphereLevel(for presentation: V3ArtworkPresentation) -> Int {
+        min(2, max(0, v3AtmosphereLevels[presentation.rawValue] ?? 0))
+    }
+
+    public func setV3AtmosphereLevel(_ level: Int, for presentation: V3ArtworkPresentation) {
+        let storedLevel = min(2, max(0, level))
+        guard v3AtmosphereLevels[presentation.rawValue] != storedLevel else { return }
+        v3AtmosphereLevels[presentation.rawValue] = storedLevel
+    }
 
     /// Reading placement is remembered per composition, independently of artwork.
     public var v3LyricsPosition: String {
@@ -843,6 +857,9 @@ public final class AppSettingsStore: ObservableObject {
         self.lyricsOffsetStore = ScopedLyricsOffsetStore(defaults: defaults)
         self.v3LyricsPositions = (defaults.dictionary(forKey: Key.v3LyricsPositions) as? [String: String] ?? [:])
             .filter { ["automatic", "left", "center", "right"].contains($0.value) }
+        self.v3AtmosphereLevels = (defaults.dictionary(forKey: Key.v3AtmosphereLevels) as? [String: Int] ?? [:])
+            .filter { V3ArtworkPresentation(rawValue: $0.key) != nil }
+            .mapValues { min(2, max(0, $0)) }
         let legacyBlur = defaults.object(forKey: Key.v3BackdropBlurRadius) as? Double ?? 36.0
         let selectedPresentation: V3ArtworkPresentation
         if let storedPresentation = defaults.string(forKey: Key.v3ArtworkPresentation),

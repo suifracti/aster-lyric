@@ -243,10 +243,11 @@ struct V3WindowEdgeProgressSettings: View {
     @Binding var enabled: Bool
     @Binding var colorHex: String
     @Binding var colorMode: String
+    var showsModeToggle = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Toggle("窗口边缘播放进度", isOn: $enabled)
+            if showsModeToggle { Toggle("窗口边缘播放进度", isOn: $enabled) }
             Picker("颜色模式", selection: $colorMode) {
                 Text("固定颜色").tag("manual")
                 Text("自动流转").tag("flow")

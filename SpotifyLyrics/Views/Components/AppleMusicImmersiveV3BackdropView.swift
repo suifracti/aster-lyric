@@ -5,15 +5,10 @@ import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// A single track-bound key projection shared by V3 and fullscreen through
-/// the same backdrop view and cache. Playback time is intentionally absent.
+/// Artwork color sampling is shared across listening surfaces by artwork URL.
 enum AppleMusicImmersiveV3BackdropKey {
-    static func make(
-        identityKey: String,
-        artworkURL: URL?,
-        forceNoArtwork: Bool
-    ) -> String {
-        "\(identityKey)|\(artworkURL?.absoluteString ?? "no-artwork")|\(forceNoArtwork ? "debug-no-artwork" : "artwork")"
+    static func make(artworkURL: URL?) -> String {
+        "artwork|\(artworkURL?.absoluteString ?? "none")"
     }
 }
 
@@ -36,12 +31,13 @@ enum V3BackdropArtworkGeometry {
 }
 
 /// The V3 backdrop is deliberately track-bound rather than playback-bound.
-/// Cover data is reduced and sampled once per TrackIdentity/artwork key; the
+/// Cover data is reduced and sampled once per artwork URL; the
 /// SwiftUI view never rebuilds a full-resolution blur on every time tick.
 struct AppleMusicImmersiveV3BackdropView: View {
     let track: Track
     let identity: TrackIdentity?
     var isInstrumental: Bool = false
+    var isPlaying: Bool = true
     @ObservedObject var settings: AppSettingsStore
     var presentationOverride: V3ArtworkPresentation? = nil
 
@@ -53,6 +49,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
     @State private var noiseImage: NSImage?
     @State private var palette = BackdropPalette.neutral
     @State private var accessibilityDisplayRevision = 0
+    @State private var isWindowVisible = false
 
     private var artworkPresentation: V3ArtworkPresentation { presentationOverride ?? settings.v3ArtworkPresentation }
     private var backdropBlurRadius: Double { settings.v3PreviewBlur(for: artworkPresentation) }
@@ -90,6 +87,10 @@ struct AppleMusicImmersiveV3BackdropView: View {
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+        .background(alignment: .topLeading) {
+            V3WindowVisibilityProbe(isVisible: $isWindowVisible)
+                .frame(width: 0, height: 0)
+        }
         .task(id: requestKey) {
             await loadSnapshot(for: requestKey)
         }
@@ -104,11 +105,11 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
     private var requestKey: String {
         let identityKey = identity?.stableKey ?? track.id
-        return AppleMusicImmersiveV3BackdropKey.make(
-            identityKey: identityKey,
-            artworkURL: track.artworkURL,
-            forceNoArtwork: debugForceNoArtwork
-        )
+        return "\(paletteCacheKey)|\(identityKey)|\(debugForceNoArtwork ? "debug-no-artwork" : "artwork")"
+    }
+
+    private var paletteCacheKey: String {
+        AppleMusicImmersiveV3BackdropKey.make(artworkURL: track.artworkURL)
     }
 
     /// Debug-only visual validation switch. It exercises the same neutral
@@ -265,18 +266,50 @@ struct AppleMusicImmersiveV3BackdropView: View {
         case .stage:
             stageArtworkLayers(image: image, ambientImage: ambientImage)
         case .classic:
-            legacyArtworkLayers(image: image)
+            classicArtworkLayers(image: image)
         case .classicGaussian:
             gaussianArtworkLayers(image: image)
         case .lyricsOnly:
             quietArtworkColors
+            atmosphereField(for: .lyricsOnly)
         case .albumPoster:
             quietArtworkColors
             framedArtwork(image: ambientImage ?? image, scale: backdropImageScale,
                           blur: 18 + perceptualBlur * 46)
                 .saturation(0.65)
                 .opacity(reduceTransparency ? 0.08 : 0.20)
+            atmosphereField(for: .albumPoster)
             ambientReadingVeil
+        }
+    }
+
+    @ViewBuilder
+    private func atmosphereField(for presentation: V3ArtworkPresentation) -> some View {
+        let level = settings.v3AtmosphereLevel(for: presentation)
+        if level > 0, let kind = atmosphereKind(for: presentation) {
+            V3AtmosphereFieldView(
+                kind: kind,
+                primary: ambientColor(palette.primary, saturation: 0.82, maximumLuminance: 0.46),
+                secondary: ambientColor(palette.secondary, saturation: 0.72, maximumLuminance: 0.34),
+                glow: ambientColor(palette.glow, saturation: 0.90, maximumLuminance: 0.52),
+                level: level,
+                isPlaying: isPlaying,
+                isVisible: isWindowVisible,
+                reduceMotion: accessibilityReduceMotion
+            )
+        }
+    }
+
+    private func atmosphereKind(for presentation: V3ArtworkPresentation) -> V3AtmosphereFieldKind? {
+        switch presentation {
+        case .classic: return .classic
+        case .authenticAmbient: return .authenticAmbient
+        case .ambient: return .ambient
+        case .ambientFeathered: return .ambientFeathered
+        case .stage: return .stage
+        case .lyricsOnly: return .lyricsOnly
+        case .albumPoster: return .albumPoster
+        case .classicGaussian: return nil
         }
     }
 
@@ -351,6 +384,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             }
             .clipped()
         }
+        atmosphereField(for: .stage)
         // Full original cover over a diffuse extension; lyric layout is unchanged.
         Color.black.opacity(settings.v3StageReadabilityEnabled ? 0.56 : (increaseContrast ? 0.40 : 0.24))
         LinearGradient(colors: [.black.opacity(0.08), .clear, .black.opacity(0.30)],
@@ -424,6 +458,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
             .saturation(saturation)
             .opacity(0.56)
 
+        atmosphereField(for: .authenticAmbient)
+
         RadialGradient(
             colors: [
                 ambientColor(palette.glow, saturation: saturation, maximumLuminance: 0.58)
@@ -487,6 +523,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
                       blur: diffusionRadius)
             .saturation(saturation)
             .opacity(0.85)
+
+        atmosphereField(for: .ambient)
 
         RadialGradient(
             colors: [
@@ -592,6 +630,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
         }
         .clipped()
 
+        atmosphereField(for: .ambientFeathered)
+
         RadialGradient(
             colors: [
                 ambientColor(palette.glow, saturation: saturation, maximumLuminance: 0.58)
@@ -666,127 +706,58 @@ struct AppleMusicImmersiveV3BackdropView: View {
     }
 
     @ViewBuilder
-    private func legacyArtworkLayers(image: NSImage) -> some View {
-        let style = presentationStyle
-        let saturation = min(
-            1.4,
-            style.paletteSaturation * 1.35 + (increaseContrast ? 0.08 : 0)
-        )
+    private func classicArtworkLayers(image: NSImage) -> some View {
+        let saturation = min(1.2, presentationStyle.paletteSaturation * 1.12)
 
-        // complete artwork plane scaledToFit()
-        // Layer 0: Static Album Ambient Base with vibrant album color foundation
         LinearGradient(
             colors: [
-                color(palette.primary, saturation: saturation * 0.75).opacity(0.85),
-                color(palette.secondary, saturation: saturation * 0.60).opacity(0.70),
-                color(palette.glow, saturation: saturation * 0.50).opacity(0.40)
+                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.34),
+                ambientColor(palette.secondary, saturation: saturation * 0.86, maximumLuminance: 0.24),
+                Color(red: 0.035, green: 0.042, blue: 0.058)
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
 
-        // Layer 1: Restrained Cover Ambient Light Source emitting naturally from cover center
-        ZStack {
-            color(palette.primary, saturation: saturation)
-                .opacity(0.85)
+        // A quiet, stationary field remains when motion is disabled.
+        RadialGradient(
+            colors: [
+                ambientColor(palette.glow, saturation: 0.78, maximumLuminance: 0.30).opacity(0.24),
+                .clear
+            ],
+            center: coverLightCenter,
+            startRadius: 24,
+            endRadius: 720
+        )
 
-            RadialGradient(
-                colors: [
-                    color(palette.primary, saturation: saturation * 1.25).opacity(0.26),
-                    .clear
-                ],
-                center: coverLightCenter,
-                startRadius: 40,
-                endRadius: 1100
-            )
-
-            RadialGradient(
-                colors: [
-                    color(palette.glow, saturation: saturation * 1.20).opacity(0.18),
-                    .clear
-                ],
-                center: coverLightCenter,
-                startRadius: 20,
-                endRadius: 900
-            )
-        }
-        .opacity(0.45 + 0.55 * perceptualBlur)
-
-        // Layer 2: Main scaled cover substrate with smooth continuous background extension.
-        // Both the full 80–140% range and crop position now affect this image.
         GeometryReader { geometry in
             let scale = min(1.4, max(0.8, artworkSizeScale))
             let effectiveScale = backdropImageScale
-            let offset = classicArtworkOffset(for: geometry.size.width, scale: scale, effectiveScale: effectiveScale)
-
-            framedArtwork(image: image, scale: showsCompleteArtwork ? scale : effectiveScale,
-                          blur: effectiveBlurRadius, horizontalOffset: showsCompleteArtwork ? 0 : offset)
-                .opacity(min(1, style.artworkOpacity * style.textureIntensity))
+            let offset = classicArtworkOffset(
+                for: geometry.size.width,
+                scale: scale,
+                effectiveScale: effectiveScale
+            )
+            framedArtwork(
+                image: image,
+                scale: showsCompleteArtwork ? scale : effectiveScale,
+                blur: effectiveBlurRadius,
+                horizontalOffset: showsCompleteArtwork ? 0 : offset
+            )
+            .saturation(saturation)
+            .opacity(0.30)
         }
 
-        // Layer 3: Specular Screen Light Bloom Pass (Only active when blur > 0 to avoid obscuring 0% clear artwork)
-        if effectiveScreenBlurRadius > 0 {
-            GeometryReader { geometry in
-                let scale = min(1.4, max(0.8, artworkSizeScale))
-                let effectiveScale = backdropImageScale
-                let offset = classicArtworkOffset(for: geometry.size.width, scale: scale, effectiveScale: effectiveScale)
+        atmosphereField(for: .classic)
 
-                framedArtwork(image: image, scale: showsCompleteArtwork ? scale : effectiveScale,
-                              blur: effectiveScreenBlurRadius, horizontalOffset: showsCompleteArtwork ? 0 : offset,
-                              fillsEdges: false)
-                    .blendMode(.screen)
-                    .opacity(0.40 * style.textureIntensity * perceptualBlur)
-            }
-        }
-
-        // Layer 4: Overlay blend color gradient for vivid color saturation
-        LinearGradient(
-            colors: [
-                color(palette.primary, saturation: saturation)
-                    .opacity(min(1, 0.34 * style.paletteOpacity)),
-                color(palette.secondary, saturation: saturation)
-                    .opacity(min(1, 0.26 * style.paletteOpacity)),
-                color(palette.glow, saturation: saturation)
-                    .opacity(min(1, 0.22 * style.paletteOpacity))
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .blendMode(.overlay)
-
-        // Layer 5: Soft Continuous Spatial Light Falloff towards lyrics reading area
-        let lightDecayOpacity = min(0.22, max(0.06, palette.luminance * 0.18))
-        let veilStart: UnitPoint = artworkPosition == "right" ? .trailing : .leading
-        let veilEnd: UnitPoint = artworkPosition == "right" ? .leading : .trailing
         if artworkPosition != "center" {
+            let veilStart: UnitPoint = artworkPosition == "right" ? .trailing : .leading
+            let veilEnd: UnitPoint = artworkPosition == "right" ? .leading : .trailing
             LinearGradient(
-                colors: [
-                    .clear,
-                    Color.black.opacity(lightDecayOpacity * 0.40),
-                    Color.black.opacity(lightDecayOpacity)
-                ],
+                colors: [.clear, Color.black.opacity(0.08), Color.black.opacity(0.18)],
                 startPoint: veilStart,
                 endPoint: veilEnd
             )
-        }
-
-        // Layer 6: Edge Vignette Darkening (restrained to avoid harsh dark borders)
-        RadialGradient(
-            colors: [
-                .clear,
-                Color.black.opacity(min(0.24, style.vignetteIntensity * 0.45))
-            ],
-            center: .center,
-            startRadius: 180,
-            endRadius: 1050
-        )
-
-        // Procedural Grain Noise Overlay (防断层极轻微感)
-        if let noiseImage {
-            Image(nsImage: noiseImage)
-                .resizable(resizingMode: .tile)
-                .blendMode(.overlay)
-                .opacity(style.noiseIntensity * 0.8)
         }
     }
 
@@ -873,7 +844,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
         }
 
         let snapshot = await AppleMusicImmersiveV3BackdropCache.shared.snapshot(
-            for: key,
+            for: paletteCacheKey,
             artworkData: imageData
         )
         guard key == requestKey, !Task.isCancelled else { return }
@@ -946,6 +917,253 @@ struct AppleMusicImmersiveV3BackdropView: View {
     }
 }
 
+enum V3AtmosphereFieldKind {
+    case classic
+    case authenticAmbient
+    case ambient
+    case ambientFeathered
+    case stage
+    case lyricsOnly
+    case albumPoster
+}
+
+/// Isolated decorative layer: it owns its own clock and never changes layout.
+struct V3AtmosphereFieldView: View {
+    let kind: V3AtmosphereFieldKind
+    let primary: Color
+    let secondary: Color
+    let glow: Color
+    let level: Int
+    let isPlaying: Bool
+    let isVisible: Bool
+    let reduceMotion: Bool
+
+    @State private var phase = 0.0
+    @State private var lastTick: Date?
+
+    private var isPaused: Bool {
+        level == 0 || !isPlaying || !isVisible || reduceMotion
+    }
+
+    private func point(x: Double, y: Double) -> UnitPoint {
+        UnitPoint(x: CGFloat(x), y: CGFloat(y))
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: isPaused)) { timeline in
+            GeometryReader { geometry in
+                field(size: geometry.size, phase: phase)
+            }
+            .onChange(of: timeline.date) { _, date in
+                advancePhase(at: date)
+            }
+        }
+        .onChange(of: isPaused) { _, _ in lastTick = nil }
+        .onAppear { lastTick = nil }
+        .onDisappear { lastTick = nil }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private func field(size: CGSize, phase: Double) -> some View {
+        let extent = max(size.width, size.height)
+        let strength = level == 1 ? 0.24 : 0.40
+
+        switch kind {
+        case .classic:
+            ZStack {
+                RadialGradient(
+                    colors: [glow.opacity(strength * 0.68), .clear],
+                    center: point(x: 0.22 + sin(phase * 0.70) * 0.12,
+                                  y: 0.31 + cos(phase * 0.53) * 0.10),
+                    startRadius: 8,
+                    endRadius: extent * 0.62
+                )
+                RadialGradient(
+                    colors: [primary.opacity(strength * 0.48), .clear],
+                    center: point(x: 0.78 + cos(phase * 0.43) * 0.09,
+                                  y: 0.70 + sin(phase * 0.61) * 0.11),
+                    startRadius: 16,
+                    endRadius: extent * 0.54
+                )
+                RadialGradient(
+                    colors: [secondary.opacity(strength * 0.34), .clear],
+                    center: point(x: 0.47 + sin(phase * 0.31) * 0.10,
+                                  y: 0.20 + cos(phase * 0.38) * 0.08),
+                    startRadius: 12,
+                    endRadius: extent * 0.46
+                )
+            }
+            .blendMode(.screen)
+
+        case .authenticAmbient:
+            RadialGradient(
+                colors: [glow.opacity(strength * 0.58), primary.opacity(strength * 0.18), .clear],
+                center: point(x: 0.36 + sin(phase * 0.34) * 0.14,
+                              y: 0.48 + cos(phase * 0.28) * 0.12),
+                startRadius: extent * 0.08,
+                endRadius: extent * 0.76
+            )
+            .blendMode(.screen)
+
+        case .ambient:
+            LinearGradient(
+                colors: [primary.opacity(strength * 0.52), .clear,
+                         secondary.opacity(strength * 0.24), glow.opacity(strength * 0.36)],
+                startPoint: point(x: 0.02 + sin(phase * 0.24) * 0.18, y: 0.05),
+                endPoint: point(x: 0.98 + cos(phase * 0.24) * 0.18, y: 0.95)
+            )
+            .blendMode(.screen)
+
+        case .ambientFeathered:
+            RadialGradient(
+                stops: [
+                    .init(color: secondary.opacity(strength * 0.36), location: 0),
+                    .init(color: glow.opacity(strength * 0.28), location: 0.42),
+                    .init(color: .clear, location: 1)
+                ],
+                center: point(x: 0.70 + cos(phase * 0.29) * 0.12,
+                              y: 0.46 + sin(phase * 0.32) * 0.10),
+                startRadius: 0,
+                endRadius: extent * 0.72
+            )
+            .blendMode(.screen)
+
+        case .stage:
+            RadialGradient(
+                colors: [glow.opacity(strength * 0.44), primary.opacity(strength * 0.12), .clear],
+                center: point(x: 0.50 + sin(phase * 0.22) * 0.13,
+                              y: 0.18 + cos(phase * 0.18) * 0.07),
+                startRadius: 4,
+                endRadius: extent * 0.43
+            )
+            .blendMode(.screen)
+
+        case .lyricsOnly:
+            LinearGradient(
+                colors: [.clear, primary.opacity(strength * 0.20), .clear],
+                startPoint: point(x: 0.06, y: 0.14 + sin(phase * 0.18) * 0.12),
+                endPoint: point(x: 0.88, y: 0.88 + cos(phase * 0.18) * 0.12)
+            )
+            .blendMode(.softLight)
+
+        case .albumPoster:
+            RadialGradient(
+                colors: [secondary.opacity(strength * 0.28), glow.opacity(strength * 0.18), .clear],
+                center: point(x: 0.20 + sin(phase * 0.16) * 0.06,
+                              y: 0.50 + cos(phase * 0.14) * 0.08),
+                startRadius: 0,
+                endRadius: extent * 0.46
+            )
+            .blendMode(.screen)
+        }
+    }
+
+    private func advancePhase(at date: Date) {
+        guard !isPaused else {
+            lastTick = nil
+            return
+        }
+        guard let lastTick else {
+            self.lastTick = date
+            return
+        }
+        let elapsed = min(0.10, max(0, date.timeIntervalSince(lastTick)))
+        let rate = level == 1 ? 0.11 : 0.15
+        phase += elapsed * rate
+        self.lastTick = date
+    }
+}
+
+private struct V3WindowVisibilityProbe: NSViewRepresentable {
+    @Binding var isVisible: Bool
+
+    func makeNSView(context: Context) -> V3WindowVisibilityTrackingView {
+        let view = V3WindowVisibilityTrackingView()
+        let binding = _isVisible
+        view.onVisibilityChange = { binding.wrappedValue = $0 }
+        return view
+    }
+
+    func updateNSView(_ nsView: V3WindowVisibilityTrackingView, context: Context) {
+        let binding = _isVisible
+        nsView.onVisibilityChange = { binding.wrappedValue = $0 }
+        nsView.refreshWindowObservers()
+    }
+
+    static func dismantleNSView(_ nsView: V3WindowVisibilityTrackingView, coordinator: ()) {
+        nsView.stopObserving()
+    }
+}
+
+private final class V3WindowVisibilityTrackingView: NSView {
+    var onVisibilityChange: ((Bool) -> Void)?
+    private weak var observedWindow: NSWindow?
+    private var observers: [NSObjectProtocol] = []
+    private var lastReportedVisibility: Bool?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        refreshWindowObservers()
+    }
+
+    func refreshWindowObservers() {
+        guard observedWindow !== window else {
+            reportVisibility()
+            return
+        }
+        stopObserving()
+        observedWindow = window
+        guard let window else {
+            reportVisibility()
+            return
+        }
+        observe(NSWindow.didChangeOcclusionStateNotification, object: window)
+        observe(NSWindow.didMiniaturizeNotification, object: window)
+        observe(NSWindow.didDeminiaturizeNotification, object: window)
+        observe(NSApplication.didHideNotification, object: NSApp)
+        observe(NSApplication.didUnhideNotification, object: NSApp)
+        reportVisibility()
+    }
+
+    func stopObserving() {
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+        observers.removeAll()
+        observedWindow = nil
+    }
+
+    private func observe(_ name: Notification.Name, object: AnyObject?) {
+        observers.append(NotificationCenter.default.addObserver(
+            forName: name,
+            object: object,
+            queue: .main
+        ) { [weak self] _ in
+            self?.reportVisibility()
+        })
+    }
+
+    private func reportVisibility() {
+        let visible = window.map {
+            $0.isVisible && $0.occlusionState.contains(.visible) && !NSApp.isHidden
+        } ?? false
+        guard lastReportedVisibility != visible else { return }
+        lastReportedVisibility = visible
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let current = self.window.map {
+                $0.isVisible && $0.occlusionState.contains(.visible) && !NSApp.isHidden
+            } ?? false
+            guard current == visible else {
+                self.reportVisibility()
+                return
+            }
+            self.onVisibilityChange?(current)
+        }
+    }
+}
+
 public struct AppleMusicImmersiveV3BackdropSnapshot: Sendable {
     public let artworkData: Data
     public let ambientArtworkData: Data
@@ -973,8 +1191,7 @@ public struct AppleMusicImmersiveV3BackdropSnapshot: Sendable {
 }
 
 /// Cached low-resolution artwork and optional procedural texture for V3.
-/// The key includes TrackIdentity so a reused cover URL on another track does
-/// not accidentally keep stale color treatment.
+/// The same artwork URL shares its sampled palette across listening surfaces.
 public actor AppleMusicImmersiveV3BackdropCache {
     public static let shared = AppleMusicImmersiveV3BackdropCache()
 

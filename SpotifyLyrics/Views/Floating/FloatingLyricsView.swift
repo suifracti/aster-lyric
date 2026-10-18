@@ -8,6 +8,7 @@ struct FloatingLyricsView: View {
     @ObservedObject var windowController: FloatingLyricsWindowController
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var islandAccent: Color = .accentColor
     @State private var isHovering = false
 
     private var presentationVersion: FloatingLyricsPresentationVersion {
@@ -44,68 +45,82 @@ struct FloatingLyricsView: View {
         .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: state.liveLyrics))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("悬浮歌词")
+        .lyricIslandSongTint(artworkURL: state.currentTrack.artworkURL, accent: $islandAccent)
     }
 
     private var toolbar: some View {
-        HStack(spacing: 8) {
-            Button { state.previousTrack() } label: { Image(systemName: "backward.fill").frame(width: 24, height: 26) }
-                .help("上一首")
-                .accessibilityLabel("上一首")
-            Button { state.togglePlayPause() } label: { Image(systemName: state.isPlaying ? "pause.fill" : "play.fill").frame(width: 24, height: 26) }
-                .help(state.isPlaying ? "暂停" : "播放")
-                .accessibilityLabel(state.isPlaying ? "暂停" : "播放")
-            Button { state.nextTrack() } label: { Image(systemName: "forward.fill").frame(width: 24, height: 26) }
-                .help("下一首")
-                .accessibilityLabel("下一首")
-            HStack(spacing: 5) {
-                Image(systemName: windowController.interactionMode == .locked ? "lock.fill" : "line.3.horizontal")
-                Text(windowController.interactionMode == .locked ? "已锁定" : "拖动移动")
-                    .lineLimit(1)
-            }
-            .font(.system(size: 10, weight: .medium))
-            .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
-            .overlay {
-                FloatingLyricsDragHandle(
-                    isEnabled: windowController.interactionMode == .interactive,
-                    onMouseDown: windowController.beginDragging
-                )
-            }
-            .help(windowController.interactionMode == .interactive ? "拖动这里移动桌面歌词" : "解锁后可移动桌面歌词")
-            Button { windowController.toggleStylePanel(settings: settings) } label: { Image(systemName: "textformat.size").frame(width: 26, height: 26) }
-                .help("桌面歌词样式")
-                .accessibilityLabel("桌面歌词样式")
-                .accessibilityValue(windowController.isStylePanelVisible ? "已打开" : "已关闭")
+        Group {
+            if windowController.interactionMode == .passThrough {
+                HStack(spacing: 6) {
+                    Image(systemName: "cursorarrow.slash")
+                    Text("鼠标穿透中 · ⌥⌘L 或菜单栏恢复")
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
+                .accessibilityLabel("鼠标穿透中，可按 Option Command L 或使用菜单栏恢复交互")
+            } else {
+                HStack(spacing: 8) {
+                    Button { state.previousTrack() } label: { Image(systemName: "backward.fill").frame(width: 24, height: 26) }
+                        .help("上一首")
+                        .accessibilityLabel("上一首")
+                    Button { state.togglePlayPause() } label: { Image(systemName: state.isPlaying ? "pause.fill" : "play.fill").frame(width: 24, height: 26) }
+                        .help(state.isPlaying ? "暂停" : "播放")
+                        .accessibilityLabel(state.isPlaying ? "暂停" : "播放")
+                    Button { state.nextTrack() } label: { Image(systemName: "forward.fill").frame(width: 24, height: 26) }
+                        .help("下一首")
+                        .accessibilityLabel("下一首")
+                    HStack(spacing: 5) {
+                        Image(systemName: windowController.interactionMode == .locked ? "lock.fill" : "line.3.horizontal")
+                        Text(windowController.interactionMode == .locked ? "已锁定 · 解锁后可拖动" : "拖动移动")
+                            .lineLimit(1)
+                    }
+                    .font(.system(size: 10, weight: .medium))
+                    .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
+                    .overlay {
+                        FloatingLyricsDragHandle(
+                            isEnabled: windowController.interactionMode == .interactive,
+                            onMouseDown: windowController.beginDragging
+                        )
+                    }
+                    .help(windowController.interactionMode == .interactive ? "拖动这里移动桌面歌词" : "解锁后可移动桌面歌词")
+                    Button { windowController.toggleStylePanel(settings: settings) } label: { Image(systemName: "textformat.size").frame(width: 26, height: 26) }
+                        .help("桌面歌词样式")
+                        .accessibilityLabel("桌面歌词样式")
+                        .accessibilityValue(windowController.isStylePanelVisible ? "已打开" : "已关闭")
 
-            Button {
-                windowController.toggleInteractionMode()
-            } label: {
-                Image(systemName: windowController.interactionMode == .locked ? "lock.open" : "lock")
-                    .frame(width: 26, height: 26)
+                    Button {
+                        windowController.toggleInteractionMode()
+                    } label: {
+                        Image(systemName: windowController.interactionMode == .locked ? "lock.open" : "lock")
+                            .frame(width: 26, height: 26)
+                    }
+                    .help(windowController.interactionMode == .locked ? "解锁悬浮歌词" : "锁定悬浮歌词")
+                    .accessibilityLabel(windowController.interactionMode == .locked ? "解锁悬浮歌词" : "锁定悬浮歌词")
+                    Button {
+                        windowController.setInteractionMode(.passThrough)
+                    } label: {
+                        Image(systemName: "cursorarrow.slash").frame(width: 26, height: 26)
+                    }
+                    .help("启用鼠标穿透；即使主窗口不接收鼠标，也可用 ⌥⌘L 从应用菜单恢复交互")
+                    .accessibilityLabel("启用鼠标穿透")
+                    Button { windowController.close() } label: {
+                        Image(systemName: "xmark").frame(width: 26, height: 26)
+                    }
+                    .help("隐藏悬浮歌词")
+                    .accessibilityLabel("隐藏悬浮歌词")
+                }
             }
-            .help(windowController.interactionMode == .locked ? "解锁悬浮歌词" : "锁定悬浮歌词")
-            .accessibilityLabel(windowController.interactionMode == .locked ? "解锁悬浮歌词" : "锁定悬浮歌词")
-            Button {
-                windowController.setInteractionMode(.passThrough)
-            } label: {
-                Image(systemName: "cursorarrow.slash").frame(width: 26, height: 26)
-            }
-            .help("启用鼠标穿透；即使主窗口不接收鼠标，也可用 ⌥⌘L 从应用菜单恢复交互")
-            .accessibilityLabel("启用鼠标穿透")
-            Button { windowController.close() } label: {
-                Image(systemName: "xmark").frame(width: 26, height: 26)
-            }
-            .help("隐藏悬浮歌词")
-            .accessibilityLabel("隐藏悬浮歌词")
         }
         .font(.system(size: 11, weight: .semibold))
         .buttonStyle(.plain)
         .foregroundStyle(.white.opacity(0.9))
         .padding(.horizontal, 10)
-        .background(Color.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.black.opacity(0.54), in: RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal, 6)
-        .opacity((isHovering || windowController.isStylePanelVisible) && windowController.interactionMode != .passThrough ? 1 : 0)
-        .allowsHitTesting((isHovering || windowController.isStylePanelVisible) && windowController.interactionMode != .passThrough)
-        .accessibilityHidden(windowController.interactionMode == .passThrough)
+        .opacity(windowController.interactionMode == .passThrough || isHovering || windowController.isStylePanelVisible ? 1 : 0)
+        .allowsHitTesting(windowController.interactionMode != .passThrough && (isHovering || windowController.isStylePanelVisible))
+        .accessibilityHidden(windowController.interactionMode != .passThrough && !isHovering && !windowController.isStylePanelVisible)
     }
 
     @ViewBuilder
@@ -393,6 +408,15 @@ struct FloatingLyricsView: View {
             }
         }
         .id("desktop-\(state.liveLyricsSessionRevision)-\(index)-\(settings.floatingDesktopLineMode)-\(settings.floatingDesktopCompanion)-\(preferences.showPinyin)-\(preferences.showKana)-\(conversion.rawValue)")
+        .overlay(alignment: .leading) {
+            if presentationVersion == .transparentV2, activeIndex != nil {
+                Capsule()
+                    .fill(islandAccent)
+                    .frame(width: 2, height: 20)
+                    .padding(.leading, 5)
+                    .accessibilityHidden(true)
+            }
+        }
     }
 
     @ViewBuilder

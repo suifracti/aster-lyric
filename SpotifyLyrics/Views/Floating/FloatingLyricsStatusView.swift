@@ -4,6 +4,7 @@ struct FloatingLyricsStatusView: View {
     let state: LyricsLoadState
     let message: String
     let title: String
+    @Environment(\.lyricIslandAccent) private var islandAccent
 
     private var statusTitle: String {
         switch state {
@@ -33,29 +34,37 @@ struct FloatingLyricsStatusView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(statusTitle, systemImage: symbol)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary)
+        HStack(alignment: .top, spacing: 10) {
+            Capsule()
+                .fill(islandAccent)
+                .frame(width: 2, height: 30)
+                .padding(.top, 2)
+                .accessibilityHidden(true)
 
-            if !title.isEmpty {
-                Text(title)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+            VStack(alignment: .leading, spacing: 8) {
+                Label(statusTitle, systemImage: symbol)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.primary)
 
-            if !message.isEmpty {
-                Text(message)
-                    .font(.system(size: 11, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+                if !title.isEmpty {
+                    Text(title)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
 
-            if case .candidates = state {
-                Text("请回到主窗口选择歌词候选")
-                    .font(.system(size: 10, design: .rounded))
-                    .foregroundStyle(.secondary)
+                if !message.isEmpty {
+                    Text(message)
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if case .candidates = state {
+                    Text("请回到主窗口选择歌词候选")
+                        .font(.system(size: 10, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
