@@ -290,8 +290,24 @@ public enum LyricsSafeMatcher {
                     add("missingFeaturedArtist", -0.05)
                 }
                 if !extra.isEmpty {
-                    incompleteArtistSet = true
-                    add("extraFeaturedArtist", -0.02)
+                    // Desktop playback often exposes only the primary artist.
+                    // Additional release credits alone do not change an otherwise
+                    // exact recording; explicit guest disagreements still do.
+                    let sameRelease = expectedFeatured.isEmpty && missing.isEmpty
+                        && candidateFeaturedInTitle.isEmpty && metadataFeaturedInTitle.isEmpty
+                        && metadata.verifiedSpotifyArtists.isEmpty
+                        && (reasons.contains("titleExact") || reasons.contains("titleTypographyExact"))
+                        && metadata.track.duration.isFinite && candidate.duration.isFinite
+                        && metadata.track.duration > 0 && candidate.duration > 0
+                        && abs(metadata.track.duration - candidate.duration) <= 2
+                        && TrackTextNormalizer.extractVersionTags(fromTitle: metadata.track.title)
+                            == TrackTextNormalizer.extractVersionTags(fromTitle: candidate.title)
+                    if sameRelease {
+                        add("collaboratorMetadataDifference", -0.02)
+                    } else {
+                        incompleteArtistSet = true
+                        add("extraFeaturedArtist", -0.02)
+                    }
                 }
             }
         }

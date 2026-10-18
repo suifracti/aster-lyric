@@ -222,7 +222,9 @@ public final class LyricsSearchManager: @unchecked Sendable {
         default: return false
         }
         return candidates.contains { candidate in
-            guard candidate.identity == metadata.identity, candidate.isSynchronized else { return false }
+            guard candidate.identity == metadata.identity,
+                  !candidate.requiresTextOnlyPreview,
+                  candidate.lines.contains(where: { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { return false }
             let decision = LyricsSafeMatcher.decide(candidate: candidate, metadata: metadata, aliasUsed: metadata.aliases.first { $0.id == variant.aliasIDs.first }, queryVariant: variant)
             return decision.tier == .autoHigh || decision.tier == .autoMedium
         }
@@ -232,7 +234,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         let list: [LyricsCandidate]
         switch probe.result {
         case .candidates(let candidates): list = candidates
-        case .match(let d): list = [LyricsCandidate(id: "plain", identity: d.identity, title: d.title ?? "", artist: d.artist ?? "", album: d.album ?? "", duration: d.duration ?? 0, lines: d.lines, isSynchronized: d.isSynchronized, source: d.source, confidence: d.confidence, spotifyTrackID: d.spotifyTrackID, isrc: d.isrc)]
+        case .match(let d): list = [LyricsCandidate(id: "plain", identity: d.identity, title: d.title ?? "", artist: d.artist ?? "", album: d.album ?? "", duration: d.duration ?? 0, lines: d.lines, isSynchronized: d.isSynchronized, source: d.source, confidence: d.confidence, providerSourceID: d.providerSourceID, spotifyTrackID: d.spotifyTrackID, isrc: d.isrc, language: d.language, explicitlyTimedLineIndices: d.explicitlyTimedLineIndices)]
         default: return nil
         }
         return list.first(where: { candidate in
@@ -657,7 +659,54 @@ public final class LyricsSearchManager: @unchecked Sendable {
             rejectedForExplanation.append(contentsOf: evaluatedCandidates.filter { $0.decision.tier == .reject })
 
             if !collectCandidatesOnly, let selected = Self.bestAutomaticAdoption(in: automaticAdoptions) {
-                let enriched = Self.finalizeDocument(selected.document, identity: identity)
+                var selectedDocument = selected.document
+                // Show the exact recording first. A metadata-only tempo catalog
+                // may have the same words plus a translation on its base release.
+                // Consult that source once, rather than exhaust every query alias.
+                let baseTitle = TrackTextNormalizer.stripVersionMarkers(fromTitle: track.title)
+                if meta.versionTags.contains(.spedUp), baseTitle != track.title,
+                   !selectedDocument.lines.contains(where: { !($0.translationText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                    let metadataOnlyIndices = Set(probeCache.values.flatMap { $0 }.compactMap { probe -> Int? in
+                        if case .failed(.lyricsBodyUnavailable) = probe.result { return probe.index }
+                        return nil
+                    })
+                    let companionProviders = configuredProviders.enumerated().compactMap { index, provider -> IndexedProvider? in
+                        guard metadataOnlyIndices.contains(index), provider.executionLane == .network else { return nil }
+                        return IndexedProvider(index: index, provider: provider)
+                    }.prefix(2)
+                    if !companionProviders.isEmpty {
+                        let companionTrack = Track(id: track.id, title: baseTitle, artist: track.artist,
+                            album: track.album, duration: track.duration)
+                        let companions = await withTaskGroup(of: ProviderProbeResult.self) { group in
+                            for provider in companionProviders {
+                                group.addTask { await Self.probe(provider, track: companionTrack, identity: identity) }
+                            }
+                            var results: [ProviderProbeResult] = []
+                            for await result in group { results.append(result) }
+                            return results.sorted { $0.index < $1.index }
+                        }
+                        guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics) }
+                        for probe in companions {
+                            diagnostics.append(LyricsProviderDiagnostic(provider: probe.provider.name + "@translation-companion",
+                                outcome: Self.diagnosticOutcome(probe.result), duration: probe.duration))
+                            let candidates: [LyricsCandidate]
+                            switch probe.result {
+                            case .candidates(let list): candidates = list
+                            case .match(let d): candidates = [LyricsCandidate(id: d.providerSourceID ?? "companion",
+                                identity: d.identity, title: d.title ?? "", artist: d.artist ?? "", album: d.album ?? "",
+                                duration: d.duration ?? 0, lines: d.lines, isSynchronized: d.isSynchronized,
+                                source: d.source, confidence: d.confidence, spotifyTrackID: d.spotifyTrackID, isrc: d.isrc)]
+                            default: candidates = []
+                            }
+                            if let merged = candidates.compactMap({ Self.mergingTranslationCompanion($0, into: selectedDocument, metadata: meta) }).first {
+                                selectedDocument = merged
+                                LyricsE2ELog.log("SEARCH translation-companion provider=\(probe.provider.name) matchedLines=\(merged.lines.count) timingTransferred=false")
+                                break
+                            }
+                        }
+                    }
+                }
+                let enriched = Self.finalizeDocument(selectedDocument, identity: identity)
                 let selectionPath = selected.cameFromCandidates ? "from-candidates" : "provider-result"
                 LyricsE2ELog.log("MANAGER AUTO_ADOPT \(selectionPath) provider=\(selected.providerName) strategy=\(variant.strategy.rawValue) kind=\(variant.queryKind.rawValue) tier=\(selected.decision.tier) score=\(selected.decision.score) timingPriority=\(selected.timingPriority) evidence=\(selected.decision.explanation.joined(separator: ";")) lines=\(enriched.lines.count) sync=\(enriched.isSynchronized)")
                 return SearchOutcome(result: .match(enriched), diagnostics: diagnostics,
@@ -830,6 +879,56 @@ public final class LyricsSearchManager: @unchecked Sendable {
             expiresAt: Date().addingTimeInterval(negativeCacheLifetime)
         )
         negativeCacheLock.unlock()
+    }
+
+    private static func diagnosticOutcome(_ result: LyricsLookupResult) -> LyricsProviderDiagnostic.Outcome {
+        switch result {
+        case .match: return .match
+        case .candidates(let list): return .candidates(list.count)
+        case .noMatch: return .noMatch
+        case .noLyrics: return .noLyrics
+        case .failed(let failure): return .failed(failure)
+        }
+    }
+
+    /// Only transfers the translation layer after every target line is found in
+    /// order. Provider timestamps, spans, original text and IDs are never copied.
+    static func mergingTranslationCompanion(_ donor: LyricsCandidate, into document: LyricsDocument,
+                                             metadata: TrackMetadata) -> LyricsDocument? {
+        guard donor.identity == document.identity, document.lines.count >= 3,
+              metadata.versionTags.contains(.spedUp) else { return nil }
+        let decision = LyricsSafeMatcher.decide(candidate: donor, metadata: metadata)
+        let targetTags = Set(metadata.versionTags)
+        let donorTags = Set(TrackTextNormalizer.extractVersionTags(fromTitle: donor.title))
+        guard !decision.hardReject, decision.reasons.contains("primaryArtistExact"),
+              decision.reasons.contains("tempoBaseTitleExact"),
+              targetTags.symmetricDifference(donorTags).subtracting([.spedUp, .remaster]).isEmpty else { return nil }
+        func key(_ text: String) -> String {
+            let folded = text.folding(options: [.caseInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            return String(String.UnicodeScalarView(folded.unicodeScalars.filter {
+                CharacterSet.alphanumerics.contains($0) || CharacterSet.nonBaseCharacters.contains($0)
+            }))
+        }
+        let donorKeys = donor.lines.map { key($0.originalText) }
+        var cursor = 0
+        var translated = 0
+        var merged: [LyricLine] = []
+        for line in document.lines {
+            let wanted = key(line.originalText)
+            guard !wanted.isEmpty,
+                  let index = donorKeys.indices.dropFirst(cursor).first(where: { donorKeys[$0] == wanted }) else { return nil }
+            cursor = index + 1
+            var copy = line
+            if (copy.translationText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               let translation = donor.lines[index].translationText,
+               !translation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                copy.translationText = translation
+                translated += 1
+            }
+            merged.append(copy)
+        }
+        guard translated > 0 else { return nil }
+        return document.replacingLines(merged)
     }
 
     private static func timingPriority(of candidate: LyricsCandidate) -> Int {

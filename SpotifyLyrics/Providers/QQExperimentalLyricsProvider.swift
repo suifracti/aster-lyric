@@ -57,11 +57,23 @@ public final class QQExperimentalLyricsProvider: LyricsProvider, @unchecked Send
                     )
                     synced = doc.isSynchronized
                 } else {
-                    lines = lyric.original
+                    let plainLines = lyric.original
                         .components(separatedBy: .newlines)
                         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                         .filter { !$0.isEmpty }
                         .map { LyricLine(timestamp: 0, originalText: $0) }
+                    let translated = PlainLyricsCompanionMerger.merge(
+                        lyric.translation,
+                        original: lyric.original,
+                        into: plainLines,
+                        layer: .translation
+                    )
+                    lines = PlainLyricsCompanionMerger.merge(
+                        lyric.romaji,
+                        original: lyric.original,
+                        into: translated,
+                        layer: .romaji
+                    )
                     synced = false
                 }
                 guard !lines.isEmpty else { continue }

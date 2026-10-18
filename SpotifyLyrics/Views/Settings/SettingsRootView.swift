@@ -40,7 +40,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     case experienceLibrary = "体验版本库"
 
     static var primaryCases: [SettingsCategory] {
-        [.general, .lyricsAndText, .appearance, .reading, .advancedAndData]
+        [.general, .lyricsAndText, .aiTranslation, .appearance, .reading, .advancedAndData]
     }
 
     var id: String { rawValue }
@@ -107,7 +107,6 @@ struct SettingsRootView: View {
     private var visibleCategories: [SettingsCategory] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !query.isEmpty { return SettingsCategory.allCases.filter { $0.matches(query) } }
-        if selection == .aiTranslation { return SettingsCategory.primaryCases + [.aiTranslation] }
         return SettingsCategory.primaryCases
     }
 

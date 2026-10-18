@@ -176,3 +176,51 @@ public enum TimedLyricsCompanionMerger {
         }
     }
 }
+
+/// Attaches untimed companion text by row order only when both feeds are plain
+/// text and have exactly the same number of non-empty rows.
+public enum PlainLyricsCompanionMerger {
+    private static let timestampExpression = try! NSRegularExpression(
+        pattern: #"\[\d+:\d+(?:[\.:]\d+)?\]|\[\d+,\d+(?:,\d+)?\]"#
+    )
+
+    public static func merge(
+        _ content: String?,
+        original: String,
+        into lines: [LyricLine],
+        layer: TimedLyricsCompanionLayer
+    ) -> [LyricLine] {
+        guard let content,
+              !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !containsTimestamp(in: original),
+              !containsTimestamp(in: content),
+              lines.allSatisfy({ $0.timestamp == 0 && $0.endTime == nil && !$0.hasTimedSpans }) else {
+            return lines
+        }
+
+        let companions = content
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !lines.isEmpty, companions.count == lines.count else { return lines }
+
+        let originalRows = original.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard originalRows == lines.map(\.originalText) else { return lines }
+        var mergedLines = lines
+        for (index, text) in companions.enumerated() {
+            switch layer {
+            case .translation:
+                mergedLines[index].translationText = text
+            case .romaji:
+                mergedLines[index].romajiText = text
+            }
+        }
+        return mergedLines
+    }
+
+    private static func containsTimestamp(in content: String) -> Bool {
+        let range = NSRange(content.startIndex..<content.endIndex, in: content)
+        return timestampExpression.firstMatch(in: content, range: range) != nil
+    }
+}

@@ -6,6 +6,29 @@ private struct FixtureProvider: LyricsProvider {
     var executionLane: LyricsProviderExecutionLane { .network }
     func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult { result }
 }
+private actor SearchProgress {
+    var queries = 0
+    var provisional = false
+    func began() { queries += 1 }
+    func published() { provisional = true }
+    func snapshot() -> (Int, Bool) { (queries, provisional) }
+}
+private struct TranslationCompanionProvider: LyricsProvider {
+    let progress: SearchProgress
+    let translated: [LyricLine]
+    var name: String { "translation-companion-fixture" }
+    var executionLane: LyricsProviderExecutionLane { .network }
+    func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult {
+        await progress.began()
+        if track.title != "アーカイブ" { return .failed(.lyricsBodyUnavailable("fixture metadata only")) }
+        // The plain exact original must be visible before this optional lookup.
+        let state = await progress.snapshot()
+        precondition(state.1, "optional translation search blocked first lyrics")
+        return .candidates([LyricsCandidate(id: "base-translation", identity: identity,
+            title: "アーカイブ", artist: "stb, NEA, ささ。", album: "アーカイブ", duration: 238.977,
+            lines: translated, isSynchronized: true, source: .neteaseExperimental, confidence: 0.8)])
+    }
+}
 @main struct SpedUpSearchContract {
     static func require(_ value: Bool, _ label: String) {
         if !value { print("FAIL: \(label)"); exit(1) }
@@ -72,6 +95,33 @@ private struct FixtureProvider: LyricsProvider {
             require(TrackTextNormalizer.stripVersionMarkers(fromTitle: title) == title, "ordinary title must remain intact")
         }
         require(LyricsQueryPlanner.plan(for: metadata).contains { $0.titleQuery == "アーカイブ" && $0.artistQuery == "stb" && $0.queryKind == .normalizedVersionTitleFullArtist }, "artist-scoped fallback missing")
+        let plainLines = ["自写甲：星の手紙", "自写乙：空を見よう", "自写丙：朝を待って"].map { LyricLine(timestamp: 0, originalText: $0) }
+        let plain = LyricsDocument(identity: metadata.identity, title: "アーカイブ (Sped Up Ver.)",
+            artist: "stb, NEA, ささ。", album: "アーカイブ", duration: 211.327, lines: plainLines,
+            isSynchronized: false, source: .qqExperimental, providerSourceID: "fixture-exact-plain")
+        let translated = plainLines.enumerated().map { i, line in
+            LyricLine(timestamp: Double(i + 1) * 10, originalText: line.originalText, translationText: "Self authored translation \(i)")
+        }
+        let donor = LyricsCandidate(id: "donor", identity: metadata.identity, title: "アーカイブ", artist: "stb, NEA, ささ。",
+            album: "アーカイブ", duration: 238.977, lines: translated, isSynchronized: true, source: .neteaseExperimental, confidence: 0.8)
+        let wrongWords = plain.replacingLines([plainLines[0], LyricLine(timestamp: 0, originalText: "a different verse"), plainLines[2]])
+        require(LyricsSearchManager.mergingTranslationCompanion(donor, into: wrongWords, metadata: metadata) == nil, "partial text overlap paired a different verse")
+        let reordered = plain.replacingLines(plainLines.reversed())
+        require(LyricsSearchManager.mergingTranslationCompanion(donor, into: reordered, metadata: metadata) == nil, "out of order text paired a different arrangement")
+        let pianoDonor = LyricsCandidate(id: "piano-donor", identity: metadata.identity, title: "アーカイブ (Piano Ver.)", artist: "stb",
+            album: "アーカイブ", duration: 240, lines: translated, isSynchronized: true, source: .neteaseExperimental, confidence: 0.8)
+        require(LyricsSearchManager.mergingTranslationCompanion(pianoDonor, into: plain, metadata: metadata) == nil, "piano arrangement supplied a tempo companion")
+        let progress = SearchProgress()
+        let plainOutcome = await LyricsSearchManager(providers: [
+            TranslationCompanionProvider(progress: progress, translated: translated),
+            FixtureProvider(name: "QQ plain", result: .match(plain))
+        ]).search(track: track, identity: metadata.identity, onProvisional: { _ in await progress.published() })
+        guard case .match(let paired) = plainOutcome.result else { require(false, "exact plain recording not automatically adopted"); return }
+        require(paired.lines.map(\.translationText) == translated.map(\.translationText), "identical original text did not recover source translation")
+        require(!paired.isSynchronized && paired.lines.map(\.timestamp) == plainLines.map(\.timestamp), "other tempo timestamps leaked")
+        require(paired.lines.map(\.id) == plainLines.map(\.id) && paired.providerSourceID == plain.providerSourceID, "companion replaced original identity")
+        let progressState = await progress.snapshot()
+        require(progressState.0 == 2 && progressState.1, "unnecessary query variants ran after exact plain match")
         let original = candidate()
         let d = LyricsSafeMatcher.decide(candidate: original, metadata: metadata)
         require(d.tier == .candidates && d.versionConflict && !d.hardReject, "same composition can preview text only, never auto adopt recording")
@@ -84,6 +134,17 @@ private struct FixtureProvider: LyricsProvider {
         }
         let plainTrack = Track(title:"アーカイブ", artist:"stb", album:"アーカイブ", duration:238.977, spotifyId:"2SufJjq3cM8qjsc6jhdRP6")
         require(!LyricsSafeMatcher.decide(candidate:original, metadata:TrackMetadata.bootstrap(from:plainTrack)).versionConflict, "ordinary recording wrongly marked tempo conflict")
+        // Playback exposes only the primary artist; providers include the release credits.
+        let credited = candidate(title: "アーカイブ (Sped Up Ver.)", duration: 211.327)
+        let creditedDecision = LyricsSafeMatcher.decide(candidate: credited, metadata: metadata)
+        require([.autoHigh, .autoMedium].contains(creditedDecision.tier), "same title/version/duration blocked by additional release credits")
+        require(creditedDecision.reasons.contains("collaboratorMetadataDifference"), "credit difference must be explicit, not unconfirmed")
+        let creditedOutcome = await LyricsSearchManager(providers: [FixtureProvider(name: "release-credits", result: .candidates([credited]))])
+            .search(track: track, identity: metadata.identity)
+        guard case .match = creditedOutcome.result else { require(false, "matching release credits forced full fallback search"); return }
+        for bad in [candidate(title: credited.title, duration: 238.977), candidate(title: "アーカイブ (Piano Ver.)", duration: 211.327), candidate(title: credited.title, artist: "Other Artist", duration: 211.327)] {
+            require(![.autoHigh, .autoMedium].contains(LyricsSafeMatcher.decide(candidate: bad, metadata: metadata).tier), "credit tolerance bypassed recording mismatch")
+        }
         let exact = candidate(title:track.title, artist:"stb", duration:211.327)
         let exactD = LyricsSafeMatcher.decide(candidate:exact, metadata:metadata)
         require(!exactD.versionConflict && [.autoHigh,.autoMedium].contains(exactD.tier), "matching tempo recording no longer usable")

@@ -236,19 +236,25 @@ public final class NetEaseExperimentalLyricsProvider: LyricsProvider, @unchecked
             )
         }
 
-        let plain = lyric.lrc
+        let plainLines = lyric.lrc
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && !$0.hasPrefix("[") }
             .map { LyricLine(timestamp: 0, originalText: $0) }
-        guard !plain.isEmpty else { return nil }
+        guard !plainLines.isEmpty else { return nil }
+        let lines = PlainLyricsCompanionMerger.merge(
+            lyric.tlyric,
+            original: lyric.lrc,
+            into: plainLines,
+            layer: .translation
+        )
         return LyricsDocument(
             identity: identity,
             title: song.name,
             artist: song.artists.joined(separator: ", "),
             album: song.album,
             duration: song.duration,
-            lines: plain,
+            lines: lines,
             isSynchronized: false,
             source: .neteaseExperimental,
             confidence: score(song: song, track: track),
