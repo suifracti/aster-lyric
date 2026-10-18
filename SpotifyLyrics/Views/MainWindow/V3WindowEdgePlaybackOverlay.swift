@@ -8,17 +8,21 @@ struct V3WindowEdgePlaybackOverlay: View {
     let colorHex: String
     let colorMode: String
     let exitPoint: CGPoint?
+    let pointerInsideWindow: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.v3PlaybackInteractionChanged) private var interactionChanged
     @State private var edgeHovered = false
     @State private var controlsHovered = false
+    @State private var trackedPointerInside: Bool?
     @State private var draftFraction: Double?
     @State private var dragTrackKey: String?
 
     private let borderInset: CGFloat = 1.5
     private let borderRadius: CGFloat = 12
-    private var progressVisible: Bool { edgeHovered || controlsHovered || draftFraction != nil }
+    private var progressVisible: Bool {
+        (trackedPointerInside ?? pointerInsideWindow) && (edgeHovered || controlsHovered || draftFraction != nil)
+    }
     private var animatesColor: Bool { colorMode == "flow" && !reduceMotion }
 
     var body: some View {
@@ -50,15 +54,6 @@ struct V3WindowEdgePlaybackOverlay: View {
                 V3WindowEdgeHitBand(inset: borderInset, cornerRadius: borderRadius)
                     .fill(Color.clear)
                     .contentShape(V3WindowEdgeHitBand(inset: borderInset, cornerRadius: borderRadius))
-                    .onContinuousHover { phase in
-                        switch phase {
-                        case .active(let location):
-                            let inside = V3WindowEdgeHitBand(inset: borderInset, cornerRadius: borderRadius)
-                                .path(in: CGRect(origin: .zero, size: size)).contains(location)
-                            if edgeHovered != inside { edgeHovered = inside }
-                        case .ended: edgeHovered = false
-                        }
-                    }
                     .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
                         .onChanged { value in updateDraft(at: value.location, size: size) }
                         .onEnded { value in finishSeek(at: value.location, size: size) })
@@ -75,10 +70,36 @@ struct V3WindowEdgePlaybackOverlay: View {
                                               isVertical: controlPosition.isVertical)
                     .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
                     .scaleEffect(controlPosition.scale)
+                    .opacity(progressVisible ? 1 : 0)
+                    .allowsHitTesting(progressVisible)
+                    .accessibilityHidden(!progressVisible)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: progressVisible)
                     .position(controlPosition.center)
-                    .onHover { controlsHovered = $0 }
             }
             .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .background(V3WindowEdgePointerTracker { point in
+                let wasVisible = progressVisible
+                let inside = point != nil
+                if trackedPointerInside != inside { trackedPointerInside = inside }
+                let onEdge = point.map {
+                    V3WindowEdgeHitBand(inset: borderInset, cornerRadius: borderRadius)
+                        .path(in: CGRect(origin: .zero, size: size)).contains($0)
+                } ?? false
+                let controlSize = CGSize(width: controlPosition.baseSize.width * controlPosition.scale,
+                                         height: controlPosition.baseSize.height * controlPosition.scale)
+                let controlRect = CGRect(x: controlPosition.center.x - controlSize.width / 2,
+                                         y: controlPosition.center.y - controlSize.height / 2,
+                                         width: controlSize.width, height: controlSize.height)
+                let onControls = wasVisible && (point.map { controlRect.contains($0) } ?? false)
+                if edgeHovered != onEdge { edgeHovered = onEdge }
+                if controlsHovered != onControls { controlsHovered = onControls }
+            })
+        }
+        .onChange(of: pointerInsideWindow) { _, inside in
+            if !inside && trackedPointerInside != true {
+                edgeHovered = false
+                controlsHovered = false
+            }
         }
         .onChange(of: state.currentTrackIdentity) { _, _ in
             if dragTrackKey != nil {
@@ -139,6 +160,60 @@ struct V3WindowEdgePlaybackOverlay: View {
             let hue = reduceMotion ? songHue : (songHue + date.timeIntervalSinceReferenceDate / 36).truncatingRemainder(dividingBy: 1)
             return Color(hue: hue, saturation: 0.68, brightness: 0.98)
         default: return V3WindowEdgeColor.color(from: colorHex)
+        }
+    }
+}
+
+/// Tracking stays active for an inactive window; this view never takes clicks.
+private struct V3WindowEdgePointerTracker: NSViewRepresentable {
+    let onMove: (CGPoint?) -> Void
+
+    func makeNSView(context: Context) -> TrackingView {
+        let view = TrackingView()
+        view.onMove = onMove
+        return view
+    }
+
+    func updateNSView(_ nsView: TrackingView, context: Context) {
+        nsView.onMove = onMove
+    }
+
+    final class TrackingView: NSView {
+        var onMove: (CGPoint?) -> Void = { _ in }
+        private var area: NSTrackingArea?
+        override var isFlipped: Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let area { removeTrackingArea(area) }
+            let next = NSTrackingArea(rect: .zero,
+                options: [.activeAlways, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect, .enabledDuringMouseDrag],
+                owner: self, userInfo: nil)
+            addTrackingArea(next)
+            area = next
+            // AppKit can update tracking during layout; defer SwiftUI state writes.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                guard let window = self.window, window.isVisible,
+                      NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0) == window.windowNumber
+                else { self.onMove(nil); return }
+                self.report(window.mouseLocationOutsideOfEventStream)
+            }
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            updateTrackingAreas()
+        }
+        override func mouseEntered(with event: NSEvent) { report(event.locationInWindow) }
+        override func mouseMoved(with event: NSEvent) { report(event.locationInWindow) }
+        override func mouseExited(with event: NSEvent) { onMove(nil) }
+
+        private func report(_ windowPoint: CGPoint) {
+            guard window != nil else { onMove(nil); return }
+            let local = convert(windowPoint, from: nil)
+            onMove(bounds.contains(local) ? local : nil)
         }
     }
 }

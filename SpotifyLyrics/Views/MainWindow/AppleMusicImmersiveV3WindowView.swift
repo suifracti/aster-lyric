@@ -230,7 +230,8 @@ struct AppleMusicImmersiveV3WindowView: View {
                         state: state,
                         colorHex: settings.v3EdgeProgressColorHex,
                         colorMode: settings.v3EdgeProgressColorMode,
-                        exitPoint: lastWindowExitPoint
+                        exitPoint: lastWindowExitPoint,
+                        pointerInsideWindow: isPointerInsideCanvas
                     )
                     .frame(width: geometry.size.width, height: geometry.size.height)
                 }
