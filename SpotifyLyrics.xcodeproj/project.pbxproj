@@ -122,6 +122,7 @@
 		110000AA2D83400100000001 /* ReadingLanguageGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000AA2D83400100000000 /* ReadingLanguageGate.swift */; };
 		110000AB2D83400100000001 /* AIReadingCandidateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000AB2D83400100000000 /* AIReadingCandidateService.swift */; };
 		110000502D83400100000001 /* AppleMusicImmersiveV3WindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000502D83400100000000 /* AppleMusicImmersiveV3WindowView.swift */; };
+		B31702F52C144DEE90000001 /* V3WindowEdgePlaybackOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = B31702F52C144DEE90000000 /* V3WindowEdgePlaybackOverlay.swift */; };
 		110000512D83400100000001 /* AppleMusicImmersiveV3BackdropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000512D83400100000000 /* AppleMusicImmersiveV3BackdropView.swift */; };
 		110001302D83400100000001 /* V3ResponsiveGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110001302D83400100000000 /* V3ResponsiveGeometry.swift */; };
 		110000522D83400100000001 /* DatabaseModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000522D83400100000000 /* DatabaseModels.swift */; };
@@ -340,6 +341,7 @@
 		110000AA2D83400100000000 /* ReadingLanguageGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingLanguageGate.swift; sourceTree = "<group>"; };
 		110000AB2D83400100000000 /* AIReadingCandidateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIReadingCandidateService.swift; sourceTree = "<group>"; };
 		110000502D83400100000000 /* AppleMusicImmersiveV3WindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicImmersiveV3WindowView.swift; sourceTree = "<group>"; };
+		B31702F52C144DEE90000000 /* V3WindowEdgePlaybackOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3WindowEdgePlaybackOverlay.swift; sourceTree = "<group>"; };
 		110000512D83400100000000 /* AppleMusicImmersiveV3BackdropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicImmersiveV3BackdropView.swift; sourceTree = "<group>"; };
 		110001302D83400100000000 /* V3ResponsiveGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3ResponsiveGeometry.swift; sourceTree = "<group>"; };
 		110000522D83400100000000 /* DatabaseModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseModels.swift; sourceTree = "<group>"; };
@@ -593,6 +595,7 @@
 				110000072D83400100000000 /* MainLyricsWindowView.swift */,
 				1100001D2D83400100000000 /* ImmersiveSplitWindowView.swift */,
 				110000502D83400100000000 /* AppleMusicImmersiveV3WindowView.swift */,
+				B31702F52C144DEE90000000 /* V3WindowEdgePlaybackOverlay.swift */,
 			);
 			path = MainWindow;
 			sourceTree = "<group>";
@@ -971,6 +974,7 @@
 				110000482D83400100000001 /* AlignmentService.swift in Sources */,
 				110000472D83400100000001 /* AlignmentModels.swift in Sources */,
 				110000502D83400100000001 /* AppleMusicImmersiveV3WindowView.swift in Sources */,
+				B31702F52C144DEE90000001 /* V3WindowEdgePlaybackOverlay.swift in Sources */,
 				110000512D83400100000001 /* AppleMusicImmersiveV3BackdropView.swift in Sources */,
 				110001302D83400100000001 /* V3ResponsiveGeometry.swift in Sources */,
 				110000432D83400100000001 /* NetEaseExperimentalLyricsProvider.swift in Sources */,

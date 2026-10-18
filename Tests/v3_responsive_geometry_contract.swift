@@ -52,12 +52,15 @@ struct V3ResponsiveGeometryContract {
                         )
                         let offset = V3ResponsiveGeometry.hiddenCoverVerticalOffset(
                             containerHeight: height, compositionHeight: coverSize + detailsHeight,
-                            coverSize: coverSize, scale: scale, compact: compact
+                            coverSize: coverSize, scale: scale, compact: compact,
+                            topChromeInset: 44
                         )
                         let oldCenter = (height - detailsHeight) / 2
                         let newCenter = oldCenter + offset
+                        let scaledHalfSize = coverSize * scale / 2
+                        let canvasCenter = min(max(height / 2 - 22, scaledHalfSize), height - scaledHalfSize)
                         precondition(offset >= 0, "centering reclaims hidden details space")
-                        precondition(abs(newCenter - height / 2) < 0.001, "hidden cover centers in the media column")
+                        precondition(abs(newCenter - canvasCenter) < 0.001, "hidden cover centers against the full canvas, accounting for the 44pt toolbar reserve")
                         precondition(newCenter - coverSize * scale / 2 >= -0.001, "expanded cover stays below the top boundary")
                         precondition(newCenter + coverSize * scale / 2 <= height + 0.001, "expanded cover stays above the bottom boundary")
                     }
@@ -66,6 +69,12 @@ struct V3ResponsiveGeometryContract {
         }
         precondition(V3ResponsiveGeometry.hiddenCoverVerticalOffset(containerHeight: 720, compositionHeight: 0, coverSize: 320, scale: 1.14, compact: false) == 0,
                      "a missing measurement must not cause a speculative jump")
+        let toolbarOffset = V3ResponsiveGeometry.hiddenCoverVerticalOffset(
+            containerHeight: 720, compositionHeight: 420, coverSize: 320,
+            scale: 1.14, compact: false, topChromeInset: 44
+        )
+        precondition(abs((310 + toolbarOffset) - 338) < 0.001,
+                     "a 44pt top toolbar reserve must not push the expanded cover 22pt below the canvas center")
         precondition(!V3ResponsiveGeometry.stagePlaybackDetailsVisible(pointerY: nil, canvasHeight: 800, previousVisible: true))
         precondition(!V3ResponsiveGeometry.stagePlaybackDetailsVisible(pointerY: 120, canvasHeight: 800, previousVisible: false))
         precondition(V3ResponsiveGeometry.stagePlaybackDetailsVisible(pointerY: 680, canvasHeight: 800, previousVisible: false))

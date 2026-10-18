@@ -40,6 +40,14 @@ grep -q 'v3BackdropBlurFeathered' "$SETTINGS" || {
 grep -q 'settings.v3ArtworkPresentation = style' "$WINDOW"
 grep -q 'V3ThemeSelectorView' "$WINDOW"
 grep -q 'showsForegroundArtwork' "$WINDOW"
+grep -q 'v3ShowForegroundArtwork' "$SETTINGS"
+grep -q 'Toggle("显示前景封面", isOn: \$settings.v3ShowForegroundArtwork)' "$WINDOW"
+grep -q 'lyricsOnlyLayout(in: geometry, hidesArtwork: true)' "$WINDOW"
+grep -q 'V3WindowEdgePlaybackOverlay' "$WINDOW"
+grep -q 'V3WindowEdgeProgressSettings' "$WINDOW"
+grep -q 'lastWindowExitPoint = pointerLocationBox.location' "$WINDOW"
+grep -q 'guard !settings.v3EdgeProgressEnabled else { return false }' "$WINDOW"
+grep -q 'topChromeInset: 44' "$WINDOW"
 grep -q 'blurControlTitle' "$SETTINGS" || {
   echo "V3 presentations must expose mode-specific blur semantics" >&2
   exit 1
@@ -94,7 +102,10 @@ assert 'artworkStylePicker' not in window and 'isStylePickerPresented' not in wi
 backdrop = (root/'SpotifyLyrics/Views/Components/AppleMusicImmersiveV3BackdropView.swift').read_text()
 start = backdrop.index('    private func gaussianArtworkLayers')
 end = backdrop.index('    @ViewBuilder', start)
-assert '.blur(radius: effectiveBlurRadius)' in backdrop[start:end]
+assert 'blur: effectiveBlurRadius' in backdrop[start:end]
 assert '.blendMode' not in backdrop[start:end], 'pure Gaussian must remain separate from light bloom'
+frame_start = backdrop.index('    private func framedArtwork')
+frame_end = backdrop.index('    private func classicArtworkOffset', frame_start)
+assert '.blur(radius: blur)' in backdrop[frame_start:frame_end]
 PYTEST
 echo "V3 artwork presentation contract passed"

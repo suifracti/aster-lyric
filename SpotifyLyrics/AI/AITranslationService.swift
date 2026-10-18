@@ -510,6 +510,7 @@ final class AIConversationStore: @unchecked Sendable {
     private let defaults: UserDefaults
     private let sessionLock = NSRecursiveLock()
     private let queue = AIConversationQueue()
+    private var codexSession: (executable: String, client: CodexAppServerClient, directory: URL)?
     init(defaults: UserDefaults) { self.defaults = defaults }
     func reuseEnabled(for provider: String) -> Bool {
         defaults.object(forKey: "ai.conversationReuse.v1." + provider) as? Bool ?? true
@@ -533,6 +534,11 @@ final class AIConversationStore: @unchecked Sendable {
     func startNew(for provider: String) {
         defaults.removeObject(forKey: "ai.conversationThread.v1." + provider)
         defaults.removeObject(forKey: "ai.conversationArchived.v1." + provider)
+        defaults.removeObject(forKey: "ai.conversationNotice.v1." + provider)
+    }
+    func recordContinuationNotice(for provider: String) {
+        defaults.set("原对话正由 Codex 窗口使用，已接续为应用专用分支；后续翻译复用此分支。",
+            forKey: "ai.conversationNotice.v1." + provider)
     }
     func withProviderSession<T: Sendable>(provider: String,
         operation: @Sendable () async throws -> T) async throws -> T {
@@ -545,6 +551,40 @@ final class AIConversationStore: @unchecked Sendable {
         sessionLock.lock(); defer { sessionLock.unlock() }
         return try work()
     }
+
+    func retainedCodexClient(executable: String, timeout: TimeInterval, attemptID: UUID?,
+                             diagnosticSink: @escaping CodexRPCDiagnostic.Sink) throws -> CodexAppServerClient {
+        if let session = codexSession,
+           session.executable == executable, session.client.isUsable {
+            session.client.beginRequest(timeout: timeout, attemptID: attemptID)
+            return session.client
+        }
+        releaseCodexClient()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("lyrics-conversation-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        do {
+            let client = try CodexAppServerClient(executable: executable, cwd: directory, timeout: timeout,
+                diagnosticSink: diagnosticSink, attemptID: attemptID, conversationStore: self)
+            codexSession = (executable, client, directory)
+            try client.initialize()
+            return client
+        } catch {
+            releaseCodexClient()
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
+    }
+
+    func releaseCodexClient() {
+        sessionLock.lock(); defer { sessionLock.unlock() }
+        guard let session = codexSession else { return }
+        codexSession = nil
+        session.client.stop()
+        try? FileManager.default.removeItem(at: session.directory)
+    }
+
+    deinit { releaseCodexClient() }
 }
 
 protocol CodexTranslationTransport: Sendable {
@@ -567,6 +607,21 @@ struct CodexAppServerTransport: CodexTranslationTransport {
             return try await Task.detached(priority: .userInitiated) {
                 let work = { () throws -> CodexTranslationResult in
                     try owner.checkCancellation()
+                    if let store = conversationStore,
+                       store.reuseEnabled(for: TranslationEngineID.codexChatGPT.rawValue) {
+                        let client = try store.retainedCodexClient(executable: executable, timeout: timeout,
+                            attemptID: attemptID, diagnosticSink: diagnosticSink)
+                        owner.install(client)
+                        defer { client.endRequest() }
+                        do {
+                            try client.ensureAuthenticated()
+                            return try client.translate(prompt: prompt, model: model,
+                                reasoningEffort: reasoningEffort, outputSchema: outputSchema)
+                        } catch {
+                            store.releaseCodexClient()
+                            throw error
+                        }
+                    }
                     let job = FileManager.default.temporaryDirectory.appendingPathComponent("lyrics-translation-" + UUID().uuidString)
                     try FileManager.default.createDirectory(at: job, withIntermediateDirectories: false,
                         attributes: [.posixPermissions: 0o700])
@@ -624,6 +679,8 @@ private final class CodexProcessOwner: @unchecked Sendable {
     }
 }
 
+private struct CodexConversationWriterBusy: Error {}
+
 final class CodexAppServerClient: @unchecked Sendable {
     private let process = Process()
     private let input: FileHandle
@@ -636,11 +693,11 @@ final class CodexAppServerClient: @unchecked Sendable {
     private var failure: AITranslationError?
     private var nextID = 1
     private var watchdog: DispatchWorkItem?
-    private let deadline: Date
+    private var deadline: Date
     private let diagnosticSink: CodexRPCDiagnostic.Sink
     private let diagnosticLock = NSLock()
     private let traceID = UUID()
-    private let attemptID: UUID?
+    private var attemptID: UUID?
     private let conversationStore: AIConversationStore?
     private let startedAt = ProcessInfo.processInfo.systemUptime
     private var phase = "launch"
@@ -689,6 +746,28 @@ final class CodexAppServerClient: @unchecked Sendable {
         let work = DispatchWorkItem { [weak self] in self?.abort(.timedOut) }
         watchdog = work
         DispatchQueue.global().asyncAfter(deadline: .now() + max(0.05, min(timeout, 600)), execute: work)
+    }
+
+    var isUsable: Bool {
+        condition.lock(); defer { condition.unlock() }
+        return process.isRunning && failure == nil && !eof
+    }
+
+    func beginRequest(timeout: TimeInterval, attemptID: UUID?) {
+        watchdog?.cancel()
+        diagnosticLock.lock(); self.attemptID = attemptID; diagnosticLock.unlock()
+        condition.lock()
+        deadline = Date().addingTimeInterval(max(0.05, min(timeout, 600)))
+        bytesReceived = buffer.count
+        condition.unlock()
+        let work = DispatchWorkItem { [weak self] in self?.abort(.timedOut) }
+        watchdog = work
+        DispatchQueue.global().asyncAfter(deadline: .now() + max(0.05, min(timeout, 600)), execute: work)
+    }
+
+    func endRequest() {
+        watchdog?.cancel()
+        watchdog = nil
     }
 
     private func diagnose(_ event: String, method: String? = nil, requestID: Int? = nil,
@@ -888,7 +967,15 @@ final class CodexAppServerClient: @unchecked Sendable {
             var resume = params.filter { resumeKeys.contains($0.key) }
             resume["threadId"] = threadID
             resume["excludeTurns"] = true
-            result = try request(method: "thread/resume", params: resume)
+            do {
+                result = try request(method: "thread/resume", params: resume)
+            } catch is CodexConversationWriterBusy {
+                // Another Codex window owns the old writer. Continue its history
+                // once in an app-owned branch; keep this connection for later songs.
+                resume["ephemeral"] = false
+                result = try request(method: "thread/fork", params: resume)
+                conversationStore?.recordContinuationNotice(for: provider)
+            }
         } else {
             result = try request(method: "thread/start", params: params)
         }
@@ -989,12 +1076,15 @@ final class CodexAppServerClient: @unchecked Sendable {
             outputTokens: output, reasoningOutputTokens: reasoning, totalTokens: total)
     }
 
-    private static func protocolError(_ error: [String: Any]) -> AITranslationError {
+    private static func protocolError(_ error: [String: Any], method: String? = nil) -> AITranslationError {
         let info = (error["data"] as? [String: Any])?["codexErrorInfo"] ?? error["codexErrorInfo"]
         if info as? String == "usageLimitExceeded" { return .codexQuotaExceeded }
         if info as? String == "rateLimitExceeded" { return .rateLimited }
         if info as? String == "unauthorized" { return .unauthorized }
         // Do not reflect arbitrary server error text into saved logs/UI.
+        if let method, let code = error["code"] as? Int {
+            return .codexUnavailable("协议请求失败（\(method)，代码 \(code)）")
+        }
         return .codexUnavailable("协议请求失败")
     }
 
@@ -1009,7 +1099,11 @@ final class CodexAppServerClient: @unchecked Sendable {
                 diagnose("rpc_response", method: method, requestID: id)
                 if let error = message["error"] as? [String: Any] {
                     diagnose("rpc_error", method: method, requestID: id)
-                    throw Self.protocolError(error)
+                    if method == "thread/resume", error["code"] as? Int == -32600,
+                       (error["message"] as? String)?.contains("already has an active writer") == true {
+                        throw CodexConversationWriterBusy()
+                    }
+                    throw Self.protocolError(error, method: method)
                 }
                 guard let result = message["result"] as? [String: Any] else { throw AITranslationError.codexResponseInvalid("协议响应缺少 result") }
                 return result

@@ -265,6 +265,9 @@ public final class AppSettingsStore: ObservableObject {
         public static let readingPreferences = "reading.preferences.v1"
         public static let v3PlaybackDetailsOnHover = "v3.playbackDetailsOnHover"
         public static let v3ExpandArtworkWhenDetailsHidden = "v3.expandArtworkWhenDetailsHidden.v1"
+        public static let v3ShowForegroundArtwork = "v3.showForegroundArtwork.v1"
+        public static let v3EdgeProgressEnabled = "v3.edgeProgress.enabled.v1"
+        public static let v3EdgeProgressColorHex = "v3.edgeProgress.colorHex.v1"
         public static let v3AmbientBackgroundShowsCompleteArtwork = "v3.ambientBackgroundShowsCompleteArtwork.v1"
         /// Preserved historical global offset. New runtime reads/writes use
         /// `lyricsOffsetStore`; this key is never migrated or overwritten.
@@ -564,6 +567,18 @@ public final class AppSettingsStore: ObservableObject {
         didSet { defaults.set(v3ExpandArtworkWhenDetailsHidden, forKey: Key.v3ExpandArtworkWhenDetailsHidden) }
     }
 
+    @Published public var v3ShowForegroundArtwork: Bool {
+        didSet { defaults.set(v3ShowForegroundArtwork, forKey: Key.v3ShowForegroundArtwork) }
+    }
+
+    @Published public var v3EdgeProgressEnabled: Bool {
+        didSet { defaults.set(v3EdgeProgressEnabled, forKey: Key.v3EdgeProgressEnabled) }
+    }
+
+    @Published public var v3EdgeProgressColorHex: String {
+        didSet { defaults.set(v3EdgeProgressColorHex, forKey: Key.v3EdgeProgressColorHex) }
+    }
+
     /// Ambient background framing is independent of foreground cover size.
     @Published public var v3AmbientBackgroundShowsCompleteArtwork: Bool {
         didSet { defaults.set(v3AmbientBackgroundShowsCompleteArtwork, forKey: Key.v3AmbientBackgroundShowsCompleteArtwork) }
@@ -854,6 +869,9 @@ public final class AppSettingsStore: ObservableObject {
         }
         self.v3PlaybackDetailsOnHover = defaults.bool(forKey: Key.v3PlaybackDetailsOnHover)
         self.v3ExpandArtworkWhenDetailsHidden = defaults.object(forKey: Key.v3ExpandArtworkWhenDetailsHidden) as? Bool ?? true
+        self.v3ShowForegroundArtwork = defaults.object(forKey: Key.v3ShowForegroundArtwork) as? Bool ?? true
+        self.v3EdgeProgressEnabled = defaults.object(forKey: Key.v3EdgeProgressEnabled) as? Bool ?? false
+        self.v3EdgeProgressColorHex = defaults.string(forKey: Key.v3EdgeProgressColorHex) ?? "FFFFFF"
         self.v3AmbientBackgroundShowsCompleteArtwork = defaults.bool(forKey: Key.v3AmbientBackgroundShowsCompleteArtwork)
         self.v3BackgroundFraming = defaults.dictionary(forKey: "v3.backgroundFramingByPresentation.v1") as? [String: Bool] ?? [:]
         var backgroundScales = defaults.dictionary(forKey: "v3.additionalBackdropScales.v1") as? [String: Double] ?? [:]

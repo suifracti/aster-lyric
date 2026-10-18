@@ -790,15 +790,7 @@ struct TranslationProviderControls: View {
                             }
                         }
                     } label: {
-                        HStack {
-                            Text("思考强度")
-                            Spacer()
-                            Text(reasoningSelectionLabel)
-                                .foregroundStyle(.secondary)
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        }
+                        Text("思考强度：\(reasoningSelectionLabel)")
                     }
                     .disabled((advertisedReasoningOptions ?? []).isEmpty)
                     .accessibilityIdentifier("ai.reasoningEffort")
@@ -842,6 +834,7 @@ private struct ProviderConversationControls: View {
     private let provider: String
     @AppStorage private var reuseConversation: Bool
     @AppStorage private var showConversation: Bool
+    @AppStorage private var continuationNotice: String
     @State private var conversationNotice = ""
 
     init(provider: String) {
@@ -850,6 +843,8 @@ private struct ProviderConversationControls: View {
             "ai.conversationReuse.v1." + provider, store: .lyricsQ)
         _showConversation = AppStorage(wrappedValue: true,
             "ai.conversationVisible.v1." + provider, store: .lyricsQ)
+        _continuationNotice = AppStorage(wrappedValue: "",
+            "ai.conversationNotice.v1." + provider, store: .lyricsQ)
     }
 
     private var canControlVisibility: Bool { provider == TranslationEngineID.codexChatGPT.rawValue }
@@ -886,13 +881,21 @@ private struct ProviderConversationControls: View {
                             conversationNotice = "尚未建立 Codex 对话。"
                             return
                         }
-                        _ = NSWorkspace.shared.open(url)
+                        Task {
+                            await Task.detached {
+                                AIConversationStore.shared.releaseCodexClient()
+                            }.value
+                            _ = NSWorkspace.shared.open(url)
+                        }
                     }
                     .buttonStyle(.borderless)
                 }
             }
             if !conversationNotice.isEmpty {
                 Text(conversationNotice).font(.caption).foregroundStyle(.secondary)
+            }
+            if !continuationNotice.isEmpty {
+                Text(continuationNotice).font(.caption).foregroundStyle(.secondary)
             }
         }
         .font(.callout)

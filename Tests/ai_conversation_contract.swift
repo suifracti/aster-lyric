@@ -2,7 +2,7 @@ import Foundation
 
 @main
 struct ConversationContract {
-    static func main() throws {
+    static func main() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("lyrics-conversation-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -62,6 +62,58 @@ for raw in sys.stdin:
         precondition(reopened.threadID(for: provider) == "conversation-one")
         reopened.startNew(for: provider)
         precondition(reopened.threadID(for: provider) == nil)
+        // A Codex window may have loaded a saved thread between app launches.
+        // Continue once, then keep the app-owned writer alive across translations.
+        let retainedDefaults = UserDefaults(suiteName: suite + ".retained")!
+        defer { retainedDefaults.removePersistentDomain(forName: suite + ".retained") }
+        let retained = AIConversationStore(defaults: retainedDefaults)
+        defer { retained.releaseCodexClient() }
+        retained.remember("external-writer", for: provider)
+        let persistentScript = root.appendingPathComponent("retained.py")
+        let persistentCode = #"""
+#!/usr/bin/python3
+import json,sys,os
+owned=False
+for raw in sys.stdin:
+    v=json.loads(raw);m=v.get('method');p=v.get('params',{})
+    if 'id' not in v:continue
+    with open(__file__+'.events','a') as f:f.write(json.dumps({'pid':os.getpid(),'method':m})+'\n')
+    if m=='initialize':r={}
+    elif m=='account/read':r={'account':{'type':'chatgpt'}}
+    elif m=='model/list':r={'data':[{'model':'fixture-model','supportedReasoningEfforts':[{'reasoningEffort':'medium'}]}]}
+    elif m=='thread/resume' and not owned:
+        print(json.dumps({'id':v['id'],'error':{'code':-32600,'message':'thread external-writer already has an active writer'}}),flush=True);continue
+    elif m in ['thread/fork','thread/resume']:
+        if m=='thread/fork':assert p['threadId']=='external-writer';owned=True
+        else:assert p['threadId']=='app-owned'
+        r={'thread':{'id':'app-owned','ephemeral':False},'model':'fixture-model','reasoningEffort':'medium'}
+    elif m=='thread/name/set':r={}
+    elif m=='turn/start':r={'turn':{'id':'next-turn'}}
+    else:sys.exit(73)
+    print(json.dumps({'id':v['id'],'result':r}),flush=True)
+    if m=='turn/start':
+        print(json.dumps({'method':'item/completed','params':{'threadId':'app-owned','turnId':'next-turn','item':{'type':'agentMessage','phase':'final_answer','text':p['input'][0]['text']}}}),flush=True)
+        print(json.dumps({'method':'turn/completed','params':{'threadId':'app-owned','turn':{'id':'next-turn','status':'completed'}}}),flush=True)
+"""#
+        try persistentCode.write(to: persistentScript, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: persistentScript.path)
+        let transport = CodexAppServerTransport(conversationStore: retained, diagnosticSink: { _ in })
+        for title in ["first-song", "second-song"] {
+            let result = try await transport.run(executable: persistentScript.path,
+                prompt: .init(system: "fixture", user: title, promptHash: title), model: "fixture-model",
+                reasoningEffort: "medium", timeout: 3, outputSchema: ["type": "object"])
+            precondition(result.text.hasSuffix(title))
+        }
+        let retainedRows = try String(contentsOfFile: persistentScript.path + ".events", encoding: .utf8)
+            .split(separator: "\n").map { try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any] }
+        precondition(Set(retainedRows.compactMap { $0["pid"] as? Int }).count == 1,
+            "two translations must retain the same app-server writer")
+        precondition(retainedRows.filter { $0["method"] as? String == "thread/fork" }.count == 1,
+            "only the externally owned conversation needs a continuation branch")
+        precondition(retainedRows.filter { $0["method"] as? String == "turn/start" }.count == 2)
+        precondition(retained.threadID(for: provider) == "app-owned")
+        precondition(retainedDefaults.string(forKey: "ai.conversationNotice.v1." + provider) != nil)
+        print("PASS: foreign writer continues once; second translation retains writer and conversation")
         print("PASS: one durable conversation, resume/hide/reopen, explicit new conversation and turn isolation")
     }
 }

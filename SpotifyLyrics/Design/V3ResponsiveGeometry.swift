@@ -302,7 +302,8 @@ enum V3ResponsiveGeometry {
         compositionHeight: CGFloat,
         coverSize: CGFloat,
         scale: CGFloat,
-        compact: Bool
+        compact: Bool,
+        topChromeInset: CGFloat = 0
     ) -> CGFloat {
         guard compositionHeight.isFinite, compositionHeight > 0 else { return 0 }
         let height = finitePositive(containerHeight)
@@ -310,9 +311,11 @@ enum V3ResponsiveGeometry {
         let scaledHalfSize = size * max(1, finiteValue(scale)) / 2
         let originalCenter = (height - compositionHeight + size) / 2
         guard scaledHalfSize <= height / 2, originalCenter >= 0 else { return 0 }
-        let desiredOffset = max(0, height / 2 - originalCenter)
-        let bottomLimit = max(0, height - scaledHalfSize - originalCenter)
-        return min(desiredOffset, bottomLimit)
+        // Split layouts reserve 44pt at the top for the toolbar. Their media
+        // column is therefore centered 22pt below the full canvas midpoint.
+        let desiredCenter = height / 2 - finiteNonNegative(topChromeInset) / 2
+        let boundedCenter = min(height - scaledHalfSize, max(scaledHalfSize, desiredCenter))
+        return boundedCenter - originalCenter
     }
 
     /// Stage playback controls use the full player canvas as their hit area.

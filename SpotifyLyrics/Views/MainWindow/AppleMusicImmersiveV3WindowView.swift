@@ -128,9 +128,11 @@ struct AppleMusicImmersiveV3WindowView: View {
     @State private var pointerLocationBox = V3PointerLocationBox()
     @State private var playbackRegion = CGRect.null
     @State private var isPlaybackInteracting = false
+    @State private var lastWindowExitPoint: CGPoint?
 
     private var playbackDetailsVisible: Bool {
-        V3ResponsiveGeometry.playbackDetailsVisible(
+        guard !settings.v3EdgeProgressEnabled else { return false }
+        return V3ResponsiveGeometry.playbackDetailsVisible(
             hoverOnly: settings.v3PlaybackDetailsOnHover,
             pointerInRegion: pointerRevealsPlayback,
             interacting: isPlaybackInteracting,
@@ -178,7 +180,9 @@ struct AppleMusicImmersiveV3WindowView: View {
     }
 
     private var showsForegroundArtwork: Bool {
-        compositionStyle != .stage && compositionStyle != .lyricsOnly
+        settings.v3ShowForegroundArtwork
+            && compositionStyle != .stage
+            && compositionStyle != .lyricsOnly
     }
 
     /// Stage has no foreground cover, so its size slider is consumed only by
@@ -220,6 +224,15 @@ struct AppleMusicImmersiveV3WindowView: View {
                 .frame(width: geometry.size.width, height: geometry.size.height)
 
                 layout(for: geometry)
+
+                if settings.v3EdgeProgressEnabled {
+                    V3WindowEdgePlaybackOverlay(
+                        state: state,
+                        colorHex: settings.v3EdgeProgressColorHex,
+                        exitPoint: lastWindowExitPoint
+                    )
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                }
 
                 HStack(spacing: 16) {
                     Spacer(minLength: 0)
@@ -276,6 +289,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                         }
                     }
                 case .ended:
+                    lastWindowExitPoint = pointerLocationBox.location
                     pointerLocationBox.location = nil
                     if isPointerInsideCanvas {
                         isPointerInsideCanvas = false
@@ -366,10 +380,29 @@ struct AppleMusicImmersiveV3WindowView: View {
     @ViewBuilder
     private func layout(for geometry: GeometryProxy) -> some View {
         if compositionStyle == .lyricsOnly {
-            lyricsOnlyLayout(in: geometry)
+            lyricsOnlyLayout(in: geometry, hidesArtwork: !settings.v3ShowForegroundArtwork)
         } else if compositionStyle == .stage {
             stageTheaterLayout(in: geometry)
-        } else if compositionStyle == .albumPoster {
+        } else {
+            Group {
+                if settings.v3ShowForegroundArtwork {
+                    foregroundArtworkLayout(in: geometry)
+                        .transition(reduceMotion ? .identity : .opacity)
+                } else {
+                    lyricsOnlyLayout(in: geometry, hidesArtwork: true)
+                        .transition(reduceMotion ? .identity : .opacity)
+                }
+            }
+            .animation(
+                reduceMotion ? nil : .easeInOut(duration: 0.22),
+                value: settings.v3ShowForegroundArtwork
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func foregroundArtworkLayout(in geometry: GeometryProxy) -> some View {
+        if compositionStyle == .albumPoster {
             if isAutomaticCompactLyricsFocus(in: geometry) {
                 lyricsOnlyLayout(in: geometry)
             } else if V3ResponsiveGeometry.foregroundLayout(
@@ -455,18 +488,20 @@ struct AppleMusicImmersiveV3WindowView: View {
         }
     }
 
-    private func lyricsOnlyLayout(in geometry: GeometryProxy) -> some View {
+    private func lyricsOnlyLayout(in geometry: GeometryProxy, hidesArtwork: Bool = false) -> some View {
         let compact = isCompact(for: geometry.size)
         let readingWidth = min(940, max(1, geometry.size.width - (compact ? 56 : 112)))
-        let headerHeight: CGFloat = compact ? 64 : 76
-        let footerHeight: CGFloat = 68
+        let headerHeight: CGFloat = hidesArtwork ? (compact ? 48 : 56) : (compact ? 64 : 76)
+        let footerHeight: CGFloat = settings.v3EdgeProgressEnabled && !isCompositionPreview ? 0 : 68
         let lyricHeight = max(1, geometry.size.height - 100 - headerHeight - footerHeight - 28)
 
         return VStack(spacing: 14) {
             HStack(spacing: 14) {
-                ArtworkView(track: compositionTrack, size: compact ? 44 : 52,
-                            showsAlbumLabel: false, cornerRadiusRatio: 0.12,
-                            preservesCompleteArtwork: true)
+                if !hidesArtwork {
+                    ArtworkView(track: compositionTrack, size: compact ? 44 : 52,
+                                showsAlbumLabel: false, cornerRadiusRatio: 0.12,
+                                preservesCompleteArtwork: true)
+                }
                 TrackMetadataView(track: compositionTrack, titleSize: compact ? 19 : 22,
                                   presentation: .v3Immersive)
                 Spacer(minLength: 0)
@@ -631,6 +666,7 @@ struct AppleMusicImmersiveV3WindowView: View {
                 coverSize: metrics.coverSize,
                 alignment: trackAlignment,
                 compact: isCompact,
+                topChromeInset: 44,
                 progressDensity: progressDensity
             )
         }
@@ -740,6 +776,7 @@ struct AppleMusicImmersiveV3WindowView: View {
             coverSize: coverSize,
             alignment: .center,
             compact: false,
+            topChromeInset: 44,
             progressDensity: regime == .wide ? .wide : .medium
         )
         let lyricsCol = lyricsColumn(width: split.lyrics, compact: false)
@@ -878,6 +915,7 @@ struct AppleMusicImmersiveV3WindowView: View {
         coverSize: CGFloat,
         alignment: HorizontalAlignment,
         compact: Bool,
+        topChromeInset: CGFloat = 0,
         progressDensity: AppleMusicImmersiveV3ProgressDensity = .medium
     ) -> some View {
         let visualScale = immersiveCoverScale(
@@ -893,7 +931,8 @@ struct AppleMusicImmersiveV3WindowView: View {
             compositionHeight: playbackRegion.isNull ? 0 : playbackRegion.height,
             coverSize: coverSize,
             scale: visualScale,
-            compact: compact
+            compact: compact,
+            topChromeInset: topChromeInset
         ) : 0
         return VStack(alignment: alignment, spacing: 0) {
             if showsForegroundArtwork {
@@ -4136,14 +4175,18 @@ private struct V3VisualTuningPopoverView: View {
             }
 
             // 2. 前景封面：尺寸、位置、隐藏播放信息时舒展
-            if settings.v3ArtworkPresentation != .lyricsOnly && settings.v3ArtworkPresentation != .stage {
-                Divider()
+            Divider()
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("前景封面")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("前景封面")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.primary)
 
+                Toggle("显示前景封面", isOn: $settings.v3ShowForegroundArtwork)
+                    .help("关闭后，有前景封面的主题会展开歌词布局；舞台与纯净歌词保持原布局。")
+                    .accessibilityIdentifier("v3.artwork.showForeground")
+
+                if settings.v3ArtworkPresentation != .lyricsOnly && settings.v3ArtworkPresentation != .stage {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text(settings.v3ArtworkPresentation.artworkSizeControlTitle)
@@ -4188,8 +4231,8 @@ private struct V3VisualTuningPopoverView: View {
                         || settings.v3ArtworkPresentation == .classic
                         || settings.v3ArtworkPresentation == .ambientFeathered {
                         Toggle("隐藏播放信息时舒展封面", isOn: $settings.v3ExpandArtworkWhenDetailsHidden)
-                            .disabled(!settings.v3PlaybackDetailsOnHover)
-                            .help("隐藏播放信息后，统一放大封面并在封面区域居中；关闭后保持设定的尺寸与位置。")
+                            .disabled(!settings.v3PlaybackDetailsOnHover && !settings.v3EdgeProgressEnabled)
+                            .help("隐藏播放信息后，统一放大封面并按窗口画布居中；关闭后保持设定的尺寸与位置。")
                             .accessibilityIdentifier("v3.artwork.expandWhenDetailsHidden")
                     }
                 }
@@ -4230,6 +4273,11 @@ private struct V3VisualTuningPopoverView: View {
                 Text("播放")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(.primary)
+
+                V3WindowEdgeProgressSettings(
+                    enabled: $settings.v3EdgeProgressEnabled,
+                    colorHex: $settings.v3EdgeProgressColorHex
+                )
 
                 VStack(alignment: .leading, spacing: 5) {
                     Toggle("悬停时显示播放信息", isOn: $settings.v3PlaybackDetailsOnHover)
