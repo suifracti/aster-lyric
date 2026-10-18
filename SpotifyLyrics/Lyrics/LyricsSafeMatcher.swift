@@ -698,16 +698,22 @@ public enum LyricsSafeMatcher {
     }
 
     private static func featuredBaseTitle(_ title: String) -> String {
-        let stripped = title.replacingOccurrences(of: #"[（(]\s*(?:feat\.?|ft\.?|featuring)\s+[^）)]+[）)]"#, with: "", options: [.regularExpression, .caseInsensitive])
+        let parenthesized = title.replacingOccurrences(of: #"[（(]\s*(?:feat\.?|ft\.?|featuring)\s+[^）)]+[）)]"#, with: "", options: [.regularExpression, .caseInsensitive])
+        let stripped = parenthesized.replacingOccurrences(of: #"\s+(?:feat\.?|ft\.?|featuring)\s+[^()（）]+$"#, with: "", options: [.regularExpression, .caseInsensitive])
         return TrackTextNormalizer.normalize(stripped)
     }
 
     private static func declaredFeaturedArtists(in title: String) -> [String] {
-        let pattern = #"[（(]\s*(?:feat\.?|ft\.?|featuring)\s+([^）)]+)[）)]"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
-        return regex.matches(in: title, range: NSRange(title.startIndex..., in: title)).flatMap { match in
-            guard let range = Range(match.range(at: 1), in: title) else { return [String]() }
-            return TrackTextNormalizer.artistTokens(String(title[range])).all
+        let patterns = [
+            #"[（(]\s*(?:feat\.?|ft\.?|featuring)\s+([^）)]+)[）)]"#,
+            #"\s+(?:feat\.?|ft\.?|featuring)\s+([^()（）]+)$"#
+        ]
+        return patterns.flatMap { pattern in
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [String]() }
+            return regex.matches(in: title, range: NSRange(title.startIndex..., in: title)).flatMap { match in
+                guard let range = Range(match.range(at: 1), in: title) else { return [String]() }
+                return TrackTextNormalizer.artistTokens(String(title[range])).all
+            }
         }
     }
 

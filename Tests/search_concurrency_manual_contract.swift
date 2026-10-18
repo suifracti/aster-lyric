@@ -182,7 +182,41 @@ private struct TypographyTitleProvider: LyricsProvider {
     }
 }
 
+private func runFeaturedTitleTailContract() {
+    let track = Track(title: "Kitto Kore wa Warui Yume (feat. Nurse Robot_Type T)",
+        artist: "tosho_aTe", album: "Kitto Kore wa Warui Yume", duration: 228.666)
+    var metadata = TrackMetadata.bootstrap(from: track)
+    metadata.verifiedSpotifyArtists = ["tosho_aTe", "Nurse Robot_Type t"]
+
+    func candidate(_ title: String, id: String) -> LyricsCandidate {
+        LyricsCandidate(id: id, identity: metadata.identity, title: title, artist: "tosho ate",
+            album: track.album, duration: 229,
+            lines: [LyricLine(timestamp: 0, originalText: "Fixture lyric")],
+            isSynchronized: true, source: .lrclib, confidence: 0.9, providerSourceID: id)
+    }
+
+    for marker in ["feat", "ft", "featuring"] {
+        let decision = LyricsSafeMatcher.decide(
+            candidate: candidate("kitto kore wa warui yume \(marker) nurse robot type t", id: "guest-\(marker)"),
+            metadata: metadata)
+        precondition((decision.tier == .autoHigh || decision.tier == .autoMedium)
+            && !decision.hardReject
+            && !decision.reasons.contains("missingFeaturedArtist")
+            && !decision.reasons.contains("extraFeaturedArtist"),
+            "matching trailing \(marker) guest should auto-match the verified recording: \(decision.explanation)")
+    }
+
+    let wrongGuest = LyricsSafeMatcher.decide(
+        candidate: candidate("kitto kore wa warui yume featuring Some Other Guest", id: "wrong-guest"),
+        metadata: metadata)
+    precondition((wrongGuest.tier == .candidates || wrongGuest.tier == .reject)
+        && !wrongGuest.hardReject,
+        "a different trailing guest must remain selectable or rejected, never auto-match: \(wrongGuest.explanation)")
+    print("PASS trailing feat/ft/featuring guests match only when the declared guest agrees")
+}
+
 private func runAliasRecallContracts() async {
+    runFeaturedTitleTailContract()
     let celebrationID = "4KSdoYvrxRIHyvIvMPBfgw"
     let hatsukoiID = "5EgW6VV9LW6xtgJ1sFN5RU"
     SpotifyAliasFixtureURLProtocol.reset([
@@ -292,6 +326,10 @@ private func runAliasRecallContracts() async {
 
 @main struct SearchConcurrencyManualContract {
     static func main() async {
+        if CommandLine.arguments.contains("--featured-title-tail") {
+            runFeaturedTitleTailContract()
+            return
+        }
         if CommandLine.arguments.contains("--alias-search-recall") {
             await runAliasRecallContracts()
             return
