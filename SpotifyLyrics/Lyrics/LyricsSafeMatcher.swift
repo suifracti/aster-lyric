@@ -169,10 +169,13 @@ public enum LyricsSafeMatcher {
             // have a persisted TrackAlias record. They still expand recall,
             // but receive less title evidence than a confirmed alias.
             add("titleAliasQuery", queryVariant.queryKind == .romajiAlias ? 0.10 : 0.12)
-        } else if titlesHaveSameReading(candidate.title, metadata.track.title) {
+        } else if titlesHaveSameReading(candidate.title, metadata.track.title, minimumLatinLength: 2) {
             // Provider titles can remain Japanese while Spotify localizes to Latin.
             // This is a full local reading comparison, not an echo of our query.
             add("titleReadingExact", 0.28)
+            if !titlesHaveSameReading(candidate.title, metadata.track.title) {
+                add("shortTitleReading", 0)
+            }
         } else if !candidateBaseTitle.isEmpty, candidateBaseTitle == metadataBaseTitle,
                   (TrackTextNormalizer.extractVersionTags(fromTitle: metadata.track.title).contains(.piano)
                    || TrackTextNormalizer.extractVersionTags(fromTitle: candidate.title).contains(.piano)) {
@@ -404,6 +407,9 @@ public enum LyricsSafeMatcher {
             if reasons.contains("titleParallelExact") || reasons.contains("titleLatinSpacingExact") {
                 tier = minTier(tier, metadataPrimaryMatches && reasons.contains("durationClose") ? .autoMedium : .candidates)
             }
+            if reasons.contains("shortTitleReading") && !hasStrongIndependentIdentity {
+                tier = minTier(tier, metadataPrimaryMatches && reasons.contains("durationClose") ? .autoMedium : .candidates)
+            }
             tier = minTier(tier, ceiling)
             if reasons.contains("titleProviderAliasConfirmed") || metadataPrimaryReadingMatches || reasons.contains("titleReadingExact") || reasons.contains("titleTypographyExact") { tier = minTier(tier, .autoMedium) }
             return LyricsMatchDecision(
@@ -465,6 +471,9 @@ public enum LyricsSafeMatcher {
         }
 
         if reasons.contains("titleParallelExact") || reasons.contains("titleLatinSpacingExact") {
+            tier = minTier(tier, metadataPrimaryMatches && reasons.contains("durationClose") ? .autoMedium : .candidates)
+        }
+        if reasons.contains("shortTitleReading") && !hasStrongIndependentIdentity {
             tier = minTier(tier, metadataPrimaryMatches && reasons.contains("durationClose") ? .autoMedium : .candidates)
         }
         return LyricsMatchDecision(
@@ -588,18 +597,20 @@ public enum LyricsSafeMatcher {
     }
     private static let titleReadings = TitleReadingCache()
 
-    private static func titlesHaveSameReading(_ lhs: String, _ rhs: String) -> Bool {
+    private static func titlesHaveSameReading(_ lhs: String, _ rhs: String, minimumLatinLength: Int = 3) -> Bool {
         func latinKey(_ value: String) -> String? {
             let folded = value.folding(options: [.diacriticInsensitive, .caseInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
             guard folded.unicodeScalars.allSatisfy({ $0.isASCII }) else { return nil }
             let key = folded.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }
             let result = String(String.UnicodeScalarView(key))
-            return result.count >= 3 ? result : nil
+            return result.count >= minimumLatinLength ? result : nil
         }
         func readingKey(_ japanese: String) -> String? {
             guard japanese.count <= 256,
                   japanese.unicodeScalars.contains(where: { (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value) }) else { return nil }
-            if let cached = titleReadings.values.object(forKey: japanese as NSString) { return cached as String }
+            if let cached = titleReadings.values.object(forKey: japanese as NSString) {
+                return cached.length >= minimumLatinLength ? cached as String : nil
+            }
             let romanized: String
             if !JapaneseKanaGenerator.hasKanji(japanese) {
                 romanized = JapaneseRomanizer.romanize(japanese)

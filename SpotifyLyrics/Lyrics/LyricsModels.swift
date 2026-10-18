@@ -358,9 +358,9 @@ public enum LyricsFailure: Error, Equatable, Sendable {
     /// The underlying failure remains available for recovery and diagnostics.
     public var recoveryMessage: String {
         switch self {
-        case .identityUnconfirmed(_, let sourceError):
+        case .identityUnconfirmed(_, let details):
             return "搜索结果未能确认与当前歌曲一致，可查找更多版本或手动搜索核对。"
-                + (sourceError.isEmpty ? "" : "部分来源同时失败：" + sourceError)
+                + (details.isEmpty ? "" : " " + details)
         case .networkUnavailable: return "网络暂时不可用，请检查连接后重试。"
         case .timedOut: return "歌词服务响应超时，可以稍后重试。"
         case .rateLimited: return "歌词服务限流，请稍后重试。"
@@ -385,9 +385,9 @@ public enum LyricsFailure: Error, Equatable, Sendable {
             return "歌词解析失败"
         case .cancelled:
             return "歌词请求已取消"
-        case .identityUnconfirmed(let count, let sourceError):
+        case .identityUnconfirmed(let count, let details):
             return "搜索累计有\(count)次候选判定未确认身份（可能重复，不代表可用歌词）。"
-                + (sourceError.isEmpty ? "" : "部分来源同时失败：" + sourceError)
+                + (details.isEmpty ? "" : " " + details)
         case .unknown(let message):
             return message.isEmpty ? "未知歌词错误" : message
         }

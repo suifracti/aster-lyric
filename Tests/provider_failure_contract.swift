@@ -305,6 +305,41 @@ struct ProviderFailureContract {
         precondition(identityFailure.recoveryMessage.contains("未能确认") && identityFailure.recoveryMessage.contains("限流"))
         precondition(unconfirmed.alternatives.isEmpty && unconfirmed.automaticDecision == nil,
             "presentation repair must not expose or auto-adopt a hard-rejected wrong artist")
+        let nearbyTitle = LyricsCandidate(id: "nearby-title", identity: identity, title: "另一种标题",
+            artist: track.artist, album: track.album, duration: track.duration + 0.1,
+            lines: [LyricLine(timestamp: 0, originalText: "Self-authored title mismatch fixture")],
+            source: .neteaseExperimental, confidence: 1)
+        let unrelatedTitle = LyricsCandidate(id: "unrelated-title", identity: identity, title: "无关长歌",
+            artist: track.artist, album: "Other Album", duration: track.duration + 90,
+            lines: nearbyTitle.lines, source: .neteaseExperimental, confidence: 1)
+        let titleMismatch = await LyricsSearchManager(providers: [
+            FixedLyricsProvider(name: "nearby-source", result: .candidates([unrelatedTitle, nearbyTitle])),
+            FixedLyricsProvider(name: "limited-source", result: .failed(.rateLimited(1)))
+        ]).search(track: track, identity: identity)
+        guard case .failed(let titleFailure) = titleMismatch.result else {
+            fatalError("title mismatch must remain a failed identity check")
+        }
+        precondition(titleFailure.recoveryMessage.contains("另一种标题")
+            && titleFailure.recoveryMessage.contains(track.title)
+            && titleFailure.recoveryMessage.contains("标题"),
+            "identity refusal must explain the nearest result's title mismatch")
+        precondition(!titleFailure.recoveryMessage.contains("无关长歌"), "explanation must exclude unrelated result noise")
+        precondition(titleFailure.recoveryMessage.contains("限流"), "identity detail must retain source failures")
+        precondition(titleMismatch.alternatives.isEmpty && titleMismatch.automaticDecision == nil,
+            "explanations must not loosen candidate or automatic adoption eligibility")
+        let localizedTrack = Track(title: "ai", artist: "LOVELY BOMB", album: "ai", duration: 168.58)
+        let localizedIdentity = TrackIdentity(track: localizedTrack)
+        let localizedCandidate = LyricsCandidate(id: "localized-title", identity: localizedIdentity, title: "愛",
+            artist: "LOVELY BOMB", album: "愛", duration: 168.646,
+            lines: [LyricLine(timestamp: 1, originalText: "Self-authored localization fixture")],
+            isSynchronized: true, source: .neteaseExperimental, confidence: 1)
+        let localizedResult = await LyricsSearchManager(providers: [
+            FixedLyricsProvider(name: "localized-source", result: .candidates([localizedCandidate]))
+        ]).search(track: localizedTrack, identity: localizedIdentity)
+        guard case .match(let localizedDocument) = localizedResult.result else {
+            fatalError("full manager must automatically select 愛 for ai with matching artist and duration")
+        }
+        precondition(localizedDocument.title == "愛" && localizedResult.automaticDecision != nil)
         let onlyLimited = await LyricsSearchManager(providers: [
             FixedLyricsProvider(name: "limited-source", result: .failed(.rateLimited(1)))
         ]).search(track: track, identity: identity)

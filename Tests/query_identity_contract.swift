@@ -115,6 +115,21 @@ struct QueryIdentityContract {
         let romanizedDecision = LyricsSafeMatcher.decide(candidate: japaneseTitle, metadata: romanizedMeta)
         require(romanizedDecision.tier == .autoMedium, "complete Japanese reading matching localized Latin title must auto-select instead of titleMismatch")
         require(romanizedDecision.reasons.contains("titleReadingExact") && !romanizedDecision.reasons.contains("titleMismatch"), "retain observed transliteration evidence without pretending literal title equality")
+        // Observed Spotify "ai" / NetEase "愛": same artist, 0.066s duration delta.
+        let shortTrack = Track(title: "ai", artist: "LOVELY BOMB", album: "ai", duration: 168.58)
+        let shortMetadata = TrackMetadata.bootstrap(from: shortTrack)
+        func shortCandidate(_ title: String = "愛", artist: String = "LOVELY BOMB", duration: Double = 168.646) -> LyricsCandidate {
+            candidate(identity: shortMetadata.identity, title: title, artist: artist, album: "愛", duration: duration)
+        }
+        let shortDecision = LyricsSafeMatcher.decide(candidate: shortCandidate(), metadata: shortMetadata)
+        require(shortDecision.tier == .autoMedium, "two-letter full Japanese reading with exact artist and duration must auto-select: \(shortDecision.explanation)")
+        require(shortDecision.reasons.contains("titleReadingExact"), "short reading retains actual reading evidence")
+        for item in [shortCandidate(artist: "薛之谦"), shortCandidate(duration: 0), shortCandidate(duration: 250), shortCandidate("藍色") ] {
+            let decision = LyricsSafeMatcher.decide(candidate: item, metadata: shortMetadata)
+            require(decision.tier != .autoHigh && decision.tier != .autoMedium, "short reading cannot adopt wrong artist, unknown/far duration or partial title")
+        }
+        let shortReverse = Track(title: "愛", artist: "LOVELY BOMB", album: "愛", duration: 168.646)
+        require(LyricsSafeMatcher.decide(candidate: candidate(identity: TrackIdentity(track: shortReverse), title: "ai", artist: "LOVELY BOMB", album: "ai", duration: 168.58), metadata: TrackMetadata.bootstrap(from: shortReverse)).tier == .autoMedium, "short reading must match in both directions")
         let reverseTrack = Track(title: "唄を教えてくれたあなたへ", artist: "ミセカイ", album: "Artrium", duration: 254)
         require(LyricsSafeMatcher.decide(candidate: candidate(identity: TrackIdentity(track: reverseTrack), title: "Uta o Oshietekureta Anata e", artist: "ミセカイ", album: "Artrium", duration: 254), metadata: TrackMetadata.bootstrap(from: reverseTrack)).tier == .autoMedium, "title reading works in both localization directions")
         let kanaTrack = Track(title: "Aoiharu", artist: "ミセカイ", album: "Artrium", duration: 180)

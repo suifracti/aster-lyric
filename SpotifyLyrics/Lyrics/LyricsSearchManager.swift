@@ -331,6 +331,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         LyricsE2ELog.log("MANAGER start title=\(track.title) artist=\(track.artist) variants=\(variants.count) providers=\(configuredProviders.map { $0.name }) queryOverride=\(queryOverride ?? "")")
         var diagnostics: [LyricsProviderDiagnostic] = []
         var acceptedCandidates: [String: LyricsCandidate] = [:]
+        var rejectedForExplanation: [EvaluatedCandidate] = []
         var sawNoLyrics = false
         var sawNoMatch = false
         var firstFailure: LyricsFailure?
@@ -664,6 +665,8 @@ public final class LyricsSearchManager: @unchecked Sendable {
             }
             guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics) }
 
+            rejectedForExplanation.append(contentsOf: evaluatedCandidates.filter { $0.decision.tier == .reject })
+
             // Explicit version browsing collects all enabled sources for this
             // query, but never turns a trusted result into an active selection.
             // Only use broader fallback queries when this batch found nothing.
@@ -690,7 +693,11 @@ public final class LyricsSearchManager: @unchecked Sendable {
 
         let rejected = diagnostics.flatMap(\.matchDecisions).filter { $0.tier == .reject }
         if !rejected.isEmpty {
-            return SearchOutcome(result: .failed(.identityUnconfirmed(rejected.count, SearchOutcome.sourceFailureSummary(for: diagnostics) ?? "")), diagnostics: diagnostics)
+            var details = Self.identityRejectionDetail(rejectedForExplanation, track: track)
+            if let sourceFailures = SearchOutcome.sourceFailureSummary(for: diagnostics) {
+                details += (details.isEmpty ? "" : " ") + "部分来源同时失败：" + sourceFailures
+            }
+            return SearchOutcome(result: .failed(.identityUnconfirmed(rejected.count, details)), diagnostics: diagnostics)
         }
         if firstFailure == nil, sawNoLyrics {
             storeNegativeResult(.noLyrics, for: cacheKey)
@@ -705,6 +712,35 @@ public final class LyricsSearchManager: @unchecked Sendable {
             return SearchOutcome(result: .failed(firstFailure), diagnostics: diagnostics)
         }
         return SearchOutcome(result: .noMatch, diagnostics: diagnostics)
+    }
+
+    /// Explain one relevant rejected result without turning it into a selectable candidate.
+    private static func identityRejectionDetail(_ evaluated: [EvaluatedCandidate], track: Track) -> String {
+        func relevance(_ item: EvaluatedCandidate) -> Int {
+            let reasons = item.decision.reasons
+            if !item.decision.hardReject, reasons.contains("primaryArtistExact"), reasons.contains("durationClose") { return 2 }
+            if reasons.contains("titleExact") || reasons.contains("titleReadingExact") || reasons.contains("titleTypographyExact") { return 1 }
+            return 0
+        }
+        guard let closest = evaluated.filter({ $0.decision.tier == .reject && relevance($0) > 0 }).max(by: {
+            if relevance($0) != relevance($1) { return relevance($0) < relevance($1) }
+            return $0.decision.score < $1.decision.score
+        }) else { return "" }
+        let item = closest.candidate
+        let reasons = closest.decision.reasons
+        var differences: [String] = []
+        if reasons.contains("titleMismatch") { differences.append("标题与当前“\(track.title)”不同") }
+        if reasons.contains("primaryArtistConflict") || reasons.contains("primaryArtistMissing") {
+            differences.append("歌手与当前“\(track.artist)”不符")
+        }
+        if reasons.contains("durationFar") || reasons.contains("durationQuestionable") {
+            differences.append("时长为 \(Int(item.duration.rounded())) 秒，与当前 \(Int(track.duration.rounded())) 秒不符")
+        }
+        if reasons.contains("spotifyIDConflict") || reasons.contains("isrcConflict") {
+            differences.append("来源指向另一首歌曲")
+        }
+        if differences.isEmpty { differences.append("歌曲信息尚未匹配") }
+        return "找到“\(item.title)”（\(item.artist)），但" + differences.joined(separator: "，") + "，未自动采用。"
     }
 
     public func clearNegativeCache() {
