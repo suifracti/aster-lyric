@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Draws playback progress around the main window and keeps transport controls
-/// close to the point where the pointer last left the window.
+/// anchored to the current approaching edge, without publishing every mouse move.
 struct V3WindowEdgePlaybackOverlay: View {
     @ObservedObject var state: PlaybackState
     let colorHex: String
@@ -12,16 +12,14 @@ struct V3WindowEdgePlaybackOverlay: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.v3PlaybackInteractionChanged) private var interactionChanged
-    @State private var edgeHovered = false
-    @State private var controlsHovered = false
-    @State private var trackedPointerInside: Bool?
+    @State private var edgeInteraction = V3WindowEdgeInteractionState()
     @State private var draftFraction: Double?
     @State private var dragTrackKey: String?
 
     private let borderInset: CGFloat = 1.5
     private let borderRadius: CGFloat = 12
     private var controlsVisible: Bool {
-        (trackedPointerInside ?? pointerInsideWindow) && (edgeHovered || controlsHovered || draftFraction != nil)
+        edgeInteraction.isVisible && edgeInteraction.pointerInside
     }
     private var animatesColor: Bool { colorMode == "flow" && !reduceMotion }
 
@@ -30,7 +28,7 @@ struct V3WindowEdgePlaybackOverlay: View {
             let size = geometry.size
             let songHue = V3WindowEdgeSongColor.hue(for: state.currentTrackIdentity?.stableKey ?? "no-track")
             let controlsAccent = accent(at: .now, songHue: songHue)
-            let controlPosition = V3WindowEdgeControlPositioner.layout(size: size, exitPoint: exitPoint)
+            let controlPosition = edgeInteraction.layout(size: size, fallbackExitPoint: exitPoint)
 
             ZStack(alignment: .topLeading) {
                 TimelineView(.animation(
@@ -76,27 +74,13 @@ struct V3WindowEdgePlaybackOverlay: View {
             }
             .frame(width: size.width, height: size.height, alignment: .topLeading)
             .background(V3WindowEdgePointerTracker { point in
-                let wasVisible = controlsVisible
-                let inside = point != nil
-                if trackedPointerInside != inside { trackedPointerInside = inside }
-                let onEdge = point.map {
-                    V3WindowEdgeHitBand(inset: borderInset, cornerRadius: borderRadius)
-                        .path(in: CGRect(origin: .zero, size: size)).contains($0)
-                } ?? false
-                let controlSize = CGSize(width: controlPosition.baseSize.width * controlPosition.scale,
-                                         height: controlPosition.baseSize.height * controlPosition.scale)
-                let controlRect = CGRect(x: controlPosition.center.x - controlSize.width / 2,
-                                         y: controlPosition.center.y - controlSize.height / 2,
-                                         width: controlSize.width, height: controlSize.height)
-                let onControls = wasVisible && (point.map { controlRect.contains($0) } ?? false)
-                if edgeHovered != onEdge { edgeHovered = onEdge }
-                if controlsHovered != onControls { controlsHovered = onControls }
+                updatePointer(point, size: size, dragging: draftFraction != nil)
             })
         }
         .onChange(of: pointerInsideWindow) { _, inside in
-            if !inside && trackedPointerInside != true {
-                edgeHovered = false
-                controlsHovered = false
+            // The local activeAlways tracker is authoritative for non-key windows.
+            if !inside && !edgeInteraction.pointerInside {
+                clearPointer()
             }
         }
         .onChange(of: state.currentTrackIdentity) { _, _ in
@@ -107,7 +91,22 @@ struct V3WindowEdgePlaybackOverlay: View {
                 interactionChanged(false)
             }
         }
-        .onDisappear { cancelDraft() }
+        .onDisappear {
+            cancelDraft()
+            clearPointer()
+        }
+    }
+
+    private func updatePointer(_ point: CGPoint?, size: CGSize, dragging: Bool) {
+        // Keep per-pixel input local. Only a visibility/anchor transition writes
+        // SwiftUI state, so idle/lyric-region mouse motion does not redraw views.
+        let next = edgeInteraction.updating(point: point, size: size, dragging: dragging)
+        if next != edgeInteraction { edgeInteraction = next }
+    }
+
+    private func clearPointer() {
+        let next = edgeInteraction.hiding()
+        if next != edgeInteraction { edgeInteraction = next }
     }
 
     private var border: V3WindowEdgeRoundedRectShape {
@@ -136,10 +135,14 @@ struct V3WindowEdgePlaybackOverlay: View {
         }
         guard dragTrackKey == state.currentTrackIdentity?.stableKey else { return }
         draftFraction = fraction
+        updatePointer(point, size: size, dragging: true)
     }
 
     private func finishSeek(at point: CGPoint, size: CGSize) {
-        defer { cancelDraft() }
+        defer {
+            cancelDraft()
+            updatePointer(point, size: size, dragging: false)
+        }
         guard canSeek, dragTrackKey == state.currentTrackIdentity?.stableKey,
               let fraction = V3ResponsiveGeometry.edgeProgressFraction(at: point, canvasSize: size) else { return }
         state.seek(to: fraction * state.currentTrack.duration, source: "v3-edge-progress")
@@ -434,8 +437,10 @@ private struct V3WindowEdgeRoundedRectShape: Shape {
     }
 }
 
+// BEGIN EDGE INTERACTION PURE CORE
+// Foundation geometry only. Tests compile this exact section on macOS/Linux.
 private enum V3WindowEdgeControlPositioner {
-    private enum Edge {
+    enum Edge: Equatable {
         case top, right, bottom, left
 
         var isVertical: Bool { self == .left || self == .right }
@@ -448,7 +453,7 @@ private enum V3WindowEdgeControlPositioner {
         let scale: CGFloat
     }
 
-    static func layout(size: CGSize, exitPoint: CGPoint?) -> Layout {
+    static func layout(size: CGSize, exitPoint: CGPoint?, preferredEdge: Edge? = nil) -> Layout {
         let width = max(0, size.width.isFinite ? size.width : 0)
         let height = max(0, size.height.isFinite ? size.height : 0)
         let defaultCenter = CGPoint(x: width / 2, y: height / 2)
@@ -470,7 +475,7 @@ private enum V3WindowEdgeControlPositioner {
                 (.bottom, height - point.y),
                 (.left, point.x)
             ]
-            edge = distances.min(by: { $0.1 < $1.1 })?.0 ?? .bottom
+            edge = preferredEdge ?? distances.min(by: { $0.1 < $1.1 })?.0 ?? .bottom
         } else {
             point = CGPoint(x: width / 2, y: height)
             edge = .bottom
@@ -518,6 +523,142 @@ private enum V3WindowEdgeControlPositioner {
         return min(max(value, lower), upper)
     }
 }
+
+/// No timer, display link, publisher, artwork access or text-layout work.
+/// The state contains only meaningful UI transitions, not the raw pointer stream.
+private struct V3WindowEdgeInteractionState: Equatable {
+    typealias Edge = V3WindowEdgeControlPositioner.Edge
+
+    struct Anchor: Equatable {
+        let edge: Edge
+        let fraction: CGFloat
+
+        func point(in size: CGSize) -> CGPoint {
+            switch edge {
+            case .top: return CGPoint(x: size.width * fraction, y: 0)
+            case .right: return CGPoint(x: size.width, y: size.height * fraction)
+            case .bottom: return CGPoint(x: size.width * fraction, y: size.height)
+            case .left: return CGPoint(x: 0, y: size.height * fraction)
+            }
+        }
+    }
+
+    // Design starting values in points, not claims of native hand-feel validation.
+    static let revealDistance: CGFloat = 30
+    static let keepDistance: CGFloat = 46
+    static let controlCorridor: CGFloat = 12
+    static let reanchorDistance: CGFloat = 96
+    static let cornerHysteresis: CGFloat = 6
+
+    private(set) var pointerInside = false
+    private(set) var isVisible = false
+    private(set) var anchor: Anchor?
+
+    func layout(size: CGSize, fallbackExitPoint: CGPoint?) -> V3WindowEdgeControlPositioner.Layout {
+        V3WindowEdgeControlPositioner.layout(
+            size: size,
+            exitPoint: anchor?.point(in: size) ?? fallbackExitPoint,
+            preferredEdge: anchor?.edge
+        )
+    }
+
+    func hiding() -> Self {
+        var result = self
+        result.pointerInside = false
+        result.isVisible = false
+        // Remember the last anchor for disappearance, but a real new approach
+        // always replaces it. A historical point can never override current input.
+        return result
+    }
+
+    func updating(point: CGPoint?, size: CGSize, dragging: Bool) -> Self {
+        guard size.width.isFinite, size.height.isFinite,
+              size.width > 0, size.height > 0,
+              let point, point.x.isFinite, point.y.isFinite,
+              point.x >= 0, point.y >= 0,
+              point.x <= size.width, point.y <= size.height else {
+            return hiding()
+        }
+
+        var result = self
+        result.pointerInside = true
+
+        // Do not summon a player over the existing traffic-light area.
+        // This changes passive discovery only; the seek hit band is untouched.
+        if point.x < 88 && point.y < 74 && !dragging {
+            result.isVisible = false
+            return result
+        }
+
+        if isVisible, let anchor {
+            if dragging { return result } // Keep the active gesture's anchor.
+            let positioned = layout(size: size, fallbackExitPoint: nil)
+            let width = positioned.baseSize.width * positioned.scale
+            let height = positioned.baseSize.height * positioned.scale
+            let corridor = CGRect(
+                x: positioned.center.x - width / 2,
+                y: positioned.center.y - height / 2,
+                width: width, height: height
+            ).insetBy(dx: -Self.controlCorridor, dy: -Self.controlCorridor)
+            if corridor.contains(point) { return result } // Buttons must not evade clicks.
+
+            let nearest = Self.nearestEdge(point: point, size: size)
+            let currentDistance = Self.distance(to: anchor.edge, point: point, size: size)
+            let nearestDistance = Self.distance(to: nearest, point: point, size: size)
+            let chosen = currentDistance <= nearestDistance + Self.cornerHysteresis ? anchor.edge : nearest
+
+            if chosen == anchor.edge && currentDistance <= Self.keepDistance {
+                let oldPoint = anchor.point(in: size)
+                let displacement = anchor.edge.isVertical ? abs(point.y - oldPoint.y) : abs(point.x - oldPoint.x)
+                // Reposition only after the pointer has clearly left this control
+                // cluster, never for the small movements required to click it.
+                if currentDistance <= Self.revealDistance && displacement > Self.reanchorDistance {
+                    result.anchor = Self.makeAnchor(edge: chosen, point: point, size: size)
+                }
+                return result
+            }
+            if nearestDistance <= Self.revealDistance {
+                result.anchor = Self.makeAnchor(edge: nearest, point: point, size: size)
+                return result
+            }
+            result.isVisible = false
+            return result
+        }
+
+        let nearest = Self.nearestEdge(point: point, size: size)
+        if dragging || Self.distance(to: nearest, point: point, size: size) <= Self.revealDistance {
+            result.anchor = Self.makeAnchor(edge: nearest, point: point, size: size)
+            result.isVisible = true
+        }
+        return result
+    }
+
+    private static func makeAnchor(edge: Edge, point: CGPoint, size: CGSize) -> Anchor {
+        let fraction = edge.isVertical ? point.y / size.height : point.x / size.width
+        return Anchor(edge: edge, fraction: min(max(fraction, 0), 1))
+    }
+
+    private static func nearestEdge(point: CGPoint, size: CGSize) -> Edge {
+        var edge = Edge.top
+        var distance = point.y
+        let right = size.width - point.x
+        if right < distance { edge = .right; distance = right }
+        let bottom = size.height - point.y
+        if bottom < distance { edge = .bottom; distance = bottom }
+        if point.x < distance { edge = .left }
+        return edge
+    }
+
+    private static func distance(to edge: Edge, point: CGPoint, size: CGSize) -> CGFloat {
+        switch edge {
+        case .top: return point.y
+        case .right: return size.width - point.x
+        case .bottom: return size.height - point.y
+        case .left: return point.x
+        }
+    }
+}
+// END EDGE INTERACTION PURE CORE
 
 private enum V3WindowEdgeColor {
     static func foreground(on color: Color) -> Color {
