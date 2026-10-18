@@ -9,19 +9,55 @@ permissions:
 jobs:
   source:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Export the exact tracked source, not user data
+      - name: Inspect official public provider structure (no credentials or lyric body export)
         shell: bash
         run: |
-          mkdir -p /tmp/lyric-export
-          git rev-parse HEAD > /tmp/lyric-export/SOURCE_SHA.txt
-          git archive --format=zip HEAD SpotifyLyrics SpotifyLyrics.xcodeproj Tests Scripts Tools generate_xcodeproj.py AGENTS.md docs/design > /tmp/lyric-export/source.zip
+          python3 -m pip -q install beautifulsoup4==4.13.4
+          mkdir -p /tmp/lyric-provider-shapes
+          python3 - <<'PY'
+          import json, urllib.request, pathlib, re
+          from bs4 import BeautifulSoup, Comment
+          urls = [
+            'https://www.tunecore.co.jp/artists',
+            'https://www.tunecore.co.jp/artists?id=582402&lang=en',
+            'https://www.tunecore.co.jp/artists?id=1077427&lang=en',
+            'https://linkco.re/YSn8Z79P?lang=en',
+            'https://linkco.re/YSn8Z79P?lang=ja',
+            'https://linkco.re/YSn8Z79P/songs/2380258/lyrics?lang=ja',
+            'https://linkco.re/Qq1pZPQT?lang=en'
+          ]
+          out = pathlib.Path('/tmp/lyric-provider-shapes')
+          summary = []
+          for i, url in enumerate(urls):
+              item = {'url': url}
+              try:
+                  req = urllib.request.Request(url, headers={'User-Agent':'LyricIsland-SourceCompatibility/1.0'})
+                  with urllib.request.urlopen(req, timeout=20) as response:
+                      data = response.read(1800000)
+                      item['status'] = response.status
+                  soup = BeautifulSoup(data, 'html.parser')
+                  item['title'] = soup.title.get_text(' ', strip=True) if soup.title else ''
+                  item['headings'] = [{'tag':t.name, 'text':t.get_text(' ', strip=True)[:140]} for t in soup.select('h1,h2,h3')[:30]]
+                  item['forms'] = [str(t) for t in soup.select('form')[:4]]
+                  item['scriptSources'] = [t.get('src') for t in soup.select('script[src]')]
+                  item['links'] = [{'href':a.get('href'),'text':a.get_text(' ',strip=True)[:120]} for a in soup.select('a[href]') if re.search(r'linkco\.re|/artists|spotify\.com|/songs/|\.js',a.get('href',''))][:200]
+                  # Export tag/attribute structure only, never copyrighted lyric lines.
+                  for t in soup.select('script,style,iframe,noscript'): t.decompose()
+                  for t in list(soup.find_all(string=True)):
+                      t.replace_with('' if isinstance(t,Comment) or not t.strip() else '[text]')
+                  (out / (str(i)+'.html')).write_text(str(soup),encoding='utf-8')
+              except Exception as e:
+                  item['error'] = type(e).__name__ + ': ' + str(e)
+              summary.append(item)
+          (out/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8')
+          PY
       - uses: actions/upload-artifact@v4
         with:
-          name: lyric-island-tracked-source
-          path: /tmp/lyric-export/
-          retention-days: 1
+          name: lyric-island-provider-structure
+          path: /tmp/lyric-provider-shapes/
+          retention-days: 2
