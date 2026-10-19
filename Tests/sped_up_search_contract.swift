@@ -122,6 +122,53 @@ private struct TranslationCompanionProvider: LyricsProvider {
         require(paired.lines.map(\.id) == plainLines.map(\.id) && paired.providerSourceID == plain.providerSourceID, "companion replaced original identity")
         let progressState = await progress.snapshot()
         require(progressState.0 == 2 && progressState.1, "unnecessary query variants ran after exact plain match")
+        var partiallyTranslatedLines = plainLines
+        partiallyTranslatedLines[0].translationText = "Keep this existing translation"
+        let partialProgress = SearchProgress()
+        let partialOutcome = await LyricsSearchManager(providers: [
+            TranslationCompanionProvider(progress: partialProgress, translated: translated),
+            FixtureProvider(name: "Partial QQ plain", result: .match(plain.replacingLines(partiallyTranslatedLines)))
+        ]).search(track: track, identity: metadata.identity, onProvisional: { _ in await partialProgress.published() })
+        guard case .match(let completedPartial) = partialOutcome.result else {
+            require(false, "partially translated exact recording not automatically adopted"); return
+        }
+        require(completedPartial.lines.map(\.translationText) == ["Keep this existing translation", "Self authored translation 1", "Self authored translation 2"],
+            "partial translation incorrectly skipped the bounded base-recording supplement")
+        require(completedPartial.lines.map(\.id) == plainLines.map(\.id)
+            && completedPartial.lines.map(\.timestamp) == plainLines.map(\.timestamp)
+            && !completedPartial.isSynchronized, "partial supplement changed selected original/timing")
+        let partialProgressState = await partialProgress.snapshot()
+        require(partialProgressState.0 == 2 && partialProgressState.1,
+            "partial translation supplement must reuse the same single bounded request")
+        var sparseTranslation = translated
+        sparseTranslation[2].translationText = nil
+        let multipleProgress = SearchProgress()
+        let multipleOutcome = await LyricsSearchManager(providers: [
+            TranslationCompanionProvider(progress: multipleProgress, translated: sparseTranslation),
+            TranslationCompanionProvider(progress: multipleProgress, translated: translated),
+            FixtureProvider(name: "Partial QQ plain", result: .match(plain.replacingLines(partiallyTranslatedLines)))
+        ]).search(track: track, identity: metadata.identity, onProvisional: { _ in await multipleProgress.published() })
+        guard case .match(let completedMultiple) = multipleOutcome.result else {
+            require(false, "multiple available supplements lost the selected recording"); return
+        }
+        require(completedMultiple.lines.map(\.translationText) == ["Keep this existing translation", "Self authored translation 1", "Self authored translation 2"],
+            "an incomplete first supplement discarded the second already returned translation")
+        let multipleProgressState = await multipleProgress.snapshot()
+        require(multipleProgressState.0 == 4, "supplement sources exceeded their existing two-source limit")
+        var completeLines = zip(plainLines, translated).map { original, donor in
+            var line = original
+            line.translationText = donor.translationText
+            return line
+        }
+        completeLines.insert(LyricLine(timestamp: 0, originalText: ""), at: 1)
+        let completeProgress = SearchProgress()
+        _ = await LyricsSearchManager(providers: [
+            TranslationCompanionProvider(progress: completeProgress, translated: translated),
+            FixtureProvider(name: "Complete QQ plain", result: .match(plain.replacingLines(completeLines)))
+        ]).search(track: track, identity: metadata.identity, onProvisional: { _ in await completeProgress.published() })
+        let completeProgressState = await completeProgress.snapshot()
+        require(completeProgressState.0 == 1, "blank rows must not request another translation for fully translated lyrics")
+        print("PASS partial translations completed without overwriting existing text/timing; fully translated blank rows do not fetch again")
         let original = candidate()
         let d = LyricsSafeMatcher.decide(candidate: original, metadata: metadata)
         require(d.tier == .candidates && d.versionConflict && !d.hardReject, "same composition can preview text only, never auto adopt recording")

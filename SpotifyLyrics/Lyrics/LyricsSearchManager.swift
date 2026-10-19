@@ -764,7 +764,10 @@ public final class LyricsSearchManager: @unchecked Sendable {
                 // Consult that source once, rather than exhaust every query alias.
                 let baseTitle = TrackTextNormalizer.stripVersionMarkers(fromTitle: track.title)
                 if meta.versionTags.contains(.spedUp), baseTitle != track.title,
-                   !selectedDocument.lines.contains(where: { !($0.translationText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                   selectedDocument.lines.contains(where: {
+                       !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                           && ($0.translationText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                   }) {
                     let metadataOnlyIndices = Set(probeCache.values.flatMap { $0 }.compactMap { probe -> Int? in
                         if case .failed(.lyricsBodyUnavailable) = probe.result { return probe.index }
                         return nil
@@ -800,7 +803,6 @@ public final class LyricsSearchManager: @unchecked Sendable {
                             if let merged = candidates.compactMap({ Self.mergingTranslationCompanion($0, into: selectedDocument, metadata: meta) }).first {
                                 selectedDocument = merged
                                 LyricsE2ELog.log("SEARCH translation-companion provider=\(probe.provider.name) matchedLines=\(merged.lines.count) timingTransferred=false")
-                                break
                             }
                         }
                     }
@@ -996,7 +998,10 @@ public final class LyricsSearchManager: @unchecked Sendable {
                                              metadata: TrackMetadata) -> LyricsDocument? {
         guard donor.identity == document.identity, document.lines.count >= 3,
               donor.lines.contains(where: { !($0.translationText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
-              document.lines.contains(where: { ($0.translationText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { return nil }
+              document.lines.contains(where: {
+                  !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                      && ($0.translationText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              }) else { return nil }
         let decision = LyricsSafeMatcher.decide(candidate: donor, metadata: metadata)
         let sameRecording = !decision.versionConflict && (decision.tier == .autoHigh || decision.tier == .autoMedium)
         let targetTags = Set(metadata.versionTags)
