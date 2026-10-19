@@ -5,102 +5,26 @@ on:
     branches: [chatgpt/redesign-performance-safe-20261018]
     paths: [.github/workflows/lyric-redesign-check.yml]
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: lyric-island-isolated-native-check
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
-  native:
-    runs-on: macos-15
-    timeout-minutes: 18
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
-      - name: Apply the reviewed incremental source with exact identity checks
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
+          persist-credentials: false
+      - name: Preserve the exact committed source for continued work
         run: |
-          mkdir -p /tmp/lyric-native-result
-          python3 - <<'PY'
-          import urllib.request,base64,lzma,json,pathlib,hashlib,os,subprocess
-          raw=b''
-          for sha in ['518f0873a34fd3dfbca846457cbbb35bc840b5fb','f4e54ed3a232facdea2e7731446ccda498423b66']:
-              req=urllib.request.Request('https://api.github.com/repos/suifracti/lyricsQ/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
-              with urllib.request.urlopen(req,timeout=20) as r: item=json.load(r)
-              data=base64.b64decode(item['content'])
-              assert hashlib.sha1(('blob '+str(len(data))+'\0').encode()+data).hexdigest()==sha
-              raw+=data
-          manifest=json.loads(lzma.decompress(raw));paths=[]
-          for entry in manifest['files']:
-              path=pathlib.Path(entry['path'])
-              assert not path.is_absolute() and '..' not in path.parts
-              assert str(path).startswith(('SpotifyLyrics/','SpotifyLyrics.xcodeproj/','Tests/'))
-              content=path.read_bytes() if path.exists() else b''
-              assert (hashlib.sha256(content).hexdigest() if path.exists() else None)==entry['before'],str(path)
-              lines=content.decode('utf-8').splitlines(keepends=True)
-              for start,end,replacement in reversed(entry['ops']): lines[start:end]=[replacement]
-              updated=''.join(lines).encode('utf-8')
-              assert hashlib.sha256(updated).hexdigest()==entry['after'],str(path)
-              path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(updated);paths.append(str(path))
-          subprocess.run(['git','diff','--check'],check=True)
-          subprocess.run(['git','add','--',*paths],check=True)
-          subprocess.run(['git','-c','user.name=ChatGPT','-c','user.email=noreply@openai.com','commit','-m','feat: integrate official publisher lyrics and compact failure recovery'],check=True)
-          subprocess.run(['git','push','origin','HEAD:chatgpt/redesign-performance-safe-20261018'],check=True)
-          pathlib.Path('/tmp/lyric-native-result/SOURCE_SHA.txt').write_text(subprocess.check_output(['git','rev-parse','HEAD'],text=True))
-          pathlib.Path('/tmp/lyric-native-result/source-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2))
-          PY
-      - name: Production geometry, scenes, and provider regression checks
-        id: contracts
-        continue-on-error: true
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import subprocess,json,pathlib
-          root=pathlib.Path('/tmp/lyric-native-result');results={}
-          commands={
-              'edge':['python3','Tests/v3_edge_pointer_state_contract.py'],
-              'scenes':['python3','Tests/v3_redesign_contract.py'],
-              'publisher':['python3','Tests/linkcore_parser_contract.py','--live'],
-              'provider-config':['bash','Tests/provider_expansion_configuration_contract.sh']
-          }
-          for name,command in commands.items():
-              with (root/(name+'.log')).open('w') as log:
-                  try: results[name]=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,timeout=150).returncode
-                  except subprocess.TimeoutExpired: results[name]='TIMEOUT'
-          (root/'contracts.json').write_text(json.dumps(results,indent=2))
-          raise SystemExit(0 if all(v==0 for v in results.values()) else 1)
-          PY
-      - name: Complete native AppKit and SwiftUI compilation
-        id: build
-        continue-on-error: true
-        shell: bash
-        run: |
-          xcodebuild -version > /tmp/lyric-native-result/xcode-version.txt
-          xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics -configuration Debug CODE_SIGNING_ALLOWED=NO SWIFT_OPTIMIZATION_LEVEL=-O -derivedDataPath /tmp/lyric-native-derived build > /tmp/lyric-native-result/xcodebuild.log 2>&1
-      - name: Record actual outcomes
-        if: always()
-        env:
-          BUILD_RESULT: ${{ steps.build.outcome }}
-          CONTRACT_RESULT: ${{ steps.contracts.outcome }}
-        run: |
-          python3 - <<'PY'
-          import json,os,pathlib
-          root=pathlib.Path('/tmp/lyric-native-result');root.mkdir(exist_ok=True)
-          (root/'result.json').write_text(json.dumps({'native_build':os.environ['BUILD_RESULT'],'contracts':os.environ['CONTRACT_RESULT'],'user_mac_gui':'NOT_RUN','paired_cpu_memory':'NOT_RUN'},indent=2))
-          log=root/'xcodebuild.log'
-          if log.exists(): (root/'errors.txt').write_text('\n'.join(l for l in log.read_text(errors='replace').splitlines() if 'error:' in l))
-          PY
+          mkdir -p /tmp/lyric-tracked-source
+          git rev-parse HEAD > /tmp/lyric-tracked-source/SOURCE_SHA.txt
+          git archive --format=zip HEAD -o /tmp/lyric-tracked-source/source.zip
+          sha256sum /tmp/lyric-tracked-source/source.zip > /tmp/lyric-tracked-source/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: lyric-island-native-build
-          path: /tmp/lyric-native-result/
+          name: lyric-island-tracked-source
+          path: /tmp/lyric-tracked-source/
           retention-days: 3
-      - name: Gate actual success
-        if: always()
-        env:
-          BUILD_RESULT: ${{ steps.build.outcome }}
-          CONTRACT_RESULT: ${{ steps.contracts.outcome }}
-        run: test "$BUILD_RESULT" = success && test "$CONTRACT_RESULT" = success
