@@ -876,7 +876,7 @@ private final class LyricIslandStatusTextView: NSView {
         }
         guard layer.animation(forKey: "lyric.marquee") == nil else { return }
         layer.transform = CATransform3DIdentity
-        let travel = min(60, max(2, Double(animationDistance) / 22))
+        let travel = max(2, Double(animationDistance) / 22) // Constant reading speed, even for a long line.
         let hold = 1.4
         let duration = 2 * (travel + hold)
         let animation = CAKeyframeAnimation(keyPath: "transform.translation.x")

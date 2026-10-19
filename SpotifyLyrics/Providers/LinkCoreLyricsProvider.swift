@@ -340,10 +340,10 @@ enum LinkCoreHTML {
     }
     static func lyricPage(_ html: String) -> LinkCoreLyricsPage? {
         guard html.utf8.count <= 1_500_000,
-              let header = capture(#"(?is)<section\b[^>]*\bclass\s*=\s*["'][^"']*\blyric_header\b[^"']*["'][^>]*>(.*?)</section\s*>"#, html),
+              let header = capture(#"(?is)<section\b[^>]*\bclass\s*=\s*(?:["'][^"']*\blyric_header\b[^"']*["']|lyric_header(?=[\s>]))[^>]*>(.*?)</section\s*>"#, html),
               let titleRaw = capture(#"(?is)<h2\b[^>]*>(.*?)</h2>"#, header),
               let artistRaw = capture(#"(?is)<h3\b[^>]*>(.*?)</h3>"#, header),
-              let block = capture(#"(?is)<div\b[^>]*\bclass\s*=\s*["'][^"']*\blyric_text\b[^"']*["'][^>]*>(.*?)</div\s*>"#, html) else { return nil }
+              let block = capture(#"(?is)<div\b[^>]*\bclass\s*=\s*(?:["'][^"']*\blyric_text\b[^"']*["']|lyric_text(?=[\s>]))[^>]*>(.*?)</div\s*>"#, html) else { return nil }
         let separated = replace(#"(?is)<\s*(?:/?p\b[^>]*|br\s*/?)>"#, block, with: "\n")
         let body = plain(separated)
         let lines = body.components(separatedBy: .newlines)

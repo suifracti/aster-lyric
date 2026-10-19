@@ -71,3 +71,14 @@ assert '.onChange(of: timeline.date)' not in backdrop[backdrop.index('struct V3A
 assert 'Timer.' not in controls and 'URLSession' not in controls
 assert '.activeAlways' in (ROOT/'SpotifyLyrics/Views/MainWindow/V3WindowEdgePlaybackOverlay.swift').read_text()
 print('PASS structural boundaries; native GUI/performance NOT_RUN')
+
+# A zero-height frame alone does not remove controls or their hit regions.
+focus=window[window.index('private func lyricsOnlyLayout'):window.index('private func albumPosterLayout')]
+assert 'if footerHeight > 0 {' in focus
+notes=window[window.index('private func linerNotesLayout'):window.index('private func sceneTransport')]
+assert 'coverColumnWidth / 1.4 * coverScale' in notes
+assert 'coverWidth * min(1,' not in notes
+menu=(ROOT/'SpotifyLyrics/Windows/MenuBarLyricsController.swift').read_text()
+assert 'Double(animationDistance) / 22' in menu and 'min(60, max(2' not in menu
+assert 'Double(input)' in controls and 'formatter.number(from: draft)' not in controls
+print('PASS empty playback footprint, finite cover scaling, full numeric input and constant marquee speed guards')

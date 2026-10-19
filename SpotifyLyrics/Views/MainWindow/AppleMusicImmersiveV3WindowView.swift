@@ -757,16 +757,18 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                          onSearch: { isSearchPresented = true })
                 .frame(width: readingWidth, height: lyricHeight)
 
-            Group {
-                if isCompositionPreview {
-                    compositionPreviewLabel
-                } else {
-                    AppleMusicImmersiveV3FocusTransportControls(state: state, reduceMotion: reduceMotion)
+            if footerHeight > 0 {
+                Group {
+                    if isCompositionPreview {
+                        compositionPreviewLabel
+                    } else {
+                        AppleMusicImmersiveV3FocusTransportControls(state: state, reduceMotion: reduceMotion)
+                    }
                 }
-            }
                 .frame(width: min(460, readingWidth), height: footerHeight)
                 .reportsV3PlaybackRegion()
                 .modifier(V3PlaybackVisibility(visible: isCompositionPreview || playbackDetailsVisible, reduceMotion: reduceMotion))
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.top, 76)

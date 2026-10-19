@@ -41,6 +41,11 @@ let body = "<section class='lyric_header'><h1>Lyrics</h1><h2>Example</h2><h3>Art
 let words = LinkCoreHTML.lyricPage(body)!
 expect(words.lines == ["Line & one", "Line 二", "Third <line>"], "HTML paragraph/BR/entity handling")
 expect(words.title == "Example" && words.artist == "Artist", "independent page metadata")
+// Production publisher HTML also uses valid, unquoted class attributes.
+let minified = body.replacingOccurrences(of: "class='lyric_header'", with: "class=lyric_header")
+    .replacingOccurrences(of: "class='lyric_text'", with: "class=lyric_text")
+expect(LinkCoreHTML.lyricPage(minified)?.lines == words.lines, "minified unquoted publisher classes")
+expect(LinkCoreHTML.lyricPage(body.replacingOccurrences(of: "class='lyric_text'", with: "class=lyric_text_other")) == nil, "unquoted class must be exact")
 expect(LinkCoreHTML.lyricPage("<h2>Catalog title only</h2>") == nil, "catalog is not a lyric body")
 expect(LinkCoreHTML.lyricPage(body.replacingOccurrences(of: "lyric_text", with: "lyric_credit")) == nil, "credits masquerading as lyrics")
 for raw in ["http://linkco.re/AAAA1234", "https://linkco.re.evil.invalid/a", "https://x@linkco.re/a", "https://linkco.re:8443/a", "file:///etc/passwd"] {
@@ -119,8 +124,8 @@ for (artistName,title) in [("SACBEN","HANABI"),("toh","WAITING AT 3AM")] {
         print("LIVE NOT_RUN body entity=\(id) HTTP=\(body.status) error=\(body.error)"); liveUnavailable += 1; continue
     }
     guard let page = LinkCoreHTML.lyricPage(html) else {
-        let header = marker(#"(?is)<section\b[^>]*\bclass\s*=\s*["'][^"']*\blyric_header\b[^"']*["'][^>]*>(.*?)</section\s*>"#, in: html)
-        let text = marker(#"(?is)<div\b[^>]*\bclass\s*=\s*["'][^"']*\blyric_text\b[^"']*["'][^>]*>(.*?)</div\s*>"#, in: html)
+        let header = marker(#"(?is)<section\b[^>]*\bclass\s*=\s*(?:["'][^"']*\blyric_header\b[^"']*["']|lyric_header(?=[\s>]))[^>]*>(.*?)</section\s*>"#, in: html)
+        let text = marker(#"(?is)<div\b[^>]*\bclass\s*=\s*(?:["'][^"']*\blyric_text\b[^"']*["']|lyric_text(?=[\s>]))[^>]*>(.*?)</div\s*>"#, in: html)
         print("LIVE FAIL body parse entity=\(id) HTTP=\(body.status) bytes=\(html.utf8.count) header=\(header) lyric_text=\(text)")
         liveFailures += 1; continue
     }
