@@ -343,20 +343,17 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     .frame(width: geometry.size.width, height: geometry.size.height)
                 }
 
-                if pinnedToolbarPanel != nil {
-                    V3PinnedInspectorPanelHost(
-                        isPresented: Binding(
-                            get: { pinnedToolbarPanel != nil },
-                            set: { presented in
-                                if !presented {
-                                    dismissPinnedToolbarPanel()
-                                }
-                            }
-                        ),
-                        title: pinnedToolbarPanel == .more ? "更多" : "调整",
-                        content: inspectorPanelContent(for: pinnedToolbarPanel ?? .adjust)
-                    )
-                    .frame(width: 0, height: 0)
+                // Pinned tools stay inside the window on the right, below the
+                // toolbar. No extra window takes key focus, so one click works,
+                // and the lyric canvas keeps its width (no re-layout).
+                if let pinned = pinnedToolbarPanel {
+                    inspectorSurface(for: pinned)
+                        .frame(width: min(340, max(260, geometry.size.width - 48)))
+                        .frame(maxHeight: min(780, geometry.size.height - 78))
+                        .padding(.top, 66)
+                        .padding(.trailing, 12)
+                        .padding(.bottom, 12)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
 
             }
@@ -1578,9 +1575,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     }
 
     private func toolbarTriggerHover(_ panel: ToolbarPopover, inside: Bool) {
-        // The tall adjustment panel opens only on click (pinned beside the
-        // window) so passing over the toolbar never covers the lyric column.
-        guard pinnedToolbarPanel == nil, panel != .adjust else { return }
+        guard pinnedToolbarPanel == nil else { return }
         if inside {
             hoveredToolbarTrigger = panel
             presentToolbarPopover(panel)
@@ -1649,16 +1644,21 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             } label: {
                 toolbarEntry("译文", symbol: "character.bubble")
             }.help("显示译文、选择已有版本或翻译本首")
+            toolbarPanelButton("调整", symbol: "slider.horizontal.3", panel: .adjust)
+                .accessibilityIdentifier("appearance.shortcut")
+            toolbarPanelButton("更多", symbol: "ellipsis", panel: .more)
+
+            // Global, low-frequency settings sit at the trailing end, apart
+            // from the listening tools.
+            Rectangle().fill(Color.white.opacity(0.18)).frame(width: 1, height: 18)
+                .padding(.horizontal, 2)
             Button {
+                dismissPinnedToolbarPanel()
                 if liveOnly { MenuBarLyricsController.shared.openSettings() }
                 else { openSettings() }
             } label: {
                 toolbarEntry("设置", symbol: "gearshape")
             }.help("应用设置与 AI 服务")
-
-            toolbarPanelButton("调整", symbol: "slider.horizontal.3", panel: .adjust)
-                .accessibilityIdentifier("appearance.shortcut")
-            toolbarPanelButton("更多", symbol: "ellipsis", panel: .more)
         }
         .background {
             Button("翻译与读音") {
@@ -1836,40 +1836,60 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
     private func inspectorSurface(for panel: ToolbarPopover) -> some View {
         VStack(spacing: 0) {
+            // "More" brings its own header; the adjustment page gets the same
+            // title and close button here.
+            if panel != .more {
+                HStack {
+                    Text("调整").font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Spacer(minLength: 4)
+                    Button(action: dismissPinnedToolbarPanel) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 24, height: 24)
+                            .background(Color.white.opacity(0.10), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .help("关闭（Esc）")
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+            }
             inspectorPanelContent(for: panel)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.regularMaterial)
-        .overlay(alignment: .leading) {
-            Rectangle().fill(Color.white.opacity(0.12)).frame(width: 1)
-        }
+        // Near-opaque neutral surface: readable over bright artwork and no
+        // live blur sampling of the animated backdrop.
+        .background(Color(white: 0.11).opacity(0.96),
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.7))
+        .shadow(color: .black.opacity(0.28), radius: 18, x: 0, y: 6)
+        .preferredColorScheme(.dark)
+        .environment(\.colorScheme, .dark)
         .onExitCommand { dismissPinnedToolbarPanel() }
     }
 
     private var moreInspectorContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("LYRIC ISLAND")
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
-                        .tracking(1.5)
-                        .foregroundStyle(.secondary)
-                    Text("更多")
-                        .font(.system(size: 19, weight: .semibold, design: .rounded))
-                }
+            HStack {
+                Text("更多").font(.system(size: 15, weight: .semibold, design: .rounded))
                 Spacer(minLength: 4)
-                Button(action: dismissPinnedToolbarPanel) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(width: 26, height: 26)
-                        .background(.quaternary.opacity(0.5), in: Circle())
+                if pinnedToolbarPanel == .more {
+                    Button(action: dismissPinnedToolbarPanel) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 24, height: 24)
+                            .background(Color.white.opacity(0.10), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .keyboardShortcut(.cancelAction)
+                    .help("关闭（Esc）")
                 }
-                .buttonStyle(.plain)
-                .keyboardShortcut(.cancelAction)
-                .help("关闭")
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 16)
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
             .padding(.bottom, 12)
 
             Divider()

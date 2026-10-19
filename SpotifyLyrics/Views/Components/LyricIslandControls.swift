@@ -122,19 +122,22 @@ private struct LyricIslandReadingProtection: ViewModifier {
         if reduceTransparency { return 0.88 }
         if policy == .enhanced || contrast == .increased { return 0.64 }
         // Local reading field; no full-screen veil and no frame-by-frame sampling.
-        return min(0.62, max(0.12, (luminance - 0.16) * 0.90 + 0.12))
+        return min(0.45, max(0.12, (luminance - 0.16) * 0.90 + 0.12))
     }
+    private static let fade = [Gradient.Stop(color: .clear, location: 0),
+                               .init(color: .white, location: 0.12),
+                               .init(color: .white, location: 0.88),
+                               .init(color: .clear, location: 1)]
     func body(content: Content) -> some View {
         content
             .background {
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                // Feathered on all four edges so bright covers get a soft
+                // shade behind the text instead of a hard grey slab.
+                Rectangle()
                     .fill(Color.black.opacity(opacity))
                     .mask {
-                        LinearGradient(stops: [.init(color: .clear, location: 0),
-                                               .init(color: .white, location: 0.10),
-                                               .init(color: .white, location: 0.90),
-                                               .init(color: .clear, location: 1)],
-                                       startPoint: .top, endPoint: .bottom)
+                        LinearGradient(stops: Self.fade, startPoint: .top, endPoint: .bottom)
+                            .mask(LinearGradient(stops: Self.fade, startPoint: .leading, endPoint: .trailing))
                     }
                     .allowsHitTesting(false)
             }
