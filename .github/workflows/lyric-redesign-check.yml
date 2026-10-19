@@ -1,57 +1,51 @@
-name: Lyric Island isolated source check
+name: Lyric Island native source check
 on:
   workflow_dispatch:
   push:
-    branches: [chatgpt/redesign-performance-safe-20261018]
-    paths: [.github/workflows/lyric-redesign-check.yml]
+    branches: [main, chatgpt/redesign-performance-safe-20261018]
+    paths:
+      - 'SpotifyLyrics/**'
+      - 'SpotifyLyrics.xcodeproj/**'
+      - 'Tests/**'
+      - '.github/workflows/lyric-redesign-check.yml'
 permissions:
-  contents: write
+  contents: read
 concurrency:
-  group: lyric-island-isolated-native-check
-  cancel-in-progress: false
+  group: lyric-island-native-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  native:
-    runs-on: macos-15
-    timeout-minutes: 16
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
-      - name: Apply reviewed source only with exact hashes
-        env:
-          GH_TOKEN: ${{ github.token }}
+          persist-credentials: false
+      - name: Archive exactly the committed source
         shell: bash
         run: |
-          mkdir -p /tmp/lyric-native-result
-          python3 - <<'PY'
-          import urllib.request,base64,lzma,json,pathlib,hashlib,os,subprocess
-          sha='be959a39eb36503fa94898c71fb0a96b29c32660'
-          req=urllib.request.Request('https://api.github.com/repos/suifracti/lyricsQ/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
-          with urllib.request.urlopen(req,timeout=20) as r:item=json.load(r)
-          raw=base64.b64decode(item['content'])
-          assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==sha
-          manifest=json.loads(lzma.decompress(raw));paths=[]
-          for entry in manifest['files']:
-              path=pathlib.Path(entry['path'])
-              assert not path.is_absolute() and '..' not in path.parts and str(path).startswith(('SpotifyLyrics/','Tests/'))
-              content=path.read_bytes()
-              assert hashlib.sha256(content).hexdigest()==entry['before'],str(path)
-              lines=content.decode('utf-8').splitlines(keepends=True)
-              for start,end,replacement in reversed(entry['ops']):lines[start:end]=[replacement]
-              updated=''.join(lines).encode('utf-8')
-              assert hashlib.sha256(updated).hexdigest()==entry['after'],str(path)
-              path.write_bytes(updated);paths.append(str(path))
-          subprocess.run(['git','diff','--check'],check=True)
-          subprocess.run(['git','add','--',*paths],check=True)
-          subprocess.run(['git','-c','user.name=ChatGPT','-c','user.email=noreply@openai.com','commit','-m',manifest['message']],check=True)
-          subprocess.run(['git','push','origin','HEAD:chatgpt/redesign-performance-safe-20261018'],check=True)
-          pathlib.Path('/tmp/lyric-native-result/SOURCE_SHA.txt').write_text(subprocess.check_output(['git','rev-parse','HEAD'],text=True))
-          PY
+          mkdir -p /tmp/lyric-source
+          git rev-parse HEAD > /tmp/lyric-source/SOURCE_SHA.txt
+          git archive --format=zip HEAD > /tmp/lyric-source/source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lyric-island-committed-source
+          path: /tmp/lyric-source/
+          retention-days: 7
+  native:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Native production logic contracts
         id: contracts
         continue-on-error: true
         shell: bash
         run: |
+          mkdir -p /tmp/lyric-native-result
+          git rev-parse HEAD > /tmp/lyric-native-result/SOURCE_SHA.txt
           python3 - <<'PY'
           import subprocess,json,pathlib
           root=pathlib.Path('/tmp/lyric-native-result');results={}
@@ -66,29 +60,24 @@ jobs:
           (root/'contracts.json').write_text(json.dumps(results,indent=2))
           raise SystemExit(0 if all(v==0 for v in results.values()) else 1)
           PY
-      - name: Full native AppKit and SwiftUI compilation
+      - name: Compile the complete native app
         id: build
         continue-on-error: true
         shell: bash
         run: |
           xcodebuild -version > /tmp/lyric-native-result/xcode-version.txt
           xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics -configuration Debug CODE_SIGNING_ALLOWED=NO SWIFT_OPTIMIZATION_LEVEL=-O -derivedDataPath /tmp/lyric-native-derived build > /tmp/lyric-native-result/xcodebuild.log 2>&1
-      - name: Public publisher body and entity check
-        id: live
-        continue-on-error: true
-        shell: bash
-        run: python3 Tests/linkcore_parser_contract.py --live > /tmp/lyric-native-result/publisher-live.log 2>&1
-      - name: Record real separate outcomes
+      - name: Record verification boundaries
         if: always()
         env:
           BUILD_RESULT: ${{ steps.build.outcome }}
           CONTRACT_RESULT: ${{ steps.contracts.outcome }}
-          LIVE_RESULT: ${{ steps.live.outcome }}
+        shell: bash
         run: |
           python3 - <<'PY'
           import json,os,pathlib,subprocess
           root=pathlib.Path('/tmp/lyric-native-result');root.mkdir(exist_ok=True)
-          (root/'result.json').write_text(json.dumps({'native_build':os.environ['BUILD_RESULT'],'contracts':os.environ['CONTRACT_RESULT'],'public_publisher':os.environ['LIVE_RESULT'],'user_mac_gui':'NOT_RUN','paired_cpu_memory':'NOT_RUN'},indent=2))
+          (root/'result.json').write_text(json.dumps({'native_build':os.environ['BUILD_RESULT'],'contracts':os.environ['CONTRACT_RESULT'],'user_mac_gui':'NOT_RUN','paired_cpu_memory':'NOT_RUN'},indent=2))
           log=root/'xcodebuild.log'
           if log.exists():(root/'errors.txt').write_text('\n'.join(l for l in log.read_text(errors='replace').splitlines() if 'error:' in l))
           (root/'production-tree.txt').write_text(subprocess.check_output(['git','ls-tree','-r','HEAD','SpotifyLyrics','SpotifyLyrics.xcodeproj','Tests'],text=True))
@@ -99,7 +88,7 @@ jobs:
           name: lyric-island-native-build
           path: /tmp/lyric-native-result/
           retention-days: 7
-      - name: Require actual native compilation and offline contract success
+      - name: Require real build and contract success
         if: always()
         env:
           BUILD_RESULT: ${{ steps.build.outcome }}
