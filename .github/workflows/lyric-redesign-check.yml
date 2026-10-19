@@ -47,7 +47,8 @@ jobs:
         run: |
           mkdir -p /tmp/lyric-native-result
           brew install mecab mecab-ipadic > /tmp/lyric-native-result/morphology-setup.log 2>&1
-          mecab -D >> /tmp/lyric-native-result/morphology-setup.log
+          mecab -D >> /tmp/lyric-native-result/morphology-setup.log || true
+          printf 'かな\n' | mecab -Ochasen >> /tmp/lyric-native-result/morphology-setup.log
       - name: Native production logic contracts
         id: contracts
         continue-on-error: true
