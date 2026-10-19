@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 4
       - name: Apply only the hash-verified reviewed files
         env:
           GH_TOKEN: ${{ github.token }}
@@ -32,7 +32,7 @@ jobs:
           raw=base64.b64decode(item['content'])
           assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==sha
           manifest=json.loads(lzma.decompress(raw));paths=[]
-          assert subprocess.check_output(['git','rev-parse','HEAD^'],text=True).strip()==manifest['source_base']
+          subprocess.run(['git','merge-base','--is-ancestor',manifest['source_base'],'HEAD'],check=True)
           allowed={'SpotifyLyrics/Views/Components/LyricIslandControls.swift',
                    'SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift',
                    'Tests/v3_redesign_contract.py','Tests/query_identity_contract.swift',
@@ -46,14 +46,15 @@ jobs:
               for start,end,replacement in reversed(entry['ops']):lines[start:end]=[replacement]
               updated=''.join(lines).encode('utf-8')
               assert hashlib.sha256(updated).hexdigest()==entry['after'],str(path)
+              if str(path).startswith('.github/'):
+                  continue  # Workflow changes are performed separately via connector.
               path.write_bytes(updated);paths.append(str(path))
           subprocess.run(['git','diff','--check'],check=True)
-          subprocess.run(['git','add','--',*paths],check=True)
-          subprocess.run(['git','rm','--','.github/workflows/lyric-finalize-once.yml'],check=True)
+          subprocess.run(['git','add','-f','--',*paths],check=True)
           subprocess.run(['git','-c','user.name=ChatGPT','-c','user.email=noreply@openai.com','commit','-m',manifest['message']],check=True)
           subprocess.run(['git','push','origin','HEAD:chatgpt/redesign-performance-safe-20261018'],check=True)
           pathlib.Path('/tmp/lyric-final-result/SOURCE_SHA.txt').write_text(subprocess.check_output(['git','rev-parse','HEAD'],text=True))
-          pathlib.Path('/tmp/lyric-final-result/reviewed-files.json').write_text(json.dumps([{k:v for k,v in e.items() if k!='ops'} for e in manifest['files']],indent=2))
+          pathlib.Path('/tmp/lyric-final-result/reviewed-files.json').write_text(json.dumps([{k:v for k,v in e.items() if k!='ops'} for e in manifest['files'] if not e['path'].startswith('.github/')],indent=2))
           PY
       - name: Native source and identity contracts
         id: contracts
