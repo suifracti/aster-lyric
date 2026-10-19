@@ -17,14 +17,46 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Preserve the exact committed source for continued work
+      - name: Inspect official publisher markup without storing song text
+        shell: bash
         run: |
           mkdir -p /tmp/lyric-tracked-source
-          git rev-parse HEAD > /tmp/lyric-tracked-source/SOURCE_SHA.txt
-          git archive --format=zip HEAD -o /tmp/lyric-tracked-source/source.zip
-          sha256sum /tmp/lyric-tracked-source/source.zip > /tmp/lyric-tracked-source/SHA256SUMS.txt
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          import urllib.request,json,re,pathlib
+          class Markup(HTMLParser):
+              def __init__(self):
+                  super().__init__();self.tags=[];self.data=[];self.next=False
+              def handle_starttag(self,tag,attrs):
+                  d=dict(attrs)
+                  if 'lyric' in str(d).lower() or tag in ('h1','h2','h3'): self.tags.append([tag,d])
+                  if tag=='script' and d.get('id')=='__NEXT_DATA__':self.next=True
+              def handle_endtag(self,tag):
+                  if tag=='script':self.next=False
+              def handle_data(self,data):
+                  if self.next:self.data.append(data)
+          reports=[]
+          for code,song in [('YSn8Z79P','2380258'),('Qq1pZPQT','4366633')]:
+              url=f'https://linkco.re/{code}/songs/{song}/lyrics?lang=ja'
+              row={'url':url}
+              try:
+                  req=urllib.request.Request(url,headers={'User-Agent':'LyricIsland/1.0 (public publisher lyrics)'})
+                  with urllib.request.urlopen(req,timeout=15) as response: raw=response.read(1500001);row['status']=response.status;row['final_url']=response.url
+                  html=raw.decode('utf-8');p=Markup();p.feed(html);row['bytes']=len(raw);row['tags']=p.tags[:70]
+                  if p.data:
+                      value=json.loads(''.join(p.data));props=value.get('props',{}).get('pageProps',{});row['pagePropKeys']=list(props)
+                      def structure(v,depth=0):
+                          if depth>5:return type(v).__name__
+                          if isinstance(v,dict):return {k:structure(x,depth+1) for k,x in v.items()}
+                          if isinstance(v,list):return {'count':len(v),'first':structure(v[0],depth+1) if v else None}
+                          return {'type':type(v).__name__,'length':len(v) if isinstance(v,str) else None}
+                      row['propsStructure']=structure(props)
+              except Exception as e:row['error']=str(e)
+              reports.append(row)
+          pathlib.Path('/tmp/lyric-tracked-source/publisher-structure.json').write_text(json.dumps(reports,indent=2))
+          PY
       - uses: actions/upload-artifact@v4
         with:
-          name: lyric-island-tracked-source
+          name: lyric-publisher-structure
           path: /tmp/lyric-tracked-source/
           retention-days: 3
