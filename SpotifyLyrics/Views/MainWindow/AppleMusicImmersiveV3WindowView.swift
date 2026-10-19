@@ -316,12 +316,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         HStack(spacing: 16) {
                             Spacer(minLength: 0)
                             toolBar(for: canvasGeometry.size)
-                                .opacity(toolsVisible || toolbarPanelIsPresented ? 1 : 0)
-                                .allowsHitTesting(toolsVisible || toolbarPanelIsPresented)
-                                .accessibilityHidden(!(toolsVisible || toolbarPanelIsPresented))
+                                .opacity(toolbarOpacity)
+                                .allowsHitTesting(toolbarOpacity > 0)
+                                .accessibilityHidden(toolbarOpacity == 0)
                                 .animation(
                                     LyricsDesignTokens.Motion.animation(reduceMotion: reduceMotion),
-                                    value: toolsVisible || toolbarPanelIsPresented
+                                    value: toolbarOpacity
                                 )
                         }
                         .padding(.horizontal, 24)
@@ -338,7 +338,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         colorHex: settings.v3EdgeProgressColorHex,
                         colorMode: settings.v3EdgeProgressColorMode,
                         exitPoint: lastWindowExitPoint,
-                        pointerInsideWindow: isPointerInsideCanvas
+                        pointerInsideWindow: isPointerInsideCanvas,
+                        // Priority: an open panel, then the toolbar, then the edge.
+                        suppressControls: isPointerInToolbarRegion || toolbarPanelIsPresented
                     )
                     .frame(width: geometry.size.width, height: geometry.size.height)
                 }
@@ -1539,6 +1541,16 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         return nil
     }
 
+    /// Three quiet levels: gone while the pointer is outside the window, a
+    /// faint resting toolbar while it is inside (so tools are discoverable
+    /// without covering the lyrics), and full contrast near the top edge or
+    /// while a panel is open. Positions never change between levels.
+    private var toolbarOpacity: Double {
+        if toolsVisible || toolbarPanelIsPresented { return 1 }
+        if isPointerInsideCanvas && !liveOnly { return 0.32 }
+        return 0
+    }
+
     private var toolbarPanelIsPresented: Bool {
         isWindowMenuPresented || isSearchPresented || isVersionPickerPresented
             || activeToolbarPopover != nil || pinnedToolbarPanel != nil
@@ -2611,7 +2623,7 @@ private struct V3PlaybackButtons: View {
     @V3ContentPlaybackState var state: PlaybackState
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 12) {
             V3TransportIconButton(systemImage: "backward.fill", label: "上一首", enabled: state.canControlSpotify) {
                 state.previousTrack()
             }
@@ -2637,28 +2649,12 @@ private struct V3TransportIconButton: View {
     var prominent = false
     let action: () -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isHovered = false
-
     var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: prominent ? 20 : 15, weight: .semibold))
-                .foregroundStyle(.white.opacity(enabled ? (isHovered || prominent ? 1.0 : 0.88) : 0.35))
-                .frame(width: prominent ? 40 : 34, height: prominent ? 40 : 34)
-                .contentShape(Circle())
-        }
-        .buttonStyle(V3BounceButtonStyle())
-        .disabled(!enabled)
-        .accessibilityLabel(label)
-        .help(label)
-        .onHover { hovering in
-            withAnimation(LyricsDesignTokens.Motion.animation(
-                reduceMotion: reduceMotion, duration: 0.14
-            )) {
-                isHovered = hovering
-            }
-        }
+        // Same look as the window-edge and menu-bar transport.
+        IslandTransportButton(
+            systemImage: systemImage, label: label, enabled: enabled,
+            primary: prominent, tint: .white, glyph: .white, action: action
+        )
     }
 }
 
@@ -4710,11 +4706,13 @@ private struct V3VisualTuningPopoverView: View {
 
     private var picturePage: some View {
         VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("风格")
             V3ThemeSelectorView(settings: settings, artworkURL: state.currentTrack.artworkURL,
                                 preview: $preview, previewScene: $previewScene, onConfirm: {})
             Divider()
+            sectionLabel("阅读")
             VStack(alignment: .leading, spacing: 7) {
-                Text("歌词清晰度保护").font(.system(size: 12, weight: .semibold))
+                Text("歌词清晰度保护").font(.system(size: 12, weight: .medium))
                 Picker("歌词清晰度保护", selection: $settings.v3ReadingProtection) {
                     ForEach(V3ReadingProtection.allCases) { value in Text(value.title).tag(value) }
                 }.pickerStyle(.segmented).labelsHidden()
@@ -4727,6 +4725,8 @@ private struct V3VisualTuningPopoverView: View {
             if settings.v3ListeningScene != .focusedLyrics && settings.v3ListeningScene != .linerNotes {
                 blurControls
             }
+            Divider()
+            sectionLabel("播放")
             Picker("播放呈现", selection: $settings.v3EdgeProgressEnabled) {
                 Text("标准播放栏").tag(false)
                 Text("窗口边缘").tag(true)
@@ -4853,7 +4853,7 @@ private struct V3VisualTuningPopoverView: View {
 
     private var textPage: some View {
         VStack(alignment: .leading, spacing: 13) {
-            sectionLabel("文字层")
+            sectionLabel("显示与对齐")
             VStack(alignment: .leading, spacing: 6) {
                 Text("歌词位置与对齐")
                     .font(.system(size: 12, weight: .medium))
@@ -4889,6 +4889,8 @@ private struct V3VisualTuningPopoverView: View {
             }
             .accessibilityIdentifier("v3.display.kanaMode")
 
+            Divider()
+            sectionLabel("字号")
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("原文与译文字号")
@@ -4956,6 +4958,13 @@ private struct V3VisualTuningPopoverView: View {
                     .font(.system(size: 12)).foregroundStyle(.white.opacity(0.72))
             }
 
+            Divider()
+
+            currentSongWorkflow
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+
+            Divider()
+
             VStack(alignment: .leading, spacing: 7) {
                 sectionLabel("翻译服务")
                 Text(TranslationEngineCatalog.metadata(for: settings.aiTranslationConfiguration.engineID)?.displayName
@@ -4989,11 +4998,6 @@ private struct V3VisualTuningPopoverView: View {
 
             Divider()
 
-            currentSongWorkflow
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-
-            Divider()
-
             VStack(alignment: .leading, spacing: 7) {
                 sectionLabel("歌词时间")
                 LyricsPresentationOffsetControl(settings: settings)
@@ -5005,10 +5009,7 @@ private struct V3VisualTuningPopoverView: View {
     }
 
     private func sectionLabel(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(.system(size: 11, weight: .semibold, design: .rounded))
-            .tracking(1.1)
-            .foregroundStyle(.secondary)
+        IslandSectionHeader(title: title)
     }
 
     private func atmosphereButton(_ title: String, level: Int) -> some View {

@@ -49,11 +49,11 @@ public struct MenuBarLyricsPopoverView: View {
         let snapshot = controller.currentSnapshot
         let artist = snapshot.artistName ?? ""
         return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 artworkView(snapshot.artworkURL)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(snapshot.trackTitle ?? "等待播放音乐")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .lineLimit(1)
                     Text(artist.isEmpty ? "当前播放" : artist)
                         .font(.system(size: 11))
@@ -94,7 +94,7 @@ public struct MenuBarLyricsPopoverView: View {
                 EmptyView()
             }
 
-            HStack(spacing: 18) {
+            HStack(spacing: 22) {
                 Spacer()
                 transportButton("backward.fill", title: "上一首", enabled: snapshot.canControlPlayback) {
                     controller.previousTrack()
@@ -109,6 +109,8 @@ public struct MenuBarLyricsPopoverView: View {
                 }
                 Spacer()
             }
+            .padding(.vertical, 6)
+            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             if snapshot.hasLiveTrack && !snapshot.canControlPlayback {
                 Text("播放连接暂不可用，可在主窗口查看连接状态。")
                     .font(.caption)
@@ -117,17 +119,18 @@ public struct MenuBarLyricsPopoverView: View {
 
             Divider()
 
-            HStack(spacing: 4) {
-                shortcut("主窗口", icon: "macwindow") { controller.openMainWindow() }
-                shortcut("歌词库", icon: "books.vertical") { controller.openLibrary() }
-                shortcut("设置", icon: "gearshape") { controller.openSettings() }
-            }
-
-            HStack(spacing: 4) {
-                shortcut("桌面歌词", icon: "text.bubble") { controller.toggleFloatingLyrics() }
-                shortcut("顶部胶囊", icon: "capsule") { controller.toggleCapsule() }
-                shortcut("恢复拖动", icon: "hand.draw") { controller.restoreFloatingInteraction() }
-                    .help("解除桌面歌词的锁定或鼠标穿透，让窗口恢复拖动")
+            Grid(horizontalSpacing: 4, verticalSpacing: 4) {
+                GridRow {
+                    shortcut("主窗口", icon: "macwindow") { controller.openMainWindow() }
+                    shortcut("歌词库", icon: "books.vertical") { controller.openLibrary() }
+                    shortcut("设置", icon: "gearshape") { controller.openSettings() }
+                }
+                GridRow {
+                    shortcut("桌面歌词", icon: "text.bubble") { controller.toggleFloatingLyrics() }
+                    shortcut("顶部胶囊", icon: "capsule") { controller.toggleCapsule() }
+                    shortcut("恢复拖动", icon: "hand.draw") { controller.restoreFloatingInteraction() }
+                        .help("解除桌面歌词的锁定或鼠标穿透，让窗口恢复拖动")
+                }
             }
 
             HStack(spacing: 12) {
@@ -363,27 +366,24 @@ public struct MenuBarLyricsPopoverView: View {
 
     private func transportButton(_ symbol: String, title: String, enabled: Bool,
                                  prominent: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: prominent ? 17 : 13, weight: .semibold))
-                .frame(width: prominent ? 40 : 32, height: prominent ? 40 : 32)
-                .background(Color.primary.opacity(prominent ? 0.08 : 0), in: Circle())
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.4)
-        .accessibilityLabel(title)
-        .help(title)
+        IslandTransportButton(
+            systemImage: symbol, label: title, enabled: enabled,
+            primary: prominent, tint: islandAccent, glyph: .primary, action: action
+        )
     }
 
     private func shortcut(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: icon)
-                .font(.system(size: 10, weight: .medium))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 5)
-                .contentShape(Rectangle())
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .regular))
+                    .frame(height: 18)
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .contentShape(Rectangle())
         }
         .buttonStyle(HoverRowButtonStyle())
     }
@@ -401,8 +401,9 @@ public struct MenuBarLyricsPopoverView: View {
     private func artworkView(_ url: URL?) -> some View {
         if let image = cachedArtwork {
             Image(nsImage: image).resizable().scaledToFit()
-                .frame(width: 44, height: 44)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .frame(width: 48, height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
         } else { fallbackArtwork }
     }
 
@@ -410,9 +411,9 @@ public struct MenuBarLyricsPopoverView: View {
         Image(systemName: "music.note")
             .font(.system(size: 18, weight: .semibold))
             .foregroundStyle(islandAccent)
-            .frame(width: 44, height: 44)
+            .frame(width: 48, height: 48)
             .background(islandAccent.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 }
 

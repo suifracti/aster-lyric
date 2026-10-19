@@ -9,6 +9,8 @@ struct V3WindowEdgePlaybackOverlay: View {
     let colorMode: String
     let exitPoint: CGPoint?
     let pointerInsideWindow: Bool
+    /// The toolbar or an open panel owns the pointer; only the rail stays.
+    var suppressControls = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.v3PlaybackInteractionChanged) private var interactionChanged
@@ -23,7 +25,7 @@ struct V3WindowEdgePlaybackOverlay: View {
     private let borderInset: CGFloat = 1.5
     private let borderRadius: CGFloat = 12
     private var controlsVisible: Bool {
-        edgeInteraction.isVisible && edgeInteraction.pointerInside
+        edgeInteraction.isVisible && edgeInteraction.pointerInside && !suppressControls
     }
     private var animatesColor: Bool { colorMode == "flow" && !reduceMotion && state.isPlaying && windowVisible }
 
@@ -380,36 +382,13 @@ private struct V3WindowEdgeTransportButton: View {
     let accent: Color
     let action: () -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isHovered = false
-
     var body: some View {
-        Button(action: action) {
-            Image(systemName: image)
-                .font(.system(size: primary ? 14 : 12, weight: .semibold))
-                .foregroundStyle((primary ? V3WindowEdgeColor.foreground(on: accent) : .white)
-                    .opacity(enabled ? 0.96 : 0.40))
-                .frame(width: 30, height: 30)
-                .background(
-                    Circle().fill(primary ? accent.opacity(enabled ? 0.92 : 0.34) : Color.clear)
-                )
-                .overlay(
-                    Circle().strokeBorder(
-                        Color.white.opacity(isHovered ? 0.32 : 0),
-                        lineWidth: 0.8
-                    )
-                )
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .accessibilityLabel(label)
-        .help(label)
-        .onHover { hovering in
-            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
-                isHovered = hovering
-            }
-        }
+        // Shares the main player's transport look; the primary disc takes the
+        // edge progress colour so the controls read as part of the rail.
+        IslandTransportButton(
+            systemImage: image, label: label, enabled: enabled,
+            primary: primary, size: .compact, tint: accent, glyph: .white, action: action
+        )
     }
 }
 

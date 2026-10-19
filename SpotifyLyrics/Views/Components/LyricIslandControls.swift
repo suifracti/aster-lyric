@@ -316,3 +316,122 @@ struct LyricIslandSceneSettingsPicker: View {
         }
     }
 }
+
+// MARK: - Shared transport button
+
+/// One transport look for the main player card, the window-edge controls and
+/// the menu-bar popover: the centre action is a filled disc, the neighbours
+/// are bare glyphs that gain a soft halo on hover. Hit targets never shrink
+/// below the visible disc.
+struct IslandTransportButton: View {
+    enum Size { case regular, compact }
+
+    let systemImage: String
+    let label: String
+    var enabled = true
+    var primary = false
+    var size: Size = .regular
+    /// Fill of the primary disc.
+    var tint: Color = .white
+    /// Glyph colour of the secondary buttons.
+    var glyph: Color = .white
+    let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovered = false
+
+    private var diameter: CGFloat {
+        switch size {
+        case .regular: return primary ? 44 : 36
+        case .compact: return primary ? 32 : 30
+        }
+    }
+
+    private var glyphSize: CGFloat {
+        switch size {
+        case .regular: return primary ? 17 : 15
+        case .compact: return primary ? 13 : 12
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: glyphSize, weight: .semibold))
+                .foregroundStyle(primary ? Self.foreground(on: tint) : glyph)
+                .opacity(enabled ? 1 : 0.4)
+                .frame(width: diameter, height: diameter)
+                .background {
+                    if primary {
+                        Circle().fill(tint.opacity(enabled ? (hovered ? 1 : 0.9) : 0.3))
+                    } else {
+                        Circle().fill(glyph.opacity(hovered && enabled ? 0.14 : 0))
+                    }
+                }
+                .contentShape(Circle())
+        }
+        .buttonStyle(V3BounceButtonStyle())
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+        .help(label)
+        .onHover { inside in
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) { hovered = inside }
+        }
+    }
+
+    static func foreground(on color: Color) -> Color {
+        guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return .black }
+        let brightness = rgb.redComponent * 0.2126 + rgb.greenComponent * 0.7152 + rgb.blueComponent * 0.0722
+        return brightness > 0.58 ? .black : .white
+    }
+}
+
+// MARK: - Management surfaces
+
+/// Group title used inside panels, settings and the library: a quiet
+/// heading, not a card. Chinese titles are not upper-cased or tracked.
+struct IslandSectionHeader: View {
+    let title: String
+    var detail: String? = nil
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.primary.opacity(0.62))
+            if let detail {
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Small state badge reserved for real states (使用中 / 未同步 / 失败 / 已锁定).
+struct IslandStatusPill: View {
+    enum Tone { case active, neutral, warning, danger }
+    let title: String
+    var tone: Tone = .neutral
+
+    private var color: Color {
+        switch tone {
+        case .active: return .accentColor
+        case .neutral: return .secondary
+        case .warning: return .orange
+        case .danger: return .red
+        }
+    }
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 10.5, weight: .semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2.5)
+            .background(color.opacity(0.14), in: Capsule())
+            .fixedSize()
+    }
+}
