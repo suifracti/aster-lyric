@@ -495,19 +495,28 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     @objc private func statusItemClicked(_ sender: Any?) {
         guard let button = statusItem?.button, let popover else { return }
         if popover.isShown {
+            presentationGeneration &+= 1
             popover.performClose(sender)
         } else {
             fullLyricsSnapshot = nil
             presentationGeneration &+= 1
+            let generation = presentationGeneration
             let frontmost = NSWorkspace.shared.frontmostApplication
             applicationBeforePopover = frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : frontmost
-            resizePopoverToContent()
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            // Give the popover keyboard focus without activating all app windows.
-            // Desktop lyrics remain independent of the main player.
-            popover.contentViewController?.view.window?.makeKey()
-            _ = NSRunningApplication.current.activate(options: [])
-            (popover.contentViewController as? MenuBarPopoverHostingController<MenuBarLyricsPopoverView>)?.clearOpeningFocus()
+            // Activation after show can dismiss a transient popover immediately.
+            // Do not bring all of the app's windows forward with the menu.
+            if !NSApp.isActive {
+                _ = NSRunningApplication.current.activate(options: [])
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.presentationGeneration == generation,
+                      !popover.isShown, button.window != nil,
+                      self.updatePopoverContentSize() else { return }
+                // Leave the opening mouse-up/activation turn before presenting.
+                popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+                popover.contentViewController?.view.window?.makeKey()
+                (popover.contentViewController as? MenuBarPopoverHostingController<MenuBarLyricsPopoverView>)?.clearOpeningFocus()
+            }
         }
     }
 
@@ -515,14 +524,21 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     /// height. Resize only for those events, never on playback ticks.
     func resizePopoverToContent() {
         DispatchQueue.main.async { [weak self] in
-            guard let self, let popover = self.popover,
-                  let view = popover.contentViewController?.view else { return }
-            view.invalidateIntrinsicContentSize()
-            let size = view.fittingSize
-            guard size.width.isFinite, size.height.isFinite, size.height > 0 else { return }
-            popover.contentSize = size
-            view.frame.size = size
+            _ = self?.updatePopoverContentSize()
         }
+    }
+
+    /// The first presentation must have a measured frame before AppKit shows it.
+    @discardableResult
+    private func updatePopoverContentSize() -> Bool {
+        guard let popover, let view = popover.contentViewController?.view else { return false }
+        view.invalidateIntrinsicContentSize()
+        view.layoutSubtreeIfNeeded()
+        let size = view.fittingSize
+        guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return false }
+        if popover.contentSize != size { popover.contentSize = size }
+        if view.frame.size != size { view.frame.size = size }
+        return true
     }
 
     private func handlePlaybackStateChange() {
