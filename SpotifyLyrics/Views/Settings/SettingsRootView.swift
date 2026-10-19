@@ -39,6 +39,29 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     case statistics = "听歌统计"
     case experienceLibrary = "体验版本库"
 
+    /// Sidebar sections: listening first, then lyrics, then the system.
+    static var sidebarGroups: [(title: String, categories: [SettingsCategory])] {
+        [("听歌", [.general, .appearance]),
+         ("歌词", [.lyricsAndText, .aiTranslation, .reading]),
+         ("系统", [.advancedAndData])]
+    }
+
+    var tileColor: Color {
+        switch self {
+        case .general: return .pink
+        case .lyricsAndText: return .blue
+        case .appearance: return .purple
+        case .reading: return .orange
+        case .advancedAndData: return .gray
+        case .servicesAndSources: return .teal
+        case .aiTranslation: return .indigo
+        case .library: return .green
+        case .history: return .cyan
+        case .statistics: return .mint
+        case .experienceLibrary: return .brown
+        }
+    }
+
     static var primaryCases: [SettingsCategory] {
         [.general, .lyricsAndText, .aiTranslation, .appearance, .reading, .advancedAndData]
     }
@@ -136,20 +159,18 @@ struct SettingsRootView: View {
                 .padding(12)
 
                 List(selection: $selection) {
-                    ForEach(visibleCategories) { category in
-                        Label {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(category.rawValue)
-                                Text(category.detail)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
-                        } icon: {
-                            Image(systemName: category.systemImage)
+                    if isSearching {
+                        ForEach(visibleCategories) { category in
+                            sidebarRow(category, showsDetail: true)
                         }
-                        .padding(.vertical, 4)
-                        .tag(category)
+                    } else {
+                        ForEach(SettingsCategory.sidebarGroups, id: \.title) { group in
+                            Section(group.title) {
+                                ForEach(group.categories) { category in
+                                    sidebarRow(category, showsDetail: false)
+                                }
+                            }
+                        }
                     }
                     if visibleCategories.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
@@ -192,6 +213,29 @@ struct SettingsRootView: View {
                 navigateToAISettings()
             }
         }
+    }
+
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func sidebarRow(_ category: SettingsCategory, showsDetail: Bool) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(category.rawValue)
+                if showsDetail {
+                    Text(category.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+        } icon: {
+            SettingsIconTile(systemImage: category.systemImage, color: category.tileColor)
+        }
+        .padding(.vertical, 2)
+        .help(category.detail)
+        .tag(category)
     }
 
     private func navigateToAISettings() {
@@ -295,15 +339,8 @@ struct SettingsPageHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 7) {
-                SettingsRecordMark()
-                Text("LYRIC ISLAND · SETTINGS")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .tracking(1.1)
-                    .foregroundStyle(.secondary)
-            }
             Text(title)
-                .font(.system(size: 25, weight: .semibold))
+                .font(.system(size: 24, weight: .bold))
             Text(detail)
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
@@ -313,15 +350,18 @@ struct SettingsPageHeader: View {
     }
 }
 
-private struct SettingsRecordMark: View {
+/// System-Settings-style coloured icon tile for the sidebar.
+private struct SettingsIconTile: View {
+    let systemImage: String
+    let color: Color
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Capsule().frame(width: 16, height: 2)
-            Capsule().frame(width: 11, height: 2)
-        }
-        .frame(width: 16, height: 7)
-        .foregroundStyle(.secondary)
-        .accessibilityHidden(true)
+        Image(systemName: systemImage)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 22, height: 22)
+            .background(color.gradient, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .accessibilityHidden(true)
     }
 }
 

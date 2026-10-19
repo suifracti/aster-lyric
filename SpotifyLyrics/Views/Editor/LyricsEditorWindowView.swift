@@ -86,13 +86,22 @@ struct LyricsEditorWindowView: View {
     private var header: some View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 7) {
-                    LyricsEditorRecordMark()
-                    Text("LYRIC ISLAND · EDITOR")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .tracking(1.1)
+                // What is being edited and whether it is safe to leave.
+                HStack(spacing: 6) {
+                    Text("正在编辑 · 原词与译文")
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
+                    if editor.isStale {
+                        IslandStatusPill(title: "已过期", tone: .warning)
+                    } else if editor.state == .saving {
+                        IslandStatusPill(title: "正在保存", tone: .neutral)
+                    } else if editor.hasUnsavedChanges {
+                        IslandStatusPill(title: "未保存", tone: .warning)
+                    } else if editor.state == .saved {
+                        IslandStatusPill(title: "已保存", tone: .active)
+                    }
                 }
+                .help("保存会另存为新版本，原来的版本保留，可在歌词库中切换")
                 let title = editor.draft?.title ?? (editor.draft?.identity == nil ? "" : state.currentTrack.title)
                 Text(title.isEmpty ? "歌词编辑" : title)
                     .font(.system(size: 17, weight: .semibold, design: .serif))
