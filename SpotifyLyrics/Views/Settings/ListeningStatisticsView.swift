@@ -11,13 +11,6 @@ public struct ListeningStatisticsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 7) {
-                        StatisticsRecordMark()
-                        Text("LYRIC ISLAND · LISTENING NOTES")
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .tracking(1.2)
-                            .foregroundStyle(.secondary)
-                    }
                     Text("听歌统计")
                         .font(.system(size: 25, weight: .semibold))
                     Text("仅统计应用运行期间观察到的播放；新版会分别记录单曲循环，旧记录中合并的循环次数无法还原。")

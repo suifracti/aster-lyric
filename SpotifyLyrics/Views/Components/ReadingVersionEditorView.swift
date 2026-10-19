@@ -31,13 +31,6 @@ struct ReadingVersionEditorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 7) {
-                    ReadingRecordMark()
-                    Text("LYRIC ISLAND · READING")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .tracking(1.1)
-                        .foregroundStyle(.secondary)
-                }
                 Text("编辑读音")
                     .font(.system(size: 21, weight: .semibold, design: .serif))
                 if state.hasLiveTrack {
@@ -180,13 +173,6 @@ struct RubyCorrectionEditorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 7) {
-                    ReadingRecordMark()
-                    Text("LYRIC ISLAND · READING")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .tracking(1.1)
-                        .foregroundStyle(.secondary)
-                }
                 Text("修改「\(request.surface)」的读音")
                     .font(.system(size: 18, weight: .semibold, design: .serif))
                 if state.hasLiveTrack {

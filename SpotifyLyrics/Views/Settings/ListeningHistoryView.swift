@@ -8,13 +8,6 @@ public struct ListeningHistoryView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 7) {
-                    ListeningRecordMark()
-                    Text("LYRIC ISLAND · LISTENING JOURNAL")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .tracking(1.2)
-                        .foregroundStyle(.secondary)
-                }
                 Text("最近播放")
                     .font(.system(size: 25, weight: .semibold))
                 Text("这里只记录 Lyric Island 运行期间观察到的播放，不代表 Spotify 的完整播放历史。")

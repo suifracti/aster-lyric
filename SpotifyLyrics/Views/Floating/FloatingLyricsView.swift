@@ -557,7 +557,7 @@ struct FloatingLyricsStylePanelView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("桌面歌词").font(.headline)
+                IslandSectionHeader(title: "外观")
                 Picker("行数", selection: $settings.floatingDesktopLineMode) {
                     ForEach(FloatingDesktopLineMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                 }
@@ -568,6 +568,8 @@ struct FloatingLyricsStylePanelView: View {
                         .accessibilityLabel("桌面歌词字号")
                 }
                 FloatingDesktopColorControls(settings: settings)
+                Divider()
+                IslandSectionHeader(title: "第二行")
                 Picker("第二行", selection: $settings.floatingDesktopCompanion) {
                     Text("译文 / 下一句").tag("translation")
                     Text("假名").tag("kana")
@@ -575,9 +577,11 @@ struct FloatingLyricsStylePanelView: View {
                 }
                 Text("第二行按此处选择显示；无译文时默认显示下一句。")
                     .font(.caption).foregroundStyle(.secondary)
+                Divider()
+                IslandSectionHeader(title: "时间")
                 LyricsPresentationOffsetControl(settings: settings)
                 Divider()
-                Text("共享歌词层").font(.caption).foregroundStyle(.secondary)
+                IslandSectionHeader(title: "共享歌词层", detail: "与主窗口共用")
                 Toggle("原文", isOn: $settings.displayPreferences.showOriginal)
                 Toggle("译文", isOn: $settings.displayPreferences.showTranslation)
                 Toggle("罗马音", isOn: $settings.displayPreferences.showRomaji)
@@ -604,8 +608,8 @@ struct FloatingLyricsStylePanelView: View {
             .frame(width: 352)
         }
         .frame(width: 352, height: 600)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.14)))
+        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.10)))
         .preferredColorScheme(.dark)
     }
 }

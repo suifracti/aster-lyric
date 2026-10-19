@@ -805,15 +805,6 @@ private struct LibraryEditorHeading: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 7) {
-                RecordShelfMark()
-                    .frame(width: 38, height: 12)
-                    .foregroundStyle(.secondary)
-                Text("LYRIC ISLAND · \(context)")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .tracking(1.1)
-                    .foregroundStyle(.secondary)
-            }
             Text(title)
                 .font(.system(size: 21, weight: .semibold, design: .serif))
         }

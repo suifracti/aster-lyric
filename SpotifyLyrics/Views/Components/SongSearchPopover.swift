@@ -12,17 +12,8 @@ struct SongSearchPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 7) {
-                    SearchRecordMark()
-                    Text("LYRIC ISLAND · SEARCH")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .tracking(1.1)
-                        .foregroundStyle(.secondary)
-                }
-                Text("查找歌曲")
-                    .font(.system(size: 22, weight: .semibold))
-            }
+            Text("查找歌曲")
+                .font(.system(size: 18, weight: .bold))
 
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
