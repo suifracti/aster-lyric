@@ -218,6 +218,7 @@ public final class LyricsSessionController: ObservableObject {
                 if automaticallySearch {
                     let protectsRefresh = forceRefresh && cachedReference?.isUserProtected == true
                     let suppressProvisional = reviewOnly || protectsRefresh
+                    let retainsPlainCache = cachedReference?.document.isSynchronized == false
                     let searched = await searchManager.search(
                         track: track,
                         identity: identity,
@@ -227,6 +228,7 @@ public final class LyricsSessionController: ObservableObject {
                         onProvisional: { [weak self] document in
                             await MainActor.run { [weak self] in
                                 guard !suppressProvisional, !Task.isCancelled, let self, self.activeIdentity == identity, self.revision == requestRevision,
+                                      !retainsPlainCache || document.isSynchronized,
                                       self.activeLyricsVersionID == nil else { return }
                                 self.apply(.match(document), identity: identity, requestRevision: requestRevision)
                             }

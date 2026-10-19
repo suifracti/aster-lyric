@@ -84,8 +84,15 @@ private actor CachedLyricsFixture: LyricsRepository {
             isSynchronized: false, source: .lrclib, providerSourceID: "alternate-plain")
         let otherSession = LyricsSessionController(providers: [CandidateSource(name: "Other plain source", result: .match(alternate))],
             repository: cache, recoveryCooldowns: [])
+        var displayedText: [String] = []
+        let displayedSubscription = otherSession.$lyrics.sink {
+            if let text = $0.first?.originalText { displayedText.append(text) }
+        }
         otherSession.begin(track: track, identity: identity)
         try await settle(otherSession)
+        expect(!displayedText.isEmpty && displayedText.allSatisfy { $0 == "Self-authored cached original" },
+            "keeping a plain cache never flashes an unselected plain alternative")
+        displayedSubscription.cancel()
         expect(otherSession.availableCandidates.map(\.providerSourceID) == ["alternate-plain"],
             "an alternate plain match remains previewable while cached lyrics stay selected")
         expect(otherSession.activeDocument?.providerSourceID == "cached-original"

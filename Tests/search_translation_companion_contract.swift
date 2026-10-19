@@ -18,6 +18,17 @@ private struct SourceFixture: LyricsProvider {
     }
 }
 
+private struct LaterVariantSource: LyricsProvider {
+    let name = "Later query fixture"
+    let exact: LyricsDocument
+    let translatedBase: LyricsCandidate
+    let executionLane: LyricsProviderExecutionLane = .network
+    func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult {
+        if !track.artist.isEmpty && track.title != exact.title { return .match(exact) }
+        return .candidates([translatedBase])
+    }
+}
+
 @main struct SearchTranslationCompanionContract {
     static func main() async {
         var failures = 0
@@ -96,6 +107,27 @@ private struct SourceFixture: LyricsProvider {
             expect(candidates.first { $0.providerSourceID == "selected-source" }?.lines == lines
                 && browse.automaticDecision == nil, "version browsing preserves each original source")
         } else { expect(false, "version browsing remains manual") }
+
+        let tempoTrack = Track(title: "Fixture song - Sped Up Ver.", artist: track.artist, album: track.album, duration: 180)
+        let tempoIdentity = TrackIdentity(track: tempoTrack)
+        let tempoDocument = LyricsDocument(identity: tempoIdentity, title: tempoTrack.title, artist: tempoTrack.artist,
+            album: tempoTrack.album, duration: 180, lines: lines, source: .lrclib, providerSourceID: "later-exact-recording")
+        let base = LyricsCandidate(id: "earlier-translated-base", identity: tempoIdentity,
+            title: "Fixture song", artist: tempoTrack.artist, album: tempoTrack.album, duration: 210,
+            lines: donorLines, source: .neteaseExperimental, confidence: 0.9)
+        let later = await LyricsSearchManager(providers: [LaterVariantSource(exact: tempoDocument, translatedBase: base)])
+            .search(track: tempoTrack, identity: tempoIdentity)
+        if case .match(let document) = later.result {
+            expect(document.lines.map(\.translationText) == expectedTranslations,
+                "a later exact query can reuse translations returned by an earlier query")
+            expect(document.replacingLines(lines) == tempoDocument,
+                "earlier base recording contributes no timing or original identity")
+        } else {
+            for diagnostic in later.diagnostics {
+                print("LATER_QUERY", diagnostic.provider, diagnostic.matchDecisions.map { $0.explanation })
+            }
+            expect(false, "later query automatically selects the exact tempo recording")
+        }
         print("TRANSLATION_COMPANION_FAILURES=\(failures)")
         if failures > 0 { exit(1) }
     }

@@ -385,6 +385,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         LyricsE2ELog.log("MANAGER start title=\(track.title) artist=\(track.artist) variants=\(variants.count) providers=\(configuredProviders.map { $0.name }) queryOverride=\(queryOverride ?? "")")
         var diagnostics: [LyricsProviderDiagnostic] = []
         var acceptedCandidates: [String: LyricsCandidate] = [:]
+        var translationDonors: [String: EvaluatedCandidate] = [:]
         var rejectedForExplanation: [EvaluatedCandidate] = []
         var sawNoLyrics = false
         var sawNoMatch = false
@@ -736,16 +737,22 @@ public final class LyricsSearchManager: @unchecked Sendable {
             guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics) }
 
             rejectedForExplanation.append(contentsOf: evaluatedCandidates.filter { $0.decision.tier == .reject })
+            for item in evaluatedCandidates where !collectCandidatesOnly && item.candidate.lines.contains(where: {
+                !($0.translationText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }) {
+                translationDonors["\(item.providerIndex)\u{1F}\(item.candidate.id)"] = item
+            }
 
             if !collectCandidatesOnly, let selected = Self.bestAutomaticAdoption(in: automaticAdoptions) {
                 var selectedDocument = selected.document
                 // Reuse translations that have already arrived. This never
                 // starts another query or delays adoption for a slower source.
-                let donors = evaluatedCandidates.sorted {
+                let donors = translationDonors.values.sorted {
                     if $0.providerIndex != $1.providerIndex { return $0.providerIndex < $1.providerIndex }
-                    return $0.candidateIndex < $1.candidateIndex
+                    if $0.candidateIndex != $1.candidateIndex { return $0.candidateIndex < $1.candidateIndex }
+                    return $0.candidate.id < $1.candidate.id
                 }
-                for donor in donors where donor.providerIndex != selected.providerIndex || donor.candidateIndex != selected.candidateIndex {
+                for donor in donors where donor.document != selected.document {
                     if let merged = Self.mergingTranslationCompanion(donor.candidate, into: selectedDocument, metadata: meta) {
                         selectedDocument = merged
                         diagnostics.append(LyricsProviderDiagnostic(provider: donor.providerName + "@translation-companion",
