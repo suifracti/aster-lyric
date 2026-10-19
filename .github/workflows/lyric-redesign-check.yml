@@ -25,9 +25,9 @@ jobs:
           mkdir -p /tmp/lyric-native-result
           python3 - <<'PY'
           import urllib.request,base64,lzma,json,pathlib,hashlib,os,subprocess
-          sha='c5f74ec999b96f0da974473fd4633c8f7924f9e6'
+          sha='be959a39eb36503fa94898c71fb0a96b29c32660'
           req=urllib.request.Request('https://api.github.com/repos/suifracti/lyricsQ/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
-          with urllib.request.urlopen(req,timeout=20) as r: item=json.load(r)
+          with urllib.request.urlopen(req,timeout=20) as r:item=json.load(r)
           raw=base64.b64decode(item['content'])
           assert hashlib.sha1(('blob '+str(len(raw))+'\0').encode()+raw).hexdigest()==sha
           manifest=json.loads(lzma.decompress(raw));paths=[]
@@ -86,11 +86,12 @@ jobs:
           LIVE_RESULT: ${{ steps.live.outcome }}
         run: |
           python3 - <<'PY'
-          import json,os,pathlib
+          import json,os,pathlib,subprocess
           root=pathlib.Path('/tmp/lyric-native-result');root.mkdir(exist_ok=True)
           (root/'result.json').write_text(json.dumps({'native_build':os.environ['BUILD_RESULT'],'contracts':os.environ['CONTRACT_RESULT'],'public_publisher':os.environ['LIVE_RESULT'],'user_mac_gui':'NOT_RUN','paired_cpu_memory':'NOT_RUN'},indent=2))
           log=root/'xcodebuild.log'
           if log.exists():(root/'errors.txt').write_text('\n'.join(l for l in log.read_text(errors='replace').splitlines() if 'error:' in l))
+          (root/'production-tree.txt').write_text(subprocess.check_output(['git','ls-tree','-r','HEAD','SpotifyLyrics','SpotifyLyrics.xcodeproj','Tests'],text=True))
           PY
       - uses: actions/upload-artifact@v4
         if: always()
