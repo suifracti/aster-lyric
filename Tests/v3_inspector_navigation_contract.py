@@ -35,7 +35,7 @@ program = '''import Foundation
  @MainActor static func main() {
   let ui = Inspector()
   ui.toolbarTriggerHover(.adjust, inside: true)
-  precondition(ui.activeToolbarPopover == .adjust && ui.pinnedToolbarPanel == nil)
+  precondition(ui.activeToolbarPopover == nil && ui.pinnedToolbarPanel == nil)
   ui.togglePinnedToolbarPanel(.adjust)
   precondition(ui.activeToolbarPopover == nil && ui.pinnedToolbarPanel == .adjust)
   ui.toolbarTriggerHover(.more, inside: true)
@@ -50,7 +50,7 @@ program = '''import Foundation
   ui.hoveredStyle = "temporary-preview"
   ui.dismissPinnedToolbarPanel()
   precondition(ui.pinnedToolbarPanel == nil && ui.activeToolbarPopover == nil && ui.hoveredStyle == nil)
-  print("PASS production inspector hover, pin, ignore other hover, repeat close, explicit switch and dismissal")
+  print("PASS production inspector click-only adjust, more hover, pin, ignore other hover, repeat close, explicit switch and dismissal")
  }
 }
 '''.replace('METHODS', methods)

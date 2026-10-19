@@ -1578,7 +1578,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     }
 
     private func toolbarTriggerHover(_ panel: ToolbarPopover, inside: Bool) {
-        guard pinnedToolbarPanel == nil else { return }
+        // The tall adjustment panel opens only on click (pinned beside the
+        // window) so passing over the toolbar never covers the lyric column.
+        guard pinnedToolbarPanel == nil, panel != .adjust else { return }
         if inside {
             hoveredToolbarTrigger = panel
             presentToolbarPopover(panel)
@@ -4510,14 +4512,14 @@ private struct V3ThemeSelectorView: View {
                     .font(.system(size: 11))
                     .help("停留后临时预览，移开恢复，点击才采用；预览不会保存设置或调用 AI")
             }
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 9), GridItem(.flexible(), spacing: 9)], spacing: 9) {
+            // One row per scene: the title and description stay legible even
+            // when every thumbnail falls back to the same no-artwork tint.
+            VStack(spacing: 6) {
                 ForEach(V3ListeningScene.allCases) { scene in
                     sceneButton(scene)
                 }
             }
             if let scene = settings.v3ListeningScene {
-                Text(scene.detail).font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
                 if scene.renderers.count > 1 {
                     Picker("背景风格", selection: Binding(
                         get: { settings.v3ArtworkPresentation },
@@ -4530,14 +4532,9 @@ private struct V3ThemeSelectorView: View {
                 }
                 Button("恢复此场景当前风格的默认值", role: .destructive) {
                     clearPreview(); settings.resetCurrentV3Scene()
-                }.font(.caption).buttonStyle(.borderless)
-            } else {
-                Label("继续使用旧预设 · " + settings.v3ArtworkPresentation.title, systemImage: "checkmark.circle")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text("旧画面与数值保持不变。选择上方场景后，使用该场景独立保存的设置。")
-                    .font(.caption2).foregroundStyle(.secondary)
+                }.font(.system(size: 12)).buttonStyle(.borderless)
             }
-            DisclosureGroup("旧预设 · 原样保留", isExpanded: $oldPresetsExpanded) {
+            DisclosureGroup("经典画面（旧预设，数值原样保留）", isExpanded: $oldPresetsExpanded) {
                 VStack(spacing: 2) {
                     ForEach(V3ArtworkPresentation.allCases) { renderer in
                         Button { adopt(nil, renderer: renderer) } label: {
@@ -4555,7 +4552,7 @@ private struct V3ThemeSelectorView: View {
                         .accessibilityIdentifier("v3.style." + renderer.rawValue)
                     }
                 }.padding(.top, 6)
-            }.font(.caption)
+            }.font(.system(size: 12))
         }
         .task(id: artworkURL) {
             let image = await ArtworkImageLoader.shared.image(for: artworkURL)
@@ -4571,19 +4568,32 @@ private struct V3ThemeSelectorView: View {
     private func sceneButton(_ scene: V3ListeningScene) -> some View {
         let selected = settings.v3ListeningScene == scene
         let previewing = preview != nil && previewScene == scene
+        // A legacy renderer still belongs to one scene; mark that row so the
+        // list never shows "nothing selected".
+        let legacyCurrent = settings.v3ListeningScene == nil
+            && scene.renderers.contains(settings.v3ArtworkPresentation)
         let renderer = settings.v3Renderer(for: scene)
         return Button { adopt(scene, renderer: renderer) } label: {
-            VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .center, spacing: 10) {
                 LyricIslandSceneThumbnail(scene: scene, image: thumbnail, accent: tint)
-                HStack(spacing: 3) {
-                    Text(scene.title).font(.system(size: 12, weight: .semibold))
-                    Spacer(minLength: 0)
-                    if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(tint) }
-                    else if previewing { Text("预览").font(.system(size: 9)).foregroundStyle(tint) }
+                    .frame(width: 108)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 4) {
+                        Text(scene.title).font(.system(size: 13, weight: .semibold))
+                        Spacer(minLength: 0)
+                        if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(tint) }
+                        else if previewing { Text("预览").font(.system(size: 11)).foregroundStyle(tint) }
+                    }
+                    if legacyCurrent {
+                        Text("当前 · 经典画面「\(settings.v3ArtworkPresentation.title)」")
+                            .font(.system(size: 11, weight: .medium)).foregroundStyle(tint)
+                    }
+                    Text(scene.detail).font(.system(size: 11)).foregroundStyle(.white.opacity(0.72))
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(8)
-            .background(selected ? tint.opacity(0.12) : Color.primary.opacity(0.035),
+            .padding(6)
+            .background(selected || legacyCurrent ? tint.opacity(0.12) : Color.primary.opacity(0.035),
                         in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(selected ? tint.opacity(0.75) : previewing ? tint.opacity(0.45) : .clear,
@@ -4650,27 +4660,9 @@ private struct V3VisualTuningPopoverView: View {
     }
 
     var body: some View {
+        // The pinned NSPanel already provides the title bar and close button;
+        // the tab control is the only header so nothing is repeated.
         VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(selectedTab.title)
-                        .font(.system(size: 19, weight: .semibold, design: .rounded))
-                }
-                Spacer(minLength: 4)
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(width: 26, height: 26)
-                        .background(.quaternary.opacity(0.5), in: Circle())
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut(.cancelAction)
-                .help("关闭")
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 12)
-
             Picker("调整类别", selection: $selectedTab) {
                 ForEach(V3AdjustmentTab.allCases) { tab in
                     Text(tab.title).tag(tab)
@@ -4679,6 +4671,7 @@ private struct V3VisualTuningPopoverView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .padding(.horizontal, 14)
+            .padding(.top, 12)
             .padding(.bottom, 10)
 
             Divider()
@@ -4721,7 +4714,7 @@ private struct V3VisualTuningPopoverView: View {
                     ForEach(V3ReadingProtection.allCases) { value in Text(value.title).tag(value) }
                 }.pickerStyle(.segmented).labelsHidden()
                 Text("只保护文字与状态信息所在区域，封面配色保持稳定；不随播放逐帧采样。")
-                    .font(.caption2).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.72))
             }
             Toggle(settings.v3ListeningScene == .focusedLyrics || settings.v3ListeningScene == .coverPhoto
                    ? "显示歌曲缩略图" : "显示前景封面", isOn: $settings.v3ShowForegroundArtwork)
@@ -4790,7 +4783,7 @@ private struct V3VisualTuningPopoverView: View {
                     Text(settings.v3BackgroundShowsCompleteArtwork(for: renderer)
                          ? "优先保留封面内容并补边；前景封面单独调整。"
                          : "允许裁切以铺满背景；前景封面单独调整。")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(.white.opacity(0.72))
                     backdropScaleControls
                 }
                 if renderer != .classicGaussian {
@@ -4802,10 +4795,10 @@ private struct V3VisualTuningPopoverView: View {
                         atmosphereButton("鲜明", level: 2)
                     }
                     Text("暂停、窗口隐藏或系统减少动态效果时停止装饰运动。")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(.system(size: 11)).foregroundStyle(.white.opacity(0.72))
                 } else {
                     Label("纯高斯保持静态", systemImage: "circle.lefthalf.filled")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(.white.opacity(0.72))
                 }
                 Divider()
             }
@@ -4841,7 +4834,7 @@ private struct V3VisualTuningPopoverView: View {
             } else {
                 Toggle("悬停时显示播放信息", isOn: $settings.v3PlaybackDetailsOnHover)
                 Text("移入封面或播放区域显示；关闭后播放栏保持可见。")
-                    .font(.caption2).foregroundStyle(.secondary)
+                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.72))
             }
             Toggle("确认纯音乐时使用简洁画面", isOn: $settings.v3InstrumentalPureImmersion)
                 .help("仅对已确认纯音乐生效；找不到歌词不代表纯音乐。")
@@ -4849,7 +4842,7 @@ private struct V3VisualTuningPopoverView: View {
                 Picker("主窗口布局", selection: $layoutStyleRawValue) {
                     ForEach(MainWindowLayoutStyle.userSelectableCases) { style in Text(style.title).tag(style.rawValue) }
                 }.pickerStyle(.menu)
-            }.font(.caption)
+            }.font(.system(size: 12))
         }.font(.system(size: 12))
     }
 
@@ -4872,7 +4865,7 @@ private struct V3VisualTuningPopoverView: View {
                 .labelsHidden()
                 .accessibilityLabel("歌词位置与对齐")
                 Text("假名、原文与译文会一起对齐。")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.72))
             }
 
             HStack(spacing: 10) {
@@ -4936,7 +4929,7 @@ private struct V3VisualTuningPopoverView: View {
             .font(.system(size: 12, weight: .medium))
 
             Text("原文、译文与读音按同一行节奏排列；关闭某层只影响显示，不会删除版本。")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(.white.opacity(0.72))
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -4953,9 +4946,9 @@ private struct V3VisualTuningPopoverView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Text("歌词来源 · " + (state.liveLyricsSource?.displayName ?? "尚未采用"))
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.72))
                 Text(state.liveLyricsVersionID == nil ? "暂无已保存歌词版本" : "已采用保存版本 · \(state.liveLyrics.count) 行")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.72))
             }
 
             VStack(alignment: .leading, spacing: 7) {
@@ -4966,11 +4959,11 @@ private struct V3VisualTuningPopoverView: View {
                 Text(settings.aiTranslationConfiguration.model.isEmpty
                      ? "尚未选择模型"
                      : "模型 · \(settings.aiTranslationConfiguration.model)")
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.72)).lineLimit(2)
                 let reasoning = TranslationReasoningPolicy.value(settings.aiTranslationConfiguration)
                 if !reasoning.isEmpty {
                     Text("思考强度 · " + (["low": "低", "medium": "中", "high": "高", "xhigh": "很高", "max": "最高", "ultra": "超高", "none": "关闭"][reasoning] ?? reasoning))
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(.white.opacity(0.72))
                 }
                 Button("在设置中调整服务", systemImage: "sparkles", action: onOpenAISettings)
                     .buttonStyle(.bordered)
@@ -5000,7 +4993,7 @@ private struct V3VisualTuningPopoverView: View {
                 sectionLabel("歌词时间")
                 LyricsPresentationOffsetControl(settings: settings)
                 Button("恢复默认时间") { settings.lyricsOffsetStore.resetActiveValue() }
-                    .font(.caption)
+                    .font(.system(size: 12))
                     .buttonStyle(.borderless)
             }
         }
@@ -5008,7 +5001,7 @@ private struct V3VisualTuningPopoverView: View {
 
     private func sectionLabel(_ title: String) -> some View {
         Text(title.uppercased())
-            .font(.system(size: 9, weight: .semibold, design: .rounded))
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
             .tracking(1.1)
             .foregroundStyle(.secondary)
     }
@@ -5059,7 +5052,7 @@ private struct V3VisualTuningPopoverView: View {
             settings.v3BackdropBlurRadius = val
         }
         .buttonStyle(.plain)
-        .font(.system(size: 10, weight: abs(settings.v3BackdropBlurRadius - val) < 5 ? .bold : .regular))
+        .font(.system(size: 11, weight: abs(settings.v3BackdropBlurRadius - val) < 5 ? .bold : .regular))
         .foregroundStyle(abs(settings.v3BackdropBlurRadius - val) < 5 ? Color.blue : Color.secondary)
     }
 
@@ -5069,7 +5062,7 @@ private struct V3VisualTuningPopoverView: View {
             settings.v3ArtworkSizeScale = val
         }
         .buttonStyle(.plain)
-        .font(.system(size: 10, weight: abs(settings.v3ArtworkSizeScale - val) < 0.04 ? .bold : .regular))
+        .font(.system(size: 11, weight: abs(settings.v3ArtworkSizeScale - val) < 0.04 ? .bold : .regular))
         .foregroundStyle(abs(settings.v3ArtworkSizeScale - val) < 0.04 ? Color.blue : Color.secondary)
     }
 
@@ -5080,7 +5073,7 @@ private struct V3VisualTuningPopoverView: View {
             settings.setV3BackdropScale(val, for: settings.v3ArtworkPresentation)
         }
         .buttonStyle(.plain)
-        .font(.system(size: 10, weight: abs(currentScale - val) < 0.04 ? .bold : .regular))
+        .font(.system(size: 11, weight: abs(currentScale - val) < 0.04 ? .bold : .regular))
         .foregroundStyle(abs(currentScale - val) < 0.04 ? Color.blue : Color.secondary)
     }
 }

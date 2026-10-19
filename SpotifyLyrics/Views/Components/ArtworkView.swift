@@ -90,10 +90,30 @@ struct ArtworkView: View {
                 .blur(radius: size * 0.12)
                 .offset(x: size * 0.18, y: -size * 0.14)
 
-            Image(systemName: effectiveArtworkName)
-                .font(.system(size: size * 0.31, weight: .medium))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(LyricsDesignTokens.primaryText)
+            // Large no-artwork surfaces show a quiet mark plus the song identity
+            // instead of a symbol that dominates half the window.
+            let showsIdentity = remoteArtwork == nil && size >= 160 && !track.title.isEmpty
+            VStack(spacing: size * 0.05) {
+                Image(systemName: effectiveArtworkName)
+                    .font(.system(size: size * (showsIdentity ? 0.14 : 0.31), weight: .medium))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(LyricsDesignTokens.primaryText.opacity(showsIdentity ? 0.6 : 1))
+                if showsIdentity {
+                    VStack(spacing: 4) {
+                        Text(track.title)
+                            .font(.system(size: min(26, size * 0.06), weight: .semibold, design: .rounded))
+                            .foregroundStyle(LyricsDesignTokens.primaryText)
+                        if !track.artist.isEmpty {
+                            Text(track.artist)
+                                .font(.system(size: min(17, size * 0.04), weight: .medium, design: .rounded))
+                                .foregroundStyle(LyricsDesignTokens.primaryText.opacity(0.7))
+                        }
+                    }
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, size * 0.1)
+                }
+            }
         }
     }
 }
