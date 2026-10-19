@@ -4481,7 +4481,8 @@ private struct V3ThemeSelectorView: View {
     @State private var thumbnail: NSImage?
     @State private var tint = Color.accentColor
     @State private var previewTask: Task<Void, Never>?
-    @State private var oldPresetsExpanded = false
+    /// Hovering another family shows its styles without adopting anything.
+    @State private var browsedFamily: V3SceneFamily?
 
     private func clearPreview() {
         previewTask?.cancel(); previewTask = nil
@@ -4503,6 +4504,14 @@ private struct V3ThemeSelectorView: View {
         else { settings.selectLegacyV3Presentation(renderer) }
     }
 
+    /// The family that owns the current selection, new scene or classic preset.
+    private var currentFamily: V3SceneFamily {
+        if let scene = settings.v3ListeningScene { return V3SceneFamily.family(of: scene) }
+        return V3SceneFamily.family(ofClassic: settings.v3ArtworkPresentation)
+    }
+
+    private var shownFamily: V3SceneFamily { browsedFamily ?? currentFamily }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -4513,47 +4522,42 @@ private struct V3ThemeSelectorView: View {
                     .font(.system(size: 11))
                     .help("停留后临时预览，移开恢复，点击才采用；预览不会保存设置或调用 AI")
             }
-            // One row per scene: the title and description stay legible even
-            // when every thumbnail falls back to the same no-artwork tint.
-            VStack(spacing: 6) {
-                ForEach(V3ListeningScene.allCases) { scene in
-                    sceneButton(scene)
+            // Four families as large cards; the chosen family's styles sit
+            // underneath. Entries only — every style is an existing
+            // scene + renderer pair and keeps its saved values.
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                ForEach(V3SceneFamily.allCases) { family in
+                    familyCard(family)
                 }
             }
-            if let scene = settings.v3ListeningScene {
-                if scene.renderers.count > 1 {
-                    Picker("背景风格", selection: Binding(
-                        get: { settings.v3ArtworkPresentation },
-                        set: { adopt(scene, renderer: $0) }
-                    )) {
-                        ForEach(scene.renderers) { renderer in
-                            Text(scene.rendererTitle(renderer)).tag(renderer)
-                        }
-                    }.pickerStyle(.menu)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(shownFamily.title + " · 风格").font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Text(shownFamily.detail).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
+                        .lineLimit(1)
                 }
-                Button("恢复此场景当前风格的默认值", role: .destructive) {
+                .padding(.bottom, 4)
+                ForEach(shownFamily.styles, id: \.self) { style in
+                    styleRow(scene: style.scene, renderer: style.renderer,
+                             title: style.scene.rendererTitle(style.renderer),
+                             detail: style.renderer == style.scene.defaultRenderer && style.scene.renderers.count == 1
+                                ? style.scene.detail : nil)
+                }
+                Text("经典版").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+                    .padding(.top, 8).padding(.bottom, 2)
+                ForEach(shownFamily.classics) { renderer in
+                    styleRow(scene: nil, renderer: renderer, title: "经典 · " + renderer.title, detail: nil)
+                }
+            }
+            .padding(10)
+            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+            if settings.v3ListeningScene != nil {
+                Button("恢复此风格的默认值", role: .destructive) {
                     clearPreview(); settings.resetCurrentV3Scene()
                 }.font(.system(size: 12)).buttonStyle(.borderless)
+                .help("只重置当前场景风格的画面数值；经典版与其他风格不受影响")
             }
-            DisclosureGroup("经典画面（旧预设，数值原样保留）", isExpanded: $oldPresetsExpanded) {
-                VStack(spacing: 2) {
-                    ForEach(V3ArtworkPresentation.allCases) { renderer in
-                        Button { adopt(nil, renderer: renderer) } label: {
-                            HStack {
-                                Image(systemName: renderer.symbolName).frame(width: 20)
-                                Text(renderer.title)
-                                Spacer()
-                                if settings.v3ListeningScene == nil && settings.v3ArtworkPresentation == renderer {
-                                    Image(systemName: "checkmark")
-                                }
-                            }.font(.system(size: 12)).padding(.vertical, 6).contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .onHover { hovering($0, scene: nil, renderer: renderer) }
-                        .accessibilityIdentifier("v3.style." + renderer.rawValue)
-                    }
-                }.padding(.top, 6)
-            }.font(.system(size: 12))
         }
         .task(id: artworkURL) {
             let image = await ArtworkImageLoader.shared.image(for: artworkURL)
@@ -4563,49 +4567,167 @@ private struct V3ThemeSelectorView: View {
             tint = LyricIslandArtworkColors.edgeAccent(colors)
         }
         .onChange(of: settings.v3SceneHoverPreviewEnabled) { _, _ in clearPreview() }
+        .onChange(of: settings.v3ListeningSceneRawValue) { _, _ in browsedFamily = nil }
+        .onHover { inside in if !inside { browsedFamily = nil } }
         .onDisappear { clearPreview() }
     }
 
-    private func sceneButton(_ scene: V3ListeningScene) -> some View {
-        let selected = settings.v3ListeningScene == scene
-        let previewing = preview != nil && previewScene == scene
-        // A legacy renderer still belongs to one scene; mark that row so the
-        // list never shows "nothing selected".
-        let legacyCurrent = settings.v3ListeningScene == nil
-            && scene.renderers.contains(settings.v3ArtworkPresentation)
-        let renderer = settings.v3Renderer(for: scene)
-        return Button { adopt(scene, renderer: renderer) } label: {
-            HStack(alignment: .center, spacing: 10) {
-                LyricIslandSceneThumbnail(scene: scene, image: thumbnail, accent: tint)
-                    .frame(width: 108)
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 4) {
-                        Text(scene.title).font(.system(size: 13, weight: .semibold))
-                        Spacer(minLength: 0)
-                        if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(tint) }
-                        else if previewing { Text("预览").font(.system(size: 11)).foregroundStyle(tint) }
-                    }
-                    if legacyCurrent {
-                        Text("当前 · 经典画面「\(settings.v3ArtworkPresentation.title)」")
-                            .font(.system(size: 11, weight: .medium)).foregroundStyle(tint)
-                    }
-                    Text(scene.detail).font(.system(size: 11)).foregroundStyle(.white.opacity(0.72))
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+    /// Clicking a family adopts its remembered style (or keeps the current
+    /// one when it already belongs there); hovering previews that style.
+    private func familyTarget(_ family: V3SceneFamily) -> (V3ListeningScene?, V3ArtworkPresentation) {
+        if family == currentFamily {
+            return (settings.v3ListeningScene, settings.v3ArtworkPresentation)
+        }
+        let scene = family.primaryScene
+        return (scene, settings.v3Renderer(for: scene))
+    }
+
+    private func familyCard(_ family: V3SceneFamily) -> some View {
+        let selected = family == currentFamily
+        let target = familyTarget(family)
+        let previewing = preview != nil && family.contains(scene: previewScene, renderer: preview!) && !selected
+        return Button {
+            browsedFamily = nil
+            adopt(target.0, renderer: target.1)
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                LyricIslandSceneThumbnail(scene: family.primaryScene, image: thumbnail, accent: tint)
+                HStack(spacing: 4) {
+                    Image(systemName: family.symbolName).font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(selected ? tint : .white.opacity(0.7))
+                    Text(family.title).font(.system(size: 13, weight: .semibold))
+                    Spacer(minLength: 0)
+                    if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(tint) }
+                    else if previewing { Text("预览").font(.system(size: 11)).foregroundStyle(tint) }
                 }
             }
             .padding(6)
-            .background(selected || legacyCurrent ? tint.opacity(0.12) : Color.primary.opacity(0.035),
+            .background(selected ? tint.opacity(0.14) : Color.primary.opacity(0.035),
                         in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(selected ? tint.opacity(0.75) : previewing ? tint.opacity(0.45) : .clear,
-                              style: StrokeStyle(lineWidth: 1, dash: previewing && !selected ? [3, 3] : [])))
+                              style: StrokeStyle(lineWidth: 1, dash: previewing ? [3, 3] : [])))
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
-        .onHover { hovering($0, scene: scene, renderer: renderer) }
-        .help(scene.detail)
-        .accessibilityIdentifier("v3.scene." + scene.rawValue)
+        .onHover { inside in
+            if inside && family != currentFamily { browsedFamily = family }
+            hovering(inside, scene: target.0, renderer: target.1)
+        }
+        .help(family.detail)
+        .accessibilityLabel(family.title)
+        .accessibilityIdentifier("v3.family." + family.rawValue)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// Selection always matches scene + renderer: the same renderer draws
+    /// differently inside a scene and as a classic preset.
+    private func styleRow(scene: V3ListeningScene?, renderer: V3ArtworkPresentation,
+                          title: String, detail: String?) -> some View {
+        let selected = settings.v3ListeningScene == scene && settings.v3ArtworkPresentation == renderer
+        let previewing = !selected && preview == renderer && previewScene == scene
+        return Button { adopt(scene, renderer: renderer) } label: {
+            HStack(spacing: 8) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 13))
+                    .foregroundStyle(selected ? tint : .white.opacity(0.35))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.system(size: 12.5, weight: selected ? .semibold : .regular))
+                    if let detail {
+                        Text(detail).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                if previewing { Text("预览").font(.system(size: 11)).foregroundStyle(tint) }
+            }
+            .padding(.horizontal, 6).padding(.vertical, 5)
+            .background(selected ? tint.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(previewing ? tint.opacity(0.45) : .clear, style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering($0, scene: scene, renderer: renderer) }
+        .accessibilityIdentifier(scene == nil ? "v3.style." + renderer.rawValue
+                                 : "v3.scene." + scene!.rawValue + "." + renderer.rawValue)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// Entry grouping only. Families map onto existing scene + renderer pairs and
+/// the eight classic presets; nothing here is persisted.
+private enum V3SceneFamily: String, CaseIterable, Identifiable {
+    case ambient, cover, linerNotes, focus
+    var id: String { rawValue }
+
+    struct Style: Hashable {
+        let scene: V3ListeningScene
+        let renderer: V3ArtworkPresentation
+    }
+
+    var title: String {
+        switch self {
+        case .ambient: return "环境光"
+        case .cover: return "封面"
+        case .linerNotes: return "内页"
+        case .focus: return "专注"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .ambient: return "封面化作光色，环绕歌词"
+        case .cover: return "画面成为舞台"
+        case .linerNotes: return "题头、版心与段落"
+        case .focus: return "安静底色，连续阅读"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .ambient: return "sun.max"
+        case .cover: return "photo.fill"
+        case .linerNotes: return "book.pages"
+        case .focus: return "text.alignleft"
+        }
+    }
+
+    var scenes: [V3ListeningScene] {
+        switch self {
+        case .ambient: return [.originalAmbient, .flowingField]
+        case .cover: return [.coverPhoto]
+        case .linerNotes: return [.linerNotes]
+        case .focus: return [.focusedLyrics]
+        }
+    }
+
+    var primaryScene: V3ListeningScene { scenes[0] }
+
+    var styles: [Style] {
+        scenes.flatMap { scene in scene.renderers.map { Style(scene: scene, renderer: $0) } }
+    }
+
+    /// Classic presets keep their own rawIDs and values.
+    var classics: [V3ArtworkPresentation] {
+        switch self {
+        case .ambient: return [.authenticAmbient, .classic, .ambientFeathered]
+        case .cover: return [.ambient, .classicGaussian, .stage]
+        case .linerNotes: return [.albumPoster]
+        case .focus: return [.lyricsOnly]
+        }
+    }
+
+    func contains(scene: V3ListeningScene?, renderer: V3ArtworkPresentation) -> Bool {
+        if let scene { return scenes.contains(scene) }
+        return classics.contains(renderer)
+    }
+
+    static func family(of scene: V3ListeningScene) -> V3SceneFamily {
+        allCases.first { $0.scenes.contains(scene) } ?? .ambient
+    }
+
+    static func family(ofClassic renderer: V3ArtworkPresentation) -> V3SceneFamily {
+        allCases.first { $0.classics.contains(renderer) } ?? .ambient
     }
 }
 
