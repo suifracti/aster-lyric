@@ -52,6 +52,18 @@ for screen in [visible,CGRect(x:-1600,y:-100,width:1600,height:1000),CGRect(x:0,
  expect(screen.contains(panel),"floating panel off owner screen")
  expect(full.width==screen.width,"owner canvas changed")
 }
+for canvasHeight: CGFloat in [400, 500, 640, 820, 1080] {
+ for footerHeight: CGFloat in [0, 44] {
+  let field=LyricIslandSceneBudget.fieldReadingHeight(canvasHeight:canvasHeight,footerHeight:footerHeight)
+  let fieldTotal=84+24+28+16+field+(footerHeight>0 ? footerHeight+16 : 0)
+  expect(abs(fieldTotal-canvasHeight)<0.01,"flow scene overflows the window")
+  for headerHeight: CGFloat in [80,104] {
+   let reading=LyricIslandSceneBudget.linerReadingHeight(canvasHeight:canvasHeight,headerHeight:headerHeight,footerHeight:footerHeight)
+   let total=76+24+headerHeight+1+36+reading+(footerHeight>0 ? footerHeight+18 : 0)
+   expect(abs(total-canvasHeight)<0.01,"liner scene hides its footer below the window")
+  }
+ }
+}
 print("PASS \(count) scene/normalization/placement assertions")
 '''
 compiler=shutil.which('swiftc')
@@ -82,3 +94,8 @@ menu=(ROOT/'SpotifyLyrics/Windows/MenuBarLyricsController.swift').read_text()
 assert 'Double(animationDistance) / 22' in menu and 'min(60, max(2' not in menu
 assert 'Double(input)' in controls and 'formatter.number(from: draft)' not in controls
 print('PASS empty playback footprint, finite cover scaling, full numeric input and constant marquee speed guards')
+
+field=window[window.index('private func fieldReadingLayout'):window.index('private func photographicLayout')]
+assert 'LyricIslandSceneBudget.fieldReadingHeight' in field and 'if footerHeight > 0' in field
+assert 'LyricIslandSceneBudget.linerReadingHeight' in notes and 'if footerHeight > 0' in notes
+print('PASS bounded narrow/short scene geometry with and without standard playback')

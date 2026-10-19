@@ -232,6 +232,21 @@ enum LyricIslandPanelPlacement {
         return CGRect(x: x, y: y, width: width, height: height)
     }
 }
+/// Deterministic space budgets for the two document-like scenes. A hidden
+/// player creates neither an empty footer nor its surrounding stack spacing.
+/// No GeometryPreference feedback, runtime text measurement, or extra timers.
+enum LyricIslandSceneBudget {
+    static func fieldReadingHeight(canvasHeight: CGFloat, footerHeight: CGFloat) -> CGFloat {
+        let footer = footerHeight > 0 ? footerHeight + 16 : 0
+        return max(1, canvasHeight - 84 - 24 - 28 - 16 - footer)
+    }
+    static func linerReadingHeight(canvasHeight: CGFloat, headerHeight: CGFloat,
+                                   footerHeight: CGFloat) -> CGFloat {
+        let footer = footerHeight > 0 ? footerHeight + 18 : 0
+        // 76/24 outer padding, header, 1pt rule, and two 18pt gaps.
+        return max(1, canvasHeight - 76 - 24 - headerHeight - 1 - 36 - footer)
+    }
+}
 // END EXTERNAL PANEL GEOMETRY
 
 private struct LyricIslandSceneEnvironmentKey: EnvironmentKey {

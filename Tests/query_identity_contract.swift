@@ -498,6 +498,43 @@ struct QueryIdentityContract {
             )
         }
 
+        // Publisher fixtures use catalog metadata and placeholder text only.
+        // These verify matching policy, not user-Mac Session adoption or lyric timing.
+        let publisherTrack = Track(title: "HANABI", artist: "SACBEN", album: "HANABI", duration: 120)
+        let publisherMetadata = TrackMetadata.bootstrap(from: publisherTrack)
+        func publisherCandidate(title: String, artist: String, duration: Double = 120,
+                                source: LyricsSource = .linkcore) -> LyricsCandidate {
+            LyricsCandidate(id: "fixture-publisher-" + artist + title,
+                identity: publisherMetadata.identity, title: title, artist: artist,
+                album: "HANABI", duration: duration,
+                lines: [LyricLine(timestamp: 0, originalText: "Publisher fixture text")],
+                isSynchronized: false, source: source, confidence: 0.98,
+                providerSourceID: "fixture:catalog-582402:song-2380258",
+                declaredTitleAliases: ["HANABI", "はなび"])
+        }
+        let publisherBody = publisherCandidate(title: "はなび", artist: "SACBEN")
+        let publisherDecision = LyricsSafeMatcher.decide(candidate: publisherBody, metadata: publisherMetadata)
+        require(publisherDecision.tier == .autoHigh || publisherDecision.tier == .autoMedium,
+            "official localized title plus matching performer and duration should permit plain-text adoption")
+        require(!publisherBody.isSynchronized, "publisher fixture must not fabricate synchronization")
+        let otherArtist = LyricsSafeMatcher.decide(candidate: publisherCandidate(title: "HANABI", artist: "Louis Vision"),
+            metadata: publisherMetadata)
+        require(otherArtist.tier != .autoHigh && otherArtist.tier != .autoMedium,
+            "same HANABI title must not authorize another performer")
+        let wrongVersion = LyricsSafeMatcher.decide(candidate: publisherCandidate(title: "HANABI - Piano Ver.", artist: "SACBEN"),
+            metadata: publisherMetadata)
+        require(wrongVersion.tier != .autoHigh && wrongVersion.tier != .autoMedium,
+            "publisher title alias must not bypass piano recording conflict")
+        let distantDuration = LyricsSafeMatcher.decide(candidate: publisherCandidate(title: "HANABI", artist: "SACBEN", duration: 210),
+            metadata: publisherMetadata)
+        require(distantDuration.tier != .autoHigh && distantDuration.tier != .autoMedium,
+            "publisher evidence must retain duration mismatch protection")
+        let queryEcho = LyricsSafeMatcher.decide(candidate: publisherCandidate(title: "HANABI", artist: "SACBEN", source: .lyricsOVH),
+            metadata: publisherMetadata)
+        require(queryEcho.tier == .candidates,
+            "query-echo source stays candidate-only even with matching returned labels")
+        print("PASS 6 publisher identity / plain-text / wrong-recording / query-echo guards (fixtures, not native playback)")
+
         print("query identity contract passed")
     }
 }

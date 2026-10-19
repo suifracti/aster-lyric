@@ -529,18 +529,20 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     // Each new scene retains its reading architecture when its cover is hidden.
     // Only the selected branch is constructed: there are no five hidden lyric trees.
     private func fieldReadingLayout(in geometry: GeometryProxy) -> some View {
-        let width = min(820, max(1, geometry.size.width - 80))
-        let height = max(1, geometry.size.height - 190)
+        let width = min(820, max(1, geometry.size.width - (geometry.size.width < 760 ? 48 : 80)))
+        let footerHeight: CGFloat = isCompositionPreview || !settings.v3EdgeProgressEnabled ? 44 : 0
+        let height = LyricIslandSceneBudget.fieldReadingHeight(canvasHeight: geometry.size.height,
+                                                               footerHeight: footerHeight)
         return VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .firstTextBaseline) {
                 Text(compositionTrack.title).font(.system(size: 20, weight: .semibold)).lineLimit(1)
                 Spacer(minLength: 12)
                 Text(compositionTrack.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
-            .frame(width: width)
+            .frame(width: width, height: 28)
             lyricsColumn(width: width, compact: isCompact(for: geometry.size), lyricsFocus: false)
                 .frame(width: width, height: height)
-            sceneTransport(width: min(420, width))
+            if footerHeight > 0 { sceneTransport(width: min(420, width)) }
         }
         .padding(.top, 84).padding(.bottom, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -587,7 +589,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         let coverScale = min(1.4, max(0.8, CGFloat(compositionArtworkScale)))
         let coverSize = compact ? 64 * coverScale : coverColumnWidth / 1.4 * coverScale
         let headerHeight: CGFloat = compact ? 104 : 80
-        let readingHeight = max(1, geometry.size.height - headerHeight - 170)
+        let footerHeight: CGFloat = isCompositionPreview || !settings.v3EdgeProgressEnabled ? 44 : 0
+        let readingHeight = LyricIslandSceneBudget.linerReadingHeight(
+            canvasHeight: geometry.size.height, headerHeight: headerHeight, footerHeight: footerHeight)
         let heading = VStack(alignment: .leading, spacing: 6) {
             Text(compositionTrack.title)
                 .font(.system(size: compact ? 24 : 32, weight: .medium, design: .serif))
@@ -608,7 +612,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 Spacer(minLength: 0)
             }
             .frame(height: headerHeight, alignment: .leading)
-            Divider().overlay(Color.white.opacity(0.16))
+            Divider().frame(height: 1).overlay(Color.white.opacity(0.16))
             HStack(alignment: .top, spacing: 36) {
                 if !compact && compositionShowsCover {
                     VStack(alignment: .leading, spacing: 16) {
@@ -626,8 +630,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     .environment(\.lyricTextAlignment, .leading)
             }
             .frame(maxWidth: .infinity, minHeight: readingHeight, maxHeight: readingHeight, alignment: .leading)
-            sceneTransport(width: min(460, contentWidth))
-                .frame(maxWidth: .infinity)
+            if footerHeight > 0 {
+                sceneTransport(width: min(460, contentWidth))
+                    .frame(maxWidth: .infinity)
+            }
         }
         .frame(width: contentWidth)
         .padding(.top, 76).padding(.bottom, 24)
@@ -642,7 +648,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     .reportsV3PlaybackRegion()
                     .modifier(playbackVisibility)
             }
-        }.frame(width: max(1, width), height: settings.v3EdgeProgressEnabled ? 0 : 44)
+        }.frame(width: max(1, width), height: isCompositionPreview || !settings.v3EdgeProgressEnabled ? 44 : 0)
     }
 
     @ViewBuilder
