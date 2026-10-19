@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TMP_DIR="$(mktemp -d /tmp/spotifylyrics-s1-adoption.XXXXXX)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+mkdir -m 700 "$TMP_DIR/home"
+export CFFIXED_USER_HOME="$TMP_DIR/home"
 cp "$ROOT_DIR/Tests/s1_durable_manual_adoption_contract.swift" "$TMP_DIR/main.swift"
 
 cat > "$TMP_DIR/logger.swift" <<'SWIFT'
@@ -25,6 +27,7 @@ swiftc -D DEBUG -parse-as-library \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsSafeMatcher.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsQueryPlanner.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsRecoveryModels.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Providers/LinkCoreLyricsProvider.swift" \
   "$TMP_DIR/logger.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsSearchManager.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/CompositeLyricsProvider.swift" \

@@ -845,7 +845,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         if !acceptedCandidates.isEmpty {
             let sorted = acceptedCandidates.values
                 .sorted(by: LyricsCandidate.hasPrecedence)
-            return SearchOutcome(result: .candidates(sorted), diagnostics: diagnostics)
+            return SearchOutcome(result: .candidates(sorted), diagnostics: diagnostics, alternatives: sorted)
         }
 
         // Exact catalog metadata without text is distinct from wrong same-title songs.

@@ -271,7 +271,8 @@ public final class LyricsSessionController: ObservableObject {
                             cachedReference = nil
                             outcome = searched
                         } else {
-                            outcome = SearchOutcome(result: .match(cached.document), diagnostics: searched.diagnostics)
+                            outcome = SearchOutcome(result: .match(cached.document), diagnostics: searched.diagnostics,
+                                alternatives: searched.alternatives)
                         }
                     } else { outcome = searched }
                 } else {
@@ -972,7 +973,7 @@ public final class LyricsSessionController: ObservableObject {
             applyLoadedDocument(document, identity: identity, sourceContentHash: sourceContentHash)
         case .candidates(let candidates):
             lyrics = []
-        availableCandidates = []
+            availableCandidates = candidates
 #if DEBUG
             debugLyricsBindingToken = nil
 #endif
