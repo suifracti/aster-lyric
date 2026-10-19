@@ -26,3 +26,15 @@
 
 UI 手感、真实歌曲在线覆盖、配对 CPU/RSS 测量：`NOT_RUN`。
 未读取 Obsidian，未改正式数据或 `/Applications` 安装版；未重启当前日用 App。
+
+## 追加：官方歌曲信息补查取消
+
+输入基线：`5a403b7e089001da23e42eaba6570aca6393788d`。
+
+首轮无自动结果后的 Spotify 官方别名补查直接等待共享元数据请求，未经过前述单来源超时边界。现在每个消费者能独立取消等待；共享加载本身负责写缓存及清理在途记录，其他消费者不会被取消，也不会因等待者退出而重复发请求。
+
+- `bash Tests/spotify_alias_cancellation_contract.sh`：实际 resolver/search + 延迟 HTTP，修改前3项失败，修改后8项通过。单消费者取消从约0.861秒降至立即返回；最后一个消费者退出、全搜索取消、其他消费者正常完成、缓存和请求去重均通过。
+- `bash Tests/search_concurrency_manual_contract.sh`：再次通过，含官方别名、自动采用、录音不符拒绝和译文保留。
+- 完整 Mac App：同配置 Debug、arm64、`-O`，编译成功。
+
+此处数值仅为离线复现；真实在线歌曲和界面体验未复测。UI、匹配规则及正式数据未修改。

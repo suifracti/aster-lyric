@@ -193,18 +193,39 @@ public actor SpotifyTrackArtistResolver {
         if let pending = inFlight[id] {
             task = pending
         } else {
-            task = Task { [session] in await Self.fetch(id: id, session: session) }
+            task = Task { [session] in
+                let result = await Self.fetch(id: id, session: session)
+                storeMetadata(result, for: id)
+                return result
+            }
             inFlight[id] = task
         }
-        let result = await task.value
+
+        // Cancelling a caller must end its wait without cancelling another
+        // caller's shared request. AsyncStream terminates its iterator on task
+        // cancellation; the bounded fetch owns cache/in-flight cleanup above.
+        let (values, continuation) = AsyncStream<TrackArtists?>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let observer = Task {
+            continuation.yield(await task.value)
+            continuation.finish()
+        }
+        defer {
+            observer.cancel()
+            continuation.finish()
+        }
+        for await result in values {
+            return Task.isCancelled ? nil : result
+        }
+        return nil
+    }
+
+    private func storeMetadata(_ result: TrackArtists?, for id: String) {
         inFlight.removeValue(forKey: id)
         cache = cache.filter { $0.value.expires > Date() }
         if cache.count >= 128, let oldest = cache.min(by: { $0.value.expires < $1.value.expires })?.key {
             cache.removeValue(forKey: oldest)
         }
         cache[id] = Cached(value: result, expires: Date().addingTimeInterval(result == nil ? 60 : 3600))
-        guard !Task.isCancelled else { return nil }
-        return result
     }
 
     private static func exactTrackID(_ track: Track) -> String? {
