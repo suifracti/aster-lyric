@@ -34,11 +34,20 @@ jobs:
           retention-days: 7
   native:
     runs-on: macos-15
-    timeout-minutes: 15
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Prepare the project's existing Japanese morphology dependency
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_CLEANUP: 1
+        shell: bash
+        run: |
+          mkdir -p /tmp/lyric-native-result
+          brew install mecab mecab-ipadic > /tmp/lyric-native-result/morphology-setup.log 2>&1
+          mecab -D >> /tmp/lyric-native-result/morphology-setup.log
       - name: Native production logic contracts
         id: contracts
         continue-on-error: true
