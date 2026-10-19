@@ -1,0 +1,14 @@
+# 后端：普通歌曲复用已返回的译文
+
+输入基线：`d0170228c8f4414e58f7c3c0f2a48951dfc0185a`。
+
+自动选择歌词后，从本轮已经返回的其他结果补齐缺失译文。普通歌曲要求来源通过既有录音匹配，且完整非空原文顺序一致；不增加查询，不等待额外来源。保留原选来源、行 ID、时间轴、逐字信息和已有译文。现有加速版文本补译保留，版本浏览仍分别展示各来源。搜索诊断记录实际补译来源。
+
+## 检查
+
+- `bash Tests/search_translation_companion_contract.sh`：修改前4项失败；修改后14项通过。包括真实搜索自动采用路径、空行、保留现有译文和元数据、无额外请求，以及拒绝不同艺人/录音 ID/时长/编排/原文或顺序。
+- `bash Tests/sped_up_search_contract.sh`：通过；补齐其遗漏的 LinkCore 编译输入与测试所要求的私有 home。
+- `bash Tests/search_concurrency_manual_contract.sh`：通过，包括自动选择、取消、来源优先级、版本浏览、官方别名和译文保留。
+- 完整 Mac App：Debug、arm64、`SWIFT_OPTIMIZATION_LEVEL=-O`、`CODE_SIGNING_ALLOWED=NO`，编译成功。
+
+以上均为离线输入和编译；真实歌曲在线覆盖与 UI 体验未复测。只修改后端与定向测试，未读取 Obsidian、调用付费模型、控制 Spotify 或替换正式 App/数据。

@@ -739,6 +739,19 @@ public final class LyricsSearchManager: @unchecked Sendable {
 
             if !collectCandidatesOnly, let selected = Self.bestAutomaticAdoption(in: automaticAdoptions) {
                 var selectedDocument = selected.document
+                // Reuse translations that have already arrived. This never
+                // starts another query or delays adoption for a slower source.
+                let donors = evaluatedCandidates.sorted {
+                    if $0.providerIndex != $1.providerIndex { return $0.providerIndex < $1.providerIndex }
+                    return $0.candidateIndex < $1.candidateIndex
+                }
+                for donor in donors where donor.providerIndex != selected.providerIndex || donor.candidateIndex != selected.candidateIndex {
+                    if let merged = Self.mergingTranslationCompanion(donor.candidate, into: selectedDocument, metadata: meta) {
+                        selectedDocument = merged
+                        diagnostics.append(LyricsProviderDiagnostic(provider: donor.providerName + "@translation-companion",
+                            outcome: .match, duration: 0))
+                    }
+                }
                 // Show the exact recording first. A metadata-only tempo catalog
                 // may have the same words plus a translation on its base release.
                 // Consult that source once, rather than exhaust every query alias.
@@ -975,13 +988,17 @@ public final class LyricsSearchManager: @unchecked Sendable {
     static func mergingTranslationCompanion(_ donor: LyricsCandidate, into document: LyricsDocument,
                                              metadata: TrackMetadata) -> LyricsDocument? {
         guard donor.identity == document.identity, document.lines.count >= 3,
-              metadata.versionTags.contains(.spedUp) else { return nil }
+              donor.lines.contains(where: { !($0.translationText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              document.lines.contains(where: { ($0.translationText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { return nil }
         let decision = LyricsSafeMatcher.decide(candidate: donor, metadata: metadata)
+        let sameRecording = !decision.versionConflict && (decision.tier == .autoHigh || decision.tier == .autoMedium)
         let targetTags = Set(metadata.versionTags)
         let donorTags = Set(TrackTextNormalizer.extractVersionTags(fromTitle: donor.title))
-        guard !decision.hardReject, decision.reasons.contains("primaryArtistExact"),
-              decision.reasons.contains("tempoBaseTitleExact"),
-              targetTags.symmetricDifference(donorTags).subtracting([.spedUp, .remaster]).isEmpty else { return nil }
+        let tempoCompanion = metadata.versionTags.contains(.spedUp)
+            && decision.reasons.contains("primaryArtistExact")
+            && decision.reasons.contains("tempoBaseTitleExact")
+            && targetTags.symmetricDifference(donorTags).subtracting([.spedUp, .remaster]).isEmpty
+        guard !decision.hardReject, sameRecording || tempoCompanion else { return nil }
         func key(_ text: String) -> String {
             let folded = text.folding(options: [.caseInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
             return String(String.UnicodeScalarView(folded.unicodeScalars.filter {
@@ -989,13 +1006,17 @@ public final class LyricsSearchManager: @unchecked Sendable {
             }))
         }
         let donorKeys = donor.lines.map { key($0.originalText) }
+        if sameRecording {
+            let targetKeys = document.lines.map { key($0.originalText) }.filter { !$0.isEmpty }
+            guard targetKeys.count >= 3, targetKeys == donorKeys.filter({ !$0.isEmpty }) else { return nil }
+        }
         var cursor = 0
         var translated = 0
         var merged: [LyricLine] = []
         for line in document.lines {
             let wanted = key(line.originalText)
-            guard !wanted.isEmpty,
-                  let index = donorKeys.indices.dropFirst(cursor).first(where: { donorKeys[$0] == wanted }) else { return nil }
+            if wanted.isEmpty { merged.append(line); continue }
+            guard let index = donorKeys.indices.dropFirst(cursor).first(where: { donorKeys[$0] == wanted }) else { return nil }
             cursor = index + 1
             var copy = line
             if (copy.translationText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,

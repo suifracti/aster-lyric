@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+mkdir -m 700 "$TMP_DIR/home"
+export CFFIXED_USER_HOME="$TMP_DIR/home"
 
 cat > "$TMP_DIR/logger.swift" <<'SWIFT'
 enum LyricsE2ELog { static func log(_ message: String) { print(message) } }
@@ -22,6 +24,7 @@ swiftc -parse-as-library \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsQueryPlanner.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsSafeMatcher.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsRecoveryModels.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Providers/LinkCoreLyricsProvider.swift" \
   "$TMP_DIR/logger.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsSearchManager.swift" \
   "$ROOT_DIR/Tests/sped_up_search_contract.swift" \
