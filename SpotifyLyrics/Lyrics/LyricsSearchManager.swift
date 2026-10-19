@@ -609,6 +609,18 @@ public final class LyricsSearchManager: @unchecked Sendable {
                 let publisherAliases = await LinkCoreCatalog.shared.cachedAliases(for: track)
                 if !publisherAliases.isEmpty {
                     meta.aliases = Self.mergeAliases(meta.aliases, publisherAliases)
+                    // At most two extra queries, tied to an independently verified
+                    // publisher entity and this track. No generic parenthesis alias.
+                    let publisherPlan = LyricsQueryPlanner.plan(for: meta, manualQuery: nil)
+                        .filter { plan in plan.aliasIDs.contains { $0.hasPrefix("linkcore-entity:") } }
+                        .filter { queriedVariants.insert($0.titleQuery + "\u{1F}" + ($0.artistQuery ?? "")).inserted }
+                        .prefix(2)
+                    let additions = publisherPlan.enumerated().map { offset, item in
+                        LyricsQueryVariant(rank: variantCursor + offset + 1, strategy: item.strategy,
+                            queryKind: item.queryKind, titleQuery: item.titleQuery,
+                            artistQuery: item.artistQuery, aliasIDs: item.aliasIDs)
+                    }
+                    variants.insert(contentsOf: additions, at: variantCursor)
                     var rescored: [LyricsMatchDecision] = []
                     for item in evaluatedCandidates {
                         let decision = LyricsSafeMatcher.decide(candidate: item.candidate, metadata: meta,

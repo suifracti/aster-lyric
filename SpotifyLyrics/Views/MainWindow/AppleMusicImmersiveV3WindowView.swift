@@ -580,7 +580,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         let compact = geometry.size.width < 840 || geometry.size.height < 640
         let margin: CGFloat = compact ? 24 : 46
         let contentWidth = max(1, geometry.size.width - margin * 2)
-        let textWidth = compact ? min(760, contentWidth) : max(1, contentWidth - min(290, contentWidth * 0.30) - 36)
+        let coverColumnWidth = min(290, contentWidth * 0.30)
+        let textWidth = compact ? min(760, contentWidth) : max(1, contentWidth - coverColumnWidth - 36)
+        // Keep the reading column stable while the cover changes, including 100–140%.
+        // Reserving the maximum size avoids a slider dead zone or clipped artwork.
+        let coverScale = min(1.4, max(0.8, CGFloat(compositionArtworkScale)))
+        let coverSize = compact ? 64 * coverScale : coverColumnWidth / 1.4 * coverScale
         let headerHeight: CGFloat = compact ? 104 : 80
         let readingHeight = max(1, geometry.size.height - headerHeight - 170)
         let heading = VStack(alignment: .leading, spacing: 6) {
@@ -595,8 +600,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         return VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 18) {
                 if compact && compositionShowsCover {
-                    ArtworkView(track: compositionTrack, size: 64, showsAlbumLabel: false,
+                    ArtworkView(track: compositionTrack, size: coverSize, showsAlbumLabel: false,
                                 cornerRadiusRatio: 0.025, preservesCompleteArtwork: true)
+                        .frame(width: 90, height: 90)
                 }
                 heading
                 Spacer(minLength: 0)
@@ -605,15 +611,14 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             Divider().overlay(Color.white.opacity(0.16))
             HStack(alignment: .top, spacing: 36) {
                 if !compact && compositionShowsCover {
-                    let coverWidth = min(290, contentWidth * 0.30)
                     VStack(alignment: .leading, spacing: 16) {
-                        ArtworkView(track: compositionTrack, size: coverWidth * min(1, CGFloat(compositionArtworkScale)),
+                        ArtworkView(track: compositionTrack, size: coverSize,
                                     showsAlbumLabel: false, cornerRadiusRatio: 0.025, preservesCompleteArtwork: true)
                         Text("原文 · 译文 · 读音")
                             .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
                         Text("点击已同步的歌词可跳转；手动滚动阅读后可返回当前行。")
                             .font(.caption).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
-                    }.frame(width: coverWidth, alignment: .leading)
+                    }.frame(width: coverColumnWidth, alignment: .leading)
                 }
                 lyricsColumn(width: compositionShowsCover ? textWidth : min(840, contentWidth),
                              compact: compact, lyricsFocus: false)

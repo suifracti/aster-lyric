@@ -50,43 +50,88 @@ expect(LinkCoreHTML.isAllowed(URL(string:"https://www.tunecore.co.jp/artists?key
 expect(LinkCoreHTML.pageProps(String(repeating:"x",count:1_500_001)) == nil, "unbounded document")
 print("PASS \(checks) exact parser assertions; no app UI or performance claim")
 '''
-# Optional bounded public identity/body path. No polling and no lyric body output.
-live = r'''
-import FoundationNetworking
-'''
+# Optional bounded public identity/body path. Network status and parser status
+# are distinct. No body text is printed, saved in the repo, or uploaded as evidence.
 if '--live' in sys.argv:
     fixtures += r'''
-func fetch(_ url: URL) -> String? {
-    let semaphore = DispatchSemaphore(value: 0)
-    var result: String?
-    var request = URLRequest(url:url); request.timeoutInterval = 10
-    request.setValue("LyricIsland-Compatibility/1.0",forHTTPHeaderField:"User-Agent")
-    let task = URLSession.shared.dataTask(with:request) { data, response, error in
+final class FetchBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var item: (String?, Int, String) = (nil, 0, "not started")
+    func set(_ value: (String?, Int, String)) { lock.lock(); defer { lock.unlock() }; item = value }
+    func get() -> (String?, Int, String) { lock.lock(); defer { lock.unlock() }; return item }
+}
+func fetch(_ url: URL) -> (html: String?, status: Int, error: String) {
+    let semaphore = DispatchSemaphore(value: 0), box = FetchBox()
+    var request = URLRequest(url: url); request.timeoutInterval = 12
+    request.setValue("LyricIsland/1.0 (public publisher lyrics)", forHTTPHeaderField: "User-Agent")
+    request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.httpShouldSetCookies = false; configuration.httpCookieStorage = nil
+    configuration.urlCache = nil
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    let task = session.dataTask(with: request) { data, response, error in
         defer { semaphore.signal() }
-        if error == nil, (response as? HTTPURLResponse)?.statusCode == 200,
-           let data, data.count < 1_500_000 { result = String(data:data,encoding:.utf8) }
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let allowed = response?.url.map { LinkCoreHTML.isAllowed($0) } ?? false
+        let html = allowed && code == 200 && error == nil && (data?.count ?? 0) <= 1_500_000
+            ? data.flatMap { String(data: $0, encoding: .utf8) } : nil
+        box.set((html, code, error.map { String(describing: type(of: $0)) } ?? (allowed ? "" : "unexpected host")))
     }
     task.resume()
-    if semaphore.wait(timeout:.now()+12) == .timedOut { task.cancel();return nil }
-    return result
+    if semaphore.wait(timeout: .now()+14) == .timedOut { task.cancel(); return (nil, 0, "timeout") }
+    return box.get()
 }
+func marker(_ pattern: String, in html: String) -> Bool {
+    html.range(of: pattern, options: .regularExpression) != nil
+}
+var liveFailures = 0, liveUnavailable = 0, liveBodies = 0
 for (artistName,title) in [("SACBEN","HANABI"),("toh","WAITING AT 3AM")] {
-    var parts=URLComponents(string:"https://www.tunecore.co.jp/artists")!
-    parts.queryItems=[URLQueryItem(name:"keyword",value:artistName),URLQueryItem(name:"lang",value:"en")]
-    guard let html=fetch(parts.url!) else { print("NOT_RUN public directory: \(artistName)");continue }
-    let ids=LinkCoreHTML.artistDirectory(html,matching:artistName)
-    guard let id=ids.first,
-          let profileHTML=fetch(URL(string:"https://www.tunecore.co.jp/artists?id=\(id)&lang=en")!),
-          let artist=LinkCoreHTML.artistPage(profileHTML) else { print("FAIL official artist lookup \(artistName), ids=\(ids)");continue }
-    let songs=artist.songs.filter { LinkCoreHTML.key($0.versionedTitle) == LinkCoreHTML.key(title) }
-    guard let song=songs.first,let url=song.lyricURL else { print("FAIL release/song lookup \(title)");continue }
-    guard let html=fetch(url),let page=LinkCoreHTML.lyricPage(html) else {
-        print("BODY_UNAVAILABLE \(artist.id) \(song.releaseCode)/\(song.songID) \(title)");continue
+    var parts = URLComponents(string:"https://www.tunecore.co.jp/artists")!
+    parts.queryItems = [URLQueryItem(name:"keyword",value:artistName),URLQueryItem(name:"lang",value:"en")]
+    let directory = fetch(parts.url!)
+    guard let html = directory.html else {
+        print("LIVE NOT_RUN directory artist=\(artistName) HTTP=\(directory.status) error=\(directory.error)"); liveUnavailable += 1; continue
     }
-    let matches=song.titles.contains { LinkCoreHTML.key($0)==LinkCoreHTML.key(page.title) }
+    let ids = LinkCoreHTML.artistDirectory(html, matching:artistName)
+    guard let id = ids.first else {
+        print("LIVE FAIL directory parse artist=\(artistName) bytes=\(html.utf8.count)"); liveFailures += 1; continue
+    }
+    let profile = fetch(URL(string:"https://www.tunecore.co.jp/artists?id=\(id)&lang=en")!)
+    guard let profileHTML = profile.html else {
+        print("LIVE NOT_RUN artist entity=\(id) HTTP=\(profile.status)"); liveUnavailable += 1; continue
+    }
+    guard let artist = LinkCoreHTML.artistPage(profileHTML), artist.id == id else {
+        print("LIVE FAIL artist parse entity=\(id)"); liveFailures += 1; continue
+    }
+    let songs = artist.songs.filter { LinkCoreHTML.key($0.versionedTitle) == LinkCoreHTML.key(title) }
+    guard let song = songs.first, let url = song.lyricURL else {
+        print("LIVE FAIL release lookup entity=\(id) title=\(title)"); liveFailures += 1; continue
+    }
+    print("LIVE CATALOG verified entity=\(id) title=\(title) aliases=\(artist.names.joined(separator: " / ")) duration=\(song.duration)")
+    let body = fetch(url)
+    if body.status == 404 {
+        print("LIVE BODY_NOT_PUBLISHED entity=\(id) release=\(song.releaseCode) song=\(song.songID); catalog identity is not lyric success")
+        if artistName == "SACBEN" { liveFailures += 1 }
+        continue
+    }
+    guard let html = body.html else {
+        print("LIVE NOT_RUN body entity=\(id) HTTP=\(body.status) error=\(body.error)"); liveUnavailable += 1; continue
+    }
+    guard let page = LinkCoreHTML.lyricPage(html) else {
+        let header = marker(#"(?is)<section\b[^>]*\bclass\s*=\s*["'][^"']*\blyric_header\b[^"']*["'][^>]*>(.*?)</section\s*>"#, in: html)
+        let text = marker(#"(?is)<div\b[^>]*\bclass\s*=\s*["'][^"']*\blyric_text\b[^"']*["'][^>]*>(.*?)</div\s*>"#, in: html)
+        print("LIVE FAIL body parse entity=\(id) HTTP=\(body.status) bytes=\(html.utf8.count) header=\(header) lyric_text=\(text)")
+        liveFailures += 1; continue
+    }
+    let matches = song.titles.contains { LinkCoreHTML.key($0)==LinkCoreHTML.key(page.title) }
         && song.artistNames.contains { LinkCoreHTML.key($0)==LinkCoreHTML.key(page.artist) }
-    print("LIVE \(matches ? "PASS" : "FAIL") entity=\(artist.id), release=\(song.releaseCode), song=\(song.songID), lines=\(page.lines.count), title=\(page.title), sync=false")
+    print("LIVE \(matches ? "PASS" : "FAIL") entity=\(id), release=\(song.releaseCode), song=\(song.songID), lines=\(page.lines.count), sync=false")
+    if matches { liveBodies += 1 } else { liveFailures += 1 }
 }
+print("LIVE summary: verifiedBodies=\(liveBodies) failures=\(liveFailures) unavailable=\(liveUnavailable); no GUI or automatic-adoption claim")
+if liveFailures > 0 { exit(1) }
+if liveUnavailable > 0 { exit(2) } // NOT_RUN must not silently become PASS.
 '''
 compiler=shutil.which('swiftc')
 if not compiler: raise SystemExit('NOT_RUN: swiftc unavailable')
@@ -94,4 +139,4 @@ with tempfile.TemporaryDirectory(prefix='lyric-linkcore-test-') as d:
     p=Path(d);main=p/'main.swift';exe=p/'test'
     main.write_text('import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n'+models+parser+fixtures)
     subprocess.run([compiler,'-swift-version','5','-O',str(main),'-o',str(exe)],check=True,timeout=90)
-    subprocess.run([str(exe)],check=True,timeout=90)
+    raise SystemExit(subprocess.run([str(exe)],timeout=110).returncode)

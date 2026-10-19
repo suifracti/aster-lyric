@@ -92,6 +92,7 @@ actor LinkCoreCatalog {
     private struct Entry<T: Sendable>: Sendable { let value: T; let expires: Date }
     private let session: URLSession
     private var directories: [String: Entry<[String]>] = [:]
+    private var directoryTasks: [String: Task<[String], Error>] = [:]
     private var artists: [String: Entry<LinkCoreArtist>] = [:]
     private var artistTasks: [String: Task<LinkCoreArtist, Error>] = [:]
     private var lyricPages: [String: Entry<LinkCoreLyricsPage?>] = [:]
@@ -180,10 +181,18 @@ actor LinkCoreCatalog {
     private func artistIDs(named name: String) async throws -> [String] {
         let key = LinkCoreHTML.key(name)
         if let entry = directories[key], entry.expires > Date() { return entry.value }
+        if let task = directoryTasks[key] { return try await task.value }
         var url = URLComponents(string: "https://www.tunecore.co.jp/artists")!
         url.queryItems = [URLQueryItem(name: "keyword", value: name), URLQueryItem(name: "lang", value: "en")]
-        guard let html = try await Self.fetch(url.url!, session: session) else { return [] }
-        let list = LinkCoreHTML.artistDirectory(html, matching: name)
+        let requestURL = url.url!
+        let task = Task<[String], Error> { [session] in
+            guard let html = try await Self.fetch(requestURL, session: session) else { return [] }
+            return LinkCoreHTML.artistDirectory(html, matching: name)
+        }
+        directoryTasks[key] = task
+        defer { directoryTasks[key] = nil }
+        let list = try await task.value
+        try Task.checkCancellation()
         insert(Entry(value: list, expires: Date().addingTimeInterval(list.isEmpty ? 300 : 86400)),
                into: &directories, key: key, limit: 96)
         return list

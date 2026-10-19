@@ -72,8 +72,11 @@ private struct FoundationProviderCLIExecutor: ProviderCLIExecuting {
                     posix_spawn_file_actions_addclose(&actions,input.fileHandleForReading.fileDescriptor)
                     posix_spawn_file_actions_addclose(&actions,input.fileHandleForWriting.fileDescriptor)
                 } else { posix_spawn_file_actions_addopen(&actions,STDIN_FILENO,"/dev/null",O_RDONLY,0) }
-                if #available(macOS 26,*) { posix_spawn_file_actions_addchdir(&actions,cwd.path) }
-                else { posix_spawn_file_actions_addchdir_np(&actions,cwd.path) }
+                // The _np entry point is available in older macOS SDKs too.
+                // A runtime #available check cannot make a newer SDK symbol compile.
+                // Keep the child's working directory local to posix_spawn; never chdir
+                // the application process while other translation jobs are running.
+                posix_spawn_file_actions_addchdir_np(&actions,cwd.path)
                 var pid:pid_t=0
                 let environment=Self.safeEnvironment.merging(environmentOverrides){_,override in override}
                 let error=Self.withPointers([executable]+arguments) { argv in

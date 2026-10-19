@@ -47,17 +47,18 @@ struct V3NumericSlider: View {
     }
 
     private func formatted(_ number: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.usesGroupingSeparator = false
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = step * displayScale >= 1 ? 0 : 2
-        return formatter.string(from: NSNumber(value: number * displayScale)) ?? "0"
+        // Foundation's value-style formatting reuses its internals instead of
+        // allocating several NumberFormatters on every slider redraw.
+        let digits = step * displayScale >= 1 ? 0 : 2
+        return (number * displayScale).formatted(.number.grouping(.never)
+            .precision(.fractionLength(0...digits)))
     }
     private func commit() {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        let number = formatter.number(from: draft)?.doubleValue ?? Double(draft)
+        let separator = Locale.current.decimalSeparator ?? "."
+        let input = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: separator, with: ".")
+        // Consume the whole string: "12oops" must not commit a partial 12.
+        let number = Double(input)
         guard let number, number.isFinite, displayScale.isFinite, displayScale > 0 else {
             draft = formatted(value); return
         }
