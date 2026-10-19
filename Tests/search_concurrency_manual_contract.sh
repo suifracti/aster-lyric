@@ -22,6 +22,7 @@ swiftc -parse-as-library \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsQueryPlanner.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsSafeMatcher.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsRecoveryModels.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Providers/LinkCoreLyricsProvider.swift" \
   "$TMP_DIR/logger.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsSearchManager.swift" \
   "$ROOT_DIR/Tests/search_concurrency_manual_contract.swift" \

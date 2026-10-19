@@ -40,6 +40,58 @@ public final class LyricsSearchManager: @unchecked Sendable {
         let duration: TimeInterval
     }
 
+    /// A task group waits for cancelled children before returning. A provider
+    /// awaiting shared catalog work may not finish until that HTTP request ends,
+    /// so race the result without making the search wait for its cleanup.
+    private final class ProviderLookupRace: @unchecked Sendable {
+        private let lock = NSLock()
+        private var result: LyricsLookupResult?
+        private var continuation: CheckedContinuation<LyricsLookupResult, Never>?
+        private var tasks: [Task<Void, Never>] = []
+
+        func install(_ continuation: CheckedContinuation<LyricsLookupResult, Never>) {
+            lock.lock()
+            if let result {
+                lock.unlock()
+                continuation.resume(returning: result)
+            } else {
+                self.continuation = continuation
+                lock.unlock()
+            }
+        }
+
+        func start(timeout: TimeInterval, lookup: @escaping @Sendable () async -> LyricsLookupResult) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard result == nil else { return }
+            tasks = [
+                Task {
+                    guard !Task.isCancelled else { return }
+                    finish(await lookup())
+                },
+                Task {
+                    do {
+                        try await Task.sleep(nanoseconds: UInt64(max(0.01, timeout) * 1_000_000_000))
+                        finish(.failed(.timedOut))
+                    } catch { /* The winning result already cancelled this timer. */ }
+                }
+            ]
+        }
+
+        func finish(_ result: LyricsLookupResult) {
+            lock.lock()
+            guard self.result == nil else { lock.unlock(); return }
+            self.result = result
+            let continuation = self.continuation
+            self.continuation = nil
+            let tasks = self.tasks
+            self.tasks = []
+            lock.unlock()
+            tasks.forEach { $0.cancel() }
+            continuation?.resume(returning: result)
+        }
+    }
+
     private struct AutomaticAdoption {
         let document: LyricsDocument
         let decision: LyricsMatchDecision
@@ -250,30 +302,18 @@ public final class LyricsSearchManager: @unchecked Sendable {
         track: Track,
         identity: TrackIdentity
     ) async -> LyricsLookupResult {
-        await withTaskGroup(of: LyricsLookupResult.self) { group in
-            group.addTask {
-                await provider.lookup(track: track, identity: identity)
-            }
-            group.addTask {
-                do {
-                    try await Task.sleep(
-                        nanoseconds: UInt64(max(0.01, provider.timeoutInterval) * 1_000_000_000)
-                    )
-                    return .failed(.timedOut)
-                } catch {
-                    return .failed(.cancelled)
+        let race = ProviderLookupRace()
+        let result = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                race.install(continuation)
+                race.start(timeout: provider.timeoutInterval) {
+                    await provider.lookup(track: track, identity: identity)
                 }
             }
-
-            guard let first = await group.next() else {
-                return .failed(.unknown("歌词 Provider 未返回结果"))
-            }
-            group.cancelAll()
-            if Task.isCancelled {
-                return .failed(.cancelled)
-            }
-            return first
+        } onCancel: {
+            race.finish(.failed(.cancelled))
         }
+        return Task.isCancelled ? .failed(.cancelled) : result
     }
 
     public func lookup(
