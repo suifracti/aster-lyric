@@ -52,7 +52,8 @@ jobs:
           commands={'edge':['python3','Tests/v3_edge_pointer_state_contract.py'],
                     'scenes':['python3','Tests/v3_redesign_contract.py'],
                     'publisher-parser':['python3','Tests/linkcore_parser_contract.py'],
-                    'provider-config':['bash','Tests/provider_expansion_configuration_contract.sh']}
+                    'provider-config':['bash','Tests/provider_expansion_configuration_contract.sh'],
+                    'query-identity':['bash','Tests/query_identity_contract.sh']}
           for name,command in commands.items():
               with (root/(name+'.log')).open('w') as log:
                   try:results[name]=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,timeout=130).returncode
