@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import Combine
 @testable import SpotifyLyrics
 
 private final class SongSearchStubSession: LRCLIBSession, @unchecked Sendable {
@@ -84,6 +85,28 @@ private final class SongSearchFixedPlaybackProvider: PlaybackProvider {
 
 @MainActor
 final class SongSearchContractTests: XCTestCase {
+    func testSearchPublishesLocalBeforeSlowOnline() async throws {
+        let local = LocalSearchProvider(searchDirectories: [], savedSearch: { _ in
+            [TrackSearchResult(id: "saved", source: .local,
+                track: Track(title: "Saved result", artist: "Local", album: "", duration: 180), confidence: 0.9)]
+        })
+        let query = SongSearchQuery(text: "Saved result")
+        let online = SongSearchDelayedTrackProvider(name: "slow online", delay: 100_000_000,
+            acceptedQuery: query.text,
+            result: TrackSearchResult(id: "online", source: .spotifyCatalog,
+                track: Track(title: "Online result", artist: "Online", album: "", duration: 180), confidence: 0.5))
+        let manager = SongSearchManager(providers: [online, local] as [TrackSearchProvider])
+        var firstBatch: [SongSearchResult]?
+        let observation = manager.$state.sink { state in
+            if case .results(_, let results) = state, firstBatch == nil { firstBatch = results }
+        }
+        await manager.search(query: query, debounceNanoseconds: 50_000_000)?.value
+        XCTAssertEqual(firstBatch?.map(\.id), ["saved"], "Local results must be published before the online provider")
+        guard case .results(_, let complete) = manager.state else { return XCTFail("Expected merged search results") }
+        XCTAssertEqual(Set(complete.map(\.id)), Set(["saved", "online"]))
+        observation.cancel()
+    }
+
     func testLocalSearchAndProviderFailuresStayDistinct() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("song-search-\(UUID().uuidString)", isDirectory: true)

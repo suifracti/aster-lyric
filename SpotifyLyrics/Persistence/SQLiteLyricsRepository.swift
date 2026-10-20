@@ -11,6 +11,24 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     private var prepared = false
     private var redirectResolver: TrackIdentityRedirectResolver?
     private var manualAdoptionRequestIDs: [String: UUID] = [:]
+    private struct SearchVersionText {
+        let original: String
+        let reading: String
+        let normalized: Data
+    }
+    private struct SearchSong {
+        let signature: [String: String]
+        let versions: [String: SearchVersionText]
+        let entry: PersonalLyricsLibraryEntry
+    }
+    private var librarySearchCache: [String: SearchSong] = [:]
+    private var librarySearchDataVersion: Int32 = -1
+    private var librarySearchTotalChanges: Int32 = -1
+#if DEBUG
+    private var librarySearchNormalizationCounts: [String: Int] = [:]
+    func searchNormalizationCounts() -> [String: Int] { librarySearchNormalizationCounts }
+#endif
+
     private let alignmentProvenanceStore: AlignmentProvenanceStore
 
 #if DEBUG
@@ -3680,6 +3698,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     /// - Saved fine timing versions (`lyrics_timing_versions` attached to lyrics)
     public func loadPersonalLibraryEntries(searchQuery: String? = nil) throws -> [PersonalLyricsLibraryEntry] {
         try prepare()
+        let searchText = searchQuery?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !searchText.isEmpty { return try searchCachedLibrary(searchText) }
         // Newly saved keys must join their recording family without a restart.
         try reloadRedirectResolver()
         let statement = try prepare("""
@@ -3690,13 +3710,11 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         defer { sqlite3_finalize(statement) }
         var seen = Set<String>()
         var results: [PersonalLyricsLibraryEntry] = []
-        let filter = searchQuery?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         while sqlite3_step(statement) == SQLITE_ROW {
             guard let key = columnText(statement, index: 0) else { continue }
             let canonical = try resolvedCanonicalStableKey(key)
             guard seen.insert(canonical).inserted,
                   let track = try fetchTrack(stableKey: canonical) else { continue }
-            if !filter.isEmpty, try !libraryFamilyMatches(stableKey: canonical, query: filter) { continue }
             results.append(try compileLibraryEntry(
                 stableKey: canonical, spotifyID: track.spotifyID, spotifyURI: track.spotifyURI,
                 isrc: track.isrc, title: track.title, artist: track.artistDisplay, album: track.album,
@@ -3709,36 +3727,117 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         }
     }
 
-    /// Search every saved version, including auxiliary layers on historical
-    /// identity keys. The query is compared as literal text, never SQL syntax.
-    private func libraryFamilyMatches(stableKey: String, query: String) throws -> Bool {
+    private static func normalizedLibrarySearchText(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+            .precomposedStringWithCanonicalMapping
+    }
+
+    private func searchCachedLibrary(_ query: String) throws -> [PersonalLyricsLibraryEntry] {
+        try refreshLibrarySearchCache()
+        let needle = Data(Self.normalizedLibrarySearchText(query).utf8)
+        return librarySearchCache.values.filter { song in
+            song.versions.values.contains { $0.normalized.range(of: needle) != nil }
+        }.map(\.entry).sorted {
+            if $0.lastModifiedAt != $1.lastModifiedAt { return $0.lastModifiedAt > $1.lastModifiedAt }
+            return $0.trackStableKey < $1.trackStableKey
+        }
+    }
+
+    /// SQLite's change counters include other repository connections. Only a
+    /// changed song reloads its text; unchanged versions keep their normalization.
+    private func refreshLibrarySearchCache() throws {
+        let version = try prepare("PRAGMA data_version;")
+        defer { sqlite3_finalize(version) }
+        guard sqlite3_step(version) == SQLITE_ROW else { throw lastError() }
+        let dataVersion = sqlite3_column_int(version, 0)
+        let totalChanges = sqlite3_total_changes(database)
+        guard dataVersion != librarySearchDataVersion || totalChanges != librarySearchTotalChanges else { return }
+        try reloadRedirectResolver()
+        let stamps = try prepare("""
+            SELECT stable_key, 'metadata', title || char(31) || artist_display || char(31) || album || char(31) ||
+                COALESCE(spotify_id, '') || COALESCE(spotify_uri, '') || COALESCE(isrc, '') || updated_at FROM tracks
+            UNION ALL SELECT track_stable_key, 'alias:' || field || ':' || kind || ':' || value, value FROM track_aliases
+            UNION ALL SELECT track_stable_key, 'lyrics:' || id,
+                content_hash || ':' || updated_at || ':' || is_preferred || ':' || is_locked || ':' || is_manually_edited FROM lyrics_versions
+            UNION ALL SELECT lv.track_stable_key, 'translation:' || tv.id,
+                tv.updated_at || ':' || tv.is_archived || ':' || tv.is_draft || ':' || tv.is_locked
+                FROM translation_versions tv JOIN lyrics_versions lv ON lv.id = tv.lyrics_version_id
+            UNION ALL SELECT lv.track_stable_key, 'reading:' || rv.id,
+                rv.updated_at || ':' || rv.is_current || ':' || rv.is_archived || ':' || rv.is_locked
+                FROM reading_versions rv JOIN lyrics_versions lv ON lv.id = rv.lyrics_version_id
+            UNION ALL SELECT lv.track_stable_key, 'legacy-reading:' || rl.lyrics_version_id || ':' || rl.line_index,
+                COALESCE(rl.kana_text, '') || char(31) || COALESCE(rl.romaji_text, '')
+                FROM lyric_reading_layers rl JOIN lyrics_versions lv ON lv.id = rl.lyrics_version_id
+            UNION ALL SELECT lv.track_stable_key, 'timing:' || tm.id, tm.created_at
+                FROM lyrics_timing_versions tm JOIN lyrics_versions lv ON lv.id = tm.lyrics_version_id
+            UNION ALL SELECT track_stable_key, 'revoked', revoked_version_id FROM lyrics_selection_revocations;
+            """)
+        defer { sqlite3_finalize(stamps) }
+        var signatures: [String: [String: String]] = [:]
+        while sqlite3_step(stamps) == SQLITE_ROW {
+            guard let key = columnText(stamps, index: 0), let component = columnText(stamps, index: 1) else { continue }
+            let canonical = try resolvedCanonicalStableKey(key)
+            signatures[canonical, default: [:]][component + ":" + key] = columnText(stamps, index: 2) ?? ""
+        }
+        for key in Array(librarySearchCache.keys) where signatures[key] == nil { librarySearchCache.removeValue(forKey: key) }
+        for (key, signature) in signatures {
+            guard librarySearchCache[key]?.signature != signature else { continue }
+            guard signature.keys.contains(where: { $0.hasPrefix("lyrics:") }), let track = try fetchTrack(stableKey: key) else {
+                librarySearchCache.removeValue(forKey: key)
+                continue
+            }
+            let versions = try cachedSearchVersions(stableKey: key, previous: librarySearchCache[key]?.versions ?? [:])
+            let entry = try compileLibraryEntry(stableKey: key, spotifyID: track.spotifyID, spotifyURI: track.spotifyURI,
+                isrc: track.isrc, title: track.title, artist: track.artistDisplay, album: track.album,
+                duration: track.duration, artworkURL: track.artworkURL.flatMap(URL.init(string:)), fallbackDate: track.updatedAt)
+            librarySearchCache[key] = SearchSong(signature: signature, versions: versions, entry: entry)
+        }
+        librarySearchDataVersion = dataVersion
+        librarySearchTotalChanges = totalChanges
+    }
+
+    private func cachedSearchVersions(stableKey: String, previous: [String: SearchVersionText]) throws -> [String: SearchVersionText] {
         let family = try resolvedIdentityFamily(stableKey: stableKey)
         let statement = try prepare("""
             WITH family AS (SELECT * FROM tracks WHERE stable_key IN (\(placeholders(count: family.count)))),
                  versions AS (SELECT * FROM lyrics_versions WHERE track_stable_key IN (SELECT stable_key FROM family))
-            SELECT title || ' ' || artist_display || ' ' || album || ' ' || COALESCE(spotify_id, '') || ' ' || COALESCE(spotify_uri, '') || ' ' || COALESCE(isrc, '') AS text, 0 AS is_reading FROM family
-            UNION ALL SELECT value, 0 FROM track_aliases WHERE track_stable_key IN (SELECT stable_key FROM family)
-            UNION ALL SELECT raw_text, 0 FROM versions
-            UNION ALL SELECT original_text || ' ' || COALESCE(kana_text, '') || ' ' || COALESCE(romaji_text, '') || ' ' || COALESCE(translation_text, ''), 0
+            SELECT 'metadata', title || ' ' || artist_display || ' ' || album || ' ' || COALESCE(spotify_id, '') || ' ' || COALESCE(spotify_uri, '') || ' ' || COALESCE(isrc, '') AS text, 0 AS is_reading FROM family
+            UNION ALL SELECT 'metadata', value, 0 FROM track_aliases WHERE track_stable_key IN (SELECT stable_key FROM family)
+            UNION ALL SELECT 'lyrics:' || id, raw_text, 0 FROM versions
+            UNION ALL SELECT 'lyrics:' || lyrics_version_id, original_text || ' ' || COALESCE(kana_text, '') || ' ' || COALESCE(romaji_text, '') || ' ' || COALESCE(translation_text, ''), 0
                 FROM lyric_lines WHERE lyrics_version_id IN (SELECT id FROM versions)
-            UNION ALL SELECT kana_text, 1 FROM lyric_lines WHERE lyrics_version_id IN (SELECT id FROM versions)
-            UNION ALL SELECT COALESCE(kana_text, '') || ' ' || COALESCE(romaji_text, ''), 1
+            UNION ALL SELECT 'lyrics:' || lyrics_version_id, kana_text, 1 FROM lyric_lines WHERE lyrics_version_id IN (SELECT id FROM versions)
+            UNION ALL SELECT 'lyrics:' || lyrics_version_id, COALESCE(kana_text, '') || ' ' || COALESCE(romaji_text, ''), 1
                 FROM lyric_reading_layers WHERE lyrics_version_id IN (SELECT id FROM versions)
-            UNION ALL SELECT rl.reading_text, 1 FROM reading_lines rl JOIN reading_versions rv ON rv.id = rl.reading_version_id
+            UNION ALL SELECT 'reading:' || rv.id, rl.reading_text, 1 FROM reading_lines rl JOIN reading_versions rv ON rv.id = rl.reading_version_id
                 WHERE rv.lyrics_version_id IN (SELECT id FROM versions)
-            UNION ALL SELECT tl.translated_text, 0 FROM translation_lines tl JOIN translation_versions tv ON tv.id = tl.translation_version_id
+            UNION ALL SELECT 'translation:' || tv.id, tl.translated_text, 0 FROM translation_lines tl JOIN translation_versions tv ON tv.id = tl.translation_version_id
                 WHERE tv.lyrics_version_id IN (SELECT id FROM versions);
             """)
         defer { sqlite3_finalize(statement) }
         for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: statement) }
+        var originals: [String: [String]] = [:]
+        var readings: [String: [String]] = [:]
         while sqlite3_step(statement) == SQLITE_ROW {
-            guard let text = columnText(statement, index: 0) else { continue }
-            let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]
-            if text.range(of: query, options: options) != nil { return true }
-            if sqlite3_column_int(statement, 1) == 1,
-               JapaneseRomanizer.romanizeConfirmedKana(text).range(of: query, options: options) != nil { return true }
+            guard let component = columnText(statement, index: 0), let text = columnText(statement, index: 1), !text.isEmpty else { continue }
+            originals[component, default: []].append(text)
+            if sqlite3_column_int(statement, 2) == 1 { readings[component, default: []].append(text) }
         }
-        return false
+        var result: [String: SearchVersionText] = [:]
+        for (component, parts) in originals {
+            let original = parts.joined(separator: "\0")
+            let reading = (readings[component] ?? []).joined(separator: "\0")
+            if let old = previous[component], old.original == original, old.reading == reading {
+                result[component] = old
+            } else {
+                let normalized = Self.normalizedLibrarySearchText(original + "\0" + JapaneseRomanizer.romanizeConfirmedKana(reading))
+                result[component] = SearchVersionText(original: original, reading: reading, normalized: Data(normalized.utf8))
+#if DEBUG
+                librarySearchNormalizationCounts[stableKey, default: 0] += 1
+#endif
+            }
+        }
+        return result
     }
 
     private func compileLibraryEntry(

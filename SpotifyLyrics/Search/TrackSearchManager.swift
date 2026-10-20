@@ -34,22 +34,20 @@ public final class TrackSearchManager: ObservableObject {
         }
 
         state = .searching(query)
-        let providers = self.providers
+        let providers = self.providers.filter(\.isLocal) + self.providers.filter { !$0.isLocal }
         requestTask = Task { [weak self] in
-            if debounceNanoseconds > 0 {
-                do {
-                    try await Task.sleep(nanoseconds: debounceNanoseconds)
-                } catch {
-                    return
-                }
-            }
             var results: [TrackSearchResult] = []
             var errors: [String] = []
 
-            // Serial fan-out with failure isolation: one provider error must not
-            // cancel remaining providers or drop successful metadata.
+            var waitedForOnlineDebounce = false
+            // Publish each source immediately. Online setup never gates local results.
             for provider in providers {
                 guard !Task.isCancelled else { return }
+                if !provider.isLocal && !waitedForOnlineDebounce {
+                    waitedForOnlineDebounce = true
+                    do { try await Task.sleep(nanoseconds: debounceNanoseconds) }
+                    catch { return }
+                }
                 do {
                     results.append(contentsOf: try await provider.search(query: query))
                 } catch let error as SongSearchError {
@@ -60,6 +58,8 @@ public final class TrackSearchManager: ObservableObject {
                 } catch {
                     errors.append(error.localizedDescription)
                 }
+                guard !Task.isCancelled, let self, self.generation == requestGeneration else { return }
+                if !results.isEmpty { self.state = .results(query, Self.merge(results)) }
             }
 
             guard !Task.isCancelled else { return }

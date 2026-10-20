@@ -3,6 +3,7 @@ import Foundation
 /// Local track metadata search backed by the shared read-only lyrics index.
 public final class LocalSearchProvider: TrackSearchProvider {
     public let name = "Local Search"
+    public let isLocal = true
 
     private let index: LocalLyricsIndex
     private let savedSearch: ((TrackSearchQuery) async throws -> [TrackSearchResult])?

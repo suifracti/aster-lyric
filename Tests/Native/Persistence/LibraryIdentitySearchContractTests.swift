@@ -32,7 +32,7 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         let conflict = Track(title: a.title, artist: "Different singer", album: a.album, duration: 170, spotifyId: "family-song")
         let aID = try await save(a, text: "原版独有歌词")
         let bID = try await save(b, text: "新版独有歌词")
-        _ = try await save(unrelated, text: "unrelated")
+        let unrelatedID = try await save(unrelated, text: "unrelated")
         _ = try await save(conflict, text: "conflict")
         let historical = Track(title: "Historical metadata", artist: "Historical singer", album: "Old album", duration: 99, spotifyId: "historical-id")
         let historicalID = try await save(historical, text: "historical-only")
@@ -69,7 +69,7 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         XCTAssertEqual(oldDetail.entry.trackStableKey, family.trackStableKey)
         XCTAssertEqual(oldDetail.lyricsVersions.count, 3)
 
-        for query in ["原版独有", "新版独有", "historical-only", "SAVEDREADINGNEEDLE", "karada", "保存译文独有", "Alternative title"] {
+        for query in ["原版独有", "新版独有", "historical-only", "SAVEDREADINGNEEDLE", "SÁVEDREADINGNEEDLE", "karada", "ＫＡＲＡＤＡ", "保存译文独有", "Alternative title"] {
             let found = try await repo.loadPersonalLibraryEntries(searchQuery: query)
             XCTAssertEqual(found.map(\.trackStableKey), [family.trackStableKey], "Search must cover all versions and aliases: \(query)")
         }
@@ -93,6 +93,23 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         XCTAssertEqual(reopenedEntries.count, 6)
         let redirects = try await reopened.redirectCount()
         XCTAssertEqual(redirects, 1, "Read-time grouping must not write redirect migrations")
+        let beforeNormalization = await repo.searchNormalizationCounts()
+        _ = try await save(a, text: "newly-saved-cache-needle")
+        let updatedSearch = try await repo.loadPersonalLibraryEntries(searchQuery: "NEWLY-SAVED-CACHE-NEEDLE")
+        XCTAssertEqual(updatedSearch.map(\.trackStableKey), [family.trackStableKey])
+        let afterNormalization = await repo.searchNormalizationCounts()
+        for (key, count) in beforeNormalization where key != family.trackStableKey {
+            XCTAssertEqual(afterNormalization[key], count, "An edit must leave other songs' cached versions intact")
+        }
+        XCTAssertGreaterThan(afterNormalization[family.trackStableKey] ?? 0, beforeNormalization[family.trackStableKey] ?? 0)
+        _ = try await repo.loadPersonalLibraryEntries(searchQuery: "another search")
+        let repeatedNormalization = await repo.searchNormalizationCounts()
+        XCTAssertEqual(repeatedNormalization, afterNormalization, "Search itself only matches substrings")
+        try await reopened.toggleLyricsLocked(versionID: unrelatedID, locked: true)
+        let externallyChanged = try await repo.loadPersonalLibraryEntries(searchQuery: "unrelated")
+        XCTAssertEqual(externallyChanged.first?.hasLockedLyrics, true, "Edits from the library's separate connection invalidate its song")
+
+
     }
 
     private func executeSQL(_ sql: String, at databaseURL: URL) throws {

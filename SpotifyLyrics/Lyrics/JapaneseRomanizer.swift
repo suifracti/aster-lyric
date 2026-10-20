@@ -65,9 +65,7 @@ public enum JapaneseRomanizer {
         toHiraganaPreservingLatin(text)
     }
 
-    private static func romanizeHiragana(_ text: String, capitalize: Bool) -> String {
-        // Longest-match table
-        let table: [(String, String)] = [
+    private static let table: [String: String] = Dictionary(uniqueKeysWithValues: [
             ("きゃ", "kya"), ("きゅ", "kyu"), ("きょ", "kyo"),
             ("しゃ", "sha"), ("しゅ", "shu"), ("しょ", "sho"),
             ("ちゃ", "cha"), ("ちゅ", "chu"), ("ちょ", "cho"),
@@ -102,8 +100,11 @@ public enum JapaneseRomanizer {
             ("ぁ", "a"), ("ぃ", "i"), ("ぅ", "u"), ("ぇ", "e"), ("ぉ", "o"),
             ("ゃ", "ya"), ("ゅ", "yu"), ("ょ", "yo"), ("っ", ""), // sokuon handled specially
             ("ー", "") // chōonpu handled specially
-        ].sorted { $0.0.count > $1.0.count }
+        ])
 
+
+    private static func romanizeHiragana(_ text: String, capitalize: Bool) -> String {
+        // Longest-match table
         var i = text.startIndex
         var pieces: [String] = []
         while i < text.endIndex {
@@ -113,7 +114,7 @@ public enum JapaneseRomanizer {
                 let nextStart = text.index(after: i)
                 if nextStart < text.endIndex {
                     // peek next romaji consonant
-                    let nextRomaji = peekRomaji(String(text[nextStart...]), table: table)
+                    let nextRomaji = peekRomaji(text[nextStart...])
                     if let c = nextRomaji.first, c.isLetter, !"aiueon".contains(c) {
                         pieces.append(String(c))
                     } else {
@@ -132,7 +133,7 @@ public enum JapaneseRomanizer {
             if rest.hasPrefix("ん") {
                 let nextStart = text.index(after: i)
                 if nextStart < text.endIndex {
-                    let nextRomaji = peekRomaji(String(text[nextStart...]), table: table)
+                    let nextRomaji = peekRomaji(text[nextStart...])
                     if let first = nextRomaji.first, "aiueoy".contains(first) {
                         pieces.append("n'")
                     } else {
@@ -154,14 +155,13 @@ public enum JapaneseRomanizer {
                 continue
             }
 
-            var matched = false
-            for (k, v) in table {
-                if rest.hasPrefix(k) {
-                    pieces.append(v)
-                    i = text.index(i, offsetBy: k.count)
-                    matched = true
-                    break
-                }
+            let pair = String(rest.prefix(2))
+            let single = String(rest.prefix(1))
+            let key = table[pair] != nil ? pair : single
+            let matched = table[key] != nil
+            if let value = table[key] {
+                pieces.append(value)
+                i = text.index(i, offsetBy: key.count)
             }
             if !matched {
                 // keep non-kana as-is (latin, digits, punctuation)
@@ -193,10 +193,8 @@ public enum JapaneseRomanizer {
         return tokens.joined(separator: " ")
     }
 
-    private static func peekRomaji(_ rest: String, table: [(String, String)]) -> String {
-        for (k, v) in table where rest.hasPrefix(k) && !v.isEmpty {
-            return v
-        }
-        return ""
+    private static func peekRomaji(_ rest: Substring) -> String {
+        if let pair = table[String(rest.prefix(2))], !pair.isEmpty { return pair }
+        return table[String(rest.prefix(1))] ?? ""
     }
 }

@@ -254,7 +254,7 @@ private struct ExperienceFixtureRoot: View {
                 MenuBarLyricsController.shared.setOpenEditorHandler { openWindow(id: "lyrics-editor") }
                 MenuBarLyricsController.shared.setOpenSettingsHandler { openSettings() }
                 MenuBarLyricsController.shared.setOpenMainWindowHandler { openWindow(id: "fixture-main") }
-                if ExperienceArguments.value("--panel", fallback: "").contains("library") {
+                if ["library", "search"].contains(where: { ExperienceArguments.value("--panel", fallback: "").contains($0) }) {
                     let track = Track(id: "spotify:track:visualfixture", title: "夜を越えて · After the rain",
                         artist: "Visual Fixture", album: "Native rendering study", duration: 240,
                         spotifyId: "visualfixture", artworkURL: ExperienceArtwork.make())
