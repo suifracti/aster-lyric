@@ -325,6 +325,19 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         }
     }
 
+    @discardableResult
+    public func deleteTranslationVersion(versionID: UUID, trackStableKey: String) async -> Bool {
+        do {
+            try await repository.deleteTranslation(versionID: versionID)
+            refreshTrackDetail(stableKey: trackStableKey)
+            refresh()
+            return true
+        } catch {
+            statusMessage = "删除译文失败：\(error.localizedDescription)"
+            return false
+        }
+    }
+
     public func adoptReading(versionID: UUID, trackStableKey: String) {
         Task {
             do {

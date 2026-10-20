@@ -875,6 +875,12 @@ public final class PlaybackState: ObservableObject {
     }
     public func lockSelectedTranslation() { translationSession.lockSelected() }
     public func deleteSelectedTranslation() { translationSession.deleteSelected() }
+    public func reconcileExternalTranslationDeletion(versionID: UUID, trackStableKey: String) {
+        guard currentTrackIdentity?.stableKey == trackStableKey,
+              translationSession.selectedVersion?.record.id == versionID else { return }
+        translationSession.reconcileExternalDeletion(versionID: versionID)
+        objectWillChange.send()
+    }
     public func adoptTranslation(versionID: UUID) { translationSession.adoptTranslation(versionID: versionID) }
     public func archiveTranslation(versionID: UUID) { translationSession.archiveTranslation(versionID: versionID) }
     public func cancelTranslation() { translationSession.cancel() }

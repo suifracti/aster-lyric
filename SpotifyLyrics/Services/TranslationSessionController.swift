@@ -414,6 +414,22 @@ public final class TranslationSessionController: ObservableObject {
         }
     }
 
+    /// Clears a selection removed from the lyrics library and reloads the
+    /// remaining saved translations without starting a new automatic request.
+    public func reconcileExternalDeletion(versionID: UUID) {
+        guard selectedVersion?.record.id == versionID, let context else { return }
+        requestTask?.cancel()
+        requestTask = nil
+        inFlightKey = nil
+        selectedVersion = nil
+        pendingCandidate = nil
+        manualSelection.removeValue(forKey: context.key)
+        manualNoSelection.remove(context.key)
+        persistSelection(nil, key: context.key)
+        isNoSelection = false
+        loadExistingOrAutoTranslate(context, allowAutomaticRequest: false)
+    }
+
     /// Projects the selected version onto the existing LyricLine values. All
     /// original/kana/romaji/timeline fields remain untouched.
     public func project(onto lines: [LyricLine]) -> [LyricLine] {

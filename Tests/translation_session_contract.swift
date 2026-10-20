@@ -451,6 +451,23 @@ struct TranslationSessionContract {
         precondition(retained.count == 3 && retained.contains {
             $0.record.id == protected.record.id && $0.record.isLocked && $0.record.isManuallyEdited && $0.lines == protected.lines
         })
+        third.select(versionID: candidate.record.id)
+        try await reopened.deleteTranslation(versionID: candidate.record.id)
+        third.reconcileExternalDeletion(versionID: candidate.record.id)
+        let deleteDeadline = Date().addingTimeInterval(2)
+        while (third.selectedVersion?.record.id != protected.record.id || third.state != .loaded(protected.record.id)),
+              Date() < deleteDeadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        precondition(third.selectedVersion?.record.id == protected.record.id,
+            "deleting a selected version must clear the stale selection and choose a remaining translation")
+        precondition(defaults.object(forKey: key) == nil && defaults.object(forKey: libraryKey) == nil,
+            "deleted version IDs must be removed from persisted selection")
+        let afterDeletion = try await reopened.loadTranslationVersions(lyricsVersionID: versionID,
+            targetLanguage: config.targetLanguage, sourceContentHash: hash)
+        precondition(!afterDeletion.contains { $0.record.id == candidate.record.id },
+            "externally deleted version remained in persisted history")
+        third.cancel()
         let calls = await fake.calls()
         precondition(calls == 0, "selection/reconstruction must not dispatch a translation")
         first.cancel(); second.cancel(); rebuilt.cancel(); third.cancel()

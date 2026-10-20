@@ -384,6 +384,8 @@ public struct PersonalLibraryTrackDetailView: View {
     @ObservedObject var service: PersonalLyricsLibraryService
     let stableKey: String
     @State private var selectedSection: VersionSection = .all
+    @State private var translationDeletionCandidate: PersonalTranslationVersionItem?
+    @State private var showTranslationDeletionConfirmation = false
 
     private enum VersionSection: String, CaseIterable, Identifiable {
         case all = "全部", lyrics = "原词", translations = "译文", readings = "读音", timing = "时间轴"
@@ -491,6 +493,29 @@ public struct PersonalLibraryTrackDetailView: View {
         }
         .task(id: stableKey) {
             service.selectTrack(stableKey: stableKey)
+        }
+        .alert("删除译文版本？", isPresented: $showTranslationDeletionConfirmation) {
+            Button("删除", role: .destructive) {
+                confirmTranslationDeletion()
+            }
+            Button("取消", role: .cancel) {
+                translationDeletionCandidate = nil
+            }
+        } message: {
+            if let version = translationDeletionCandidate, version.isCurrent {
+                Text("将永久删除这条译文及其逐行内容。它正在使用，删除后会重新选择可用译文；原词和其他版本不受影响。")
+            } else {
+                Text("将永久删除这条译文及其逐行内容；原词和其他版本不受影响。")
+            }
+        }
+    }
+
+    private func confirmTranslationDeletion() {
+        guard let version = translationDeletionCandidate else { return }
+        translationDeletionCandidate = nil
+        Task { @MainActor in
+            guard await service.deleteTranslationVersion(versionID: version.id, trackStableKey: stableKey) else { return }
+            playback.reconcileExternalTranslationDeletion(versionID: version.id, trackStableKey: stableKey)
         }
     }
 
@@ -652,6 +677,13 @@ public struct PersonalLibraryTrackDetailView: View {
                         Button(tv.isArchived ? "恢复" : "归档") {
                             service.toggleTranslationArchive(versionID: tv.id, currentArchived: tv.isArchived, trackStableKey: entry.trackStableKey)
                         }
+                        Divider()
+                        Button("删除", role: .destructive) {
+                            translationDeletionCandidate = tv
+                            showTranslationDeletionConfirmation = true
+                        }
+                        .disabled(tv.isLocked)
+                        .help(tv.isLocked ? "请先解锁版本后再删除" : "永久删除此译文版本")
                     }
                 }
             }
