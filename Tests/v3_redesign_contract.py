@@ -78,7 +78,8 @@ assert 'geometry.size.width - inspectorWidth' not in window
 assert '.fittingSize' not in window[window.index('private struct V3PinnedInspectorPanelHost'):window.index('private struct QuietToolbarButtonStyle')]
 popover_host=window[window.index('func v3ToolPopover<Content: View>'):window.index('private struct V3PinnedInspectorPanelHost')]
 pinned_host=window[window.index('private struct V3PinnedInspectorPanelHost'):window.index('private struct QuietToolbarButtonStyle')]
-assert 'v3ToolPanelRoot(content())' in popover_host, 'hover tool content must override the listening canvas color scheme'
+assert 'v3HoverToolPanelRoot(content())' in popover_host, 'hover panels must use the historical dark glass color scheme'
+assert 'popover.appearance = NSAppearance(named: .darkAqua)' in popover_host, 'hover popovers must restore their historical Dark Aqua material appearance'
 assert pinned_host.count('v3ToolPanelRoot(parent.content)') >= 2, 'pinned tool content must override inherited dark color scheme on create and update'
 assert 'anchor.onWindowAttachment = { [weak coordinator]' in pinned_host, 'pinned host must retry when its zero-size anchor joins the owner window'
 assert 'override func viewDidMoveToWindow()' in window[window.index('private final class V3ToolAnchorView'):window.index('private struct V3ToolPopoverAnchor')], 'tool anchor must signal its AppKit window attachment'
@@ -86,7 +87,8 @@ normalized_window=' '.join(window.split())
 surface=window[window.index('private func inspectorSurface(for panel: ToolbarPopover, style: InspectorSurfaceStyle)'):window.index('private var moreInspectorContent')]
 assert '.regularMaterial' in surface, 'hover tool panels must retain their frosted glass surface'
 assert 'Color(nsColor: .windowBackgroundColor)' in surface, 'pinned tool panels must use an opaque system-colored surface'
-assert 'V3SystemAppearance.colorScheme == .dark ? Color.black : Color.white' in surface, 'glass tint must follow tool panel appearance for readable text'
+assert 'V3SystemAppearance.colorScheme == .dark ? Color.black : Color.white' not in surface, 'historical glass must not be covered by an opaque white tint'
+assert 'Color.white.opacity(0.12)' in surface, 'glass panel must retain its original hairline edge'
 assert 'content: inspectorSurface(for: pinned, style: .pinnedSolid)' in window, 'pinned tool windows must use the solid panel surface'
 assert 'hoverTrackedPanel(.translation) { inspectorSurface(for: .translation, style: .hoverGlass) }' in normalized_window, 'translation hover panel must share the glass surface'
 assert 'hoverTrackedPanel(panel) { inspectorSurface(for: panel, style: .hoverGlass) }' in normalized_window, 'adjust and More hover panels must share the glass surface'

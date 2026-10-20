@@ -177,7 +177,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private var compositionLyricsPosition: String { settings.v3PreviewLyricsPosition(for: compositionStyle, scene: compositionScene) }
     private var compositionArtworkScale: Double { settings.v3PreviewScale(for: compositionStyle, scene: compositionScene) }
     private enum ToolbarPopover: Equatable { case adjust, more, translation }
-    private enum InspectorSurfaceStyle { case hoverGlass, pinnedSolid }
+    private enum InspectorSurfaceStyle: Equatable { case hoverGlass, pinnedSolid }
     @State private var activeToolbarPopover: ToolbarPopover?
     @State private var hoveredToolbarTrigger: ToolbarPopover?
     @State private var hoveredToolbarPanel: ToolbarPopover?
@@ -1905,20 +1905,15 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .background {
             switch style {
             case .hoverGlass:
-                Rectangle()
-                    .fill(.regularMaterial)
-                    // Keep the familiar glass blur while preventing the dark
-                    // lyric canvas from making light-mode text unreadable.
-                    .overlay {
-                        (V3SystemAppearance.colorScheme == .dark ? Color.black : Color.white)
-                            .opacity(0.56)
-                    }
+                Rectangle().fill(.regularMaterial)
             case .pinnedSolid:
                 Color(nsColor: .windowBackgroundColor)
             }
         }
         .overlay(alignment: .leading) {
-            Rectangle().fill(Color.primary.opacity(0.10)).frame(width: 1)
+            Rectangle()
+                .fill(style == .hoverGlass ? Color.white.opacity(0.12) : Color.primary.opacity(0.10))
+                .frame(width: 1)
         }
         .onExitCommand { dismissPinnedToolbarPanel() }
     }
@@ -2056,7 +2051,7 @@ private extension View {
                 // Closed panels must not construct/copy every settings page on
                 // each playback tick. Keep the anchor, build the page on demand.
                 content: isPresented.wrappedValue
-                    ? v3ToolPanelRoot(content())
+                    ? v3HoverToolPanelRoot(content())
                     : AnyView(EmptyView())
             )
         )
@@ -2121,6 +2116,12 @@ private func v3ToolPanelRoot<Content: View>(_ content: Content) -> AnyView {
     AnyView(content.environment(\.colorScheme, V3SystemAppearance.colorScheme))
 }
 
+/// Hover popovers keep their original dark frosted-glass treatment. Fixed
+/// panels use the user's system appearance through `v3ToolPanelRoot` instead.
+private func v3HoverToolPanelRoot<Content: View>(_ content: Content) -> AnyView {
+    AnyView(content.preferredColorScheme(.dark).environment(\.colorScheme, .dark))
+}
+
 private final class V3ToolAnchorView: NSView {
     var onWindowAttachment: (() -> Void)?
 
@@ -2183,11 +2184,6 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
             }
         }
         if !coordinator.popover.isShown {
-            let system = V3SystemAppearance.current
-            if coordinator.popover.appearance?.name != system.name {
-                coordinator.popover.appearance = system
-                coordinator.hosting?.view.appearance = system
-            }
             // A few points of air between the button and the panel arrow.
             var rect = anchor.bounds
             if !anchor.isFlipped { rect.origin.y -= 4 }
@@ -2229,9 +2225,7 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
             super.init()
             popover.behavior = .applicationDefined
             popover.animates = false
-            // Tool panels follow the system appearance even though the
-            // listening canvas itself is always dark.
-            popover.appearance = V3SystemAppearance.current
+            popover.appearance = NSAppearance(named: .darkAqua)
             popover.delegate = self
         }
 
