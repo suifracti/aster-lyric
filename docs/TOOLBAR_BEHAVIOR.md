@@ -21,17 +21,17 @@ The old 调整 button and its tabs are gone. Each panel has one job and no tabs.
 
 ## Hover vs click
 Hover and click show **different** things:
-- **Hover** shows a small panel inside the app with 3–5 quick controls. Every control in it can be used directly.
-- **Click** opens the full panel, or does the button's action.
+- **Hover** is where you adjust things while listening. It holds **every setting people change during a song**, so you rarely need the full panel. Every control works directly. Max height 520 pt; scroll beyond that. There is no explanatory text.
+- **Click** opens the full panel: everything in hover, plus rarely used settings, services, explanations, and staying open while you work elsewhere. Or it does the button's action.
 
-| Button | Hover: quick controls | Click |
+| Button | Hover | Click |
 |---|---|---|
-| 歌词库 | This song's lyric versions; the adopted one has a check, and clicking another adopts it. 「打开歌词库」 at the bottom. | Opens the lyrics library. |
-| 搜索 | A search field prefilled with the current song, plus the top 3 results. | Opens the full search. |
-| 译文 | 原文 / 中文 / 读音 switches, one line naming the current translation source, and 「翻译整首」. | Full 译文 panel (below). |
-| 文字 | Font size − / +, and alignment (left / centre / right). | Full 文字 panel (below). |
-| 画面 | The 4 category thumbnails from `V3SceneFamily`: 环境光 · 封面 · 内页 · 专注. Clicking adopts that category’s current style, or its first style if none. The full panel keeps the categories and their style list. | Full 画面 panel (below). |
-| 更多 | Window modes (桌面歌词, 顶部胶囊, 菜单栏歌词, 全屏), and lyric offset −0.1s / +0.1s. | Full 更多 panel (below). |
+| 歌词库 | This song's versions **grouped by type** (原词 / 译文 / 读音 / 时间轴). The adopted one is checked; click another to adopt it. Each row shows source, date and line count. 「打开歌词库」 is at the bottom. | Opens the lyrics library. |
+| 搜索 | A search field prefilled with the current song. **Results are local first and show at once**; online results are added when they arrive. Show the top 5. | Opens the full search. |
+| 译文 | 功能 翻译 / 读音. 原文 / 中文 / 读音 switches. A **saved-translation version picker**. 「翻译整首」 and 「重新翻译」. | Full 译文 panel (below). |
+| 文字 | 清晰度 (关闭 / 文字阴影 / 柔和光晕). 位置 (自动 / 左 / 中 / 右). 原文与译文 size slider. 罗马音 / 拼音 toggles. 注音排版. | Full 文字 panel (below). |
+| 画面 | The 4 categories from `V3SceneFamily`. **Below them, the selected category's style list** (including 经典版), and the 背景封面模糊 slider. Clicking a category adopts its current style, or its first style if none. | Full 画面 panel (below). |
+| 更多 | 歌词版本. Lyric offset: −0.1s, a value field, +0.1s, 归零. Window modes (桌面歌词, 顶部胶囊, 菜单栏歌词, 全屏). 桌面歌词交互. | Full 更多 panel (below). |
 | 设置 | No hover panel, only a tooltip. | Opens settings. |
 
 ### Full panels
