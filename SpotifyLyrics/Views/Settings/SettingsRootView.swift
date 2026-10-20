@@ -42,7 +42,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     /// Sidebar sections: listening first, then lyrics, then the system.
     static var sidebarGroups: [(title: String, categories: [SettingsCategory])] {
         [("听歌", [.general, .appearance]),
-         ("歌词", [.lyricsAndText, .aiTranslation, .reading]),
+         ("歌词", [.lyricsAndText, .aiTranslation, .reading, .library]),
          ("系统", [.advancedAndData])]
     }
 
@@ -63,7 +63,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     }
 
     static var primaryCases: [SettingsCategory] {
-        [.general, .lyricsAndText, .aiTranslation, .appearance, .reading, .advancedAndData]
+        [.general, .lyricsAndText, .aiTranslation, .library, .appearance, .reading, .advancedAndData]
     }
 
     var id: String { rawValue }
@@ -308,11 +308,8 @@ private struct SettingsDetailView: View {
                 )
                 .padding(28)
 
-            // Hidden Bridge Destinations
             case .library:
-                TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
-                    PersonalLyricsLibraryView()
-                }
+                PersonalLyricsLibraryView()
             case .history:
                 TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
                     ListeningHistoryView()
