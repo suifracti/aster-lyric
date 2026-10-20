@@ -5,6 +5,24 @@ import XCTest
 
 final class PresentationSourceContractTests: XCTestCase {
     @MainActor
+    func testReadingProtectionDefaultsAndLegacySettings() {
+        let suite = "lyricsq-reading-protection-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        for (stored, expected) in [(nil, "off"), ("automatic", "off"), ("auto", "off"),
+                                   ("enhanced", "glow"), ("off", "off"), ("shadow", "shadow"), ("glow", "glow")] {
+            defaults.set(stored, forKey: AppSettingsStore.Key.v3ReadingProtection)
+            XCTAssertEqual(AppSettingsStore(defaults: defaults).v3ReadingProtection.rawValue, expected)
+            XCTAssertEqual(defaults.string(forKey: AppSettingsStore.Key.v3ReadingProtection), expected)
+        }
+        for mode in V3ReadingProtection.allCases {
+            XCTAssertEqual(mode.effective(reduceTransparency: true, increasedContrast: false), .glow)
+            XCTAssertEqual(mode.effective(reduceTransparency: false, increasedContrast: true), .glow)
+            XCTAssertEqual(mode.effective(reduceTransparency: false, increasedContrast: false), mode)
+        }
+    }
+
+    @MainActor
     func testEmbeddedLibraryFitsTheSettingsDetailColumn() {
         let settings = AppSettingsStore(defaults: .lyricsQ)
         let playback = PlaybackState(settings: settings)
@@ -120,9 +138,9 @@ final class PresentationSourceContractTests: XCTestCase {
         for removed in ["togglePinnedToolbarPanel", "presentToolbarPopover", "hoveredToolbarTrigger", "toolbarMenuDepth"] {
             XCTAssertFalse(view.contains(removed), "old toolbar state path was reintroduced: \(removed)")
         }
-        XCTAssertTrue(spec.contains("180 ms grace period"))
+        XCTAssertTrue(spec.contains("180 ms after"))
         XCTAssertTrue(spec.contains("While pinned"))
-        XCTAssertTrue(spec.contains("Outside clicks"))
+        XCTAssertTrue(spec.contains("An outside click"))
         XCTAssertTrue(spec.contains("Never** to the left of the window"))
     }
 

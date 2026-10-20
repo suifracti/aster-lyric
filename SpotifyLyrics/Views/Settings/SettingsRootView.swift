@@ -432,7 +432,7 @@ private struct AppearanceSettingsView: View {
                 }
                 if settings.mainWindowLayoutStyleRawValue == MainWindowLayoutStyle.appleMusicImmersiveV3.rawValue {
                     LyricIslandSceneSettingsPicker(settings: settings)
-                    Picker("歌词清晰度保护", selection: $settings.v3ReadingProtection) {
+                    Picker("清晰度", selection: $settings.v3ReadingProtection) {
                         ForEach(V3ReadingProtection.allCases) { policy in Text(policy.title).tag(policy) }
                     }
                     Text("画面精细调整在独立工具窗中完成，不会改变主窗尺寸。")

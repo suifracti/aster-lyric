@@ -375,11 +375,11 @@ struct V3VisualTuningPopoverView: View {
             Divider()
             sectionLabel("阅读")
             VStack(alignment: .leading, spacing: 7) {
-                Text("歌词清晰度保护").font(.system(size: 12, weight: .medium))
-                Picker("歌词清晰度保护", selection: $settings.v3ReadingProtection) {
+                Text("清晰度").font(.system(size: 12, weight: .medium))
+                Picker("清晰度", selection: $settings.v3ReadingProtection) {
                     ForEach(V3ReadingProtection.allCases) { value in Text(value.title).tag(value) }
                 }.pickerStyle(.segmented).labelsHidden()
-                Text("只保护文字与状态信息所在区域，封面配色保持稳定；不随播放逐帧采样。")
+                Text("文字阴影只作用于歌词；柔和光晕随封面明暗调整。")
                     .font(.system(size: 11)).foregroundStyle(Color.secondary)
             }
             Toggle(settings.v3ListeningScene == .focusedLyrics || settings.v3ListeningScene == .coverPhoto

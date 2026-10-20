@@ -111,47 +111,40 @@ enum LyricIslandArtworkColors {
     }
 }
 
-private struct LyricIslandReadingProtection: ViewModifier {
+private struct V3ReadingGlow: ViewModifier {
     let artworkURL: URL?
     let policy: V3ReadingProtection
     @State private var luminance: Double = 0.14
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
-    private var opacity: Double {
-        if policy == .off && contrast != .increased && !reduceTransparency { return 0 }
-        if reduceTransparency { return 0.88 }
-        if policy == .enhanced || contrast == .increased { return 0.64 }
-        // Local reading field; no full-screen veil and no frame-by-frame sampling.
-        return min(0.45, max(0.12, (luminance - 0.16) * 0.90 + 0.12))
-    }
-    private static let fade = [Gradient.Stop(color: .clear, location: 0),
-                               .init(color: .white, location: 0.12),
-                               .init(color: .white, location: 0.88),
-                               .init(color: .clear, location: 1)]
+
     func body(content: Content) -> some View {
-        content
-            .background {
-                // Feathered on all four edges so bright covers get a soft
-                // shade behind the text instead of a hard grey slab.
-                Rectangle()
-                    .fill(Color.black.opacity(opacity))
-                    .mask {
-                        LinearGradient(stops: Self.fade, startPoint: .top, endPoint: .bottom)
-                            .mask(LinearGradient(stops: Self.fade, startPoint: .leading, endPoint: .trailing))
-                    }
-                    .allowsHitTesting(false)
+        content.background {
+            if policy.effective(reduceTransparency: reduceTransparency, increasedContrast: contrast == .increased) == .glow {
+                GeometryReader { geometry in
+                    let opacity = min(0.48, max(0.035, (luminance - 0.16) * 0.55 + 0.035))
+                    EllipticalGradient(stops: [
+                        .init(color: .black.opacity(opacity), location: 0),
+                        .init(color: .black.opacity(opacity * 0.5), location: 0.4),
+                        .init(color: .clear, location: 1)
+                    ])
+                    .frame(width: geometry.size.width * 1.6, height: geometry.size.height * 1.35)
+                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                }
+                .allowsHitTesting(false)
+                .task(id: artworkURL) {
+                    let next = await LyricIslandArtworkColors.palette(for: artworkURL).luminance
+                    guard !Task.isCancelled else { return }
+                    luminance = next
+                }
             }
-            .task(id: artworkURL) {
-                let next = await LyricIslandArtworkColors.palette(for: artworkURL).luminance
-                guard !Task.isCancelled else { return }
-                if luminance != next { luminance = next }
-            }
+        }
     }
 }
 
 extension View {
-    func lyricIslandReadingProtection(artworkURL: URL?, policy: V3ReadingProtection) -> some View {
-        modifier(LyricIslandReadingProtection(artworkURL: artworkURL, policy: policy))
+    func v3ReadingGlow(artworkURL: URL?, policy: V3ReadingProtection) -> some View {
+        modifier(V3ReadingGlow(artworkURL: artworkURL, policy: policy))
     }
 }
 

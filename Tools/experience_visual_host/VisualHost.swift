@@ -104,6 +104,7 @@ private enum ExperienceArtwork {
         }
         ("AFTER\nTHE RAIN" as NSString).draw(in: CGRect(x: 50, y: size.height*0.36, width: size.width-100, height: 210), withAttributes: [.font:NSFont.systemFont(ofSize:56,weight:.black),.foregroundColor:NSColor.white])
         if kind == "white" { NSColor.white.setFill(); bounds.fill() }
+        if kind == "dark" { NSColor(calibratedWhite: 0.04, alpha: 1).setFill(); bounds.fill() }
         image.unlockFocus()
         guard let tiff=image.tiffRepresentation, let bitmap=NSBitmapImageRep(data:tiff), let png=bitmap.representation(using:.png,properties:[:]) else { return nil }
         let url=ExperienceArguments.root.appendingPathComponent("\(kind).png")
@@ -139,6 +140,8 @@ struct ExperienceVisualHostApp: App {
         case "light": UserDefaults.standard.set("Light", forKey: "AppleInterfaceStyle")
         default: break
         }
+        let protection = ExperienceArguments.value("--reading-protection", fallback: "")
+        if !protection.isEmpty { defaults.set(protection, forKey: AppSettingsStore.Key.v3ReadingProtection) }
         let settings=AppSettingsStore(defaults:defaults)
         settings.floatingWindowAlwaysOnTop = true
         precondition(!settings.v3StageReadabilityEnabled)

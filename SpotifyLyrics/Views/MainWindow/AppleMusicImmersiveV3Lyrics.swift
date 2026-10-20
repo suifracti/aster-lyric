@@ -987,6 +987,12 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
     var presentationClock: LyricsPresentationClock = LyricsPresentationClock()
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    private var showsReadingShadow: Bool {
+        settings.v3ReadingProtection.effective(reduceTransparency: reduceTransparency,
+                                               increasedContrast: contrast == .increased) == .shadow
+    }
     @Environment(\.lyricAgentPresentationMap) private var agentPresentationMap
 
     static func == (lhs: AppleMusicImmersiveV3LyricRow, rhs: AppleMusicImmersiveV3LyricRow) -> Bool {
@@ -1086,6 +1092,8 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
             textAlignment: textAlignment
         )
         .equatable()
+        .shadow(color: showsReadingShadow ? .black.opacity(0.65) : .clear,
+                radius: showsReadingShadow ? 6 : 0, x: 0, y: 2)
         .offset(x: CGFloat(agentPresentationMap.horizontalOffset(for: line.performerID)))
         .opacity(rowOpacity)
         .blur(radius: reduceMotion ? 0 : rowBlur)

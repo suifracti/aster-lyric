@@ -1314,7 +1314,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .environmentObject(settings)
         .environment(\.v3PreviewPresentation, hoveredStyle)
         .environment(\.lyricIslandScene, compositionScene)
-        .lyricIslandReadingProtection(artworkURL: compositionTrack.artworkURL, policy: settings.v3ReadingProtection)
+        .v3ReadingGlow(artworkURL: compositionTrack.artworkURL, policy: settings.v3ReadingProtection)
         .environment(\.lyricTextAlignment, compositionLyricsPosition == "center" ? .center : compositionLyricsPosition == "right" ? .trailing : .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

@@ -210,10 +210,19 @@ public enum V3ListeningScene: String, CaseIterable, Codable, Identifiable, Senda
 }
 
 public enum V3ReadingProtection: String, CaseIterable, Identifiable, Codable, Sendable {
-    case automatic, enhanced, off
+    case off, shadow, glow
     public var id: String { rawValue }
     public var title: String {
-        switch self { case .automatic: return "自动"; case .enhanced: return "加强"; case .off: return "关闭" }
+        switch self { case .off: return "关闭"; case .shadow: return "文字阴影"; case .glow: return "柔和光晕" }
+    }
+
+    static func restored(_ value: String?) -> Self {
+        if value == "enhanced" { return .glow }
+        return Self(rawValue: value ?? "off") ?? .off
+    }
+
+    func effective(reduceTransparency: Bool, increasedContrast: Bool) -> Self {
+        reduceTransparency || increasedContrast ? .glow : self
     }
 }
 
@@ -439,7 +448,7 @@ public final class AppSettingsStore: ObservableObject {
     @Published public var v3PictureAdvancedExpanded = true {
         didSet { defaults.set(v3PictureAdvancedExpanded, forKey: Key.v3PictureAdvancedExpanded) }
     }
-    @Published public var v3ReadingProtection: V3ReadingProtection = .automatic {
+    @Published public var v3ReadingProtection: V3ReadingProtection = .off {
         didSet { defaults.set(v3ReadingProtection.rawValue, forKey: Key.v3ReadingProtection) }
     }
     @Published public var menuBarWidthMode = "adaptive" {
@@ -1285,7 +1294,8 @@ public final class AppSettingsStore: ObservableObject {
         self.v3SceneHoverPreviewEnabled = defaults.object(forKey: Key.v3SceneHoverPreviewEnabled) as? Bool
             ?? (defaults.object(forKey: Key.v3ArtworkPresentation) != nil)
         self.v3PictureAdvancedExpanded = defaults.object(forKey: Key.v3PictureAdvancedExpanded) as? Bool ?? true
-        self.v3ReadingProtection = V3ReadingProtection(rawValue: defaults.string(forKey: Key.v3ReadingProtection) ?? "automatic") ?? .automatic
+        self.v3ReadingProtection = V3ReadingProtection.restored(defaults.string(forKey: Key.v3ReadingProtection))
+        defaults.set(v3ReadingProtection.rawValue, forKey: Key.v3ReadingProtection)
         self.menuBarWidthMode = defaults.string(forKey: Key.menuBarWidthMode) == "fixed" ? "fixed" : "adaptive"
         let requestedWidth = defaults.object(forKey: Key.menuBarWidth) as? Double ?? 240
         self.menuBarWidth = requestedWidth.isFinite ? min(480, max(120, requestedWidth)) : 240
