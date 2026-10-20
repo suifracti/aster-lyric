@@ -279,6 +279,18 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         }
     }
 
+    public func adoptTiming(versionID: UUID, trackStableKey: String,
+                            applyToPlayback: ((UUID) async throws -> Bool)? = nil) {
+        Task {
+            do {
+                let lyricsID = try await repository.adoptPersonalLibraryTimingVersion(id: versionID, trackStableKey: trackStableKey)
+                try await repository.setPersonalLibraryActiveLyrics(trackStableKey: trackStableKey, lyricsVersionID: lyricsID)
+                _ = try await applyToPlayback?(lyricsID)
+                refreshTrackDetail(stableKey: trackStableKey)
+            } catch { statusMessage = "采用时间轴失败：\(error.localizedDescription)" }
+        }
+    }
+
     public func toggleLyricsLock(versionID: UUID, currentLocked: Bool, trackStableKey: String) {
         Task {
             do {

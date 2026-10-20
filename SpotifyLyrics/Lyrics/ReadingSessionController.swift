@@ -280,6 +280,12 @@ public final class ReadingSessionController: ObservableObject {
         message = "本次播放不使用读音版本"
     }
 
+    public func selectSavedVersion(versionID: UUID) async {
+        reload(allowAutomaticGeneration: false)
+        await loadTask?.value
+        select(versionID: versionID)
+    }
+
     public func select(versionID: UUID) {
         guard let version = availableVersions.first(where: { $0.record.id == versionID }), !version.record.isArchived else { return }
         revision &+= 1

@@ -266,6 +266,19 @@ private struct ExperienceFixtureRoot: View {
                         let saved = try! await repository.save(track: track, identity: identity, document: document)
                         try! await repository.setPersonalLibraryActiveLyrics(trackStableKey: identity.stableKey,
                                                                              lyricsVersionID: saved.versionID!)
+                        let source = try! await repository.loadEditableVersion(versionID: saved.versionID!, track: track, identity: identity)!
+                        for label in ["译文一", "译文二"] {
+                            _ = try! await repository.saveTranslation(lyricsVersionID: source.record.id,
+                                sourceContentHash: source.sourceContentHash,
+                                originalLines: document.lines.map(\.originalText),
+                                draft: AITranslationDraft(lines: document.lines.indices.map {
+                                    AITranslationLine(index: $0, translation: label + " · " + String($0))
+                                }, targetLanguage: "zh-Hans", model: label, baseURLHost: "", promptHash: label,
+                                sourceContentHash: source.sourceContentHash, sourceKind: .manualImport,
+                                isMachineGenerated: false, isManuallyEdited: true, engineID: label),
+                                forceNewVersion: true)
+                        }
+
                     }
                 }
                 playback.startProvider()

@@ -484,6 +484,7 @@ public struct PersonalLibraryTrackDetailView: View {
     @EnvironmentObject private var playback: PlaybackState
     @ObservedObject var service: PersonalLyricsLibraryService
     let stableKey: String
+    var compact = false
     @State private var selectedSection: VersionSection = .all
     @State private var translationDeletionCandidate: PersonalTranslationVersionItem?
     @State private var showTranslationDeletionConfirmation = false
@@ -512,8 +513,9 @@ public struct PersonalLibraryTrackDetailView: View {
                     if lhs.isCurrent != rhs.isCurrent { return lhs.isCurrent }
                     return lhs.createdAt > rhs.createdAt
                 }
-                ScrollView {
+                Group {
                     VStack(alignment: .leading, spacing: 20) {
+                        if !compact {
                         trackHeader(detail.entry)
 
                         Picker("版本类型", selection: $selectedSection) {
@@ -526,6 +528,8 @@ public struct PersonalLibraryTrackDetailView: View {
                         Text("切换当前版本会保留旧稿；锁定的版本不会被自动替换。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+
+                        }
 
                         // Section 1: Lyrics Versions
                         if selectedSection == .all || selectedSection == .lyrics {
@@ -579,15 +583,16 @@ public struct PersonalLibraryTrackDetailView: View {
                             }
                         }
                     }
-                    .padding(20)
+                    .padding(compact ? 0 : 20)
                 }
+                .modifier(LibraryDetailScrolling(enabled: !compact))
                 .id(stableKey)
             } else {
                 VStack {
                     ProgressView()
-                    Text("正在加载歌曲资产...")
+                    if !compact { Text("正在加载歌曲资产...")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.secondary) }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -702,6 +707,9 @@ public struct PersonalLibraryTrackDetailView: View {
             return (parent.source, parent.parentVersionID)
         }
         return VStack(alignment: .leading, spacing: 8) {
+            versionAdoptionRow(source: DatabaseSourceIdentifier.displayName(for: lv.source), date: lv.updatedAt, lineCount: lv.lineCount,
+                isCurrent: compact ? playback.liveLyricsVersionID == lv.id : lv.isCurrent) { adoptLyrics(lv, entry: entry) }
+            if !compact {
             HStack {
                 HStack(spacing: 6) {
                     LibraryVersionLabel(kind: "lyrics", id: lv.id, originalTitle: DatabaseSourceIdentifier.displayName(for: lv.source))
@@ -719,7 +727,7 @@ public struct PersonalLibraryTrackDetailView: View {
                         .disabled(service.revisionBusy)
                     if !lv.isCurrent {
                         Button("设为当前") {
-                            service.adoptLyricsVersion(versionID: lv.id, trackStableKey: entry.trackStableKey, applyToPlayback: { try await playback.adoptCurrentLyricsVersion(versionID: $0) })
+                            adoptLyrics(lv, entry: entry)
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -744,12 +752,17 @@ public struct PersonalLibraryTrackDetailView: View {
                 }
             }
             .font(.caption)
+            }
         }
-        .versionRowSurface(isCurrent: lv.isCurrent)
+        .versionRowSurface(isCurrent: compact ? playback.liveLyricsVersionID == lv.id : lv.isCurrent)
     }
 
     private func translationVersionCard(_ tv: PersonalTranslationVersionItem, entry: PersonalLyricsLibraryEntry) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            versionAdoptionRow(source: tv.sourceKind.uppercased(), date: tv.updatedAt, lineCount: tv.lineCount,
+                isCurrent: compact ? playback.selectedTranslation?.record.id == tv.id : tv.isCurrent) { adoptTranslation(tv, entry: entry) }
+                .disabled(tv.isArchived)
+            if !compact {
             HStack {
                 HStack(spacing: 6) {
                     LibraryVersionLabel(kind: "translation", id: tv.id, originalTitle: tv.sourceKind.uppercased())
@@ -767,7 +780,7 @@ public struct PersonalLibraryTrackDetailView: View {
                     .controlSize(.small)
                     .disabled(service.revisionBusy)
                     if !tv.isCurrent && !tv.isArchived {
-                        Button("设为当前") { service.adoptTranslation(versionID: tv.id, trackStableKey: entry.trackStableKey) }
+                        Button("设为当前") { adoptTranslation(tv, entry: entry) }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
                     }
@@ -801,12 +814,17 @@ public struct PersonalLibraryTrackDetailView: View {
                 }
             }
             .font(.caption)
+            }
         }
-        .versionRowSurface(isCurrent: tv.isCurrent)
+        .versionRowSurface(isCurrent: compact ? playback.selectedTranslation?.record.id == tv.id : tv.isCurrent)
     }
 
     private func readingVersionCard(_ rv: PersonalReadingVersionItem, entry: PersonalLyricsLibraryEntry) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            versionAdoptionRow(source: rv.sourceKind, date: rv.updatedAt, lineCount: rv.lineCount,
+                isCurrent: compact ? playback.selectedReadingVersion?.record.id == rv.id : rv.isCurrent) { adoptReading(rv, entry: entry) }
+                .disabled(rv.isArchived)
+            if !compact {
             HStack {
                 HStack(spacing: 6) {
                     LibraryVersionLabel(kind: "reading", id: rv.id, originalTitle: rv.representationID.contains("kana") ? "假名 (KANA)" : "罗马音 (ROMAJI)")
@@ -821,7 +839,7 @@ public struct PersonalLibraryTrackDetailView: View {
                         .controlSize(.small)
                         .disabled(service.revisionBusy)
                     if !rv.isCurrent && !rv.isArchived {
-                        Button("设为当前") { service.adoptReading(versionID: rv.id, trackStableKey: entry.trackStableKey) }
+                        Button("设为当前") { adoptReading(rv, entry: entry) }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
                     }
@@ -848,12 +866,16 @@ public struct PersonalLibraryTrackDetailView: View {
                 }
             }
             .font(.caption)
+            }
         }
-        .versionRowSurface(isCurrent: rv.isCurrent)
+        .versionRowSurface(isCurrent: compact ? playback.selectedReadingVersion?.record.id == rv.id : rv.isCurrent)
     }
 
     private func timingVersionCard(_ tm: PersonalTimingVersionItem, entry: PersonalLyricsLibraryEntry) -> some View {
-        HStack(alignment: .top) {
+        VStack(alignment: .leading, spacing: 8) {
+            versionAdoptionRow(source: tm.source.uppercased(), date: tm.createdAt, lineCount: service.selectedTrackDetail?.lyricsVersions.first(where: { $0.id == tm.lyricsVersionID })?.lineCount ?? 0,
+                isCurrent: tm.isCurrent) { adoptTiming(tm, entry: entry) }
+            if !compact {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     LibraryVersionLabel(kind: "timing", id: tm.id, originalTitle: tm.source.uppercased())
@@ -874,8 +896,64 @@ public struct PersonalLibraryTrackDetailView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(service.revisionBusy)
+            }
         }
         .versionRowSurface(isCurrent: tm.isCurrent)
+    }
+
+    private func versionAdoptionRow(source: String, date: Date, lineCount: Int,
+                                    isCurrent: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: isCurrent ? "checkmark.circle.fill" : "circle")
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(source).fontWeight(.medium)
+                    Text(date.formatted(date: .numeric, time: .shortened) + " · \(lineCount) 行")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func adoptLyrics(_ version: PersonalLyricsVersionItem, entry: PersonalLyricsLibraryEntry) {
+        service.adoptLyricsVersion(versionID: version.id, trackStableKey: entry.trackStableKey,
+            applyToPlayback: { try await playback.adoptCurrentLyricsVersion(versionID: $0) })
+    }
+
+    private func adoptTranslation(_ version: PersonalTranslationVersionItem, entry: PersonalLyricsLibraryEntry) {
+        guard playback.liveTrackIdentity?.stableKey == entry.trackStableKey else {
+            service.adoptTranslation(versionID: version.id, trackStableKey: entry.trackStableKey)
+            return
+        }
+        Task { @MainActor in
+            if playback.liveLyricsVersionID != version.lyricsVersionID {
+                guard (try? await playback.adoptCurrentLyricsVersion(versionID: version.lyricsVersionID)) == true else { return }
+            }
+            await playback.selectSavedTranslationVersion(versionID: version.id)
+            service.adoptTranslation(versionID: version.id, trackStableKey: entry.trackStableKey)
+        }
+    }
+
+    private func adoptReading(_ version: PersonalReadingVersionItem, entry: PersonalLyricsLibraryEntry) {
+        guard playback.liveTrackIdentity?.stableKey == entry.trackStableKey else {
+            service.adoptReading(versionID: version.id, trackStableKey: entry.trackStableKey)
+            return
+        }
+        Task { @MainActor in
+            if playback.liveLyricsVersionID != version.lyricsVersionID {
+                guard (try? await playback.adoptCurrentLyricsVersion(versionID: version.lyricsVersionID)) == true else { return }
+            }
+            await playback.readingSession.selectSavedVersion(versionID: version.id)
+            service.adoptReading(versionID: version.id, trackStableKey: entry.trackStableKey)
+        }
+    }
+
+    private func adoptTiming(_ version: PersonalTimingVersionItem, entry: PersonalLyricsLibraryEntry) {
+        service.adoptTiming(versionID: version.id, trackStableKey: entry.trackStableKey,
+            applyToPlayback: { try await playback.adoptCurrentLyricsVersion(versionID: $0) })
     }
 
     /// Less frequent, reversible actions (lock, archive) share one menu so
@@ -1583,5 +1661,12 @@ private struct LibraryTimingRevisionSheet: View {
         .padding(24)
         .frame(width: 760, height: 620)
         .interactiveDismissDisabled(service.revisionBusy)
+    }
+}
+
+private struct LibraryDetailScrolling: ViewModifier {
+    let enabled: Bool
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled { ScrollView { content } } else { content }
     }
 }

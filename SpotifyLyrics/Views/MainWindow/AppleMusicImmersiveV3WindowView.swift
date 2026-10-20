@@ -1380,9 +1380,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         return allowsModelRequests
     }
 
-    private var translationPanel: some View {
+    private func translationControls(compact: Bool) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("AI 与读音", systemImage: "sparkles").font(.headline)
+            if !compact { Label("AI 与读音", systemImage: "sparkles").font(.headline) }
             HStack(spacing: 8) {
                 Text("功能").font(.subheadline)
                 HStack(spacing: 2) {
@@ -1395,7 +1395,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             }
             Divider()
             if displaysAIReadingControls {
-                aiReadingControls
+                aiReadingControls(compact: compact)
             } else {
             Toggle("新歌词自动翻译", isOn: Binding(
                 get: { settings.aiTranslationConfiguration.autoTranslateNewLyrics },
@@ -1406,23 +1406,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
             ))
             .disabled(!allowsAutomaticTranslation || !settings.aiTranslationConfiguration.isConfigured)
-            Text("优先复用已保存译文；自动翻译完整后使用，人工稿与锁定版本保留。新候选可手动采用，所有窗口共用。")
-                .font(.caption).foregroundStyle(.secondary)
-            Divider()
-            if let current = state.selectedTranslation {
-                Text("当前译文 · " + current.record.translationSourceTitle)
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            if !state.translationProgressMessage.isEmpty {
-                Text(state.translationProgressMessage).font(.caption)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if !state.translationState.userFacingMessage.isEmpty {
-                Text(state.translationState.userFacingMessage).font(.caption)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text(state.selectedTranslation != nil ? "正在显示已采用译文" : "尚未采用译文")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
             if case .loading = state.translationState {
                 HStack { ProgressView().controlSize(.small)
                     Button("取消") { state.cancelTranslation() } }
@@ -1433,7 +1416,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
                 .disabled(!allowsTranslationRequests || !settings.aiTranslationConfiguration.isConfigured || state.liveLyrics.isEmpty)
             }
-            if !allowsTranslationRequests {
+            if !compact && !allowsTranslationRequests {
                 Text("没有剩余模型请求预算；苹果系统翻译及已保存版本仍可使用。")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -1500,7 +1483,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .accessibilityAddTraits(showsAIReadingControls == reading ? .isSelected : [])
     }
 
-    private var aiReadingControls: some View {
+    private func aiReadingControls(compact: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Toggle("本地自动生成读音", isOn: Binding(
                 get: { settings.readingPreferences.automaticGeneration },
@@ -1510,8 +1493,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     settings.readingPreferences = next
                 }
             ))
-            Text("本地生成不调用 AI。可在设置 → 读音调整自动生成与人工词典。")
-                .font(.caption).foregroundStyle(.secondary)
+            if !compact { Text("本地生成不调用 AI。可在设置 → 读音调整自动生成与人工词典。")
+                .font(.caption).foregroundStyle(.secondary) }
             Toggle("使用 AI 优化读音", isOn: Binding(
                 get: { settings.readingPreferences.aiAssistedCandidate },
                 set: { enabled in
@@ -1520,14 +1503,14 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     settings.readingPreferences = next
                 }
             ))
-            Text("关闭恢复本地读音；人工修改、锁定读音和已保存版本保留。")
-                .font(.caption).foregroundStyle(.secondary)
+            if !compact { Text("关闭恢复本地读音；人工修改、锁定读音和已保存版本保留。")
+                .font(.caption).foregroundStyle(.secondary) }
             if settings.readingPreferences.aiAssistedCandidate {
                 Toggle("新歌词自动优化", isOn: readingBinding(\.automaticAIOptimization))
                     .disabled(!allowsAutomaticTranslation || !settings.aiTranslationConfiguration.isConfigured
                         || !AIReadingCandidateService.supports(engineID: settings.aiTranslationConfiguration.engineID))
-                Text("新歌词就绪后自动优化并使用；优先复用已保存的 AI 读音，保留人工修改和锁定读音。仅处理不确定读音，可能产生模型费用。")
-                    .font(.caption).foregroundStyle(.secondary)
+                if !compact { Text("新歌词就绪后自动优化并使用；优先复用已保存的 AI 读音，保留人工修改和锁定读音。仅处理不确定读音，可能产生模型费用。")
+                    .font(.caption).foregroundStyle(.secondary) }
             }
             HStack {
                 Button("本地生成") { state.generateCurrentReading() }
@@ -1535,7 +1518,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 Button("AI 优化当前歌词…", systemImage: "sparkles") { confirmsAIReadingRequest = true }
                     .disabled(aiReadingRequestDisabledReason != nil)
             }
-            if let reason = aiReadingRequestDisabledReason {
+            if !compact, let reason = aiReadingRequestDisabledReason {
                 Text(reason).font(.caption).foregroundStyle(.secondary)
             }
             if state.isReadingGenerating {
@@ -1741,15 +1724,33 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             toolbarTriggerHover(panel, inside: inside)
         }
         .v3ToolPopover(isPresented: toolbarPopoverBinding(panel), onAnchorPress: { clickToolbarPanel(panel) }) {
-            hoverTrackedPanel(panel) { quickToolbarPanel(for: panel) }
+            hoverTrackedPanel(panel) { inspectorSurface(for: panel, style: .hoverGlass) }
         }
     }
 
-    private func quickToolbarPanel(for panel: ToolbarPopover) -> some View {
-        V3ToolbarQuickControls(panel: panel, settings: settings, state: state,
-                               search: state.songSearchManager, canTranslate: allowsTranslationRequests,
-                               openLibrary: { clickToolbarPanel(.library) }, windowModes: AnyView(windowModePanel))
+    private func toolbarPanel(for panel: ToolbarPopover) -> some View {
+        V3ToolbarQuickControls(panel: panel, state: state, search: state.songSearchManager,
+            openLibrary: { clickToolbarPanel(.library) }, openSearch: { clickToolbarPanel(.search) }) {
+            switch panel {
+            case .translation: translationControls(compact: true)
+            case .text: visualControls.textPage
+            case .picture:
+                V3ThemeSelectorView(settings: settings, artworkURL: state.currentTrack.artworkURL,
+                    preview: $hoveredStyle, previewScene: $hoveredScene,
+                    onConfirm: {}, compact: true)
+                visualControls.blurControls
+                Toggle("显示歌曲缩略图", isOn: $settings.v3ShowForegroundArtwork)
+            case .more:
+                windowModePanel
+                Divider()
+                desktopInteractionPanel
+                Button("恢复歌词时间") { settings.lyricsOffsetStore.resetActiveValue() }
+            case .library, .search: EmptyView()
+            }
+        }
     }
+
+    private var visualControls: V3VisualControls { V3VisualControls(settings: settings) }
 
     private func toolbarEntry(_ title: String, symbol: String, selected: Bool = false) -> some View {
         Label(title, systemImage: symbol)
@@ -1847,35 +1848,11 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .buttonStyle(QuietToolbarButtonStyle())
     }
 
-    @ViewBuilder
-    private func inspectorPanelContent(for panel: ToolbarPopover) -> some View {
-        switch panel {
-        case .more:
-            moreInspectorContent
-        case .library, .search:
-            EmptyView()
-        case .translation, .text, .picture:
-            V3VisualTuningPopoverView(
-                settings: settings,
-                state: state,
-                liveOnly: liveOnly,
-                currentSongWorkflow: AnyView(translationPanel),
-                panel: panel,
-                layoutStyleRawValue: $layoutStyleRawValue,
-                preview: $hoveredStyle,
-                previewScene: $hoveredScene,
-                onOpenAISettings: openAISettings,
-                onDismiss: dismissPinnedToolbarPanel
-            )
-            .environmentObject(settings)
-        }
-    }
-
     private func inspectorSurface(for panel: ToolbarPopover, style: InspectorSurfaceStyle) -> some View {
         VStack(spacing: 0) {
-            inspectorPanelContent(for: panel)
+            toolbarPanel(for: panel)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(width: 360, height: 520, alignment: .topLeading)
         .background {
             switch style {
             case .hoverGlass:
@@ -1890,70 +1867,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 .frame(width: 1)
         }
         .onExitCommand { dismissPinnedToolbarPanel() }
-    }
-
-    private var moreInspectorContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("更多").font(.system(size: 15, weight: .semibold, design: .rounded))
-                Spacer(minLength: 4)
-                if pinnedToolbarPanel == .more {
-                    Button(action: dismissPinnedToolbarPanel) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 11, weight: .semibold))
-                            .frame(width: 24, height: 24)
-                            .background(Color.primary.opacity(0.08), in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .focusable(false)
-                    .keyboardShortcut(.cancelAction)
-                    .help("关闭（Esc）")
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 12)
-
-            Divider()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 9) {
-                        sectionEyebrow("当前歌曲")
-                        CurrentSongOperationsView(
-                            state: state,
-                            versionShortcutOnly: true,
-                            iconOnly: false,
-                            onVersionPickerPresentationChange: { isVersionPickerPresented = $0 },
-                            onOpenEditor: liveOnly ? { MenuBarLyricsController.shared.openEditor() } : nil
-                        )
-                        .environmentObject(settings)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        LyricsPresentationOffsetControl(settings: settings, showsLegacyNotice: false)
-                            .padding(.top, 4)
-                        Button("恢复歌词时间") { settings.lyricsOffsetStore.resetActiveValue() }
-                            .font(.caption)
-                            .buttonStyle(.borderless)
-                    }
-
-                    Divider()
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        sectionEyebrow("窗口与播放面")
-                        windowModePanel
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    Divider()
-
-                    desktopInteractionPanel
-                }
-                .padding(16)
-            }
-            .scrollIndicators(.hidden)
-        }
-        .frame(width: 340)
-        .frame(maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func sectionEyebrow(_ title: String) -> some View {

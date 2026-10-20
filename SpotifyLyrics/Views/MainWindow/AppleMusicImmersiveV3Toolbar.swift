@@ -405,7 +405,7 @@ struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
         }
         private func positionBeside(_ owner: NSWindow) {
             guard let panel, !userPositioned, let screen = owner.screen else { return }
-            let requested = CGSize(width: 360, height: min(780, max(420, owner.frame.height)))
+            let requested = CGSize(width: 360, height: min(542, max(420, owner.frame.height)))
             let frame = LyricIslandPanelPlacement.frame(owner: owner.frame,
                                                         visible: screen.visibleFrame, requested: requested)
             guard panel.frame != frame else { return }

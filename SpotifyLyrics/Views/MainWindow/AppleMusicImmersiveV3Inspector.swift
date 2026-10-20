@@ -27,12 +27,13 @@ private struct V3LyricsTimePopover: View {
 }
 
 /// Shared theme navigation; existing style IDs and per-style preferences stay intact.
-private struct V3ThemeSelectorView: View {
+struct V3ThemeSelectorView: View {
     @ObservedObject var settings: AppSettingsStore
     let artworkURL: URL?
     @Binding var preview: V3ArtworkPresentation?
     @Binding var previewScene: V3ListeningScene?
     var onConfirm: () -> Void
+    var compact = false
     @State private var thumbnail: NSImage?
     @State private var tint = Color.accentColor
     @State private var previewTask: Task<Void, Never>?
@@ -72,10 +73,10 @@ private struct V3ThemeSelectorView: View {
             HStack {
                 Text("场景").font(.system(size: 13, weight: .semibold))
                 Spacer()
-                Toggle("悬停预览", isOn: $settings.v3SceneHoverPreviewEnabled)
+                if !compact { Toggle("悬停预览", isOn: $settings.v3SceneHoverPreviewEnabled)
                     .toggleStyle(.switch).controlSize(.mini)
                     .font(.system(size: 11))
-                    .help("停留后临时预览，移开恢复，点击才采用；预览不会保存设置或调用 AI")
+                    .help("停留后临时预览，移开恢复，点击才采用；预览不会保存设置或调用 AI") }
             }
             // Four families as large cards; the chosen family's styles sit
             // underneath. Entries only — every style is an existing
@@ -89,8 +90,8 @@ private struct V3ThemeSelectorView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text(shownFamily.title + " · 风格").font(.system(size: 12, weight: .semibold))
                     Spacer()
-                    Text(shownFamily.detail).font(.system(size: 11)).foregroundStyle(Color.secondary)
-                        .lineLimit(1)
+                    if !compact { Text(shownFamily.detail).font(.system(size: 11)).foregroundStyle(Color.secondary)
+                        .lineLimit(1) }
                 }
                 .padding(.bottom, 4)
                 ForEach(shownFamily.styles, id: \.self) { style in
@@ -107,7 +108,7 @@ private struct V3ThemeSelectorView: View {
             }
             .padding(10)
             .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
-            if settings.v3ListeningScene != nil {
+            if !compact, settings.v3ListeningScene != nil {
                 Button("恢复此风格的默认值", role: .destructive) {
                     clearPreview(); settings.resetCurrentV3Scene()
                 }.font(.system(size: 12)).buttonStyle(.borderless)
@@ -156,7 +157,7 @@ private struct V3ThemeSelectorView: View {
         }
         .buttonStyle(.plain)
         .onHover { inside in
-            if inside && family != currentFamily { browsedFamily = family }
+            if inside && !compact && family != currentFamily { browsedFamily = family }
             hovering(inside, scene: target.0, renderer: target.1)
         }
         .help(family.detail)
@@ -178,7 +179,7 @@ private struct V3ThemeSelectorView: View {
                     .foregroundStyle(selected ? tint : Color.secondary.opacity(0.6))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title).font(.system(size: 12.5, weight: selected ? .semibold : .regular))
-                    if let detail {
+                    if !compact, let detail {
                         Text(detail).font(.system(size: 11)).foregroundStyle(Color.secondary).lineLimit(1)
                     }
                 }
@@ -285,18 +286,9 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
     }
 }
 
-struct V3VisualTuningPopoverView: View {
+/// Shared settings controls used by the toolbar panel and the settings window.
+struct V3VisualControls {
     @ObservedObject var settings: AppSettingsStore
-    @V3ContentPlaybackState var state: PlaybackState
-    var liveOnly: Bool
-    let currentSongWorkflow: AnyView
-    let panel: V3ToolbarModel.Panel
-    @Binding var layoutStyleRawValue: String
-    @Binding var preview: V3ArtworkPresentation?
-    @Binding var previewScene: V3ListeningScene?
-    var onOpenAISettings: () -> Void
-    var onDismiss: () -> Void
-    @State private var textAdvancedExpanded = false
 
     private var blurPresetName: String {
         let r = settings.v3BackdropBlurRadius
@@ -324,71 +316,9 @@ struct V3VisualTuningPopoverView: View {
         return "自定"
     }
 
-    var body: some View {
-        // The pinned NSPanel already provides the title bar and close button;
-        // the tab control is the only header so nothing is repeated.
-        VStack(spacing: 0) {
-            HStack {
-                Text(panel.title).font(.system(size: 15, weight: .semibold, design: .rounded))
-                Spacer()
-                Button(action: onDismiss) { Image(systemName: "xmark") }
-                    .buttonStyle(.plain).help("关闭（Esc）")
-            }
-            .padding(14)
-
-            Divider()
-
-            ScrollView {
-                panelContent
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .scrollIndicators(.hidden)
-        }
-        .frame(minWidth: 300, idealWidth: 340, maxWidth: .infinity)
-        .frame(maxHeight: 760)
-        .onDisappear { preview = nil; previewScene = nil }
-        .onExitCommand(perform: onDismiss)
-    }
-
-    @ViewBuilder
-    private var panelContent: some View {
-        switch panel {
-        case .picture: picturePage
-        case .text: textPage
-        case .translation: translationPage
-        case .library, .search, .more: EmptyView()
-        }
-    }
-
-    private var picturePage: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionLabel("风格")
-            V3ThemeSelectorView(settings: settings, artworkURL: state.currentTrack.artworkURL,
-                                preview: $preview, previewScene: $previewScene, onConfirm: {})
-            Divider()
-            Toggle(settings.v3ListeningScene == .focusedLyrics || settings.v3ListeningScene == .coverPhoto
-                   ? "显示歌曲缩略图" : "显示前景封面", isOn: $settings.v3ShowForegroundArtwork)
-                .accessibilityIdentifier("v3.artwork.showForeground")
-            if settings.v3ListeningScene != .focusedLyrics && settings.v3ListeningScene != .linerNotes {
-                blurControls
-            }
-            Divider()
-            sectionLabel("播放")
-            Picker("播放呈现", selection: $settings.v3EdgeProgressEnabled) {
-                Text("标准播放栏").tag(false)
-                Text("窗口边缘").tag(true)
-            }.pickerStyle(.segmented)
-            DisclosureGroup("更多画面选项", isExpanded: $settings.v3PictureAdvancedExpanded) {
-                pictureAdvancedControls.padding(.top, 10)
-            }.font(.system(size: 12, weight: .medium))
-        }
-    }
-
-    private var blurControls: some View {
+    var blurControls: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(settings.v3ListeningScene == .flowingField && settings.v3ArtworkPresentation == .classic
-                 ? "光场柔化" : settings.v3ArtworkPresentation.blurControlTitle)
+            Text("背景封面模糊")
                 .font(.system(size: 12, weight: .medium))
             V3NumericSlider(value: $settings.v3BackdropBlurRadius, in: 0...100, step: 1, unit: "%")
                 .accessibilityLabel(settings.v3ArtworkPresentation.blurControlTitle)
@@ -419,7 +349,7 @@ struct V3VisualTuningPopoverView: View {
         }
     }
 
-    private var pictureAdvancedControls: some View {
+    var pictureAdvancedControls: some View {
         VStack(alignment: .leading, spacing: 14) {
             let renderer = settings.v3ArtworkPresentation
             let scene = settings.v3ListeningScene
@@ -492,47 +422,21 @@ struct V3VisualTuningPopoverView: View {
             Toggle("确认纯音乐时使用简洁画面", isOn: $settings.v3InstrumentalPureImmersion)
                 .help("仅对已确认纯音乐生效；找不到歌词不代表纯音乐。")
             DisclosureGroup("旧版布局兼容") {
-                Picker("主窗口布局", selection: $layoutStyleRawValue) {
+                Picker("主窗口布局", selection: $settings.mainWindowLayoutStyleRawValue) {
                     ForEach(MainWindowLayoutStyle.userSelectableCases) { style in Text(style.title).tag(style.rawValue) }
                 }.pickerStyle(.menu)
             }.font(.system(size: 12))
         }.font(.system(size: 12))
     }
 
-    private var textPage: some View {
+    var textPage: some View {
         VStack(alignment: .leading, spacing: 13) {
             VStack(alignment: .leading, spacing: 7) {
                 Text("清晰度").font(.system(size: 12, weight: .medium))
                 Picker("清晰度", selection: $settings.v3ReadingProtection) {
                     ForEach(V3ReadingProtection.allCases) { value in Text(value.title).tag(value) }
                 }.pickerStyle(.segmented).labelsHidden()
-                Text("文字阴影只作用于歌词；柔和光晕随封面明暗调整。")
-                    .font(.system(size: 11)).foregroundStyle(Color.secondary)
-            }
-            Divider()
-            sectionLabel("显示与对齐")
-            VStack(alignment: .leading, spacing: 6) {
-                Text("歌词位置与对齐")
-                    .font(.system(size: 12, weight: .medium))
-                Picker("歌词位置与对齐", selection: Binding(
-                    get: { settings.v3LyricsPosition },
-                    set: { settings.v3LyricsPosition = $0 }
-                )) {
-                    Text("自动").tag("automatic")
-                    Text("左侧").tag("left")
-                    Text("居中").tag("center")
-                    Text("右侧").tag("right")
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .accessibilityLabel("歌词位置与对齐")
-                Text("假名、原文与译文会一起对齐。")
-                    .font(.system(size: 12)).foregroundStyle(Color.secondary)
-            }
-
-            HStack(spacing: 10) {
-                Toggle("原文", isOn: displayBinding(\.showOriginal))
-                Toggle("译文", isOn: displayBinding(\.showTranslation))
+                Image(systemName: "info.circle").help("文字阴影只作用于歌词；柔和光晕随封面明暗调整。")
             }
             HStack(spacing: 10) {
                 Toggle("罗马音", isOn: displayBinding(\.showRomaji))
@@ -550,14 +454,6 @@ struct V3VisualTuningPopoverView: View {
             sectionLabel("字号")
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text("原文与译文字号")
-                    Spacer()
-                    Text("\(Int(settings.displayPreferences.fontSize.rounded())) pt").monospacedDigit()
-                }
-                V3NumericSlider(value: displayDoubleBinding(\.fontSize), in: 14...42, step: 1, unit: "pt")
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
                     Text("读音与辅助字")
                     Spacer()
                     Text("\(Int(settings.displayPreferences.assistantFontSize.rounded())) pt").monospacedDigit()
@@ -573,7 +469,10 @@ struct V3VisualTuningPopoverView: View {
                 V3NumericSlider(value: displayDoubleBinding(\.rubyFontSize), in: 8...18, step: 1, unit: "pt")
             }
 
-            DisclosureGroup("更多文字选项", isExpanded: $textAdvancedExpanded) {
+        }
+    }
+
+    var textAdvancedControls: some View {
                 VStack(alignment: .leading, spacing: 10) {
                     Picker("繁简转换", selection: readingBinding(\.scriptConversionID)) {
                         Text("不转换").tag(ScriptConversionID.none.rawValue)
@@ -588,43 +487,6 @@ struct V3VisualTuningPopoverView: View {
                     }
                     V3NumericSlider(value: displayBinding(\.opacity), in: 0.15...1, step: 0.05, unit: "%", displayScale: 100)
                 }
-                .padding(.top, 8)
-            }
-            .font(.system(size: 12, weight: .medium))
-
-            Text("原文、译文与读音按同一行节奏排列；关闭某层只影响显示，不会删除版本。")
-                .font(.system(size: 12)).foregroundStyle(Color.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private var translationPage: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            currentSongWorkflow
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 7) {
-                sectionLabel("翻译服务")
-                Text(TranslationEngineCatalog.metadata(for: settings.aiTranslationConfiguration.engineID)?.displayName
-                     ?? settings.aiTranslationConfiguration.engineID)
-                    .font(.system(size: 12, weight: .medium))
-                Text(settings.aiTranslationConfiguration.model.isEmpty
-                     ? "尚未选择模型"
-                     : "模型 · \(settings.aiTranslationConfiguration.model)")
-                    .font(.system(size: 12)).foregroundStyle(Color.secondary).lineLimit(2)
-                let reasoning = TranslationReasoningPolicy.value(settings.aiTranslationConfiguration)
-                if !reasoning.isEmpty {
-                    Text("思考强度 · " + (["low": "低", "medium": "中", "high": "高", "xhigh": "很高", "max": "最高", "ultra": "超高", "none": "关闭"][reasoning] ?? reasoning))
-                        .font(.system(size: 12)).foregroundStyle(Color.secondary)
-                }
-                Button("在设置中调整服务", systemImage: "sparkles", action: onOpenAISettings)
-                    .buttonStyle(.bordered)
-            }
-
-
-        }
     }
 
     private func sectionLabel(_ title: String) -> some View {

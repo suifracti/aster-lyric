@@ -285,6 +285,13 @@ public final class TranslationSessionController: ObservableObject {
         loadExistingOrAutoTranslate(context)
     }
 
+    public func selectSavedVersion(versionID: UUID) async {
+        guard let context else { return }
+        loadExistingOrAutoTranslate(context, allowAutomaticRequest: false)
+        await requestTask?.value
+        select(versionID: versionID)
+    }
+
     public func select(versionID: UUID) {
         guard let context,
               let version = availableVersions.first(where: { $0.record.id == versionID }),

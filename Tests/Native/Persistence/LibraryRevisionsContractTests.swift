@@ -184,6 +184,13 @@ final class LibraryRevisionsContractTests: XCTestCase {
         XCTAssertEqual(editedTimingSource?.document.timingVersionID, timingChild.id)
         let editedStartTime = editedTimingSource?.document.lines[0].timedSpans?.first?.startTime ?? 0
         XCTAssertEqual(editedStartTime, 1.2, accuracy: 0.0001)
+        _ = try await repo.adoptPersonalLibraryTimingVersion(id: originalTiming.id, trackStableKey: timingIdentity.stableKey)
+        let selectedTimingSource = try await repo.loadEditableVersion(versionID: timingSource.record.id, track: timingTrack, identity: timingIdentity)
+        XCTAssertEqual(selectedTimingSource?.document.timingVersionID, originalTiming.id)
+        let selectedTimingDetail = try await repo.loadPersonalLibraryTrackDetail(stableKey: timingIdentity.stableKey)
+        XCTAssertEqual(selectedTimingDetail?.timingVersions.count, 2)
+        XCTAssertEqual(selectedTimingDetail?.timingVersions.first(where: \.isCurrent)?.id, originalTiming.id)
+
 
         let request = LyricsEditSaveRequest(
             track: track, identity: identity, sourceVersionID: source.record.id,

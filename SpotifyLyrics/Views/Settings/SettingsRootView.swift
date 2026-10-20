@@ -413,7 +413,10 @@ struct LyricsSearchSettingsSections: View {
 }
 
 private struct AppearanceSettingsView: View {
+    @EnvironmentObject private var playback: PlaybackState
     @EnvironmentObject private var settings: AppSettingsStore
+
+    private var visualControls: V3VisualControls { V3VisualControls(settings: settings) }
 
     var body: some View {
         Form {
@@ -432,6 +435,14 @@ private struct AppearanceSettingsView: View {
                 }
                 if settings.mainWindowLayoutStyleRawValue == MainWindowLayoutStyle.appleMusicImmersiveV3.rawValue {
                     LyricIslandSceneSettingsPicker(settings: settings)
+                    Toggle("悬停预览", isOn: $settings.v3SceneHoverPreviewEnabled)
+                    Button("恢复此风格的默认值") { settings.resetCurrentV3Scene() }
+                    Picker("播放呈现", selection: $settings.v3EdgeProgressEnabled) {
+                        Text("标准播放栏").tag(false)
+                        Text("窗口边缘").tag(true)
+                    }
+                    DisclosureGroup("画面精细调整") { visualControls.pictureAdvancedControls }
+                    DisclosureGroup("更多文字选项") { visualControls.textAdvancedControls }
                     Text("画面精细调整在独立工具窗中完成，不会改变主窗尺寸。")
                         .font(.caption).foregroundStyle(.secondary)
 

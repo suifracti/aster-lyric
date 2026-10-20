@@ -1781,6 +1781,24 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         return try fetchTimingVersion(id: id)
     }
 
+    private func timingSelectionKey(_ lyricsVersionID: UUID) -> String {
+        "lyrics.timing.selection." + databaseURL.path + "." + lyricsVersionID.uuidString
+    }
+
+    /// Selection is a preference; immutable timeline assets and dates stay intact.
+    public func adoptPersonalLibraryTimingVersion(id: UUID, trackStableKey: String) throws -> UUID {
+        try ensurePrepared()
+        guard let timing = try fetchTimingVersion(id: id),
+              let lyrics = try fetchLyricsVersion(versionID: timing.lyricsVersionID),
+              try resolvedCanonicalStableKey(lyrics.trackStableKey) == resolvedCanonicalStableKey(trackStableKey),
+              timing.sourceContentHash == LyricsSourceContentHasher.hash(
+                isSynchronized: lyrics.isSynced, lines: try fetchLines(versionID: lyrics.id)) else {
+            throw LyricsEditingRepositoryError.sourceNotFound
+        }
+        UserDefaults.lyricsQ.set(id.uuidString, forKey: timingSelectionKey(lyrics.id))
+        return lyrics.id
+    }
+
     /// Saves an immutable timing child on the same lyrics version. The exact
     /// lyric identity/hash is checked again before the new payload is stored.
     public func savePersonalLibraryTimingRevision(
@@ -3534,11 +3552,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                    source_content_hash, spans_payload, created_at
             FROM lyrics_timing_versions
             WHERE lyrics_version_id = ? AND source_content_hash = ?
-            ORDER BY created_at DESC;
+            ORDER BY (id = ?) DESC, created_at DESC;
             """)
         defer { sqlite3_finalize(statement) }
         try bindText(lyricsVersionID.uuidString, at: 1, to: statement)
         try bindText(sourceContentHash, at: 2, to: statement)
+
+        try bindText(UserDefaults.lyricsQ.string(forKey: timingSelectionKey(lyricsVersionID)) ?? "", at: 3, to: statement)
 
         while sqlite3_step(statement) == SQLITE_ROW {
             guard let idText = columnText(statement, index: 0),
@@ -4137,7 +4157,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 try bindText(id.uuidString, at: Int32(idx + 1), to: timeStmt)
             }
 
-            var isFirstTiming = true
+            var seenTimingLyrics = Set<UUID>()
             while sqlite3_step(timeStmt) == SQLITE_ROW {
                 guard let idText = columnText(timeStmt, index: 0),
                       let id = UUID(uuidString: idText),
@@ -4147,8 +4167,10 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 let granularity = columnText(timeStmt, index: 3) ?? "timedUnit"
                 let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(timeStmt, 4))
 
-                let isCurrent = isFirstTiming
-                isFirstTiming = false
+                let firstForLyrics = seenTimingLyrics.insert(lvid).inserted
+                let selected = UserDefaults.lyricsQ.string(forKey: timingSelectionKey(lvid))
+                let isCurrent = lyricsItems.first(where: { $0.id == lvid })?.isCurrent == true
+                    && (selected.map { $0 == id.uuidString } ?? firstForLyrics)
 
                 timingItems.append(PersonalTimingVersionItem(
                     id: id,
