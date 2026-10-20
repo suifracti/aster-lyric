@@ -2251,7 +2251,11 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
             // to the popover window; handle it here because the toolbar button
             // cannot receive it. A click routed to the owner window must reach
             // the SwiftUI button, or both paths toggle the same panel.
-            if anchorRect.contains(screenPoint), eventWindow !== anchorWindow {
+            if anchorRect.contains(screenPoint) {
+                // Keep the hover panel alive until mouse-up. The owner-window
+                // button pins it on release; closing here would remove that
+                // button mid-click and make the action intermittent.
+                if eventWindow === anchorWindow { return event }
                 V3ToolbarLog.logger.notice("anchor click → pin")
                 parent.onAnchorPress()
                 return nil
