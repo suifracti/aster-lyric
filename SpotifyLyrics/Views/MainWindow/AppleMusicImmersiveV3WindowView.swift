@@ -426,6 +426,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 if !presented && !isPointerInToolbarRegion { toolsVisible = false }
             }
             .onExitCommand { dismissPinnedToolbarPanel() }
+#if DEBUG
+            // Lets the offscreen visual host (Tools/experience_visual_host)
+            // render toolbar states that otherwise need a real pointer.
+            .onReceive(NotificationCenter.default.publisher(for: .v3ToolbarDebugCommand)) { note in
+                applyToolbarDebugCommand(note.userInfo ?? [:])
+            }
+#endif
             .task(id: interactionToken) {
                 guard interactionToken > 0 else { return }
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
@@ -1553,6 +1560,25 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         return 0
     }
 
+#if DEBUG
+    private func applyToolbarDebugCommand(_ info: [AnyHashable: Any]) {
+        if let tab = (info["tab"] as? String).flatMap(V3AdjustmentTab.init(rawValue:)) { adjustmentTab = tab }
+        let panel: ToolbarPopover? = switch info["panel"] as? String {
+        case "adjust": .adjust
+        case "more": .more
+        case "translation": .translation
+        default: nil
+        }
+        switch info["command"] as? String {
+        case "faint": isPointerInsideCanvas = true
+        case "full": isPointerInsideCanvas = true; toolsVisible = true
+        case "hover": if let panel { toolsVisible = true; presentToolbarPopover(panel) }
+        case "pin": if let panel { toolsVisible = true; togglePinnedToolbarPanel(panel == .translation ? .adjust : panel) }
+        default: break
+        }
+    }
+#endif
+
     private var toolbarPanelIsPresented: Bool {
         isWindowMenuPresented || isSearchPresented || isVersionPickerPresented
             || activeToolbarPopover != nil || pinnedToolbarPanel != nil
@@ -2092,6 +2118,12 @@ private final class V3FirstClickView: NSView {
         action()
     }
 }
+
+#if DEBUG
+extension Notification.Name {
+    static let v3ToolbarDebugCommand = Notification.Name("V3ToolbarDebugCommand")
+}
+#endif
 
 enum V3ToolbarLog {
     static let logger = Logger(subsystem: "com.spotifylyrics.app", category: "toolbar")

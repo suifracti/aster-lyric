@@ -132,6 +132,13 @@ struct ExperienceVisualHostApp: App {
             if !value.isEmpty { defaults.set(value, forKey: key) }
         }
         if let font = Double(ExperienceArguments.value("--desktop-font", fallback: "")) { defaults.set(font, forKey: "desktopLyrics.fontSize") }
+        // Tool panels read the system appearance; this sets it for this
+        // fixture process only (its own defaults domain).
+        switch ExperienceArguments.value("--appearance", fallback: "") {
+        case "dark": UserDefaults.standard.set("Dark", forKey: "AppleInterfaceStyle")
+        case "light": UserDefaults.standard.set("Light", forKey: "AppleInterfaceStyle")
+        default: break
+        }
         let settings=AppSettingsStore(defaults:defaults)
         settings.floatingWindowAlwaysOnTop = true
         precondition(!settings.v3StageReadabilityEnabled)
@@ -165,6 +172,12 @@ struct ExperienceVisualHostApp: App {
         precondition(settings.v3LyricsPosition == "automatic")
         settings.v3ArtworkPresentation = selectedStyle
         precondition(settings.v3LyricsPosition == lyricPosition)
+        if let scene = V3ListeningScene.allCases.first(where: { $0.rawValue == ExperienceArguments.value("--scene", fallback: "") || $0.rawValue == "scene.\(ExperienceArguments.value("--scene", fallback: "")).v1" }) {
+            let renderer = V3ArtworkPresentation(rawValue: ExperienceArguments.value("--renderer", fallback: "")) ?? scene.defaultRenderer
+            settings.selectV3Scene(scene, renderer: renderer)
+        } else if let classic = V3ArtworkPresentation(rawValue: ExperienceArguments.value("--classic", fallback: "")) {
+            settings.selectLegacyV3Presentation(classic)
+        }
         if let scale=Double(ExperienceArguments.value("--scale",fallback:"")) { settings.v3ArtworkSizeScale=scale }
         if let blur=Double(ExperienceArguments.value("--blur",fallback:"")) { settings.v3BackdropBlurRadius=blur }
         let provider=ExperiencePlaybackProvider(artwork:ExperienceArtwork.make())
@@ -371,10 +384,57 @@ private struct ExperienceFixtureRoot: View {
                     print("FULLSCREEN_BEHAVIOR_CHECKS_PASSED")
                     fflush(stdout)
                 }
+                // Toolbar states normally need a real pointer; the main view
+                // accepts these through a DEBUG-only notification.
+                let toolbar = ExperienceArguments.value("--toolbar", fallback: "")
+                let panel = ExperienceArguments.value("--panel", fallback: "")   // hover:adjust, pin:more, ...
+                let tab = ExperienceArguments.value("--tab", fallback: "")
+                if !toolbar.isEmpty {
+                    NotificationCenter.default.post(name: .v3ToolbarDebugCommand, object: nil, userInfo: ["command": toolbar, "tab": tab])
+                }
+                if panel.contains(":") {
+                    let parts = panel.split(separator: ":").map(String.init)
+                    NotificationCenter.default.post(name: .v3ToolbarDebugCommand, object: nil,
+                                                    userInfo: ["command": parts[0], "panel": parts[1], "tab": tab])
+                }
+                if !toolbar.isEmpty || !panel.isEmpty { try? await Task.sleep(for: .milliseconds(1500)) }
+                var extraWindow: NSWindow?
+                if ["menubar", "settings"].contains(ExperienceArguments.surface) {
+                    MenuBarLyricsController.shared.bind(playbackState: playback)
+                    let root: AnyView = ExperienceArguments.surface == "menubar"
+                        ? AnyView(MenuBarLyricsPopoverView(controller: MenuBarLyricsController.shared))
+                        : AnyView(SettingsRootView().environmentObject(settings).environmentObject(playback).environmentObject(SettingsDataController()))
+                    let hosting = NSHostingView(rootView: root.environment(\.colorScheme, ExperienceArguments.value("--appearance", fallback: "dark") == "light" ? .light : .dark))
+                    let size = ExperienceArguments.surface == "menubar" ? CGSize(width: 340, height: 560) : ExperienceArguments.size
+                    let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
+                    window.title = "Experience extra surface"
+                    window.appearance = NSAppearance(named: ExperienceArguments.value("--appearance", fallback: "dark") == "light" ? .aqua : .darkAqua)
+                    window.contentView = hosting
+                    window.orderFront(nil)
+                    extraWindow = window
+                    try? await Task.sleep(for: .milliseconds(1500))
+                }
                 let output=ExperienceArguments.value("--output",fallback:"")
-                if !output.isEmpty, let window=targetWindow, let view=window.contentView, let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds) {
-                    view.cacheDisplay(in:view.bounds,to:bitmap)
-                    if let png=bitmap.representation(using:.png,properties:[:]) { try? png.write(to:URL(fileURLWithPath:output)); print("RENDERED",output) }
+                func render(_ view: NSView, to path: String) {
+                    guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+                    view.cacheDisplay(in: view.bounds, to: bitmap)
+                    if let png = bitmap.representation(using: .png, properties: [:]) {
+                        try? png.write(to: URL(fileURLWithPath: path)); print("RENDERED", path)
+                    }
+                }
+                if !output.isEmpty {
+                    let primary = extraWindow ?? targetWindow
+                    if let view = primary?.contentView { render(view, to: output) }
+                    // Also capture tool windows (hover popover, pinned panel).
+                    let base = (output as NSString).deletingPathExtension
+                    var index = 0
+                    for window in NSApp.windows where window.isVisible && window !== primary
+                        && window !== targetWindow && window.frame.width > 120 && window.frame.height > 120 {
+                        index += 1
+                        if let view = window.contentView?.superview ?? window.contentView {
+                            render(view, to: "\(base)-panel\(index).png")
+                        }
+                    }
                 }
                 print("WINDOWS",NSApp.windows.map { "\($0.windowNumber):\($0.title):\($0.frame)" })
                 if ProcessInfo.processInfo.arguments.contains("--keep-open"), ExperienceArguments.surface != "main", let panel = targetWindow {
