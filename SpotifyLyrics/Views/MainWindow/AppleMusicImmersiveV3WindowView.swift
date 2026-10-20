@@ -2247,10 +2247,11 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
             }
             let screenPoint = eventWindow.convertPoint(toScreen: event.locationInWindow)
             let anchorRect = anchorWindow.convertToScreen(anchor.convert(anchor.bounds, to: nil))
-            // A click on the anchor pins its panel right here, whichever
-            // window AppKit routed it to. Not leaving it to the button avoids
-            // races with the hover popover and non-key windows.
-            if anchorRect.contains(screenPoint) {
+            // When the popover overlaps the anchor, AppKit routes the click
+            // to the popover window; handle it here because the toolbar button
+            // cannot receive it. A click routed to the owner window must reach
+            // the SwiftUI button, or both paths toggle the same panel.
+            if anchorRect.contains(screenPoint), eventWindow !== anchorWindow {
                 V3ToolbarLog.logger.notice("anchor click → pin")
                 parent.onAnchorPress()
                 return nil
