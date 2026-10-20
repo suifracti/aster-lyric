@@ -258,7 +258,6 @@ public struct LibraryLyricsRevisionDraft: Identifiable {
             sourceContentHash: hash,
             document: document,
             createLyricsVersion: true,
-            preserveCurrentLyricsSelection: true,
             confirmedTimingLoss: confirmingTimingLoss,
             readingLayers: readingLayers
         )

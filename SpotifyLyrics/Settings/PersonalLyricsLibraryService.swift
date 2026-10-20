@@ -49,7 +49,8 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         }
     }
 
-    public func saveRevision(_ draft: LibraryLyricsRevisionDraft, confirmingTimingLoss: Bool = false) {
+    public func saveRevision(_ draft: LibraryLyricsRevisionDraft, confirmingTimingLoss: Bool = false,
+                             applyToPlayback: ((UUID) async throws -> Bool)? = nil) {
         guard !revisionBusy else { return }
         revisionBusy = true
         revisionError = nil
@@ -59,7 +60,8 @@ public final class PersonalLyricsLibraryService: ObservableObject {
                 let result = try await repository.saveManualEdit(
                     draft.saveRequest(confirmingTimingLoss: confirmingTimingLoss)
                 )
-                guard result.lyricsVersion != nil else { throw LyricsEditingRepositoryError.sourceNotFound }
+                guard let version = result.lyricsVersion else { throw LyricsEditingRepositoryError.sourceNotFound }
+                _ = try await applyToPlayback?(version.record.id)
                 revisionDraft = nil
                 refreshTrackDetail(stableKey: draft.source.record.trackStableKey)
                 refresh()

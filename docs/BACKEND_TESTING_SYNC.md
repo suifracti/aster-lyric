@@ -34,8 +34,10 @@ A release must use a commit where this job is green.
 Saving from the main lyrics editor immediately adopts its saved new version:
 `LyricsEditorSessionController.applySaved` calls `onSaved`, and PlaybackState
 routes that result to `lyricsSession.adoptPersisted`. Original versions remain.
-Saving a revision from the personal library does not adopt it automatically;
-it refreshes the library, and adoption remains the explicit “set current” action.
+Saving a lyrics revision from the personal library also adopts the new version.
+For the currently playing song it uses the same `adoptCurrentLyricsVersion`
+path as “set current”; editing another song updates only that song's saved
+selection. Original and locked source versions remain available.
 
 ## B2 — desktop playback events
 

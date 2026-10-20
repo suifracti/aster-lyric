@@ -1292,6 +1292,7 @@ struct LibraryVersionLabel: View {
 
 private struct LibraryLyricsRevisionSheet: View {
     @ObservedObject var service: PersonalLyricsLibraryService
+    @EnvironmentObject private var playback: PlaybackState
     @Environment(\.dismiss) private var dismiss
     @State private var draft: LibraryLyricsRevisionDraft
     @State private var timingLossPendingDraft: LibraryLyricsRevisionDraft?
@@ -1312,7 +1313,7 @@ private struct LibraryLyricsRevisionSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             LibraryEditorHeading(context: "LYRICS REVISION", title: "编辑歌词为新版本")
             Text("\(draft.track.title) · \(draft.track.artist)").font(.headline)
-            Text("保存后生成独立修订版，原版保留，当前采用不变。回到歌词库可选择任一版本“设为当前”。")
+            Text("保存后自动采用新修订版；若正在播放这首歌，主窗口会同步更新。原版保留，仍可随时切换。")
                 .font(.callout).foregroundStyle(.secondary)
             HStack {
                 Text("开始时间（秒）").frame(width: 110, alignment: .leading)
@@ -1361,7 +1362,9 @@ private struct LibraryLyricsRevisionSheet: View {
         .alert("保存将丢失部分逐字时间", isPresented: $showTimingLossConfirmation) {
             Button("确认并保存兼容部分", role: .destructive) {
                 if let pending = timingLossPendingDraft {
-                    service.saveRevision(pending, confirmingTimingLoss: true)
+                    service.saveRevision(pending, confirmingTimingLoss: true, applyToPlayback: {
+                        try await playback.adoptCurrentLyricsVersion(versionID: $0)
+                    })
                 }
                 timingLossPendingDraft = nil
             }
@@ -1374,7 +1377,9 @@ private struct LibraryLyricsRevisionSheet: View {
     private func requestSave() {
         let summary = draft.timingLossSummary
         guard summary.requiresConfirmation else {
-            service.saveRevision(draft)
+            service.saveRevision(draft, applyToPlayback: {
+                try await playback.adoptCurrentLyricsVersion(versionID: $0)
+            })
             return
         }
         timingLossPendingDraft = draft

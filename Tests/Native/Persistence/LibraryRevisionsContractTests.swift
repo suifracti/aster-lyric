@@ -4,6 +4,7 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class LibraryRevisionsContractTests: XCTestCase {
+    @MainActor
     func testLibraryRevisionsPreserveLineageAndSelection() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("library-revisions-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -205,8 +206,16 @@ final class LibraryRevisionsContractTests: XCTestCase {
             XCTFail("Unexpected error for no-op revision: \(error)")
         }
         revisionDraft.lines[0].originalText = "Revised first"
-        let revisionResult = try await repo.saveManualEdit(revisionDraft.saveRequest())
-        let revision = try XCTUnwrap(revisionResult.lyricsVersion)
+        let library = PersonalLyricsLibraryService(repository: repo)
+        library.saveRevision(revisionDraft)
+        for _ in 0..<200 {
+            if !library.revisionBusy { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertFalse(library.revisionBusy)
+        XCTAssertNil(library.revisionError)
+        let versions = try await repo.loadEditableVersions(track: track, identity: identity)
+        let revision = try XCTUnwrap(versions.first { $0.record.parentVersionID == higher.record.id })
         XCTAssertNotEqual(revision.record.id, source.record.id)
         XCTAssertNotEqual(revision.record.id, higher.record.id)
         XCTAssertEqual(revision.record.parentVersionID, higher.record.id)
@@ -220,7 +229,7 @@ final class LibraryRevisionsContractTests: XCTestCase {
         XCTAssertEqual(lockedAfter?.record, higher.record)
         XCTAssertEqual(lockedAfter?.lines, higher.lines)
         let stillSelected = try await repo.loadBestStored(track: track, identity: identity)
-        XCTAssertEqual(stillSelected?.versionID, source.record.id, "Save must not adopt implicitly")
+        XCTAssertEqual(stillSelected?.versionID, revision.record.id, "Saving a library revision must adopt the new version")
         try await repo.setPersonalLibraryActiveLyrics(trackStableKey: identity.stableKey, lyricsVersionID: revision.record.id)
         let newSelected = try await repo.loadBestStored(track: track, identity: identity)
         XCTAssertEqual(newSelected?.versionID, revision.record.id)
