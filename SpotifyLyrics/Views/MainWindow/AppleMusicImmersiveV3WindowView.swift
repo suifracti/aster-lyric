@@ -2096,6 +2096,21 @@ private final class V3ToolAnchorView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
+/// Hover panels can receive their first control click before AppKit has made
+/// the popover window key. NSHostingView's default rejects that click, which
+/// makes SwiftUI controls look inert until the panel has been clicked again.
+private final class V3ToolPopoverHostingView: NSHostingView<AnyView> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+private final class V3ToolPopoverHostingController: NSHostingController<AnyView> {
+    override func loadView() {
+        let hostingView = V3ToolPopoverHostingView(rootView: rootView)
+        hostingView.sizingOptions = []
+        view = hostingView
+    }
+}
+
 private struct V3ToolPopoverAnchor: NSViewRepresentable {
     @Binding var isPresented: Bool
     let onAnchorPress: () -> Void
@@ -2116,8 +2131,7 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
             hosting.rootView = content
             hosting.view.appearance = coordinator.popover.appearance
         } else {
-            let hosting = NSHostingController(rootView: content)
-            hosting.sizingOptions = []
+            let hosting = V3ToolPopoverHostingController(rootView: content)
             hosting.view.appearance = coordinator.popover.appearance
             coordinator.hosting = hosting
             coordinator.popover.contentViewController = hosting
@@ -2156,7 +2170,7 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
         weak var anchor: NSView?
         let popover = NSPopover()
         var measuredHeight: CGFloat?
-        var hosting: NSHostingController<AnyView>?
+        var hosting: V3ToolPopoverHostingController?
         private var localMonitor: Any?
         private var observers: [NSObjectProtocol] = []
         private var trackingMenus = 0
