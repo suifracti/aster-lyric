@@ -1645,22 +1645,18 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
     private func toolBar(for size: CGSize) -> some View {
         HStack(spacing: 3) {
-            Button {
-                dismissPinnedToolbarPanel()
-                if liveOnly { MenuBarLyricsController.shared.openLibrary() }
-                else { openWindow(id: "personal-library-activity") }
-            } label: {
+            Button(action: openLibrary) {
                 toolbarEntry("歌词库", symbol: "books.vertical")
             }
+            .v3FirstClick(openLibrary)
             .help("歌词库")
 
             searchButton
-            Button {
-                adjustmentTab = .currentSong
-                if pinnedToolbarPanel != .adjust { togglePinnedToolbarPanel(.adjust) }
-            } label: {
+            Button(action: openTranslation) {
                 toolbarEntry("译文", symbol: "character.bubble")
-            }.help("显示译文、选择已有版本或翻译本首")
+            }
+            .v3FirstClick(openTranslation)
+            .help("显示译文、选择已有版本或翻译本首")
             toolbarPanelButton("调整", symbol: "slider.horizontal.3", panel: .adjust)
                 .accessibilityIdentifier("appearance.shortcut")
             toolbarPanelButton("更多", symbol: "ellipsis", panel: .more)
@@ -1669,13 +1665,11 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             // from the listening tools.
             Rectangle().fill(Color.white.opacity(0.18)).frame(width: 1, height: 18)
                 .padding(.horizontal, 2)
-            Button {
-                dismissPinnedToolbarPanel()
-                if liveOnly { MenuBarLyricsController.shared.openSettings() }
-                else { openSettings() }
-            } label: {
+            Button(action: openAppSettings) {
                 toolbarEntry("设置", symbol: "gearshape")
-            }.help("应用设置与 AI 服务")
+            }
+            .v3FirstClick(openAppSettings)
+            .help("应用设置与 AI 服务")
         }
         .background {
             Button("翻译与读音") {
@@ -1686,6 +1680,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
         }
         .buttonStyle(QuietToolbarButtonStyle())
+        // The window's first focusable control otherwise wears a focus ring
+        // whenever the window becomes key, which reads as a stuck selection.
+        .focusEffectDisabled()
         .environment(\.lyricIslandCompactTools, size.width < 720)
         .padding(5)
         .background(.regularMaterial.opacity(0.78), in: Capsule())
@@ -1703,17 +1700,35 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .onDisappear { toolbarDismissTask?.cancel(); hoveredStyle = nil }
     }
 
+    private func openLibrary() {
+        dismissPinnedToolbarPanel()
+        if liveOnly { MenuBarLyricsController.shared.openLibrary() }
+        else { openWindow(id: "personal-library-activity") }
+    }
+
+    private func openTranslation() {
+        adjustmentTab = .currentSong
+        if pinnedToolbarPanel != .adjust { togglePinnedToolbarPanel(.adjust) }
+    }
+
+    private func openAppSettings() {
+        dismissPinnedToolbarPanel()
+        if liveOnly { MenuBarLyricsController.shared.openSettings() }
+        else { openSettings() }
+    }
+
     private func toolbarPanelButton(_ title: String, symbol: String, panel: ToolbarPopover) -> some View {
         Button { togglePinnedToolbarPanel(panel) } label: {
             toolbarEntry(title, symbol: symbol, selected: pinnedToolbarPanel == panel)
         }
+        .v3FirstClick { togglePinnedToolbarPanel(panel) }
         .help(title == "调整" ? "歌词、文字与当前歌曲调整" : "窗口、歌词版本、时间与设置")
         .onHover { inside in toolbarTriggerHover(panel, inside: inside) }
         .v3ToolPopover(
             isPresented: toolbarPopoverBinding(panel),
-            // The native anchor monitor only passes mouse-down through; the
-            // SwiftUI button owns the single click-to-pin toggle.
-            onAnchorPress: {}
+            // Only used when the popover window overlaps the anchor; normal
+            // clicks reach the SwiftUI button.
+            onAnchorPress: { togglePinnedToolbarPanel(panel) }
         ) {
             hoverTrackedPanel(panel) { inspectorPanelContent(for: panel) }
         }
@@ -1822,6 +1837,11 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             isSearchPresented.toggle()
         } label: {
             toolbarEntry("搜索", symbol: "magnifyingglass")
+        }
+        .v3FirstClick {
+            dismissPinnedToolbarPanel()
+            activeToolbarPopover = nil
+            isSearchPresented = true
         }
         .help("搜索")
         .popover(isPresented: $isSearchPresented, arrowEdge: .top) {
@@ -2004,6 +2024,40 @@ private extension View {
     }
 }
 
+/// SwiftUI's hosting view ignores the click that activates an inactive
+/// window, so a toolbar button needed two clicks after switching from
+/// Spotify. This overlay only takes the click in that state; once the window
+/// is key and active it is transparent and the SwiftUI button handles input.
+private extension View {
+    func v3FirstClick(_ action: @escaping () -> Void) -> some View {
+        overlay(V3FirstClickCatcher(action: action))
+    }
+}
+
+private struct V3FirstClickCatcher: NSViewRepresentable {
+    let action: () -> Void
+    func makeNSView(context: Context) -> V3FirstClickView { V3FirstClickView() }
+    func updateNSView(_ view: V3FirstClickView, context: Context) { view.action = action }
+}
+
+private final class V3FirstClickView: NSView {
+    var action: () -> Void = {}
+    private var pressed = false
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let window, !(NSApp.isActive && window.isKeyWindow) else { return nil }
+        return super.hitTest(point)
+    }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { pressed = true }
+    override func mouseUp(with event: NSEvent) {
+        defer { pressed = false }
+        guard pressed, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+        window?.makeKeyAndOrderFront(nil)
+        action()
+    }
+}
+
 private final class V3ToolAnchorView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
@@ -2045,7 +2099,11 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
             }
         }
         if !coordinator.popover.isShown {
-            coordinator.popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+            // A few points of air between the button and the panel arrow.
+            var rect = anchor.bounds
+            if !anchor.isFlipped { rect.origin.y -= 4 }
+            rect.size.height += 4
+            coordinator.popover.show(relativeTo: rect, of: anchor, preferredEdge: .minY)
             coordinator.startMonitoring()
         }
     }
@@ -2100,12 +2158,23 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
                 if event.keyCode == 53 { dismiss(); return nil }
                 return event
             }
-            // Let the anchor receive its FIRST click and confirm the panel.
-            // A content click (including its native menus) stays in place too.
+            // Let the anchor receive its FIRST click; the SwiftUI button owns
+            // the click-to-pin toggle. A content click stays in place too.
             if let anchor, event.window === anchor.window,
                anchor.bounds.contains(anchor.convert(event.locationInWindow, from: nil)) {
-                if event.type == .leftMouseDown { parent.onAnchorPress() }
                 return event
+            }
+            // The popover window is taller than its visible content and can
+            // overlap the bottom of the anchor. A click there belongs to the
+            // anchor, not the panel.
+            if event.type == .leftMouseDown, let anchor, let anchorWindow = anchor.window,
+               let eventWindow = event.window, eventWindow !== anchorWindow {
+                let screenPoint = eventWindow.convertPoint(toScreen: event.locationInWindow)
+                let anchorRect = anchorWindow.convertToScreen(anchor.convert(anchor.bounds, to: nil))
+                if anchorRect.contains(screenPoint) {
+                    parent.onAnchorPress()
+                    return nil
+                }
             }
             if let contentView = popover.contentViewController?.view,
                event.window === contentView.window { return event }
