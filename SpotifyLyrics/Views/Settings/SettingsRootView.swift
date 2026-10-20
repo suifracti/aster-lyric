@@ -437,10 +437,7 @@ private struct AppearanceSettingsView: View {
                     LyricIslandSceneSettingsPicker(settings: settings)
                     Toggle("悬停预览", isOn: $settings.v3SceneHoverPreviewEnabled)
                     Button("恢复此风格的默认值") { settings.resetCurrentV3Scene() }
-                    Picker("播放呈现", selection: $settings.v3EdgeProgressEnabled) {
-                        Text("标准播放栏").tag(false)
-                        Text("窗口边缘").tag(true)
-                    }
+                    visualControls.playbackPresentationControls
                     DisclosureGroup("画面精细调整") { visualControls.pictureAdvancedControls }
                     DisclosureGroup("更多文字选项") { visualControls.textAdvancedControls }
                     Text("画面精细调整在独立工具窗中完成，不会改变主窗尺寸。")
@@ -766,6 +763,18 @@ private struct ServicesAndSourcesSettingsView: View {
 struct TranslationProviderControls: View {
     @ObservedObject var settings: AppSettingsStore
 
+    /// Shared with the listening panel; changing a model uses the same provider policy.
+    var modelPicker: some View {
+        Picker("AI 模型", selection: modelBinding) {
+            Text(settings.aiTranslationConfiguration.model.isEmpty ? "选择模型" : settings.aiTranslationConfiguration.model)
+                .tag(settings.aiTranslationConfiguration.model)
+            ForEach(settings.aiCachedModels.filter { $0.id != settings.aiTranslationConfiguration.model }, id: \.id) { model in
+                Text(model.displayName).tag(model.id)
+            }
+        }
+        .disabled(provider == TranslationEngineID.appleSystem.rawValue)
+    }
+
     private var provider: String { settings.aiTranslationConfiguration.engineID }
     private var family: String { TranslationEngineCatalog.topLevelID(for: provider) }
     private var modelBinding: Binding<String> {
@@ -874,15 +883,7 @@ struct TranslationProviderControls: View {
             if provider != TranslationEngineID.appleSystem.rawValue {
                 TextField("此服务的模型 ID", text: modelBinding)
                     .textFieldStyle(.roundedBorder)
-                if !settings.aiCachedModels.isEmpty {
-                    Picker("已读取的模型", selection: modelBinding) {
-                        Text(settings.aiTranslationConfiguration.model.isEmpty ? "选择模型" : "保留当前输入")
-                            .tag(settings.aiTranslationConfiguration.model)
-                        ForEach(settings.aiCachedModels.filter { $0.id != settings.aiTranslationConfiguration.model }, id: \.id) { model in
-                            Text(model.displayName).tag(model.id)
-                        }
-                    }
-                }
+                modelPicker
                 if supportsReasoningControl {
                     Menu {
                         ForEach(advertisedReasoningOptions ?? [], id: \.self) { effort in

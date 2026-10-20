@@ -93,6 +93,12 @@ private func v3HoverToolPanelRoot<Content: View>(_ content: Content) -> AnyView 
     AnyView(content.preferredColorScheme(.dark).environment(\.colorScheme, .dark))
 }
 
+/// The shared panel reports its laid-out content, including expanded groups.
+struct V3ToolPanelHeight: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
 final class V3ToolAnchorView: NSView {
     var onWindowAttachment: (() -> Void)?
 
@@ -144,25 +150,20 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
             coordinator.close()
             return
         }
+        let sizedContent = AnyView(content.onPreferenceChange(V3ToolPanelHeight.self) { [weak coordinator] height in
+            guard height > 0 else { return }
+            DispatchQueue.main.async { coordinator?.resizeContent(height: height) }
+        })
         if let hosting = coordinator.hosting {
-            hosting.rootView = content
+            hosting.rootView = sizedContent
             hosting.view.appearance = coordinator.popover.appearance
         } else {
-            let hosting = V3ToolPopoverHostingController(rootView: content)
+            let hosting = V3ToolPopoverHostingController(rootView: sizedContent)
             hosting.view.appearance = coordinator.popover.appearance
             coordinator.hosting = hosting
             coordinator.popover.contentViewController = hosting
         }
-        let height = min(700, max(260, (anchor.window?.screen?.visibleFrame.height ?? 800) - 100))
-        // The panel contains its own scroll view. Measuring the entire hosted
-        // tree for every playback tick causes synchronous layout on main.
-        if !coordinator.popover.isShown || coordinator.measuredHeight != height {
-            coordinator.measuredHeight = height
-            if let size = coordinator.hosting?.sizeThatFits(in: CGSize(width: 420, height: height)) {
-                let rounded = CGSize(width: ceil(size.width), height: ceil(size.height))
-                if coordinator.popover.contentSize != rounded { coordinator.popover.contentSize = rounded }
-            }
-        }
+        if !coordinator.popover.isShown { coordinator.resizeContent(height: 520) }
         if !coordinator.popover.isShown {
             // Position in the owner canvas, rather than the tiny button bounds:
             // AppKit clips positioning rectangles to their positioning view.
@@ -191,12 +192,16 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
         var parent: V3ToolPopoverAnchor
         weak var anchor: NSView?
         let popover = NSPopover()
-        var measuredHeight: CGFloat?
         var hosting: V3ToolPopoverHostingController?
         private var localMonitor: Any?
         private var observers: [NSObjectProtocol] = []
         private var trackingMenus = 0
         private var forwardingWindow: NSWindow?
+
+        func resizeContent(height: CGFloat) {
+            let size = CGSize(width: 360, height: min(520, ceil(height)))
+            if popover.contentSize != size { popover.contentSize = size }
+        }
 
         private func forward(_ event: NSEvent, to window: NSWindow) {
             guard let source = event.window else { return }
@@ -352,6 +357,7 @@ struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
         private var observers: [NSObjectProtocol] = []
         private var userPositioned = false
         private var settingFrame = false
+        private var contentHeight: CGFloat = 520
         private weak var observedOwner: NSWindow?
         init(parent: V3PinnedInspectorPanelHost) { self.parent = parent; super.init() }
 
@@ -363,15 +369,19 @@ struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
                 V3ToolbarLog.logger.notice("pinned panel waiting for owner window attachment")
                 return
             }
-            if let hosting { hosting.rootView = v3ToolPanelRoot(parent.content) }
+            let content = v3ToolPanelRoot(parent.content.onPreferenceChange(V3ToolPanelHeight.self) { [weak self] height in
+                guard height > 0 else { return }
+                DispatchQueue.main.async { self?.resizeContent(height: height) }
+            })
+            if let hosting { hosting.rootView = content }
             else {
-                let controller = NSHostingController(rootView: v3ToolPanelRoot(parent.content))
+                let controller = NSHostingController(rootView: content)
                 controller.sizingOptions = []
                 controller.view.appearance = V3SystemAppearance.current
                 hosting = controller
             }
             if panel == nil {
-                let candidate = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 720),
+                let candidate = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: contentHeight),
                                         styleMask: [.titled, .closable, .utilityWindow, .resizable],
                                         backing: .buffered, defer: false)
                 candidate.isReleasedWhenClosed = false
@@ -382,7 +392,7 @@ struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
                 candidate.becomesKeyOnlyIfNeeded = true
                 candidate.level = .floating
                 candidate.collectionBehavior = [.fullScreenAuxiliary]
-                candidate.minSize = NSSize(width: 320, height: 360)
+                candidate.minSize = NSSize(width: 320, height: 60)
                 candidate.contentViewController = hosting
                 candidate.delegate = self
                 panel = candidate
@@ -405,13 +415,26 @@ struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
         }
         private func positionBeside(_ owner: NSWindow) {
             guard let panel, !userPositioned, let screen = owner.screen else { return }
-            let requested = CGSize(width: 360, height: min(542, max(420, owner.frame.height)))
+            let requested = panel.frameRect(forContentRect: CGRect(x: 0, y: 0, width: 360, height: contentHeight)).size
             let frame = LyricIslandPanelPlacement.frame(owner: owner.frame,
                                                         visible: screen.visibleFrame, requested: requested)
             guard panel.frame != frame else { return }
             settingFrame = true
             panel.setFrame(frame, display: true, animate: false)
             settingFrame = false
+        }
+        private func resizeContent(height: CGFloat) {
+            let height = min(520, ceil(height))
+            guard contentHeight != height else { return }
+            contentHeight = height
+            guard let panel, let owner = anchor?.window else { return }
+            if userPositioned {
+                let top = panel.frame.maxY
+                settingFrame = true
+                panel.setContentSize(CGSize(width: 360, height: height))
+                panel.setFrameTopLeftPoint(CGPoint(x: panel.frame.minX, y: top))
+                settingFrame = false
+            } else { positionBeside(owner) }
         }
         private func observe(_ owner: NSWindow) {
             guard observedOwner !== owner else { return }

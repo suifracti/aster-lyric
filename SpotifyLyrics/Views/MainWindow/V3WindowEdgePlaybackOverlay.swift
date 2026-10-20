@@ -272,6 +272,7 @@ struct V3WindowEdgeProgressSettings: View {
     @Binding var colorHex: String
     @Binding var colorMode: String
     var showsModeToggle = true
+    var showsExplanation = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -290,9 +291,12 @@ struct V3WindowEdgeProgressSettings: View {
                 ), supportsOpacity: false)
                 .disabled(!enabled)
             }
-            Text("进度常驻显示；靠近边缘时显示播放按钮，点击或拖动边缘可跳转。")
+            if showsExplanation {
+                Text("进度常驻显示；靠近边缘时显示播放按钮，点击或拖动边缘可跳转。")
                 .font(.caption).foregroundStyle(.secondary)
+            }
         }
+        .help("进度常驻显示；靠近边缘时显示播放按钮，点击或拖动边缘可跳转。")
     }
 }
 

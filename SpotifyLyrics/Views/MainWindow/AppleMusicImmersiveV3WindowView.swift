@@ -317,16 +317,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     ZStack(alignment: .topTrailing) {
                         layout(for: canvasGeometry)
 
-                        if let lyricNotice {
-                            Text(lyricNotice)
-                                .font(.system(size: 14, weight: .medium))
-                                .padding(.horizontal, 16).padding(.vertical, 10)
-                                .background(.regularMaterial, in: Capsule())
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                                .allowsHitTesting(false)
-                                .transition(.opacity)
-                        }
-
                         HStack(spacing: 16) {
                             Spacer(minLength: 0)
                             toolBar(for: canvasGeometry.size)
@@ -1350,11 +1340,22 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             V3LyricBar(settings: settings, offsetStore: settings.lyricsOffsetStore,
                 hasReading: state.selectedReadingVersion != nil || state.liveLyrics.contains { $0.kanaText?.isEmpty == false },
                 notice: showLyricNotice)
-                .scaleEffect(min(1, width / 470))
-                .frame(width: max(1, width), height: 34)
+                .frame(width: max(1, width), height: 30, alignment: .leading)
                 .opacity(lyricColumnHovered && isPointerInsideCanvas && !toolbarPanelIsPresented ? 1 : 0)
                 .allowsHitTesting(lyricColumnHovered && isPointerInsideCanvas && !toolbarPanelIsPresented)
                 .accessibilityHidden(!lyricColumnHovered || !isPointerInsideCanvas || toolbarPanelIsPresented)
+                .overlay(alignment: .topLeading) {
+                    if let lyricNotice {
+                        Text(lyricNotice)
+                            .font(.system(size: 13, weight: .medium))
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(.regularMaterial, in: Capsule())
+                            .fixedSize()
+                            .offset(y: -36)
+                            .allowsHitTesting(false)
+                            .transition(.opacity)
+                    }
+                }
         }
         .onHover { lyricColumnHovered = $0 }
     }
@@ -1410,6 +1411,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 Spacer()
             }
             Divider()
+            TranslationProviderControls(settings: settings).modelPicker
             if displaysAIReadingControls {
                 aiReadingControls(compact: compact)
             } else {
@@ -1591,7 +1593,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         let panel = (info["panel"] as? String).flatMap(ToolbarPopover.init(rawValue:))
         switch info["command"] as? String {
         case "lyricbar": isPointerInsideCanvas = true; lyricColumnHovered = true
-        case "notice": lyricNotice = "字号 22"
+        case "notice": isPointerInsideCanvas = true; lyricColumnHovered = true; lyricNotice = "字号 22"
         case "faint": isPointerInsideCanvas = true
         case "full": isPointerInsideCanvas = true; toolsVisible = true
         case "hover": if let panel { toolsVisible = true; apply(toolbar.pointerOnTrigger(panel, inside: true)) }
@@ -1755,7 +1757,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     preview: $hoveredStyle, previewScene: $hoveredScene,
                     onConfirm: {}, compact: true)
                 visualControls.blurControls
-                Toggle("显示歌曲缩略图", isOn: $settings.v3ShowForegroundArtwork)
+                Toggle(settings.v3ListeningScene == .focusedLyrics || settings.v3ListeningScene == .coverPhoto
+                       ? "显示歌曲缩略图" : "显示前景封面", isOn: $settings.v3ShowForegroundArtwork)
+                visualControls.playbackPresentationControls
+                visualControls.backgroundMotionControls
+                DisclosureGroup("更多画面选项") {
+                    visualControls.pictureAdvancedControls(showsExplanations: false)
+                }
             case .more:
                 windowModePanel
                 Divider()
@@ -1868,7 +1876,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         VStack(spacing: 0) {
             toolbarPanel(for: panel)
         }
-        .frame(width: 360, height: 520, alignment: .topLeading)
+        .frame(width: 360, alignment: .topLeading)
         .background {
             switch style {
             case .hoverGlass:

@@ -1,0 +1,8 @@
+Command: LYRICSQ_TEST_DERIVED_DATA=/tmp/lyricsq-f3-derived Scripts/test-native.sh
+Xcode 26.6 (17F113), macOS arm64, Debug, CODE_SIGNING_ALLOWED=NO
+
+Test Case '-[SpotifyLyricsTests.V3ToolbarPresentationTests testPanelReportsContentHeightInsteadOfAFullScreen]' started.
+Test Case '-[SpotifyLyricsTests.V3ToolbarPresentationTests testPanelReportsContentHeightInsteadOfAFullScreen]' passed (0.043 seconds).
+	 Executed 55 tests, with 0 failures (0 unexpected) in 16.044 (16.073) seconds
+	 Executed 55 tests, with 0 failures (0 unexpected) in 16.044 (16.074) seconds
+** TEST SUCCEEDED **

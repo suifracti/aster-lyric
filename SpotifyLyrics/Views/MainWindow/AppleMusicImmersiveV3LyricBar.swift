@@ -74,10 +74,11 @@ struct V3LyricBar: View {
             Text(actions.family.title).lineLimit(1)
             barButton("›", "下一场景（Command + 右方向键）") { notice(actions.scene(1)) }
         }
-        .font(.system(size: 11, weight: .medium))
+        .font(.system(size: 13, weight: .medium))
         .buttonStyle(.plain)
         .foregroundStyle(.white)
-        .padding(.horizontal, 10).padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .frame(height: 30)
         .background(.regularMaterial, in: Capsule())
         .fixedSize()
         .accessibilityIdentifier("v3.lyricBar")

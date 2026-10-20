@@ -1,10 +1,34 @@
-// Rules from docs/TOOLBAR_BEHAVIOR.md (b5a1ed5).
+// Rules from docs/TOOLBAR_BEHAVIOR.md (bad5213).
 import XCTest
 import CoreGraphics
 import Foundation
+import SwiftUI
 @testable import SpotifyLyrics
 
 final class V3ToolbarPresentationTests: XCTestCase {
+    @MainActor
+    func testPanelReportsContentHeightInsteadOfAFullScreen() async {
+        let height = expectation(description: "the host receives the short panel's height")
+        let suite = "panel-height-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        let state = PlaybackState(provider: MockPlaybackProvider(), settings: settings)
+        let root = V3ToolbarQuickControls(panel: .more, state: state, search: state.songSearchManager,
+                                         openLibrary: {}, openSearch: {}) { Text("短面板") }
+        .onPreferenceChange(V3ToolPanelHeight.self) { value in
+            if value > 0 && value < 100 { height.fulfill() }
+        }
+        let host = NSHostingView(rootView: root)
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 360, height: 520),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.close() }
+        await fulfillment(of: [height], timeout: 2)
+    }
+
     @MainActor
     func testLyricBarUsesExistingPreferences() {
         let defaults = UserDefaults(suiteName: "lyric-bar-\(UUID())")!

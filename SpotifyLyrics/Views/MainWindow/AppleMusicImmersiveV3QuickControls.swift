@@ -10,6 +10,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
     @ViewBuilder var controls: () -> Controls
     @StateObject private var library = PersonalLyricsLibraryService()
     @State private var query = ""
+    @State private var contentHeight: CGFloat = 520
 
     var body: some View {
         ScrollView {
@@ -17,6 +18,8 @@ struct V3ToolbarQuickControls<Controls: View>: View {
                 Text(panel.title).font(.system(size: 12, weight: .semibold))
                 switch panel {
                 case .library:
+                    Text("\(state.liveLyricsSource?.displayName ?? "暂无歌词") · \(state.liveLyricsVersionID == nil ? "未采用版本" : "已采用版本") · \(state.liveLyrics.count) 行")
+                        .font(.caption).foregroundStyle(.secondary)
                     PersonalLibraryTrackDetailView(service: library,
                         stableKey: state.liveTrackIdentity?.stableKey ?? "", compact: true)
                         .environmentObject(state)
@@ -30,9 +33,15 @@ struct V3ToolbarQuickControls<Controls: View>: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(GeometryReader { geometry in
+                Color.clear.preference(key: V3ToolPanelHeight.self, value: geometry.size.height)
+            })
         }
         .scrollBounceBehavior(.basedOnSize)
-        .frame(width: 360, height: 520)
+        .frame(width: 360, height: contentHeight)
+        .onPreferenceChange(V3ToolPanelHeight.self) { height in
+            if height > 0 { contentHeight = min(520, ceil(height)) }
+        }
         .font(.system(size: 12))
         .controlSize(.small)
         .toggleStyle(.switch)

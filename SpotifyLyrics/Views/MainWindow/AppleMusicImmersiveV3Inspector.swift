@@ -350,6 +350,33 @@ struct V3VisualControls {
     }
 
     var pictureAdvancedControls: some View {
+        pictureAdvancedControls(showsExplanations: true)
+    }
+
+    var playbackPresentationControls: some View {
+        Picker("播放呈现", selection: $settings.v3EdgeProgressEnabled) {
+            Text("标准播放栏").tag(false)
+            Text("窗口边缘").tag(true)
+        }.pickerStyle(.segmented)
+    }
+
+    @ViewBuilder var backgroundMotionControls: some View {
+        if settings.v3ArtworkPresentation != .classicGaussian {
+            HStack {
+                Text("背景动态")
+                Spacer()
+                atmosphereButton("关闭", level: 0)
+                atmosphereButton("轻柔", level: 1)
+                atmosphereButton("鲜明", level: 2)
+            }
+            .help("暂停、窗口隐藏或系统减少动态效果时停止装饰运动。")
+        } else {
+            Label("纯高斯保持静态", systemImage: "circle.lefthalf.filled")
+                .font(.system(size: 12)).foregroundStyle(Color.secondary)
+        }
+    }
+
+    func pictureAdvancedControls(showsExplanations: Bool) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             let renderer = settings.v3ArtworkPresentation
             let scene = settings.v3ListeningScene
@@ -363,25 +390,21 @@ struct V3VisualControls {
                         Text("铺满").tag(false)
                         Text("尽量完整").tag(true)
                     }.pickerStyle(.segmented)
-                    Text(settings.v3BackgroundShowsCompleteArtwork(for: renderer)
-                         ? "优先保留封面内容并补边；前景封面单独调整。"
-                         : "允许裁切以铺满背景；前景封面单独调整。")
-                        .font(.system(size: 11)).foregroundStyle(Color.secondary)
+                    .help("背景取景不改变前景封面；可铺满裁切或保留完整内容。")
+                    if showsExplanations {
+                        Text(settings.v3BackgroundShowsCompleteArtwork(for: renderer)
+                             ? "优先保留封面内容并补边；前景封面单独调整。"
+                             : "允许裁切以铺满背景；前景封面单独调整。")
+                            .font(.system(size: 11)).foregroundStyle(Color.secondary)
+                    }
                     backdropScaleControls
                 }
-                if renderer != .classicGaussian {
-                    HStack {
-                        Text("背景动态")
-                        Spacer()
-                        atmosphereButton("关闭", level: 0)
-                        atmosphereButton("轻柔", level: 1)
-                        atmosphereButton("鲜明", level: 2)
+                if showsExplanations {
+                    backgroundMotionControls
+                    if renderer != .classicGaussian {
+                        Text("暂停、窗口隐藏或系统减少动态效果时停止装饰运动。")
+                            .font(.system(size: 11)).foregroundStyle(Color.secondary)
                     }
-                    Text("暂停、窗口隐藏或系统减少动态效果时停止装饰运动。")
-                        .font(.system(size: 11)).foregroundStyle(Color.secondary)
-                } else {
-                    Label("纯高斯保持静态", systemImage: "circle.lefthalf.filled")
-                        .font(.system(size: 12)).foregroundStyle(Color.secondary)
                 }
                 Divider()
             }
@@ -413,11 +436,15 @@ struct V3VisualControls {
             if settings.v3EdgeProgressEnabled {
                 V3WindowEdgeProgressSettings(enabled: $settings.v3EdgeProgressEnabled,
                     colorHex: $settings.v3EdgeProgressColorHex,
-                    colorMode: $settings.v3EdgeProgressColorMode, showsModeToggle: false)
+                    colorMode: $settings.v3EdgeProgressColorMode, showsModeToggle: false,
+                    showsExplanation: showsExplanations)
             } else {
                 Toggle("悬停时显示播放信息", isOn: $settings.v3PlaybackDetailsOnHover)
-                Text("移入封面或播放区域显示；关闭后播放栏保持可见。")
-                    .font(.system(size: 11)).foregroundStyle(Color.secondary)
+                    .help("移入封面或播放区域显示；关闭后播放栏保持可见。")
+                if showsExplanations {
+                    Text("移入封面或播放区域显示；关闭后播放栏保持可见。")
+                        .font(.system(size: 11)).foregroundStyle(Color.secondary)
+                }
             }
             Toggle("确认纯音乐时使用简洁画面", isOn: $settings.v3InstrumentalPureImmersion)
                 .help("仅对已确认纯音乐生效；找不到歌词不代表纯音乐。")
@@ -431,12 +458,30 @@ struct V3VisualControls {
 
     var textPage: some View {
         VStack(alignment: .leading, spacing: 13) {
+            HStack {
+                Text("显示")
+                Toggle("原文", isOn: displayBinding(\.showOriginal))
+                Toggle("译文", isOn: displayBinding(\.showTranslation))
+                Toggle("读音", isOn: displayBinding(\.showKana))
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("原文与译文字号")
+                V3NumericSlider(value: displayDoubleBinding(\.fontSize), in: 14...42, step: 1, unit: "pt")
+            }
+            Picker("对齐", selection: $settings.v3LyricsPosition) {
+                Text("自动").tag("automatic")
+                Text("左").tag("left")
+                Text("居中").tag("center")
+                Text("右").tag("right")
+            }.pickerStyle(.segmented)
             VStack(alignment: .leading, spacing: 7) {
-                Text("清晰度").font(.system(size: 12, weight: .medium))
+                HStack {
+                    Text("清晰度").font(.system(size: 12, weight: .medium))
+                    Image(systemName: "info.circle").help("文字阴影只作用于歌词；柔和光晕随封面明暗调整。")
+                }
                 Picker("清晰度", selection: $settings.v3ReadingProtection) {
                     ForEach(V3ReadingProtection.allCases) { value in Text(value.title).tag(value) }
                 }.pickerStyle(.segmented).labelsHidden()
-                Image(systemName: "info.circle").help("文字阴影只作用于歌词；柔和光晕随封面明暗调整。")
             }
             HStack(spacing: 10) {
                 Toggle("罗马音", isOn: displayBinding(\.showRomaji))
@@ -468,7 +513,7 @@ struct V3VisualControls {
                 }
                 V3NumericSlider(value: displayDoubleBinding(\.rubyFontSize), in: 8...18, step: 1, unit: "pt")
             }
-
+            DisclosureGroup("更多文字选项") { textAdvancedControls }
         }
     }
 
