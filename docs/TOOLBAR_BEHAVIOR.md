@@ -35,6 +35,8 @@ Hover and click show **different** things:
 | 设置 | No hover panel, only a tooltip. | Opens settings. |
 
 ### Full panels
+**Layout rule:** the full panel opens with **exactly the hover panel's controls, in the same order**. You never have to hunt for something you just saw in hover. Below that is a single collapsed 「更多选项」 section with the rest. Explanatory paragraphs become an ⓘ tooltip next to the control.
+
 - **译文:**
   - 翻译 / 读音
   - 新歌词自动翻译
