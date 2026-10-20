@@ -127,19 +127,9 @@ private struct V3ThemeSelectorView: View {
         .onDisappear { clearPreview() }
     }
 
-    /// Clicking a family adopts its remembered style (or keeps the current
-    /// one when it already belongs there); hovering previews that style.
-    private func familyTarget(_ family: V3SceneFamily) -> (V3ListeningScene?, V3ArtworkPresentation) {
-        if family == currentFamily {
-            return (settings.v3ListeningScene, settings.v3ArtworkPresentation)
-        }
-        let scene = family.primaryScene
-        return (scene, settings.v3Renderer(for: scene))
-    }
-
     private func familyCard(_ family: V3SceneFamily) -> some View {
         let selected = family == currentFamily
-        let target = familyTarget(family)
+        let target = family.target(settings: settings)
         let previewing = preview != nil && family.contains(scene: previewScene, renderer: preview!) && !selected
         return Button {
             browsedFamily = nil
@@ -211,7 +201,7 @@ private struct V3ThemeSelectorView: View {
 
 /// Entry grouping only. Families map onto existing scene + renderer pairs and
 /// the eight classic presets; nothing here is persisted.
-private enum V3SceneFamily: String, CaseIterable, Identifiable {
+enum V3SceneFamily: String, CaseIterable, Identifiable {
     case ambient, cover, linerNotes, focus
     var id: String { rawValue }
 
@@ -275,6 +265,15 @@ private enum V3SceneFamily: String, CaseIterable, Identifiable {
     func contains(scene: V3ListeningScene?, renderer: V3ArtworkPresentation) -> Bool {
         if let scene { return scenes.contains(scene) }
         return classics.contains(renderer)
+    }
+
+    /// Shared by the full selector and its four hover shortcuts.
+    @MainActor
+    func target(settings: AppSettingsStore) -> (V3ListeningScene?, V3ArtworkPresentation) {
+        if contains(scene: settings.v3ListeningScene, renderer: settings.v3ArtworkPresentation) {
+            return (settings.v3ListeningScene, settings.v3ArtworkPresentation)
+        }
+        return (primaryScene, settings.v3Renderer(for: primaryScene))
     }
 
     static func family(of scene: V3ListeningScene) -> V3SceneFamily {

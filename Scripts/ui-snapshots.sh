@@ -20,6 +20,12 @@ python3 "$ROOT/Tools/experience_visual_host/build.py" > /dev/null
 declare -a CASES=(
   "toolbar-faint|--toolbar faint"
   "toolbar-full|--toolbar full"
+  "hover-library|--panel hover:library"
+  "pin-library|--panel pin:library"
+  "hover-search|--panel hover:search"
+  "pin-search|--panel pin:search"
+  "pin-picture|--panel pin:picture"
+  "pin-more|--panel pin:more"
   "hover-picture|--panel hover:picture"
   "hover-text|--panel hover:text"
   "pin-text|--panel pin:text"

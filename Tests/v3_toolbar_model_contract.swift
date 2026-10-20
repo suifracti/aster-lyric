@@ -81,6 +81,29 @@ final class V3ToolbarPresentationTests: XCTestCase {
         XCTAssertEqual(m.opacity(pointerInside: false, nearTop: false, otherPanelOpen: true), 1)
     }
 
+    @MainActor
+    func testCategoryShortcutUsesTheFullSelectorsStyle() {
+        let suite = "lyricsq-family-shortcut-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        settings.selectV3Scene(.coverPhoto, renderer: .classicGaussian)
+        let current = V3SceneFamily.cover.target(settings: settings)
+        XCTAssertEqual(current.0, .coverPhoto)
+        XCTAssertEqual(current.1, .classicGaussian)
+        let first = V3SceneFamily.focus.target(settings: settings)
+        XCTAssertEqual(first.0, .focusedLyrics)
+        XCTAssertEqual(first.1, .lyricsOnly)
+    }
+
+    func testHoverPanelStaysInsideTheMainWindow() {
+        let owner = CGRect(x: 704, y: 540, width: 1152, height: 720)
+        let overflowing = CGRect(x: 1547, y: 825, width: 346, height: 376)
+        let placed = V3HoverPanelPlacement.frame(overflowing, inside: owner)
+        XCTAssertTrue(owner.contains(placed))
+        XCTAssertEqual(placed.maxX, owner.maxX)
+    }
+
     func testPinnedPlacement() {
         let visible = CGRect(x: 0, y: 0, width: 1800, height: 1100)
         let requested = CGSize(width: 360, height: 720)

@@ -1701,11 +1701,17 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .v3FirstClick { clickToolbarPanel(panel) }
         .help(panel.title)
         .onHover { inside in
-            if panel != .library && panel != .search { toolbarTriggerHover(panel, inside: inside) }
+            toolbarTriggerHover(panel, inside: inside)
         }
         .v3ToolPopover(isPresented: toolbarPopoverBinding(panel), onAnchorPress: { clickToolbarPanel(panel) }) {
-            hoverTrackedPanel(panel) { inspectorSurface(for: panel, style: .hoverGlass) }
+            hoverTrackedPanel(panel) { quickToolbarPanel(for: panel) }
         }
+    }
+
+    private func quickToolbarPanel(for panel: ToolbarPopover) -> some View {
+        V3ToolbarQuickControls(panel: panel, settings: settings, state: state,
+                               search: state.songSearchManager, canTranslate: allowsTranslationRequests,
+                               openLibrary: { clickToolbarPanel(.library) }, windowModes: AnyView(windowModePanel))
     }
 
     private func toolbarEntry(_ title: String, symbol: String, selected: Bool = false) -> some View {

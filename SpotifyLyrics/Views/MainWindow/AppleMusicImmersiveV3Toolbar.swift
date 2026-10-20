@@ -119,6 +119,15 @@ private final class V3ToolPopoverHostingController: NSHostingController<AnyView>
     }
 }
 
+enum V3HoverPanelPlacement {
+    static func frame(_ frame: CGRect, inside owner: CGRect) -> CGRect {
+        var result = frame
+        result.origin.x = min(max(owner.minX, frame.minX), max(owner.minX, owner.maxX - frame.width))
+        result.origin.y = min(max(owner.minY, frame.minY), max(owner.minY, owner.maxY - frame.height))
+        return result
+    }
+}
+
 private struct V3ToolPopoverAnchor: NSViewRepresentable {
     @Binding var isPresented: Bool
     let onAnchorPress: () -> Void
@@ -155,11 +164,21 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
             }
         }
         if !coordinator.popover.isShown {
-            // A few points of air between the button and the panel arrow.
-            var rect = anchor.bounds
-            if !anchor.isFlipped { rect.origin.y -= 4 }
-            rect.size.height += 4
-            coordinator.popover.show(relativeTo: rect, of: anchor, preferredEdge: .minY)
+            // Position in the owner canvas, rather than the tiny button bounds:
+            // AppKit clips positioning rectangles to their positioning view.
+            guard let positioningView = anchor.window?.contentView else { return }
+            var buttonRect = anchor.bounds
+            if !anchor.isFlipped { buttonRect.origin.y -= 4 }
+            buttonRect.size.height += 4
+            let rect = anchor.convert(buttonRect, to: positioningView)
+            coordinator.popover.show(relativeTo: rect, of: positioningView,
+                                     preferredEdge: positioningView.isFlipped ? .maxY : .minY)
+            if let window = coordinator.hosting?.view.window, let owner = anchor.window {
+                let frame = V3HoverPanelPlacement.frame(window.frame, inside: owner.frame)
+                let dx = frame.minX - window.frame.minX
+                let dy = frame.minY - window.frame.minY
+                coordinator.popover.positioningRect = rect.offsetBy(dx: dx, dy: positioningView.isFlipped ? -dy : dy)
+            }
             coordinator.startMonitoring()
         }
     }

@@ -30,7 +30,7 @@ Hover and click show **different** things:
 | 搜索 | A search field prefilled with the current song, plus the top 3 results. | Opens the full search. |
 | 译文 | 原文 / 中文 / 读音 switches, one line naming the current translation source, and 「翻译整首」. | Full 译文 panel (below). |
 | 文字 | Font size − / +, and alignment (left / centre / right). | Full 文字 panel (below). |
-| 画面 | The 4 scene thumbnails; clicking one switches the scene. | Full 画面 panel (below). |
+| 画面 | The 4 category thumbnails from `V3SceneFamily`: 环境光 · 封面 · 内页 · 专注. Clicking adopts that category’s current style, or its first style if none. The full panel keeps the categories and their style list. | Full 画面 panel (below). |
 | 更多 | Window modes (桌面歌词, 顶部胶囊, 菜单栏歌词, 全屏), and lyric offset −0.1s / +0.1s. | Full 更多 panel (below). |
 | 设置 | No hover panel, only a tooltip. | Opens settings. |
 

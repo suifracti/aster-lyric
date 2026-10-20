@@ -9,6 +9,10 @@ private enum ExperienceArguments {
         return args[index + 1]
     }
     static let root = URL(fileURLWithPath: "/tmp/lyrics-experience-visual-host/fixtures/run-\(UUID().uuidString)", isDirectory: true)
+    static var databaseURL: URL {
+        URL(fileURLWithPath: ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DATABASE_PATH"]
+            ?? root.appendingPathComponent("fixture.sqlite3").path)
+    }
     static let surface = value("--surface", fallback: "main")
     static let size = CGSize(width: Double(value("--width", fallback: "1152")) ?? 1152, height: Double(value("--height", fallback: "720")) ?? 720)
 }
@@ -184,7 +188,7 @@ struct ExperienceVisualHostApp: App {
         if let scale=Double(ExperienceArguments.value("--scale",fallback:"")) { settings.v3ArtworkSizeScale=scale }
         if let blur=Double(ExperienceArguments.value("--blur",fallback:"")) { settings.v3BackdropBlurRadius=blur }
         let provider=ExperiencePlaybackProvider(artwork:ExperienceArtwork.make())
-        let repository=SQLiteLyricsRepository(databaseURL:root.appendingPathComponent("fixture.sqlite3"), alignmentProvenanceDirectory:root.appendingPathComponent("provenance"))
+        let repository=SQLiteLyricsRepository(databaseURL:ExperienceArguments.databaseURL, alignmentProvenanceDirectory:root.appendingPathComponent("provenance"))
         _settings=StateObject(wrappedValue:settings)
         _playback=StateObject(wrappedValue:PlaybackState(provider:provider,lyricsProvider:ExperienceLyricsProvider(),lyricsRepository:repository,settings:settings))
         print("VISUAL_FIXTURE_ROOT",root.path)
@@ -198,6 +202,11 @@ struct ExperienceVisualHostApp: App {
         }
         .defaultSize(width:ExperienceArguments.size.width,height:ExperienceArguments.size.height)
         .windowStyle(.hiddenTitleBar)
+        Window("歌词库与收听记录", id: "personal-library-activity") {
+            UnifiedLibraryHistoryWindowView().environmentObject(playback).environmentObject(settings)
+                .environmentObject(SettingsDataController())
+        }
+        .defaultSize(width: 1000, height: 680)
         Window("歌词编辑", id: "lyrics-editor") {
             LyricsEditorWindowView().environmentObject(playback).environmentObject(settings)
         }
@@ -237,6 +246,20 @@ private struct ExperienceFixtureRoot: View {
                 MenuBarLyricsController.shared.setOpenEditorHandler { openWindow(id: "lyrics-editor") }
                 MenuBarLyricsController.shared.setOpenSettingsHandler { openSettings() }
                 MenuBarLyricsController.shared.setOpenMainWindowHandler { openWindow(id: "fixture-main") }
+                if ExperienceArguments.value("--panel", fallback: "").contains("library") {
+                    let track = Track(id: "spotify:track:visualfixture", title: "夜を越えて · After the rain",
+                        artist: "Visual Fixture", album: "Native rendering study", duration: 240,
+                        spotifyId: "visualfixture", artworkURL: ExperienceArtwork.make())
+                    let identity = TrackIdentity(track: track)
+                    if case .match(let document) = await ExperienceLyricsProvider().lookup(track: track, identity: identity) {
+                        let repository = SQLiteLyricsRepository(databaseURL: ExperienceArguments.databaseURL,
+                            alignmentProvenanceDirectory: ExperienceArguments.root.appendingPathComponent("provenance"))
+                        try! await repository.prepare()
+                        let saved = try! await repository.save(track: track, identity: identity, document: document)
+                        try! await repository.setPersonalLibraryActiveLyrics(trackStableKey: identity.stableKey,
+                                                                             lyricsVersionID: saved.versionID!)
+                    }
+                }
                 playback.startProvider()
                 try? await Task.sleep(for:.seconds(1))
                 if ProcessInfo.processInfo.arguments.contains("--fullscreen-preview-isolation") {
