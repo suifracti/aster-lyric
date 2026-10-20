@@ -82,9 +82,14 @@ assert 'v3ToolPanelRoot(content())' in popover_host, 'hover tool content must ov
 assert pinned_host.count('v3ToolPanelRoot(parent.content)') >= 2, 'pinned tool content must override inherited dark color scheme on create and update'
 assert 'anchor.onWindowAttachment = { [weak coordinator]' in pinned_host, 'pinned host must retry when its zero-size anchor joins the owner window'
 assert 'override func viewDidMoveToWindow()' in window[window.index('private final class V3ToolAnchorView'):window.index('private struct V3ToolPopoverAnchor')], 'tool anchor must signal its AppKit window attachment'
-surface=window[window.index('private func inspectorSurface(for panel: ToolbarPopover)'):window.index('private var moreInspectorContent')]
-assert '.background(Color(nsColor: .windowBackgroundColor))' in surface, 'tool panel content must have an opaque system-colored surface instead of revealing the dark lyric canvas'
-assert 'content: inspectorSurface(for: pinned)' in window, 'pinned tool windows must use the readable panel surface'
+normalized_window=' '.join(window.split())
+surface=window[window.index('private func inspectorSurface(for panel: ToolbarPopover, style: InspectorSurfaceStyle)'):window.index('private var moreInspectorContent')]
+assert '.regularMaterial' in surface, 'hover tool panels must retain their frosted glass surface'
+assert 'Color(nsColor: .windowBackgroundColor)' in surface, 'pinned tool panels must use an opaque system-colored surface'
+assert 'V3SystemAppearance.colorScheme == .dark ? Color.black : Color.white' in surface, 'glass tint must follow tool panel appearance for readable text'
+assert 'content: inspectorSurface(for: pinned, style: .pinnedSolid)' in window, 'pinned tool windows must use the solid panel surface'
+assert 'hoverTrackedPanel(.translation) { inspectorSurface(for: .translation, style: .hoverGlass) }' in normalized_window, 'translation hover panel must share the glass surface'
+assert 'hoverTrackedPanel(panel) { inspectorSurface(for: panel, style: .hoverGlass) }' in normalized_window, 'adjust and More hover panels must share the glass surface'
 assert 'isProjectingScene = true' in settings and 'selectLegacyV3Presentation' in settings
 assert 'scenePresets[Self.sceneKey(scene, renderer)]' in settings
 assert 'sceneOverride: compositionScene' in window
