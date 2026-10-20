@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import AppKit
 import Combine
+import os
 
 private struct V3PreviewPresentationKey: EnvironmentKey {
     static let defaultValue: V3ArtworkPresentation? = nil
@@ -175,7 +176,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private var compositionArtworkPosition: String { settings.v3PreviewPosition(for: compositionStyle, scene: compositionScene) }
     private var compositionLyricsPosition: String { settings.v3PreviewLyricsPosition(for: compositionStyle, scene: compositionScene) }
     private var compositionArtworkScale: Double { settings.v3PreviewScale(for: compositionStyle, scene: compositionScene) }
-    private enum ToolbarPopover: Equatable { case adjust, more }
+    private enum ToolbarPopover: Equatable { case adjust, more, translation }
     @State private var activeToolbarPopover: ToolbarPopover?
     @State private var hoveredToolbarTrigger: ToolbarPopover?
     @State private var hoveredToolbarPanel: ToolbarPopover?
@@ -1563,11 +1564,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         hoveredToolbarPanel = nil
         isWindowMenuPresented = false
         isSearchPresented = false
-        if panel != .adjust { hoveredStyle = nil }
+        if panel == .more { hoveredStyle = nil }
         activeToolbarPopover = panel
     }
 
     private func togglePinnedToolbarPanel(_ panel: ToolbarPopover) {
+        V3ToolbarLog.logger.notice("toggle pin \(String(describing: panel), privacy: .public) from \(String(describing: pinnedToolbarPanel), privacy: .public)")
         toolbarDismissTask?.cancel()
         hoveredToolbarTrigger = nil
         hoveredToolbarPanel = nil
@@ -1584,7 +1586,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
     private func dismissPinnedToolbarPanel() {
         pinnedToolbarPanel = nil
-        if activeToolbarPopover == .adjust || activeToolbarPopover == .more {
+        if activeToolbarPopover != nil {
             activeToolbarPopover = nil
         }
         hoveredStyle = nil
@@ -1657,6 +1659,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             }
             .v3FirstClick(openTranslation)
             .help("显示译文、选择已有版本或翻译本首")
+            .onHover { inside in
+                if inside && pinnedToolbarPanel == nil { adjustmentTab = .currentSong }
+                toolbarTriggerHover(.translation, inside: inside)
+            }
+            .v3ToolPopover(isPresented: toolbarPopoverBinding(.translation), onAnchorPress: openTranslation) {
+                hoverTrackedPanel(.translation) { inspectorPanelContent(for: .translation) }
+            }
             toolbarPanelButton("调整", symbol: "slider.horizontal.3", panel: .adjust)
                 .accessibilityIdentifier("appearance.shortcut")
             toolbarPanelButton("更多", symbol: "ellipsis", panel: .more)
@@ -1689,8 +1698,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .overlay(Capsule().strokeBorder(Color.white.opacity(0.16), lineWidth: 0.7))
         .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 4)
         .onChange(of: activeToolbarPopover) { _, panel in
-            if panel != .adjust { hoveredStyle = nil }
-            if panel != .adjust { hoveredAIReadingControls = nil }
+            if panel == nil || panel == .more { hoveredStyle = nil }
+            if panel == nil || panel == .more { hoveredAIReadingControls = nil }
             if panel == nil {
                 toolbarDismissTask?.cancel()
                 hoveredToolbarTrigger = nil
@@ -1713,6 +1722,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     /// 译文 is a shortcut to 调整 › 当前歌曲. Clicking it again closes the
     /// panel, like every other toolbar button, so a click is never a no-op.
     private func openTranslation() {
+        V3ToolbarLog.logger.notice("译文 action pinned=\(String(describing: pinnedToolbarPanel), privacy: .public)")
         if translationPinned {
             dismissPinnedToolbarPanel()
             return
@@ -1975,7 +1985,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         }
         .frame(width: 340)
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .preferredColorScheme(.dark)
     }
 
     private func sectionEyebrow(_ title: String) -> some View {
@@ -2064,9 +2073,14 @@ private final class V3FirstClickView: NSView {
     override func mouseUp(with event: NSEvent) {
         defer { pressed = false }
         guard pressed, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+        V3ToolbarLog.logger.notice("first click caught")
         window?.makeKeyAndOrderFront(nil)
         action()
     }
+}
+
+enum V3ToolbarLog {
+    static let logger = Logger(subsystem: "com.spotifylyrics.app", category: "toolbar")
 }
 
 /// The listening canvas forces dark, which every child window would inherit.
@@ -2146,6 +2160,19 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
         private var localMonitor: Any?
         private var observers: [NSObjectProtocol] = []
         private var trackingMenus = 0
+        private var forwardingWindow: NSWindow?
+
+        private func forward(_ event: NSEvent, to window: NSWindow) {
+            guard let source = event.window else { return }
+            let screenPoint = source.convertPoint(toScreen: event.locationInWindow)
+            guard let moved = NSEvent.mouseEvent(
+                with: event.type, location: window.convertPoint(fromScreen: screenPoint),
+                modifierFlags: event.modifierFlags, timestamp: event.timestamp,
+                windowNumber: window.windowNumber, context: nil,
+                eventNumber: event.eventNumber, clickCount: event.clickCount, pressure: event.pressure
+            ) else { return }
+            window.sendEvent(moved)
+        }
 
         init(parent: V3ToolPopoverAnchor) {
             self.parent = parent
@@ -2160,7 +2187,9 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
 
         func startMonitoring() {
             guard localMonitor == nil else { return }
-            localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
+            localMonitor = NSEvent.addLocalMonitorForEvents(
+                matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .rightMouseDown, .keyDown]
+            ) { [weak self] event in
                 guard let self else { return event }
                 return self.handle(event)
             }
@@ -2180,31 +2209,52 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
         }
 
         func handle(_ event: NSEvent) -> NSEvent? {
+            // Finish a click that started on the popover's transparent chrome
+            // in the window underneath, so that window sees a whole click.
+            if let target = forwardingWindow,
+               event.type == .leftMouseDragged || event.type == .leftMouseUp {
+                forward(event, to: target)
+                if event.type == .leftMouseUp {
+                    forwardingWindow = nil
+                    if !popover.isShown { stopMonitoring() }
+                }
+                return nil
+            }
+            if event.type == .leftMouseDragged || event.type == .leftMouseUp { return event }
             guard trackingMenus == 0 else { return event }
             if event.type == .keyDown {
                 if event.keyCode == 53 { dismiss(); return nil }
                 return event
             }
-            // Let the anchor receive its FIRST click; the SwiftUI button owns
-            // the click-to-pin toggle. A content click stays in place too.
-            if let anchor, event.window === anchor.window,
-               anchor.bounds.contains(anchor.convert(event.locationInWindow, from: nil)) {
-                return event
+            guard event.type == .leftMouseDown, let anchor, let anchorWindow = anchor.window,
+                  let eventWindow = event.window else {
+                if event.type != .leftMouseDown { return event }
+                dismiss(); return event
             }
-            // The popover window is taller than its visible content and can
-            // overlap the bottom of the anchor. A click there belongs to the
-            // anchor, not the panel.
-            if event.type == .leftMouseDown, let anchor, let anchorWindow = anchor.window,
-               let eventWindow = event.window, eventWindow !== anchorWindow {
-                let screenPoint = eventWindow.convertPoint(toScreen: event.locationInWindow)
-                let anchorRect = anchorWindow.convertToScreen(anchor.convert(anchor.bounds, to: nil))
-                if anchorRect.contains(screenPoint) {
-                    parent.onAnchorPress()
+            let screenPoint = eventWindow.convertPoint(toScreen: event.locationInWindow)
+            let anchorRect = anchorWindow.convertToScreen(anchor.convert(anchor.bounds, to: nil))
+            // A click on the anchor pins its panel right here, whichever
+            // window AppKit routed it to. Not leaving it to the button avoids
+            // races with the hover popover and non-key windows.
+            if anchorRect.contains(screenPoint) {
+                V3ToolbarLog.logger.notice("anchor click → pin")
+                parent.onAnchorPress()
+                return nil
+            }
+            if let contentView = popover.contentViewController?.view, eventWindow === contentView.window {
+                let contentRect = eventWindow.convertToScreen(contentView.convert(contentView.bounds, to: nil))
+                // The popover window is larger than its visible panel (arrow,
+                // shadow). A click there was meant for the toolbar below it.
+                if !contentRect.contains(screenPoint), anchorWindow.frame.contains(screenPoint) {
+                    V3ToolbarLog.logger.notice("click on popover chrome → forwarded")
+                    // Set before dismissing so the monitor survives until mouse up.
+                    forwardingWindow = anchorWindow
+                    dismiss()
+                    forward(event, to: anchorWindow)
                     return nil
                 }
+                return event
             }
-            if let contentView = popover.contentViewController?.view,
-               event.window === contentView.window { return event }
             dismiss()
             return event
         }
@@ -2222,6 +2272,7 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
         func popoverDidClose(_ notification: Notification) { stopMonitoring() }
 
         private func stopMonitoring() {
+            guard forwardingWindow == nil else { return }
             if let localMonitor { NSEvent.removeMonitor(localMonitor) }
             localMonitor = nil
             observers.forEach(NotificationCenter.default.removeObserver)
