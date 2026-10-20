@@ -1653,7 +1653,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
             searchButton
             Button(action: openTranslation) {
-                toolbarEntry("译文", symbol: "character.bubble")
+                toolbarEntry("译文", symbol: "character.bubble", selected: translationPinned)
             }
             .v3FirstClick(openTranslation)
             .help("显示译文、选择已有版本或翻译本首")
@@ -1706,7 +1706,17 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         else { openWindow(id: "personal-library-activity") }
     }
 
+    private var translationPinned: Bool {
+        pinnedToolbarPanel == .adjust && adjustmentTab == .currentSong
+    }
+
+    /// 译文 is a shortcut to 调整 › 当前歌曲. Clicking it again closes the
+    /// panel, like every other toolbar button, so a click is never a no-op.
     private func openTranslation() {
+        if translationPinned {
+            dismissPinnedToolbarPanel()
+            return
+        }
         adjustmentTab = .currentSong
         if pinnedToolbarPanel != .adjust { togglePinnedToolbarPanel(.adjust) }
     }
@@ -1719,7 +1729,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
     private func toolbarPanelButton(_ title: String, symbol: String, panel: ToolbarPopover) -> some View {
         Button { togglePinnedToolbarPanel(panel) } label: {
-            toolbarEntry(title, symbol: symbol, selected: pinnedToolbarPanel == panel)
+            toolbarEntry(title, symbol: symbol,
+                         selected: pinnedToolbarPanel == panel && !(panel == .adjust && translationPinned))
         }
         .v3FirstClick { togglePinnedToolbarPanel(panel) }
         .help(title == "调整" ? "歌词、文字与当前歌曲调整" : "窗口、歌词版本、时间与设置")
@@ -1893,7 +1904,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         Image(systemName: "xmark")
                             .font(.system(size: 11, weight: .semibold))
                             .frame(width: 24, height: 24)
-                            .background(Color.white.opacity(0.10), in: Circle())
+                            .background(Color.primary.opacity(0.08), in: Circle())
                     }
                     .buttonStyle(.plain)
                     .focusable(false)
@@ -2017,7 +2028,7 @@ private extension View {
                 // Closed panels must not construct/copy every settings page on
                 // each playback tick. Keep the anchor, build the page on demand.
                 content: isPresented.wrappedValue
-                    ? AnyView(content().preferredColorScheme(.dark).environment(\.colorScheme, .dark))
+                    ? AnyView(content())
                     : AnyView(EmptyView())
             )
         )
@@ -2055,6 +2066,15 @@ private final class V3FirstClickView: NSView {
         guard pressed, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
         window?.makeKeyAndOrderFront(nil)
         action()
+    }
+}
+
+/// The listening canvas forces dark, which every child window would inherit.
+/// Tool panels read the user's system choice directly instead.
+private enum V3SystemAppearance {
+    static var current: NSAppearance {
+        let dark = UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
+        return NSAppearance(named: dark ? .darkAqua : .aqua) ?? NSAppearance(named: .aqua)!
     }
 }
 
@@ -2099,6 +2119,11 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
             }
         }
         if !coordinator.popover.isShown {
+            let system = V3SystemAppearance.current
+            if coordinator.popover.appearance?.name != system.name {
+                coordinator.popover.appearance = system
+                coordinator.hosting?.view.appearance = system
+            }
             // A few points of air between the button and the panel arrow.
             var rect = anchor.bounds
             if !anchor.isFlipped { rect.origin.y -= 4 }
@@ -2127,7 +2152,9 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
             super.init()
             popover.behavior = .applicationDefined
             popover.animates = false
-            popover.appearance = NSAppearance(named: .darkAqua)
+            // Tool panels follow the system appearance even though the
+            // listening canvas itself is always dark.
+            popover.appearance = V3SystemAppearance.current
             popover.delegate = self
         }
 
@@ -2240,7 +2267,7 @@ private struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
             else {
                 let controller = NSHostingController(rootView: parent.content)
                 controller.sizingOptions = []
-                controller.view.appearance = NSAppearance(named: .darkAqua)
+                controller.view.appearance = V3SystemAppearance.current
                 hosting = controller
             }
             if panel == nil {
@@ -2263,6 +2290,11 @@ private struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
                 positionBeside(owner)
             }
             guard let panel else { return }
+            let system = V3SystemAppearance.current
+            if panel.appearance?.name != system.name {
+                panel.appearance = system
+                hosting?.view.appearance = system
+            }
             panel.title = parent.title
             if !panel.isVisible {
                 positionBeside(owner)
@@ -4603,7 +4635,7 @@ private struct V3ThemeSelectorView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text(shownFamily.title + " · 风格").font(.system(size: 12, weight: .semibold))
                     Spacer()
-                    Text(shownFamily.detail).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
+                    Text(shownFamily.detail).font(.system(size: 11)).foregroundStyle(Color.secondary)
                         .lineLimit(1)
                 }
                 .padding(.bottom, 4)
@@ -4613,7 +4645,7 @@ private struct V3ThemeSelectorView: View {
                              detail: style.renderer == style.scene.defaultRenderer && style.scene.renderers.count == 1
                                 ? style.scene.detail : nil)
                 }
-                Text("经典版").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+                Text("经典版").font(.system(size: 11, weight: .medium)).foregroundStyle(Color.secondary)
                     .padding(.top, 8).padding(.bottom, 2)
                 ForEach(shownFamily.classics) { renderer in
                     styleRow(scene: nil, renderer: renderer, title: "经典 · " + renderer.title, detail: nil)
@@ -4663,7 +4695,7 @@ private struct V3ThemeSelectorView: View {
                 LyricIslandSceneThumbnail(scene: family.primaryScene, image: thumbnail, accent: tint)
                 HStack(spacing: 4) {
                     Image(systemName: family.symbolName).font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(selected ? tint : .white.opacity(0.7))
+                        .foregroundStyle(selected ? tint : Color.secondary)
                     Text(family.title).font(.system(size: 13, weight: .semibold))
                     Spacer(minLength: 0)
                     if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(tint) }
@@ -4699,11 +4731,11 @@ private struct V3ThemeSelectorView: View {
             HStack(spacing: 8) {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 13))
-                    .foregroundStyle(selected ? tint : .white.opacity(0.35))
+                    .foregroundStyle(selected ? tint : Color.secondary.opacity(0.6))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title).font(.system(size: 12.5, weight: selected ? .semibold : .regular))
                     if let detail {
-                        Text(detail).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                        Text(detail).font(.system(size: 11)).foregroundStyle(Color.secondary).lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
@@ -4877,8 +4909,6 @@ private struct V3VisualTuningPopoverView: View {
         }
         .frame(minWidth: 300, idealWidth: 340, maxWidth: .infinity)
         .frame(maxHeight: 760)
-        .preferredColorScheme(.dark)
-        .environment(\.colorScheme, .dark)
         .onDisappear { preview = nil; previewScene = nil }
         .onExitCommand(perform: onDismiss)
     }
@@ -4908,7 +4938,7 @@ private struct V3VisualTuningPopoverView: View {
                     ForEach(V3ReadingProtection.allCases) { value in Text(value.title).tag(value) }
                 }.pickerStyle(.segmented).labelsHidden()
                 Text("只保护文字与状态信息所在区域，封面配色保持稳定；不随播放逐帧采样。")
-                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.72))
+                    .font(.system(size: 11)).foregroundStyle(Color.secondary)
             }
             Toggle(settings.v3ListeningScene == .focusedLyrics || settings.v3ListeningScene == .coverPhoto
                    ? "显示歌曲缩略图" : "显示前景封面", isOn: $settings.v3ShowForegroundArtwork)
@@ -4979,7 +5009,7 @@ private struct V3VisualTuningPopoverView: View {
                     Text(settings.v3BackgroundShowsCompleteArtwork(for: renderer)
                          ? "优先保留封面内容并补边；前景封面单独调整。"
                          : "允许裁切以铺满背景；前景封面单独调整。")
-                        .font(.system(size: 11)).foregroundStyle(.white.opacity(0.72))
+                        .font(.system(size: 11)).foregroundStyle(Color.secondary)
                     backdropScaleControls
                 }
                 if renderer != .classicGaussian {
@@ -4991,10 +5021,10 @@ private struct V3VisualTuningPopoverView: View {
                         atmosphereButton("鲜明", level: 2)
                     }
                     Text("暂停、窗口隐藏或系统减少动态效果时停止装饰运动。")
-                        .font(.system(size: 11)).foregroundStyle(.white.opacity(0.72))
+                        .font(.system(size: 11)).foregroundStyle(Color.secondary)
                 } else {
                     Label("纯高斯保持静态", systemImage: "circle.lefthalf.filled")
-                        .font(.system(size: 12)).foregroundStyle(.white.opacity(0.72))
+                        .font(.system(size: 12)).foregroundStyle(Color.secondary)
                 }
                 Divider()
             }
@@ -5030,7 +5060,7 @@ private struct V3VisualTuningPopoverView: View {
             } else {
                 Toggle("悬停时显示播放信息", isOn: $settings.v3PlaybackDetailsOnHover)
                 Text("移入封面或播放区域显示；关闭后播放栏保持可见。")
-                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.72))
+                    .font(.system(size: 11)).foregroundStyle(Color.secondary)
             }
             Toggle("确认纯音乐时使用简洁画面", isOn: $settings.v3InstrumentalPureImmersion)
                 .help("仅对已确认纯音乐生效；找不到歌词不代表纯音乐。")
@@ -5061,7 +5091,7 @@ private struct V3VisualTuningPopoverView: View {
                 .labelsHidden()
                 .accessibilityLabel("歌词位置与对齐")
                 Text("假名、原文与译文会一起对齐。")
-                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.72))
+                    .font(.system(size: 12)).foregroundStyle(Color.secondary)
             }
 
             HStack(spacing: 10) {
@@ -5127,7 +5157,7 @@ private struct V3VisualTuningPopoverView: View {
             .font(.system(size: 12, weight: .medium))
 
             Text("原文、译文与读音按同一行节奏排列；关闭某层只影响显示，不会删除版本。")
-                .font(.system(size: 12)).foregroundStyle(.white.opacity(0.72))
+                .font(.system(size: 12)).foregroundStyle(Color.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -5144,9 +5174,9 @@ private struct V3VisualTuningPopoverView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Text("歌词来源 · " + (state.liveLyricsSource?.displayName ?? "尚未采用"))
-                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.72))
+                    .font(.system(size: 12)).foregroundStyle(Color.secondary)
                 Text(state.liveLyricsVersionID == nil ? "暂无已保存歌词版本" : "已采用保存版本 · \(state.liveLyrics.count) 行")
-                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.72))
+                    .font(.system(size: 12)).foregroundStyle(Color.secondary)
             }
 
             Divider()
@@ -5164,11 +5194,11 @@ private struct V3VisualTuningPopoverView: View {
                 Text(settings.aiTranslationConfiguration.model.isEmpty
                      ? "尚未选择模型"
                      : "模型 · \(settings.aiTranslationConfiguration.model)")
-                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.72)).lineLimit(2)
+                    .font(.system(size: 12)).foregroundStyle(Color.secondary).lineLimit(2)
                 let reasoning = TranslationReasoningPolicy.value(settings.aiTranslationConfiguration)
                 if !reasoning.isEmpty {
                     Text("思考强度 · " + (["low": "低", "medium": "中", "high": "高", "xhigh": "很高", "max": "最高", "ultra": "超高", "none": "关闭"][reasoning] ?? reasoning))
-                        .font(.system(size: 12)).foregroundStyle(.white.opacity(0.72))
+                        .font(.system(size: 12)).foregroundStyle(Color.secondary)
                 }
                 Button("在设置中调整服务", systemImage: "sparkles", action: onOpenAISettings)
                     .buttonStyle(.bordered)
