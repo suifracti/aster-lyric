@@ -59,17 +59,12 @@ provider cache/command route too. Recording/source gates and request dedup
 remain; capture continuity uses the raw monotonic clock and elapsed-time drift,
 so sparse hidden-window samples do not become false seeks.
 
-Local full native target: **58 tests, 1 optional resource probe skipped,
-0 failures**. The resource probe then passed separately. Native test mode also
-skips automatic capture and orphan-capture cleanup and keeps capture logs in
-the private host root. The isolated visual host builds after adapting its
-entry-point replacement to the new XCTest-compatible app entrypoint. New coverage includes
-both payload formats, real distributed transport under a private test name,
-track/partial pause, process exit, hidden/show clock lifecycle, transient errors,
-stale in-flight reads, same-recording pause recovery, position-only scripts,
-short-track units, cover identity/de-duplication and sparse capture continuity.
-The player names themselves use injected notification centers in tests; no
-public player broadcasts were synthesized and no real recording was started.
+The notification suite now keeps five scenarios: changing songs (Spotify and
+Music payloads), pause/resume, hiding then showing lyrics, player exit, and an
+old poll that cannot overwrite a newer notification. The duplicate concrete
+provider stale-read scenario was removed; the existing provider position/asset
+unit checks remain. Production playback behavior is unchanged by this trim.
+The resource XCTest and its CI target membership have been removed.
 
 ### Matched 30-second backend resource comparison
 
@@ -92,13 +87,21 @@ cached 64 lyric lines and make zero provider lyric requests/player commands.
 Raw samples, exact executable hashes, build configuration and test excerpt:
 [evidence](evidence/b2-playback-events-20261020/manifest.json).
 
-Reproduce the optional sample after build-for-testing:
+### Manual process sampling (outside CI)
+
+The table above is historical evidence from the removed headless XCTest probe.
+It is not directly comparable with a visible app process. For a new comparison,
+launch each desired build in turn with the same cached song, window and scene,
+then sample its PID:
 
 ```sh
-python3 Scripts/measure-playback-resources.py \
-  --xctestrun /path/to/Build/Products/SpotifyLyrics_macosx26.5-arm64.xctestrun \
-  --output /tmp/lyricsq-probe-new.json
+python3 Scripts/measure-playback-resources.py --pid APP_PID \
+  --label "build SHA; song; scene; window size" --seconds 30 --warmup 2 \
+  --output /tmp/lyricsq-process-sample.json
 ```
 
-Use the generated xctestrun filename for the installed SDK. The script refuses
-to overwrite existing output and launches only the isolated test host.
+Run once per build with separate output files. This one-off script reads
+cumulative process CPU time and RSS through `ps`; one core is 100%. Raw samples
+and the executable path are included in JSON. It does not build or launch an
+app, access its database, control a player, or measure child osascript CPU,
+WindowServer or frame time. It has no performance thresholds and is not run by CI.

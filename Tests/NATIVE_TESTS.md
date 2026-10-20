@@ -48,9 +48,10 @@ use a commit with this job green; running a small selection is not a release gat
 New behavior tests belong in this target. Register source membership in the
 manually maintained project; do not regenerate it with generate_xcodeproj.py.
 
-Desktop playback event and calibration tests are in `Tests/Native/Playback/`.
-One distributed-transport check posts a UUID-scoped private notification only;
-it does not synthesize Spotify/Music broadcasts to other apps. The 32-second
-resource probe is opt-in via `Scripts/measure-playback-resources.py`; normal CI
-skips that one test. See `docs/BACKEND_TESTING_SYNC.md` for the paired resource
-result and the boundaries of that native backend fixture.
+Desktop playback event tests keep five scenarios: song changes, pause/resume,
+hide/show, player exit, and an old poll completing after a new notification.
+Provider position/asset unit checks remain separate. Resource sampling is not
+in the native target or CI; use `Scripts/measure-playback-resources.py --pid PID
+--output /tmp/lyricsq-sample.json` manually. It reads the already running
+process without launching an app or controlling a player. See
+`docs/BACKEND_TESTING_SYNC.md` for measurement boundaries and historical results.

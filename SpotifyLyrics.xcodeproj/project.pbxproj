@@ -469,7 +469,6 @@
 			children = (
 				AF8DB5959F9D7D8A47B31CCA,
 				499C20D4FBE3ABCBD6463F24,
-				25433F0F9D36521FA274514D,
 				21E03D3ADC3FD2C8C04D43AF,
 				1208877320643DA34F48E805,
 				927262AE26F723BCA63985FB /* SpotifyLyricsTests.xctest */,
@@ -1363,7 +1362,6 @@
 			isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; runOnlyForDeploymentPostprocessing = 0; files = (
 				77BDB79A9B6514A974EE96DE,
 				FB2698985591B3233543ABBE,
-				4C1F344CD55BFF827877A3F2,
 				E2EC754DE7CFDC3D4A1DEA28,
 				45807C00F498AF9166DC55F3,
 				9E0B6FDF20BC8FBFE7E02E74 /* Tests/Native/Persistence/LibraryIdentitySearchContractTests.swift build */,
@@ -1435,8 +1433,6 @@
 		45807C00F498AF9166DC55F3 = {isa = PBXBuildFile; fileRef = 1208877320643DA34F48E805; };
 		21E03D3ADC3FD2C8C04D43AF = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Search/SearchSourceContractTests.swift"; sourceTree = SOURCE_ROOT; };
 		E2EC754DE7CFDC3D4A1DEA28 = {isa = PBXBuildFile; fileRef = 21E03D3ADC3FD2C8C04D43AF; };
-		25433F0F9D36521FA274514D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Playback/PlaybackResourceProbeTests.swift"; sourceTree = SOURCE_ROOT; };
-		4C1F344CD55BFF827877A3F2 = {isa = PBXBuildFile; fileRef = 25433F0F9D36521FA274514D; };
 		499C20D4FBE3ABCBD6463F24 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Playback/DesktopPlaybackEventTests.swift"; sourceTree = SOURCE_ROOT; };
 		FB2698985591B3233543ABBE = {isa = PBXBuildFile; fileRef = 499C20D4FBE3ABCBD6463F24; };
 		AF8DB5959F9D7D8A47B31CCA = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Playback/ProviderPositionCalibrationTests.swift"; sourceTree = SOURCE_ROOT; };
