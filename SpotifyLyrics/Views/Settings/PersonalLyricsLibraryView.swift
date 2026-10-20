@@ -165,18 +165,44 @@ public struct PersonalLyricsLibraryView: View {
 
             Divider()
 
-            HStack(spacing: 0) {
-                sidebarContent
-                    .frame(minWidth: 220, idealWidth: 270, maxWidth: 300)
-                    .frame(maxHeight: .infinity)
-                Divider()
-                detailContent
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            GeometryReader { geometry in
+                // Settings already owns the navigation column. Use only the
+                // width it offers instead of enlarging the whole split view.
+                let isWide = geometry.size.width >= 760
+                let showsList = isWide || selectedStableKey == nil
+                let listWidth = isWide ? 270 : (showsList ? geometry.size.width : 0)
+                let detailWidth = max(0, geometry.size.width - listWidth - (isWide ? 1 : 0))
+                // Keep the native List in one place across width changes.
+                // Replacing it between conditional branches can leave stale
+                // SwiftUI list attributes while the Settings sidebar animates.
+                HStack(spacing: 0) {
+                    sidebarContent
+                        .frame(width: listWidth)
+                        .clipped()
+                        .accessibilityHidden(!showsList)
+                    Divider()
+                        .frame(width: isWide ? 1 : 0)
+                        .opacity(isWide ? 1 : 0)
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !isWide {
+                            Button {
+                                selectedStableKey = nil
+                            } label: {
+                                Label("返回歌曲列表", systemImage: "chevron.left")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                        detailContent
+                    }
+                    .frame(width: detailWidth)
+                    .clipped()
+                    .accessibilityHidden(detailWidth == 0)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(16)
-        .frame(minWidth: 680, maxWidth: .infinity, minHeight: 460, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder

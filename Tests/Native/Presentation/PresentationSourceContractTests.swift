@@ -1,8 +1,22 @@
 import Foundation
+import SwiftUI
 import XCTest
 @testable import SpotifyLyrics
 
 final class PresentationSourceContractTests: XCTestCase {
+    @MainActor
+    func testEmbeddedLibraryFitsTheSettingsDetailColumn() {
+        let settings = AppSettingsStore(defaults: .lyricsQ)
+        let playback = PlaybackState(settings: settings)
+        let host = NSHostingView(rootView: PersonalLyricsLibraryView(embeddedInSettings: true)
+            .environmentObject(playback))
+        // An 860pt Settings window leaves about 615pt after its navigation column.
+        host.frame = NSRect(x: 0, y: 0, width: 615, height: 540)
+        host.layoutSubtreeIfNeeded()
+        XCTAssertLessThanOrEqual(host.fittingSize.width, 615,
+            "The embedded library must not push the Settings sidebar out of the window")
+    }
+
     func testFloatingWindowKeepsItsLiveProjectionAndSharedTimeline() throws {
         let playback = try source("SpotifyLyrics/Services/PlaybackState.swift")
         let translation = try source("SpotifyLyrics/Services/TranslationSessionController.swift")
