@@ -219,6 +219,7 @@
 		110006072D83400100000001 /* PersonalDataSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110006072D83400100000000 /* PersonalDataSync.swift */; };
 		A7100701ABCDEF0100000001 /* TranslationModelSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7100701ABCDEF0100000002 /* TranslationModelSettingsStore.swift */; };
 		A7100702ABCDEF0100000001 /* TranslationCLISetupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7100702ABCDEF0100000002 /* TranslationCLISetupStore.swift */; };
+		2D67EB8DBEDEFAC5F793BEC8 /* V3ToolbarModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 635A0DC5B309902907F732BB /* V3ToolbarModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -440,6 +441,7 @@
 		110006072D83400100000000 /* PersonalDataSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalDataSync.swift; sourceTree = "<group>"; };
 		A7100701ABCDEF0100000002 /* TranslationModelSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslationModelSettingsStore.swift; sourceTree = "<group>"; };
 		A7100702ABCDEF0100000002 /* TranslationCLISetupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslationCLISetupStore.swift; sourceTree = "<group>"; };
+		635A0DC5B309902907F732BB /* V3ToolbarModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3ToolbarModel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -601,6 +603,7 @@
 				110000072D83400100000000 /* MainLyricsWindowView.swift */,
 				1100001D2D83400100000000 /* ImmersiveSplitWindowView.swift */,
 				110000502D83400100000000 /* AppleMusicImmersiveV3WindowView.swift */,
+				635A0DC5B309902907F732BB /* V3ToolbarModel.swift */,
 				B31702F52C144DEE90000000 /* V3WindowEdgePlaybackOverlay.swift */,
 			);
 			path = MainWindow;
@@ -982,6 +985,7 @@
 				110000482D83400100000001 /* AlignmentService.swift in Sources */,
 				110000472D83400100000001 /* AlignmentModels.swift in Sources */,
 				110000502D83400100000001 /* AppleMusicImmersiveV3WindowView.swift in Sources */,
+				2D67EB8DBEDEFAC5F793BEC8 /* V3ToolbarModel.swift in Sources */,
 				B31702F52C144DEE90000001 /* V3WindowEdgePlaybackOverlay.swift in Sources */,
 				110000512D83400100000001 /* AppleMusicImmersiveV3BackdropView.swift in Sources */,
 				110001302D83400100000001 /* V3ResponsiveGeometry.swift in Sources */,

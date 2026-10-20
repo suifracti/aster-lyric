@@ -1,62 +1,49 @@
-"""Exercise the production inspector transitions without opening windows."""
+"""Exercise the production inspector transitions without opening windows.
+
+The rules now live in V3ToolbarModel; this keeps the original hover, pin,
+ignore-other-hover, repeat-close, switch and dismissal sequence, and checks
+that the view routes through the model and clears the hover preview.
+"""
 from pathlib import Path
 import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-source = (root / 'SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift').read_text()
+view = (root / 'SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift').read_text()
+model = root / 'SpotifyLyrics/Views/MainWindow/V3ToolbarModel.swift'
 
-def method(name):
-    start = source.index('    private func ' + name + '(')
-    opening = source.index('{', start)
-    end, depth = opening + 1, 1
-    while depth:
-        depth += (source[end] == '{') - (source[end] == '}')
-        end += 1
-    return source[start:end].replace('private func', 'func', 1)
+assert '@State private var toolbar = V3ToolbarModel()' in view, 'view must own one toolbar model'
+assert '.onChange(of: toolbar.mode) { old, new in toolbarModeChanged(from: old, to: new) }' in view
+changed = view[view.index('private func toolbarModeChanged('):]
+assert 'hoveredStyle = nil' in changed[:changed.index('\n    }\n')], 'mode change must clear the hover preview'
+for removed in ('togglePinnedToolbarPanel', 'presentToolbarPopover', 'hoveredToolbarTrigger', 'toolbarMenuDepth'):
+    assert removed not in view, f'{removed} reintroduced outside the model'
 
-methods = '\n'.join(method(n) for n in ['presentToolbarPopover', 'togglePinnedToolbarPanel',
-    'dismissPinnedToolbarPanel', 'toolbarTriggerHover', 'scheduleToolbarDismissal'])
-program = '''import Foundation
-@MainActor final class Inspector {
- enum ToolbarPopover { case adjust, more }
- var activeToolbarPopover: ToolbarPopover?
- var pinnedToolbarPanel: ToolbarPopover?
- var hoveredToolbarTrigger: ToolbarPopover?
- var hoveredToolbarPanel: ToolbarPopover?
- var hoveredStyle: String?
- var toolbarDismissTask: Task<Void, Never>?
- var toolbarMenuDepth = 0
- var isWindowMenuPresented = false
- var isSearchPresented = false
- METHODS
-}
-@main struct Check {
- @MainActor static func main() {
-  let ui = Inspector()
-  ui.toolbarTriggerHover(.adjust, inside: true)
-  precondition(ui.activeToolbarPopover == .adjust && ui.pinnedToolbarPanel == nil)
-  ui.togglePinnedToolbarPanel(.adjust)
-  precondition(ui.activeToolbarPopover == nil && ui.pinnedToolbarPanel == .adjust)
-  ui.toolbarTriggerHover(.more, inside: true)
-  precondition(ui.pinnedToolbarPanel == .adjust && ui.activeToolbarPopover == nil)
-  ui.togglePinnedToolbarPanel(.adjust)
-  precondition(ui.pinnedToolbarPanel == nil && ui.activeToolbarPopover == nil)
-  ui.toolbarTriggerHover(.more, inside: true)
-  precondition(ui.activeToolbarPopover == .more)
-  ui.togglePinnedToolbarPanel(.more)
-  ui.togglePinnedToolbarPanel(.adjust)
-  precondition(ui.pinnedToolbarPanel == .adjust)
-  ui.hoveredStyle = "temporary-preview"
-  ui.dismissPinnedToolbarPanel()
-  precondition(ui.pinnedToolbarPanel == nil && ui.activeToolbarPopover == nil && ui.hoveredStyle == nil)
+program = '''@main struct Check {
+ static func main() {
+  var ui = V3ToolbarModel()
+  _ = ui.pointerOnTrigger(.adjust, inside: true)
+  precondition(ui.hoverPanel == .adjust && ui.pinnedPanel == nil)
+  ui.click(.adjust)
+  precondition(ui.hoverPanel == nil && ui.pinnedPanel == .adjust)
+  _ = ui.pointerOnTrigger(.more, inside: true)
+  precondition(ui.pinnedPanel == .adjust && ui.hoverPanel == nil)
+  ui.click(.adjust)
+  precondition(ui.pinnedPanel == nil && ui.hoverPanel == nil)
+  _ = ui.pointerOnTrigger(.more, inside: true)
+  precondition(ui.hoverPanel == .more)
+  ui.click(.more)
+  ui.click(.adjust)
+  precondition(ui.pinnedPanel == .adjust)
+  ui.dismiss()
+  precondition(ui.pinnedPanel == nil && ui.hoverPanel == nil)
   print("PASS production inspector hover, pin, ignore other hover, repeat close, explicit switch and dismissal")
  }
 }
-'''.replace('METHODS', methods)
+'''
 with tempfile.TemporaryDirectory(prefix='lyrics-inspector-') as directory:
     path = Path(directory) / 'main.swift'
     path.write_text(program)
     binary = Path(directory) / 'contract'
-    subprocess.run(['swiftc', '-parse-as-library', str(path), '-o', str(binary)], check=True)
+    subprocess.run(['swiftc', '-parse-as-library', str(model), str(path), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)

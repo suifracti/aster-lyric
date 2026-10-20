@@ -176,15 +176,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private var compositionArtworkPosition: String { settings.v3PreviewPosition(for: compositionStyle, scene: compositionScene) }
     private var compositionLyricsPosition: String { settings.v3PreviewLyricsPosition(for: compositionStyle, scene: compositionScene) }
     private var compositionArtworkScale: Double { settings.v3PreviewScale(for: compositionStyle, scene: compositionScene) }
-    private enum ToolbarPopover: Equatable { case adjust, more, translation }
+    private typealias ToolbarPopover = V3ToolbarModel.Panel
     private enum InspectorSurfaceStyle: Equatable { case hoverGlass, pinnedSolid }
-    @State private var activeToolbarPopover: ToolbarPopover?
-    @State private var hoveredToolbarTrigger: ToolbarPopover?
-    @State private var hoveredToolbarPanel: ToolbarPopover?
-    @State private var pinnedToolbarPanel: ToolbarPopover?
-    @State private var adjustmentTab: V3AdjustmentTab = .picture
-    @State private var toolbarMenuDepth = 0
+    /// All toolbar/panel decisions live in this value; see V3ToolbarModel.
+    @State private var toolbar = V3ToolbarModel()
     @State private var toolbarDismissTask: Task<Void, Never>?
+    private var activeToolbarPopover: ToolbarPopover? { toolbar.hoverPanel }
+    private var pinnedToolbarPanel: ToolbarPopover? { toolbar.pinnedPanel }
     // Keep listening unobstructed. Tools reveal at the top edge and stay
     // available while their popover is open.
     @State private var toolsVisible = false
@@ -1562,7 +1560,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
 #if DEBUG
     private func applyToolbarDebugCommand(_ info: [AnyHashable: Any]) {
-        if let tab = (info["tab"] as? String).flatMap(V3AdjustmentTab.init(rawValue:)) { adjustmentTab = tab }
+        if let tab = (info["tab"] as? String).flatMap(V3AdjustmentTab.init(rawValue:)) { toolbar.tab = tab }
         let panel: ToolbarPopover? = switch info["panel"] as? String {
         case "adjust": .adjust
         case "more": .more
@@ -1572,8 +1570,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         switch info["command"] as? String {
         case "faint": isPointerInsideCanvas = true
         case "full": isPointerInsideCanvas = true; toolsVisible = true
-        case "hover": if let panel { toolsVisible = true; presentToolbarPopover(panel) }
-        case "pin": if let panel { toolsVisible = true; togglePinnedToolbarPanel(panel == .translation ? .adjust : panel) }
+        case "hover": if let panel { toolsVisible = true; apply(toolbar.pointerOnTrigger(panel, inside: true)) }
+        case "pin": if let panel { toolsVisible = true; clickToolbarPanel(panel) }
         default: break
         }
     }
@@ -1584,91 +1582,64 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             || activeToolbarPopover != nil || pinnedToolbarPanel != nil
     }
 
-    private func presentToolbarPopover(_ panel: ToolbarPopover) {
+    /// Every panel-button click, whichever path delivered it.
+    private func clickToolbarPanel(_ panel: ToolbarPopover) {
+        V3ToolbarLog.logger.notice("click \(panel.description, privacy: .public) mode-before=\(String(describing: toolbar.mode), privacy: .public)")
         toolbarDismissTask?.cancel()
-        guard pinnedToolbarPanel == nil else { return }
-        guard activeToolbarPopover != panel else { return }
-        hoveredToolbarPanel = nil
-        isWindowMenuPresented = false
-        isSearchPresented = false
-        if panel == .more { hoveredStyle = nil }
-        activeToolbarPopover = panel
-    }
-
-    private func togglePinnedToolbarPanel(_ panel: ToolbarPopover) {
-        V3ToolbarLog.logger.notice("toggle pin \(String(describing: panel), privacy: .public) from \(String(describing: pinnedToolbarPanel), privacy: .public)")
-        toolbarDismissTask?.cancel()
-        hoveredToolbarTrigger = nil
-        hoveredToolbarPanel = nil
-        if pinnedToolbarPanel == panel {
-            dismissPinnedToolbarPanel()
-        } else {
-            activeToolbarPopover = nil
-            isWindowMenuPresented = false
-            isSearchPresented = false
-            hoveredStyle = nil
-            pinnedToolbarPanel = panel
-        }
+        toolbar.click(panel)
     }
 
     private func dismissPinnedToolbarPanel() {
-        pinnedToolbarPanel = nil
-        if activeToolbarPopover != nil {
-            activeToolbarPopover = nil
-        }
-        hoveredStyle = nil
         toolbarDismissTask?.cancel()
+        toolbar.dismiss()
     }
 
     private func toolbarTriggerHover(_ panel: ToolbarPopover, inside: Bool) {
-        guard pinnedToolbarPanel == nil else { return }
-        if inside {
-            hoveredToolbarTrigger = panel
-            presentToolbarPopover(panel)
-        } else {
-            if hoveredToolbarTrigger == panel { hoveredToolbarTrigger = nil }
-            scheduleToolbarDismissal(panel)
+        apply(toolbar.pointerOnTrigger(panel, inside: inside))
+    }
+
+    private func apply(_ effect: V3ToolbarModel.Effect) {
+        switch effect {
+        case .none: break
+        case .cancelHoverDismissal: toolbarDismissTask?.cancel()
+        case .scheduleHoverDismissal(let panel):
+            toolbarDismissTask?.cancel()
+            toolbarDismissTask = Task { @MainActor in
+                try? await Task.sleep(for: V3ToolbarModel.hoverGrace)
+                guard !Task.isCancelled else { return }
+                toolbar.dismissTimerFired(panel)
+            }
         }
     }
 
-    private func scheduleToolbarDismissal(_ panel: ToolbarPopover) {
-        toolbarDismissTask?.cancel()
-        toolbarDismissTask = Task { @MainActor in
-            // Allow the pointer to cross the small popover arrow/gap.
-            try? await Task.sleep(for: .milliseconds(180))
-            guard !Task.isCancelled, activeToolbarPopover == panel,
-                  hoveredToolbarTrigger != panel, hoveredToolbarPanel != panel,
-                  pinnedToolbarPanel == nil, toolbarMenuDepth == 0 else { return }
-            hoveredStyle = nil
-            activeToolbarPopover = nil
+    /// Side effects of any toolbar mode change, kept in one place.
+    private func toolbarModeChanged(from old: V3ToolbarModel.Mode, to new: V3ToolbarModel.Mode) {
+        hoveredStyle = nil
+        if toolbar.hoverPanel == nil || toolbar.hoverPanel == .more { hoveredAIReadingControls = nil }
+        if new != .idle {
+            isWindowMenuPresented = false
+            isSearchPresented = false
+        } else {
+            toolbarDismissTask?.cancel()
         }
     }
 
     private func hoverTrackedPanel<Content: View>(_ panel: ToolbarPopover, @ViewBuilder content: () -> Content) -> some View {
         content()
             .buttonStyle(.automatic)
-            .onHover { inside in
-                if inside {
-                    hoveredToolbarPanel = panel
-                    toolbarDismissTask?.cancel()
-                } else {
-                    if hoveredToolbarPanel == panel { hoveredToolbarPanel = nil }
-                    scheduleToolbarDismissal(panel)
-                }
-            }
+            .onHover { inside in apply(toolbar.pointerInPanel(panel, inside: inside)) }
             .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
-                if activeToolbarPopover == panel { toolbarMenuDepth += 1; toolbarDismissTask?.cancel() }
+                if activeToolbarPopover == panel { apply(toolbar.menuTrackingBegan()) }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
-                toolbarMenuDepth = max(0, toolbarMenuDepth - 1)
-                if activeToolbarPopover == panel { scheduleToolbarDismissal(panel) }
+                apply(toolbar.menuTrackingEnded())
             }
     }
 
     private func toolbarPopoverBinding(_ panel: ToolbarPopover) -> Binding<Bool> {
         Binding(get: { activeToolbarPopover == panel }, set: { presented in
-            if presented { presentToolbarPopover(panel) }
-            else if activeToolbarPopover == panel { activeToolbarPopover = nil }
+            if presented { apply(toolbar.pointerOnTrigger(panel, inside: true)) }
+            else { toolbar.hoverClosed(panel) }
         })
     }
 
@@ -1682,14 +1653,11 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
             searchButton
             Button(action: openTranslation) {
-                toolbarEntry("译文", symbol: "character.bubble", selected: translationPinned)
+                toolbarEntry("译文", symbol: "character.bubble", selected: toolbar.isSelected(.translation))
             }
             .v3FirstClick(openTranslation)
             .help("显示译文、选择已有版本或翻译本首")
-            .onHover { inside in
-                if inside && pinnedToolbarPanel == nil { adjustmentTab = .currentSong }
-                toolbarTriggerHover(.translation, inside: inside)
-            }
+            .onHover { inside in toolbarTriggerHover(.translation, inside: inside) }
             .v3ToolPopover(isPresented: toolbarPopoverBinding(.translation), onAnchorPress: openTranslation) {
                 hoverTrackedPanel(.translation) {
                     inspectorSurface(for: .translation, style: .hoverGlass)
@@ -1711,8 +1679,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         }
         .background {
             Button("翻译与读音") {
-                adjustmentTab = .currentSong
-                if pinnedToolbarPanel != .adjust { togglePinnedToolbarPanel(.adjust) }
+                if !toolbar.translationPinned { clickToolbarPanel(.translation) }
             }
             .keyboardShortcut("t", modifiers: [.command, .option])
             .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
@@ -1726,15 +1693,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .background(.regularMaterial.opacity(0.78), in: Capsule())
         .overlay(Capsule().strokeBorder(Color.white.opacity(0.16), lineWidth: 0.7))
         .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 4)
-        .onChange(of: activeToolbarPopover) { _, panel in
-            if panel == nil || panel == .more { hoveredStyle = nil }
-            if panel == nil || panel == .more { hoveredAIReadingControls = nil }
-            if panel == nil {
-                toolbarDismissTask?.cancel()
-                hoveredToolbarTrigger = nil
-                hoveredToolbarPanel = nil
-            }
-        }
+        .onChange(of: toolbar.mode) { old, new in toolbarModeChanged(from: old, to: new) }
         .onDisappear { toolbarDismissTask?.cancel(); hoveredStyle = nil }
     }
 
@@ -1744,21 +1703,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         else { openWindow(id: "personal-library-activity") }
     }
 
-    private var translationPinned: Bool {
-        pinnedToolbarPanel == .adjust && adjustmentTab == .currentSong
-    }
-
-    /// 译文 is a shortcut to 调整 › 当前歌曲. Clicking it again closes the
-    /// panel, like every other toolbar button, so a click is never a no-op.
-    private func openTranslation() {
-        V3ToolbarLog.logger.notice("译文 action pinned=\(String(describing: pinnedToolbarPanel), privacy: .public)")
-        if translationPinned {
-            dismissPinnedToolbarPanel()
-            return
-        }
-        adjustmentTab = .currentSong
-        if pinnedToolbarPanel != .adjust { togglePinnedToolbarPanel(.adjust) }
-    }
+    /// 译文 is a shortcut to 调整 › 当前歌曲 (rules in V3ToolbarModel.click).
+    private func openTranslation() { clickToolbarPanel(.translation) }
 
     private func openAppSettings() {
         dismissPinnedToolbarPanel()
@@ -1767,18 +1713,17 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     }
 
     private func toolbarPanelButton(_ title: String, symbol: String, panel: ToolbarPopover) -> some View {
-        Button { togglePinnedToolbarPanel(panel) } label: {
-            toolbarEntry(title, symbol: symbol,
-                         selected: pinnedToolbarPanel == panel && !(panel == .adjust && translationPinned))
+        Button { clickToolbarPanel(panel) } label: {
+            toolbarEntry(title, symbol: symbol, selected: toolbar.isSelected(panel))
         }
-        .v3FirstClick { togglePinnedToolbarPanel(panel) }
+        .v3FirstClick { clickToolbarPanel(panel) }
         .help(title == "调整" ? "歌词、文字与当前歌曲调整" : "窗口、歌词版本、时间与设置")
         .onHover { inside in toolbarTriggerHover(panel, inside: inside) }
         .v3ToolPopover(
             isPresented: toolbarPopoverBinding(panel),
             // Only used when the popover window overlaps the anchor; normal
             // clicks reach the SwiftUI button.
-            onAnchorPress: { togglePinnedToolbarPanel(panel) }
+            onAnchorPress: { clickToolbarPanel(panel) }
         ) {
             hoverTrackedPanel(panel) {
                 inspectorSurface(for: panel, style: .hoverGlass)
@@ -1885,14 +1830,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @ViewBuilder private var searchButton: some View {
         Button {
             dismissPinnedToolbarPanel()
-            activeToolbarPopover = nil
             isSearchPresented.toggle()
         } label: {
             toolbarEntry("搜索", symbol: "magnifyingglass")
         }
         .v3FirstClick {
             dismissPinnedToolbarPanel()
-            activeToolbarPopover = nil
             isSearchPresented = true
         }
         .help("搜索")
@@ -1917,7 +1860,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 previewScene: $hoveredScene,
                 onOpenAISettings: openAISettings,
                 onDismiss: dismissPinnedToolbarPanel,
-                selectedTab: $adjustmentTab
+                selectedTab: $toolbar.tab
             )
             .environmentObject(settings)
         }
@@ -4974,18 +4917,6 @@ private enum V3SceneFamily: String, CaseIterable, Identifiable {
         allCases.first { $0.classics.contains(renderer) } ?? .ambient
     }
 }
-
-private enum V3AdjustmentTab: String, CaseIterable, Identifiable {
-        case picture, text, currentSong
-        var id: String { rawValue }
-        var title: String {
-            switch self {
-            case .picture: return "画面"
-            case .text: return "文字"
-            case .currentSong: return "当前歌曲"
-            }
-        }
-    }
 
 private struct V3VisualTuningPopoverView: View {
     @ObservedObject var settings: AppSettingsStore

@@ -397,7 +397,16 @@ private struct ExperienceFixtureRoot: View {
                     NotificationCenter.default.post(name: .v3ToolbarDebugCommand, object: nil,
                                                     userInfo: ["command": parts[0], "panel": parts[1], "tab": tab])
                 }
-                if !toolbar.isEmpty || !panel.isEmpty { try? await Task.sleep(for: .milliseconds(1500)) }
+                if !toolbar.isEmpty || !panel.isEmpty { try? await Task.sleep(for: .milliseconds(800)) }
+                if !panel.isEmpty {
+                    // Popovers and the pinned panel appear asynchronously.
+                    for _ in 0..<40 {
+                        let main = targetWindow
+                        if NSApp.windows.contains(where: { $0 !== main && $0.isVisible && $0.frame.width > 120 && $0.frame.height > 120 }) { break }
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
                 var extraWindow: NSWindow?
                 if ["menubar", "settings"].contains(ExperienceArguments.surface) {
                     MenuBarLyricsController.shared.bind(playbackState: playback)
