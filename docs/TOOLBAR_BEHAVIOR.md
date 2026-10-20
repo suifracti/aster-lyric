@@ -30,18 +30,19 @@ Things people change during a song do not live in panels. They sit in a small ba
 |---|---|---|
 | A− / A+ | Changes the 原文与译文 font size by 2 pt | Range 14–42. |
 | ◀ 0.0s ▶ | Moves the lyric offset by 0.1 s | Click the value to reset it to 0. |
-| 原 译 读 | Shows or hides 原文, 译文 and 读音 | A lit label means it is shown. 读 is greyed out when the song has no reading. |
+| 原 译 读 | Shows or hides 原文, 译文 and 读音 | They are text labels, never coloured blocks. A lit label means it is shown. 读 is greyed out when the song has no reading. |
 | Alignment | Left, centre, right | The current one is lit. |
 | ‹ name › | Switches to the previous or next of the 4 scene categories | The name is the current category. |
 
 **When it shows:**
 - It appears when the pointer rests on the lyrics column.
 - It follows the toolbar's visibility rules: hidden outside the window, and hidden while any panel is open.
-- Its place is fixed, just under the lyrics column. It never covers the current line.
+- Its place is fixed, just under the lyrics column and aligned with it. It never covers a lyric line.
+- Size: 13 pt labels and 30 pt high, so it is readable at a glance.
 
 **Every button has a tooltip** with its name and, where one exists, its shortcut written in words, for example 「放大字号（Command + 加号）」. Don't write ⌘ or ⌥ symbols.
 
-**Feedback:** each change briefly shows a small centred notice, such as 「字号 22」, 「偏移 +0.3s」 or 「封面」, then it fades out.
+**Feedback:** each change briefly shows a small notice **just above the bar**, not in the middle of the window, such as 「字号 22」, 「偏移 +0.3s」 or 「封面」, then it fades out.
 
 ## Gestures and shortcuts (optional extras)
 Every action here also has a button in the lyric bar, so nobody needs to learn them.
@@ -54,22 +55,22 @@ Every action here also has a button in the lyric bar, so nobody needs to learn t
 
 ## Panels
 - **One panel per button.** Hover shows it temporarily; click pins it. **Hover and pin show the same content.**
-- **Each panel fits on one screen:** at most about 8 controls and max height 520 pt.
+- **Each panel fits on one screen**, max height 520 pt. **The panel's height fits its content**, so there is no empty space below it.
 - **No explanatory paragraphs.** Use an ⓘ tooltip when a control needs one.
-- **Lyric bar controls are not repeated in panels.**
+- **Each panel holds everything about its topic.** The lyric bar is only a shortcut, so its controls **also** stay in their panel, where people expect them.
 - **Rarely used settings live in the settings window**, not in toolbar panels.
 
 | Button | Panel |
 |---|---|
 | 歌词库 | This song's versions grouped by type (原词 / 译文 / 读音 / 时间轴). The adopted one is checked; click another to adopt it. Each row shows source, date and line count. 「打开歌词库」 is at the bottom. |
 | 搜索 | A search field prefilled with the current song. Local results show at once; online results are added when they arrive. Top 5, plus 「全部结果」, which opens the full search. |
-| 译文 | 翻译 / 读音. The saved-translation version picker. 「翻译整首」 and 「重新翻译」. 新歌词自动翻译. 并排对比. |
-| 文字 | 清晰度 (关闭 / 文字阴影 / 柔和光晕, default 关闭). 罗马音 / 拼音. 注音排版. 读音与辅助字 size. 假名 size. |
+| 译文 | 翻译 / 读音. **AI model picker** (one row). The saved-translation version picker. 「翻译整首」 and 「重新翻译」. 新歌词自动翻译. 并排对比. |
+| 文字 | **显示: 原文 / 译文 / 读音.** **原文与译文 size.** **对齐.** 清晰度 (关闭 / 文字阴影 / 柔和光晕, default 关闭). 罗马音 / 拼音. 注音排版. 读音与辅助字 size. 假名 size. The ⓘ sits on the same line as its label. |
 | 画面 | The 4 categories from `V3SceneFamily`. Below them, the selected category's style list, including 经典版. 背景封面模糊. 显示歌曲缩略图. |
 | 更多 | Window modes (桌面歌词, 顶部胶囊, 菜单栏歌词, 全屏). 桌面歌词交互. 恢复歌词时间. |
 | 设置 | No panel; it opens settings. |
 
-**Moved to the settings window:** 翻译服务 and model, 悬停预览, 恢复此风格的默认值, and every explanatory paragraph.
+**Moved to the settings window:** 翻译服务 login and connection details (the model picker stays in 译文), 悬停预览, 恢复此风格的默认值, and every explanatory paragraph.
 
 **Removed from 更多:** 「歌词版本」, which 歌词库 now covers, and the offset, which the lyric bar now covers.
 
