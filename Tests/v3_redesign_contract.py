@@ -82,6 +82,9 @@ assert 'v3ToolPanelRoot(content())' in popover_host, 'hover tool content must ov
 assert pinned_host.count('v3ToolPanelRoot(parent.content)') >= 2, 'pinned tool content must override inherited dark color scheme on create and update'
 assert 'anchor.onWindowAttachment = { [weak coordinator]' in pinned_host, 'pinned host must retry when its zero-size anchor joins the owner window'
 assert 'override func viewDidMoveToWindow()' in window[window.index('private final class V3ToolAnchorView'):window.index('private struct V3ToolPopoverAnchor')], 'tool anchor must signal its AppKit window attachment'
+surface=window[window.index('private func inspectorSurface(for panel: ToolbarPopover)'):window.index('private var moreInspectorContent')]
+assert '.background(Color(nsColor: .windowBackgroundColor))' in surface, 'tool panel content must have an opaque system-colored surface instead of revealing the dark lyric canvas'
+assert 'content: inspectorSurface(for: pinned)' in window, 'pinned tool windows must use the readable panel surface'
 assert 'isProjectingScene = true' in settings and 'selectLegacyV3Presentation' in settings
 assert 'scenePresets[Self.sceneKey(scene, renderer)]' in settings
 assert 'sceneOverride: compositionScene' in window

@@ -359,7 +359,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                             }
                         ),
                         title: pinned == .more ? "更多" : "调整",
-                        content: inspectorPanelContent(for: pinned)
+                        content: inspectorSurface(for: pinned)
                     )
                     .frame(width: 0, height: 0)
                 }
@@ -1751,7 +1751,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             // clicks reach the SwiftUI button.
             onAnchorPress: { togglePinnedToolbarPanel(panel) }
         ) {
-            hoverTrackedPanel(panel) { inspectorPanelContent(for: panel) }
+            hoverTrackedPanel(panel) { inspectorSurface(for: panel) }
         }
     }
 
@@ -1897,7 +1897,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             inspectorPanelContent(for: panel)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.regularMaterial)
+        // Tool panels can overlap the dark lyric canvas when the screen has no
+        // room beside it. Use the panel's semantic window surface so text stays
+        // readable instead of letting the backdrop tint the material.
+        .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .leading) {
             Rectangle().fill(Color.white.opacity(0.12)).frame(width: 1)
         }
