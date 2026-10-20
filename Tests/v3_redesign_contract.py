@@ -45,7 +45,7 @@ expect(right.minX==owner.maxX+12,"right gap")
 expect(!right.intersects(owner),"right inspector changes/occludes available canvas")
 let wideOwner=CGRect(x:760,y:180,width:900,height:800)
 let edge=LyricIslandPanelPlacement.frame(owner:wideOwner,visible:visible,requested:requested)
-expect(edge.maxX==min(wideOwner.maxX,visible.maxX-8)-12 && edge.minX>wideOwner.minX && edge.maxY<=wideOwner.maxY-64,"no room on the right docks inside the right edge below the toolbar, never left")
+expect(edge.maxX==visible.maxX-8 && edge.minX>wideOwner.minX,"when the panel cannot fit beside the app, keep its separate window at the screen's right edge")
 for screen in [visible,CGRect(x:-1600,y:-100,width:1600,height:1000),CGRect(x:0,y:0,width:600,height:420)] {
  let full=CGRect(x:screen.minX,y:screen.minY,width:screen.width,height:screen.height)
  let panel=LyricIslandPanelPlacement.frame(owner:full,visible:screen,requested:requested)

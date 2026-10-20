@@ -225,22 +225,15 @@ enum LyricIslandPanelPlacement {
         let margin: CGFloat = 8
         let width = min(max(280, requested.width), max(1, visible.width - margin * 2))
         let height = min(max(320, requested.height), max(1, visible.height - margin * 2))
-        // Always on the right: beside the window when it fits. Otherwise dock
-        // inside the window's right edge, just below its toolbar, so it reads
-        // as part of the window instead of a sheet stuck to the screen edge.
-        // Never jump to the left of the window.
+        // Keep this as a separate panel on the right. When it cannot fit beside
+        // the owner, place it at the screen's right edge rather than docking it
+        // back inside the main window or jumping to the left.
         let right = owner.maxX + gap
-        if right + width <= visible.maxX - margin {
-            let y = min(visible.maxY - height - margin, max(visible.minY + margin, owner.maxY - height))
-            return CGRect(x: right, y: y, width: width, height: height)
-        }
-        let toolbarClearance: CGFloat = 64
-        let dockedHeight = min(height, max(320, owner.height - toolbarClearance - gap))
-        let trailing = min(owner.maxX, visible.maxX - margin) - gap
-        let x = max(visible.minX + margin, trailing - width)
-        let top = min(owner.maxY, visible.maxY) - toolbarClearance
-        let y = max(visible.minY + margin, top - dockedHeight)
-        return CGRect(x: x, y: y, width: width, height: dockedHeight)
+        let x = right + width <= visible.maxX - margin
+            ? right
+            : max(visible.minX + margin, visible.maxX - width - margin)
+        let y = min(visible.maxY - height - margin, max(visible.minY + margin, owner.maxY - height))
+        return CGRect(x: x, y: y, width: width, height: height)
     }
 }
 /// Deterministic space budgets for the two document-like scenes. A hidden
