@@ -7,7 +7,8 @@ import shutil, subprocess, tempfile
 ROOT=Path(__file__).resolve().parents[1]
 settings=(ROOT/'SpotifyLyrics/Settings/AppSettingsStore.swift').read_text()
 controls=(ROOT/'SpotifyLyrics/Views/Components/LyricIslandControls.swift').read_text()
-window=(ROOT/'SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift').read_text()
+window='\n'.join((ROOT/f'SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3{part}.swift').read_text()
+                 for part in ('WindowView', 'Toolbar', 'Transport', 'Lyrics', 'Inspector'))
 backdrop=(ROOT/'SpotifyLyrics/Views/Components/AppleMusicImmersiveV3BackdropView.swift').read_text()
 a=settings.index('public enum V3ArtworkTheme:')
 b=settings.index('public enum PlaybackSourceMode:',a)
@@ -75,14 +76,14 @@ with tempfile.TemporaryDirectory(prefix='lyric-redesign-contract-') as d:
 # Actual source boundaries, not tests tied to whether a particular title was renamed.
 assert 'let canvasWidth = max(1, geometry.size.width)' in window
 assert 'geometry.size.width - inspectorWidth' not in window
-assert '.fittingSize' not in window[window.index('private struct V3PinnedInspectorPanelHost'):window.index('private struct QuietToolbarButtonStyle')]
-popover_host=window[window.index('func v3ToolPopover<Content: View>'):window.index('private struct V3PinnedInspectorPanelHost')]
-pinned_host=window[window.index('private struct V3PinnedInspectorPanelHost'):window.index('private struct QuietToolbarButtonStyle')]
+assert '.fittingSize' not in window[window.index('struct V3PinnedInspectorPanelHost'):window.index('struct QuietToolbarButtonStyle')]
+popover_host=window[window.index('func v3ToolPopover<Content: View>'):window.index('struct V3PinnedInspectorPanelHost')]
+pinned_host=window[window.index('struct V3PinnedInspectorPanelHost'):window.index('struct QuietToolbarButtonStyle')]
 assert 'v3HoverToolPanelRoot(content())' in popover_host, 'hover panels must use the historical dark glass color scheme'
 assert 'popover.appearance = NSAppearance(named: .darkAqua)' in popover_host, 'hover popovers must restore their historical Dark Aqua material appearance'
 assert pinned_host.count('v3ToolPanelRoot(parent.content)') >= 2, 'pinned tool content must override inherited dark color scheme on create and update'
 assert 'anchor.onWindowAttachment = { [weak coordinator]' in pinned_host, 'pinned host must retry when its zero-size anchor joins the owner window'
-assert 'override func viewDidMoveToWindow()' in window[window.index('private final class V3ToolAnchorView'):window.index('private struct V3ToolPopoverAnchor')], 'tool anchor must signal its AppKit window attachment'
+assert 'override func viewDidMoveToWindow()' in window[window.index('final class V3ToolAnchorView'):window.index('private struct V3ToolPopoverAnchor')], 'tool anchor must signal its AppKit window attachment'
 normalized_window=' '.join(window.split())
 surface=window[window.index('private func inspectorSurface(for panel: ToolbarPopover, style: InspectorSurfaceStyle)'):window.index('private var moreInspectorContent')]
 assert '.regularMaterial' in surface, 'hover tool panels must retain their frosted glass surface'

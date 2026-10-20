@@ -71,7 +71,7 @@ final class PresentationSourceContractTests: XCTestCase {
         let state = try source("SpotifyLyrics/Services/PlaybackState.swift")
         let controls = try source("SpotifyLyrics/Views/Components/LyricsPreferencesPopover.swift")
         let editor = try source("SpotifyLyrics/Services/LyricsEditorSessionController.swift")
-        let v3 = try source("SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift")
+        let v3 = try v3Sources()
         let fullscreen = try source("SpotifyLyrics/Views/Fullscreen/FullScreenLyricsView.swift")
         let floating = try source("SpotifyLyrics/Views/Floating/FloatingLyricsView.swift")
         let capsule = try source("SpotifyLyrics/Views/Capsule/CapsuleLyricsView.swift")
@@ -106,7 +106,7 @@ final class PresentationSourceContractTests: XCTestCase {
     }
 
     func testToolbarViewStillRoutesInteractionThroughItsModelAndMatchesTheBehaviorSpec() throws {
-        let view = try source("SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift")
+        let view = try v3Sources()
         let spec = try source("docs/TOOLBAR_BEHAVIOR.md")
 
         XCTAssertTrue(view.contains("@State private var toolbar = V3ToolbarModel()"))
@@ -149,6 +149,12 @@ final class PresentationSourceContractTests: XCTestCase {
             XCTAssertTrue(settingsStore.contains("public static let \(name) ="), "missing persistent key for \(name)")
             XCTAssertTrue(settingsStore.contains("@Published public var \(name):"), "missing published setting for \(name)")
         }
+    }
+
+    private func v3Sources() throws -> String {
+        try ["WindowView", "Toolbar", "Transport", "Lyrics", "Inspector"]
+            .map { try source("SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3\($0).swift") }
+            .joined(separator: "\n")
     }
 
     private func source(_ relativePath: String) throws -> String {

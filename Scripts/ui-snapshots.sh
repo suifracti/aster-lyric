@@ -16,6 +16,7 @@ mkdir -p "$OUT"
 
 python3 "$ROOT/Tools/experience_visual_host/build.py" > /dev/null
 
+# Fix the scene toolbar state too; its pointer fade can otherwise be captured mid-animation.
 declare -a CASES=(
   "toolbar-faint|--toolbar faint"
   "toolbar-full|--toolbar full"
@@ -26,11 +27,11 @@ declare -a CASES=(
   "pin-adjust-light|--panel pin:adjust --tab picture --appearance light"
   "pin-more-light|--panel pin:more --appearance light"
   "pin-adjust-narrow-screen|--panel pin:adjust --width 1700 --height 900"
-  "scene-originalAmbient|--scene originalAmbient"
-  "scene-flowingField|--scene flowingField"
-  "scene-coverPhoto|--scene coverPhoto"
-  "scene-linerNotes|--scene linerNotes"
-  "scene-focusedLyrics|--scene focusedLyrics"
+  "scene-originalAmbient|--scene originalAmbient --toolbar faint"
+  "scene-flowingField|--scene flowingField --toolbar faint"
+  "scene-coverPhoto|--scene coverPhoto --toolbar faint"
+  "scene-linerNotes|--scene linerNotes --toolbar faint"
+  "scene-focusedLyrics|--scene focusedLyrics --toolbar faint"
   "menubar-dark|--surface menubar --appearance dark"
   "menubar-light|--surface menubar --appearance light"
   "settings-light|--surface settings --appearance light"
