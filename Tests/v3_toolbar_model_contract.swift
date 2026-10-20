@@ -1,9 +1,31 @@
 // Rules from docs/TOOLBAR_BEHAVIOR.md (b5a1ed5).
 import XCTest
 import CoreGraphics
+import Foundation
 @testable import SpotifyLyrics
 
 final class V3ToolbarPresentationTests: XCTestCase {
+    @MainActor
+    func testLyricBarUsesExistingPreferences() {
+        let defaults = UserDefaults(suiteName: "lyric-bar-\(UUID())")!
+        let settings = AppSettingsStore(defaults: defaults)
+        let actions = V3LyricActions(settings: settings)
+        var display = settings.displayPreferences
+        display.fontSize = 22
+        settings.displayPreferences = display
+        XCTAssertEqual(actions.fontSize(2), "字号 24")
+        XCTAssertEqual(settings.displayPreferences.fontSize, 24)
+        _ = actions.fontSize(100)
+        XCTAssertEqual(settings.displayPreferences.fontSize, 42)
+        _ = actions.fontSize(-100)
+        XCTAssertEqual(settings.displayPreferences.fontSize, 14)
+        let original = actions.family
+        _ = actions.scene(1)
+        XCTAssertNotEqual(actions.family, original)
+        _ = actions.scene(-1)
+        XCTAssertEqual(actions.family, original)
+    }
+
     func testHoverLifetimeAndMenus() {
         XCTAssertEqual(V3ToolbarModel.hoverGrace, .milliseconds(180))
         for panel in V3ToolbarModel.Panel.allCases {

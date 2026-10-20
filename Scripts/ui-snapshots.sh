@@ -20,6 +20,8 @@ python3 "$ROOT/Tools/experience_visual_host/build.py" > /dev/null
 declare -a CASES=(
   "toolbar-faint|--toolbar faint"
   "toolbar-full|--toolbar full"
+  "lyric-bar|--toolbar lyricbar"
+  "lyric-notice|--toolbar notice"
   "hover-library|--panel hover:library"
   "pin-library|--panel pin:library"
   "hover-search|--panel hover:search"
@@ -59,7 +61,7 @@ for entry in "${CASES[@]}"; do
   if ((${#selected[@]})) && [[ ! " ${selected[*]} " =~ " $name " ]]; then continue; fi
   rm -f "$OUT/$name".png "$OUT/$name"-panel*.png
   # shellcheck disable=SC2086
-  python3 "$ROOT/Tools/experience_visual_host/run.py" $args --surface main \
+  PYTHONUNBUFFERED=1 python3 "$ROOT/Tools/experience_visual_host/run.py" $args --surface main \
     --output "$OUT/$name.png" > "$OUT/$name.log" 2>&1 || echo "FAILED $name (see $OUT/$name.log)"
   ls "$OUT/$name"*.png 2>/dev/null | sed "s|$OUT/|  |"
 done

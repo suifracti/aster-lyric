@@ -226,6 +226,7 @@
 		4D06F010ADE3A5243CBBE3C1 /* AppleMusicImmersiveV3Lyrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = E957149F3C618CDF82DE876F /* AppleMusicImmersiveV3Lyrics.swift */; };
 		5F18092C81A9AE6DD73580A1 /* AppleMusicImmersiveV3Inspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3D93F5601D92279146B1636 /* AppleMusicImmersiveV3Inspector.swift */; };
 		0397361CF07CC824F9B93C85 /* AppleMusicImmersiveV3QuickControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29670441C088A914F1A776E1 /* AppleMusicImmersiveV3QuickControls.swift */; };
+		AF4738C40CC270950960061F /* AppleMusicImmersiveV3LyricBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35FDDBAC403CC53CC0FAC566 /* AppleMusicImmersiveV3LyricBar.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -454,6 +455,7 @@
 		E957149F3C618CDF82DE876F /* AppleMusicImmersiveV3Lyrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicImmersiveV3Lyrics.swift; sourceTree = "<group>"; };
 		D3D93F5601D92279146B1636 /* AppleMusicImmersiveV3Inspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicImmersiveV3Inspector.swift; sourceTree = "<group>"; };
 		29670441C088A914F1A776E1 /* AppleMusicImmersiveV3QuickControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicImmersiveV3QuickControls.swift; sourceTree = "<group>"; };
+		35FDDBAC403CC53CC0FAC566 /* AppleMusicImmersiveV3LyricBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicImmersiveV3LyricBar.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -621,6 +623,7 @@
 				110000072D83400100000000 /* MainLyricsWindowView.swift */,
 				1100001D2D83400100000000 /* ImmersiveSplitWindowView.swift */,
 				110000502D83400100000000 /* AppleMusicImmersiveV3WindowView.swift */,
+				35FDDBAC403CC53CC0FAC566 /* AppleMusicImmersiveV3LyricBar.swift */,
 				29670441C088A914F1A776E1 /* AppleMusicImmersiveV3QuickControls.swift */,
 				D3D93F5601D92279146B1636 /* AppleMusicImmersiveV3Inspector.swift */,
 				E957149F3C618CDF82DE876F /* AppleMusicImmersiveV3Lyrics.swift */,
@@ -1011,6 +1014,7 @@
 				110000482D83400100000001 /* AlignmentService.swift in Sources */,
 				110000472D83400100000001 /* AlignmentModels.swift in Sources */,
 				110000502D83400100000001 /* AppleMusicImmersiveV3WindowView.swift in Sources */,
+				AF4738C40CC270950960061F /* AppleMusicImmersiveV3LyricBar.swift in Sources */,
 				0397361CF07CC824F9B93C85 /* AppleMusicImmersiveV3QuickControls.swift in Sources */,
 				5F18092C81A9AE6DD73580A1 /* AppleMusicImmersiveV3Inspector.swift in Sources */,
 				4D06F010ADE3A5243CBBE3C1 /* AppleMusicImmersiveV3Lyrics.swift in Sources */,

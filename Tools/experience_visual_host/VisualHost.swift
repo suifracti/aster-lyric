@@ -118,8 +118,16 @@ private enum ExperienceArtwork {
     }
 }
 
+private final class ExperienceVisualHostDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Direct command-line launches must open the fixture's WindowGroup too.
+        NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
 @main
 struct ExperienceVisualHostApp: App {
+    @NSApplicationDelegateAdaptor(ExperienceVisualHostDelegate.self) private var appDelegate
     @StateObject private var settings: AppSettingsStore
     @StateObject private var playback: PlaybackState
     @StateObject private var adapter = DirectionDProductStateAdapter()
@@ -450,6 +458,7 @@ private struct ExperienceFixtureRoot: View {
                 }
                 let output=ExperienceArguments.value("--output",fallback:"")
                 func render(_ view: NSView, to path: String) {
+                    print("CAPTURING", path); fflush(stdout)
                     guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
                     view.cacheDisplay(in: view.bounds, to: bitmap)
                     if let png = bitmap.representation(using: .png, properties: [:]) {
@@ -465,7 +474,7 @@ private struct ExperienceFixtureRoot: View {
                     for window in NSApp.windows where window.isVisible && window !== primary
                         && window !== targetWindow && window.frame.width > 120 && window.frame.height > 120 {
                         index += 1
-                        if let view = window.contentView?.superview ?? window.contentView {
+                        if let view = window.contentView {
                             render(view, to: "\(base)-panel\(index).png")
                         }
                     }

@@ -168,6 +168,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var confirmsAIReadingRequest = false
     @State private var isTranslationComparisonPresented = false
     @State private var isVersionPickerPresented = false
+    @State private var lyricColumnHovered = false
+    @State private var lyricNotice: String?
+    @State private var lyricNoticeTask: Task<Void, Never>?
     @State private var hoveredStyle: V3ArtworkPresentation?
     @State private var hoveredScene: V3ListeningScene?
     private var compositionScene: V3ListeningScene? { hoveredStyle == nil ? settings.v3ListeningScene : hoveredScene }
@@ -312,6 +315,16 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 GeometryReader { canvasGeometry in
                     ZStack(alignment: .topTrailing) {
                         layout(for: canvasGeometry)
+
+                        if let lyricNotice {
+                            Text(lyricNotice)
+                                .font(.system(size: 14, weight: .medium))
+                                .padding(.horizontal, 16).padding(.vertical, 10)
+                                .background(.regularMaterial, in: Capsule())
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                                .allowsHitTesting(false)
+                                .transition(.opacity)
+                        }
 
                         HStack(spacing: 16) {
                             Spacer(minLength: 0)
@@ -1301,6 +1314,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         onSearch: (() -> Void)? = nil,
         stage: Bool = false
     ) -> some View {
+        VStack(spacing: 8) {
         AppleMusicImmersiveV3LyricsViewport(
             state: state,
             availableWidth: max(1, width - (compact ? 22 : 34)),
@@ -1317,6 +1331,27 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .v3ReadingGlow(artworkURL: compositionTrack.artworkURL, policy: settings.v3ReadingProtection)
         .environment(\.lyricTextAlignment, compositionLyricsPosition == "center" ? .center : compositionLyricsPosition == "right" ? .trailing : .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+            V3LyricBar(settings: settings, offsetStore: settings.lyricsOffsetStore,
+                hasReading: state.selectedReadingVersion != nil || state.liveLyrics.contains { $0.kanaText?.isEmpty == false },
+                notice: showLyricNotice)
+                .scaleEffect(min(1, width / 470))
+                .frame(width: max(1, width), height: 34)
+                .opacity(lyricColumnHovered && isPointerInsideCanvas && !toolbarPanelIsPresented ? 1 : 0)
+                .allowsHitTesting(lyricColumnHovered && isPointerInsideCanvas && !toolbarPanelIsPresented)
+                .accessibilityHidden(!lyricColumnHovered || !isPointerInsideCanvas || toolbarPanelIsPresented)
+        }
+        .onHover { lyricColumnHovered = $0 }
+    }
+
+    private func showLyricNotice(_ message: String?) {
+        guard let message else { return }
+        lyricNoticeTask?.cancel()
+        withAnimation(.easeOut(duration: 0.15)) { lyricNotice = message }
+        lyricNoticeTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.25)) { lyricNotice = nil }
+        }
     }
 
     private func isCompact(for size: CGSize) -> Bool {
@@ -1556,6 +1591,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private func applyToolbarDebugCommand(_ info: [AnyHashable: Any]) {
         let panel = (info["panel"] as? String).flatMap(ToolbarPopover.init(rawValue:))
         switch info["command"] as? String {
+        case "lyricbar": isPointerInsideCanvas = true; lyricColumnHovered = true
+        case "notice": lyricNotice = "字号 22"
         case "faint": isPointerInsideCanvas = true
         case "full": isPointerInsideCanvas = true; toolsVisible = true
         case "hover": if let panel { toolsVisible = true; apply(toolbar.pointerOnTrigger(panel, inside: true)) }
