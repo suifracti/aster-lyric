@@ -1,17 +1,15 @@
 // Behaviour of the main-window toolbar, from docs/TOOLBAR_BEHAVIOR.md.
 // Every case below comes from a real user report; change the spec first.
+import XCTest
 import CoreGraphics
-import Foundation
+@testable import SpotifyLyrics
 
-@main
-struct ToolbarModelContract {
-    static var count = 0
-    static func expect(_ ok: Bool, _ message: String, line: Int = #line) {
-        count += 1
-        if !ok { fatalError("FAIL line \(line): \(message)") }
+final class V3ToolbarPresentationTests: XCTestCase {
+    private func expect(_ ok: Bool, _ message: String, line: Int = #line) {
+        XCTAssertTrue(ok, message, file: #filePath, line: UInt(line))
     }
 
-    static func main() {
+    func testToolbarModelAndPanelPlacement() {
         // Hover shows a temporary panel inside the app; leaving closes it
         // only after the grace timer, and not while the pointer is on it.
         var m = V3ToolbarModel()
@@ -101,6 +99,31 @@ struct ToolbarModelContract {
         expect(edge.maxX == visible.maxX - 8, "no room: screen right edge")
         expect(edge.minX > wide.minX, "never left of the window")
 
-        print("PASS \(count) toolbar behaviour checks")
+    }
+
+    func testInspectorHoverPinRepeatSwitchAndDismissSequence() {
+        var ui = V3ToolbarModel()
+        _ = ui.pointerOnTrigger(.adjust, inside: true)
+        XCTAssertEqual(ui.hoverPanel, .adjust)
+        XCTAssertNil(ui.pinnedPanel)
+        ui.click(.adjust)
+        XCTAssertNil(ui.hoverPanel)
+        XCTAssertEqual(ui.pinnedPanel, .adjust)
+
+        _ = ui.pointerOnTrigger(.more, inside: true)
+        XCTAssertEqual(ui.pinnedPanel, .adjust, "hovering another trigger does not switch a pinned panel")
+        XCTAssertNil(ui.hoverPanel)
+        ui.click(.adjust)
+        XCTAssertNil(ui.pinnedPanel)
+        XCTAssertNil(ui.hoverPanel)
+
+        _ = ui.pointerOnTrigger(.more, inside: true)
+        XCTAssertEqual(ui.hoverPanel, .more)
+        ui.click(.more)
+        ui.click(.adjust)
+        XCTAssertEqual(ui.pinnedPanel, .adjust, "clicking another panel switches the pinned tool")
+        ui.dismiss()
+        XCTAssertNil(ui.pinnedPanel)
+        XCTAssertNil(ui.hoverPanel)
     }
 }

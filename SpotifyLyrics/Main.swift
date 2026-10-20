@@ -2,6 +2,22 @@ import SwiftUI
 import AppKit
 
 @main
+enum SpotifyLyricsEntryPoint {
+    @MainActor
+    static func main() {
+#if DEBUG
+        if NativeTestRuntime.isEnabled {
+            NativeTestRuntime.prepare()
+            let application = NSApplication.shared
+            application.setActivationPolicy(.prohibited)
+            application.run()
+            return
+        }
+#endif
+        SpotifyLyricsApp.main()
+    }
+}
+
 struct SpotifyLyricsApp: App {
     @StateObject private var appSettings: AppSettingsStore
     @StateObject private var playbackState: PlaybackState

@@ -1,12 +1,15 @@
 name: Lyric Island native source check
 on:
   workflow_dispatch:
+  pull_request:
   push:
     branches: [main, chatgpt/redesign-performance-safe-20261018]
+    tags: ['v*']
     paths:
       - 'SpotifyLyrics/**'
       - 'SpotifyLyrics.xcodeproj/**'
       - 'Tests/**'
+      - 'Scripts/**'
       - '.github/workflows/lyric-redesign-check.yml'
 permissions:
   contents: read
@@ -34,7 +37,7 @@ jobs:
           retention-days: 7
   native:
     runs-on: macos-15
-    timeout-minutes: 18
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
@@ -71,13 +74,13 @@ jobs:
           (root/'contracts.json').write_text(json.dumps(results,indent=2))
           raise SystemExit(0 if all(v==0 for v in results.values()) else 1)
           PY
-      - name: Compile the complete native app
+      - name: Build the app and run the entire native XCTest target
         id: build
         continue-on-error: true
         shell: bash
         run: |
           xcodebuild -version > /tmp/lyric-native-result/xcode-version.txt
-          xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics -configuration Debug CODE_SIGNING_ALLOWED=NO SWIFT_OPTIMIZATION_LEVEL=-O -derivedDataPath /tmp/lyric-native-derived build > /tmp/lyric-native-result/xcodebuild.log 2>&1
+          xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics -configuration Debug CODE_SIGNING_ALLOWED=NO SWIFT_OPTIMIZATION_LEVEL=-O -derivedDataPath /tmp/lyric-native-derived -destination 'platform=macOS' -resultBundlePath /tmp/lyric-native-result/native-tests.xcresult test > /tmp/lyric-native-result/xcodebuild.log 2>&1
       - name: Record verification boundaries
         if: always()
         env:
@@ -88,7 +91,7 @@ jobs:
           python3 - <<'PY'
           import json,os,pathlib,subprocess
           root=pathlib.Path('/tmp/lyric-native-result');root.mkdir(exist_ok=True)
-          (root/'result.json').write_text(json.dumps({'native_build':os.environ['BUILD_RESULT'],'contracts':os.environ['CONTRACT_RESULT'],'user_mac_gui':'NOT_RUN','paired_cpu_memory':'NOT_RUN'},indent=2))
+          (root/'result.json').write_text(json.dumps({'native_build_and_tests':os.environ['BUILD_RESULT'],'contracts':os.environ['CONTRACT_RESULT'],'user_mac_gui':'NOT_RUN','paired_cpu_memory':'NOT_RUN'},indent=2))
           log=root/'xcodebuild.log'
           if log.exists():(root/'errors.txt').write_text('\n'.join(l for l in log.read_text(errors='replace').splitlines() if 'error:' in l))
           (root/'production-tree.txt').write_text(subprocess.check_output(['git','ls-tree','-r','HEAD','SpotifyLyrics','SpotifyLyrics.xcodeproj','Tests'],text=True))
@@ -99,7 +102,7 @@ jobs:
           name: lyric-island-native-build
           path: /tmp/lyric-native-result/
           retention-days: 7
-      - name: Require real build and contract success
+      - name: Require the complete native test target and source contracts before release
         if: always()
         env:
           BUILD_RESULT: ${{ steps.build.outcome }}

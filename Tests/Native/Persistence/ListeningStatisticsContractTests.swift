@@ -1,15 +1,18 @@
 import Foundation
+import XCTest
+@testable import SpotifyLyrics
 
-@main
-@MainActor
-struct ListeningStatisticsContract {
-    static func main() async throws {
+final class ListeningStatisticsContractTests: XCTestCase {
+    func testStatisticsAggregateHistoryAndHandleEmptyLibrary() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("SpotifyLyricsListeningStatisticsContract-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("SpotifyLyrics.sqlite3"), alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        let repository = SQLiteLyricsRepository(
+            databaseURL: root.appendingPathComponent("SpotifyLyrics.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance")
+        )
         try await repository.prepare()
 
         try await repository.upsertListeningHistory(entry(
@@ -26,21 +29,21 @@ struct ListeningStatisticsContract {
         ))
 
         let statistics = try await repository.loadListeningStatistics(for: .allTime)
-        precondition(statistics.totalListeningTime == 260)
-        precondition(statistics.sessionCount == 4)
-        precondition(statistics.uniqueSongCount == 3)
-        precondition(statistics.dailyPlayCounts.count == 7)
-        precondition(statistics.dailyPlayCounts.map(\.count) == [0, 0, 0, 0, 0, 0, 0])
-        precondition(statistics.topSongs.map(\.stableKey) == [
+        XCTAssertEqual(statistics.totalListeningTime, 260)
+        XCTAssertEqual(statistics.sessionCount, 4)
+        XCTAssertEqual(statistics.uniqueSongCount, 3)
+        XCTAssertEqual(statistics.dailyPlayCounts.count, 7)
+        XCTAssertEqual(statistics.dailyPlayCounts.map(\.count), [0, 0, 0, 0, 0, 0, 0])
+        XCTAssertEqual(statistics.topSongs.map(\.stableKey), [
             "spotify-id:history-a",
             "spotify-id:history-b",
             "spotify-id:history-y"
         ])
-        precondition(statistics.topSongs.map(\.sessionCount) == [2, 1, 1])
-        precondition(statistics.topSongs.map(\.observedListeningTime) == [100, 80, 80])
-        precondition(statistics.topArtists.map(\.artist) == ["Artist X", "Artist Y"])
-        precondition(statistics.topArtists.map(\.sessionCount) == [3, 1])
-        precondition(statistics.topArtists.map(\.observedListeningTime) == [180, 80])
+        XCTAssertEqual(statistics.topSongs.map(\.sessionCount), [2, 1, 1])
+        XCTAssertEqual(statistics.topSongs.map(\.observedListeningTime), [100, 80, 80])
+        XCTAssertEqual(statistics.topArtists.map(\.artist), ["Artist X", "Artist Y"])
+        XCTAssertEqual(statistics.topArtists.map(\.sessionCount), [3, 1])
+        XCTAssertEqual(statistics.topArtists.map(\.observedListeningTime), [180, 80])
 
         let now = Date().timeIntervalSince1970
         try await repository.upsertListeningHistory(ListeningHistoryEntry(
@@ -56,36 +59,42 @@ struct ListeningStatisticsContract {
             completionRatio: 60.0 / 180.0
         ))
         let updatedStats = try await repository.loadListeningStatistics(for: .allTime)
-        precondition(updatedStats.sessionCount == 5)
-        precondition(updatedStats.uniqueSongCount == 4)
-        precondition(updatedStats.dailyPlayCounts.count == 7)
-        precondition(updatedStats.dailyPlayCounts.last?.count == 1)
-        precondition(updatedStats.dailyPlayCounts.dropLast().allSatisfy { $0.count == 0 })
+        XCTAssertEqual(updatedStats.sessionCount, 5)
+        XCTAssertEqual(updatedStats.uniqueSongCount, 4)
+        XCTAssertEqual(updatedStats.dailyPlayCounts.count, 7)
+        XCTAssertEqual(updatedStats.dailyPlayCounts.last?.count, 1)
+        XCTAssertTrue(updatedStats.dailyPlayCounts.dropLast().allSatisfy { $0.count == 0 })
 
         let emptyRepository = SQLiteLyricsRepository(
             databaseURL: root.appendingPathComponent("empty.sqlite3"),
             alignmentProvenanceDirectory: root.appendingPathComponent("empty-provenance")
         )
         let emptyStatistics = try await emptyRepository.loadListeningStatistics(for: .allTime)
-        precondition(emptyStatistics.isEmpty)
-        precondition(emptyStatistics.sessionCount == 0)
-        precondition(emptyStatistics.uniqueSongCount == 0)
-        precondition(emptyStatistics.dailyPlayCounts.count == 7)
-        precondition(emptyStatistics.dailyPlayCounts.allSatisfy { $0.count == 0 })
-
-        print("listening statistics contract passed")
+        XCTAssertTrue(emptyStatistics.isEmpty)
+        XCTAssertEqual(emptyStatistics.sessionCount, 0)
+        XCTAssertEqual(emptyStatistics.uniqueSongCount, 0)
+        XCTAssertEqual(emptyStatistics.dailyPlayCounts.count, 7)
+        XCTAssertTrue(emptyStatistics.dailyPlayCounts.allSatisfy { $0.count == 0 })
     }
 
-    private static func entry(
+    private func entry(
         id: String,
         key: String,
         title: String,
         artist: String,
         duration: TimeInterval,
         observedAt: TimeInterval
-    ) -> ListeningHistoryEntry {
-        ListeningHistoryEntry(
-            sessionID: UUID(uuidString: "00000000-0000-0000-0000-00000000\(id == "A1" ? "0011" : id == "A2" ? "0022" : id == "B1" ? "0033" : "0044")")!,
+    ) throws -> ListeningHistoryEntry {
+        let uuidSuffix: String
+        switch id {
+        case "A1": uuidSuffix = "0011"
+        case "A2": uuidSuffix = "0022"
+        case "B1": uuidSuffix = "0033"
+        default: uuidSuffix = "0044"
+        }
+        let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-00000000\(uuidSuffix)"))
+        return ListeningHistoryEntry(
+            sessionID: sessionID,
             stableKey: key,
             title: title,
             artist: artist,

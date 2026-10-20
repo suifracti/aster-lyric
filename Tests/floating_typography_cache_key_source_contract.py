@@ -58,7 +58,7 @@ assert "NSCache<FloatingFittedFontSizeCacheKey, NSNumber>" in source
 assert "cache.countLimit = 512" in block("private static let estimatedLineWidthCache:")
 assert "cache.countLimit = 256" in block("private static let fittedFontSizeCache:")
 
-tests = (root / "Tests/floating_lyrics_contract.swift").read_text()
+tests = (root / "Tests/Native/Presentation/FloatingLyricsPresentationTests.swift").read_text()
 assert all(marker in tests for marker in (
     "changedSurface", "changedGrouping", "A-to-B-to-A", 'text: "ABC-DE"',
     'companionText: "DE-F"', "longRubyWidth > shortRubyWidth",

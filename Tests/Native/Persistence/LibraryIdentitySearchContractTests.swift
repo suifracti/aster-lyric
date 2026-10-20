@@ -1,20 +1,31 @@
 import Foundation
 import SQLite3
+import XCTest
+@testable import SpotifyLyrics
 
-@main struct LibraryIdentitySearchContract {
-    static func main() async throws {
+final class LibraryIdentitySearchContractTests: XCTestCase {
+    func testIdentityGroupingSearchExportAndCrossKeySelection() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("library-identity-search-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let url = root.appendingPathComponent("test.sqlite3")
-        let repo = SQLiteLyricsRepository(databaseURL: url, alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+
+        let databaseURL = root.appendingPathComponent("test.sqlite3")
+        let repo = SQLiteLyricsRepository(
+            databaseURL: databaseURL,
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance")
+        )
         try await repo.prepare()
         func save(_ track: Track, text: String) async throws -> UUID {
             let identity = TrackIdentity(track: track)
-            let document = LyricsDocument(identity: identity, title: track.title, artist: track.artist, album: track.album, duration: track.duration,
+            let document = LyricsDocument(
+                identity: identity, title: track.title, artist: track.artist, album: track.album, duration: track.duration,
                 lines: [LyricLine(timestamp: 1, originalText: text, translationText: "legacytranslation", romajiText: "legacyromaji", kanaText: "れがしーかな")],
-                isSynchronized: true, source: .lrclib, confidence: 0.95, providerSourceID: text)
-            return try await repo.save(track: track, identity: identity, document: document).versionID!
+                isSynchronized: true, source: .lrclib, confidence: 0.95, providerSourceID: text
+            )
+            let saved = try await repo.save(track: track, identity: identity, document: document)
+            return try XCTUnwrap(saved.versionID)
         }
+
         let a = Track(title: "Family fixture", artist: "Singer", album: "Album", duration: 170, spotifyId: "family-song")
         let b = Track(title: a.title, artist: a.artist, album: a.album, duration: 170.72, spotifyId: "family-song")
         let unrelated = Track(title: a.title, artist: a.artist, album: a.album, duration: 170, spotifyId: "different-song")
@@ -28,10 +39,10 @@ import SQLite3
         _ = try await save(Track(title: "Duration conflict", artist: "Singer", album: "Album", duration: 100, spotifyId: "duration-conflict"), text: "short recording")
         _ = try await save(Track(title: "Duration conflict", artist: "Singer", album: "Album", duration: 130, spotifyId: "duration-conflict"), text: "long recording")
         _ = try await save(Track(title: a.title, artist: a.artist, album: a.album, duration: a.duration), text: "metadata-only")
-        var db: OpaquePointer?
-        precondition(sqlite3_open(url.path, &db) == SQLITE_OK)
-        let readingID = UUID(), translationID = UUID()
-        let sql = """
+
+        let readingID = UUID()
+        let translationID = UUID()
+        let fixtureSQL = """
         INSERT INTO track_identity_redirects VALUES ('\(TrackIdentity(track: historical).stableKey)', '\(TrackIdentity(track: a).stableKey)', 'fixture', 'fixture', 'fixture', 1);
         INSERT INTO reading_versions(id,lyrics_version_id,source_content_hash,engine_id,representation_id,created_at,updated_at)
         VALUES ('\(readingID)','\(bID)','fixture','fixture','readingRepresentation.kana',1,1);
@@ -43,39 +54,59 @@ import SQLite3
         INSERT INTO track_aliases(track_stable_key,field,kind,value,script,source,confidence,is_official)
         VALUES ('\(TrackIdentity(track: b).stableKey)','title','userAlias','Alternative title','latin','user',1,0);
         """
-        var error: UnsafeMutablePointer<CChar>?
-        precondition(sqlite3_exec(db, sql, nil, nil, &error) == SQLITE_OK, error.map { String(cString: $0) } ?? "fixture SQL")
-        sqlite3_close(db)
+        try executeSQL(fixtureSQL, at: databaseURL)
+
         let entries = try await repo.loadPersonalLibraryEntries()
-        precondition(entries.count == 6, "Same Spotify recording with subsecond duration drift must occupy one row; conflicting identities stay separate")
-        let family = entries.first { $0.lyricsVersionCount == 3 }!
-        let detail = try await repo.loadPersonalLibraryTrackDetail(stableKey: family.trackStableKey)!
-        precondition(Set(detail.lyricsVersions.map(\.id)) == [aID, bID, historicalID], "Grouping must retain both physical keys' versions")
-        precondition(detail.readingVersions.contains { $0.id == readingID } && detail.translationVersions.contains { $0.id == translationID })
-        let oldDetail = try await repo.loadPersonalLibraryTrackDetail(stableKey: TrackIdentity(track: b).stableKey)!
-        precondition(oldDetail.entry.trackStableKey == family.trackStableKey && oldDetail.lyricsVersions.count == 3)
+        XCTAssertEqual(entries.count, 6, "Same Spotify recording with subsecond duration drift must occupy one row; conflicting identities stay separate")
+        let family = try XCTUnwrap(entries.first { $0.lyricsVersionCount == 3 })
+        let loadedDetail = try await repo.loadPersonalLibraryTrackDetail(stableKey: family.trackStableKey)
+        let detail = try XCTUnwrap(loadedDetail)
+        XCTAssertEqual(Set(detail.lyricsVersions.map(\.id)), Set([aID, bID, historicalID]), "Grouping must retain both physical keys' versions")
+        XCTAssertTrue(detail.readingVersions.contains { $0.id == readingID })
+        XCTAssertTrue(detail.translationVersions.contains { $0.id == translationID })
+        let oldDetailResult = try await repo.loadPersonalLibraryTrackDetail(stableKey: TrackIdentity(track: b).stableKey)
+        let oldDetail = try XCTUnwrap(oldDetailResult)
+        XCTAssertEqual(oldDetail.entry.trackStableKey, family.trackStableKey)
+        XCTAssertEqual(oldDetail.lyricsVersions.count, 3)
+
         for query in ["原版独有", "新版独有", "historical-only", "SAVEDREADINGNEEDLE", "karada", "保存译文独有", "Alternative title"] {
             let found = try await repo.loadPersonalLibraryEntries(searchQuery: query)
-            precondition(found.map(\.trackStableKey) == [family.trackStableKey], "Search must cover all versions and aliases: \(query)")
+            XCTAssertEqual(found.map(\.trackStableKey), [family.trackStableKey], "Search must cover all versions and aliases: \(query)")
         }
         for query in ["legacyromaji", "れがしーかな", "legacytranslation", "Singer", "Album"] {
             let found = try await repo.loadPersonalLibraryEntries(searchQuery: query)
-            precondition(found.contains { $0.trackStableKey == family.trackStableKey })
+            XCTAssertTrue(found.contains { $0.trackStableKey == family.trackStableKey }, "Search must include legacy fields: \(query)")
         }
         let injection = try await repo.loadPersonalLibraryEntries(searchQuery: "' OR 1=1 --")
-        precondition(injection.isEmpty)
+        XCTAssertTrue(injection.isEmpty)
+
         let package = try await repo.exportPersonalLibraryPackage(stableKey: family.trackStableKey)
-        precondition(Set(package.lyricsVersions.map(\.id)) == [aID, bID, historicalID], "Export must not lose versions hidden by grouping")
+        XCTAssertEqual(Set(package.lyricsVersions.map(\.id)), Set([aID, bID, historicalID]), "Export must not lose versions hidden by grouping")
         try await repo.setPersonalLibraryActiveLyrics(trackStableKey: family.trackStableKey, lyricsVersionID: bID)
         let best = try await repo.loadBestStored(track: a, identity: TrackIdentity(track: a))
-        precondition(best?.versionID == bID, "Selecting a sibling-key version must affect playback")
+        XCTAssertEqual(best?.versionID, bID, "Selecting a sibling-key version must affect playback")
         let editable = try await repo.loadEditableVersion(versionID: bID, track: a, identity: TrackIdentity(track: a))
-        precondition(editable?.record.id == bID, "Sibling-key versions must remain editable")
-        let reopened = SQLiteLyricsRepository(databaseURL: url, alignmentProvenanceDirectory: root.appendingPathComponent("reopened"))
+        XCTAssertEqual(editable?.record.id, bID, "Sibling-key versions must remain editable")
+
+        let reopened = SQLiteLyricsRepository(databaseURL: databaseURL, alignmentProvenanceDirectory: root.appendingPathComponent("reopened"))
         let reopenedEntries = try await reopened.loadPersonalLibraryEntries()
-        precondition(reopenedEntries.count == 6)
+        XCTAssertEqual(reopenedEntries.count, 6)
         let redirects = try await reopened.redirectCount()
-        precondition(redirects == 1, "Read-time grouping must not write redirect migrations")
-        print("Library identity/search PASS: one family row, all versions/detail/export, cross-key selection, full-content search, unrelated identity protection")
+        XCTAssertEqual(redirects, 1, "Read-time grouping must not write redirect migrations")
+    }
+
+    private func executeSQL(_ sql: String, at databaseURL: URL) throws {
+        var database: OpaquePointer?
+        guard sqlite3_open(databaseURL.path, &database) == SQLITE_OK, let database else {
+            throw NSError(domain: "LibraryIdentitySearchContractTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open temporary SQLite database"])
+        }
+        defer { sqlite3_close(database) }
+        var error: UnsafeMutablePointer<CChar>?
+        let result = sqlite3_exec(database, sql, nil, nil, &error)
+        guard result == SQLITE_OK else {
+            let message = error.map { String(cString: $0) } ?? "SQLite fixture statement failed"
+            sqlite3_free(error)
+            throw NSError(domain: "LibraryIdentitySearchContractTests", code: Int(result), userInfo: [NSLocalizedDescriptionKey: message])
+        }
     }
 }

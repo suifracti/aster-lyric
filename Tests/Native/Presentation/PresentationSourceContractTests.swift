@@ -1,0 +1,168 @@
+import Foundation
+import XCTest
+@testable import SpotifyLyrics
+
+final class PresentationSourceContractTests: XCTestCase {
+    func testFloatingWindowKeepsItsLiveProjectionAndSharedTimeline() throws {
+        let playback = try source("SpotifyLyrics/Services/PlaybackState.swift")
+        let translation = try source("SpotifyLyrics/Services/TranslationSessionController.swift")
+        let timeline = try source("SpotifyLyrics/Lyrics/LyricsModels.swift")
+        let floating = try source("SpotifyLyrics/Views/Floating/FloatingLyricsView.swift")
+
+        XCTAssertTrue(playback.contains("liveLyrics"))
+        XCTAssertTrue(playback.contains("liveCurrentLineIndex"))
+        XCTAssertTrue(playback.contains("liveLyricsProjectionCache"))
+        XCTAssertTrue(translation.contains("identity: TrackIdentity"))
+        XCTAssertTrue(timeline.contains("middle = lower"), "timeline lookup should stay binary-search based")
+        XCTAssertFalse(timeline.contains("lines.indices.last"), "playback lookup should not scan backward from the end")
+        XCTAssertTrue(floating.contains("NSAttributedString(string: text, attributes:"))
+        XCTAssertTrue(floating.contains("FloatingTimedRubyLayoutCache.layout(for: key)"))
+    }
+
+    func testExperienceLibraryRouteAndPreviewAdaptersStayPresentationOnly() throws {
+        let adapters = try source("SpotifyLyrics/Views/Debug/PresentationPreviewAdapters.swift")
+        let releaseView = try source("SpotifyLyrics/Views/Settings/ExperienceLibrarySettingsView.swift")
+        let settings = try source("SpotifyLyrics/Views/Settings/SettingsRootView.swift")
+
+        let adapterCode = adapters
+            .components(separatedBy: .newlines)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("///") }
+            .joined(separator: "\n")
+        for forbidden in ["PlaybackState", "LyricsSession", "TranslationSession", "Timer", "SQLite", "seek("] {
+            XCTAssertFalse(adapterCode.contains(forbidden), "preview adapters must not own runtime behavior: \(forbidden)")
+        }
+
+        XCTAssertTrue(releaseView.contains("体验版本库"))
+        XCTAssertTrue(releaseView.contains("PresentationPreviewAdapterView"))
+        XCTAssertTrue(releaseView.contains("applyPresentationSelection"))
+        XCTAssertTrue(releaseView.contains("Restore Recommended") || releaseView.contains("恢复推荐"))
+        for debugOnly in ["snapshotKey", "renderer signature", "Observer 数量", "Debug geometry", "Apply-to-Debug"] {
+            XCTAssertFalse(releaseView.contains(debugOnly), "debug diagnostics should stay out of the release page")
+        }
+
+        guard let primaryStart = settings.range(of: "static var primaryCases"),
+              let primaryEnd = settings.range(of: "\n    }", range: primaryStart.upperBound..<settings.endIndex) else {
+            XCTFail("SettingsRootView should expose the primary sidebar cases")
+            return
+        }
+        let primaryCases = settings[primaryStart.lowerBound..<primaryEnd.lowerBound]
+        XCTAssertFalse(primaryCases.contains(".experienceLibrary"), "experience library should remain under advanced settings")
+        XCTAssertTrue(settings.contains("onOpenTool(.experienceLibrary)"))
+        XCTAssertTrue(settings.contains("accessibilityIdentifier(\"btn_enter_experience_library\")"))
+        XCTAssertTrue(settings.contains("onOpenTool: { tool in selection = tool }"))
+        XCTAssertTrue(settings.contains("ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections)"))
+    }
+
+    func testScopedOffsetConsumersUseTheVersionScopedValue() throws {
+        let state = try source("SpotifyLyrics/Services/PlaybackState.swift")
+        let controls = try source("SpotifyLyrics/Views/Components/LyricsPreferencesPopover.swift")
+        let editor = try source("SpotifyLyrics/Services/LyricsEditorSessionController.swift")
+        let v3 = try source("SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift")
+        let fullscreen = try source("SpotifyLyrics/Views/Fullscreen/FullScreenLyricsView.swift")
+        let floating = try source("SpotifyLyrics/Views/Floating/FloatingLyricsView.swift")
+        let capsule = try source("SpotifyLyrics/Views/Capsule/CapsuleLyricsView.swift")
+        let settingsView = try source("SpotifyLyrics/Views/Settings/SettingsRootView.swift")
+
+        XCTAssertTrue(state.contains("presentationOffset: settingsStore.lyricsOffsetStore.activeOffset"))
+        XCTAssertTrue(state.contains("syncLiveLyricsOffsetScope()"))
+        XCTAssertTrue(state.contains("session.$activeLyricsVersionID"))
+        XCTAssertTrue(state.contains("syncLiveLyricsOffsetScope(lyricsVersionID: versionID)"))
+        XCTAssertTrue(controls.contains("settings.lyricsOffsetStore"))
+        XCTAssertTrue(controls.contains(".onChange(of: scope) { _, _ in syncInput() }"))
+        XCTAssertTrue(editor.contains("persistentLyricsOffsetScope"))
+        XCTAssertTrue(v3.contains("LyricsPresentationOffsetControl(settings: settings)"))
+        XCTAssertTrue(floating.contains("LyricsPresentationOffsetControl(settings: settings)"))
+        XCTAssertTrue(settingsView.contains("LyricsPresentationOffsetControl(settings: settings)"))
+        XCTAssertTrue(fullscreen.contains("AppleMusicImmersiveV3WindowView(state: state, settings: settings,"))
+        XCTAssertTrue(capsule.contains("currentIndex: state.liveCurrentLineIndex"))
+
+        for file in [state, controls, v3, settingsView] {
+            XCTAssertFalse(file.contains("lyricsPresentationOffset"), "live offset controls must not read the legacy global property")
+        }
+
+        let sourceDirectory = try repositoryRoot().appendingPathComponent("SpotifyLyrics", isDirectory: true)
+        guard let files = FileManager.default.enumerator(at: sourceDirectory, includingPropertiesForKeys: nil) else {
+            XCTFail("Could not enumerate the SpotifyLyrics source directory")
+            return
+        }
+        for case let url as URL in files where url.pathExtension == "swift" && url.lastPathComponent != "AppSettingsStore.swift" {
+            let contents = try String(contentsOf: url, encoding: .utf8)
+            XCTAssertFalse(contents.contains(".lyricsPresentationOffset"), "legacy offset consumer remains in \(url.lastPathComponent)")
+        }
+    }
+
+    func testToolbarViewStillRoutesInteractionThroughItsModelAndMatchesTheBehaviorSpec() throws {
+        let view = try source("SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift")
+        let spec = try source("docs/TOOLBAR_BEHAVIOR.md")
+
+        XCTAssertTrue(view.contains("@State private var toolbar = V3ToolbarModel()"))
+        XCTAssertTrue(view.contains(".onChange(of: toolbar.mode) { old, new in toolbarModeChanged(from: old, to: new) }"))
+        guard let changedStart = view.range(of: "private func toolbarModeChanged("),
+              let changedEnd = view.range(of: "\n    }", range: changedStart.upperBound..<view.endIndex) else {
+            XCTFail("Toolbar model changes should flow through toolbarModeChanged")
+            return
+        }
+        XCTAssertTrue(view[changedStart.lowerBound..<changedEnd.lowerBound].contains("hoveredStyle = nil"))
+        for removed in ["togglePinnedToolbarPanel", "presentToolbarPopover", "hoveredToolbarTrigger", "toolbarMenuDepth"] {
+            XCTAssertFalse(view.contains(removed), "old toolbar state path was reintroduced: \(removed)")
+        }
+        XCTAssertTrue(spec.contains("180 ms grace period"))
+        XCTAssertTrue(spec.contains("While pinned"))
+        XCTAssertTrue(spec.contains("Outside clicks"))
+        XCTAssertTrue(spec.contains("Never** to the left of the window"))
+    }
+
+    func testMenuBarSettingsAndToggleStayConnectedToProductionViews() throws {
+        let popover = try source("SpotifyLyrics/Views/MenuBar/MenuBarLyricsPopoverView.swift")
+        let controller = try source("SpotifyLyrics/Windows/MenuBarLyricsController.swift")
+        let mainWindow = try source("SpotifyLyrics/Views/MainWindow/MainLyricsWindowView.swift")
+        let settingsStore = try source("SpotifyLyrics/Settings/AppSettingsStore.swift")
+
+        XCTAssertTrue(popover.contains("@ObservedObject private var settings: AppSettingsStore"))
+        XCTAssertTrue(popover.contains("Toggle(\"菜单栏显示歌词\", isOn: $settings.menuBarLyricsEnabled)"))
+        XCTAssertTrue(popover.contains("controller.openSettings()"))
+        XCTAssertTrue(controller.contains("MenuBarLyricsPopoverView(controller: self)"))
+        XCTAssertTrue(controller.contains("openSettingsHandler?()"))
+        XCTAssertTrue(mainWindow.contains("MenuBarLyricsController.shared.setOpenSettingsHandler { [openSettings] in"))
+        XCTAssertTrue(mainWindow.contains("openSettings()"))
+
+        let settings = [
+            "menuBarLyricsEnabled", "menuBarLyricsShowsFullLine", "menuBarLyricsShowsOriginal",
+            "menuBarLyricsShowsTranslation", "menuBarLyricsShowsKana", "menuBarLyricsShowsRomaji",
+            "menuBarLyricsReadingsAbove", "menuBarLyricsFontSize"
+        ]
+        for name in settings {
+            XCTAssertTrue(settingsStore.contains("public static let \(name) ="), "missing persistent key for \(name)")
+            XCTAssertTrue(settingsStore.contains("@Published public var \(name):"), "missing published setting for \(name)")
+        }
+    }
+
+    private func source(_ relativePath: String) throws -> String {
+        let root = try repositoryRoot()
+        let url = root.appendingPathComponent(relativePath)
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    private func repositoryRoot() throws -> URL {
+        let root: URL
+        if let override = ProcessInfo.processInfo.environment["LYRICSQ_SOURCE_ROOT"], !override.isEmpty {
+            root = URL(fileURLWithPath: override, isDirectory: true)
+        } else {
+            root = (0..<4).reduce(URL(fileURLWithPath: #filePath)) { candidate, _ in
+                candidate.deletingLastPathComponent()
+            }
+        }
+
+        var isDirectory: ObjCBool = false
+        let sourceDirectory = root.appendingPathComponent("SpotifyLyrics", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: sourceDirectory.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            throw NSError(
+                domain: "PresentationSourceContractTests",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Source root does not contain SpotifyLyrics/: \(root.path)"]
+            )
+        }
+        return root
+    }
+}

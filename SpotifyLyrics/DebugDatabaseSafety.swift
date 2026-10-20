@@ -7,6 +7,7 @@ import CryptoKit
 extension UserDefaults {
     public static var lyricsQ: UserDefaults {
 #if DEBUG
+        if NativeTestRuntime.isEnabled { return NativeTestRuntime.defaults }
         if DebugAcceptanceDataIsolation.isRequested { return DebugAcceptanceDataIsolation.defaults }
 #endif
         return .standard
@@ -16,6 +17,7 @@ extension UserDefaults {
 public enum LyricsQStorage {
     public static var homeDirectory: URL {
 #if DEBUG
+        if NativeTestRuntime.isEnabled { return NativeTestRuntime.root }
         if DebugAcceptanceDataIsolation.isRequested { return DebugAcceptanceDataIsolation.configuration.home }
 #endif
         return FileManager.default.homeDirectoryForCurrentUser
@@ -23,6 +25,30 @@ public enum LyricsQStorage {
 }
 
 #if DEBUG
+/// XCTest's hosted process must not construct the product's windows, providers
+/// or shared data stores. Ordinary Debug and release launches never enter here.
+enum NativeTestRuntime {
+    static var isEnabled: Bool {
+        ProcessInfo.processInfo.environment["LYRICSQ_NATIVE_TESTS"] == "1"
+    }
+    static let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("lyricsq-native-tests-host-\(ProcessInfo.processInfo.processIdentifier)")
+    private static let suite = "com.spotifylyrics.tests.\(ProcessInfo.processInfo.processIdentifier)"
+    static let defaults = UserDefaults(suiteName: suite)!
+
+    static func prepare() {
+        try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defaults.removePersistentDomain(forName: suite)
+        setenv("SPOTIFYLYRICS_DATABASE_PATH", root.appendingPathComponent("test.sqlite3").path, 1)
+        setenv("SPOTIFYLYRICS_ALIGNMENT_PROVENANCE_PATH", root.appendingPathComponent("provenance").path, 1)
+        setenv("SPOTIFYLYRICS_DISABLE_KEYCHAIN", "1", 1)
+        atexit {
+            NativeTestRuntime.defaults.removePersistentDomain(forName: NativeTestRuntime.suite)
+            try? FileManager.default.removeItem(at: NativeTestRuntime.root)
+        }
+    }
+}
+
 /// CFPreferences can route a named suite through the login user's daemon even
 /// with CFFIXED_USER_HOME. Acceptance therefore implements the existing
 /// UserDefaults API using one root-owned plist, never a CF persistent domain.

@@ -448,6 +448,7 @@
 		110000002D83400000000001 = {
 			isa = PBXGroup;
 			children = (
+				7191877D7CFCA739773864ED /* Native Tests */,
 				110000002D83400000000002 /* SpotifyLyrics */,
 				110000002D83400000000003 /* Products */,
 			);
@@ -456,6 +457,9 @@
 		110000002D83400000000002 /* SpotifyLyrics */ = {
 			isa = PBXGroup;
 			children = (
+				21E03D3ADC3FD2C8C04D43AF,
+				1208877320643DA34F48E805,
+				927262AE26F723BCA63985FB /* SpotifyLyricsTests.xctest */,
 				CC7BDEF42026101800000004 /* LinkCoreLyricsProvider.swift */,
 				CC7BDEF42026101800000002 /* LyricIslandControls.swift */,
 				110000412D83400100000000 /* Resources */,
@@ -861,6 +865,7 @@
 			projectRoot = "";
 			targets = (
 				110000002D83400000000004 /* SpotifyLyrics */,
+				A62F93C45DC66CCC29D46F40 /* SpotifyLyricsTests */,
 			);
 		};
 /* End PBXProject section */
@@ -1224,6 +1229,186 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Native XCTest target: imports the built app module rather than compiling source subsets. */
+		2849EAA14F7F1E696E303139 /* Tests/Native/Persistence/LibraryIdentitySearchContractTests.swift */ = {
+			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Persistence/LibraryIdentitySearchContractTests.swift"; sourceTree = SOURCE_ROOT;
+		};
+		9E0B6FDF20BC8FBFE7E02E74 /* Tests/Native/Persistence/LibraryIdentitySearchContractTests.swift build */ = {
+			isa = PBXBuildFile; fileRef = 2849EAA14F7F1E696E303139 /* Tests/Native/Persistence/LibraryIdentitySearchContractTests.swift */;
+		};
+		0DEDF4B2C22A0C6063F45CD5 /* Tests/Native/Persistence/LibraryRevisionsContractTests.swift */ = {
+			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Persistence/LibraryRevisionsContractTests.swift"; sourceTree = SOURCE_ROOT;
+		};
+		9A757666B9EF39CCE984CE15 /* Tests/Native/Persistence/LibraryRevisionsContractTests.swift build */ = {
+			isa = PBXBuildFile; fileRef = 0DEDF4B2C22A0C6063F45CD5 /* Tests/Native/Persistence/LibraryRevisionsContractTests.swift */;
+		};
+		2E2DD35BE6D5A5E1C3E4B0AD /* Tests/Native/Persistence/ListeningHistoryContractTests.swift */ = {
+			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Persistence/ListeningHistoryContractTests.swift"; sourceTree = SOURCE_ROOT;
+		};
+		857582EE352EFDC972661F00 /* Tests/Native/Persistence/ListeningHistoryContractTests.swift build */ = {
+			isa = PBXBuildFile; fileRef = 2E2DD35BE6D5A5E1C3E4B0AD /* Tests/Native/Persistence/ListeningHistoryContractTests.swift */;
+		};
+		65251B5DEF939F31DE33AE35 /* Tests/Native/Persistence/ListeningStatisticsContractTests.swift */ = {
+			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Persistence/ListeningStatisticsContractTests.swift"; sourceTree = SOURCE_ROOT;
+		};
+		D9A29AEF6674F0635F3BE17D /* Tests/Native/Persistence/ListeningStatisticsContractTests.swift build */ = {
+			isa = PBXBuildFile; fileRef = 65251B5DEF939F31DE33AE35 /* Tests/Native/Persistence/ListeningStatisticsContractTests.swift */;
+		};
+		27E5F3AC9561180F6CF17B3C /* Tests/Native/Persistence/LyricsEditorContractTests.swift */ = {
+			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Persistence/LyricsEditorContractTests.swift"; sourceTree = SOURCE_ROOT;
+		};
+		A8587F7679DD850BB50C5431 /* Tests/Native/Persistence/LyricsEditorContractTests.swift build */ = {
+			isa = PBXBuildFile; fileRef = 27E5F3AC9561180F6CF17B3C /* Tests/Native/Persistence/LyricsEditorContractTests.swift */;
+		};
+		B8263A8688DACCB6CB8CC948 /* Tests/Native/Presentation/ExperienceLibraryPresentationTests.swift */ = {
+			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Presentation/ExperienceLibraryPresentationTests.swift"; sourceTree = SOURCE_ROOT;
+		};
+		C453A463C4CDA11358EF6404 /* Tests/Native/Presentation/ExperienceLibraryPresentationTests.swift build */ = {
+			isa = PBXBuildFile; fileRef = B8263A8688DACCB6CB8CC948 /* Tests/Native/Presentation/ExperienceLibraryPresentationTests.swift */;
+		};
+		D6D77B78F9F01A34ABCE6E48 /* Tests/Native/Presentation/FloatingLyricsPresentationTests.swift */ = {
+			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Presentation/FloatingLyricsPresentationTests.swift"; sourceTree = SOURCE_ROOT;
+		};
+		3A337B695E534973927BEED9 /* Tests/Native/Presentation/FloatingLyricsPresentationTests.swift build */ = {
+			isa = PBXBuildFile; fileRef = D6D77B78F9F01A34ABCE6E48 /* Tests/Native/Presentation/FloatingLyricsPresentationTests.swift */;
+		};
+		3E267FADAAD0CDFAD4C3584D /* Tests/Native/Presentation/MenuBarPresentationTests.swift */ = {
+			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Presentation/MenuBarPresentationTests.swift"; sourceTree = SOURCE_ROOT;
+		};
+		434C4AB2DD9A75360A82B00D /* Tests/Native/Presentation/MenuBarPresentationTests.swift build */ = {
+			isa = PBXBuildFile; fileRef = 3E267FADAAD0CDFAD4C3584D /* Tests/Native/Presentation/MenuBarPresentationTests.swift */;
+		};
+		5BA070C14C4FD3F1BD4915C8 /* Tests/Native/Presentation/PresentationSourceContractTests.swift */ = {
+			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Presentation/PresentationSourceContractTests.swift"; sourceTree = SOURCE_ROOT;
+		};
+		C294E2E2ACFCE84F78B03DB6 /* Tests/Native/Presentation/PresentationSourceContractTests.swift build */ = {
+			isa = PBXBuildFile; fileRef = 5BA070C14C4FD3F1BD4915C8 /* Tests/Native/Presentation/PresentationSourceContractTests.swift */;
+		};
+		CDEB393B15DFA4689DFC7FD1 /* Tests/Native/Presentation/ScopedLyricsOffsetPresentationTests.swift */ = {
+			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Presentation/ScopedLyricsOffsetPresentationTests.swift"; sourceTree = SOURCE_ROOT;
+		};
+		BA6769AFB81C416762513119 /* Tests/Native/Presentation/ScopedLyricsOffsetPresentationTests.swift build */ = {
+			isa = PBXBuildFile; fileRef = CDEB393B15DFA4689DFC7FD1 /* Tests/Native/Presentation/ScopedLyricsOffsetPresentationTests.swift */;
+		};
+		616A604E8263B383B6952325 /* Tests/v3_toolbar_model_contract.swift */ = {
+			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/v3_toolbar_model_contract.swift"; sourceTree = SOURCE_ROOT;
+		};
+		E9768852755BB9C1C3035A2A /* Tests/v3_toolbar_model_contract.swift build */ = {
+			isa = PBXBuildFile; fileRef = 616A604E8263B383B6952325 /* Tests/v3_toolbar_model_contract.swift */;
+		};
+		0C7B181BC7B5BF384F806590 /* Tests/Native/Search/ProviderFailureContractTests.swift */ = {
+			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Search/ProviderFailureContractTests.swift"; sourceTree = SOURCE_ROOT;
+		};
+		5BC27E38C05B32C2FD500810 /* Tests/Native/Search/ProviderFailureContractTests.swift build */ = {
+			isa = PBXBuildFile; fileRef = 0C7B181BC7B5BF384F806590 /* Tests/Native/Search/ProviderFailureContractTests.swift */;
+		};
+		CFD4C786AA766A3AF21D1BA1 /* Tests/Native/Search/SearchModelsContractTests.swift */ = {
+			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Search/SearchModelsContractTests.swift"; sourceTree = SOURCE_ROOT;
+		};
+		11FD5C6C6F1C6F7C433FD1FB /* Tests/Native/Search/SearchModelsContractTests.swift build */ = {
+			isa = PBXBuildFile; fileRef = CFD4C786AA766A3AF21D1BA1 /* Tests/Native/Search/SearchModelsContractTests.swift */;
+		};
+		A0D0A89AF2F2E79670EE44CC /* Tests/Native/Search/SongSearchContractTests.swift */ = {
+			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Search/SongSearchContractTests.swift"; sourceTree = SOURCE_ROOT;
+		};
+		15BDD729C06E6D39D722443A /* Tests/Native/Search/SongSearchContractTests.swift build */ = {
+			isa = PBXBuildFile; fileRef = A0D0A89AF2F2E79670EE44CC /* Tests/Native/Search/SongSearchContractTests.swift */;
+		};
+		7191877D7CFCA739773864ED /* Native Tests */ = {
+			isa = PBXGroup; name = "Native Tests"; sourceTree = "<group>"; children = (
+				2849EAA14F7F1E696E303139 /* Tests/Native/Persistence/LibraryIdentitySearchContractTests.swift */,
+				0DEDF4B2C22A0C6063F45CD5 /* Tests/Native/Persistence/LibraryRevisionsContractTests.swift */,
+				2E2DD35BE6D5A5E1C3E4B0AD /* Tests/Native/Persistence/ListeningHistoryContractTests.swift */,
+				65251B5DEF939F31DE33AE35 /* Tests/Native/Persistence/ListeningStatisticsContractTests.swift */,
+				27E5F3AC9561180F6CF17B3C /* Tests/Native/Persistence/LyricsEditorContractTests.swift */,
+				B8263A8688DACCB6CB8CC948 /* Tests/Native/Presentation/ExperienceLibraryPresentationTests.swift */,
+				D6D77B78F9F01A34ABCE6E48 /* Tests/Native/Presentation/FloatingLyricsPresentationTests.swift */,
+				3E267FADAAD0CDFAD4C3584D /* Tests/Native/Presentation/MenuBarPresentationTests.swift */,
+				5BA070C14C4FD3F1BD4915C8 /* Tests/Native/Presentation/PresentationSourceContractTests.swift */,
+				CDEB393B15DFA4689DFC7FD1 /* Tests/Native/Presentation/ScopedLyricsOffsetPresentationTests.swift */,
+				616A604E8263B383B6952325 /* Tests/v3_toolbar_model_contract.swift */,
+				0C7B181BC7B5BF384F806590 /* Tests/Native/Search/ProviderFailureContractTests.swift */,
+				CFD4C786AA766A3AF21D1BA1 /* Tests/Native/Search/SearchModelsContractTests.swift */,
+				A0D0A89AF2F2E79670EE44CC /* Tests/Native/Search/SongSearchContractTests.swift */,
+			);
+		};
+		927262AE26F723BCA63985FB /* SpotifyLyricsTests.xctest */ = {
+			isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SpotifyLyricsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		20F29C7351DC494205783402 /* Native Test Sources */ = {
+			isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; runOnlyForDeploymentPostprocessing = 0; files = (
+				E2EC754DE7CFDC3D4A1DEA28,
+				45807C00F498AF9166DC55F3,
+				9E0B6FDF20BC8FBFE7E02E74 /* Tests/Native/Persistence/LibraryIdentitySearchContractTests.swift build */,
+				9A757666B9EF39CCE984CE15 /* Tests/Native/Persistence/LibraryRevisionsContractTests.swift build */,
+				857582EE352EFDC972661F00 /* Tests/Native/Persistence/ListeningHistoryContractTests.swift build */,
+				D9A29AEF6674F0635F3BE17D /* Tests/Native/Persistence/ListeningStatisticsContractTests.swift build */,
+				A8587F7679DD850BB50C5431 /* Tests/Native/Persistence/LyricsEditorContractTests.swift build */,
+				C453A463C4CDA11358EF6404 /* Tests/Native/Presentation/ExperienceLibraryPresentationTests.swift build */,
+				3A337B695E534973927BEED9 /* Tests/Native/Presentation/FloatingLyricsPresentationTests.swift build */,
+				434C4AB2DD9A75360A82B00D /* Tests/Native/Presentation/MenuBarPresentationTests.swift build */,
+				C294E2E2ACFCE84F78B03DB6 /* Tests/Native/Presentation/PresentationSourceContractTests.swift build */,
+				BA6769AFB81C416762513119 /* Tests/Native/Presentation/ScopedLyricsOffsetPresentationTests.swift build */,
+				E9768852755BB9C1C3035A2A /* Tests/v3_toolbar_model_contract.swift build */,
+				5BC27E38C05B32C2FD500810 /* Tests/Native/Search/ProviderFailureContractTests.swift build */,
+				11FD5C6C6F1C6F7C433FD1FB /* Tests/Native/Search/SearchModelsContractTests.swift build */,
+				15BDD729C06E6D39D722443A /* Tests/Native/Search/SongSearchContractTests.swift build */,
+			);
+		};
+		FDF71256A3B90FD5385055BC /* Native Test Frameworks */ = {
+			isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;
+		};
+		9D788FA4C08E1822AC9D6F45 /* Native App Proxy */ = {
+			isa = PBXContainerItemProxy; containerPortal = 110000002D83400000000006; proxyType = 1; remoteGlobalIDString = 110000002D83400000000004; remoteInfo = SpotifyLyrics;
+		};
+		8D723C093009452F7C273FEB /* Native App Dependency */ = {
+			isa = PBXTargetDependency; target = 110000002D83400000000004; targetProxy = 9D788FA4C08E1822AC9D6F45 /* Native App Proxy */;
+		};
+		D7A57711AB94B18AB01EA9DA /* Native Tests Debug */ = {
+			isa = XCBuildConfiguration; name = Debug; buildSettings = {
+                BUNDLE_LOADER = "$(TEST_HOST)";
+                CODE_SIGNING_ALLOWED = NO;
+                GENERATE_INFOPLIST_FILE = YES;
+                MACOSX_DEPLOYMENT_TARGET = 14.0;
+                PRODUCT_BUNDLE_IDENTIFIER = com.spotifylyrics.native-tests;
+                PRODUCT_NAME = "$(TARGET_NAME)";
+                SDKROOT = macosx;
+                SWIFT_VERSION = 5.0;
+                TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics";
+			};
+		};
+		DFA2095CBF11A50094079B45 /* Native Tests Release */ = {
+			isa = XCBuildConfiguration; name = Release; buildSettings = {
+                BUNDLE_LOADER = "$(TEST_HOST)";
+                CODE_SIGNING_ALLOWED = NO;
+                GENERATE_INFOPLIST_FILE = YES;
+                MACOSX_DEPLOYMENT_TARGET = 14.0;
+                PRODUCT_BUNDLE_IDENTIFIER = com.spotifylyrics.native-tests;
+                PRODUCT_NAME = "$(TARGET_NAME)";
+                SDKROOT = macosx;
+                SWIFT_VERSION = 5.0;
+                TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics";
+			};
+		};
+		3EEB6B92D7BA835B658475A0 /* Native Tests Configs */ = {
+			isa = XCConfigurationList; buildConfigurations = (D7A57711AB94B18AB01EA9DA /* Native Tests Debug */, DFA2095CBF11A50094079B45 /* Native Tests Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug;
+		};
+		A62F93C45DC66CCC29D46F40 /* SpotifyLyricsTests */ = {
+            isa = PBXNativeTarget;
+            buildConfigurationList = 3EEB6B92D7BA835B658475A0 /* Native Tests Configs */;
+            buildPhases = (20F29C7351DC494205783402 /* Native Test Sources */, FDF71256A3B90FD5385055BC /* Native Test Frameworks */);
+            buildRules = ();
+            dependencies = (8D723C093009452F7C273FEB /* Native App Dependency */);
+            name = SpotifyLyricsTests;
+            productName = SpotifyLyricsTests;
+            productReference = 927262AE26F723BCA63985FB /* SpotifyLyricsTests.xctest */;
+            productType = "com.apple.product-type.bundle.unit-test";
+		};
+		1208877320643DA34F48E805 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Presentation/ScopedLyricsOffsetRepositoryTests.swift"; sourceTree = SOURCE_ROOT; };
+		45807C00F498AF9166DC55F3 = {isa = PBXBuildFile; fileRef = 1208877320643DA34F48E805; };
+		21E03D3ADC3FD2C8C04D43AF = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Search/SearchSourceContractTests.swift"; sourceTree = SOURCE_ROOT; };
+		E2EC754DE7CFDC3D4A1DEA28 = {isa = PBXBuildFile; fileRef = 21E03D3ADC3FD2C8C04D43AF; };
 	};
 	rootObject = 110000002D83400000000006 /* Project object */;
 }
