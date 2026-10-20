@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// The lyric bar, gestures and keyboard all change the existing listening preferences.
 @MainActor
@@ -13,7 +14,7 @@ struct V3LyricActions {
     func fontSize(_ delta: CGFloat) -> String {
         var display = settings.displayPreferences
         display.fontSize = min(42, max(14, display.fontSize + delta))
-        settings.displayPreferences = display
+        if display != settings.displayPreferences { settings.displayPreferences = display }
         return "字号 \(Int(display.fontSize))"
     }
 
@@ -96,5 +97,80 @@ struct V3LyricBar: View {
             Text(title).foregroundStyle(settings.displayPreferences[keyPath: keyPath] ? Color.accentColor : .white.opacity(0.45))
         }
         .help("显示或隐藏" + name)
+    }
+}
+
+struct V3LyricShortcuts: View {
+    let settings: AppSettingsStore
+    let notice: (String?) -> Void
+    private var actions: V3LyricActions { V3LyricActions(settings: settings) }
+
+    var body: some View {
+        Group {
+            Button("放大字号") { notice(actions.fontSize(2)) }.keyboardShortcut("+", modifiers: .command)
+            Button("放大字号") { notice(actions.fontSize(2)) }.keyboardShortcut("=", modifiers: .command)
+            Button("缩小字号") { notice(actions.fontSize(-2)) }.keyboardShortcut("-", modifiers: .command)
+            Button("上一场景") { notice(actions.scene(-1)) }.keyboardShortcut(.leftArrow, modifiers: .command)
+            Button("下一场景") { notice(actions.scene(1)) }.keyboardShortcut(.rightArrow, modifiers: .command)
+            Button("歌词提前") { notice(actions.offset(0.1)) }.keyboardShortcut(.leftArrow, modifiers: .option)
+            Button("歌词延后") { notice(actions.offset(-0.1)) }.keyboardShortcut(.rightArrow, modifiers: .option)
+        }
+        .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
+    }
+}
+
+/// One scene change per horizontal two-finger scroll gesture; vertical lyric scrolling stays intact.
+struct V3SceneSwipe {
+    private var distance: CGFloat = 0
+    private var switched = false
+
+    mutating func begin() { distance = 0; switched = false }
+    mutating func move(x: CGFloat, y: CGFloat) -> Int? {
+        guard !switched, abs(x) > abs(y) else { return nil }
+        distance += x
+        guard abs(distance) >= 60 else { return nil }
+        switched = true
+        return distance < 0 ? 1 : -1
+    }
+}
+
+struct V3CanvasSceneSwipe: NSViewRepresentable {
+    let enabled: Bool
+    let onSwipe: (Int) -> Void
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeNSView(context: Context) -> V3ToolAnchorView {
+        let view = V3ToolAnchorView()
+        context.coordinator.view = view
+        context.coordinator.start()
+        return view
+    }
+    func updateNSView(_ view: V3ToolAnchorView, context: Context) {
+        context.coordinator.enabled = enabled
+        context.coordinator.onSwipe = onSwipe
+    }
+    static func dismantleNSView(_ view: V3ToolAnchorView, coordinator: Coordinator) { coordinator.stop() }
+
+    final class Coordinator {
+        weak var view: NSView?
+        var enabled = true
+        var onSwipe: ((Int) -> Void)?
+        var swipe = V3SceneSwipe()
+        var monitor: Any?
+        func start() {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                guard let self, let view = self.view, self.enabled,
+                      event.window === view.window, view.window != nil,
+                      view.bounds.contains(view.convert(event.locationInWindow, from: nil)),
+                      event.hasPreciseScrollingDeltas, event.momentumPhase.isEmpty else { return event }
+                if event.phase.contains(.began) { self.swipe.begin() }
+                if event.phase.contains(.ended) || event.phase.contains(.cancelled) { self.swipe.begin(); return event }
+                if let direction = self.swipe.move(x: event.scrollingDeltaX, y: event.scrollingDeltaY) {
+                    self.onSwipe?(direction)
+                    return nil
+                }
+                return event
+            }
+        }
+        func stop() { if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil }
     }
 }

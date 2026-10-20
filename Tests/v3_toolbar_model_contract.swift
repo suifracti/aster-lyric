@@ -19,11 +19,25 @@ final class V3ToolbarPresentationTests: XCTestCase {
         XCTAssertEqual(settings.displayPreferences.fontSize, 42)
         _ = actions.fontSize(-100)
         XCTAssertEqual(settings.displayPreferences.fontSize, 14)
+        settings.lyricsOffsetStore.activate(LyricsOffsetScope(canonicalTrackStableKey: "bar-fixture", lyricsVersionID: UUID()))
+        XCTAssertEqual(actions.offset(0.1), "偏移 +0.1s")
+        XCTAssertEqual(actions.offset(-0.1), "偏移 +0.0s")
+        XCTAssertEqual(actions.offset(nil), "偏移 +0.0s")
         let original = actions.family
         _ = actions.scene(1)
         XCTAssertNotEqual(actions.family, original)
         _ = actions.scene(-1)
         XCTAssertEqual(actions.family, original)
+    }
+
+    func testHorizontalSceneGestureLeavesVerticalScrollAlone() {
+        var swipe = V3SceneSwipe()
+        XCTAssertNil(swipe.move(x: 0, y: 80))
+        XCTAssertNil(swipe.move(x: -25, y: 0))
+        XCTAssertEqual(swipe.move(x: -40, y: 0), 1)
+        XCTAssertNil(swipe.move(x: -80, y: 0))
+        swipe.begin()
+        XCTAssertEqual(swipe.move(x: 65, y: 0), -1)
     }
 
     func testHoverLifetimeAndMenus() {

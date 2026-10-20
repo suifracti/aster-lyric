@@ -168,6 +168,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var confirmsAIReadingRequest = false
     @State private var isTranslationComparisonPresented = false
     @State private var isVersionPickerPresented = false
+    @State private var pinchStartFontSize: CGFloat?
     @State private var lyricColumnHovered = false
     @State private var lyricNotice: String?
     @State private var lyricNoticeTask: Task<Void, Never>?
@@ -451,6 +452,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 withAnimation(LyricsDesignTokens.Motion.animation(reduceMotion: reduceMotion)) {
                     toolsVisible = false
                 }
+            }
+            .background {
+                V3CanvasSceneSwipe(enabled: !toolbarPanelIsPresented) { direction in
+                    showLyricNotice(V3LyricActions(settings: settings).scene(direction))
+                }
+                V3LyricShortcuts(settings: settings, notice: showLyricNotice)
             }
             .overlayPreferenceValue(V3PlaybackRegionAnchorPreferenceKey.self) { anchor in
                 GeometryReader { proxy in
@@ -1328,6 +1335,15 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .environmentObject(settings)
         .environment(\.v3PreviewPresentation, hoveredStyle)
         .environment(\.lyricIslandScene, compositionScene)
+        .simultaneousGesture(MagnifyGesture()
+            .onChanged { value in
+                if pinchStartFontSize == nil { pinchStartFontSize = settings.displayPreferences.fontSize }
+                let size = min(42, max(14, ((pinchStartFontSize! * value.magnification) / 2).rounded() * 2))
+                if size != settings.displayPreferences.fontSize {
+                    showLyricNotice(V3LyricActions(settings: settings).fontSize(size - settings.displayPreferences.fontSize))
+                }
+            }
+            .onEnded { _ in pinchStartFontSize = nil })
         .v3ReadingGlow(artworkURL: compositionTrack.artworkURL, policy: settings.v3ReadingProtection)
         .environment(\.lyricTextAlignment, compositionLyricsPosition == "center" ? .center : compositionLyricsPosition == "right" ? .trailing : .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
