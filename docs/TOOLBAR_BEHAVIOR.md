@@ -66,9 +66,11 @@ Every action here also has a button in the lyric bar, so nobody needs to learn t
 | 搜索 | A search field prefilled with the current song. Local results show at once; online results are added when they arrive. Top 5, plus 「全部结果」, which opens the full search. |
 | 译文 | 翻译 / 读音. **AI model picker** (one row). The saved-translation version picker. 「翻译整首」 and 「重新翻译」. 新歌词自动翻译. 并排对比. |
 | 文字 | **显示: 原文 / 译文 / 读音.** **原文与译文 size.** **对齐.** 清晰度 (关闭 / 文字阴影 / 柔和光晕, default 关闭). 罗马音 / 拼音. 注音排版. 读音与辅助字 size. 假名 size. The ⓘ sits on the same line as its label. |
-| 画面 | The 4 categories from `V3SceneFamily`. Below them, the selected category's style list, including 经典版. 背景封面模糊. 显示歌曲缩略图. |
+| 画面 | The 4 categories from `V3SceneFamily`. Below them, the selected category's style list, including 经典版. 背景封面模糊. 显示歌曲缩略图 / 前景封面. **播放呈现 (标准播放栏 / 窗口边缘).** **背景动态 (关闭 / 轻柔 / 鲜明).** A collapsed 「更多画面选项」 holding the rest of the picture controls (取景方式, 前景封面尺寸与位置, 背景缩放, 悬停时显示播放信息). |
 | 更多 | Window modes (桌面歌词, 顶部胶囊, 菜单栏歌词, 全屏). 桌面歌词交互. 恢复歌词时间. |
 | 设置 | No panel; it opens settings. |
+
+**Nothing is removed.** Every control that was in a toolbar panel before 2026-10-20 stays reachable from its panel, folding into a collapsed section where needed. The settings window may show them as well.
 
 **Moved to the settings window:** 翻译服务 login and connection details (the model picker stays in 译文), 悬停预览, 恢复此风格的默认值, and every explanatory paragraph.
 
