@@ -309,7 +309,7 @@ private struct SettingsDetailView: View {
                 .padding(28)
 
             case .library:
-                PersonalLyricsLibraryView()
+                PersonalLyricsLibraryView(embeddedInSettings: true)
             case .history:
                 TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
                     ListeningHistoryView()

@@ -6,6 +6,7 @@ public struct PersonalLyricsLibraryView: View {
     @State private var selectedStableKey: String?
     @State private var libraryFilter: LibraryFilter = .all
     @State private var showSyncFolder = false
+    private let embeddedInSettings: Bool
 
     private enum LibraryFilter: String, CaseIterable, Identifiable {
         case all = "全部", translations = "有译文", manual = "人工歌词 / 译文", locked = "锁定歌词 / 译文"
@@ -33,60 +34,57 @@ public struct PersonalLyricsLibraryView: View {
         }
     }
 
-    public init() {}
+    public init() {
+        embeddedInSettings = false
+    }
+
+    init(embeddedInSettings: Bool) {
+        self.embeddedInSettings = embeddedInSettings
+    }
 
     public var body: some View {
-        NavigationSplitView {
-            sidebarContent
-                .navigationTitle("我的歌词库")
-                .toolbar {
-                    ToolbarItemGroup(placement: .primaryAction) {
-                        Button {
-                            service.exportPersonalData()
-                        } label: {
-                            Label("导出个人数据", systemImage: "archivebox")
-                        }
-                        .help("导出全部个人歌词资产")
-
-                        Button {
-                            service.presentPersonalDataImportDialog()
-                        } label: {
-                            Label("导入个人数据", systemImage: "shippingbox")
-                        }
-                        .help("导入标准个人数据包并先查看冲突")
-
-                        Button {
-                            service.presentImportDialog()
-                        } label: {
-                            Label("导入资产包", systemImage: "square.and.arrow.down")
-                        }
-                        .help("导入 .lyricisland.json 歌词资产包")
-
-                        Button {
-                            service.refresh()
-                        } label: {
-                            Label("刷新", systemImage: "arrow.clockwise")
-                        }
-                        .help("刷新歌词库")
-                    }
-                }
-        } detail: {
-            if let stableKey = selectedStableKey {
-                PersonalLibraryTrackDetailView(service: service, stableKey: stableKey)
+        Group {
+            if embeddedInSettings {
+                embeddedSettingsBody
             } else {
-                VStack(spacing: 12) {
-                    RecordShelfMark()
-                        .frame(width: 48, height: 30)
-                        .foregroundStyle(.tertiary)
-                    Text("选择一张唱片")
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                    Text("从左侧记录架打开歌曲档案，查看、切换或编辑保存的版本。")
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
+                NavigationSplitView {
+                    sidebarContent
+                        .frame(minWidth: 280)
+                        .navigationTitle("我的歌词库")
+                        .toolbar {
+                            ToolbarItemGroup(placement: .primaryAction) {
+                                Button {
+                                    service.exportPersonalData()
+                                } label: {
+                                    Label("导出个人数据", systemImage: "archivebox")
+                                }
+                                .help("导出全部个人歌词资产")
+
+                                Button {
+                                    service.presentPersonalDataImportDialog()
+                                } label: {
+                                    Label("导入个人数据", systemImage: "shippingbox")
+                                }
+                                .help("导入标准个人数据包并先查看冲突")
+
+                                Button {
+                                    service.presentImportDialog()
+                                } label: {
+                                    Label("导入资产包", systemImage: "square.and.arrow.down")
+                                }
+                                .help("导入 .lyricisland.json 歌词资产包")
+
+                                Button {
+                                    service.refresh()
+                                } label: {
+                                    Label("刷新", systemImage: "arrow.clockwise")
+                                }
+                                .help("刷新歌词库")
+                            }
+                        }
+                } detail: {
+                    detailContent
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .sheet(item: $service.revisionDraft) { draft in
@@ -121,6 +119,84 @@ public struct PersonalLyricsLibraryView: View {
         }
         .onAppear {
             service.refresh()
+        }
+    }
+
+    private var embeddedSettingsBody: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("我的歌词库")
+                    .font(.system(size: 24, weight: .bold))
+                Text("已保存的歌词与译文，可搜索、筛选、切换和编辑版本。")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    service.exportPersonalData()
+                } label: {
+                    Label("导出", systemImage: "archivebox")
+                }
+                .help("导出全部个人歌词资产")
+
+                Button {
+                    service.presentPersonalDataImportDialog()
+                } label: {
+                    Label("导入数据", systemImage: "shippingbox")
+                }
+                .help("导入标准个人数据包并先查看冲突")
+
+                Button {
+                    service.presentImportDialog()
+                } label: {
+                    Label("导入资产", systemImage: "square.and.arrow.down")
+                }
+                .help("导入 .lyricisland.json 歌词资产包")
+
+                Button {
+                    service.refresh()
+                } label: {
+                    Label("刷新", systemImage: "arrow.clockwise")
+                }
+                .help("刷新歌词库")
+            }
+
+            Divider()
+
+            HStack(spacing: 0) {
+                sidebarContent
+                    .frame(minWidth: 220, idealWidth: 270, maxWidth: 300)
+                    .frame(maxHeight: .infinity)
+                Divider()
+                detailContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .padding(16)
+        .frame(minWidth: 680, maxWidth: .infinity, minHeight: 460, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private var detailContent: some View {
+        if let stableKey = selectedStableKey {
+            PersonalLibraryTrackDetailView(service: service, stableKey: stableKey)
+        } else {
+            VStack(spacing: 12) {
+                RecordShelfMark()
+                    .frame(width: 48, height: 30)
+                    .foregroundStyle(.tertiary)
+                Text("选择一张唱片")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                Text("从左侧记录架打开歌曲档案，查看、切换或编辑保存的版本。")
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -229,7 +305,6 @@ public struct PersonalLyricsLibraryView: View {
                 .listStyle(.sidebar)
             }
         }
-        .frame(minWidth: 280)
     }
 
     private var syncFolderSection: some View {
