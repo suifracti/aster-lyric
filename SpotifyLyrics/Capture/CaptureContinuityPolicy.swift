@@ -10,6 +10,13 @@ public enum CaptureContinuityPolicy: Sendable {
     /// Small position jitter from Desktop polling is ignored below this.
     public static let positionJitterTolerance: TimeInterval = 0.40
 
+    static func isSeek(previousPosition: TimeInterval, position: TimeInterval,
+                       elapsed: TimeInterval, wasPlaying: Bool) -> Bool {
+        let expected = wasPlaying ? previousPosition + max(0, elapsed) : previousPosition
+        let jump = abs(position - previousPosition)
+        return abs(position - expected) > seekJumpThreshold && jump > positionJitterTolerance
+    }
+
     /// Host-time gap without any audio buffer before we end the open segment
     /// for `audioGap` (while still capturing overall).
     public static let audioGapTimeout: TimeInterval = 1.75

@@ -220,6 +220,7 @@
 		A7100701ABCDEF0100000001 /* TranslationModelSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7100701ABCDEF0100000002 /* TranslationModelSettingsStore.swift */; };
 		A7100702ABCDEF0100000001 /* TranslationCLISetupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7100702ABCDEF0100000002 /* TranslationCLISetupStore.swift */; };
 		2D67EB8DBEDEFAC5F793BEC8 /* V3ToolbarModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 635A0DC5B309902907F732BB /* V3ToolbarModel.swift */; };
+		9325E1D1CCBCA0FCE0FDF9CC /* DesktopPlaybackEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8951C4FD56903AA1BB468F4 /* DesktopPlaybackEvents.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -442,6 +443,7 @@
 		A7100701ABCDEF0100000002 /* TranslationModelSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslationModelSettingsStore.swift; sourceTree = "<group>"; };
 		A7100702ABCDEF0100000002 /* TranslationCLISetupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslationCLISetupStore.swift; sourceTree = "<group>"; };
 		635A0DC5B309902907F732BB /* V3ToolbarModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3ToolbarModel.swift; sourceTree = "<group>"; };
+		E8951C4FD56903AA1BB468F4 /* DesktopPlaybackEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopPlaybackEvents.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -457,6 +459,9 @@
 		110000002D83400000000002 /* SpotifyLyrics */ = {
 			isa = PBXGroup;
 			children = (
+				AF8DB5959F9D7D8A47B31CCA,
+				499C20D4FBE3ABCBD6463F24,
+				25433F0F9D36521FA274514D,
 				21E03D3ADC3FD2C8C04D43AF,
 				1208877320643DA34F48E805,
 				927262AE26F723BCA63985FB /* SpotifyLyricsTests.xctest */,
@@ -664,6 +669,7 @@
 				1100000E2D83400100000000 /* SpotifyDesktopProvider.swift */,
 				A60F09060000000000000400 /* AppleMusicDesktopProvider.swift */,
 				A60F09060000000000000500 /* ActivePlaybackProvider.swift */,
+				E8951C4FD56903AA1BB468F4 /* DesktopPlaybackEvents.swift */,
 				1100000F2D83400100000000 /* MockPlaybackProvider.swift */,
 				110000102D83400100000000 /* ArtworkImageLoader.swift */,
 				110000432D83400100000000 /* NetEaseExperimentalLyricsProvider.swift */,
@@ -921,6 +927,7 @@
 				1100000E2D83400100000001 /* SpotifyDesktopProvider.swift in Sources */,
 				A60F09060000000000000401 /* AppleMusicDesktopProvider.swift in Sources */,
 				A60F09060000000000000501 /* ActivePlaybackProvider.swift in Sources */,
+				9325E1D1CCBCA0FCE0FDF9CC /* DesktopPlaybackEvents.swift in Sources */,
 				1100000F2D83400100000001 /* MockPlaybackProvider.swift in Sources */,
 				110000102D83400100000001 /* ArtworkImageLoader.swift in Sources */,
 				110000122D83400100000001 /* TrackIdentity.swift in Sources */,
@@ -1338,6 +1345,9 @@
 		};
 		20F29C7351DC494205783402 /* Native Test Sources */ = {
 			isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; runOnlyForDeploymentPostprocessing = 0; files = (
+				77BDB79A9B6514A974EE96DE,
+				FB2698985591B3233543ABBE,
+				4C1F344CD55BFF827877A3F2,
 				E2EC754DE7CFDC3D4A1DEA28,
 				45807C00F498AF9166DC55F3,
 				9E0B6FDF20BC8FBFE7E02E74 /* Tests/Native/Persistence/LibraryIdentitySearchContractTests.swift build */,
@@ -1409,6 +1419,12 @@
 		45807C00F498AF9166DC55F3 = {isa = PBXBuildFile; fileRef = 1208877320643DA34F48E805; };
 		21E03D3ADC3FD2C8C04D43AF = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Search/SearchSourceContractTests.swift"; sourceTree = SOURCE_ROOT; };
 		E2EC754DE7CFDC3D4A1DEA28 = {isa = PBXBuildFile; fileRef = 21E03D3ADC3FD2C8C04D43AF; };
+		25433F0F9D36521FA274514D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Playback/PlaybackResourceProbeTests.swift"; sourceTree = SOURCE_ROOT; };
+		4C1F344CD55BFF827877A3F2 = {isa = PBXBuildFile; fileRef = 25433F0F9D36521FA274514D; };
+		499C20D4FBE3ABCBD6463F24 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Playback/DesktopPlaybackEventTests.swift"; sourceTree = SOURCE_ROOT; };
+		FB2698985591B3233543ABBE = {isa = PBXBuildFile; fileRef = 499C20D4FBE3ABCBD6463F24; };
+		AF8DB5959F9D7D8A47B31CCA = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Playback/ProviderPositionCalibrationTests.swift"; sourceTree = SOURCE_ROOT; };
+		77BDB79A9B6514A974EE96DE = {isa = PBXBuildFile; fileRef = AF8DB5959F9D7D8A47B31CCA; };
 	};
 	rootObject = 110000002D83400000000006 /* Project object */;
 }

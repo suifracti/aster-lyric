@@ -1,0 +1,9 @@
+Test Case '-[SpotifyLyricsTests.DesktopPlaybackEventTests testAutoModeBootstrapsWhenSpotifyOnlyLaunchConnectionIsDisabled]' started.
+Test Case '-[SpotifyLyricsTests.DesktopPlaybackEventTests testAutoModeBootstrapsWhenSpotifyOnlyLaunchConnectionIsDisabled]' passed (0.011 seconds).
+Test Case '-[SpotifyLyricsTests.DesktopPlaybackEventTests testDistributedTransportDeliversAnIsolatedPrivateNotification]' started.
+Test Case '-[SpotifyLyricsTests.DesktopPlaybackEventTests testDistributedTransportDeliversAnIsolatedPrivateNotification]' passed (0.001 seconds).
+Test Case '-[SpotifyLyricsTests.DesktopPlaybackEventTests testSparseCaptureSamplesDoNotTurnNormalProgressIntoASeek]' started.
+Test Case '-[SpotifyLyricsTests.DesktopPlaybackEventTests testSparseCaptureSamplesDoNotTurnNormalProgressIntoASeek]' passed (0.002 seconds).
+	 Executed 58 tests, with 1 test skipped and 0 failures (0 unexpected) in 11.869 (11.899) seconds
+	 Executed 58 tests, with 1 test skipped and 0 failures (0 unexpected) in 11.869 (11.900) seconds
+** TEST SUCCEEDED **

@@ -8,6 +8,18 @@ import AppKit
 public final class WindowManager: ObservableObject {
     public static let shared = WindowManager()
 
+    /// Actual exposure, rather than a command toggle or app activation.
+    var hasExposedLyricsWindow: Bool {
+        guard !NSApp.isHidden else { return false }
+        let windows = [WindowStatePersistence.shared.attachedMainWindow,
+                       floatingController?.playbackWindow, capsuleController?.playbackWindow,
+                       fullScreenController?.window]
+        return windows.contains { window in
+            guard let window else { return false }
+            return window.isVisible && !window.isMiniaturized && window.occlusionState.contains(.visible)
+        } || MenuBarLyricsController.shared.isLyricsPopoverShown
+    }
+
     private struct FullScreenAuxiliaryVisibilitySnapshot {
         let floatingWasVisible: Bool
         let capsuleWasVisible: Bool

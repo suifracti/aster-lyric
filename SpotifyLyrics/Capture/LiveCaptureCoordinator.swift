@@ -81,7 +81,7 @@ public final class LiveCaptureCoordinator: ObservableObject {
 
     private init() {
 #if DEBUG
-        if DebugAcceptanceDataIsolation.isRequested { return }
+        if NativeTestRuntime.isEnabled || DebugAcceptanceDataIsolation.isRequested { return }
 #endif
         LiveCaptureCoordinator.scavengeOrphanTemp()
         #if DEBUG
@@ -313,7 +313,7 @@ public final class LiveCaptureCoordinator: ObservableObject {
         cancellables.removeAll()
 
         invalidateSampleDelivery()
-        endOpenSegment(reason: boundary(from: reason), position: playback?.currentTime)
+        endOpenSegment(reason: boundary(from: reason), position: playback?.playbackPositionNow)
         if var session = activeSession {
             session.terminalReason = reason
             finalizeSession(session, reason: reason)
@@ -435,13 +435,14 @@ public final class LiveCaptureCoordinator: ObservableObject {
             return
         }
 
-        lastPosition = playback.currentTime
+        lastPosition = playback.playbackPositionNow
         lastHostTime = Date().timeIntervalSince1970
         lastIsPlaying = playback.isPlaying
         lastIdentityKey = playback.liveTrackIdentity?.stableKey
         lastPlaybackSource = playback.playbackSourceIdentity
 
-        // Reuse PlaybackState's existing timer-driven publishers.
+        // Observe discontinuities and calibration; sparse hidden-window samples
+        // are compared against elapsed host time rather than raw position jumps.
         playback.$currentTime
             .receive(on: DispatchQueue.main)
             .sink { [weak self] position in
@@ -474,7 +475,7 @@ public final class LiveCaptureCoordinator: ObservableObject {
     private func onPlayingChanged(_ playing: Bool) {
         guard state == .running else { return }
         let host = Date().timeIntervalSince1970
-        let position = playback?.currentTime ?? lastPosition
+        let position = playback?.playbackPositionNow ?? lastPosition
         if lastIsPlaying && !playing {
             endOpenSegment(reason: .pause, position: position)
             SCKSpikeLog.log("S2 PLAYBACK paused position=\(fmt(position))")
@@ -507,17 +508,14 @@ public final class LiveCaptureCoordinator: ObservableObject {
         let deltaFromExpected = position - expected
         let absJump = abs(position - lastPosition)
 
-        // Primary: raw Spotify position jump (provider refresh after seek).
-        // Secondary: deviation from host-clock expected progress (catches
-        // jumps that land near a "plausible" interpolated value).
-        let looksLikeSeek = absJump > CaptureContinuityPolicy.seekJumpThreshold
-            || (lastIsPlaying
-                && abs(deltaFromExpected) > CaptureContinuityPolicy.seekJumpThreshold
-                && absJump > CaptureContinuityPolicy.positionJitterTolerance)
+        // Compare against expected progress: a ten-second calibration interval
+        // is not itself a ten-second seek when lyric windows are hidden.
+        let looksLikeSeek = CaptureContinuityPolicy.isSeek(previousPosition: lastPosition,
+            position: position, elapsed: dtHost, wasPlaying: lastIsPlaying)
 
         if looksLikeSeek, openSegment != nil || lastIsPlaying {
-            let reason: SegmentBoundaryReason = position >= lastPosition ? .seekForward : .seekBackward
-            endOpenSegment(reason: reason, position: lastPosition)
+            let reason: SegmentBoundaryReason = position >= expected ? .seekForward : .seekBackward
+            endOpenSegment(reason: reason, position: openSegment?.spotifyPositionEnd ?? expected)
             if playback?.isPlaying == true {
                 beginSegment(reason: reason, position: position, host: host)
             }
@@ -625,7 +623,7 @@ public final class LiveCaptureCoordinator: ObservableObject {
         )
         // Start a segment only when currently playing; pause waits for resume.
         let host = Date().timeIntervalSince1970
-        let position = playback?.currentTime ?? 0
+        let position = playback?.playbackPositionNow ?? 0
         lastPosition = position
         lastHostTime = host
         lastIsPlaying = playback?.isPlaying ?? false
@@ -919,7 +917,7 @@ public final class LiveCaptureCoordinator: ObservableObject {
         }
 
         if openSegment == nil, playback?.isPlaying == true {
-            beginSegment(reason: .resume, position: playback?.currentTime ?? lastPosition, host: host)
+            beginSegment(reason: .resume, position: playback?.playbackPositionNow ?? lastPosition, host: host)
         }
         guard var segment = openSegment else { return }
 
@@ -940,7 +938,7 @@ public final class LiveCaptureCoordinator: ObservableObject {
             segment.sampleCount += frames
             segment.bufferCount += 1
         }
-        segment.spotifyPositionEnd = playback?.currentTime ?? segment.spotifyPositionEnd
+        segment.spotifyPositionEnd = playback?.playbackPositionNow ?? segment.spotifyPositionEnd
         openSegment = segment
     }
 
@@ -955,7 +953,7 @@ public final class LiveCaptureCoordinator: ObservableObject {
         }
         // Only gap-close while we believe playback is still running; pause already closed.
         if playback?.isPlaying == true {
-            endOpenSegment(reason: .audioGap, position: playback?.currentTime)
+            endOpenSegment(reason: .audioGap, position: playback?.playbackPositionNow)
             SCKSpikeLog.log("S2 AUDIO_GAP closed segment gap=\(fmt(gap))")
         }
     }
@@ -1040,6 +1038,9 @@ public final class LiveCaptureCoordinator: ObservableObject {
     }
 
     static func scavengeOrphanTemp() {
+#if DEBUG
+        if NativeTestRuntime.isEnabled { return }
+#endif
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(CaptureContinuityPolicy.temporaryRootName, isDirectory: true)
         guard let children = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else {

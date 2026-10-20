@@ -99,6 +99,30 @@ public final class ActivePlaybackProvider: PlaybackProvider {
         try await activeProvider.play()
     }
 
+    func acceptDesktopSnapshot(_ snapshot: PlaybackSnapshot) {
+        switch snapshot.sourceIdentity {
+        case .spotifyDesktop:
+            spotifyProvider.acceptDesktopSnapshot(snapshot)
+            activeProvider = spotifyProvider
+        case .appleMusic:
+            appleMusicProvider.acceptDesktopSnapshot(snapshot)
+            activeProvider = appleMusicProvider
+        default: break
+        }
+    }
+
+    public func calibratePosition() async -> PlaybackSnapshot {
+        await activeProvider.calibratePosition()
+    }
+
+    public func artworkURL(for track: ProviderTrack, source: PlaybackSourceIdentity) async -> URL? {
+        switch source {
+        case .spotifyDesktop: return await spotifyProvider.artworkURL(for: track, source: source)
+        case .appleMusic: return await appleMusicProvider.artworkURL(for: track, source: source)
+        default: return nil
+        }
+    }
+
     public func pause() async throws {
         try await activeProvider.pause()
     }

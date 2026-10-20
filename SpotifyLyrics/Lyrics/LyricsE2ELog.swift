@@ -4,6 +4,9 @@ import Foundation
 enum LyricsE2ELog {
     private static var path: String {
 #if DEBUG
+        if NativeTestRuntime.isEnabled {
+            return NativeTestRuntime.root.appendingPathComponent("e2e.log").path
+        }
         if DebugAcceptanceDataIsolation.isRequested {
             return DebugAcceptanceDataIsolation.configuration.root.appendingPathComponent("logs/e2e.log").path
         }

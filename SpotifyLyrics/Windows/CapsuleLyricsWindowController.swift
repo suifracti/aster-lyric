@@ -50,6 +50,7 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
 
     private let persistence = CapsuleLyricsWindowPersistence.shared
     private var panel: CapsuleLyricsPanel?
+    var playbackWindow: NSWindow? { panel }
     private weak var playbackState: PlaybackState?
     private var settings: AppSettingsStore?
     private var selectionObserver: AnyCancellable?

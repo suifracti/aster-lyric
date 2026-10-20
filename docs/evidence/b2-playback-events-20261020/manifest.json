@@ -1,0 +1,40 @@
+{
+  "base_sha": "03fe11be2c501c4a0b1f5d72d074d8bbf55f3553",
+  "before_backend_sha": "09272b458966202c7b9db4b74f35ebd4a17f2bee",
+  "after_source": "B2 changes in the commit containing this manifest",
+  "configuration": "Debug -Onone; arm64; CODE_SIGNING_ALLOWED=NO",
+  "xcode": "Xcode 26.6\nBuild version 17F113",
+  "macos": "27.0.1",
+  "measurement": "getrusage user+system CPU delta / monotonic wall time; mach_task_basic_info RSS; 2s warmup then 31 samples spanning 30s",
+  "fixture": "same cached 240s track, 64 timed lines, starts at 24s, same native test host and resource probe, no SwiftUI windows; deterministic provider, no player commands or network lyrics",
+  "boundaries": "native backend probe only; not the daily App 0.1 percent CPU / 130-150MB baseline; not WindowServer or FPS; no real ScreenCaptureKit recording",
+  "executables": {
+    "before": {
+      "sha256": "5b17d36fdf24d787684af80039854b05e3d0a38dda17619f4536a0af1ad1fd68",
+      "path": "/tmp/lyricsq-b2-before-matched-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics",
+      "sampled_utc": "2026-10-20T10:55:44.825438+00:00"
+    },
+    "after": {
+      "sha256": "d239f4503009db0712a6bde56a7ec1b2f7c41ff821d86befd3f652d7cec4182f",
+      "path": "/tmp/lyricsq-b2-after-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics",
+      "sampled_utc": "2026-10-20T10:56:19.115856+00:00"
+    }
+  },
+  "files": {
+    "before.json": "0453097cb20ab2dd82be33f9f1fc5bb807532f2a79cb4415d7178a5646bae90f",
+    "after.json": "757be6dcf9d9fdd056bcb7042cd450133d15dac6fa75d5c0e62699e1a733a7e9"
+  },
+  "shared_test_host_adjustments": [
+    "identical PlaybackResourceProbeTests.swift and target membership",
+    "native test mode disables automatic alignment/capture and capture-temp scavenging",
+    "native capture and E2E logs use the isolated test root"
+  ],
+  "candidate_source_hashes": {
+    "SpotifyLyrics/Services/PlaybackState.swift": "a78b461abd533e139925f41ffeed29f7b43dc634f3f17d47e524c3ea9e9205ca",
+    "SpotifyLyrics/Providers/DesktopPlaybackEvents.swift": "d2449342cc56f951de0957d660ec420d4e1e058f4d3385388d86eb7989d813df",
+    "SpotifyLyrics/Providers/SpotifyDesktopProvider.swift": "92f843dcbb105f5a0de276d9204e9ce2c6035a4e08552d3853225b372f1e27cb",
+    "SpotifyLyrics/Providers/AppleMusicDesktopProvider.swift": "7d8da367c55049fbc5859f3dbdb7f4f2ebba6a9599ebc5ada5525d314d796da8",
+    "SpotifyLyrics/Capture/LiveCaptureCoordinator.swift": "144e81085b0b952fc5cace7a68bcdd78cddd2f0051c9d86efd46cffaf4370188",
+    "Tests/Native/Playback/PlaybackResourceProbeTests.swift": "1c85a0100856dcd47642cb2849e4ddb29293e4dcad61629c858f69e47389cf8f"
+  }
+}

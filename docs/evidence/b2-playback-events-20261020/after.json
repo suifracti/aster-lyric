@@ -1,0 +1,296 @@
+{
+  "averageCPUPercent" : 0.9851568052683053,
+  "cacheHit" : true,
+  "cachedLyricsLineCount" : 64,
+  "endResidentBytes" : 63193088,
+  "lyricsProviderCalls" : 0,
+  "measurementSeconds" : 30.00325579167111,
+  "peakResidentBytes" : 69320704,
+  "playerCommandCount" : 0,
+  "refreshCount" : 4,
+  "refreshCountDuringMeasurement" : 3,
+  "samples" : [
+    {
+      "elapsedSeconds" : 0,
+      "residentBytes" : 69287936,
+      "systemCPUSeconds" : 0.059243,
+      "userCPUSeconds" : 0.149441
+    },
+    {
+      "cpuPercent" : 0.8954944997552998,
+      "elapsedSeconds" : 1.004807958335732,
+      "intervalCPUSeconds" : 0.008998000000000006,
+      "intervalWallSeconds" : 1.004807958335732,
+      "residentBytes" : 69320704,
+      "systemCPUSeconds" : 0.061992,
+      "userCPUSeconds" : 0.15569
+    },
+    {
+      "cpuPercent" : 1.15745171467667,
+      "elapsedSeconds" : 2.0039857083320385,
+      "intervalCPUSeconds" : 0.01156500000000002,
+      "intervalWallSeconds" : 0.9991777499963064,
+      "residentBytes" : 69320704,
+      "systemCPUSeconds" : 0.065463,
+      "userCPUSeconds" : 0.163784
+    },
+    {
+      "cpuPercent" : 0.9571803055111273,
+      "elapsedSeconds" : 3.004633125005057,
+      "intervalCPUSeconds" : 0.009578000000000003,
+      "intervalWallSeconds" : 1.0006474166730186,
+      "residentBytes" : 69124096,
+      "systemCPUSeconds" : 0.068511,
+      "userCPUSeconds" : 0.170314
+    },
+    {
+      "cpuPercent" : 0.9006131370681106,
+      "elapsedSeconds" : 4.003064041666221,
+      "intervalCPUSeconds" : 0.008992,
+      "intervalWallSeconds" : 0.9984309166611638,
+      "residentBytes" : 69091328,
+      "systemCPUSeconds" : 0.071223,
+      "userCPUSeconds" : 0.176594
+    },
+    {
+      "cpuPercent" : 0.9019432400517305,
+      "elapsedSeconds" : 5.005011791668949,
+      "intervalCPUSeconds" : 0.009037000000000017,
+      "intervalWallSeconds" : 1.0019477500027278,
+      "residentBytes" : 69091328,
+      "systemCPUSeconds" : 0.074015,
+      "userCPUSeconds" : 0.182839
+    },
+    {
+      "cpuPercent" : 1.1841394562067968,
+      "elapsedSeconds" : 6.0043028749933,
+      "intervalCPUSeconds" : 0.011832999999999982,
+      "intervalWallSeconds" : 0.9992910833243513,
+      "residentBytes" : 69091328,
+      "systemCPUSeconds" : 0.077647,
+      "userCPUSeconds" : 0.19104
+    },
+    {
+      "cpuPercent" : 1.0112991993869413,
+      "elapsedSeconds" : 7.004303666661144,
+      "intervalCPUSeconds" : 0.010112999999999983,
+      "intervalWallSeconds" : 1.0000007916678442,
+      "residentBytes" : 69091328,
+      "systemCPUSeconds" : 0.080781,
+      "userCPUSeconds" : 0.198019
+    },
+    {
+      "cpuPercent" : 1.2797065809198611,
+      "elapsedSeconds" : 8.00382966666075,
+      "intervalCPUSeconds" : 0.012790999999999997,
+      "intervalWallSeconds" : 0.9995259999996051,
+      "residentBytes" : 69222400,
+      "systemCPUSeconds" : 0.085475,
+      "userCPUSeconds" : 0.206116
+    },
+    {
+      "cpuPercent" : 1.1632501651560248,
+      "elapsedSeconds" : 9.003786541667068,
+      "intervalCPUSeconds" : 0.011632000000000031,
+      "intervalWallSeconds" : 0.999956875006319,
+      "residentBytes" : 69091328,
+      "systemCPUSeconds" : 0.089114,
+      "userCPUSeconds" : 0.214109
+    },
+    {
+      "cpuPercent" : 0.9140807683914658,
+      "elapsedSeconds" : 10.003260583340307,
+      "intervalCPUSeconds" : 0.009135999999999977,
+      "intervalWallSeconds" : 0.9994740416732384,
+      "residentBytes" : 69091328,
+      "systemCPUSeconds" : 0.092004,
+      "userCPUSeconds" : 0.220355
+    },
+    {
+      "cpuPercent" : 0.9410306774175302,
+      "elapsedSeconds" : 11.003334249995532,
+      "intervalCPUSeconds" : 0.009411000000000003,
+      "intervalWallSeconds" : 1.0000736666552257,
+      "residentBytes" : 69091328,
+      "systemCPUSeconds" : 0.094981,
+      "userCPUSeconds" : 0.226789
+    },
+    {
+      "cpuPercent" : 0.9218047332722311,
+      "elapsedSeconds" : 12.003003666672157,
+      "intervalCPUSeconds" : 0.009215000000000029,
+      "intervalWallSeconds" : 0.9996694166766247,
+      "residentBytes" : 69091328,
+      "systemCPUSeconds" : 0.097626,
+      "userCPUSeconds" : 0.233359
+    },
+    {
+      "cpuPercent" : 1.034195255593634,
+      "elapsedSeconds" : 13.004942125000525,
+      "intervalCPUSeconds" : 0.010361999999999982,
+      "intervalWallSeconds" : 1.0019384583283681,
+      "residentBytes" : 69091328,
+      "systemCPUSeconds" : 0.100669,
+      "userCPUSeconds" : 0.240678
+    },
+    {
+      "cpuPercent" : 0.8901110530666124,
+      "elapsedSeconds" : 14.003019833326107,
+      "intervalCPUSeconds" : 0.008883999999999947,
+      "intervalWallSeconds" : 0.9980777083255816,
+      "residentBytes" : 69091328,
+      "systemCPUSeconds" : 0.103434,
+      "userCPUSeconds" : 0.246797
+    },
+    {
+      "cpuPercent" : 0.6891768979361915,
+      "elapsedSeconds" : 15.003923958327505,
+      "intervalCPUSeconds" : 0.006898000000000015,
+      "intervalWallSeconds" : 1.000904125001398,
+      "residentBytes" : 69091328,
+      "systemCPUSeconds" : 0.105736,
+      "userCPUSeconds" : 0.251393
+    },
+    {
+      "cpuPercent" : 1.2161181707511028,
+      "elapsedSeconds" : 16.00284004166315,
+      "intervalCPUSeconds" : 0.012147999999999992,
+      "intervalWallSeconds" : 0.9989160833356436,
+      "residentBytes" : 69091328,
+      "systemCPUSeconds" : 0.109448,
+      "userCPUSeconds" : 0.259829
+    },
+    {
+      "cpuPercent" : 0.9135525810619827,
+      "elapsedSeconds" : 17.002125708328094,
+      "intervalCPUSeconds" : 0.009129000000000054,
+      "intervalWallSeconds" : 0.9992856666649459,
+      "residentBytes" : 69091328,
+      "systemCPUSeconds" : 0.112399,
+      "userCPUSeconds" : 0.266007
+    },
+    {
+      "cpuPercent" : 1.0369048848759848,
+      "elapsedSeconds" : 18.00279608333949,
+      "intervalCPUSeconds" : 0.010375999999999996,
+      "intervalWallSeconds" : 1.0006703750113957,
+      "residentBytes" : 68173824,
+      "systemCPUSeconds" : 0.115962,
+      "userCPUSeconds" : 0.27282
+    },
+    {
+      "cpuPercent" : 0.6286121759201471,
+      "elapsedSeconds" : 19.003094875006354,
+      "intervalCPUSeconds" : 0.006288000000000016,
+      "intervalWallSeconds" : 1.0002987916668644,
+      "residentBytes" : 63160320,
+      "systemCPUSeconds" : 0.118159,
+      "userCPUSeconds" : 0.276911
+    },
+    {
+      "cpuPercent" : 1.0131922222981316,
+      "elapsedSeconds" : 20.004780416667927,
+      "intervalCPUSeconds" : 0.010148999999999964,
+      "intervalWallSeconds" : 1.0016855416615726,
+      "residentBytes" : 63160320,
+      "systemCPUSeconds" : 0.121287,
+      "userCPUSeconds" : 0.283932
+    },
+    {
+      "cpuPercent" : 0.8879773074725006,
+      "elapsedSeconds" : 21.00052658333152,
+      "intervalCPUSeconds" : 0.008842000000000017,
+      "intervalWallSeconds" : 0.9957461666635936,
+      "residentBytes" : 63176704,
+      "systemCPUSeconds" : 0.123988,
+      "userCPUSeconds" : 0.290073
+    },
+    {
+      "cpuPercent" : 0.929075155272744,
+      "elapsedSeconds" : 22.003674708335893,
+      "intervalCPUSeconds" : 0.009319999999999995,
+      "intervalWallSeconds" : 1.0031481250043726,
+      "residentBytes" : 63176704,
+      "systemCPUSeconds" : 0.126864,
+      "userCPUSeconds" : 0.296517
+    },
+    {
+      "cpuPercent" : 1.1864089629854901,
+      "elapsedSeconds" : 23.00526862499828,
+      "intervalCPUSeconds" : 0.011882999999999977,
+      "intervalWallSeconds" : 1.0015939166623866,
+      "residentBytes" : 63176704,
+      "systemCPUSeconds" : 0.13043,
+      "userCPUSeconds" : 0.304834
+    },
+    {
+      "cpuPercent" : 0.9269003881464838,
+      "elapsedSeconds" : 24.003326249992824,
+      "intervalCPUSeconds" : 0.00925100000000001,
+      "intervalWallSeconds" : 0.9980576249945443,
+      "residentBytes" : 63176704,
+      "systemCPUSeconds" : 0.133156,
+      "userCPUSeconds" : 0.311359
+    },
+    {
+      "cpuPercent" : 0.7459676119015909,
+      "elapsedSeconds" : 25.004710208333563,
+      "intervalCPUSeconds" : 0.007470000000000032,
+      "intervalWallSeconds" : 1.001383958340739,
+      "residentBytes" : 63176704,
+      "systemCPUSeconds" : 0.135751,
+      "userCPUSeconds" : 0.316234
+    },
+    {
+      "cpuPercent" : 0.6811433799615316,
+      "elapsedSeconds" : 26.004793333326234,
+      "intervalCPUSeconds" : 0.006811999999999985,
+      "intervalWallSeconds" : 1.0000831249926705,
+      "residentBytes" : 63193088,
+      "systemCPUSeconds" : 0.13814,
+      "userCPUSeconds" : 0.320657
+    },
+    {
+      "cpuPercent" : 1.1575090268355002,
+      "elapsedSeconds" : 27.00461274999543,
+      "intervalCPUSeconds" : 0.011573,
+      "intervalWallSeconds" : 0.9998194166691974,
+      "residentBytes" : 63193088,
+      "systemCPUSeconds" : 0.141779,
+      "userCPUSeconds" : 0.328591
+    },
+    {
+      "cpuPercent" : 1.3510800637071148,
+      "elapsedSeconds" : 28.004183416662272,
+      "intervalCPUSeconds" : 0.01350499999999999,
+      "intervalWallSeconds" : 0.9995706666668411,
+      "residentBytes" : 63324160,
+      "systemCPUSeconds" : 0.147028,
+      "userCPUSeconds" : 0.336847
+    },
+    {
+      "cpuPercent" : 0.8424599901668223,
+      "elapsedSeconds" : 29.004112208334845,
+      "intervalCPUSeconds" : 0.008423999999999987,
+      "intervalWallSeconds" : 0.9999287916725734,
+      "residentBytes" : 63324160,
+      "systemCPUSeconds" : 0.149629,
+      "userCPUSeconds" : 0.34267
+    },
+    {
+      "cpuPercent" : 1.1963245522818056,
+      "elapsedSeconds" : 30.00325579167111,
+      "intervalCPUSeconds" : 0.011952999999999936,
+      "intervalWallSeconds" : 0.999143583336263,
+      "residentBytes" : 63193088,
+      "systemCPUSeconds" : 0.153352,
+      "userCPUSeconds" : 0.3509
+    }
+  ],
+  "samplingIntervalSeconds" : 1,
+  "schema" : "lyricsq-playback-resource-probe-v1",
+  "startResidentBytes" : 69287936,
+  "trackIdentity" : "spotify-id:lyricsq-resource-probe|metadata:playbackresourceprobe|isolatedfixture|nativeprobe|240",
+  "trackTitle" : "Playback Resource Probe",
+  "warmupSeconds" : 2
+}

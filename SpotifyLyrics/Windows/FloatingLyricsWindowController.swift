@@ -22,6 +22,7 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
 
     private let persistence = FloatingLyricsWindowPersistence.shared
     private var panel: FloatingLyricsPanel?
+    var playbackWindow: NSWindow? { panel }
     private var stylePanel: FloatingLyricsStylePanel?
     private weak var playbackState: PlaybackState?
     private var settings: AppSettingsStore?

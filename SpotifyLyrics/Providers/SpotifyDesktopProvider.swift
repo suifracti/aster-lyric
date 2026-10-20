@@ -6,31 +6,91 @@ import Foundation
 public final class SpotifyDesktopProvider: PlaybackProvider {
     public let displayName = "Spotify Desktop"
 
-    private let applicationPath = "/Applications/Spotify.app"
-    private let bundleIdentifier = "com.spotify.client"
+    private static let applicationPath = "/Applications/Spotify.app"
+    private static let bundleIdentifier = "com.spotify.client"
     private let fieldSeparator = String(UnicodeScalar(30))
     private let scriptRunner: @Sendable (String, TimeInterval) async throws -> String?
+    private var lastDesktopSnapshot: PlaybackSnapshot?
+    private let applicationIsInstalled: @MainActor () -> Bool
+    private let applicationIsRunning: @MainActor () -> Bool
 
     private static let refreshScriptTimeout: TimeInterval = 3
     private static let commandScriptTimeout: TimeInterval = 5
 
-    public init() {
-        self.scriptRunner = { script, timeout in
+    public convenience init() {
+        self.init(scriptRunner: { script, timeout in
             try await SpotifyAppleScriptProcessRunner.shared.run(
                 script: script,
                 timeout: timeout
             )
-        }
+        })
     }
 
     /// Test seam for the parser and connection state contract. Production
     /// calls use the bounded, serial AppleScript process runner above.
-    init(scriptRunner: @escaping @Sendable (String, TimeInterval) async throws -> String?) {
+    init(scriptRunner: @escaping @Sendable (String, TimeInterval) async throws -> String?,
+         applicationIsInstalled: (@MainActor () -> Bool)? = nil,
+         applicationIsRunning: (@MainActor () -> Bool)? = nil) {
         self.scriptRunner = scriptRunner
+        self.applicationIsInstalled = applicationIsInstalled ?? { FileManager.default.fileExists(atPath: Self.applicationPath) }
+        self.applicationIsRunning = applicationIsRunning ?? { !NSRunningApplication.runningApplications(withBundleIdentifier: Self.bundleIdentifier).isEmpty }
     }
 
     public func refresh() async -> PlaybackSnapshot {
-        guard FileManager.default.fileExists(atPath: applicationPath) else {
+        let snapshot = await readSnapshot()
+        acceptDesktopSnapshot(snapshot)
+        return snapshot
+    }
+
+    func acceptDesktopSnapshot(_ snapshot: PlaybackSnapshot) {
+        lastDesktopSnapshot = snapshot.status.isReady ? snapshot : nil
+    }
+
+    /// One asset read after a track notification, never a status polling loop.
+    public func artworkURL(for track: ProviderTrack, source: PlaybackSourceIdentity) async -> URL? {
+        guard source == .spotifyDesktop, isRunning, let id = track.id else { return nil }
+        let script = """
+        if application "Spotify" is not running then return ""
+        tell application "Spotify"
+            return (id of current track as text) & (character id 30) & (artwork url of current track as text)
+        end tell
+        """
+        guard let raw = try? await execute(script: script),
+              !Task.isCancelled else { return nil }
+        let fields = raw.components(separatedBy: fieldSeparator)
+        guard fields.count == 2, fields[0] == id else { return nil }
+        return Self.parseURL(fields[1])
+    }
+
+    public func calibratePosition() async -> PlaybackSnapshot {
+        guard isRunning else {
+            return PlaybackSnapshot(status: .notRunning, track: nil, position: 0, isPlaying: false, sourceIdentity: .spotifyDesktop)
+        }
+        guard let cached = lastDesktopSnapshot, let track = cached.track else {
+            return PlaybackSnapshot(status: .noTrack, track: nil, position: 0, isPlaying: false, sourceIdentity: .spotifyDesktop)
+        }
+        guard cached.isPlaying else { return cached }
+        do {
+            let script = """
+            if application "Spotify" is not running then return ""
+            tell application "Spotify"
+                return (player state as text) & (character id 30) & (player position as text) & (character id 30) & (id of current track as text)
+            end tell
+            """
+            let fields = (try await execute(script: script) ?? "").components(separatedBy: fieldSeparator)
+            guard fields.count == 3, fields[2] == track.id,
+                  let position = Self.parseNumber(fields[1]), position.isFinite else {
+                return PlaybackSnapshot(status: .unavailable("等待 Spotify 歌曲通知"), track: nil, position: 0, isPlaying: false, sourceIdentity: .spotifyDesktop)
+            }
+            return PlaybackSnapshot(status: .ready, track: track, position: min(max(0, position), track.duration),
+                                    isPlaying: fields[0].lowercased() == "playing", sourceIdentity: .spotifyDesktop)
+        } catch {
+            return PlaybackSnapshot(status: .unavailable(error.localizedDescription), track: nil, position: 0, isPlaying: false, sourceIdentity: .spotifyDesktop)
+        }
+    }
+
+    private func readSnapshot() async -> PlaybackSnapshot {
+        guard applicationIsInstalled() else {
             return PlaybackSnapshot(
                 status: .notInstalled,
                 track: nil,
@@ -104,7 +164,7 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
     }
 
     private var isRunning: Bool {
-        !NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).isEmpty
+        applicationIsRunning()
     }
 
     private var readScript: String {
@@ -203,7 +263,8 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
     }
 
     private static func normalizedDuration(_ raw: TimeInterval) -> TimeInterval {
-        raw > 10_000 ? raw / 1_000 : raw
+        // Spotify's AppleScript duration is milliseconds, including short tracks.
+        raw / 1_000
     }
 
     private static func parseURL(_ value: String) -> URL? {

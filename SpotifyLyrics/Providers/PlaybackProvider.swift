@@ -233,9 +233,17 @@ public protocol PlaybackProvider: AnyObject {
     var displayName: String { get }
 
     func refresh() async -> PlaybackSnapshot
+    func calibratePosition() async -> PlaybackSnapshot
+    func artworkURL(for track: ProviderTrack, source: PlaybackSourceIdentity) async -> URL?
     func play() async throws
     func pause() async throws
     func previous() async throws
     func next() async throws
     func seek(to position: TimeInterval) async throws
+}
+
+public extension PlaybackProvider {
+    /// Non-desktop providers retain their existing snapshot implementation.
+    func calibratePosition() async -> PlaybackSnapshot { await refresh() }
+    func artworkURL(for track: ProviderTrack, source: PlaybackSourceIdentity) async -> URL? { track.artworkURL }
 }

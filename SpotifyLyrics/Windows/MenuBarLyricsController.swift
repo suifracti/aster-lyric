@@ -256,6 +256,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     private var appearance = MenuBarLyricsAppearance()
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
+    var isLyricsPopoverShown: Bool { popover?.isShown == true }
     private var applicationBeforePopover: NSRunningApplication?
     private weak var playbackState: PlaybackState?
     private var cancellables = Set<AnyCancellable>()

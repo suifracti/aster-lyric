@@ -645,6 +645,9 @@ private enum SpikeError: Error, LocalizedError {
 enum SCKSpikeLog {
     private static var path: String {
 #if DEBUG
+        if NativeTestRuntime.isEnabled {
+            return NativeTestRuntime.root.appendingPathComponent("capture.log").path
+        }
         if DebugAcceptanceDataIsolation.isRequested {
             return DebugAcceptanceDataIsolation.configuration.root.appendingPathComponent("logs/capture.log").path
         }

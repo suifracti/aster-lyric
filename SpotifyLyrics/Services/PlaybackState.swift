@@ -55,6 +55,12 @@ public final class PlaybackState: ObservableObject {
     @Published public var showFullScreen = false
 
     private let provider: PlaybackProvider
+    private let desktopEvents: DesktopPlaybackEvents?
+    private let lyricsWindowsVisible: () -> Bool
+    private var desktopSnapshots: [PlaybackSourceIdentity: PlaybackSnapshot] = [:]
+    private var lastObservedDesktopSource: PlaybackSourceIdentity = .unknown
+    private var desktopArtworkTask: Task<Void, Never>?
+    private var desktopArtworkKey: String?
     /// Shared lyrics session (product auto-align reuses adopt/save paths).
     public let lyricsSession: LyricsSessionController
     private let searchPreviewSession: LyricsSessionController
@@ -75,7 +81,8 @@ public final class PlaybackState: ObservableObject {
     private var lyricsEditorSessionCancellable: AnyCancellable?
     private var spotifyAuthorizationCancellable: AnyCancellable?
     private var settingsCancellables: Set<AnyCancellable> = []
-    private var timer: Timer?
+    private(set) var timer: Timer?
+    private(set) var calibrationTimer: Timer?
     private var isProviderStarted = false
     private var automaticSpotifyConnectionEnabled = true
     /// The launch toggle gates only explicitly selected Spotify. `.auto`
@@ -104,7 +111,6 @@ public final class PlaybackState: ObservableObject {
     private var confirmedLineIndex: Int?
     private var confirmedLineStart: TimeInterval?
     private var confirmedCrossMonotonic: TimeInterval = 0
-    private var lastProviderRefreshDate = Date.distantPast
     private var transientProviderFailureStartedAt: Date?
     // Apple Events can fail for several polling cycles while Spotify remains
     // open and playing. Retain the last confirmed state for a bounded window
@@ -141,17 +147,16 @@ public final class PlaybackState: ObservableObject {
     private var liveLyricsProjectionCache: (key: LyricsProjectionCacheKey, lines: [LyricLine])?
     private var previewLyricsProjectionCache: (key: LyricsProjectionCacheKey, lines: [LyricLine])?
     private let tickInterval: TimeInterval = 0.2
-    // Track changes need a quicker observation path than the old two-second
-    // calibration heartbeat, while the single-flight guard still prevents
-    // overlapping Apple Events requests.
-    private let calibrationInterval: TimeInterval = 1.0
+    private let calibrationInterval: TimeInterval = 10
 
     public init(
         provider: PlaybackProvider? = nil,
         lyricsProvider: LyricsProvider? = nil,
         lyricsRepository: (any LyricsRepository)? = nil,
         settings: AppSettingsStore? = nil,
-        alignmentService: (any AlignmentService)? = nil
+        alignmentService: (any AlignmentService)? = nil,
+        desktopEvents: DesktopPlaybackEvents? = nil,
+        lyricsWindowsVisible: (() -> Bool)? = nil
     ) {
         let resolvedSettings = settings ?? AppSettingsStore()
         self.settingsStore = resolvedSettings
@@ -159,6 +164,12 @@ public final class PlaybackState: ObservableObject {
         self.preferences = resolvedSettings.displayPreferences
         let resolvedProvider = provider ?? ActivePlaybackProvider(settings: resolvedSettings)
         self.provider = resolvedProvider
+        let usesDesktopEvents = provider == nil || resolvedProvider is ActivePlaybackProvider
+            || resolvedProvider is SpotifyDesktopProvider || resolvedProvider is AppleMusicDesktopProvider
+        self.desktopEvents = desktopEvents ?? (usesDesktopEvents ? DesktopPlaybackEvents() : nil)
+        self.lyricsWindowsVisible = lyricsWindowsVisible ?? {
+            usesDesktopEvents ? WindowManager.shared.hasExposedLyricsWindow : true
+        }
         let sharedIndex = LocalLyricsIndex.shared
         let authorizationManager = SpotifyAuthorizationManager()
         self.spotifyAuthorizationManager = authorizationManager
@@ -362,6 +373,12 @@ public final class PlaybackState: ObservableObject {
                 self.reconnectSpotify()
             }
             .store(in: &self.settingsCancellables)
+        resolvedSettings.$menuBarLyricsEnabled
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in self?.updatePlaybackVisibility() }
+            }
+            .store(in: &self.settingsCancellables)
         resolvedSettings.lyricsOffsetStore.$activeOffset
             .dropFirst()
             .sink { [weak self] newOffset in
@@ -443,7 +460,9 @@ public final class PlaybackState: ObservableObject {
     }
 
     deinit {
+        desktopArtworkTask?.cancel()
         timer?.invalidate()
+        calibrationTimer?.invalidate()
         providerRefreshTask?.cancel()
         persistencePreparationTask?.cancel()
         networkRecoveryMonitor?.cancel()
@@ -1079,7 +1098,12 @@ public final class PlaybackState: ObservableObject {
         guard !isProviderStarted else { return }
         isProviderStarted = true
         automaticSpotifyConnectionEnabled = connectSpotify
-        startTimer()
+        desktopEvents?.start(
+            onUpdate: { [weak self] in self?.receiveDesktopUpdate($0) },
+            onApplicationChanged: { [weak self] source, running in self?.desktopApplicationChanged(source: source, isRunning: running) },
+            onVisibilityChanged: { [weak self] in self?.updatePlaybackVisibility() }
+        )
+        updatePlaybackScheduling()
         startNetworkRecoveryMonitor()
         refreshListeningHistory()
         persistencePreparationTask = Task { [weak self, lyricsRepository] in
@@ -1093,7 +1117,7 @@ public final class PlaybackState: ObservableObject {
                 }
             }
         }
-        if connectSpotify {
+        if canRefreshSelectedProvider {
             providerRefreshTask = Task { @MainActor [weak self] in
                 await self?.refreshProvider()
             }
@@ -1105,6 +1129,119 @@ public final class PlaybackState: ObservableObject {
 #if DEBUG
         startAcceptanceControlPollingIfNeeded()
 #endif
+    }
+
+    private func receiveDesktopUpdate(_ update: DesktopPlaybackUpdate) {
+        guard isProviderStarted, !isMockPreviewMode, canRefreshSelectedProvider,
+              desktopEvents?.isRunning(update.source) == true else { return }
+        switch settingsStore.playbackSourceMode {
+        case .spotify: guard update.source == .spotifyDesktop else { return }
+        case .appleMusic: guard update.source == .appleMusic else { return }
+        case .auto:
+            // A paused background player must not steal the playing player's session.
+            guard update.source == lastObservedDesktopSource || update.isPlaying || !isPlaying else { return }
+        }
+        guard let snapshot = update.snapshot(previous: desktopSnapshots[update.source],
+            estimatedPosition: update.source == lastObservedDesktopSource ? playbackPositionNow : (desktopSnapshots[update.source]?.position ?? 0)) else { return }
+        providerRefreshGeneration &+= 1
+        refreshRequestedWhileBusy = false
+        if update.isStopped {
+            desktopSnapshots[update.source] = nil
+            providerStatus = .noTrack
+            clearLiveTrackIfNeeded()
+        } else {
+            synchronize(with: snapshot)
+            loadDesktopArtworkIfNeeded(snapshot)
+        }
+    }
+
+    private func loadDesktopArtworkIfNeeded(_ snapshot: PlaybackSnapshot) {
+        guard let track = snapshot.track, track.artworkURL == nil else { return }
+        let identity = track.desktopRecordingIdentity
+        let key = snapshot.sourceIdentity.rawValue + ":" + identity.stableKey
+        guard desktopArtworkKey != key else { return }
+        desktopArtworkKey = key
+        desktopArtworkTask?.cancel()
+        let provider = provider
+        desktopArtworkTask = Task { @MainActor [weak self] in
+            guard let url = await provider.artworkURL(for: track, source: snapshot.sourceIdentity),
+                  !Task.isCancelled, let self,
+                  self.hasLiveTrack, self.currentTrackIdentity == identity,
+                  self.lastObservedDesktopSource == snapshot.sourceIdentity,
+                  let accepted = self.desktopSnapshots[snapshot.sourceIdentity],
+                  let latestTrack = accepted.track else { return }
+            let enriched = latestTrack.withArtworkURL(url)
+            let updated = PlaybackSnapshot(status: accepted.status, track: enriched,
+                position: accepted.position, isPlaying: accepted.isPlaying, sourceIdentity: accepted.sourceIdentity)
+            self.desktopSnapshots[accepted.sourceIdentity] = updated
+            self.cacheAcceptedDesktopSnapshot(updated)
+            self.currentTrack = Track(providerTrack: enriched)
+        }
+    }
+
+    private func desktopApplicationChanged(source: PlaybackSourceIdentity, isRunning: Bool) {
+        guard isProviderStarted, !isMockPreviewMode else { return }
+        if !isRunning {
+            desktopSnapshots[source] = nil
+            if lastObservedDesktopSource == source {
+                providerRefreshGeneration &+= 1
+                refreshRequestedWhileBusy = false
+                providerStatus = .notRunning
+                clearLiveTrackIfNeeded()
+            }
+        } else if canRefreshSelectedProvider {
+            let selected = settingsStore.playbackSourceMode
+            guard selected == .auto || (selected == .spotify && source == .spotifyDesktop)
+                || (selected == .appleMusic && source == .appleMusic) else { return }
+            providerRefreshTask = Task { @MainActor [weak self] in await self?.refreshProvider() }
+        }
+        updatePlaybackScheduling()
+    }
+
+    func updatePlaybackVisibility() {
+        if isPlaying && lyricsWindowsVisible() {
+            tick()
+            syncPublishedLineIndex(source: .boundary)
+        }
+        updatePlaybackScheduling()
+    }
+
+    private func updatePlaybackScheduling() {
+        guard isProviderStarted else { return }
+        if isPlaying && lyricsWindowsVisible() {
+            if timer == nil { startTimer() }
+        } else {
+            timer?.invalidate()
+            timer = nil
+        }
+        let canCalibrate = !isMockPreviewMode && isPlaying && canRefreshSelectedProvider
+            && (desktopEvents?.isRunning(lastObservedDesktopSource) ?? true)
+        if canCalibrate {
+            if calibrationTimer == nil {
+                calibrationTimer = Timer.scheduledTimer(withTimeInterval: calibrationInterval, repeats: true) { [weak self] _ in
+                    Task { @MainActor [weak self] in await self?.calibratePlaybackPositionIfNeeded() }
+                }
+                calibrationTimer?.tolerance = 1
+            }
+        } else {
+            calibrationTimer?.invalidate()
+            calibrationTimer = nil
+        }
+        if !isPlaying || (!lyricsWindowsVisible() && !settingsStore.menuBarLyricsEnabled) {
+            cancelLineBoundaryWake()
+        }
+    }
+
+    func calibratePlaybackPositionIfNeeded() async {
+        guard isProviderStarted, !isMockPreviewMode, isPlaying, canRefreshSelectedProvider,
+              desktopEvents?.isRunning(lastObservedDesktopSource) ?? true else { return }
+        await refreshProvider(calibrationOnly: true)
+    }
+
+    /// Unadjusted recording position, independent of the visible UI's tick.
+    var playbackPositionNow: TimeInterval {
+        let elapsed = isPlaying ? max(0, ProcessInfo.processInfo.systemUptime - playbackAnchorMonotonic) : 0
+        return min(currentTrack.duration, playbackAnchorPosition + elapsed)
     }
 
 #if DEBUG
@@ -1371,16 +1508,19 @@ public final class PlaybackState: ObservableObject {
 
     public func togglePlayPause() {
         if isMockPreviewMode {
+            let position = playbackPositionNow
             isPlaying.toggle()
-            resetPlaybackAnchor(to: currentTime, source: .pauseResume)
+            resetPlaybackAnchor(to: position, source: .pauseResume)
             return
         }
 
         guard canControlSpotify else { return }
         invalidateProviderRefresh()
+        let commandGeneration = providerRefreshGeneration
+        let position = playbackPositionNow
         let shouldPlay = !isPlaying
         isPlaying = shouldPlay
-        resetPlaybackAnchor(to: currentTime, source: .pauseResume)
+        resetPlaybackAnchor(to: position, source: .pauseResume)
         providerRefreshTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -1389,7 +1529,9 @@ public final class PlaybackState: ObservableObject {
                 } else {
                     try await self.provider.pause()
                 }
-                await self.refreshProvider()
+                if shouldPlay && self.providerRefreshGeneration == commandGeneration {
+                    await self.refreshProvider()
+                }
             } catch {
                 self.handleProviderError(error)
             }
@@ -1425,7 +1567,7 @@ public final class PlaybackState: ObservableObject {
 
         listeningHistorySession?.noteExplicitSeek()
         let seekTime = time
-        let previousPosition = currentTime
+        let previousPosition = playbackPositionNow
         #if DEBUG
         Self.seekLogger.debug("accepted source=\(source, privacy: .public) time=\(String(format: "%.3f", seekTime), privacy: .public) identity=\(self.currentTrackIdentity?.stableKey ?? "none", privacy: .public)")
         #endif
@@ -2393,10 +2535,10 @@ public final class PlaybackState: ObservableObject {
         return projected
     }
 
-    private func refreshProvider() async {
+    private func refreshProvider(calibrationOnly: Bool = false) async {
         guard !isMockPreviewMode, canRefreshSelectedProvider else { return }
         guard !isRefreshingProvider else {
-            refreshRequestedWhileBusy = true
+            if !calibrationOnly { refreshRequestedWhileBusy = true }
             return
         }
 
@@ -2410,21 +2552,24 @@ public final class PlaybackState: ObservableObject {
             isRefreshingProvider = false
         }
         let refreshStart = ProcessInfo.processInfo.systemUptime
-        let snapshot = await provider.refresh()
+        let snapshot: PlaybackSnapshot
+        if calibrationOnly { snapshot = await provider.calibratePosition() }
+        else { snapshot = await provider.refresh() }
         let refreshEnd = ProcessInfo.processInfo.systemUptime
         let rtt = refreshEnd - refreshStart
         let latencyCompensatedMonotonic = refreshStart + min(rtt * 0.5, 0.15)
-        // Throttle from the end of every bounded attempt, including an
-        // unavailable/timeout result. Do not start a new task every timer tick
-        // while a previous Apple Events request is unwinding.
-        lastProviderRefreshDate = Date()
-
         let shouldApply = !Task.isCancelled &&
             generation == providerRefreshGeneration &&
             !isMockPreviewMode &&
             canRefreshSelectedProvider
-        if shouldApply {
+        let calibrationMatches = !calibrationOnly || !snapshot.status.isReady || (snapshot.sourceIdentity == lastObservedDesktopSource
+            && snapshot.track.map { TrackIdentity(track: Track(providerTrack: $0)) } == currentTrackIdentity)
+        if shouldApply && calibrationMatches {
             synchronize(with: snapshot, observedAtMonotonic: latencyCompensatedMonotonic)
+        } else if let accepted = desktopSnapshots[lastObservedDesktopSource] {
+            // A provider's own asynchronous read can have updated its cache or
+            // command route before the generation check rejected that read.
+            cacheAcceptedDesktopSnapshot(accepted)
         }
 
         let shouldQueueRefresh = refreshRequestedWhileBusy
@@ -2440,6 +2585,12 @@ public final class PlaybackState: ObservableObject {
         // A refresh that was already in flight when Mock Preview was entered
         // must not be allowed to resurrect a real Spotify session.
         guard !isMockPreviewMode else { return }
+        defer { updatePlaybackScheduling() }
+        if snapshot.status.isReady, snapshot.track != nil {
+            lastObservedDesktopSource = snapshot.sourceIdentity
+            desktopSnapshots[snapshot.sourceIdentity] = snapshot
+            cacheAcceptedDesktopSnapshot(snapshot)
+        }
         let nextSource = snapshot.status.isReady && snapshot.track != nil
             ? snapshot.sourceIdentity
             : .unknown
@@ -2517,13 +2668,13 @@ public final class PlaybackState: ObservableObject {
             currentTrack = nextTrack
         }
 
+        let previousPosition = playbackPositionNow
         let wasPlaying = isPlaying
         if isPlaying != snapshot.isPlaying { isPlaying = snapshot.isPlaying }
         // S2 live-capture continuity: Desktop position can jump after a user
         // seek without going through seek(to:). Product auto-align reuses this.
-        let previousPosition = currentTime
         let incoming = snapshot.position
-        let desktopJump = abs(incoming - previousPosition) > 1.5
+        let desktopJump = !identityChanged && abs(incoming - previousPosition) > 1.5
         if hasLiveTrack, desktopJump {
             AutomaticAlignmentJobController.shared.notifySeek(from: previousPosition, to: incoming)
         }
@@ -2564,6 +2715,9 @@ public final class PlaybackState: ObservableObject {
 
     private func clearLiveTrackIfNeeded() {
         guard !isMockPreviewMode else { return }
+        desktopArtworkTask?.cancel()
+        desktopArtworkKey = nil
+        lastObservedDesktopSource = .unknown
         lyricsOffsetScopeBinding?.clear()
         updatePlaybackSourceIdentity(.unknown)
         transientProviderFailureStartedAt = nil
@@ -2581,6 +2735,12 @@ public final class PlaybackState: ObservableObject {
         songSearchSelectionMessage = ""
         isPlaying = false
         resetPlaybackAnchor(to: 0, source: .reset)
+    }
+
+    private func cacheAcceptedDesktopSnapshot(_ snapshot: PlaybackSnapshot) {
+        (provider as? ActivePlaybackProvider)?.acceptDesktopSnapshot(snapshot)
+        (provider as? SpotifyDesktopProvider)?.acceptDesktopSnapshot(snapshot)
+        (provider as? AppleMusicDesktopProvider)?.acceptDesktopSnapshot(snapshot)
     }
 
     private func updatePlaybackSourceIdentity(_ next: PlaybackSourceIdentity) {
@@ -2628,25 +2788,27 @@ public final class PlaybackState: ObservableObject {
         guard listeningHistorySession != nil else { return }
         updateListeningHistorySession(
             at: date,
-            position: currentTime,
+            position: playbackPositionNow,
             isPlaying: false
         )
     }
 
     private func settleListeningHistorySession(at date: Date) {
         guard var session = listeningHistorySession else { return }
-        session.observe(at: date, position: currentTime, isPlaying: isPlaying)
+        session.observe(at: date, position: playbackPositionNow, isPlaying: isPlaying)
         listeningHistorySession = nil
         publishListeningHistory(session.entry)
     }
 
     private func runProviderCommand(_ command: @escaping @MainActor (PlaybackProvider) async throws -> Void) {
         invalidateProviderRefresh()
+        let commandGeneration = providerRefreshGeneration
         providerRefreshTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 try await command(self.provider)
                 try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled, self.providerRefreshGeneration == commandGeneration else { return }
                 await self.refreshProvider()
             } catch {
                 self.handleProviderError(error)
@@ -2716,7 +2878,7 @@ public final class PlaybackState: ObservableObject {
 
     private func tick() {
         if isMockPreviewMode {
-            publishTickTime(min(currentTrack.duration, currentTime + (isPlaying ? tickInterval : 0)))
+            publishTickTime(playbackPositionNow)
             if PlaybackTickTimeUpdatePolicy.shouldFinishMockPlayback(
                 isPlaying: isPlaying,
                 currentTime: currentTime,
@@ -2727,8 +2889,7 @@ public final class PlaybackState: ObservableObject {
             }
         } else if providerStatus.isReady, hasLiveTrack {
             if isPlaying {
-                let elapsed = Date().timeIntervalSince(playbackAnchorDate)
-                publishTickTime(min(currentTrack.duration, playbackAnchorPosition + elapsed))
+                publishTickTime(playbackPositionNow)
                 if currentTime >= currentTrack.duration {
                     isPlaying = false
                     resetPlaybackAnchor(to: currentTrack.duration, source: .reset)
@@ -2744,14 +2905,6 @@ public final class PlaybackState: ObservableObject {
             syncPublishedLineIndex(source: .mockTick)
         }
 
-        let shouldRefreshProvider = !isMockPreviewMode &&
-            canRefreshSelectedProvider &&
-            Date().timeIntervalSince(lastProviderRefreshDate) >= calibrationInterval
-        if shouldRefreshProvider && !isRefreshingProvider {
-            providerRefreshTask = Task { @MainActor [weak self] in
-                await self?.refreshProvider()
-            }
-        }
     }
 
     private func publishTickTime(_ nextTime: TimeInterval) {
@@ -2796,6 +2949,7 @@ public final class PlaybackState: ObservableObject {
             previousTime: previous,
             incomingTime: presentationTimeNow
         )
+        updatePlaybackScheduling()
     }
 
     private var presentationTimeNow: TimeInterval {
@@ -2911,7 +3065,8 @@ public final class PlaybackState: ObservableObject {
         time: TimeInterval
     ) {
         cancelLineBoundaryWake()
-        guard !isMockPreviewMode, isPlaying, synchronized, hasLiveTrack else { return }
+        guard !isMockPreviewMode, isPlaying, synchronized, hasLiveTrack,
+              lyricsWindowsVisible() || settingsStore.menuBarLyricsEnabled else { return }
         guard let boundary = LyricsTimeline.nextBoundaryTime(
             lines: lines,
             currentIndex: liveCurrentLineIndex,

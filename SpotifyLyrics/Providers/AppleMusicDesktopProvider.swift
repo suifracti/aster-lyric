@@ -12,6 +12,7 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
     private let scriptRunner: @Sendable (String, TimeInterval) async throws -> String?
     private let applicationIsInstalled: @MainActor () -> Bool
     private let applicationIsRunning: @MainActor () -> Bool
+    private var lastDesktopSnapshot: PlaybackSnapshot?
 
     private static let refreshScriptTimeout: TimeInterval = 3
     private static let commandScriptTimeout: TimeInterval = 5
@@ -45,6 +46,51 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
     }
 
     public func refresh() async -> PlaybackSnapshot {
+        let snapshot = await readSnapshot()
+        acceptDesktopSnapshot(snapshot)
+        return snapshot
+    }
+
+    func acceptDesktopSnapshot(_ snapshot: PlaybackSnapshot) {
+        lastDesktopSnapshot = snapshot.status.isReady ? snapshot : nil
+    }
+
+    public func artworkURL(for track: ProviderTrack, source: PlaybackSourceIdentity) async -> URL? {
+        guard source == .appleMusic, applicationIsRunning(), let id = track.id,
+              id.hasPrefix("applemusic:") else { return nil }
+        let persistentID = String(id.dropFirst("applemusic:".count))
+        guard !persistentID.isEmpty, persistentID.allSatisfy({ $0.isHexDigit }) else { return nil }
+        return await resolveArtworkURL(trackID: persistentID, hasArtwork: true)
+    }
+
+    public func calibratePosition() async -> PlaybackSnapshot {
+        guard applicationIsRunning() else {
+            return PlaybackSnapshot(status: .notRunning, track: nil, position: 0, isPlaying: false, sourceIdentity: .appleMusic)
+        }
+        guard let cached = lastDesktopSnapshot, let track = cached.track else {
+            return PlaybackSnapshot(status: .noTrack, track: nil, position: 0, isPlaying: false, sourceIdentity: .appleMusic)
+        }
+        guard cached.isPlaying else { return cached }
+        do {
+            let script = """
+            if application "Music" is not running then return ""
+            tell application "Music"
+                return (player state as text) & (character id 30) & (player position as text) & (character id 30) & (persistent ID of current track as text)
+            end tell
+            """
+            let fields = (try await execute(script: script) ?? "").components(separatedBy: fieldSeparator)
+            guard fields.count == 3, "applemusic:" + fields[2].uppercased() == track.id,
+                  let position = Self.parseNumber(fields[1]), position.isFinite else {
+                return PlaybackSnapshot(status: .unavailable("等待 Apple Music 歌曲通知"), track: nil, position: 0, isPlaying: false, sourceIdentity: .appleMusic)
+            }
+            return PlaybackSnapshot(status: .ready, track: track, position: min(max(0, position), track.duration),
+                                    isPlaying: fields[0].lowercased() == "playing", sourceIdentity: .appleMusic)
+        } catch {
+            return PlaybackSnapshot(status: .unavailable(error.localizedDescription), track: nil, position: 0, isPlaying: false, sourceIdentity: .appleMusic)
+        }
+    }
+
+    private func readSnapshot() async -> PlaybackSnapshot {
         guard applicationIsInstalled() else {
             return PlaybackSnapshot(
                 status: .notInstalled,
@@ -220,8 +266,10 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
         }
 
         let exportScript = """
+        if application "Music" is not running then return ""
         tell application "Music"
             try
+                if (persistent ID of current track as text) is not "\(trackID)" then return "changed"
                 set theArt to artwork 1 of current track
                 set theData to raw data of theArt
                 set targetPath to POSIX file "\(path)"

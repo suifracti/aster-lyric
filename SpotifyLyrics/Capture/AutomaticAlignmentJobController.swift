@@ -255,7 +255,7 @@ public final class AutomaticAlignmentJobController: ObservableObject {
 
     private func evaluateTrigger() {
 #if DEBUG
-        if DebugAcceptanceDataIsolation.isRequested { return }
+        if NativeTestRuntime.isEnabled || DebugAcceptanceDataIsolation.isRequested { return }
 #endif
         // Re-read UserDefaults so CLI `defaults write` and Settings UI stay consistent.
         let defaultsEnabled = UserDefaults.lyricsQ.object(forKey: AppSettingsStore.Key.automaticAlignmentEnabled) as? Bool
