@@ -340,7 +340,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         exitPoint: lastWindowExitPoint,
                         pointerInsideWindow: isPointerInsideCanvas,
                         // Priority: an open panel, then the toolbar, then the edge.
-                        suppressControls: isPointerInToolbarRegion || toolbarPanelIsPresented
+                        suppressControls: toolbar.suppressesEdgeControls(nearTop: isPointerInToolbarRegion, otherPanelOpen: toolbarPanelIsPresented)
                     )
                     .frame(width: geometry.size.width, height: geometry.size.height)
                 }
@@ -357,7 +357,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                                 }
                             }
                         ),
-                        title: pinned == .more ? "更多" : "调整",
+                        title: pinned.title,
                         content: inspectorSurface(for: pinned, style: .pinnedSolid)
                     )
                     .frame(width: 0, height: 0)
@@ -1373,11 +1373,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             .disabled(!allowsAutomaticTranslation || !settings.aiTranslationConfiguration.isConfigured)
             Text("优先复用已保存译文；自动翻译完整后使用，人工稿与锁定版本保留。新候选可手动采用，所有窗口共用。")
                 .font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Toggle("原文", isOn: displayBinding(\.showOriginal))
-                Toggle("中文", isOn: displayBinding(\.showTranslation))
-                Toggle("读音", isOn: displayBinding(\.showKana))
-            }
             Divider()
             if let current = state.selectedTranslation {
                 Text("当前译文 · " + current.record.translationSourceTitle)
@@ -1553,20 +1548,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     /// without covering the lyrics), and full contrast near the top edge or
     /// while a panel is open. Positions never change between levels.
     private var toolbarOpacity: Double {
-        if toolsVisible || toolbarPanelIsPresented { return 1 }
-        if isPointerInsideCanvas && !liveOnly { return 0.32 }
-        return 0
+        toolbar.opacity(pointerInside: isPointerInsideCanvas && !liveOnly, nearTop: toolsVisible,
+                        otherPanelOpen: toolbarPanelIsPresented)
     }
 
 #if DEBUG
     private func applyToolbarDebugCommand(_ info: [AnyHashable: Any]) {
-        if let tab = (info["tab"] as? String).flatMap(V3AdjustmentTab.init(rawValue:)) { toolbar.tab = tab }
-        let panel: ToolbarPopover? = switch info["panel"] as? String {
-        case "adjust": .adjust
-        case "more": .more
-        case "translation": .translation
-        default: nil
-        }
+        let panel = (info["panel"] as? String).flatMap(ToolbarPopover.init(rawValue:))
         switch info["command"] as? String {
         case "faint": isPointerInsideCanvas = true
         case "full": isPointerInsideCanvas = true; toolsVisible = true
@@ -1587,6 +1575,14 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         V3ToolbarLog.logger.notice("click \(panel.description, privacy: .public) mode-before=\(String(describing: toolbar.mode), privacy: .public)")
         toolbarDismissTask?.cancel()
         toolbar.click(panel)
+        isSearchPresented = false
+        isWindowMenuPresented = false
+        if panel == .library {
+            if liveOnly { MenuBarLyricsController.shared.openLibrary() }
+            else { openWindow(id: "personal-library-activity") }
+        } else if panel == .search {
+            isSearchPresented = true
+        }
     }
 
     private func dismissPinnedToolbarPanel() {
@@ -1645,27 +1641,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
     private func toolBar(for size: CGSize) -> some View {
         HStack(spacing: 3) {
-            Button(action: openLibrary) {
-                toolbarEntry("歌词库", symbol: "books.vertical")
+            ForEach(ToolbarPopover.allCases, id: \.rawValue) { panel in
+                toolbarPanelButton(panel)
             }
-            .v3FirstClick(openLibrary)
-            .help("歌词库")
-
-            searchButton
-            Button(action: openTranslation) {
-                toolbarEntry("译文", symbol: "character.bubble", selected: toolbar.isSelected(.translation))
-            }
-            .v3FirstClick(openTranslation)
-            .help("显示译文、选择已有版本或翻译本首")
-            .onHover { inside in toolbarTriggerHover(.translation, inside: inside) }
-            .v3ToolPopover(isPresented: toolbarPopoverBinding(.translation), onAnchorPress: openTranslation) {
-                hoverTrackedPanel(.translation) {
-                    inspectorSurface(for: .translation, style: .hoverGlass)
-                }
-            }
-            toolbarPanelButton("调整", symbol: "slider.horizontal.3", panel: .adjust)
-                .accessibilityIdentifier("appearance.shortcut")
-            toolbarPanelButton("更多", symbol: "ellipsis", panel: .more)
 
             // Global, low-frequency settings sit at the trailing end, apart
             // from the listening tools.
@@ -1679,7 +1657,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         }
         .background {
             Button("翻译与读音") {
-                if !toolbar.translationPinned { clickToolbarPanel(.translation) }
+                if !toolbar.isSelected(.translation) { clickToolbarPanel(.translation) }
             }
             .keyboardShortcut("t", modifiers: [.command, .option])
             .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
@@ -1697,37 +1675,36 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .onDisappear { toolbarDismissTask?.cancel(); hoveredStyle = nil }
     }
 
-    private func openLibrary() {
-        dismissPinnedToolbarPanel()
-        if liveOnly { MenuBarLyricsController.shared.openLibrary() }
-        else { openWindow(id: "personal-library-activity") }
-    }
-
-    /// 译文 is a shortcut to 调整 › 当前歌曲 (rules in V3ToolbarModel.click).
-    private func openTranslation() { clickToolbarPanel(.translation) }
-
     private func openAppSettings() {
-        dismissPinnedToolbarPanel()
+        toolbar.click()
+        isSearchPresented = false
         if liveOnly { MenuBarLyricsController.shared.openSettings() }
         else { openSettings() }
     }
 
-    private func toolbarPanelButton(_ title: String, symbol: String, panel: ToolbarPopover) -> some View {
+    @ViewBuilder
+    private func toolbarPanelButton(_ panel: ToolbarPopover) -> some View {
+        if panel == .search {
+            toolbarPanelTrigger(panel)
+                .popover(isPresented: $isSearchPresented, arrowEdge: .top) {
+                    SongSearchPopover(manager: state.songSearchManager, playbackState: state)
+                }
+        } else {
+            toolbarPanelTrigger(panel)
+        }
+    }
+
+    private func toolbarPanelTrigger(_ panel: ToolbarPopover) -> some View {
         Button { clickToolbarPanel(panel) } label: {
-            toolbarEntry(title, symbol: symbol, selected: toolbar.isSelected(panel))
+            toolbarEntry(panel.title, symbol: panel.symbol, selected: toolbar.isSelected(panel))
         }
         .v3FirstClick { clickToolbarPanel(panel) }
-        .help(title == "调整" ? "歌词、文字与当前歌曲调整" : "窗口、歌词版本、时间与设置")
-        .onHover { inside in toolbarTriggerHover(panel, inside: inside) }
-        .v3ToolPopover(
-            isPresented: toolbarPopoverBinding(panel),
-            // Only used when the popover window overlaps the anchor; normal
-            // clicks reach the SwiftUI button.
-            onAnchorPress: { clickToolbarPanel(panel) }
-        ) {
-            hoverTrackedPanel(panel) {
-                inspectorSurface(for: panel, style: .hoverGlass)
-            }
+        .help(panel.title)
+        .onHover { inside in
+            if panel != .library && panel != .search { toolbarTriggerHover(panel, inside: inside) }
+        }
+        .v3ToolPopover(isPresented: toolbarPopoverBinding(panel), onAnchorPress: { clickToolbarPanel(panel) }) {
+            hoverTrackedPanel(panel) { inspectorSurface(for: panel, style: .hoverGlass) }
         }
     }
 
@@ -1769,11 +1746,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-            toolbarAction("主窗口", symbol: "macwindow") {
-                state.currentMode = .mainWindow
-                if liveOnly { WindowManager.shared.exitFullScreenToMainWindow() }
-                isWindowMenuPresented = false
-            }
             if !liveOnly {
                 toolbarAction("桌面歌词", symbol: "rectangle.on.rectangle") {
                     WindowManager.shared.toggleFloatingLyrics(state: state)
@@ -1797,8 +1769,15 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 WindowManager.shared.toggleFullScreen(state: state, settings: settings)
                 isWindowMenuPresented = false
             }
+
+        }
+        .padding(8)
+        .frame(width: 244)
+    }
+
+    @ViewBuilder private var desktopInteractionPanel: some View {
+        VStack(alignment: .leading, spacing: 4) {
             if !liveOnly {
-                Divider().padding(.vertical, 4)
                 Text("桌面歌词交互")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -1813,8 +1792,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
             }
         }
-        .padding(8)
-        .frame(width: 244)
     }
 
     private func toolbarAction(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
@@ -1827,40 +1804,25 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .buttonStyle(QuietToolbarButtonStyle())
     }
 
-    @ViewBuilder private var searchButton: some View {
-        Button {
-            dismissPinnedToolbarPanel()
-            isSearchPresented.toggle()
-        } label: {
-            toolbarEntry("搜索", symbol: "magnifyingglass")
-        }
-        .v3FirstClick {
-            dismissPinnedToolbarPanel()
-            isSearchPresented = true
-        }
-        .help("搜索")
-        .popover(isPresented: $isSearchPresented, arrowEdge: .top) {
-            SongSearchPopover(manager: state.songSearchManager, playbackState: state)
-        }
-    }
-
     @ViewBuilder
     private func inspectorPanelContent(for panel: ToolbarPopover) -> some View {
         switch panel {
         case .more:
             moreInspectorContent
-        default:
+        case .library, .search:
+            EmptyView()
+        case .translation, .text, .picture:
             V3VisualTuningPopoverView(
                 settings: settings,
                 state: state,
                 liveOnly: liveOnly,
                 currentSongWorkflow: AnyView(translationPanel),
+                panel: panel,
                 layoutStyleRawValue: $layoutStyleRawValue,
                 preview: $hoveredStyle,
                 previewScene: $hoveredScene,
                 onOpenAISettings: openAISettings,
-                onDismiss: dismissPinnedToolbarPanel,
-                selectedTab: $toolbar.tab
+                onDismiss: dismissPinnedToolbarPanel
             )
             .environmentObject(settings)
         }
@@ -1913,16 +1875,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        sectionEyebrow("窗口与播放面")
-                        windowModePanel
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    Divider()
-
                     VStack(alignment: .leading, spacing: 9) {
-                        sectionEyebrow("当前歌曲快捷操作")
+                        sectionEyebrow("当前歌曲")
                         CurrentSongOperationsView(
                             state: state,
                             versionShortcutOnly: true,
@@ -1932,7 +1886,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         )
                         .environmentObject(settings)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        LyricsPresentationOffsetControl(settings: settings)
+                        LyricsPresentationOffsetControl(settings: settings, showsLegacyNotice: false)
                             .padding(.top, 4)
                         Button("恢复歌词时间") { settings.lyricsOffsetStore.resetActiveValue() }
                             .font(.caption)
@@ -1942,25 +1896,14 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     Divider()
 
                     VStack(alignment: .leading, spacing: 8) {
-                        sectionEyebrow("服务与设置")
-                        Text(settings.aiTranslationConfiguration.isConfigured
-                             ? "AI 服务已配置 · \(settings.aiTranslationConfiguration.model)"
-                             : "AI 服务尚未完成配置")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                        Button("打开 AI 设置", systemImage: "sparkles") { openAISettings() }
-                            .buttonStyle(.bordered)
-                        if liveOnly {
-                            Button("打开设置", systemImage: "gearshape") {
-                                MenuBarLyricsController.shared.openSettings()
-                            }
-                            .buttonStyle(.borderless)
-                        } else {
-                            Button("打开设置", systemImage: "gearshape") { openSettings() }
-                                .buttonStyle(.borderless)
-                        }
+                        sectionEyebrow("窗口与播放面")
+                        windowModePanel
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
+
+                    Divider()
+
+                    desktopInteractionPanel
                 }
                 .padding(16)
             }

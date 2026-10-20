@@ -291,12 +291,12 @@ struct V3VisualTuningPopoverView: View {
     @V3ContentPlaybackState var state: PlaybackState
     var liveOnly: Bool
     let currentSongWorkflow: AnyView
+    let panel: V3ToolbarModel.Panel
     @Binding var layoutStyleRawValue: String
     @Binding var preview: V3ArtworkPresentation?
     @Binding var previewScene: V3ListeningScene?
     var onOpenAISettings: () -> Void
     var onDismiss: () -> Void
-    @Binding var selectedTab: V3AdjustmentTab
     @State private var textAdvancedExpanded = false
 
     private var blurPresetName: String {
@@ -329,21 +329,18 @@ struct V3VisualTuningPopoverView: View {
         // The pinned NSPanel already provides the title bar and close button;
         // the tab control is the only header so nothing is repeated.
         VStack(spacing: 0) {
-            Picker("调整类别", selection: $selectedTab) {
-                ForEach(V3AdjustmentTab.allCases) { tab in
-                    Text(tab.title).tag(tab)
-                }
+            HStack {
+                Text(panel.title).font(.system(size: 15, weight: .semibold, design: .rounded))
+                Spacer()
+                Button(action: onDismiss) { Image(systemName: "xmark") }
+                    .buttonStyle(.plain).help("关闭（Esc）")
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 14)
-            .padding(.top, 12)
-            .padding(.bottom, 10)
+            .padding(14)
 
             Divider()
 
             ScrollView {
-                tabContent
+                panelContent
                     .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -356,14 +353,12 @@ struct V3VisualTuningPopoverView: View {
     }
 
     @ViewBuilder
-    private var tabContent: some View {
-        switch selectedTab {
-        case .picture:
-            picturePage
-        case .text:
-            textPage
-        case .currentSong:
-            currentSongPage
+    private var panelContent: some View {
+        switch panel {
+        case .picture: picturePage
+        case .text: textPage
+        case .translation: translationPage
+        case .library, .search, .more: EmptyView()
         }
     }
 
@@ -373,15 +368,6 @@ struct V3VisualTuningPopoverView: View {
             V3ThemeSelectorView(settings: settings, artworkURL: state.currentTrack.artworkURL,
                                 preview: $preview, previewScene: $previewScene, onConfirm: {})
             Divider()
-            sectionLabel("阅读")
-            VStack(alignment: .leading, spacing: 7) {
-                Text("清晰度").font(.system(size: 12, weight: .medium))
-                Picker("清晰度", selection: $settings.v3ReadingProtection) {
-                    ForEach(V3ReadingProtection.allCases) { value in Text(value.title).tag(value) }
-                }.pickerStyle(.segmented).labelsHidden()
-                Text("文字阴影只作用于歌词；柔和光晕随封面明暗调整。")
-                    .font(.system(size: 11)).foregroundStyle(Color.secondary)
-            }
             Toggle(settings.v3ListeningScene == .focusedLyrics || settings.v3ListeningScene == .coverPhoto
                    ? "显示歌曲缩略图" : "显示前景封面", isOn: $settings.v3ShowForegroundArtwork)
                 .accessibilityIdentifier("v3.artwork.showForeground")
@@ -516,6 +502,15 @@ struct V3VisualTuningPopoverView: View {
 
     private var textPage: some View {
         VStack(alignment: .leading, spacing: 13) {
+            VStack(alignment: .leading, spacing: 7) {
+                Text("清晰度").font(.system(size: 12, weight: .medium))
+                Picker("清晰度", selection: $settings.v3ReadingProtection) {
+                    ForEach(V3ReadingProtection.allCases) { value in Text(value.title).tag(value) }
+                }.pickerStyle(.segmented).labelsHidden()
+                Text("文字阴影只作用于歌词；柔和光晕随封面明暗调整。")
+                    .font(.system(size: 11)).foregroundStyle(Color.secondary)
+            }
+            Divider()
             sectionLabel("显示与对齐")
             VStack(alignment: .leading, spacing: 6) {
                 Text("歌词位置与对齐")
@@ -604,25 +599,8 @@ struct V3VisualTuningPopoverView: View {
         }
     }
 
-    private var currentSongPage: some View {
+    private var translationPage: some View {
         VStack(alignment: .leading, spacing: 13) {
-            VStack(alignment: .leading, spacing: 4) {
-                sectionLabel("当前播放")
-                Text(state.currentTrack.title)
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
-                    .lineLimit(2)
-                Text(state.currentTrack.artist)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Text("歌词来源 · " + (state.liveLyricsSource?.displayName ?? "尚未采用"))
-                    .font(.system(size: 12)).foregroundStyle(Color.secondary)
-                Text(state.liveLyricsVersionID == nil ? "暂无已保存歌词版本" : "已采用保存版本 · \(state.liveLyrics.count) 行")
-                    .font(.system(size: 12)).foregroundStyle(Color.secondary)
-            }
-
-            Divider()
-
             currentSongWorkflow
                 .frame(maxWidth: .infinity, alignment: .topLeading)
 
@@ -646,28 +624,7 @@ struct V3VisualTuningPopoverView: View {
                     .buttonStyle(.bordered)
             }
 
-            Divider()
 
-            DisclosureGroup("版本、语言与更多操作") {
-                CurrentSongOperationsView(
-                    state: state,
-                    embeddedInInspector: true,
-                    onVersionPickerPresentationChange: { _ in },
-                    onOpenEditor: liveOnly ? { MenuBarLyricsController.shared.openEditor() } : nil
-                )
-                .environmentObject(settings)
-                .padding(.top, 8)
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 7) {
-                sectionLabel("歌词时间")
-                LyricsPresentationOffsetControl(settings: settings)
-                Button("恢复默认时间") { settings.lyricsOffsetStore.resetActiveValue() }
-                    .font(.system(size: 12))
-                    .buttonStyle(.borderless)
-            }
         }
     }
 

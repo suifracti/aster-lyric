@@ -131,11 +131,13 @@ struct LyricsPresentationOffsetControl: View {
     @ObservedObject var settings: AppSettingsStore
     @ObservedObject private var offsetStore: ScopedLyricsOffsetStore
     let target: LyricsPresentationOffsetTarget
+    let showsLegacyNotice: Bool
     @State private var input = ""
 
-    init(settings: AppSettingsStore, target: LyricsPresentationOffsetTarget = .active) {
+    init(settings: AppSettingsStore, target: LyricsPresentationOffsetTarget = .active, showsLegacyNotice: Bool = true) {
         self.settings = settings
         self.target = target
+        self.showsLegacyNotice = showsLegacyNotice
         self._offsetStore = ObservedObject(wrappedValue: settings.lyricsOffsetStore)
     }
 
@@ -212,7 +214,7 @@ struct LyricsPresentationOffsetControl: View {
                 .font(.system(size: 10, design: .rounded))
                 .foregroundStyle(LyricsDesignTokens.mutedText)
                 .fixedSize(horizontal: false, vertical: true)
-            if case .active = target {
+            if showsLegacyNotice, case .active = target {
                 Text(legacyHistoryNotice)
                     .font(.system(size: 10, design: .rounded))
                     .foregroundStyle(LyricsDesignTokens.mutedText)

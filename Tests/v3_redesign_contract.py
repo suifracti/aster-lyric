@@ -91,8 +91,7 @@ assert 'Color(nsColor: .windowBackgroundColor)' in surface, 'pinned tool panels 
 assert 'V3SystemAppearance.colorScheme == .dark ? Color.black : Color.white' not in surface, 'historical glass must not be covered by an opaque white tint'
 assert 'Color.white.opacity(0.12)' in surface, 'glass panel must retain its original hairline edge'
 assert 'content: inspectorSurface(for: pinned, style: .pinnedSolid)' in window, 'pinned tool windows must use the solid panel surface'
-assert 'hoverTrackedPanel(.translation) { inspectorSurface(for: .translation, style: .hoverGlass) }' in normalized_window, 'translation hover panel must share the glass surface'
-assert 'hoverTrackedPanel(panel) { inspectorSurface(for: panel, style: .hoverGlass) }' in normalized_window, 'adjust and More hover panels must share the glass surface'
+assert 'hoverTrackedPanel(panel) { inspectorSurface(for: panel, style: .hoverGlass) }' in normalized_window, 'hover panels must share the glass surface'
 assert 'isProjectingScene = true' in settings and 'selectLegacyV3Presentation' in settings
 assert 'scenePresets[Self.sceneKey(scene, renderer)]' in settings
 assert 'sceneOverride: compositionScene' in window

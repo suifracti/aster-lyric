@@ -1,129 +1,96 @@
-// Behaviour of the main-window toolbar, from docs/TOOLBAR_BEHAVIOR.md.
-// Every case below comes from a real user report; change the spec first.
+// Rules from docs/TOOLBAR_BEHAVIOR.md (b5a1ed5).
 import XCTest
 import CoreGraphics
 @testable import SpotifyLyrics
 
 final class V3ToolbarPresentationTests: XCTestCase {
-    private func expect(_ ok: Bool, _ message: String, line: Int = #line) {
-        XCTAssertTrue(ok, message, file: #filePath, line: UInt(line))
+    func testHoverLifetimeAndMenus() {
+        XCTAssertEqual(V3ToolbarModel.hoverGrace, .milliseconds(180))
+        for panel in V3ToolbarModel.Panel.allCases {
+            var m = V3ToolbarModel()
+            XCTAssertEqual(m.pointerOnTrigger(panel, inside: true), .cancelHoverDismissal)
+            m.dismissTimerFired(panel)
+            XCTAssertEqual(m.hoverPanel, panel, "the button keeps its hover open")
+            XCTAssertEqual(m.pointerOnTrigger(panel, inside: false), .scheduleHoverDismissal(panel))
+            _ = m.pointerInPanel(panel, inside: true)
+            m.dismissTimerFired(panel)
+            XCTAssertEqual(m.hoverPanel, panel, "the panel keeps itself open")
+            _ = m.menuTrackingBegan()
+            _ = m.pointerInPanel(panel, inside: false)
+            m.dismissTimerFired(panel)
+            XCTAssertEqual(m.hoverPanel, panel, "a native menu keeps hover open")
+            XCTAssertEqual(m.menuTrackingEnded(), .scheduleHoverDismissal(panel))
+            m.dismissTimerFired(panel)
+            XCTAssertEqual(m.mode, .idle)
+        }
     }
 
-    func testToolbarModelAndPanelPlacement() {
-        // Hover shows a temporary panel inside the app; leaving closes it
-        // only after the grace timer, and not while the pointer is on it.
+    func testClicksPinRepeatSwitchAndDismiss() {
+        XCTAssertEqual(V3ToolbarModel.Panel.allCases.map(\.title), ["歌词库", "搜索", "译文", "文字", "画面", "更多"])
+        for panel in [V3ToolbarModel.Panel.translation, .text, .picture, .more] {
+            var m = V3ToolbarModel()
+            _ = m.pointerOnTrigger(panel, inside: true)
+            m.click(panel)
+            XCTAssertEqual(m.pinnedPanel, panel, "a hover click pins that same full panel")
+            for other in V3ToolbarModel.Panel.allCases {
+                XCTAssertEqual(m.isSelected(other), other == panel)
+                _ = m.pointerOnTrigger(other, inside: true)
+                XCTAssertEqual(m.pinnedPanel, panel, "pinned ignores other hovers")
+            }
+            m.hoverClosed(panel)
+            XCTAssertEqual(m.pinnedPanel, panel, "outside clicks never close a pinned panel")
+            m.click(panel)
+            XCTAssertEqual(m.mode, .idle, "repeat click closes")
+            m.click(panel)
+            let other: V3ToolbarModel.Panel = panel == .more ? .text : .more
+            m.click(other)
+            XCTAssertEqual(m.pinnedPanel, other, "another button switches directly")
+            m.dismiss() // Escape and the close button share this action.
+            XCTAssertEqual(m.mode, .idle)
+        }
+        for action in [V3ToolbarModel.Panel.library, .search] {
+            var m = V3ToolbarModel()
+            m.click(.translation)
+            m.click(action)
+            XCTAssertEqual(m.mode, .idle, "library/search open their window and close panels")
+        }
         var m = V3ToolbarModel()
-        expect(m.pointerOnTrigger(.adjust, inside: true) == .cancelHoverDismissal, "hover cancels pending close")
-        expect(m.hoverPanel == .adjust && m.pinnedPanel == nil, "hover opens inside")
-        expect(m.pointerOnTrigger(.adjust, inside: false) == .scheduleHoverDismissal(.adjust), "leave schedules close")
-        _ = m.pointerInPanel(.adjust, inside: true)
-        m.dismissTimerFired(.adjust)
-        expect(m.hoverPanel == .adjust, "pointer on panel keeps it open")
-        expect(m.pointerInPanel(.adjust, inside: false) == .scheduleHoverDismissal(.adjust), "leaving panel schedules close")
-        m.dismissTimerFired(.adjust)
-        expect(m.mode == .idle, "grace timer closes hover")
-
-        // A native menu inside the hover panel keeps it open.
         _ = m.pointerOnTrigger(.more, inside: true)
-        _ = m.menuTrackingBegan()
-        _ = m.pointerOnTrigger(.more, inside: false)
-        m.dismissTimerFired(.more)
-        expect(m.hoverPanel == .more, "menu tracking keeps hover open")
-        expect(m.menuTrackingEnded() == .scheduleHoverDismissal(.more), "menu end schedules close")
-        m.dismissTimerFired(.more)
-        expect(m.mode == .idle, "closes after menu")
-
-        // "悬停的情况下再点击更多没反应": clicking while its hover panel is open pins it.
-        m = V3ToolbarModel()
-        _ = m.pointerOnTrigger(.more, inside: true)
-        m.click(.more)
-        expect(m.pinnedPanel == .more && m.hoverPanel == nil, "click during hover pins")
-        m.dismissTimerFired(.more)
-        expect(m.pinnedPanel == .more, "stale hover timer cannot close a pinned panel")
-
-        // While pinned, hovering other triggers does nothing.
-        _ = m.pointerOnTrigger(.adjust, inside: true)
-        expect(m.pinnedPanel == .more && m.hoverPanel == nil, "pinned ignores hover")
-        m.click(.more)
-        expect(m.mode == .idle, "second click closes")
-
-        // 调整 ↔ 更多 switch directly.
-        m.click(.adjust); m.click(.more)
-        expect(m.pinnedPanel == .more, "switch pinned panel")
-
-        // 译文: hover previews 当前歌曲; click pins 调整 on 当前歌曲; again closes.
-        m = V3ToolbarModel()
-        m.tab = .text
-        _ = m.pointerOnTrigger(.translation, inside: true)
-        expect(m.hoverPanel == .translation && m.tab == .currentSong, "译文 hover opens current song")
-        m.click(.translation)
-        expect(m.pinnedPanel == .adjust && m.tab == .currentSong, "译文 click pins adjust/current song")
-        expect(m.isSelected(.translation) && !m.isSelected(.adjust), "only 译文 lit")
-        m.click(.translation)
-        expect(m.mode == .idle, "译文 again closes, never a silent no-op")
-
-        // 译文 while 调整 is pinned on another tab: switch, don't close.
-        m.click(.adjust); m.tab = .picture
-        m.click(.translation)
-        expect(m.pinnedPanel == .adjust && m.tab == .currentSong, "译文 switches tab")
-        // 调整 while 译文 is lit: back to 画面, still pinned.
-        m.click(.adjust)
-        expect(m.pinnedPanel == .adjust && m.tab == .picture && m.isSelected(.adjust), "调整 takes over from 译文")
-        m.click(.adjust)
-        expect(m.mode == .idle, "调整 again closes")
-
-        // Hover → pin keeps the tab.
-        m.tab = .text
-        _ = m.pointerOnTrigger(.adjust, inside: true)
-        m.click(.adjust)
-        expect(m.tab == .text, "pinning keeps the tab")
-
-        // Other toolbar actions and Escape close everything.
-        m.dismiss()
-        expect(m.mode == .idle, "dismiss closes")
-        _ = m.pointerOnTrigger(.adjust, inside: true)
-        m.hoverClosed(.adjust)
-        expect(m.mode == .idle, "outside click closes hover")
-        m.click(.more)
         m.hoverClosed(.more)
-        expect(m.pinnedPanel == .more, "a closing hover popover never closes the pinned panel")
+        XCTAssertEqual(m.mode, .idle, "outside clicks close hover")
+        m.click(.text)
+        m.click() // Settings has no hover panel.
+        XCTAssertEqual(m.mode, .idle)
+    }
 
-        // Placement (user, 2026-10-20): outside on the right when it fits,
-        // otherwise against the screen's right edge; never on the left.
+    func testVisibilityAndEdgePriority() {
+        var m = V3ToolbarModel()
+        XCTAssertEqual(m.opacity(pointerInside: false, nearTop: false), 0)
+        XCTAssertEqual(m.opacity(pointerInside: true, nearTop: false), 0.32)
+        XCTAssertEqual(m.opacity(pointerInside: true, nearTop: true), 1)
+        XCTAssertFalse(m.suppressesEdgeControls(nearTop: false))
+        XCTAssertTrue(m.suppressesEdgeControls(nearTop: true))
+        _ = m.pointerOnTrigger(.text, inside: true)
+        XCTAssertEqual(m.opacity(pointerInside: false, nearTop: false), 1)
+        XCTAssertTrue(m.suppressesEdgeControls(nearTop: false))
+        m.click(.text)
+        XCTAssertEqual(m.opacity(pointerInside: false, nearTop: false), 1)
+        XCTAssertTrue(m.suppressesEdgeControls(nearTop: false))
+        m.dismiss()
+        XCTAssertTrue(m.suppressesEdgeControls(nearTop: false, otherPanelOpen: true))
+        XCTAssertEqual(m.opacity(pointerInside: false, nearTop: false, otherPanelOpen: true), 1)
+    }
+
+    func testPinnedPlacement() {
         let visible = CGRect(x: 0, y: 0, width: 1800, height: 1100)
         let requested = CGSize(width: 360, height: 720)
-        let roomy = LyricIslandPanelPlacement.frame(owner: CGRect(x: 100, y: 180, width: 900, height: 800), visible: visible, requested: requested)
-        expect(roomy.minX == 1012 && !roomy.intersects(CGRect(x: 100, y: 180, width: 900, height: 800)), "beside the window")
+        let owner = CGRect(x: 100, y: 180, width: 900, height: 800)
+        let roomy = LyricIslandPanelPlacement.frame(owner: owner, visible: visible, requested: requested)
+        XCTAssertEqual(roomy.minX, owner.maxX + 12)
+        XCTAssertFalse(roomy.intersects(owner))
         let wide = CGRect(x: 760, y: 180, width: 900, height: 800)
         let edge = LyricIslandPanelPlacement.frame(owner: wide, visible: visible, requested: requested)
-        expect(edge.maxX == visible.maxX - 8, "no room: screen right edge")
-        expect(edge.minX > wide.minX, "never left of the window")
-
-    }
-
-    func testInspectorHoverPinRepeatSwitchAndDismissSequence() {
-        var ui = V3ToolbarModel()
-        _ = ui.pointerOnTrigger(.adjust, inside: true)
-        XCTAssertEqual(ui.hoverPanel, .adjust)
-        XCTAssertNil(ui.pinnedPanel)
-        ui.click(.adjust)
-        XCTAssertNil(ui.hoverPanel)
-        XCTAssertEqual(ui.pinnedPanel, .adjust)
-
-        _ = ui.pointerOnTrigger(.more, inside: true)
-        XCTAssertEqual(ui.pinnedPanel, .adjust, "hovering another trigger does not switch a pinned panel")
-        XCTAssertNil(ui.hoverPanel)
-        ui.click(.adjust)
-        XCTAssertNil(ui.pinnedPanel)
-        XCTAssertNil(ui.hoverPanel)
-
-        _ = ui.pointerOnTrigger(.more, inside: true)
-        XCTAssertEqual(ui.hoverPanel, .more)
-        ui.click(.more)
-        ui.click(.adjust)
-        XCTAssertEqual(ui.pinnedPanel, .adjust, "clicking another panel switches the pinned tool")
-        ui.dismiss()
-        XCTAssertNil(ui.pinnedPanel)
-        XCTAssertNil(ui.hoverPanel)
+        XCTAssertEqual(edge.maxX, visible.maxX - 8)
+        XCTAssertGreaterThan(edge.minX, wide.minX, "never to the left")
     }
 }

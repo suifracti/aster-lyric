@@ -390,15 +390,14 @@ private struct ExperienceFixtureRoot: View {
                 // Toolbar states normally need a real pointer; the main view
                 // accepts these through a DEBUG-only notification.
                 let toolbar = ExperienceArguments.value("--toolbar", fallback: "")
-                let panel = ExperienceArguments.value("--panel", fallback: "")   // hover:adjust, pin:more, ...
-                let tab = ExperienceArguments.value("--tab", fallback: "")
+                let panel = ExperienceArguments.value("--panel", fallback: "")   // hover/pin: library, search, translation, text, picture, more
                 if !toolbar.isEmpty {
-                    NotificationCenter.default.post(name: .v3ToolbarDebugCommand, object: nil, userInfo: ["command": toolbar, "tab": tab])
+                    NotificationCenter.default.post(name: .v3ToolbarDebugCommand, object: nil, userInfo: ["command": toolbar])
                 }
                 if panel.contains(":") {
                     let parts = panel.split(separator: ":").map(String.init)
                     NotificationCenter.default.post(name: .v3ToolbarDebugCommand, object: nil,
-                                                    userInfo: ["command": parts[0], "panel": parts[1], "tab": tab])
+                                                    userInfo: ["command": parts[0], "panel": parts[1]])
                 }
                 if !toolbar.isEmpty || !panel.isEmpty { try? await Task.sleep(for: .milliseconds(800)) }
                 if !panel.isEmpty {
