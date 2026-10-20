@@ -76,6 +76,10 @@ with tempfile.TemporaryDirectory(prefix='lyric-redesign-contract-') as d:
 assert 'let canvasWidth = max(1, geometry.size.width)' in window
 assert 'geometry.size.width - inspectorWidth' not in window
 assert '.fittingSize' not in window[window.index('private struct V3PinnedInspectorPanelHost'):window.index('private struct QuietToolbarButtonStyle')]
+popover_host=window[window.index('func v3ToolPopover<Content: View>'):window.index('private struct V3PinnedInspectorPanelHost')]
+pinned_host=window[window.index('private struct V3PinnedInspectorPanelHost'):window.index('private struct QuietToolbarButtonStyle')]
+assert 'v3ToolPanelRoot(content())' in popover_host, 'hover tool content must override the listening canvas color scheme'
+assert pinned_host.count('v3ToolPanelRoot(parent.content)') >= 2, 'pinned tool content must override inherited dark color scheme on create and update'
 assert 'isProjectingScene = true' in settings and 'selectLegacyV3Presentation' in settings
 assert 'scenePresets[Self.sceneKey(scene, renderer)]' in settings
 assert 'sceneOverride: compositionScene' in window

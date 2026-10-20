@@ -2037,7 +2037,7 @@ private extension View {
                 // Closed panels must not construct/copy every settings page on
                 // each playback tick. Keep the anchor, build the page on demand.
                 content: isPresented.wrappedValue
-                    ? AnyView(content())
+                    ? v3ToolPanelRoot(content())
                     : AnyView(EmptyView())
             )
         )
@@ -2086,10 +2086,20 @@ enum V3ToolbarLog {
 /// The listening canvas forces dark, which every child window would inherit.
 /// Tool panels read the user's system choice directly instead.
 private enum V3SystemAppearance {
-    static var current: NSAppearance {
-        let dark = UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
-        return NSAppearance(named: dark ? .darkAqua : .aqua) ?? NSAppearance(named: .aqua)!
+    static var colorScheme: ColorScheme {
+        UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark" ? .dark : .light
     }
+
+    static var current: NSAppearance {
+        NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua) ?? NSAppearance(named: .aqua)!
+    }
+}
+
+/// The main lyric surface forces dark mode. Tool windows use the system
+/// appearance, so explicitly reset SwiftUI's inherited color scheme at the
+/// hosted root as well as setting the AppKit window appearance.
+private func v3ToolPanelRoot<Content: View>(_ content: Content) -> AnyView {
+    AnyView(content.environment(\.colorScheme, V3SystemAppearance.colorScheme))
 }
 
 private final class V3ToolAnchorView: NSView {
@@ -2321,7 +2331,7 @@ private struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
         var parent: V3PinnedInspectorPanelHost
         weak var anchor: NSView?
         private var panel: NSPanel?
-        private var hosting: NSHostingController<Content>?
+        private var hosting: NSHostingController<AnyView>?
         private var escapeMonitor: Any?
         private var observers: [NSObjectProtocol] = []
         private var userPositioned = false
@@ -2333,9 +2343,9 @@ private struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
             guard parent.isPresented, let owner = anchor?.window else {
                 close(notifyBinding: false); return
             }
-            if let hosting { hosting.rootView = parent.content }
+            if let hosting { hosting.rootView = v3ToolPanelRoot(parent.content) }
             else {
-                let controller = NSHostingController(rootView: parent.content)
+                let controller = NSHostingController(rootView: v3ToolPanelRoot(parent.content))
                 controller.sizingOptions = []
                 controller.view.appearance = V3SystemAppearance.current
                 hosting = controller
