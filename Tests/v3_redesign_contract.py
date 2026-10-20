@@ -80,6 +80,8 @@ popover_host=window[window.index('func v3ToolPopover<Content: View>'):window.ind
 pinned_host=window[window.index('private struct V3PinnedInspectorPanelHost'):window.index('private struct QuietToolbarButtonStyle')]
 assert 'v3ToolPanelRoot(content())' in popover_host, 'hover tool content must override the listening canvas color scheme'
 assert pinned_host.count('v3ToolPanelRoot(parent.content)') >= 2, 'pinned tool content must override inherited dark color scheme on create and update'
+assert 'anchor.onWindowAttachment = { [weak coordinator]' in pinned_host, 'pinned host must retry when its zero-size anchor joins the owner window'
+assert 'override func viewDidMoveToWindow()' in window[window.index('private final class V3ToolAnchorView'):window.index('private struct V3ToolPopoverAnchor')], 'tool anchor must signal its AppKit window attachment'
 assert 'isProjectingScene = true' in settings and 'selectLegacyV3Presentation' in settings
 assert 'scenePresets[Self.sceneKey(scene, renderer)]' in settings
 assert 'sceneOverride: compositionScene' in window

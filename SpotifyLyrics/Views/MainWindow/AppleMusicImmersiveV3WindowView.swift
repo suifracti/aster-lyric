@@ -2103,6 +2103,13 @@ private func v3ToolPanelRoot<Content: View>(_ content: Content) -> AnyView {
 }
 
 private final class V3ToolAnchorView: NSView {
+    var onWindowAttachment: (() -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { onWindowAttachment?() }
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
@@ -2265,7 +2272,10 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
                 // Keep the hover panel alive until mouse-up. The owner-window
                 // button pins it on release; closing here would remove that
                 // button mid-click and make the action intermittent.
-                if eventWindow === anchorWindow { return event }
+                if eventWindow === anchorWindow {
+                    V3ToolbarLog.logger.notice("toolbar anchor click delivered to owner window")
+                    return event
+                }
                 V3ToolbarLog.logger.notice("anchor click → pin")
                 parent.onAnchorPress()
                 return nil
@@ -2319,11 +2329,14 @@ private struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
     func makeNSView(context: Context) -> V3ToolAnchorView { V3ToolAnchorView() }
     func updateNSView(_ anchor: V3ToolAnchorView, context: Context) {
-        context.coordinator.parent = self
-        context.coordinator.anchor = anchor
-        context.coordinator.updatePanel()
+        let coordinator = context.coordinator
+        coordinator.parent = self
+        coordinator.anchor = anchor
+        anchor.onWindowAttachment = { [weak coordinator] in coordinator?.updatePanel() }
+        coordinator.updatePanel()
     }
     static func dismantleNSView(_ nsView: V3ToolAnchorView, coordinator: Coordinator) {
+        nsView.onWindowAttachment = nil
         coordinator.close(notifyBinding: false)
     }
 
@@ -2340,8 +2353,12 @@ private struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
         init(parent: V3PinnedInspectorPanelHost) { self.parent = parent; super.init() }
 
         func updatePanel() {
-            guard parent.isPresented, let owner = anchor?.window else {
+            guard parent.isPresented else {
                 close(notifyBinding: false); return
+            }
+            guard let owner = anchor?.window else {
+                V3ToolbarLog.logger.notice("pinned panel waiting for owner window attachment")
+                return
             }
             if let hosting { hosting.rootView = v3ToolPanelRoot(parent.content) }
             else {
@@ -2379,6 +2396,7 @@ private struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
             if !panel.isVisible {
                 positionBeside(owner)
                 panel.orderFront(nil)
+                V3ToolbarLog.logger.notice("pinned panel presented")
                 startEscapeMonitoring()
             }
         }
