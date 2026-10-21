@@ -52,7 +52,8 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
             synchronized: sync, revision: documentRevision, loadState: documentState,
             language: isPreview ? nil : state.liveLyricsLanguage, preferences: state.preferences,
             preview: isPreview, instrumental: hasExplicitInstrumentalMark,
-            wordClock: usesWordClock ? state.presentationClock : nil,
+            wordClock: usesWordClock || LyricsTimeline.vocalCountdownWindow(lines: lines, currentIndex: index, isSynchronized: sync) != nil
+                ? state.presentationClock : nil,
             loopedLineID: state.loopedLyricLineID)
     }
 
@@ -498,8 +499,13 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     }
 
     private var needsWordClock: Bool {
+        if countdownWindow != nil { return true }
         guard synchronized, let currentIndex, lines.indices.contains(currentIndex) else { return false }
         return lines[currentIndex].timedSpans?.isEmpty == false
+    }
+
+    private var countdownWindow: LyricsTimeline.VocalCountdownWindow? {
+        LyricsTimeline.vocalCountdownWindow(lines: lines, currentIndex: currentIndex, isSynchronized: synchronized)
     }
 
     private var rowSpacing: CGFloat {
@@ -514,8 +520,13 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
 
     var body: some View {
         let _ = rubyActionRelay.action = onRuby
+        let countdown = countdownWindow
         VStack(alignment: textAlignment.lyricHorizontalAlignment, spacing: rowSpacing) {
             ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
+                if let window = countdown, window.lineIndex == index {
+                    V3VocalCountdown(window: window, clock: presentationClock)
+                        .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
+                }
                 row(for: line, index: index)
                     .padding(.top, readingScene == .linerNotes && isParagraphStart(index) ? 14 : 0)
                     .id(line.id)
@@ -597,6 +608,29 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             content
                 .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
         }
+    }
+}
+
+/// Only the three dots are scheduled; lyric rows keep their boundary-driven rendering.
+private struct V3VocalCountdown: View {
+    @Environment(\.v3CoverAccent) private var accent
+    let window: LyricsTimeline.VocalCountdownWindow
+    let clock: LyricsPresentationClock
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 0.1, paused: !clock.isPlaying)) { _ in
+            let time = clock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+            let progress = (time - window.start) / (window.end - window.start)
+            HStack(spacing: 7) {
+                ForEach(0..<3) { index in
+                    Circle().fill(accent.opacity(0.2 + 0.8 * max(0, min(1, progress * 3 - Double(index)))))
+                        .frame(width: 8, height: 8)
+                }
+            }
+            .opacity(time >= window.start && time < window.end ? 1 : 0)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("前奏或间奏，准备进入下一句")
+        }
+        .frame(height: 12)
     }
 }
 

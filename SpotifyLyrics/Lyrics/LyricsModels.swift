@@ -551,6 +551,32 @@ public enum LyricsLoadState: Equatable {
 }
 
 public enum LyricsTimeline {
+    struct VocalCountdownWindow: Equatable {
+        let lineIndex: Int
+        let start: TimeInterval
+        let end: TimeInterval
+    }
+
+    /// The existing before-first-line/empty-line states identify instrumental gaps.
+    /// An explicit vocal end also permits a gap; never guess a sung line's length.
+    static func vocalCountdownWindow(lines: [LyricLine], currentIndex: Int?, isSynchronized: Bool) -> VocalCountdownWindow? {
+        guard isSynchronized else { return nil }
+        let start: TimeInterval
+        let first: Int
+        if let index = currentIndex, lines.indices.contains(index) {
+            let current = lines[index]
+            if current.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                start = current.timestamp
+            } else if let end = current.endTime { start = end }
+            else { return nil }
+            first = index + 1
+        } else { start = 0; first = 0 }
+        guard let next = lines.indices.dropFirst(first).first(where: {
+            !lines[$0].originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }), lines[next].timestamp - start >= 4 else { return nil }
+        return VocalCountdownWindow(lineIndex: next, start: start, end: lines[next].timestamp)
+    }
+
     /// Returns a seek position only for a synchronized row whose timestamp is
     /// finite and inside the current track. Plain-text rows intentionally
     /// return nil because their zero placeholder is not a real seek target.

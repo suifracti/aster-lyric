@@ -98,6 +98,16 @@ final class DesktopPlaybackEventTests: XCTestCase {
         XCTAssertNil(state.loopedLyricLineID)
     }
 
+    func testVocalCountdownUsesIntroAndTimedInstrumentalGapsOnly() {
+        let lines = [LyricLine(timestamp: 10, originalText: "One"),
+            LyricLine(timestamp: 20, originalText: ""), LyricLine(timestamp: 30, originalText: "Two")]
+        XCTAssertEqual(LyricsTimeline.vocalCountdownWindow(lines: lines, currentIndex: nil, isSynchronized: true)?.end, 10)
+        XCTAssertEqual(LyricsTimeline.vocalCountdownWindow(lines: lines, currentIndex: 1, isSynchronized: true)?.start, 20)
+        XCTAssertNil(LyricsTimeline.vocalCountdownWindow(lines: lines, currentIndex: 0, isSynchronized: true))
+        XCTAssertNil(LyricsTimeline.vocalCountdownWindow(lines: lines, currentIndex: nil, isSynchronized: false))
+        XCTAssertNil(LyricsTimeline.vocalCountdownWindow(lines: [LyricLine(timestamp: 3, originalText: "Short")], currentIndex: nil, isSynchronized: true))
+    }
+
     private func payload(_ title: String = "Event B", state: String = "Playing", position: Double = 32) -> [AnyHashable: Any] {
         ["Player State": state, "Track ID": "spotify:track:BBBBBBBBBBBBBBBBBBBBBB",
          "Name": title, "Artist": "Fixture", "Album": "Cache", "Duration": 240_000,

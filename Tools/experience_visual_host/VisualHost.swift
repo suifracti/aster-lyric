@@ -49,6 +49,9 @@ private struct ExperienceLyricsProvider: LyricsProvider {
             line.translationText = ["窗外的雨正在静静散去", "沿着灯光，我们开始前行", "越过今夜，走向未见的清晨", "Every line deserves a little room to breathe.", "即使世界变小，也保留完整的画面。", "直到我们再次相见"][index]
             return line
         }
+        if ExperienceArguments.value("--countdown", fallback: "false") == "true" {
+            for index in lines.indices { lines[index].timestamp += 10 }
+        }
         if ExperienceArguments.value("--language", fallback: "japanese") == "chinese" {
             lines[2].originalText = "沿着微光前行，让歌声陪你到天明"
             lines[2].translationText = "Follow the light, let the song carry you to dawn."
