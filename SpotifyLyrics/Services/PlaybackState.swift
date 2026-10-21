@@ -227,7 +227,8 @@ public final class PlaybackState: ObservableObject {
                         album: entry.album ?? "", duration: entry.duration, isrc: entry.isrc,
                         spotifyId: entry.spotifyTrackID, artworkURL: entry.artworkURL, spotifyURL: entry.spotifyURI.flatMap(URL.init(string:)))
                     return TrackSearchResult(id: "library:\(entry.trackStableKey)", source: .local, track: track,
-                        confidence: max(0.6, SongSearchScoring.score(track: track, query: query)), artworkURL: entry.artworkURL)
+                        confidence: max(0.6, SongSearchScoring.score(track: track, query: query)), artworkURL: entry.artworkURL,
+                        savedLibraryEntry: entry)
                 }
             }),
             CurrentTrackResolver(playbackProvider: resolvedProvider),

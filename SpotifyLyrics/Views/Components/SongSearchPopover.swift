@@ -177,65 +177,7 @@ struct SongSearchPopover: View {
     }
 
     private func resultRow(_ result: SongSearchResult, showsSeparator: Bool) -> some View {
-        HStack(spacing: 8) {
-            Button {
-                playbackState.loadSearchResult(result)
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: result.lyrics == nil ? "music.note" : "text.quote")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(result.track.title)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                        Text("\(result.track.artist) · \(result.track.album.isEmpty ? "未知专辑" : result.track.album)")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        if let metadata = result.catalogMetadata {
-                            Text("\(formatDuration(metadata.duration)) · \(metadata.releaseDate ?? "发行日期未知")\(metadata.explicit ? " · Explicit" : "")")
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                        }
-                    }
-
-                    Spacer(minLength: 6)
-
-                    VStack(alignment: .trailing, spacing: 3) {
-                        Text(result.source.displayName)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.secondary)
-                        Text(result.lyrics == nil ? "查看歌词" : "加载歌词")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 10)
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            if result.source == .spotifyCatalog,
-               let url = result.track.spotifyURL {
-                Button {
-                    NSWorkspace.shared.open(url)
-                } label: {
-                    Image(systemName: "arrow.up.right.square")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("在 Spotify 打开")
-            }
-        }
-        .overlay(alignment: .bottom) { if showsSeparator { Divider() } }
-        .accessibilityLabel("歌曲结果：\(result.track.title)，\(result.track.artist)")
-        .accessibilityHint(result.lyrics == nil ? "查看这首歌的歌词" : "加载这首歌的歌词")
+        SongSearchResultRow(result: result, state: playbackState, showsSeparator: showsSeparator)
     }
 
     private var searchPreviewActionBanner: some View {
@@ -378,5 +320,105 @@ private struct SearchRecordMark: View {
         }
         .foregroundStyle(.secondary)
         .accessibilityHidden(true)
+    }
+}
+
+/// One result row for both the complete search page and toolbar panel.
+struct SongSearchResultRow: View {
+    let result: SongSearchResult
+    @V3ContentPlaybackState var state: PlaybackState
+    var showsSeparator = true
+    var isSelected = false
+
+    private var matchesDisplayedTrack: Bool {
+        TrackIdentity(track: result.track) == TrackIdentity(track: state.displayedTrack)
+            || (!state.isShowingSearchPreview && state.liveLyricsVersionID != nil
+                && state.liveLyricsVersionID == result.savedLibraryEntry?.activeLyricsVersionID)
+    }
+
+    private var isLoading: Bool {
+        if case .loading = state.lyricsState { return matchesDisplayedTrack }
+        return false
+    }
+    private var isAdopted: Bool { matchesDisplayedTrack && !state.lyrics.isEmpty && !isLoading }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button { state.loadSearchResult(result) } label: {
+                HStack(spacing: 10) {
+                    AsyncImage(url: result.artworkURL ?? result.track.artworkURL) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Image(systemName: "music.note").frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(Color.secondary.opacity(0.1))
+                    }
+                    .frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 6))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(result.track.title).font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.primary).lineLimit(1)
+                        Text("\(result.track.artist) · \(result.track.album.isEmpty ? "未知专辑" : result.track.album)")
+                            .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                        HStack(spacing: 4) {
+                            Text(formatDuration(result.catalogMetadata?.duration ?? result.track.duration))
+                                .monospacedDigit()
+                            ForEach(result.savedLayerLabels, id: \.self) { label in
+                                Text(label).padding(.horizontal, 3)
+                                    .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+                            }
+                            if let metadata = result.catalogMetadata {
+                                Text(metadata.releaseDate ?? "发行日期未知").lineLimit(1)
+                                if metadata.explicit { Text("Explicit") }
+                            }
+                        }.font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    VStack(alignment: .trailing, spacing: 3) {
+                        if isAdopted { Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor) }
+                        Text(isLoading ? "搜索中…" : isAdopted ? "已采用" : "点击采用")
+                            .font(.system(size: 10, weight: .medium)).foregroundStyle(Color.accentColor)
+                        Text(result.source.displayName).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
+                .padding(.horizontal, 8).padding(.vertical, 9)
+                .contentShape(Rectangle())
+            }.buttonStyle(.plain)
+            if result.source == .spotifyCatalog, let url = result.track.spotifyURL {
+                Button { NSWorkspace.shared.open(url) } label: {
+                    Image(systemName: "arrow.up.right.square").foregroundStyle(.secondary)
+                }.buttonStyle(.plain).help("在 Spotify 打开")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isSelected ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .overlay(alignment: .bottom) { if showsSeparator { Divider() } }
+        .accessibilityLabel("歌曲结果：\(result.track.title)，\(result.track.artist)")
+        .accessibilityHint("采用这首歌的歌词")
+    }
+
+    private func formatDuration(_ value: TimeInterval) -> String {
+        let seconds = Int(max(0, value))
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+struct SongSearchResultGroup: Identifiable {
+    let title: String
+    let results: [SongSearchResult]
+    var id: String { title }
+
+    static func panelGroups(_ results: [SongSearchResult]) -> [Self] {
+        [Self(title: "本地已存", results: Array(results.filter(\.isSavedLocally).prefix(5))),
+         Self(title: "在线", results: Array(results.filter { !$0.isSavedLocally }.prefix(5)))]
+            .filter { !$0.results.isEmpty }
+    }
+}
+
+extension SongSearchResult {
+    var isSavedLocally: Bool { savedLibraryEntry != nil || source == .local }
+    var savedLayerLabels: [String] {
+        guard let entry = savedLibraryEntry else { return source == .local ? ["词"] : [] }
+        return [(entry.lyricsVersionCount > 0 ? "词" : nil),
+                (entry.translationVersionCount > 0 ? "译" : nil),
+                (entry.readingVersionCount > 0 ? "读" : nil)].compactMap { $0 }
     }
 }

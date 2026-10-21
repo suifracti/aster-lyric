@@ -132,6 +132,7 @@ public struct SongSearchResult: Identifiable, Equatable {
     public let lyrics: LyricsDocument?
     public let artworkURL: URL?
     public let catalogMetadata: TrackSearchMetadata?
+    public let savedLibraryEntry: PersonalLyricsLibraryEntry?
 
     public init(
         id: String,
@@ -140,7 +141,8 @@ public struct SongSearchResult: Identifiable, Equatable {
         confidence: Double,
         lyrics: LyricsDocument? = nil,
         artworkURL: URL? = nil,
-        catalogMetadata: TrackSearchMetadata? = nil
+        catalogMetadata: TrackSearchMetadata? = nil,
+        savedLibraryEntry: PersonalLyricsLibraryEntry? = nil
     ) {
         self.id = id
         self.source = source
@@ -149,6 +151,7 @@ public struct SongSearchResult: Identifiable, Equatable {
         self.lyrics = lyrics
         self.artworkURL = artworkURL
         self.catalogMetadata = catalogMetadata
+        self.savedLibraryEntry = savedLibraryEntry
     }
 
     public var searchMergeKey: String {
@@ -162,7 +165,8 @@ public struct SongSearchResult: Identifiable, Equatable {
             track: track,
             confidence: confidence,
             artworkURL: artworkURL,
-            catalogMetadata: catalogMetadata
+            catalogMetadata: catalogMetadata,
+            savedLibraryEntry: savedLibraryEntry
         )
     }
 }

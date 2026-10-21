@@ -10,9 +10,11 @@ struct V3ToolbarQuickControls<Controls: View>: View {
     @ViewBuilder var controls: () -> Controls
     @StateObject private var library = PersonalLyricsLibraryService()
     @State private var query = ""
+    @State private var selectedSearchResultID: String?
     @State private var contentHeight: CGFloat = 520
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 Text(panel.title).font(.system(size: 12, weight: .semibold))
@@ -37,6 +39,10 @@ struct V3ToolbarQuickControls<Controls: View>: View {
                 Color.clear.preference(key: V3ToolPanelHeight.self, value: geometry.size.height)
             })
         }
+        .onChange(of: selectedSearchResultID) { _, id in
+            if let id { proxy.scrollTo(id, anchor: .center) }
+        }
+        }
         .scrollBounceBehavior(.basedOnSize)
         .frame(width: 360, height: contentHeight)
         .onPreferenceChange(V3ToolPanelHeight.self) { height in
@@ -57,17 +63,21 @@ struct V3ToolbarQuickControls<Controls: View>: View {
         VStack(alignment: .leading, spacing: 8) {
             TextField("搜索歌曲或艺人", text: $query)
                 .textFieldStyle(.roundedBorder)
-                .onSubmit { search.search(query: SongSearchQuery(text: query)) }
+                .onSubmit {
+                    if let selected = visibleSearchResults.first(where: { $0.id == selectedSearchResultID }) {
+                        state.loadSearchResult(selected)
+                    } else { search.search(query: SongSearchQuery(text: query)) }
+                }
+                .onKeyPress(.downArrow) { moveSearchSelection(1); return .handled }
+                .onKeyPress(.upArrow) { moveSearchSelection(-1); return .handled }
             if case .results(_, let results) = search.state {
-                ForEach(Array(results.prefix(5))) { result in
-                    Button { state.loadSearchResult(result) } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(result.track.title).fontWeight(.medium).lineLimit(1)
-                            Text(result.track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 3)
+                ForEach(SongSearchResultGroup.panelGroups(results)) { group in
+                    Text(group.title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    ForEach(group.results) { result in
+                        SongSearchResultRow(result: result, state: state,
+                                            isSelected: selectedSearchResultID == result.id)
+                            .id(result.id)
                     }
-                    .buttonStyle(.plain)
                 }
             } else if case .searching = search.state {
                 ProgressView().controlSize(.small)
@@ -81,8 +91,21 @@ struct V3ToolbarQuickControls<Controls: View>: View {
             query = state.hasLiveTrack ? SongSearchQuery(track: state.currentTrack).text : ""
         }
         .onChange(of: query) { _, value in
+            selectedSearchResultID = nil
             search.search(query: SongSearchQuery(text: value), debounceNanoseconds: 250_000_000)
         }
+    }
+
+    private var visibleSearchResults: [SongSearchResult] {
+        guard case .results(_, let results) = search.state else { return [] }
+        return SongSearchResultGroup.panelGroups(results).flatMap(\.results)
+    }
+
+    private func moveSearchSelection(_ direction: Int) {
+        let results = visibleSearchResults
+        guard !results.isEmpty else { return }
+        let current = results.firstIndex { $0.id == selectedSearchResultID } ?? (direction > 0 ? -1 : results.count)
+        selectedSearchResultID = results[min(max(0, current + direction), results.count - 1)].id
     }
 
 }

@@ -92,9 +92,10 @@ public final class TrackSearchManager: ObservableObject {
                 merged[key] = result
                 continue
             }
-            if result.confidence > existing.confidence {
-                merged[key] = result
-            }
+            let best = result.confidence > existing.confidence ? result : existing
+            merged[key] = TrackSearchResult(id: best.id, source: best.source, track: best.track,
+                confidence: best.confidence, artworkURL: best.artworkURL, catalogMetadata: best.catalogMetadata,
+                savedLibraryEntry: best.savedLibraryEntry ?? result.savedLibraryEntry ?? existing.savedLibraryEntry)
         }
         return merged.values.sorted {
             if $0.confidence == $1.confidence { return $0.track.title < $1.track.title }

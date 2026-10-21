@@ -71,6 +71,7 @@ public struct TrackSearchResult: Identifiable, Equatable {
     public let confidence: Double
     public let artworkURL: URL?
     public let catalogMetadata: TrackSearchMetadata?
+    public let savedLibraryEntry: PersonalLyricsLibraryEntry?
 
     public init(
         id: String,
@@ -78,7 +79,8 @@ public struct TrackSearchResult: Identifiable, Equatable {
         track: Track,
         confidence: Double,
         artworkURL: URL? = nil,
-        catalogMetadata: TrackSearchMetadata? = nil
+        catalogMetadata: TrackSearchMetadata? = nil,
+        savedLibraryEntry: PersonalLyricsLibraryEntry? = nil
     ) {
         self.id = id
         self.source = source
@@ -86,6 +88,7 @@ public struct TrackSearchResult: Identifiable, Equatable {
         self.confidence = max(0, min(confidence, 1))
         self.artworkURL = artworkURL
         self.catalogMetadata = catalogMetadata
+        self.savedLibraryEntry = savedLibraryEntry
     }
 
     public var spotifyID: String? { catalogMetadata?.spotifyID ?? track.spotifyId }
@@ -132,7 +135,8 @@ public struct TrackSearchResult: Identifiable, Equatable {
             confidence: confidence,
             lyrics: lyrics,
             artworkURL: artworkURL,
-            catalogMetadata: catalogMetadata
+            catalogMetadata: catalogMetadata,
+            savedLibraryEntry: savedLibraryEntry
         )
     }
 }
