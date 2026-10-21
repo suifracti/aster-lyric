@@ -1683,6 +1683,43 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
+    /// The heart's playlist picker. Spotify only until the Apple Music
+    /// playlist path exists; the model is created once so reported checks
+    /// survive reopening.
+    public private(set) lazy var playlistPicker: PlaylistPickerModel = {
+        let catalog = SpotifyPlaylistCatalog(authorization: spotifyAuthorizationManager)
+        return PlaylistPickerModel(
+            catalog: catalog,
+            trackID: { [weak self] in
+                guard let self else { return nil }
+                return TrackIdentity(track: self.currentTrack).spotifyTrackID
+            },
+            likedState: { [weak self] in self?.isTrackLiked },
+            applyLiked: { [weak self] value in
+                guard let self else { return nil }
+                return await self.setTrackLiked(value)
+            }
+        )
+    }()
+
+    public var canPickPlaylists: Bool { playbackSourceIdentity == .spotifyDesktop }
+
+    /// Picker path for Liked Songs: sets the value instead of toggling, and
+    /// never asks for a second key press. Returns the stored value, or nil.
+    public func setTrackLiked(_ liked: Bool) async -> Bool? {
+        guard hasLiveTrack else { return nil }
+        let track = currentTrack, source = playbackSourceIdentity
+        do {
+            let saved = try await trackLikeValue(track: track, source: source, set: liked)
+            guard TrackIdentity(track: currentTrack) == TrackIdentity(track: track),
+                  playbackSourceIdentity == source else { return nil }
+            isTrackLiked = saved
+            return saved
+        } catch {
+            return nil
+        }
+    }
+
     public func togglePlayPause() {
         if isMockPreviewMode {
             let position = playbackPositionNow

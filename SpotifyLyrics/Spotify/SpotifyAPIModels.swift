@@ -94,6 +94,59 @@ struct SpotifyTokenResponseDTO: Decodable {
     }
 }
 
+// MARK: - Playlists
+
+struct SpotifyPlaylistPageDTO: Decodable {
+    let items: [SpotifyPlaylistDTO]
+    let total: Int?
+    let next: String?
+}
+
+struct SpotifyPlaylistDTO: Decodable {
+    let id: String
+    let name: String
+    let snapshotID: String?
+    let images: [SpotifyImageDTO]?
+    let items: SpotifyPlaylistCountDTO?
+    /// Older responses still carry the deprecated `tracks` count object.
+    let tracks: SpotifyPlaylistCountDTO?
+    let collaborative: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case snapshotID = "snapshot_id"
+        case images
+        case items
+        case tracks
+        case collaborative
+    }
+
+    var trackCount: Int { items?.total ?? tracks?.total ?? 0 }
+}
+
+struct SpotifyPlaylistCountDTO: Decodable {
+    let total: Int?
+}
+
+struct SpotifyPlaylistItemPageDTO: Decodable {
+    let items: [SpotifyPlaylistItemDTO]
+    let total: Int?
+    let next: String?
+}
+
+struct SpotifyPlaylistItemDTO: Decodable {
+    /// Current responses use `item`; older ones use the deprecated `track`.
+    let item: SpotifyPlaylistItemTrackDTO?
+    let track: SpotifyPlaylistItemTrackDTO?
+
+    var trackID: String? { (item ?? track)?.id }
+}
+
+struct SpotifyPlaylistItemTrackDTO: Decodable {
+    let id: String?
+}
+
 struct SpotifyAPIErrorEnvelope: Decodable {
     let error: SpotifyAPIErrorBody
 }

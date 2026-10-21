@@ -360,14 +360,12 @@ struct StageHUDView: View {
 
 private struct V3PlaybackButtons: View {
     @V3ContentPlaybackState var state: PlaybackState
+    @State private var showsPlaylistPicker = false
 
     var body: some View {
         HStack(spacing: 12) {
             V3PlayerModeButton(state: state, shuffle: true)
-            V3TransportIconButton(systemImage: state.isTrackLiked == true ? "heart.fill" : "heart",
-                                 label: state.isTrackLiked == true ? "移出喜欢 (S)" : "加入喜欢 (S)", enabled: state.hasLiveTrack) {
-                state.toggleTrackLike()
-            }
+            heartButton
             V3TransportIconButton(systemImage: "backward.fill", label: "上一首", enabled: state.canControlSpotify) {
                 state.previousTrack()
             }
@@ -384,6 +382,28 @@ private struct V3PlaybackButtons: View {
             V3PlayerModeButton(state: state, shuffle: false)
         }
         .fixedSize()
+    }
+
+    /// A liked song turns the heart into the way into playlists; an unliked
+    /// one still just likes it. Right-click always opens the picker.
+    private var heartButton: some View {
+        V3TransportIconButton(systemImage: state.isTrackLiked == true ? "heart.fill" : "heart",
+                              label: state.isTrackLiked == true ? "加入播放列表" : "加入喜欢 (S)",
+                              enabled: state.hasLiveTrack) {
+            if state.canPickPlaylists, state.isTrackLiked == true {
+                showsPlaylistPicker = true
+            } else {
+                state.toggleTrackLike()
+            }
+        }
+        .overlay {
+            if state.canPickPlaylists {
+                V3RightClickCatcher { showsPlaylistPicker = true }
+            }
+        }
+        .popover(isPresented: $showsPlaylistPicker, arrowEdge: .bottom) {
+            PlaylistPickerPopover(model: state.playlistPicker)
+        }
     }
 }
 
@@ -451,12 +471,28 @@ struct V3BounceButtonStyle: ButtonStyle {
 struct AppleMusicImmersiveV3FocusTransportControls: View {
     @V3ContentPlaybackState var state: PlaybackState
     let reduceMotion: Bool
+    @State private var showsPlaylistPicker = false
 
     var body: some View {
         HStack(spacing: LyricsDesignTokens.Spacing.sm) {
             V3PlayerModeButton(state: state, shuffle: true)
             V3TransportIconButton(systemImage: state.isTrackLiked == true ? "heart.fill" : "heart",
-                                 label: "喜欢 (S)", enabled: state.hasLiveTrack) { state.toggleTrackLike() }
+                                 label: state.isTrackLiked == true ? "加入播放列表" : "喜欢 (S)",
+                                 enabled: state.hasLiveTrack) {
+                if state.canPickPlaylists, state.isTrackLiked == true {
+                    showsPlaylistPicker = true
+                } else {
+                    state.toggleTrackLike()
+                }
+            }
+            .overlay {
+                if state.canPickPlaylists {
+                    V3RightClickCatcher { showsPlaylistPicker = true }
+                }
+            }
+            .popover(isPresented: $showsPlaylistPicker, arrowEdge: .bottom) {
+                PlaylistPickerPopover(model: state.playlistPicker)
+            }
             Button {
                 state.togglePlayPause()
             } label: {

@@ -228,6 +228,8 @@
 		0397361CF07CC824F9B93C85 /* AppleMusicImmersiveV3QuickControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29670441C088A914F1A776E1 /* AppleMusicImmersiveV3QuickControls.swift */; };
 		AF4738C40CC270950960061F /* AppleMusicImmersiveV3LyricBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35FDDBAC403CC53CC0FAC566 /* AppleMusicImmersiveV3LyricBar.swift */; };
 		7D339BA3A55BB6FEE2BD4D32 /* V3SideDrawer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2D88A770470D3D0BF8D27C2 /* V3SideDrawer.swift */; };
+		A1B2C3D42D83400100000001 /* PlaylistPickerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D42D83400000000000 /* PlaylistPickerModel.swift */; };
+		A1B2C3D52D83400100000001 /* PlaylistPickerPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D52D83400000000000 /* PlaylistPickerPopover.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -458,6 +460,8 @@
 		29670441C088A914F1A776E1 /* AppleMusicImmersiveV3QuickControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicImmersiveV3QuickControls.swift; sourceTree = "<group>"; };
 		35FDDBAC403CC53CC0FAC566 /* AppleMusicImmersiveV3LyricBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicImmersiveV3LyricBar.swift; sourceTree = "<group>"; };
 		C2D88A770470D3D0BF8D27C2 /* V3SideDrawer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3SideDrawer.swift; sourceTree = "<group>"; };
+		A1B2C3D42D83400000000000 /* PlaylistPickerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistPickerModel.swift; sourceTree = "<group>"; };
+		A1B2C3D52D83400000000000 /* PlaylistPickerPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistPickerPopover.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -659,6 +663,7 @@
 				110000722D83400100000000 /* ManualLyricsActionsView.swift */,
 				110000FB2D83400100000000 /* CurrentSongOperationsView.swift */,
 				110000A92D83400100000000 /* ReadingVersionEditorView.swift */,
+				A1B2C3D52D83400000000000 /* PlaylistPickerPopover.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -793,6 +798,7 @@
 				110000582D83400100000000 /* SpotifyTokenStore.swift */,
 				110000592D83400100000000 /* SpotifyCatalogService.swift */,
 				1100005A2D83400100000000 /* SpotifyAuthorizationManager.swift */,
+				A1B2C3D42D83400000000000 /* PlaylistPickerModel.swift */,
 			);
 			path = Spotify;
 			sourceTree = "<group>";
@@ -903,6 +909,8 @@
 			files = (
 				CC7BDEF42026101800000003 /* LinkCoreLyricsProvider.swift in Sources */,
 				CC7BDEF42026101800000001 /* LyricIslandControls.swift in Sources */,
+				A1B2C3D42D83400100000001 /* PlaylistPickerModel.swift in Sources */,
+				A1B2C3D52D83400100000001 /* PlaylistPickerPopover.swift in Sources */,
 				110000012D83400100000001 /* Main.swift in Sources */,
 				110000892D83400100000001 /* DebugDatabaseSafety.swift in Sources */,
 				110000022D83400100000001 /* Models.swift in Sources */,
@@ -1373,6 +1381,7 @@
 		20F29C7351DC494205783402 /* Native Test Sources */ = {
 			isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; runOnlyForDeploymentPostprocessing = 0; files = (
 				77BDB79A9B6514A974EE96DE,
+				A1B2C3D62D83400100000001,
 				FB2698985591B3233543ABBE,
 				E2EC754DE7CFDC3D4A1DEA28,
 				45807C00F498AF9166DC55F3,
@@ -1449,6 +1458,8 @@
 		FB2698985591B3233543ABBE = {isa = PBXBuildFile; fileRef = 499C20D4FBE3ABCBD6463F24; };
 		AF8DB5959F9D7D8A47B31CCA = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Playback/ProviderPositionCalibrationTests.swift"; sourceTree = SOURCE_ROOT; };
 		77BDB79A9B6514A974EE96DE = {isa = PBXBuildFile; fileRef = AF8DB5959F9D7D8A47B31CCA; };
+		A1B2C3D62D83400000000000 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Playback/PlaylistPickerTests.swift"; sourceTree = SOURCE_ROOT; };
+		A1B2C3D62D83400100000001 = {isa = PBXBuildFile; fileRef = A1B2C3D62D83400000000000; };
 	};
 	rootObject = 110000002D83400000000006 /* Project object */;
 }

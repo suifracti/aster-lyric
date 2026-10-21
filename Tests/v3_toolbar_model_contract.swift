@@ -93,7 +93,10 @@ final class V3ToolbarPresentationTests: XCTestCase {
         })
         let url = try service.authorizationURL(clientID: "fixture", state: "fixture", codeChallenge: "fixture")
         let scopes = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "scope" }!.value!
-        XCTAssertEqual(Set(scopes.split(separator: " ").map(String.init)), ["user-library-read", "user-library-modify", "user-read-playback-state"])
+        XCTAssertEqual(Set(scopes.split(separator: " ").map(String.init)),
+                       ["user-library-read", "user-library-modify", "user-read-playback-state",
+                        "playlist-read-private", "playlist-read-collaborative",
+                        "playlist-modify-private", "playlist-modify-public"])
     }
 
     func testPlaybackStateReadsAllRepeatModesAndOptionalSmartShuffle() async throws {

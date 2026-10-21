@@ -364,6 +364,7 @@ private struct V3WindowEdgeTransportButtons: View {
     let isVertical: Bool
     let elapsed: String
     let total: String
+    @State private var showsPlaylistPicker = false
 
     @ViewBuilder
     var body: some View {
@@ -398,8 +399,23 @@ private struct V3WindowEdgeTransportButtons: View {
     }
 
     private var likeButton: some View {
-        transportButton(image: state.isTrackLiked == true ? "heart.fill" : "heart", label: "喜欢 (S)",
-                        enabled: state.hasLiveTrack, primary: false) { state.toggleTrackLike() }
+        transportButton(image: state.isTrackLiked == true ? "heart.fill" : "heart",
+                        label: state.isTrackLiked == true ? "加入播放列表" : "喜欢 (S)",
+                        enabled: state.hasLiveTrack, primary: false) {
+            if state.canPickPlaylists, state.isTrackLiked == true {
+                showsPlaylistPicker = true
+            } else {
+                state.toggleTrackLike()
+            }
+        }
+        .overlay {
+            if state.canPickPlaylists {
+                V3RightClickCatcher { showsPlaylistPicker = true }
+            }
+        }
+        .popover(isPresented: $showsPlaylistPicker, arrowEdge: .bottom) {
+            PlaylistPickerPopover(model: state.playlistPicker)
+        }
     }
 
     private var previousButton: some View {

@@ -48,7 +48,13 @@ public struct SpotifyOAuthConfiguration: Equatable, Sendable {
     public static let libraryScopes: Set<String> = ["user-library-read", "user-library-modify"]
 
     public static let playbackScopes: Set<String> = ["user-read-playback-state"]
-    public static let authorizationScopes = libraryScopes.union(playbackScopes)
+    public static let playlistScopes: Set<String> = [
+        "playlist-read-private", "playlist-read-collaborative",
+        "playlist-modify-private", "playlist-modify-public"
+    ]
+    public static let authorizationScopes = libraryScopes
+        .union(playbackScopes)
+        .union(playlistScopes)
 
     public static let apiBaseURL = URL(string: "https://api.spotify.com/v1")!
 
@@ -247,12 +253,95 @@ public final class SpotifyCatalogService: @unchecked Sendable {
         return url
     }
 
-    private func sendAPIRequest(url: URL, accessToken: String, method: String = "GET") async throws -> Data {
+    // MARK: - Playlists
+
+    func currentUserPlaylists(accessToken: String) async throws -> [SpotifyPlaylistDTO] {
+        var playlists: [SpotifyPlaylistDTO] = []
+        var offset = 0
+        while true {
+            guard var parts = URLComponents(url: baseURL.appendingPathComponent("me/playlists"),
+                                            resolvingAgainstBaseURL: false) else {
+                throw SpotifyCatalogError.invalidURL
+            }
+            parts.queryItems = [
+                URLQueryItem(name: "limit", value: "50"),
+                URLQueryItem(name: "offset", value: String(offset))
+            ]
+            guard let url = parts.url else { throw SpotifyCatalogError.invalidURL }
+            let data = try await sendAPIRequest(url: url, accessToken: accessToken)
+            let page: SpotifyPlaylistPageDTO
+            do { page = try JSONDecoder().decode(SpotifyPlaylistPageDTO.self, from: data) }
+            catch { throw SpotifyCatalogError.parseFailure }
+            playlists.append(contentsOf: page.items)
+            offset += page.items.count
+            guard page.next != nil, !page.items.isEmpty else { break }
+        }
+        return playlists
+    }
+
+    func createPrivatePlaylist(named name: String, accessToken: String) async throws -> SpotifyPlaylistDTO {
+        let body = try JSONSerialization.data(withJSONObject: ["name": name, "public": false])
+        let data = try await sendAPIRequest(url: baseURL.appendingPathComponent("me/playlists"),
+                                            accessToken: accessToken, method: "POST", body: body)
+        do { return try JSONDecoder().decode(SpotifyPlaylistDTO.self, from: data) }
+        catch { throw SpotifyCatalogError.parseFailure }
+    }
+
+    func playlistTrackIDs(_ playlistID: String, accessToken: String) async throws -> [String] {
+        var ids: [String] = []
+        var offset = 0
+        while true {
+            guard var parts = URLComponents(
+                url: baseURL.appendingPathComponent("playlists").appendingPathComponent(playlistID)
+                    .appendingPathComponent("items"),
+                resolvingAgainstBaseURL: false
+            ) else { throw SpotifyCatalogError.invalidURL }
+            parts.queryItems = [
+                URLQueryItem(name: "limit", value: "100"),
+                URLQueryItem(name: "offset", value: String(offset))
+            ]
+            guard let url = parts.url else { throw SpotifyCatalogError.invalidURL }
+            let data = try await sendAPIRequest(url: url, accessToken: accessToken)
+            let page: SpotifyPlaylistItemPageDTO
+            do { page = try JSONDecoder().decode(SpotifyPlaylistItemPageDTO.self, from: data) }
+            catch { throw SpotifyCatalogError.parseFailure }
+            ids.append(contentsOf: page.items.compactMap(\.trackID))
+            offset += page.items.count
+            guard page.next != nil, !page.items.isEmpty else { break }
+        }
+        return ids
+    }
+
+    func addTrack(_ trackID: String, toPlaylist playlistID: String, accessToken: String) async throws {
+        guard let trackID = TrackIdentity.spotifyRequestTrackID(trackID) else { throw SpotifyCatalogError.badRequest }
+        let body = try JSONSerialization.data(withJSONObject: ["uris": ["spotify:track:" + trackID]])
+        _ = try await sendAPIRequest(url: playlistItemsURL(playlistID), accessToken: accessToken,
+                                     method: "POST", body: body)
+    }
+
+    func removeTrack(_ trackID: String, fromPlaylist playlistID: String, accessToken: String) async throws {
+        guard let trackID = TrackIdentity.spotifyRequestTrackID(trackID) else { throw SpotifyCatalogError.badRequest }
+        let body = try JSONSerialization.data(withJSONObject: ["items": [["uri": "spotify:track:" + trackID]]])
+        _ = try await sendAPIRequest(url: playlistItemsURL(playlistID), accessToken: accessToken,
+                                     method: "DELETE", body: body)
+    }
+
+    private func playlistItemsURL(_ playlistID: String) -> URL {
+        baseURL.appendingPathComponent("playlists")
+            .appendingPathComponent(playlistID)
+            .appendingPathComponent("items")
+    }
+
+    private func sendAPIRequest(url: URL, accessToken: String, method: String = "GET", body: Data? = nil) async throws -> Data {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = 15
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
 
         let data: Data
         let response: URLResponse
