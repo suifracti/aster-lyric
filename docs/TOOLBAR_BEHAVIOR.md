@@ -8,6 +8,14 @@ This file is the contract for the toolbar and its panels. Claude decides the UI;
 
 To change a rule, update this file and the tests first, and attach before/after snapshots. Keep the tests to the rules written here.
 
+## Design principle (user, 2026-10-21)
+**Minimal while listening, yet beautiful and complete.**
+- **What shows:** at rest, the screen shows only lyrics and the picture.
+- **Everything else** appears when the pointer or a key asks for it, and leaves smoothly.
+- **Folding, not cutting:** minimal never means fewer features. Features are folded away, never removed, and each stays where people expect it.
+- **Beauty is part of the requirement:** no popping, one control style, and colours from the cover.
+- **Tie-breaker:** when a choice is unclear, choose the one that keeps the listening screen calmer without losing anything.
+
 ## Buttons
 Order: 歌词库 · 搜索 · 译文 · 文字 · 画面 · 更多 | 设置. 设置 sits at the far right, after a divider.
 
