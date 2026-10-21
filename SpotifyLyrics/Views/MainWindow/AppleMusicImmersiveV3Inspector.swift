@@ -469,11 +469,12 @@ struct V3VisualControls {
                 V3NumericSlider(value: displayDoubleBinding(\.fontSize), in: 14...42, step: 1, unit: "pt")
             }
             Picker("对齐", selection: $settings.v3LyricsPosition) {
-                Text("自动").tag("automatic")
+                Text("跟随场景").tag("automatic")
                 Text("左").tag("left")
                 Text("居中").tag("center")
                 Text("右").tag("right")
             }.pickerStyle(.segmented)
+                .help("跟随场景：当前使用" + (settings.v3ListeningScene == .coverPhoto ? "右侧阅读区" : settings.v3ArtworkPresentation == .stage ? "居中阅读区" : "左对齐"))
             VStack(alignment: .leading, spacing: 7) {
                 HStack {
                     Text("清晰度").font(.system(size: 12, weight: .medium))

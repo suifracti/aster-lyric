@@ -1,4 +1,4 @@
-// Rules from docs/TOOLBAR_BEHAVIOR.md (bad5213).
+// Rules from docs/TOOLBAR_BEHAVIOR.md (9ccf7c6).
 import XCTest
 import CoreGraphics
 import Foundation
@@ -30,7 +30,7 @@ final class V3ToolbarPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testLyricBarUsesExistingPreferences() {
+    func testGesturesUseExistingPreferences() {
         let defaults = UserDefaults(suiteName: "lyric-bar-\(UUID())")!
         let settings = AppSettingsStore(defaults: defaults)
         let actions = V3LyricActions(settings: settings)
@@ -43,15 +43,49 @@ final class V3ToolbarPresentationTests: XCTestCase {
         XCTAssertEqual(settings.displayPreferences.fontSize, 42)
         _ = actions.fontSize(-100)
         XCTAssertEqual(settings.displayPreferences.fontSize, 14)
-        settings.lyricsOffsetStore.activate(LyricsOffsetScope(canonicalTrackStableKey: "bar-fixture", lyricsVersionID: UUID()))
-        XCTAssertEqual(actions.offset(0.1), "偏移 +0.1s")
-        XCTAssertEqual(actions.offset(-0.1), "偏移 +0.0s")
-        XCTAssertEqual(actions.offset(nil), "偏移 +0.0s")
         let original = actions.family
         _ = actions.scene(1)
         XCTAssertNotEqual(actions.family, original)
         _ = actions.scene(-1)
         XCTAssertEqual(actions.family, original)
+    }
+
+    @MainActor
+    func testSpaceLeavesTextEntryAlone() {
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 360, height: 120),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let space = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: " ", charactersIgnoringModifiers: " ",
+            isARepeat: false, keyCode: 49)!
+        XCTAssertTrue(V3SpacePlayback.handles(space, in: window))
+        let field = NSTextField(frame: CGRect(x: 10, y: 10, width: 200, height: 24))
+        window.contentView!.addSubview(field)
+        XCTAssertTrue(window.makeFirstResponder(field))
+        XCTAssertFalse(V3SpacePlayback.handles(space, in: window))
+    }
+
+    @MainActor
+    func testPanelModelAndReasoningSelectionPersist() throws {
+        let suite = "panel-model-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        var config = settings.aiTranslationConfiguration
+        config.engineID = TranslationEngineID.codexChatGPT.rawValue
+        config.model = "fixture-one"
+        settings.aiTranslationConfiguration = config
+        let models = [TranslationModelDescriptor(id: "fixture-one", displayName: "First model", reasoningEfforts: ["medium"]),
+                      TranslationModelDescriptor(id: "fixture-two", displayName: "Second model", reasoningEfforts: ["high"])]
+        defaults.set(try JSONEncoder().encode([config.engineID: models]), forKey: TranslationModelSettingsStore.directoriesKey)
+        _ = settings.translationModelSettings
+        let controls = TranslationProviderControls(settings: settings)
+        controls.modelBinding.wrappedValue = "fixture-two"
+        controls.reasoningBinding.wrappedValue = "high"
+        let reopened = AppSettingsStore(defaults: defaults)
+        XCTAssertEqual(reopened.aiTranslationConfiguration.model, "fixture-two")
+        XCTAssertEqual(reopened.aiTranslationConfiguration.codexReasoningEffort, "high")
     }
 
     func testHorizontalSceneGestureLeavesVerticalScrollAlone() {

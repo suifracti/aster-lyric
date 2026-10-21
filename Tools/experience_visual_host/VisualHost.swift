@@ -155,6 +155,16 @@ struct ExperienceVisualHostApp: App {
         let protection = ExperienceArguments.value("--reading-protection", fallback: "")
         if !protection.isEmpty { defaults.set(protection, forKey: AppSettingsStore.Key.v3ReadingProtection) }
         let settings=AppSettingsStore(defaults:defaults)
+        if ProcessInfo.processInfo.arguments.contains("--model-fixture") {
+            var configuration = settings.aiTranslationConfiguration
+            configuration.engineID = TranslationEngineID.codexChatGPT.rawValue
+            configuration.model = "fixture-alpha"
+            settings.aiTranslationConfiguration = configuration
+            let models = [TranslationModelDescriptor(id: "fixture-alpha", displayName: "Fixture Alpha", reasoningEfforts: ["medium"]),
+                          TranslationModelDescriptor(id: "fixture-beta", displayName: "Fixture Beta", reasoningEfforts: ["high"])]
+            defaults.set(try! JSONEncoder().encode([configuration.engineID: models]), forKey: TranslationModelSettingsStore.directoriesKey)
+            _ = settings.translationModelSettings
+        }
         settings.floatingWindowAlwaysOnTop = true
         precondition(!settings.v3StageReadabilityEnabled)
         settings.v3StageReadabilityEnabled = true
@@ -454,13 +464,21 @@ private struct ExperienceFixtureRoot: View {
                     try? await Task.sleep(for: .milliseconds(500))
                 }
                 var extraWindow: NSWindow?
-                if ["menubar", "settings"].contains(ExperienceArguments.surface) {
+                if ["menubar", "settings", "models"].contains(ExperienceArguments.surface) {
                     MenuBarLyricsController.shared.bind(playbackState: playback)
-                    let root: AnyView = ExperienceArguments.surface == "menubar"
-                        ? AnyView(MenuBarLyricsPopoverView(controller: MenuBarLyricsController.shared))
-                        : AnyView(SettingsRootView().environmentObject(settings).environmentObject(playback).environmentObject(SettingsDataController()))
+                    let root: AnyView
+                    if ExperienceArguments.surface == "models" {
+                        root = AnyView(TranslationProviderControls(settings: settings)
+                            .padding(16).frame(width: 360)
+                            .background(Color(nsColor: .windowBackgroundColor)))
+                    } else if ExperienceArguments.surface == "menubar" {
+                        root = AnyView(MenuBarLyricsPopoverView(controller: MenuBarLyricsController.shared))
+                    } else {
+                        root = AnyView(SettingsRootView().environmentObject(settings).environmentObject(playback).environmentObject(SettingsDataController()))
+                    }
                     let hosting = NSHostingView(rootView: root.environment(\.colorScheme, ExperienceArguments.value("--appearance", fallback: "dark") == "light" ? .light : .dark))
-                    let size = ExperienceArguments.surface == "menubar" ? CGSize(width: 340, height: 560) : ExperienceArguments.size
+                    let size = ExperienceArguments.surface == "models" ? CGSize(width: 360, height: 520)
+                        : ExperienceArguments.surface == "menubar" ? CGSize(width: 340, height: 560) : ExperienceArguments.size
                     let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
                     window.title = "Experience extra surface"
                     window.appearance = NSAppearance(named: ExperienceArguments.value("--appearance", fallback: "dark") == "light" ? .aqua : .darkAqua)
@@ -493,7 +511,7 @@ private struct ExperienceFixtureRoot: View {
                     }
                 }
                 print("WINDOWS",NSApp.windows.map { "\($0.windowNumber):\($0.title):\($0.frame)" })
-                if ProcessInfo.processInfo.arguments.contains("--keep-open"), ExperienceArguments.surface != "main", let panel = targetWindow {
+                if ProcessInfo.processInfo.arguments.contains("--keep-open"), ExperienceArguments.surface != "main", let panel = extraWindow ?? targetWindow {
                     NSApp.windows.first { $0.title == "Experience visual fixture" }?.orderOut(nil)
                     panel.makeKeyAndOrderFront(nil)
                 } else if !ProcessInfo.processInfo.arguments.contains("--keep-open") { NSApp.terminate(nil) }

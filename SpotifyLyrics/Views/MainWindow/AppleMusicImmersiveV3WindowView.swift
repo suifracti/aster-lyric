@@ -169,7 +169,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var isTranslationComparisonPresented = false
     @State private var isVersionPickerPresented = false
     @State private var pinchStartFontSize: CGFloat?
-    @State private var lyricColumnHovered = false
     @State private var lyricNotice: String?
     @State private var lyricNoticeTask: Task<Void, Never>?
     @State private var hoveredStyle: V3ArtworkPresentation?
@@ -444,10 +443,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
             }
             .background {
-                V3CanvasSceneSwipe(enabled: !toolbarPanelIsPresented) { direction in
+                V3CanvasSceneSwipe(enabled: !toolbarPanelIsPresented, onPlayPause: { state.togglePlayPause() }) { direction in
                     showLyricNotice(V3LyricActions(settings: settings).scene(direction))
                 }
-                V3LyricShortcuts(settings: settings, notice: showLyricNotice)
             }
             .overlayPreferenceValue(V3PlaybackRegionAnchorPreferenceKey.self) { anchor in
                 GeometryReader { proxy in
@@ -1337,27 +1335,18 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .v3ReadingGlow(artworkURL: compositionTrack.artworkURL, policy: settings.v3ReadingProtection)
         .environment(\.lyricTextAlignment, compositionLyricsPosition == "center" ? .center : compositionLyricsPosition == "right" ? .trailing : .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-            V3LyricBar(settings: settings, offsetStore: settings.lyricsOffsetStore,
-                hasReading: state.selectedReadingVersion != nil || state.liveLyrics.contains { $0.kanaText?.isEmpty == false },
-                notice: showLyricNotice)
-                .frame(width: max(1, width), height: 30, alignment: .leading)
-                .opacity(lyricColumnHovered && isPointerInsideCanvas && !toolbarPanelIsPresented ? 1 : 0)
-                .allowsHitTesting(lyricColumnHovered && isPointerInsideCanvas && !toolbarPanelIsPresented)
-                .accessibilityHidden(!lyricColumnHovered || !isPointerInsideCanvas || toolbarPanelIsPresented)
-                .overlay(alignment: .topLeading) {
-                    if let lyricNotice {
-                        Text(lyricNotice)
-                            .font(.system(size: 13, weight: .medium))
-                            .padding(.horizontal, 12).padding(.vertical, 6)
-                            .background(.regularMaterial, in: Capsule())
-                            .fixedSize()
-                            .offset(y: -36)
-                            .allowsHitTesting(false)
-                            .transition(.opacity)
-                    }
-                }
         }
-        .onHover { lyricColumnHovered = $0 }
+        .overlay(alignment: .bottomLeading) {
+            if let lyricNotice {
+                Text(lyricNotice)
+                    .font(.system(size: 13, weight: .medium))
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(.regularMaterial, in: Capsule())
+                    .fixedSize()
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
     }
 
     private func showLyricNotice(_ message: String?) {
@@ -1412,6 +1401,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             }
             Divider()
             TranslationProviderControls(settings: settings).modelPicker
+            TranslationProviderControls(settings: settings).reasoningPicker
             if displaysAIReadingControls {
                 aiReadingControls(compact: compact)
             } else {
@@ -1592,8 +1582,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private func applyToolbarDebugCommand(_ info: [AnyHashable: Any]) {
         let panel = (info["panel"] as? String).flatMap(ToolbarPopover.init(rawValue:))
         switch info["command"] as? String {
-        case "lyricbar": isPointerInsideCanvas = true; lyricColumnHovered = true
-        case "notice": isPointerInsideCanvas = true; lyricColumnHovered = true; lyricNotice = "字号 22"
+        case "notice": lyricNotice = "字号 22"
         case "faint": isPointerInsideCanvas = true
         case "full": isPointerInsideCanvas = true; toolsVisible = true
         case "hover": if let panel { toolsVisible = true; apply(toolbar.pointerOnTrigger(panel, inside: true)) }
@@ -1693,13 +1682,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             .v3FirstClick(openAppSettings)
             .help("应用设置与 AI 服务")
         }
-        .background {
-            Button("翻译与读音") {
-                if !toolbar.isSelected(.translation) { clickToolbarPanel(.translation) }
-            }
-            .keyboardShortcut("t", modifiers: [.command, .option])
-            .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
-        }
         .buttonStyle(QuietToolbarButtonStyle())
         // The window's first focusable control otherwise wears a focus ring
         // whenever the window becomes key, which reads as a stuck selection.
@@ -1765,6 +1747,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     visualControls.pictureAdvancedControls(showsExplanations: false)
                 }
             case .more:
+                LyricsPresentationOffsetControl(settings: settings, showsLegacyNotice: false, showsExplanations: false)
+                Divider()
                 windowModePanel
                 Divider()
                 desktopInteractionPanel
@@ -1815,14 +1799,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
             if !liveOnly {
-                toolbarAction("桌面歌词", symbol: "rectangle.on.rectangle") {
+                Toggle("桌面歌词", isOn: Binding(get: { state.showFloatingWindow }, set: { _ in
                     WindowManager.shared.toggleFloatingLyrics(state: state)
-                    isWindowMenuPresented = false
-                }
-                toolbarAction("顶部胶囊", symbol: "capsule") {
+                }))
+                Toggle("顶部胶囊", isOn: Binding(get: { state.showCapsulePlayer }, set: { _ in
                     WindowManager.shared.toggleCapsule(state: state)
-                    isWindowMenuPresented = false
-                }
+                }))
                 Toggle(isOn: $settings.menuBarLyricsEnabled) {
                     Label("菜单栏歌词", systemImage: "menubar.rectangle")
                         .font(.system(size: 13, weight: .medium))
@@ -1833,6 +1815,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 .accessibilityIdentifier("menubar.lyrics.toggle")
                 .help("直接开启或关闭菜单栏歌词；播放面板仍可从菜单栏图标打开。")
             }
+            Divider()
             toolbarAction(liveOnly ? "退出全屏" : "全屏歌词", symbol: "arrow.up.left.and.arrow.down.right") {
                 WindowManager.shared.toggleFullScreen(state: state, settings: settings)
                 isWindowMenuPresented = false
@@ -1840,7 +1823,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
         }
         .padding(8)
-        .frame(width: 244)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder private var desktopInteractionPanel: some View {

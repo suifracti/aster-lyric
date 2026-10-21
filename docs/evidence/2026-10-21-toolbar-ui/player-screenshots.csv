@@ -1,0 +1,17 @@
+case,before_standard_player,after_standard_player,canvas
+classic-albumPoster,visible,visible,1152x720
+classic-ambient,visible,visible,1152x720
+classic-authenticAmbient,visible,visible,1152x720
+classic-classic,visible,visible,1152x720
+classic-feathered,visible,visible,1152x720
+classic-gaussian,visible,visible,1152x720
+classic-lyricsOnly,visible,visible,1152x720
+classic-stage,visible,visible,1152x720
+scene-coverPhoto,visible,visible,1152x720
+scene-coverPhoto-gaussian,visible,visible,1152x720
+scene-coverPhoto-stage,visible,visible,1152x720
+scene-flowingField,visible,visible,1152x720
+scene-flowingField-feathered,visible,visible,1152x720
+scene-focusedLyrics,visible,visible,1152x720
+scene-linerNotes,visible,visible,1152x720
+scene-originalAmbient,visible,visible,1152x720

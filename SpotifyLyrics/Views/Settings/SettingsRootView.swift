@@ -766,18 +766,35 @@ struct TranslationProviderControls: View {
     /// Shared with the listening panel; changing a model uses the same provider policy.
     var modelPicker: some View {
         Picker("AI 模型", selection: modelBinding) {
-            Text(settings.aiTranslationConfiguration.model.isEmpty ? "选择模型" : settings.aiTranslationConfiguration.model)
-                .tag(settings.aiTranslationConfiguration.model)
-            ForEach(settings.aiCachedModels.filter { $0.id != settings.aiTranslationConfiguration.model }, id: \.id) { model in
+            if !settings.aiCachedModels.contains(where: { $0.id == settings.aiTranslationConfiguration.model }) {
+                Text(settings.aiTranslationConfiguration.model.isEmpty ? "选择模型" : settings.aiTranslationConfiguration.model)
+                    .tag(settings.aiTranslationConfiguration.model)
+            }
+            ForEach(settings.aiCachedModels, id: \.id) { model in
                 Text(model.displayName).tag(model.id)
             }
         }
         .disabled(provider == TranslationEngineID.appleSystem.rawValue)
+        .onAppear { _ = settings.translationModelSettings }
+        .accessibilityIdentifier("ai.model")
+    }
+
+    var reasoningPicker: some View {
+        Picker("思考强度", selection: reasoningBinding) {
+            if !(advertisedReasoningOptions ?? []).contains(reasoningBinding.wrappedValue) {
+                Text(reasoningSelectionLabel).tag(reasoningBinding.wrappedValue)
+            }
+            ForEach(advertisedReasoningOptions ?? [], id: \.self) { effort in
+                Text(reasoningLabel(effort)).tag(effort)
+            }
+        }
+        .disabled(!supportsReasoningControl || (advertisedReasoningOptions ?? []).isEmpty)
+        .accessibilityIdentifier("ai.reasoningEffort")
     }
 
     private var provider: String { settings.aiTranslationConfiguration.engineID }
     private var family: String { TranslationEngineCatalog.topLevelID(for: provider) }
-    private var modelBinding: Binding<String> {
+    var modelBinding: Binding<String> {
         Binding(get: { settings.aiTranslationConfiguration.model }, set: { model in
             settings.aiTranslationConfiguration = settings.translationModelSettings.selectingModel(
                 model, in: settings.aiTranslationConfiguration)
@@ -805,7 +822,7 @@ struct TranslationProviderControls: View {
         return nil
     }
 
-    private var reasoningBinding: Binding<String> {
+    var reasoningBinding: Binding<String> {
         Binding(get: { customReasoningOverride?.value ?? TranslationReasoningPolicy.value(settings.aiTranslationConfiguration) }, set: { value in
             guard value != customReasoningOverride?.value else { return }
             var next = TranslationReasoningPolicy.setting(value, in: settings.aiTranslationConfiguration)
@@ -885,17 +902,7 @@ struct TranslationProviderControls: View {
                     .textFieldStyle(.roundedBorder)
                 modelPicker
                 if supportsReasoningControl {
-                    Menu {
-                        ForEach(advertisedReasoningOptions ?? [], id: \.self) { effort in
-                            Button(reasoningLabel(effort)) {
-                                reasoningBinding.wrappedValue = effort
-                            }
-                        }
-                    } label: {
-                        Text("思考强度：\(reasoningSelectionLabel)")
-                    }
-                    .disabled((advertisedReasoningOptions ?? []).isEmpty)
-                    .accessibilityIdentifier("ai.reasoningEffort")
+                    reasoningPicker
                     Text("选项只来自当前模型明确公布的推理强度。当前没有已验证的选项时，请先刷新模型目录或检查此服务的能力说明。")
                         .font(.caption).foregroundStyle(.secondary)
                 }

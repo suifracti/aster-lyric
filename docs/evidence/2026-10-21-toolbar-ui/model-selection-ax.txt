@@ -1,0 +1,24 @@
+Window: "Experience extra surface", App: SpotifyLyrics.
+0 standard window Experience extra surface, Secondary Actions: Raise
+	1 container
+		2 pop up button 服务, Value: GPT / ChatGPT
+		3 text field (settable) Value: fixture-beta, Placeholder: 此服务的模型 ID
+		4 pop up button AI 模型, Value: Fixture Beta, ID: ai.model
+		5 pop up button 思考强度, Value: 高, ID: ai.reasoningEffort
+		6 text 选项只来自当前模型明确公布的推理强度。当前没有已验证的选项时，请先刷新模型目录或检查此服务的能力说明。
+		7 checkbox Description: 复用同一对话, Value: 1
+		8 checkbox Description: 在服务中显示对话, Value: 1
+		9 button Description: 新建对话, Help: 下一次翻译会开启新对话；已有服务记录会保留。
+		10 button 查看对话
+		11 text 已缓存 2 个模型
+		12 button 刷新模型
+	13 text Experience extra surface
+14 menu bar
+	15 SpotifyLyrics
+	16 File
+	17 Edit
+	18 View
+	19 Window
+	20 Help
+
+The focused UI element is 5 pop up button Value: 高, ID: ai.reasoningEffort

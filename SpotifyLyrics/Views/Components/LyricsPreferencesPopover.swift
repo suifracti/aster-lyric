@@ -132,12 +132,15 @@ struct LyricsPresentationOffsetControl: View {
     @ObservedObject private var offsetStore: ScopedLyricsOffsetStore
     let target: LyricsPresentationOffsetTarget
     let showsLegacyNotice: Bool
+    let showsExplanations: Bool
     @State private var input = ""
 
-    init(settings: AppSettingsStore, target: LyricsPresentationOffsetTarget = .active, showsLegacyNotice: Bool = true) {
+    init(settings: AppSettingsStore, target: LyricsPresentationOffsetTarget = .active, showsLegacyNotice: Bool = true,
+         showsExplanations: Bool = true) {
         self.settings = settings
         self.target = target
         self.showsLegacyNotice = showsLegacyNotice
+        self.showsExplanations = showsExplanations
         self._offsetStore = ObservedObject(wrappedValue: settings.lyricsOffsetStore)
     }
 
@@ -193,27 +196,29 @@ struct LyricsPresentationOffsetControl: View {
                     .foregroundStyle(LyricsDesignTokens.secondaryText)
             }
             HStack(spacing: 6) {
-                Button("提前 0.10s") { adjust(0.1) }
-                Button("延后 0.10s") { adjust(-0.1) }
+                Button("−0.1s") { adjust(-0.1) }.help("歌词延后 0.1 秒")
                 TextField("秒", text: $input)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 66)
                     .onSubmit { commitInput() }
+                Button("+0.1s") { adjust(0.1) }.help("歌词提前 0.1 秒")
                 Button("归零") { reset() }
                     .disabled(!isWritable || abs(offset) < 0.0001)
             }
             .font(.system(size: 11, design: .rounded))
             .disabled(!isWritable)
-            if let disabledReason {
+            if showsExplanations, let disabledReason {
                 Text(disabledReason)
                     .font(.system(size: 10, design: .rounded))
                     .foregroundStyle(LyricsDesignTokens.mutedText)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text("正值让歌词提前出现，负值让歌词延后出现；只影响歌词显示、自动滚动和逐字高亮，不改变播放进度。")
+            if showsExplanations {
+                Text("正值让歌词提前出现，负值让歌词延后出现；只影响歌词显示、自动滚动和逐字高亮，不改变播放进度。")
                 .font(.system(size: 10, design: .rounded))
                 .foregroundStyle(LyricsDesignTokens.mutedText)
                 .fixedSize(horizontal: false, vertical: true)
+            }
             if showsLegacyNotice, case .active = target {
                 Text(legacyHistoryNotice)
                     .font(.system(size: 10, design: .rounded))
@@ -221,6 +226,7 @@ struct LyricsPresentationOffsetControl: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .help(disabledReason ?? "正值让歌词提前出现，负值让歌词延后出现；不改变播放进度。")
         .onAppear { syncInput() }
         .onChange(of: scope) { _, _ in syncInput() }
         .onChange(of: offsetStore.activeOffset) { _, _ in syncInput() }

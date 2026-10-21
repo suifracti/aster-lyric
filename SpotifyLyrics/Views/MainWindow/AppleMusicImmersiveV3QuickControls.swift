@@ -45,6 +45,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
         .font(.system(size: 12))
         .controlSize(.small)
         .toggleStyle(.switch)
+        .disclosureGroupStyle(V3PanelDisclosureStyle())
         .task(id: state.liveTrackIdentity) {
             if panel == .library, let key = state.liveTrackIdentity?.stableKey {
                 library.selectTrack(stableKey: key)
@@ -84,4 +85,22 @@ struct V3ToolbarQuickControls<Controls: View>: View {
         }
     }
 
+}
+
+struct V3PanelDisclosureStyle: DisclosureGroupStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button { configuration.isExpanded.toggle() } label: {
+                HStack {
+                    Image(systemName: configuration.isExpanded ? "chevron.down" : "chevron.right")
+                    configuration.label
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if configuration.isExpanded { configuration.content }
+        }
+    }
 }
