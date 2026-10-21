@@ -266,13 +266,16 @@ public final class SpotifyAuthorizationManager: ObservableObject {
 
     /// Returns a valid access token, refreshing when it is within one minute of
     /// expiry. Callers must not persist or log the returned value.
-    public func accessToken() async throws -> String {
+    public func accessToken(requiredScopes: Set<String> = []) async throws -> String {
         guard clientID != nil else {
             state = .notConfigured
             throw SpotifyAuthorizationError.notConfigured
         }
         guard let token = try loadToken() else {
             state = .signedOut
+            throw SpotifyAuthorizationError.notAuthorized
+        }
+        guard requiredScopes.isSubset(of: Set((token.scope ?? "").split(separator: " ").map(String.init))) else {
             throw SpotifyAuthorizationError.notAuthorized
         }
 #if DEBUG

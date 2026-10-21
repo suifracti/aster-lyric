@@ -45,6 +45,8 @@ public struct SpotifyOAuthConfiguration: Equatable, Sendable {
 
     public static let authorizationEndpoint = URL(string: "https://accounts.spotify.com/authorize")!
     public static let tokenEndpoint = URL(string: "https://accounts.spotify.com/api/token")!
+    public static let libraryScopes: Set<String> = ["user-library-read", "user-library-modify"]
+
     public static let apiBaseURL = URL(string: "https://api.spotify.com/v1")!
 
     public let clientID: String?
@@ -96,7 +98,8 @@ public final class SpotifyCatalogService: @unchecked Sendable {
             URLQueryItem(name: "redirect_uri", value: redirectURI),
             URLQueryItem(name: "state", value: state),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
-            URLQueryItem(name: "code_challenge", value: codeChallenge)
+            URLQueryItem(name: "code_challenge", value: codeChallenge),
+            URLQueryItem(name: "scope", value: SpotifyOAuthConfiguration.libraryScopes.sorted().joined(separator: " "))
         ]
         guard let url = components.url else { throw SpotifyCatalogError.invalidURL }
         return url
@@ -201,9 +204,29 @@ public final class SpotifyCatalogService: @unchecked Sendable {
         }
     }
 
-    private func sendAPIRequest(url: URL, accessToken: String) async throws -> Data {
+    func isTrackSaved(id: String, accessToken: String) async throws -> Bool {
+        let data = try await sendAPIRequest(url: libraryTrackURL(id: id, contains: true), accessToken: accessToken)
+        guard let value = try JSONDecoder().decode([Bool].self, from: data).first else { throw SpotifyCatalogError.parseFailure }
+        return value
+    }
+
+    func setTrackSaved(_ saved: Bool, id: String, accessToken: String) async throws {
+        _ = try await sendAPIRequest(url: libraryTrackURL(id: id, contains: false), accessToken: accessToken,
+                                    method: saved ? "PUT" : "DELETE")
+    }
+
+    private func libraryTrackURL(id: String, contains: Bool) throws -> URL {
+        guard let id = TrackIdentity.canonicalSpotifyTrackID(id),
+              var parts = URLComponents(url: baseURL.appendingPathComponent(contains ? "me/library/contains" : "me/library"),
+                                        resolvingAgainstBaseURL: false) else { throw SpotifyCatalogError.badRequest }
+        parts.queryItems = [URLQueryItem(name: "uris", value: "spotify:track:" + id)]
+        guard let url = parts.url else { throw SpotifyCatalogError.invalidURL }
+        return url
+    }
+
+    private func sendAPIRequest(url: URL, accessToken: String, method: String = "GET") async throws -> Data {
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        request.httpMethod = method
         request.timeoutInterval = 15
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")

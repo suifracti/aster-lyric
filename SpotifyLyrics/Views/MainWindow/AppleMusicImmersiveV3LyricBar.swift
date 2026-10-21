@@ -29,6 +29,49 @@ struct V3LyricActions {
     }
 }
 
+/// Main-window listening keys; text entry and system key combinations pass through.
+enum V3ListeningKey: Equatable {
+    case playPause, previous, next, like, resetOffset, focus, help, escape
+    case offset(Double), blurFine(Double), blurStep(Int)
+
+    static func resolve(_ text: String, modifiers: NSEvent.ModifierFlags, repeating: Bool,
+                        focused: Bool, editing: Bool) -> Self? {
+        guard focused, !editing, modifiers.intersection([.command, .option, .control]).isEmpty else { return nil }
+        let key = text.lowercased()
+        if repeating && !["z", "c", ",", ".", "<", ">"].contains(key) { return nil }
+        switch key {
+        case " ": return .playPause
+        case "a": return .previous
+        case "d": return .next
+        case "s": return .like
+        case "z": return .offset(-0.1)
+        case "c": return .offset(0.1)
+        case "x": return .resetOffset
+        case "[": return .blurStep(-1)
+        case "]": return .blurStep(1)
+        case ",", "<": return .blurFine(-5)
+        case ".", ">": return .blurFine(5)
+        case "f": return .focus
+        case "?": return .help
+        case "\u{1b}": return .escape
+        default: return nil
+        }
+    }
+}
+
+struct V3LikeConfirmation {
+    private var pending: (track: String, time: TimeInterval)?
+    mutating func target(isLiked: Bool, track: String, now: TimeInterval) -> Bool? {
+        if !isLiked { pending = nil; return true }
+        if let pending, pending.track == track, now - pending.time < 3 {
+            self.pending = nil
+            return false
+        }
+        pending = (track, now)
+        return nil
+    }
+}
+
 /// Space belongs to playback only while the canvas has focus, never a text editor.
 enum V3SpacePlayback {
     static func handles(_ event: NSEvent, in window: NSWindow) -> Bool {
@@ -55,7 +98,7 @@ struct V3SceneSwipe {
 
 struct V3CanvasSceneSwipe: NSViewRepresentable {
     let enabled: Bool
-    let onPlayPause: () -> Void
+    let onKey: (V3ListeningKey) -> Void
     let onSwipe: (Int) -> Void
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> V3ToolAnchorView {
@@ -67,7 +110,7 @@ struct V3CanvasSceneSwipe: NSViewRepresentable {
     func updateNSView(_ view: V3ToolAnchorView, context: Context) {
         context.coordinator.enabled = enabled
         context.coordinator.onSwipe = onSwipe
-        context.coordinator.onPlayPause = onPlayPause
+        context.coordinator.onKey = onKey
     }
     static func dismantleNSView(_ view: V3ToolAnchorView, coordinator: Coordinator) { coordinator.stop() }
 
@@ -75,7 +118,7 @@ struct V3CanvasSceneSwipe: NSViewRepresentable {
         weak var view: NSView?
         var enabled = true
         var onSwipe: ((Int) -> Void)?
-        var onPlayPause: (() -> Void)?
+        var onKey: ((V3ListeningKey) -> Void)?
         var swipe = V3SceneSwipe()
         var monitor: Any?
         func start() {
@@ -83,8 +126,10 @@ struct V3CanvasSceneSwipe: NSViewRepresentable {
                 guard let self, let view = self.view, let window = view.window,
                       event.window === window else { return event }
                 if event.type == .keyDown {
-                    guard V3SpacePlayback.handles(event, in: window) else { return event }
-                    self.onPlayPause?()
+                    guard let key = V3ListeningKey.resolve(event.characters ?? "", modifiers: event.modifierFlags,
+                        repeating: event.isARepeat, focused: window.isKeyWindow && NSApp.isActive,
+                        editing: window.firstResponder is NSText || window.firstResponder is NSTextField) else { return event }
+                    self.onKey?(key)
                     return nil
                 }
                 guard self.enabled,

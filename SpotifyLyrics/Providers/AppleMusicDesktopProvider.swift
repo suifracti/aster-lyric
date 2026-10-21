@@ -192,6 +192,28 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
         """
     }
 
+    func trackFavorite(id: String, set value: Bool? = nil) async throws -> Bool {
+        let persistentID = String(id.replacingOccurrences(of: "applemusic:", with: ""))
+        guard !persistentID.isEmpty, persistentID.allSatisfy(\.isHexDigit), applicationIsRunning() else {
+            throw PlaybackProviderError.noTrack
+        }
+        // Operate on this recording, never whichever track starts during the request.
+        let write = value.map { "set favorited of targetTrack to \($0 ? "true" : "false")" } ?? ""
+        let result = try await execute(script: """
+        if application "Music" is not running then return ""
+        tell application "Music"
+            set targetTrack to current track
+            if (persistent ID of targetTrack as text) is not "\(persistentID)" then error "歌曲已切换"
+            \(write)
+            return favorited of targetTrack as text
+        end tell
+        """, timeout: Self.commandScriptTimeout)
+        guard let result, ["true", "false"].contains(result.lowercased()) else {
+            throw PlaybackProviderError.commandFailed("无法读取 Apple Music 喜爱标记")
+        }
+        return result.lowercased() == "true"
+    }
+
     private func executeCommand(_ script: String) async throws {
         _ = try await execute(script: script, timeout: Self.commandScriptTimeout)
     }

@@ -362,6 +362,10 @@ private struct V3PlaybackButtons: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            V3TransportIconButton(systemImage: state.isTrackLiked == true ? "heart.fill" : "heart",
+                                 label: state.isTrackLiked == true ? "移出喜欢 (S)" : "加入喜欢 (S)", enabled: state.hasLiveTrack) {
+                state.toggleTrackLike()
+            }
             V3TransportIconButton(systemImage: "backward.fill", label: "上一首", enabled: state.canControlSpotify) {
                 state.previousTrack()
             }
@@ -419,6 +423,8 @@ struct AppleMusicImmersiveV3FocusTransportControls: View {
 
     var body: some View {
         HStack(spacing: LyricsDesignTokens.Spacing.sm) {
+            V3TransportIconButton(systemImage: state.isTrackLiked == true ? "heart.fill" : "heart",
+                                 label: "喜欢 (S)", enabled: state.hasLiveTrack) { state.toggleTrackLike() }
             Button {
                 state.togglePlayPause()
             } label: {

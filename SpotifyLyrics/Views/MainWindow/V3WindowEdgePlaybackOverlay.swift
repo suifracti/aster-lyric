@@ -310,12 +310,14 @@ private struct V3WindowEdgeTransportButtons: View {
         Group {
             if isVertical {
                 VStack(spacing: 5) {
+                    likeButton
                     previousButton
                     playPauseButton
                     nextButton
                 }
             } else {
                 HStack(spacing: 5) {
+                    likeButton
                     previousButton
                     playPauseButton
                     nextButton
@@ -325,6 +327,11 @@ private struct V3WindowEdgeTransportButtons: View {
         .padding(4)
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(Capsule().strokeBorder(Color.white.opacity(0.22), lineWidth: 0.8))
+    }
+
+    private var likeButton: some View {
+        transportButton(image: state.isTrackLiked == true ? "heart.fill" : "heart", label: "喜欢 (S)",
+                        enabled: state.hasLiveTrack, primary: false) { state.toggleTrackLike() }
     }
 
     private var previousButton: some View {
@@ -489,7 +496,7 @@ private enum V3WindowEdgeControlPositioner {
         }
 
         let isVertical = edge.isVertical
-        let baseSize = CGSize(width: isVertical ? 38 : 108, height: isVertical ? 108 : 38)
+        let baseSize = CGSize(width: isVertical ? 38 : 143, height: isVertical ? 143 : 38)
         let availableLong = isVertical ? height : width
         let availableShort = isVertical ? width : height
         let baseLong = isVertical ? baseSize.height : baseSize.width

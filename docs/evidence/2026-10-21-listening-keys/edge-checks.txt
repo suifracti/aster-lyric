@@ -1,0 +1,7 @@
+Build mode: -Onone
+PASS 56 checks; centre changes=0/10000; cluster changes=0/10000; sweep changes=6/620
+Scope: exact Swift geometry/state logic only. macOS UI/CPU/RSS/frame-time NOT_RUN.
+Build mode: -O
+PASS 56 checks; centre changes=0/10000; cluster changes=0/10000; sweep changes=6/620
+Scope: exact Swift geometry/state logic only. macOS UI/CPU/RSS/frame-time NOT_RUN.
+PASS: source wiring guards (not a native app build).

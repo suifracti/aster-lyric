@@ -72,9 +72,11 @@ private let beforeReveal = next(State(), 1179, 400) // 31pt
 expect(!beforeReveal.isVisible, "overbroad reveal")
 private let atReveal = next(beforeReveal, 1180, 400) // 30pt inclusive
 expect(atReveal.isVisible, "30pt failed")
-private let held = next(atReveal, 1164, 470) // 46pt, outside button cluster
+private let controls = atReveal.layout(size: canvas, fallbackExitPoint: nil)
+private let outsideButtonsY = controls.center.y + controls.baseSize.height * controls.scale / 2 + State.controlCorridor + 1
+private let held = next(atReveal, 1164, outsideButtonsY) // 46pt, outside the current button cluster
 expect(held.isVisible && held.anchor == atReveal.anchor, "46pt failed to hold")
-private let hidden = next(held, 1163, 470) // 47pt and outside corridor
+private let hidden = next(held, 1163, outsideButtonsY) // 47pt and outside corridor
 expect(!hidden.isVisible, "centre-side player remained visible")
 expect(!next(hidden, 1179, 400).isVisible, "hold band revealed a hidden player")
 expect(!next(atReveal, nil).isVisible, "outside window did not hide")

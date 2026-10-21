@@ -169,6 +169,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var isTranslationComparisonPresented = false
     @State private var isVersionPickerPresented = false
     @State private var pinchStartFontSize: CGFloat?
+    @State private var showsListeningKeys = false
+    @State private var isFocusMode = false
     @State private var lyricNotice: String?
     @State private var lyricNoticeTask: Task<Void, Never>?
     @State private var hoveredStyle: V3ArtworkPresentation?
@@ -426,7 +428,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             .onChange(of: toolbarPanelIsPresented) { _, presented in
                 if !presented && !isPointerInToolbarRegion { toolsVisible = false }
             }
-            .onExitCommand { dismissPinnedToolbarPanel() }
+            .onExitCommand {
+                showsListeningKeys = false
+                isFocusMode = false
+                dismissPinnedToolbarPanel()
+            }
+            .onReceive(state.$playbackNotice.compactMap { $0 }) { showLyricNotice($0) }
+            .overlay { if showsListeningKeys { listeningKeyList } }
 #if DEBUG
             // Lets the offscreen visual host (Tools/experience_visual_host)
             // render toolbar states that otherwise need a real pointer.
@@ -443,7 +451,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
             }
             .background {
-                V3CanvasSceneSwipe(enabled: !toolbarPanelIsPresented, onPlayPause: { state.togglePlayPause() }) { direction in
+                V3CanvasSceneSwipe(enabled: !toolbarPanelIsPresented, onKey: handleListeningKey) { direction in
                     showLyricNotice(V3LyricActions(settings: settings).scene(direction))
                 }
             }
@@ -1338,15 +1346,63 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         }
         .overlay(alignment: .bottomLeading) {
             if let lyricNotice {
-                Text(lyricNotice)
+                HStack {
+                    Text(lyricNotice)
+                    if lyricNotice == "需要连接 Spotify" {
+                        Button("打开连接设置") {
+                            SettingsNavigationRoute.shared.requestConnectionSettings()
+                            openAppSettings()
+                        }
+                    }
+                }
                     .font(.system(size: 13, weight: .medium))
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.regularMaterial, in: Capsule())
                     .fixedSize()
-                    .allowsHitTesting(false)
                     .transition(.opacity)
             }
         }
+    }
+
+    private func handleListeningKey(_ key: V3ListeningKey) {
+        switch key {
+        case .playPause: state.togglePlayPause(); showLyricNotice(state.isPlaying ? "播放" : "暂停")
+        case .previous: state.previousTrack(); showLyricNotice("上一首")
+        case .next: state.nextTrack(); showLyricNotice("下一首")
+        case .like: state.toggleTrackLike(fromKeyboard: true)
+        case .offset(let delta):
+            let store = settings.lyricsOffsetStore
+            if store.setActiveValue(store.activeOffset + delta) {
+                showLyricNotice(String(format: "偏移 %+.1fs", store.activeOffset))
+            } else { showLyricNotice("当前没有已保存歌词") }
+        case .resetOffset:
+            _ = settings.lyricsOffsetStore.resetActiveValue(); showLyricNotice("偏移归零")
+        case .blurFine(let delta):
+            settings.v3BackdropBlurRadius = min(100, max(0, settings.v3BackdropBlurRadius + delta))
+            showLyricNotice("模糊 \(Int(settings.v3BackdropBlurRadius))%")
+        case .blurStep(let direction):
+            let presets: [Double] = [0, 60, 100]
+            let value = settings.v3BackdropBlurRadius
+            settings.v3BackdropBlurRadius = direction > 0
+                ? presets.first(where: { $0 > value }) ?? 100 : presets.last(where: { $0 < value }) ?? 0
+            showLyricNotice(settings.v3BackdropBlurRadius == 0 ? "清晰" : settings.v3BackdropBlurRadius == 60 ? "柔和" : "很糊")
+        case .focus:
+            isFocusMode.toggle(); dismissPinnedToolbarPanel()
+            showLyricNotice(isFocusMode ? "专注模式" : "退出专注模式")
+        case .help: showsListeningKeys.toggle(); showLyricNotice(showsListeningKeys ? "全部按键" : "关闭按键说明")
+        case .escape:
+            showsListeningKeys = false; isFocusMode = false; dismissPinnedToolbarPanel()
+            showLyricNotice("返回听歌")
+        }
+    }
+
+    private var listeningKeyList: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack { Text("听歌按键").font(.headline); Spacer(); Button("关闭") { showsListeningKeys = false } }
+            ForEach(["空格 · 播放 / 暂停", "A / D · 上一首 / 下一首", "S · 喜欢，再按移除", "Z / C · 偏移 −0.1s / +0.1s", "X · 偏移归零", "[ / ] · 清晰 / 柔和 / 很糊", ", / . · 模糊 −5% / +5%", "F · 专注模式", "? · 全部按键", "Esc · 关闭面板 / 退出专注"], id: \.self) { Text($0) }
+        }
+        .padding(22).frame(width: 320)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
     }
 
     private func showLyricNotice(_ message: String?) {
@@ -1719,7 +1775,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             toolbarEntry(panel.title, symbol: panel.symbol, selected: toolbar.isSelected(panel))
         }
         .v3FirstClick { clickToolbarPanel(panel) }
-        .help(panel.title)
+        .help(panel == .picture ? "画面 · [ / ] 三档模糊，, / . 微调模糊" : panel == .more ? "更多 · Z / C 调整偏移，X 归零" : panel.title)
         .onHover { inside in
             toolbarTriggerHover(panel, inside: inside)
         }

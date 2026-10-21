@@ -54,6 +54,12 @@ public final class PlaybackState: ObservableObject {
     @Published public var showCapsulePlayer = false
     @Published public var showFullScreen = false
 
+    @Published public private(set) var isTrackLiked: Bool?
+    @Published public private(set) var playbackNotice: String?
+    private var likeConfirmation = V3LikeConfirmation()
+    private var isChangingLike = false
+    private let spotifyLibraryService = SpotifyCatalogService()
+
     private let provider: PlaybackProvider
     private let desktopEvents: DesktopPlaybackEvents?
     private let lyricsWindowsVisible: () -> Bool
@@ -1508,6 +1514,76 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
+    private func trackLikeValue(track: Track, source: PlaybackSourceIdentity, set value: Bool? = nil) async throws -> Bool {
+        guard let id = track.spotifyId else { throw PlaybackProviderError.noTrack }
+        if source == .appleMusic {
+            let active = (provider as? ActivePlaybackProvider)?.activeProvider ?? provider
+            guard let music = active as? AppleMusicDesktopProvider else { throw PlaybackProviderError.noTrack }
+            return try await music.trackFavorite(id: id, set: value)
+        }
+        guard source == .spotifyDesktop else { throw PlaybackProviderError.noTrack }
+        let token = try await spotifyAuthorizationManager.accessToken(requiredScopes: SpotifyOAuthConfiguration.libraryScopes)
+        if let value {
+            try await spotifyLibraryService.setTrackSaved(value, id: id, accessToken: token)
+            return value
+        }
+        return try await spotifyLibraryService.isTrackSaved(id: id, accessToken: token)
+    }
+
+    private func refreshTrackLike() {
+        isTrackLiked = nil
+        likeConfirmation = V3LikeConfirmation()
+        let track = currentTrack, source = playbackSourceIdentity
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let value = try? await self.trackLikeValue(track: track, source: source)
+            guard TrackIdentity(track: self.currentTrack) == TrackIdentity(track: track),
+                  self.playbackSourceIdentity == source else { return }
+            self.isTrackLiked = value
+        }
+    }
+
+    public func toggleTrackLike(fromKeyboard: Bool = false) {
+        guard hasLiveTrack else { playbackNotice = "没有当前歌曲"; return }
+        guard !isChangingLike else { playbackNotice = "正在更新喜欢…"; return }
+        isChangingLike = true
+        playbackNotice = "正在更新喜欢…"
+        let track = currentTrack, source = playbackSourceIdentity
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.isChangingLike = false }
+            do {
+                let liked: Bool
+                if let existing = self.isTrackLiked { liked = existing }
+                else { liked = try await self.trackLikeValue(track: track, source: source) }
+                guard TrackIdentity(track: self.currentTrack) == TrackIdentity(track: track),
+                      self.playbackSourceIdentity == source else { return }
+                self.isTrackLiked = liked
+                let target: Bool
+                if fromKeyboard {
+                    guard let confirmed = self.likeConfirmation.target(isLiked: liked,
+                        track: TrackIdentity(track: track).stableKey, now: ProcessInfo.processInfo.systemUptime) else {
+                        self.playbackNotice = "已在喜欢中 · 再按 S 移除"
+                        return
+                    }
+                    target = confirmed
+                } else { target = !liked; self.likeConfirmation = V3LikeConfirmation() }
+                let saved = try await self.trackLikeValue(track: track, source: source, set: target)
+                guard TrackIdentity(track: self.currentTrack) == TrackIdentity(track: track),
+                      self.playbackSourceIdentity == source else { return }
+                self.isTrackLiked = saved
+                self.playbackNotice = saved ? "已加入喜欢" : "已移出喜欢"
+            } catch {
+                guard TrackIdentity(track: self.currentTrack) == TrackIdentity(track: track) else { return }
+                if source == .spotifyDesktop,
+                   error is SpotifyAuthorizationError || (error as? SpotifyCatalogError) == .unauthorized
+                    || (error as? SpotifyCatalogError) == .forbidden {
+                    self.playbackNotice = "需要连接 Spotify"
+                } else { self.playbackNotice = "喜欢操作失败：" + error.localizedDescription }
+            }
+        }
+    }
+
     public func togglePlayPause() {
         if isMockPreviewMode {
             let position = playbackPositionNow
@@ -2730,6 +2806,7 @@ public final class PlaybackState: ObservableObject {
         let hadLiveState = hasLiveTrack || lyricsSession.activeIdentity != nil || !lyrics.isEmpty
         lyricsEditorSession.markStale()
         hasLiveTrack = false
+        if isTrackLiked != nil { isTrackLiked = nil }
         if hadLiveState {
             currentTrack = .emptyPlaybackPlaceholder
             lyricsSession.clear()

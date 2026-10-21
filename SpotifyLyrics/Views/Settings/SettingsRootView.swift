@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 
 extension Notification.Name {
+    static let lyricIslandOpenConnectionSettings = Notification.Name("lyricIslandOpenConnectionSettings")
     static let lyricIslandOpenAISettings = Notification.Name("lyricIslandOpenAISettings")
 }
 
@@ -10,6 +11,11 @@ final class SettingsNavigationRoute: ObservableObject {
     static let shared = SettingsNavigationRoute()
 
     @Published private(set) var pendingAISettings = false
+    @Published var pendingConnectionSettings = false
+    func requestConnectionSettings() {
+        pendingConnectionSettings = true
+        NotificationCenter.default.post(name: .lyricIslandOpenConnectionSettings, object: nil)
+    }
 
     func requestAISettings() {
         pendingAISettings = true
@@ -208,7 +214,13 @@ struct SettingsRootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .lyricIslandOpenAISettings)) { _ in
             navigateToAISettings()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .lyricIslandOpenConnectionSettings)) { _ in
+            searchText = ""; selection = .general; navigationRoute.pendingConnectionSettings = false
+        }
         .onAppear {
+            if navigationRoute.pendingConnectionSettings {
+                searchText = ""; selection = .general; navigationRoute.pendingConnectionSettings = false
+            }
             if navigationRoute.consumePendingAISettingsRequest() {
                 navigateToAISettings()
             }

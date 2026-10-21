@@ -1,4 +1,4 @@
-// Rules from docs/TOOLBAR_BEHAVIOR.md (9ccf7c6).
+// Rules from docs/TOOLBAR_BEHAVIOR.md (67b5be9).
 import XCTest
 import CoreGraphics
 import Foundation
@@ -6,6 +6,53 @@ import SwiftUI
 @testable import SpotifyLyrics
 
 final class V3ToolbarPresentationTests: XCTestCase {
+    func testListeningKeysAndLikeConfirmation() {
+        XCTAssertEqual(V3ListeningKey.resolve("A", modifiers: [], repeating: false, focused: true, editing: false), .previous)
+        XCTAssertEqual(V3ListeningKey.resolve("z", modifiers: [], repeating: true, focused: true, editing: false), .offset(-0.1))
+        XCTAssertEqual(V3ListeningKey.resolve(",", modifiers: [], repeating: true, focused: true, editing: false), .blurFine(-5))
+        XCTAssertEqual(V3ListeningKey.resolve("?", modifiers: [.shift], repeating: false, focused: true, editing: false), .help)
+        XCTAssertNil(V3ListeningKey.resolve("a", modifiers: [.command], repeating: false, focused: true, editing: false))
+        XCTAssertNil(V3ListeningKey.resolve(" ", modifiers: [], repeating: false, focused: true, editing: true))
+        XCTAssertNil(V3ListeningKey.resolve("s", modifiers: [], repeating: false, focused: false, editing: false))
+        var confirmation = V3LikeConfirmation()
+        XCTAssertEqual(confirmation.target(isLiked: false, track: "one", now: 0), true)
+        XCTAssertNil(confirmation.target(isLiked: true, track: "one", now: 1))
+        XCTAssertEqual(confirmation.target(isLiked: true, track: "one", now: 2), false)
+        XCTAssertNil(confirmation.target(isLiked: true, track: "one", now: 6))
+        XCTAssertNil(confirmation.target(isLiked: true, track: "two", now: 7))
+    }
+
+    func testSpotifyLikesUseOnlyTrackLibraryRequestsAndTwoScopes() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [TrackLikeRequestFixture.self]
+        let service = SpotifyCatalogService(session: URLSession(configuration: config))
+        TrackLikeRequestFixture.requests = []
+        let id = "0123456789012345678901"
+        let saved = try await service.isTrackSaved(id: id, accessToken: "fixture")
+        XCTAssertTrue(saved)
+        try await service.setTrackSaved(true, id: id, accessToken: "fixture")
+        try await service.setTrackSaved(false, id: id, accessToken: "fixture")
+        XCTAssertEqual(TrackLikeRequestFixture.requests.map(\.httpMethod), ["GET", "PUT", "DELETE"])
+        XCTAssertEqual(TrackLikeRequestFixture.requests.map { $0.url!.path }, ["/v1/me/library/contains", "/v1/me/library", "/v1/me/library"])
+        XCTAssertTrue(TrackLikeRequestFixture.requests.allSatisfy {
+            URLComponents(url: $0.url!, resolvingAgainstBaseURL: false)!.queryItems?.first?.value == "spotify:track:" + id
+        })
+        let url = try service.authorizationURL(clientID: "fixture", state: "fixture", codeChallenge: "fixture")
+        let scopes = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "scope" }!.value!
+        XCTAssertEqual(Set(scopes.split(separator: " ").map(String.init)), ["user-library-read", "user-library-modify"])
+    }
+
+    @MainActor
+    func testAppleMusicLikesAddressTheRecording() async throws {
+        let provider = AppleMusicDesktopProvider(scriptRunner: { script, _ in
+            XCTAssertTrue(script.contains("favorited"))
+            XCTAssertTrue(script.contains("persistent ID of targetTrack as text) is not \"ABCDEF1234567890\""))
+            return "true"
+        }, applicationIsInstalled: { true }, applicationIsRunning: { true })
+        let value = try await provider.trackFavorite(id: "applemusic:ABCDEF1234567890", set: true)
+        XCTAssertTrue(value)
+    }
+
     @MainActor
     func testPanelReportsContentHeightInsteadOfAFullScreen() async {
         let height = expectation(description: "the host receives the short panel's height")
@@ -210,4 +257,18 @@ final class V3ToolbarPresentationTests: XCTestCase {
         XCTAssertEqual(edge.maxX, visible.maxX - 8)
         XCTAssertGreaterThan(edge.minX, wide.minX, "never to the left")
     }
+}
+
+private final class TrackLikeRequestFixture: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var requests: [URLRequest] = []
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.requests.append(request)
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200,
+            httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: request.httpMethod == "GET" ? Data("[true]".utf8) : Data())
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }
