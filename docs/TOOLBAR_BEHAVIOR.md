@@ -65,7 +65,10 @@ There is no lyric bar; the user removed it on 2026-10-21. Every setting lives in
 - **Cover colours:** take the accent colour from the cover's palette and use it for the current-line highlight, the progress bar and the panel accent. It changes with each song. If the cover has almost no colour (saturation below about 0.08), use the current neutral colour. Reuse `LyricIslandArtworkColors`.
 - **Night dimming:** a single switch, 「夜间柔和」, in 画面 → 更多画面选项, default off. Between 20:00 and 07:00 it lowers canvas brightness by 15% and caps 背景动态 at 轻柔. There are no other settings and no numbers for the user to set.
 - **Focus mode:** **F** hides the toolbar, the title and the player, leaving only the lyrics and the background. **F** again or **Esc** brings them back. While it is on, the pointer does not bring the toolbar back.
-- **Shuffle and repeat:** two small buttons in the player that drive the current player's own shuffle and repeat settings and show their state.
+- **Shuffle and repeat:** two small buttons in the player.
+  - **Repeat** cycles 关 → 列表循环 → 单曲循环. It uses the usual repeat icon, plus a small "1" for 单曲循环, and shows a notice.
+  - **Apple Music:** use its own repeat setting (off / all / one).
+  - **Spotify:** 列表循环 uses Spotify's own repeat. 单曲循环 is done by the app: when the current track reaches its end, the app seeks back to 0:00 instead of letting it advance. No Premium-only API.
 - **Loop one line:** right-click a lyric line → 「循环这一句」. Playback jumps back to that line's start each time it reaches the next line. The looped line has a small loop mark. Clicking the mark, right-click → 「取消循环」, or a track change stops the loop.
 - **Big-line mode:** a 「大字模式」 switch in the 文字 panel. The current line is drawn at about twice the size; the other lines are 60% size and dimmed. It is meant for singing along from a distance.
 - **Click to seek** already exists; keep it unchanged.
@@ -189,3 +192,29 @@ Clicks that land on the popover's transparent arrow or shadow area are forwarded
 - **Performance:** animate only the player view's position and opacity. Don't drive the lyrics or backdrop, and don't add a per-frame timer.
 
 **Player information:** the edge player pill shows the elapsed and total time in small text, for example 「0:35 / 3:13」, beside the play controls. Nothing else is added.
+
+## Add to playlist (like Spotify's 「新增至播放清單」)
+**Entry:**
+- **Heart:**
+  - Not liked: clicking it likes the song.
+  - Already liked: clicking it opens the playlist picker.
+- **Right-click on the heart** always opens the picker.
+- **S** stays as defined above.
+
+**Picker** (a popover from the heart, in the hover-panel style):
+- **Top:** a search field, 「尋找播放清單」, which filters by name.
+- **Next:** 「建立新清單」, which creates a private playlist named after what you typed (or 「新清單」) and adds the song.
+- **List:**
+  - The first row is always 「已按讚的歌曲」 (Liked Songs).
+  - Then the user's own and collaborative playlists, most recently updated first.
+  - Each row shows cover, name and track count.
+- **Checkmarks:**
+  - A check means the song is already in that playlist; tapping toggles add and remove at once.
+  - Checks are loaded lazily for the visible rows and cached per playlist `snapshot_id`, so reopening is instant. Don't scan every playlist up front.
+- **Done / 取消:** closes it. Changes take effect immediately, so there is nothing to confirm.
+
+**Limits:**
+- Spotify's Web API does not expose playlist folders, so the list is flat. Don't fake folders.
+- Spotify scopes, added with the library ones: `playlist-read-private`, `playlist-read-collaborative`, `playlist-modify-private`, `playlist-modify-public`. The user re-connects once.
+- **Apple Music:** the same picker using its local playlists, with no 「已按讚的歌曲」 row. Its favourite is the heart.
+- **Errors:** a short notice such as 「添加失败，稍后再试」. No retry queue.
