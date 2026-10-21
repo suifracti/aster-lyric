@@ -61,6 +61,8 @@ public final class PlaybackState: ObservableObject {
     private var isChangingLike = false
     private let spotifyLibraryService = SpotifyCatalogService()
     private var changingPlayerModes = false
+    private var spotifySingleTrackRepeat = false
+    private var restartingRepeatedTrack = false
 
     private let provider: PlaybackProvider
     private let desktopEvents: DesktopPlaybackEvents?
@@ -1521,8 +1523,9 @@ public final class PlaybackState: ObservableObject {
         let source = playbackSourceIdentity
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let modes = try? await self.provider.playbackModes(shuffle: nil, repeatMode: nil)
+            var modes = try? await self.provider.playbackModes(shuffle: nil, repeatMode: nil)
             guard self.playbackSourceIdentity == source else { return }
+            if source == .spotifyDesktop && self.spotifySingleTrackRepeat { modes?.repeatMode = .one }
             if self.playerModes != modes { self.playerModes = modes }
         }
     }
@@ -1535,14 +1538,18 @@ public final class PlaybackState: ObservableObject {
             guard let self else { return }
             defer { self.changingPlayerModes = false }
             do {
-                let current = try await self.provider.playbackModes(shuffle: nil, repeatMode: nil)
-                // Spotify's desktop dictionary exposes a repeat on/off switch.
-                let nextRepeat: PlayerRepeatMode = source == .spotifyDesktop
-                    ? (current.repeatMode == .off ? .all : .off) : current.repeatMode.next
-                let updated = try await self.provider.playbackModes(
+                var current = try await self.provider.playbackModes(shuffle: nil, repeatMode: nil)
+                if source == .spotifyDesktop && self.spotifySingleTrackRepeat { current.repeatMode = .one }
+                let nextRepeat = current.repeatMode.next
+                let nativeRepeat: PlayerRepeatMode = source == .spotifyDesktop && nextRepeat == .one ? .off : nextRepeat
+                var updated = try await self.provider.playbackModes(
                     shuffle: shuffle ? !current.shuffle : nil,
-                    repeatMode: shuffle ? nil : nextRepeat)
+                    repeatMode: shuffle ? nil : nativeRepeat)
                 guard self.playbackSourceIdentity == source else { return }
+                if source == .spotifyDesktop {
+                    if !shuffle { self.spotifySingleTrackRepeat = nextRepeat == .one }
+                    if self.spotifySingleTrackRepeat { updated.repeatMode = .one }
+                }
                 self.playerModes = updated
                 self.playbackNotice = shuffle ? (updated.shuffle ? "随机播放" : "顺序播放") : updated.repeatMode.label
             } catch { self.playbackNotice = error.localizedDescription }
@@ -2864,6 +2871,7 @@ public final class PlaybackState: ObservableObject {
         guard playbackSourceIdentity != next else { return }
         let previous = playbackSourceIdentity
         playbackSourceIdentity = next
+        if next != .spotifyDesktop { spotifySingleTrackRepeat = false }
         AutomaticAlignmentJobController.shared.notifyPlaybackSourceChanged(
             previous: previous,
             next: next
@@ -2993,7 +3001,40 @@ public final class PlaybackState: ObservableObject {
         _ = lyricsSession.retryAfterNetworkRecovery(track: currentTrack, identity: identity)
     }
 
+    private func restartRepeatedTrackIfNeeded() -> Bool {
+        guard spotifySingleTrackRepeat, playbackSourceIdentity == .spotifyDesktop,
+              hasLiveTrack, isPlaying, currentTrack.duration > 0,
+              playbackPositionNow >= currentTrack.duration,
+              let id = currentTrack.spotifyId else { return false }
+        guard !restartingRepeatedTrack else { return true }
+        restartingRepeatedTrack = true
+        invalidateProviderRefresh()
+        let identity = currentTrackIdentity
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.restartingRepeatedTrack = false }
+            do {
+                let restarted = try await self.provider.restartTrack(id: id)
+                guard self.playbackSourceIdentity == .spotifyDesktop, self.currentTrackIdentity == identity else { return }
+                if restarted {
+                    self.resetPlaybackAnchor(to: 0, source: .seek)
+                } else {
+                    self.spotifySingleTrackRepeat = false
+                    self.playerModes?.repeatMode = .off
+                    self.playbackNotice = "歌曲已切换，未执行单曲循环"
+                }
+            } catch {
+                guard self.playbackSourceIdentity == .spotifyDesktop, self.currentTrackIdentity == identity else { return }
+                self.spotifySingleTrackRepeat = false
+                self.playerModes?.repeatMode = .off
+                self.playbackNotice = "单曲循环失败：" + error.localizedDescription
+            }
+        }
+        return true
+    }
+
     private func tick() {
+        if restartRepeatedTrackIfNeeded() { return }
         if isMockPreviewMode {
             publishTickTime(playbackPositionNow)
             if PlaybackTickTimeUpdatePolicy.shouldFinishMockPlayback(

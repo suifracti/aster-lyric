@@ -144,6 +144,25 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
         try await executeCommand("tell application \"Spotify\" to play")
     }
 
+    public func restartTrack(id: String) async throws -> Bool {
+        // Playback IDs are case-sensitive; the library's identity normalizer
+        // is for matching saved records, not for sending commands to Spotify.
+        let trackID = id.hasPrefix("spotify:track:") ? String(id.dropFirst("spotify:track:".count)) : id
+        guard trackID.range(of: "^[A-Za-z0-9]{22}$", options: .regularExpression) != nil,
+              isRunning else { return false }
+        let result = try await execute(script: """
+        if application "Spotify" is not running then return "false"
+        tell application "Spotify"
+            considering case
+                if (id of current track as text) is not "spotify:track:\(trackID)" then return "false"
+            end considering
+            set player position to 0
+            return "true"
+        end tell
+        """, timeout: Self.commandScriptTimeout)
+        return result?.lowercased() == "true"
+    }
+
     public func playbackModes(shuffle: Bool?, repeatMode: PlayerRepeatMode?) async throws -> PlayerPlaybackModes {
         guard isRunning else { throw PlaybackProviderError.notRunning }
         let shuffleCommand = shuffle.map { "set shuffling to \($0 ? "true" : "false")" } ?? ""

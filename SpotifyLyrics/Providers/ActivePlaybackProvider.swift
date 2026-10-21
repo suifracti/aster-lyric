@@ -103,6 +103,10 @@ public final class ActivePlaybackProvider: PlaybackProvider {
         try await activeProvider.playbackModes(shuffle: shuffle, repeatMode: repeatMode)
     }
 
+    public func restartTrack(id: String) async throws -> Bool {
+        try await activeProvider.restartTrack(id: id)
+    }
+
     func acceptDesktopSnapshot(_ snapshot: PlaybackSnapshot) {
         switch snapshot.sourceIdentity {
         case .spotifyDesktop:

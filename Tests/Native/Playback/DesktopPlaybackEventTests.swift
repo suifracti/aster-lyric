@@ -9,6 +9,19 @@ private final class EventPlaybackProvider: PlaybackProvider {
         track: ProviderTrack(id: "spotify:track:AAAAAAAAAAAAAAAAAAAAAA", title: "Initial", artist: "Fixture", album: "Cache", duration: 240),
         position: 10, isPlaying: true, sourceIdentity: .spotifyDesktop)
     var refreshes = 0
+    var modes = PlayerPlaybackModes(shuffle: false, repeatMode: .off)
+    var nativeRepeatWrites: [PlayerRepeatMode] = []
+    var restartedTrackIDs: [String] = []
+    func playbackModes(shuffle: Bool?, repeatMode: PlayerRepeatMode?) async throws -> PlayerPlaybackModes {
+        if let shuffle { modes.shuffle = shuffle }
+        if let repeatMode { modes.repeatMode = repeatMode; nativeRepeatWrites.append(repeatMode) }
+        return modes
+    }
+    func restartTrack(id: String) async throws -> Bool {
+        guard id == snapshot.track?.id else { return false }
+        restartedTrackIDs.append(id)
+        return true
+    }
     var holdNext = false
     var pending: CheckedContinuation<PlaybackSnapshot, Never>?
     func refresh() async -> PlaybackSnapshot {
@@ -34,6 +47,34 @@ private struct EventOfflineLyrics: LyricsProvider {
 
 @MainActor
 final class DesktopPlaybackEventTests: XCTestCase {
+    func testSpotifySingleRepeatCyclesAndRestartsTheSameTrackAtItsEnd() async throws {
+        let desktop = SpotifyDesktopProvider(scriptRunner: { script, _ in
+            XCTAssertTrue(script.contains("if (id of current track as text) is not \"spotify:track:AAAAAAAAAAAAAAAAAAAAAA\" then return \"false\""))
+            XCTAssertTrue(script.contains("set player position to 0"))
+            var compileError: NSDictionary?
+            XCTAssertTrue(NSAppleScript(source: script)!.compileAndReturnError(&compileError), "\(String(describing: compileError))")
+            return "true"
+        }, applicationIsInstalled: { true }, applicationIsRunning: { true })
+        let restarted = try await desktop.restartTrack(id: "spotify:track:AAAAAAAAAAAAAAAAAAAAAA")
+        XCTAssertTrue(restarted)
+        let (state, provider, _, center) = fixture()
+        state.startProvider()
+        try await wait { state.playerModes != nil }
+        state.togglePlayerMode(shuffle: false)
+        try await wait { state.playerModes?.repeatMode == .all }
+        state.togglePlayerMode(shuffle: false)
+        try await wait { state.playerModes?.repeatMode == .one }
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil,
+                    userInfo: ["Player State": "Playing", "Playback Position": 240])
+        try await wait { !provider.restartedTrackIDs.isEmpty }
+        XCTAssertEqual(provider.restartedTrackIDs, ["spotify:track:AAAAAAAAAAAAAAAAAAAAAA"])
+        XCTAssertLessThan(state.currentTime, 1)
+        XCTAssertTrue(state.isPlaying)
+        state.togglePlayerMode(shuffle: false)
+        try await wait { state.playerModes?.repeatMode == .off }
+        XCTAssertEqual(provider.nativeRepeatWrites, [.all, .off, .off])
+    }
+
     private func payload(_ title: String = "Event B", state: String = "Playing", position: Double = 32) -> [AnyHashable: Any] {
         ["Player State": state, "Track ID": "spotify:track:BBBBBBBBBBBBBBBBBBBBBB",
          "Name": title, "Artist": "Fixture", "Album": "Cache", "Duration": 240_000,

@@ -1,0 +1,14 @@
+active false
+Lyric Island {
+    Height = 102;
+    Width = 105;
+    X = 15;
+    Y = 734;
+} onscreen 1
+active false
+Lyric Island {
+    Height = 879;
+    Width = 1438;
+    X = 1201;
+    Y = 276;
+} onscreen 1
