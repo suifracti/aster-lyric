@@ -37,17 +37,18 @@ There is no lyric bar; the user removed it on 2026-10-21. Every setting lives in
 | Play / pause | **Space**, sent to the current player. It works only when no text field has focus. |
 | Previous / next track | **A** / **D** |
 | Like the song | **S** adds the current song to Spotify 「已点赞的歌曲」 (details below) |
-| Background blur | **[** less blur / **]** more blur, stepping through 清晰 → 柔和 → 很糊 |
+| Blur presets | The **/** key (no Shift) cycles 背景封面模糊 through 0 → 25 → 50 → 75 → 100%, then back to 0. Pick the next preset above the current value. |
 | Fine blur | **,** / **.** (the **<** / **>** keys): −5% / +5% of 背景封面模糊, from 0 to 100%; holding repeats. The notice shows the value, for example 「模糊 35%」. It is the same value as the 画面 panel slider. |
 | Focus mode | **F** toggles it (see below) |
 | Lyrics are early | **Z** moves the timeline up: offset −0.1 s per press |
 | Lyrics are late | **C** moves the timeline down: offset +0.1 s per press |
 | Reset offset | **X** sets the current song's offset back to 0 |
-| Show all keys | The **/** key, which is also the **?** key, works with or without Shift. It opens a centred list of every key; the same key again or **Esc** closes it. |
+| Show all keys | **Shift + /** (that is **?**) opens a centred list of every key; **?** again or **Esc** closes it. Tell it apart from / by the Shift flag, not only by the character. |
 
 - A gesture change shows a small notice at the bottom of the lyrics column, such as 「字号 22」 or 「封面」, which fades after about 1 s.
 - **Letter keys** are case-insensitive and work only while the main window is focused and no text field has focus. They are not global hot keys.
 - **Every key press shows the same small notice**, for example 「上一首」, 「偏移 −0.3s」, 「已加入喜欢」 or 「已在喜欢中」.
+- **The [ and ] keys are not used.**
 - **Holding Z or C repeats.** The offset is the same per-song offset as in 更多.
 - **S, liking the song:**
   - The app only checks, adds and removes the current track in Liked Songs. Spotify scopes: `user-library-read` and `user-library-modify`, nothing else.
