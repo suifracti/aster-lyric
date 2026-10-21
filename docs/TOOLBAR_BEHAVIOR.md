@@ -171,4 +171,12 @@ Clicks that land on the popover's transparent arrow or shadow area are forwarded
 - **Seeking:** click seeks. Dragging scrubs with the label updating and seeks on release; while dragging, the lyrics do not jump.
 - **Accent colour:** the rail and the label use the cover accent once 封面配色 exists.
 
+**Motion (no popping):**
+- **Appear:** fade in and scale from 0.92 to 1 over about 180 ms (ease-out). **Disappear:** fade out over about 140 ms.
+- **Following:** while the player is visible, it glides to its new edge position with a soft spring (response about 0.3 s, no bounce) instead of jumping. Corner turns follow the same spring.
+- **Edge switch:** moving to a different edge cross-fades: the old position fades out while the new one fades in. It never slides through the canvas.
+- **Hide delay:** keep the existing hide timing, but end it with the fade instead of a cut.
+- **Reduce Motion:** when the system has Reduce Motion on, use fades only, with no scale or glide.
+- **Performance:** animate only the player view's position and opacity. Don't drive the lyrics or backdrop, and don't add a per-frame timer.
+
 **Player information:** the edge player pill shows the elapsed and total time in small text, for example 「0:35 / 3:13」, beside the play controls. Nothing else is added.
