@@ -12,7 +12,7 @@
 
 - 原有暂停/恢复测试加入真实报错情形；旧实现出现三处断言失败，新实现原生 65 项全部通过。
 - Xcode Debug / macOS arm64 完整构建成功，CODE_SIGNING_ALLOWED=NO，与此前同一个 DerivedData。
-- 已重启临时 App；没有替换 /Applications，没有移动鼠标。实机暂停/恢复结果待用户本次验证。
+- 已重启临时 App；没有替换 /Applications，没有移动鼠标。2026-10-21，用户在修复版切走、切回后执行暂停/恢复，并明确反馈「歌词保留了」：本次暂停/恢复场景实机通过（用户操作与确认，不是自动化验收）。修复提交：174629ea8b0105300a3cf42feee7ccf03b654daf。
 - before-user-paused.png 是用户提供的真实 App 暂停后截图。
 
 ## 边界
