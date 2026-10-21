@@ -338,7 +338,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 .frame(width: canvasWidth, height: geometry.size.height)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                if settings.v3EdgeProgressEnabled {
+                if settings.v3EdgeProgressEnabled && !isFocusMode {
                     V3WindowEdgePlaybackOverlay(
                         state: state,
                         colorHex: settings.v3EdgeProgressColorHex,
@@ -531,7 +531,11 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
     @ViewBuilder
     private func layout(for geometry: GeometryProxy) -> some View {
-        if let scene = compositionScene {
+        if isFocusMode {
+            lyricsColumn(width: max(1, geometry.size.width - 64),
+                         compact: isCompact(for: geometry.size), lyricsFocus: true)
+                .padding(32)
+        } else if let scene = compositionScene {
             switch scene {
             case .originalAmbient:
                 if compositionShowsCover { foregroundArtworkLayout(in: geometry) }
@@ -1641,7 +1645,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     /// without covering the lyrics), and full contrast near the top edge or
     /// while a panel is open. Positions never change between levels.
     private var toolbarOpacity: Double {
-        toolbar.opacity(pointerInside: isPointerInsideCanvas && !liveOnly, nearTop: toolsVisible,
+        isFocusMode ? 0 : toolbar.opacity(pointerInside: isPointerInsideCanvas && !liveOnly, nearTop: toolsVisible,
                         otherPanelOpen: toolbarPanelIsPresented)
     }
 
