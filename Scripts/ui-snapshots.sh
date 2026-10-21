@@ -26,6 +26,8 @@ declare -a CASES=(
   "pin-library|--panel pin:library"
   "hover-search|--panel hover:search"
   "pin-search|--panel pin:search"
+  "search-panel|--surface search-panel --appearance light"
+  "search-full|--surface search-full --appearance light"
   "pin-picture|--panel pin:picture"
   "pin-more|--panel pin:more"
   "hover-picture|--panel hover:picture"

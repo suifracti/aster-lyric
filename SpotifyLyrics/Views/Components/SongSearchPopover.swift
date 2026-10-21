@@ -81,6 +81,8 @@ struct SongSearchPopover: View {
         .onAppear {
             if let existing = manager.state.query?.text, !existing.isEmpty {
                 query = existing
+            } else if playbackState.hasLiveTrack {
+                query = SongSearchQuery(track: playbackState.currentTrack).text
             }
             isSearchFieldFocused = true
         }
@@ -306,10 +308,7 @@ struct SongSearchPopover: View {
         manager.search(query: SongSearchQuery(text: query))
     }
 
-    private func formatDuration(_ seconds: TimeInterval) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "时长未知" }
-        return String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
-    }
+
 }
 
 private struct SearchRecordMark: View {
@@ -393,10 +392,13 @@ struct SongSearchResultRow: View {
         .overlay(alignment: .bottom) { if showsSeparator { Divider() } }
         .accessibilityLabel("歌曲结果：\(result.track.title)，\(result.track.artist)")
         .accessibilityHint("采用这首歌的歌词")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityValue(isSelected ? "已选中" : isAdopted ? "已采用" : "点击采用")
     }
 
     private func formatDuration(_ value: TimeInterval) -> String {
-        let seconds = Int(max(0, value))
+        guard value.isFinite, value >= 0 else { return "时长未知" }
+        let seconds = Int(value)
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }

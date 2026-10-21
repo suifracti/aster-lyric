@@ -85,6 +85,34 @@ private final class SongSearchFixedPlaybackProvider: PlaybackProvider {
 
 @MainActor
 final class SongSearchContractTests: XCTestCase {
+    func testPanelGroupsKeepSavedBadgesWhenOnlineWinsTheMerge() async throws {
+        let track = Track(title: "Saved", artist: "Artist", album: "Album", duration: 180, spotifyId: "saved-track")
+        let entry = PersonalLyricsLibraryEntry(trackStableKey: "saved-track", spotifyTrackID: "saved-track",
+            isrc: nil, title: track.title, artist: track.artist, album: track.album, duration: track.duration,
+            artworkURL: nil, lyricsVersionCount: 1, translationVersionCount: 2, readingVersionCount: 1,
+            timingVersionCount: 0, hasLockedLyrics: false, hasLockedTranslation: false, hasManualLyrics: false,
+            hasManualTranslation: true, hasReading: true, hasFineTiming: false, lastModifiedAt: Date(),
+            activeLyricsVersionID: UUID(), activeTranslationVersionID: UUID())
+        let manager = TrackSearchManager(providers: [SongSearchFixedTrackProvider(name: "metadata", results: [
+            TrackSearchResult(id: "saved", source: .local, track: track, confidence: 0.6, savedLibraryEntry: entry),
+            TrackSearchResult(id: "online", source: .spotifyCatalog, track: track, confidence: 1)
+        ])])
+        await manager.search(query: SongSearchQuery(text: "Saved"))?.value
+        guard case .results(_, let results) = manager.state else { return XCTFail("Missing results") }
+        let hit = try XCTUnwrap(results.first).asSongSearchResult()
+        XCTAssertEqual(hit.source, .spotifyCatalog)
+        XCTAssertEqual(hit.savedLayerLabels, ["词", "译", "读"])
+        XCTAssertTrue(hit.isSavedLocally)
+        XCTAssertEqual(hit.asTrackSearchResult().savedLibraryEntry, entry)
+        let many = (0..<6).flatMap { index in
+            [SongSearchResult(id: "local-\(index)", source: .local, track: track, confidence: 1),
+             SongSearchResult(id: "online-\(index)", source: .spotifyCatalog, track: track, confidence: 1)]
+        }
+        let groups = SongSearchResultGroup.panelGroups(many)
+        XCTAssertEqual(groups.map(\.title), ["本地已存", "在线"])
+        XCTAssertEqual(groups.map { $0.results.count }, [5, 5])
+    }
+
     func testSearchPublishesLocalBeforeSlowOnline() async throws {
         let local = LocalSearchProvider(searchDirectories: [], savedSearch: { _ in
             [TrackSearchResult(id: "saved", source: .local,

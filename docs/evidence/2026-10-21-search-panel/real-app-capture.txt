@@ -1,0 +1,5 @@
+Actual daily app at /Users/apple/Library/Developer/Xcode/DerivedData/lyricsq-main/Build/Products/Debug/SpotifyLyrics.app
+After rebuilding, old process 11773 quit; new process 53575 started from that exact executable path.
+Computer Use real-app AX/capture failed after restart: timeoutReached, then SCStreamErrorDomain Code=-3811 (audio/video capture could not start).
+Real-app screenshot: NOT_RUN. Native arrow/Return interaction capture: NOT_RUN (same tool failure).
+No offscreen fixture image is claimed as a real-app capture.

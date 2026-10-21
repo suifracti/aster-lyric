@@ -10,7 +10,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
     @ViewBuilder var controls: () -> Controls
     @StateObject private var library = PersonalLyricsLibraryService()
     @State private var query = ""
-    @State private var selectedSearchResultID: String?
+    @State private var selectedSearchResultKey: String?
     @State private var contentHeight: CGFloat = 520
 
     var body: some View {
@@ -39,7 +39,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
                 Color.clear.preference(key: V3ToolPanelHeight.self, value: geometry.size.height)
             })
         }
-        .onChange(of: selectedSearchResultID) { _, id in
+        .onChange(of: selectedSearchResultKey) { _, id in
             if let id { proxy.scrollTo(id, anchor: .center) }
         }
         }
@@ -64,7 +64,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
             TextField("搜索歌曲或艺人", text: $query)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit {
-                    if let selected = visibleSearchResults.first(where: { $0.id == selectedSearchResultID }) {
+                    if let selected = visibleSearchResults.first(where: { $0.searchMergeKey == selectedSearchResultKey }) {
                         state.loadSearchResult(selected)
                     } else { search.search(query: SongSearchQuery(text: query)) }
                 }
@@ -75,8 +75,8 @@ struct V3ToolbarQuickControls<Controls: View>: View {
                     Text(group.title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     ForEach(group.results) { result in
                         SongSearchResultRow(result: result, state: state,
-                                            isSelected: selectedSearchResultID == result.id)
-                            .id(result.id)
+                                            isSelected: selectedSearchResultKey == result.searchMergeKey)
+                            .id(result.searchMergeKey)
                     }
                 }
             } else if case .searching = search.state {
@@ -91,7 +91,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
             query = state.hasLiveTrack ? SongSearchQuery(track: state.currentTrack).text : ""
         }
         .onChange(of: query) { _, value in
-            selectedSearchResultID = nil
+            selectedSearchResultKey = nil
             search.search(query: SongSearchQuery(text: value), debounceNanoseconds: 250_000_000)
         }
     }
@@ -104,8 +104,8 @@ struct V3ToolbarQuickControls<Controls: View>: View {
     private func moveSearchSelection(_ direction: Int) {
         let results = visibleSearchResults
         guard !results.isEmpty else { return }
-        let current = results.firstIndex { $0.id == selectedSearchResultID } ?? (direction > 0 ? -1 : results.count)
-        selectedSearchResultID = results[min(max(0, current + direction), results.count - 1)].id
+        let current = results.firstIndex { $0.searchMergeKey == selectedSearchResultKey } ?? (direction > 0 ? -1 : results.count)
+        selectedSearchResultKey = results[min(max(0, current + direction), results.count - 1)].searchMergeKey
     }
 
 }

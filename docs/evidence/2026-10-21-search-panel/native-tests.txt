@@ -1,0 +1,4 @@
+Scripts/test-native.sh; Debug; arm64; CODE_SIGNING_ALLOWED=NO
+	 Executed 58 tests, with 0 failures (0 unexpected) in 17.491 (17.522) seconds
+	 Executed 58 tests, with 0 failures (0 unexpected) in 17.491 (17.523) seconds
+** TEST SUCCEEDED **

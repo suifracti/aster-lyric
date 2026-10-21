@@ -464,10 +464,17 @@ private struct ExperienceFixtureRoot: View {
                     try? await Task.sleep(for: .milliseconds(500))
                 }
                 var extraWindow: NSWindow?
-                if ["menubar", "settings", "models"].contains(ExperienceArguments.surface) {
+                if ["menubar", "settings", "models", "search-panel", "search-full"].contains(ExperienceArguments.surface) {
                     MenuBarLyricsController.shared.bind(playbackState: playback)
                     let root: AnyView
-                    if ExperienceArguments.surface == "models" {
+                    if ExperienceArguments.surface == "search-panel" {
+                        root = AnyView(V3ToolbarQuickControls(panel: .search, state: playback,
+                            search: playback.songSearchManager, openLibrary: {}, openSearch: {}) { EmptyView() }
+                            .background(Color(nsColor: .windowBackgroundColor)))
+                    } else if ExperienceArguments.surface == "search-full" {
+                        root = AnyView(SongSearchPopover(manager: playback.songSearchManager, playbackState: playback)
+                            .background(Color(nsColor: .windowBackgroundColor)))
+                    } else if ExperienceArguments.surface == "models" {
                         root = AnyView(TranslationProviderControls(settings: settings)
                             .padding(16).frame(width: 360)
                             .background(Color(nsColor: .windowBackgroundColor)))
@@ -477,7 +484,8 @@ private struct ExperienceFixtureRoot: View {
                         root = AnyView(SettingsRootView().environmentObject(settings).environmentObject(playback).environmentObject(SettingsDataController()))
                     }
                     let hosting = NSHostingView(rootView: root.environment(\.colorScheme, ExperienceArguments.value("--appearance", fallback: "dark") == "light" ? .light : .dark))
-                    let size = ExperienceArguments.surface == "models" ? CGSize(width: 360, height: 520)
+                    let size = ExperienceArguments.surface == "search-full" ? CGSize(width: 440, height: 470)
+                        : ["models", "search-panel"].contains(ExperienceArguments.surface) ? CGSize(width: 360, height: 520)
                         : ExperienceArguments.surface == "menubar" ? CGSize(width: 340, height: 560) : ExperienceArguments.size
                     let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
                     window.title = "Experience extra surface"
