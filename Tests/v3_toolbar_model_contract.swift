@@ -79,11 +79,12 @@ final class V3ToolbarPresentationTests: XCTestCase {
         config.protocolClasses = [TrackLikeRequestFixture.self]
         let service = SpotifyCatalogService(session: URLSession(configuration: config))
         TrackLikeRequestFixture.requests = []
-        let id = "0123456789012345678901"
+        let id = "6rqhFgbbKwnb9MLmUQDhG6"
+        XCTAssertEqual(TrackIdentity.canonicalSpotifyTrackID(id), id.lowercased())
         let saved = try await service.isTrackSaved(id: id, accessToken: "fixture")
         XCTAssertTrue(saved)
-        try await service.setTrackSaved(true, id: id, accessToken: "fixture")
-        try await service.setTrackSaved(false, id: id, accessToken: "fixture")
+        try await service.setTrackSaved(true, id: "spotify:track:" + id, accessToken: "fixture")
+        try await service.setTrackSaved(false, id: "https://open.spotify.com/track/" + id, accessToken: "fixture")
         XCTAssertEqual(TrackLikeRequestFixture.requests.map(\.httpMethod), ["GET", "PUT", "DELETE"])
         XCTAssertEqual(TrackLikeRequestFixture.requests.map { $0.url!.path }, ["/v1/me/library/contains", "/v1/me/library", "/v1/me/library"])
         XCTAssertTrue(TrackLikeRequestFixture.requests.allSatisfy {

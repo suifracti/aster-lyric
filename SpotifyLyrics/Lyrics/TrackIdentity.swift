@@ -104,6 +104,12 @@ public struct TrackIdentity: Hashable, Sendable, CustomStringConvertible {
     /// rejects album, artist, episode, and malformed URLs instead of treating
     /// them as opaque IDs.
     public static func canonicalSpotifyTrackID(_ value: String?) -> String? {
+        spotifyRequestTrackID(value)?.lowercased()
+    }
+
+    /// Spotify request IDs retain their base62 case. Saved identity keys keep
+    /// using canonicalSpotifyTrackID so existing lyric assets do not move.
+    public static func spotifyRequestTrackID(_ value: String?) -> String? {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -115,7 +121,7 @@ public struct TrackIdentity: Hashable, Sendable, CustomStringConvertible {
                   parts[1].lowercased() == "track" else {
                 return nil
             }
-            return canonicalBareSpotifyID(String(parts[2]))
+            return bareSpotifyID(String(parts[2]))
         }
 
         if let url = URL(string: trimmed),
@@ -128,15 +134,15 @@ public struct TrackIdentity: Hashable, Sendable, CustomStringConvertible {
                   components[0].lowercased() == "track" else {
                 return nil
             }
-            return canonicalBareSpotifyID(String(components[1]).removingPercentEncoding ?? "")
+            return bareSpotifyID(String(components[1]).removingPercentEncoding ?? "")
         }
 
         // A bare ID is kept intentionally permissive enough for existing
         // synthetic/test identities, while still rejecting whitespace,
         // punctuation, URI prefixes, and path-like strings. Hyphen and
         // underscore are accepted for historical synthetic IDs; real Spotify
-        // IDs remain base62 and are normalized identically.
-        return canonicalBareSpotifyID(trimmed)
+        // IDs remain base62.
+        return bareSpotifyID(trimmed)
     }
 
     /// Returns the canonical spotify:track URI for any accepted Spotify track
@@ -161,7 +167,7 @@ public struct TrackIdentity: Hashable, Sendable, CustomStringConvertible {
         ].joined(separator: "|")
     }
 
-    private static func canonicalBareSpotifyID(_ value: String) -> String? {
+    private static func bareSpotifyID(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard (1...64).contains(trimmed.utf8.count),
               trimmed.unicodeScalars.allSatisfy({ scalar in
@@ -172,7 +178,7 @@ public struct TrackIdentity: Hashable, Sendable, CustomStringConvertible {
               }) else {
             return nil
         }
-        return trimmed.lowercased()
+        return trimmed
     }
 }
 

@@ -216,7 +216,7 @@ public final class SpotifyCatalogService: @unchecked Sendable {
     }
 
     private func libraryTrackURL(id: String, contains: Bool) throws -> URL {
-        guard let id = TrackIdentity.canonicalSpotifyTrackID(id),
+        guard let id = TrackIdentity.spotifyRequestTrackID(id),
               var parts = URLComponents(url: baseURL.appendingPathComponent(contains ? "me/library/contains" : "me/library"),
                                         resolvingAgainstBaseURL: false) else { throw SpotifyCatalogError.badRequest }
         parts.queryItems = [URLQueryItem(name: "uris", value: "spotify:track:" + id)]
