@@ -47,6 +47,9 @@ public struct SpotifyOAuthConfiguration: Equatable, Sendable {
     public static let tokenEndpoint = URL(string: "https://accounts.spotify.com/api/token")!
     public static let libraryScopes: Set<String> = ["user-library-read", "user-library-modify"]
 
+    public static let playbackScopes: Set<String> = ["user-read-playback-state"]
+    public static let authorizationScopes = libraryScopes.union(playbackScopes)
+
     public static let apiBaseURL = URL(string: "https://api.spotify.com/v1")!
 
     public let clientID: String?
@@ -99,7 +102,7 @@ public final class SpotifyCatalogService: @unchecked Sendable {
             URLQueryItem(name: "state", value: state),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "code_challenge", value: codeChallenge),
-            URLQueryItem(name: "scope", value: SpotifyOAuthConfiguration.libraryScopes.sorted().joined(separator: " "))
+            URLQueryItem(name: "scope", value: SpotifyOAuthConfiguration.authorizationScopes.sorted().joined(separator: " "))
         ]
         guard let url = components.url else { throw SpotifyCatalogError.invalidURL }
         return url
@@ -202,6 +205,26 @@ public final class SpotifyCatalogService: @unchecked Sendable {
         } catch {
             throw SpotifyCatalogError.parseFailure
         }
+    }
+
+    func playbackModes(accessToken: String) async throws -> PlayerPlaybackModes {
+        let data = try await sendAPIRequest(url: baseURL.appendingPathComponent("me/player"), accessToken: accessToken)
+        // 204 means no active playback, not "off".
+        guard !data.isEmpty else { return PlayerPlaybackModes(shuffle: nil, repeatMode: nil) }
+        struct State: Decodable {
+            let shuffle_state: Bool?
+            let repeat_state: String?
+            let smart_shuffle: Bool?
+        }
+        guard let state = try? JSONDecoder().decode(State.self, from: data) else { throw SpotifyCatalogError.parseFailure }
+        let mode: PlayerRepeatMode?
+        switch state.repeat_state {
+        case "off": mode = .off
+        case "context": mode = .all
+        case "track": mode = .one
+        default: mode = nil
+        }
+        return PlayerPlaybackModes(shuffle: state.shuffle_state, repeatMode: mode, smartShuffle: state.smart_shuffle)
     }
 
     func isTrackSaved(id: String, accessToken: String) async throws -> Bool {

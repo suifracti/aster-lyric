@@ -235,8 +235,15 @@ public enum PlayerRepeatMode: String, Sendable {
 }
 
 public struct PlayerPlaybackModes: Equatable, Sendable {
-    public var shuffle: Bool
-    public var repeatMode: PlayerRepeatMode
+    public var shuffle: Bool?
+    public var repeatMode: PlayerRepeatMode?
+    public var smartShuffle: Bool? = nil
+
+    var shuffleLabel: String {
+        if smartShuffle == true { return "智能随机" }
+        return shuffle.map { $0 ? "随机播放已开" : "随机播放已关" } ?? "随机播放 · 未知"
+    }
+    var repeatLabel: String { repeatMode?.label ?? "循环 · 未知" }
 }
 
 @MainActor

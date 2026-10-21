@@ -10,10 +10,12 @@ private final class EventPlaybackProvider: PlaybackProvider {
         position: 10, isPlaying: true, sourceIdentity: .spotifyDesktop)
     var refreshes = 0
     var modes = PlayerPlaybackModes(shuffle: false, repeatMode: .off)
+    var modeReadFails = false
+    var nativeShuffleWrites: [Bool] = []
     var nativeRepeatWrites: [PlayerRepeatMode] = []
     var restartedTrackIDs: [String] = []
     func playbackModes(shuffle: Bool?, repeatMode: PlayerRepeatMode?) async throws -> PlayerPlaybackModes {
-        if let shuffle { modes.shuffle = shuffle }
+        if let shuffle { modes.shuffle = shuffle; modes.smartShuffle = false; nativeShuffleWrites.append(shuffle) }
         if let repeatMode { modes.repeatMode = repeatMode; nativeRepeatWrites.append(repeatMode) }
         return modes
     }
@@ -76,6 +78,28 @@ final class DesktopPlaybackEventTests: XCTestCase {
         XCTAssertEqual(provider.nativeRepeatWrites, [.all, .off, .off])
     }
 
+    func testUnknownModesFirstClickEnablesAndSmartShuffleOnlyTurnsOff() async throws {
+        let (state, provider, _, _) = fixture()
+        provider.modeReadFails = true
+        state.startProvider()
+        try await wait { state.hasLiveTrack }
+        state.togglePlayerMode(shuffle: true)
+        try await wait { !provider.nativeShuffleWrites.isEmpty }
+        XCTAssertEqual(provider.nativeShuffleWrites, [true], "An unknown state must enable, never invert the desktop echo")
+        state.togglePlayerMode(shuffle: false)
+        try await wait { !provider.nativeRepeatWrites.isEmpty }
+        XCTAssertEqual(provider.nativeRepeatWrites, [.all])
+        provider.modeReadFails = false
+        provider.modes = PlayerPlaybackModes(shuffle: true, repeatMode: .all, smartShuffle: true)
+        state.refreshPlayerModes()
+        try await wait { state.playerModes?.smartShuffle == true }
+        XCTAssertEqual(state.playerModes?.shuffleLabel, "智能随机")
+        state.togglePlayerMode(shuffle: true)
+        try await wait { provider.nativeShuffleWrites.count == 2 }
+        XCTAssertEqual(provider.nativeShuffleWrites, [true, false])
+        XCTAssertEqual(state.playerModes?.smartShuffle, false)
+    }
+
     func testLyricLineRepeatsUntilCancelledAndStopsOnTrackChange() async throws {
         let (state, provider, _, center) = fixture()
         state.startProvider()
@@ -131,7 +155,11 @@ final class DesktopPlaybackEventTests: XCTestCase {
             windowCenter: NotificationCenter(), applicationIsRunning: running)
         let provider = EventPlaybackProvider()
         let state = PlaybackState(provider: provider, lyricsProvider: EventOfflineLyrics(),
-            lyricsRepository: repository, settings: settings, desktopEvents: events, lyricsWindowsVisible: visible)
+            lyricsRepository: repository, settings: settings, desktopEvents: events, lyricsWindowsVisible: visible,
+            spotifyPlaybackModesReader: {
+                if provider.modeReadFails { throw SpotifyCatalogError.unauthorized }
+                return provider.modes
+            })
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         return (state, provider, events, center)
     }

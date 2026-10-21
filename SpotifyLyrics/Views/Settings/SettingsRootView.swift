@@ -591,7 +591,7 @@ private struct ServicesAndSourcesSettingsView: View {
 
                 Section("桌面播放控制") {
                     LabeledContent("当前播放连接", value: playbackState.providerStatus.userFacingMessage)
-                    Text("Spotify Desktop 播放控制不需要下方的在线曲库授权。")
+                    Text("Spotify Desktop 播放控制无需在线授权；准确读取随机／循环状态需要下方授权，已有连接请重新授权以补充播放状态读取权限。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

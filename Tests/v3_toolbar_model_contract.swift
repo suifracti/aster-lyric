@@ -11,10 +11,11 @@ final class V3ToolbarPresentationTests: XCTestCase {
         let spotify = SpotifyDesktopProvider(scriptRunner: { script, _ in
             XCTAssertTrue(script.contains("set shuffling to true"))
             XCTAssertTrue(script.contains("set repeating to false"))
+            XCTAssertFalse(script.contains("shuffling as text"), "Do not trust desktop booleans as a state read")
             return "true|false"
         }, applicationIsInstalled: { true }, applicationIsRunning: { true })
         let spotifyModes = try await spotify.playbackModes(shuffle: true, repeatMode: .off)
-        XCTAssertEqual(spotifyModes, PlayerPlaybackModes(shuffle: true, repeatMode: .off))
+        XCTAssertEqual(spotifyModes, PlayerPlaybackModes(shuffle: true, repeatMode: .off, smartShuffle: false))
         let music = AppleMusicDesktopProvider(scriptRunner: { script, _ in
             XCTAssertTrue(script.contains("set shuffle enabled to false"))
             XCTAssertTrue(script.contains("set song repeat to one"))
@@ -74,7 +75,7 @@ final class V3ToolbarPresentationTests: XCTestCase {
         XCTAssertNil(confirmation.target(isLiked: true, track: "two", now: 7))
     }
 
-    func testSpotifyLikesUseOnlyTrackLibraryRequestsAndTwoScopes() async throws {
+    func testSpotifyLikesAndPlaybackUseTheirAuthorizedScopes() async throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [TrackLikeRequestFixture.self]
         let service = SpotifyCatalogService(session: URLSession(configuration: config))
@@ -92,7 +93,25 @@ final class V3ToolbarPresentationTests: XCTestCase {
         })
         let url = try service.authorizationURL(clientID: "fixture", state: "fixture", codeChallenge: "fixture")
         let scopes = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "scope" }!.value!
-        XCTAssertEqual(Set(scopes.split(separator: " ").map(String.init)), ["user-library-read", "user-library-modify"])
+        XCTAssertEqual(Set(scopes.split(separator: " ").map(String.init)), ["user-library-read", "user-library-modify", "user-read-playback-state"])
+    }
+
+    func testPlaybackStateReadsAllRepeatModesAndOptionalSmartShuffle() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [TrackLikeRequestFixture.self]
+        let service = SpotifyCatalogService(session: URLSession(configuration: config))
+        for (api, expected) in [("off", PlayerRepeatMode.off), ("context", .all), ("track", .one)] {
+            TrackLikeRequestFixture.playbackBody = "{\"shuffle_state\":true,\"repeat_state\":\"\(api)\",\"smart_shuffle\":true}"
+            let modes = try await service.playbackModes(accessToken: "fixture")
+            XCTAssertEqual(modes.repeatMode, expected)
+            XCTAssertEqual(modes.smartShuffle, true)
+        }
+        TrackLikeRequestFixture.playbackBody = "{\"shuffle_state\":false,\"repeat_state\":\"off\"}"
+        let off = try await service.playbackModes(accessToken: "fixture")
+        XCTAssertEqual(off.shuffle, false)
+        XCTAssertNil(off.smartShuffle)
+        XCTAssertEqual(TrackLikeRequestFixture.requests.last?.url?.path, "/v1/me/player")
+        XCTAssertEqual(TrackLikeRequestFixture.requests.last?.httpMethod, "GET")
     }
 
     @MainActor
@@ -313,6 +332,7 @@ final class V3ToolbarPresentationTests: XCTestCase {
 }
 
 private final class TrackLikeRequestFixture: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var playbackBody = ""
     nonisolated(unsafe) static var requests: [URLRequest] = []
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -320,7 +340,8 @@ private final class TrackLikeRequestFixture: URLProtocol, @unchecked Sendable {
         Self.requests.append(request)
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200,
             httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: request.httpMethod == "GET" ? Data("[true]".utf8) : Data())
+        let data = request.url?.path == "/v1/me/player" ? Data(Self.playbackBody.utf8) : request.httpMethod == "GET" ? Data("[true]".utf8) : Data()
+        client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}

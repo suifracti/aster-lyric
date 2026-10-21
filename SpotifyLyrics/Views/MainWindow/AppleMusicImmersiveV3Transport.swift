@@ -392,13 +392,26 @@ struct V3PlayerModeButton: View {
     let shuffle: Bool
     @Environment(\.v3CoverAccent) private var accent
     private var active: Bool { shuffle ? state.playerModes?.shuffle == true : (state.playerModes?.repeatMode ?? .off) != .off }
+    private var unknown: Bool { shuffle ? state.playerModes?.shuffle == nil && state.playerModes?.smartShuffle != true : state.playerModes?.repeatMode == nil }
     var body: some View {
         IslandTransportButton(
             systemImage: shuffle ? "shuffle" : state.playerModes?.repeatMode == .one ? "repeat.1" : "repeat",
-            label: shuffle ? (active ? "随机播放已开" : "随机播放已关") : (state.playerModes?.repeatMode ?? .off).label,
+            label: shuffle ? (state.playerModes?.shuffleLabel ?? "随机播放 · 未知") : (state.playerModes?.repeatLabel ?? "循环 · 未知"),
             enabled: state.canControlSpotify, primary: false,
             tint: active ? accent : .white.opacity(0.45), glyph: active ? accent : .white.opacity(0.45)
         ) { state.togglePlayerMode(shuffle: shuffle) }
+        .overlay(alignment: .bottom) {
+            if unknown {
+                Text("未知").font(.system(size: 8)).foregroundStyle(.white.opacity(0.65))
+                    .allowsHitTesting(false).accessibilityHidden(true)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if shuffle && state.playerModes?.smartShuffle == true {
+                Image(systemName: "sparkle").font(.system(size: 8)).foregroundStyle(accent)
+                    .allowsHitTesting(false).accessibilityHidden(true)
+            }
+        }
     }
 }
 

@@ -60,6 +60,7 @@ public final class PlaybackState: ObservableObject {
     private var likeConfirmation = V3LikeConfirmation()
     private var isChangingLike = false
     private let spotifyLibraryService = SpotifyCatalogService()
+    private let spotifyPlaybackModesReader: (@MainActor () async throws -> PlayerPlaybackModes)?
     private var changingPlayerModes = false
     private var spotifySingleTrackRepeat = false
     private var restartingRepeatedTrack = false
@@ -168,8 +169,10 @@ public final class PlaybackState: ObservableObject {
         settings: AppSettingsStore? = nil,
         alignmentService: (any AlignmentService)? = nil,
         desktopEvents: DesktopPlaybackEvents? = nil,
-        lyricsWindowsVisible: (() -> Bool)? = nil
+        lyricsWindowsVisible: (() -> Bool)? = nil,
+        spotifyPlaybackModesReader: (@MainActor () async throws -> PlayerPlaybackModes)? = nil
     ) {
+        self.spotifyPlaybackModesReader = spotifyPlaybackModesReader
         let resolvedSettings = settings ?? AppSettingsStore()
         self.settingsStore = resolvedSettings
         self.lyricsOffsetScopeBinding = LyricsOffsetScopeBinding(store: resolvedSettings.lyricsOffsetStore)
@@ -1549,15 +1552,36 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
+    private func readPlayerModes(source: PlaybackSourceIdentity) async throws -> PlayerPlaybackModes {
+        var modes: PlayerPlaybackModes
+        if source == .spotifyDesktop {
+            if let spotifyPlaybackModesReader { modes = try await spotifyPlaybackModesReader() }
+            else {
+                let token = try await spotifyAuthorizationManager.accessToken(requiredScopes: SpotifyOAuthConfiguration.playbackScopes)
+                modes = try await spotifyLibraryService.playbackModes(accessToken: token)
+            }
+            if spotifySingleTrackRepeat {
+                if modes.repeatMode == .off || modes.repeatMode == nil { modes.repeatMode = .one }
+            }
+        } else { modes = try await provider.playbackModes(shuffle: nil, repeatMode: nil) }
+        return modes
+    }
+
     public func refreshPlayerModes() {
         guard hasLiveTrack, !changingPlayerModes else { return }
         let source = playbackSourceIdentity
         Task { @MainActor [weak self] in
             guard let self else { return }
-            var modes = try? await self.provider.playbackModes(shuffle: nil, repeatMode: nil)
-            guard self.playbackSourceIdentity == source else { return }
-            if source == .spotifyDesktop && self.spotifySingleTrackRepeat { modes?.repeatMode = .one }
+            let modes: PlayerPlaybackModes?
+            do { modes = try await self.readPlayerModes(source: source) }
+            catch {
+                modes = nil
+                LyricsE2ELog.log("PLAYER modes unavailable source=\(source) error=\(error.localizedDescription)")
+            }
+            guard self.playbackSourceIdentity == source, !self.changingPlayerModes else { return }
+            if source == .spotifyDesktop, let mode = modes?.repeatMode, mode != .one { self.spotifySingleTrackRepeat = false }
             if self.playerModes != modes { self.playerModes = modes }
+            LyricsE2ELog.log("PLAYER modes source=\(source) shuffle=\(String(describing: modes?.shuffle)) repeat=\(String(describing: modes?.repeatMode)) smart=\(String(describing: modes?.smartShuffle))")
         }
     }
 
@@ -1569,20 +1593,23 @@ public final class PlaybackState: ObservableObject {
             guard let self else { return }
             defer { self.changingPlayerModes = false }
             do {
-                var current = try await self.provider.playbackModes(shuffle: nil, repeatMode: nil)
-                if source == .spotifyDesktop && self.spotifySingleTrackRepeat { current.repeatMode = .one }
-                let nextRepeat = current.repeatMode.next
+                var current = (try? await self.readPlayerModes(source: source))
+                    ?? PlayerPlaybackModes(shuffle: nil, repeatMode: self.spotifySingleTrackRepeat ? .one : nil)
+                // Unknown starts at on; smart shuffle may be disabled, never enabled by this app.
+                let nextShuffle = current.smartShuffle == true ? false : !(current.shuffle ?? false)
+                let nextRepeat = current.repeatMode?.next ?? .all
                 let nativeRepeat: PlayerRepeatMode = source == .spotifyDesktop && nextRepeat == .one ? .off : nextRepeat
-                var updated = try await self.provider.playbackModes(
-                    shuffle: shuffle ? !current.shuffle : nil,
-                    repeatMode: shuffle ? nil : nativeRepeat)
                 guard self.playbackSourceIdentity == source else { return }
-                if source == .spotifyDesktop {
-                    if !shuffle { self.spotifySingleTrackRepeat = nextRepeat == .one }
-                    if self.spotifySingleTrackRepeat { updated.repeatMode = .one }
+                _ = try await self.provider.playbackModes(shuffle: shuffle ? nextShuffle : nil,
+                                                         repeatMode: shuffle ? nil : nativeRepeat)
+                guard self.playbackSourceIdentity == source else { return }
+                if shuffle { current.shuffle = nextShuffle; current.smartShuffle = false }
+                else {
+                    current.repeatMode = nextRepeat
+                    if source == .spotifyDesktop { self.spotifySingleTrackRepeat = nextRepeat == .one }
                 }
-                self.playerModes = updated
-                self.playbackNotice = shuffle ? (updated.shuffle ? "随机播放" : "顺序播放") : updated.repeatMode.label
+                self.playerModes = current
+                self.playbackNotice = shuffle ? current.shuffleLabel : current.repeatLabel
             } catch { self.playbackNotice = error.localizedDescription }
         }
     }
