@@ -30,6 +30,7 @@ There is no lyric bar; the user removed it on 2026-10-21. Every setting lives in
 | Previous / next track | **A** / **D** |
 | Like the song | **S** adds the current song to Spotify 「已点赞的歌曲」 (details below) |
 | Background blur | **[** less blur / **]** more blur, stepping through 清晰 → 柔和 → 很糊 |
+| Fine blur | **,** / **.** (the **<** / **>** keys): −5% / +5% of 背景封面模糊, from 0 to 100%; holding repeats. The notice shows the value, for example 「模糊 35%」. It is the same value as the 画面 panel slider. |
 | Focus mode | **F** toggles it (see below) |
 | Lyrics are early | **Z** moves the timeline up: offset −0.1 s per press |
 | Lyrics are late | **C** moves the timeline down: offset +0.1 s per press |
