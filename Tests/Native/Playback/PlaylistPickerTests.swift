@@ -6,6 +6,10 @@ private final class FakePlaylistCatalog: PlaylistCataloging {
     var rows: [PlaylistSummary]
     var itemIDs: [String: [String]]
     var tokenError: Error?
+    var likedRowTitle = "已点赞的歌曲"
+    var likedCountValue: Int?
+    var sourceKey = "spotify"
+
     private(set) var itemReads: [String] = []
     private(set) var added: [(playlist: String, track: String)] = []
     private(set) var removed: [(playlist: String, track: String)] = []
@@ -23,15 +27,17 @@ private final class FakePlaylistCatalog: PlaylistCataloging {
 
     func playlists(accessToken: String) async throws -> [PlaylistSummary] { rows }
 
+    func likedTrackCount() async throws -> Int? { likedCountValue }
+
     func createPrivatePlaylist(named name: String, accessToken: String) async throws -> PlaylistSummary {
         createdNames.append(name)
         return PlaylistSummary(id: "created-\(createdNames.count)", name: name, trackCount: 0,
                                snapshotID: "created", imageURL: nil)
     }
 
-    func trackIDs(inPlaylist id: String, accessToken: String) async throws -> [String] {
+    func contains(trackID: String, inPlaylist id: String, accessToken: String) async throws -> Bool {
         itemReads.append(id)
-        return itemIDs[id] ?? []
+        return itemIDs[id]?.contains(trackID) == true
     }
 
     func add(trackID: String, toPlaylist id: String, accessToken: String) async throws {
@@ -43,6 +49,11 @@ private final class FakePlaylistCatalog: PlaylistCataloging {
         removed.append((id, trackID))
         itemIDs[id]?.removeAll { $0 == trackID }
     }
+}
+
+@MainActor
+private final class PlaylistSourceFlag {
+    var usesAppleMusic = false
 }
 
 @MainActor
@@ -147,5 +158,79 @@ final class PlaylistPickerTests: XCTestCase {
         XCTAssertEqual(catalog.added.map(\.track), [track, track])
         XCTAssertEqual(model.playlists.first?.name, "夜间驾驶")
         XCTAssertEqual(model.query, "")
+    }
+
+    func testAppleMusicNamesTheFirstRowAndOmitsItsCount() async {
+        let catalog = FakePlaylistCatalog(rows: [row("1", "Mix")])
+        catalog.likedRowTitle = "喜爱"
+        catalog.sourceKey = "apple-music"
+        let model = model(catalog)
+        model.open()
+        await waitUntil { model.phase == .ready }
+        XCTAssertEqual(model.likedRowTitle, "喜爱")
+        XCTAssertNil(model.likedCount)
+    }
+
+    func testLikedCountIsReadOncePerOpening() async {
+        let catalog = FakePlaylistCatalog(rows: [])
+        catalog.likedCountValue = 248
+        let model = model(catalog)
+        model.open()
+        await waitUntil { model.likedCount == 248 }
+
+        catalog.likedCountValue = 249
+        model.open()
+        await waitUntil { model.likedCount == 249 }
+    }
+
+    func testSourceSwitchDropsRowsFromTheOtherPlayer() async {
+        let catalog = FakePlaylistCatalog(rows: [row("1", "Spotify Mix")], itemIDs: ["1": [track]])
+        let model = model(catalog)
+        model.open()
+        await waitUntil { model.phase == .ready }
+        model.ensureMembership(for: model.playlists[0])
+        await waitUntil { !model.isChecking(model.playlists[0]) }
+        XCTAssertTrue(model.isMember(model.playlists[0]))
+
+        catalog.sourceKey = "apple-music"
+        catalog.rows = [row("2", "本地列表")]
+        model.open()
+
+        XCTAssertTrue(model.playlists.isEmpty, "切换播放器后不能沿用上一个账号的歌单")
+        await waitUntil { model.phase == .ready }
+        XCTAssertEqual(model.playlists.map(\.id), ["2"])
+        XCTAssertFalse(model.isMember(model.playlists[0]))
+    }
+
+    func testRoutingSendsEachTokenToItsOwnPlayer() async throws {
+        let spotify = FakePlaylistCatalog(rows: [row("s", "Spotify")])
+        let music = FakePlaylistCatalog(rows: [row("m", "Music")])
+        music.sourceKey = "apple-music"
+        music.likedRowTitle = "喜爱"
+        music.likedCountValue = nil
+        let source = PlaylistSourceFlag()
+        let routing = RoutingPlaylistCatalog(spotify: spotify, appleMusic: music,
+                                             usesAppleMusic: { source.usesAppleMusic })
+
+        let spotifyToken = try await routing.accessToken()
+        let spotifyRows = try await routing.playlists(accessToken: spotifyToken)
+        XCTAssertEqual(spotifyRows.map(\.id), ["s"])
+        XCTAssertEqual(routing.likedRowTitle, "已点赞的歌曲")
+
+        source.usesAppleMusic = true
+        let musicToken = try await routing.accessToken()
+        let musicRows = try await routing.playlists(accessToken: musicToken)
+        XCTAssertEqual(musicRows.map(\.id), ["m"])
+        XCTAssertEqual(routing.likedRowTitle, "喜爱")
+    }
+
+    func testAppleMusicRowParsingUsesIDSeparatorsAndCount() {
+        let raw = "9BEC9B1282CB0D2F\u{1e}夜间驾驶\u{1e}12\u{1f}ABCDEF0123456789\u{1e}Mix\u{1e}0\u{1f}"
+        let rows = AppleMusicPlaylistCatalog.parsePlaylists(raw)
+        XCTAssertEqual(rows.map(\.id), ["9BEC9B1282CB0D2F", "ABCDEF0123456789"])
+        XCTAssertEqual(rows.map(\.name), ["夜间驾驶", "Mix"])
+        XCTAssertEqual(rows.first?.trackCount, 12)
+        XCTAssertEqual(rows.first?.snapshotID, "count:12")
+        XCTAssertTrue(AppleMusicPlaylistCatalog.parsePlaylists("").isEmpty)
     }
 }

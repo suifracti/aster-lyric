@@ -1683,17 +1683,18 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
-    /// The heart's playlist picker. Spotify only until the Apple Music
-    /// playlist path exists; the model is created once so reported checks
+    /// The heart's playlist picker. One model serves both players; it drops
+    /// its rows when the source changes. Created once so reported checks
     /// survive reopening.
     public private(set) lazy var playlistPicker: PlaylistPickerModel = {
-        let catalog = SpotifyPlaylistCatalog(authorization: spotifyAuthorizationManager)
+        let catalog = RoutingPlaylistCatalog(
+            spotify: SpotifyPlaylistCatalog(authorization: spotifyAuthorizationManager),
+            appleMusic: AppleMusicPlaylistCatalog(),
+            usesAppleMusic: { [weak self] in self?.playbackSourceIdentity == .appleMusic }
+        )
         return PlaylistPickerModel(
             catalog: catalog,
-            trackID: { [weak self] in
-                guard let self else { return nil }
-                return TrackIdentity(track: self.currentTrack).spotifyTrackID
-            },
+            trackID: { [weak self] in self?.playlistTrackID },
             likedState: { [weak self] in self?.isTrackLiked },
             applyLiked: { [weak self] value in
                 guard let self else { return nil }
@@ -1702,7 +1703,20 @@ public final class PlaybackState: ObservableObject {
         )
     }()
 
-    public var canPickPlaylists: Bool { playbackSourceIdentity == .spotifyDesktop }
+    /// The player's own ID for the current recording, in the shape its
+    /// playlist API expects.
+    private var playlistTrackID: String? {
+        guard hasLiveTrack else { return nil }
+        let track = currentTrack
+        if playbackSourceIdentity == .appleMusic {
+            return TrackIdentity.playbackID(for: track)
+        }
+        return TrackIdentity(track: track).spotifyTrackID
+    }
+
+    public var canPickPlaylists: Bool {
+        playbackSourceIdentity == .spotifyDesktop || playbackSourceIdentity == .appleMusic
+    }
 
     /// Picker path for Liked Songs: sets the value instead of toggling, and
     /// never asks for a second key press. Returns the stored value, or nil.

@@ -109,14 +109,14 @@ struct PlaylistPickerPopover: View {
         }
         .buttonStyle(.plain)
         .disabled(model.isCreatingPlaylist)
-        .help("以输入的名称创建私有歌单，并加入当前歌曲")
+        .help("新建播放列表，并加入当前歌曲")
     }
 
     private var likedRow: some View {
         Button { model.toggleLikedSongs() } label: {
             row(
-                title: "已点赞的歌曲",
-                subtitle: nil,
+                title: model.likedRowTitle,
+                subtitle: model.likedCount.map { "\($0) 首" },
                 artwork: AnyView(
                     ZStack {
                         RoundedRectangle(cornerRadius: 6)

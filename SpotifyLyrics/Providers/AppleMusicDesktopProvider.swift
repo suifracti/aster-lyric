@@ -370,7 +370,7 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
 }
 
 /// Bounded, serial AppleScript process runner for Music.app.
-private actor AppleMusicAppleScriptProcessRunner {
+actor AppleMusicAppleScriptProcessRunner {
     static let shared = AppleMusicAppleScriptProcessRunner()
 
     private var isRunning = false

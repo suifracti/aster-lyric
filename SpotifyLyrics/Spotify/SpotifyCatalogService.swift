@@ -244,6 +244,20 @@ public final class SpotifyCatalogService: @unchecked Sendable {
                                     method: saved ? "PUT" : "DELETE")
     }
 
+    /// One request for the row's count: a single item plus the page's total.
+    func savedTracksTotal(accessToken: String) async throws -> Int {
+        guard var parts = URLComponents(url: baseURL.appendingPathComponent("me/tracks"),
+                                        resolvingAgainstBaseURL: false) else { throw SpotifyCatalogError.invalidURL }
+        parts.queryItems = [URLQueryItem(name: "limit", value: "1")]
+        guard let url = parts.url else { throw SpotifyCatalogError.invalidURL }
+        let data = try await sendAPIRequest(url: url, accessToken: accessToken)
+        struct Page: Decodable { let total: Int }
+        guard let page = try? JSONDecoder().decode(Page.self, from: data) else {
+            throw SpotifyCatalogError.parseFailure
+        }
+        return page.total
+    }
+
     private func libraryTrackURL(id: String, contains: Bool) throws -> URL {
         guard let id = TrackIdentity.spotifyRequestTrackID(id),
               var parts = URLComponents(url: baseURL.appendingPathComponent(contains ? "me/library/contains" : "me/library"),

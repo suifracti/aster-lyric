@@ -230,6 +230,7 @@
 		7D339BA3A55BB6FEE2BD4D32 /* V3SideDrawer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2D88A770470D3D0BF8D27C2 /* V3SideDrawer.swift */; };
 		A1B2C3D42D83400100000001 /* PlaylistPickerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D42D83400000000000 /* PlaylistPickerModel.swift */; };
 		A1B2C3D52D83400100000001 /* PlaylistPickerPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D52D83400000000000 /* PlaylistPickerPopover.swift */; };
+		A1B2C3D72D83400100000001 /* AppleMusicPlaylistCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D72D83400000000000 /* AppleMusicPlaylistCatalog.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -462,6 +463,7 @@
 		C2D88A770470D3D0BF8D27C2 /* V3SideDrawer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3SideDrawer.swift; sourceTree = "<group>"; };
 		A1B2C3D42D83400000000000 /* PlaylistPickerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistPickerModel.swift; sourceTree = "<group>"; };
 		A1B2C3D52D83400000000000 /* PlaylistPickerPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistPickerPopover.swift; sourceTree = "<group>"; };
+		A1B2C3D72D83400000000000 /* AppleMusicPlaylistCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicPlaylistCatalog.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -693,6 +695,7 @@
 				1100000D2D83400100000000 /* PlaybackProvider.swift */,
 				1100000E2D83400100000000 /* SpotifyDesktopProvider.swift */,
 				A60F09060000000000000400 /* AppleMusicDesktopProvider.swift */,
+				A1B2C3D72D83400000000000 /* AppleMusicPlaylistCatalog.swift */,
 				A60F09060000000000000500 /* ActivePlaybackProvider.swift */,
 				E8951C4FD56903AA1BB468F4 /* DesktopPlaybackEvents.swift */,
 				1100000F2D83400100000000 /* MockPlaybackProvider.swift */,
@@ -954,6 +957,7 @@
 				1100000D2D83400100000001 /* PlaybackProvider.swift in Sources */,
 				1100000E2D83400100000001 /* SpotifyDesktopProvider.swift in Sources */,
 				A60F09060000000000000401 /* AppleMusicDesktopProvider.swift in Sources */,
+				A1B2C3D72D83400100000001 /* AppleMusicPlaylistCatalog.swift in Sources */,
 				A60F09060000000000000501 /* ActivePlaybackProvider.swift in Sources */,
 				9325E1D1CCBCA0FCE0FDF9CC /* DesktopPlaybackEvents.swift in Sources */,
 				1100000F2D83400100000001 /* MockPlaybackProvider.swift in Sources */,
@@ -1167,7 +1171,7 @@
 				/* Merge screen-capture usage string (INFOPLIST_KEY alone was dropped on generate). */
 				INFOPLIST_FILE = "SpotifyLyrics/Info-Additions.plist";
 				INFOPLIST_KEY_NSHighResolutionCapable = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "SpotifyLyrics 需要控制 Spotify 以读取当前歌曲、播放状态和封面。";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Aster · Lyric 需要控制 Spotify 与「音乐」，以读取当前歌曲、播放状态和封面，并把歌曲加入歌单。";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SpotifyLyrics 使用语音识别，从你导入的本地音频生成日语歌词草稿（不会读取 Spotify 受保护音频）。";
 				INFOPLIST_KEY_NSScreenCaptureUsageDescription = "Debug Spike：仅捕获 Spotify 应用正在播放的音频，用于实验性歌词时间轴研究。不捕获麦克风、不捕获其他 App、不保存或导出音频文件，也不上传。";
 				INFOPLIST_KEY_LSMinimumSystemVersion = "14.0";
@@ -1194,7 +1198,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "SpotifyLyrics/Info-Additions.plist";
 				INFOPLIST_KEY_NSHighResolutionCapable = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "SpotifyLyrics 需要控制 Spotify 以读取当前歌曲、播放状态和封面。";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Aster · Lyric 需要控制 Spotify 与「音乐」，以读取当前歌曲、播放状态和封面，并把歌曲加入歌单。";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SpotifyLyrics 使用语音识别，从你导入的本地音频生成日语歌词草稿（不会读取 Spotify 受保护音频）。";
 				INFOPLIST_KEY_NSScreenCaptureUsageDescription = "Debug Spike：仅捕获 Spotify 应用正在播放的音频，用于实验性歌词时间轴研究。不捕获麦克风、不捕获其他 App、不保存或导出音频文件，也不上传。";
 				INFOPLIST_KEY_LSMinimumSystemVersion = "14.0";
