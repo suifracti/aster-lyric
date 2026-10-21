@@ -463,6 +463,12 @@ private struct ExperienceFixtureRoot: View {
                                                     userInfo: ["command": parts[0], "panel": parts[1]])
                 }
                 if !toolbar.isEmpty || !panel.isEmpty { try? await Task.sleep(for: .milliseconds(800)) }
+                let drawer = ExperienceArguments.value("--drawer", fallback: "")
+                if !drawer.isEmpty {
+                    NotificationCenter.default.post(name: .v3ToolbarDebugCommand, object: nil,
+                        userInfo: ["command": "drawer", "panel": drawer])
+                    try? await Task.sleep(for: .milliseconds(300))
+                }
                 if !panel.isEmpty {
                     // Popovers and the pinned panel appear asynchronously.
                     for _ in 0..<40 {

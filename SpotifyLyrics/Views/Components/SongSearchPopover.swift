@@ -4,6 +4,7 @@ import AppKit
 struct SongSearchPopover: View {
     @ObservedObject var manager: SongSearchManager
     @ObservedObject var playbackState: PlaybackState
+    var embedded = false
     @State private var query = ""
     @State private var isApplyingPreview = false
     @State private var isLockConfirmationPresented = false
@@ -77,7 +78,7 @@ struct SongSearchPopover: View {
             content
         }
         .padding(16)
-        .frame(width: 440, height: 470, alignment: .top)
+        .frame(width: embedded ? nil : 440, height: embedded ? nil : 470, alignment: .top)
         .onAppear {
             if let existing = manager.state.query?.text, !existing.isEmpty {
                 query = existing

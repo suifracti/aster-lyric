@@ -172,6 +172,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var coverAccent: Color?
     @State private var showsListeningKeys = false
     @State private var isFocusMode = false
+    @State private var isSideDrawerOpen = false
+    @State private var sideDrawerTab = V3SideDrawer.Tab.library
     @State private var lyricNotice: String?
     @State private var lyricNoticeTask: Task<Void, Never>?
     @State private var hoveredStyle: V3ArtworkPresentation?
@@ -349,6 +351,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         suppressControls: toolbar.suppressesEdgeControls(nearTop: isPointerInToolbarRegion, otherPanelOpen: toolbarPanelIsPresented)
                     )
                     .frame(width: geometry.size.width, height: geometry.size.height)
+                }
+
+                if !isFocusMode, !liveOnly {
+                    V3SideDrawer(isOpen: $isSideDrawerOpen, tab: $sideDrawerTab,
+                        fromTrailing: compositionArtworkPosition == "right", state: state)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                 }
 
                 // Hover shows the temporary panel inside the app; a click pins
@@ -1653,6 +1661,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private func applyToolbarDebugCommand(_ info: [AnyHashable: Any]) {
         let panel = (info["panel"] as? String).flatMap(ToolbarPopover.init(rawValue:))
         switch info["command"] as? String {
+        case "drawer":
+            sideDrawerTab = info["panel"] as? String == "search" ? .search : .library
+            isSideDrawerOpen = true
         case "notice": lyricNotice = "字号 22"
         case "faint": isPointerInsideCanvas = true
         case "full": isPointerInsideCanvas = true; toolsVisible = true
@@ -1665,11 +1676,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
     private var toolbarPanelIsPresented: Bool {
         isWindowMenuPresented || isSearchPresented || isVersionPickerPresented
-            || activeToolbarPopover != nil || pinnedToolbarPanel != nil
+            || activeToolbarPopover != nil || pinnedToolbarPanel != nil || isSideDrawerOpen
     }
 
     /// Every panel-button click, whichever path delivered it.
     private func clickToolbarPanel(_ panel: ToolbarPopover) {
+        isSideDrawerOpen = false
         V3ToolbarLog.logger.notice("click \(panel.description, privacy: .public) mode-before=\(String(describing: toolbar.mode), privacy: .public)")
         toolbarDismissTask?.cancel()
         toolbar.click(panel)
@@ -1684,6 +1696,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     }
 
     private func dismissPinnedToolbarPanel() {
+        isSideDrawerOpen = false
         toolbarDismissTask?.cancel()
         toolbar.dismiss()
     }
