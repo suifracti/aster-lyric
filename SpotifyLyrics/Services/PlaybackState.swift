@@ -55,10 +55,12 @@ public final class PlaybackState: ObservableObject {
     @Published public var showFullScreen = false
 
     @Published public private(set) var isTrackLiked: Bool?
+    @Published public private(set) var playerModes: PlayerPlaybackModes?
     @Published public private(set) var playbackNotice: String?
     private var likeConfirmation = V3LikeConfirmation()
     private var isChangingLike = false
     private let spotifyLibraryService = SpotifyCatalogService()
+    private var changingPlayerModes = false
 
     private let provider: PlaybackProvider
     private let desktopEvents: DesktopPlaybackEvents?
@@ -1514,6 +1516,39 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
+    public func refreshPlayerModes() {
+        guard hasLiveTrack, !changingPlayerModes else { return }
+        let source = playbackSourceIdentity
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let modes = try? await self.provider.playbackModes(shuffle: nil, repeatMode: nil)
+            guard self.playbackSourceIdentity == source else { return }
+            if self.playerModes != modes { self.playerModes = modes }
+        }
+    }
+
+    public func togglePlayerMode(shuffle: Bool) {
+        guard canControlSpotify, !changingPlayerModes else { return }
+        changingPlayerModes = true
+        let source = playbackSourceIdentity
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.changingPlayerModes = false }
+            do {
+                let current = try await self.provider.playbackModes(shuffle: nil, repeatMode: nil)
+                // Spotify's desktop dictionary exposes a repeat on/off switch.
+                let nextRepeat: PlayerRepeatMode = source == .spotifyDesktop
+                    ? (current.repeatMode == .off ? .all : .off) : current.repeatMode.next
+                let updated = try await self.provider.playbackModes(
+                    shuffle: shuffle ? !current.shuffle : nil,
+                    repeatMode: shuffle ? nil : nextRepeat)
+                guard self.playbackSourceIdentity == source else { return }
+                self.playerModes = updated
+                self.playbackNotice = shuffle ? (updated.shuffle ? "随机播放" : "顺序播放") : updated.repeatMode.label
+            } catch { self.playbackNotice = error.localizedDescription }
+        }
+    }
+
     private func trackLikeValue(track: Track, source: PlaybackSourceIdentity, set value: Bool? = nil) async throws -> Bool {
         guard let id = track.spotifyId else { throw PlaybackProviderError.noTrack }
         if source == .appleMusic {
@@ -2723,6 +2758,8 @@ public final class PlaybackState: ObservableObject {
             hasLiveTrack = true
             isMockPreviewMode = false
             currentTrack = nextTrack
+            playerModes = nil
+            refreshPlayerModes()
             songSearchSelectionMessage = ""
             LyricsE2ELog.log("Playback trackChange identity=\(nextIdentity.stableKey) title=\(nextTrack.title) artist=\(nextTrack.artist) duration=\(nextTrack.duration)")
 #if DEBUG
@@ -2807,6 +2844,7 @@ public final class PlaybackState: ObservableObject {
         lyricsEditorSession.markStale()
         hasLiveTrack = false
         if isTrackLiked != nil { isTrackLiked = nil }
+        if playerModes != nil { playerModes = nil }
         if hadLiveState {
             currentTrack = .emptyPlaybackPlaceholder
             lyricsSession.clear()

@@ -144,6 +144,25 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
         try await executeCommand("tell application \"Spotify\" to play")
     }
 
+    public func playbackModes(shuffle: Bool?, repeatMode: PlayerRepeatMode?) async throws -> PlayerPlaybackModes {
+        guard isRunning else { throw PlaybackProviderError.notRunning }
+        let shuffleCommand = shuffle.map { "set shuffling to \($0 ? "true" : "false")" } ?? ""
+        let repeatCommand = repeatMode.map { "set repeating to \($0 == .off ? "false" : "true")" } ?? ""
+        let raw = try await execute(script: """
+        if application "Spotify" is not running then return ""
+        tell application "Spotify"
+            \(shuffleCommand)
+            \(repeatCommand)
+            return (shuffling as text) & "|" & (repeating as text)
+        end tell
+        """, timeout: Self.commandScriptTimeout)
+        let parts = (raw ?? "").lowercased().components(separatedBy: "|")
+        guard parts.count == 2, parts.allSatisfy({ ["true", "false"].contains($0) }) else {
+            throw PlaybackProviderError.commandFailed("无法读取 Spotify 随机与循环")
+        }
+        return PlayerPlaybackModes(shuffle: parts[0] == "true", repeatMode: parts[1] == "true" ? .all : .off)
+    }
+
     public func pause() async throws {
         try await executeCommand("tell application \"Spotify\" to pause")
     }

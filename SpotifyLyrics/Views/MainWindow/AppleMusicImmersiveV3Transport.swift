@@ -363,6 +363,7 @@ private struct V3PlaybackButtons: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            V3PlayerModeButton(state: state, shuffle: true)
             V3TransportIconButton(systemImage: state.isTrackLiked == true ? "heart.fill" : "heart",
                                  label: state.isTrackLiked == true ? "移出喜欢 (S)" : "加入喜欢 (S)", enabled: state.hasLiveTrack) {
                 state.toggleTrackLike()
@@ -380,8 +381,24 @@ private struct V3PlaybackButtons: View {
             V3TransportIconButton(systemImage: "forward.fill", label: "下一首", enabled: state.canControlSpotify) {
                 state.nextTrack()
             }
+            V3PlayerModeButton(state: state, shuffle: false)
         }
         .fixedSize()
+    }
+}
+
+struct V3PlayerModeButton: View {
+    @V3ContentPlaybackState var state: PlaybackState
+    let shuffle: Bool
+    @Environment(\.v3CoverAccent) private var accent
+    private var active: Bool { shuffle ? state.playerModes?.shuffle == true : (state.playerModes?.repeatMode ?? .off) != .off }
+    var body: some View {
+        IslandTransportButton(
+            systemImage: shuffle ? "shuffle" : state.playerModes?.repeatMode == .one ? "repeat.1" : "repeat",
+            label: shuffle ? (active ? "随机播放已开" : "随机播放已关") : (state.playerModes?.repeatMode ?? .off).label,
+            enabled: state.canControlSpotify, primary: false,
+            tint: active ? accent : .white.opacity(0.45), glyph: active ? accent : .white.opacity(0.45)
+        ) { state.togglePlayerMode(shuffle: shuffle) }
     }
 }
 
@@ -424,6 +441,7 @@ struct AppleMusicImmersiveV3FocusTransportControls: View {
 
     var body: some View {
         HStack(spacing: LyricsDesignTokens.Spacing.sm) {
+            V3PlayerModeButton(state: state, shuffle: true)
             V3TransportIconButton(systemImage: state.isTrackLiked == true ? "heart.fill" : "heart",
                                  label: "喜欢 (S)", enabled: state.hasLiveTrack) { state.toggleTrackLike() }
             Button {
@@ -439,6 +457,8 @@ struct AppleMusicImmersiveV3FocusTransportControls: View {
             .disabled(!state.canInteractWithPlayback)
             .opacity(state.canInteractWithPlayback ? 1 : 0.42)
             .accessibilityLabel(state.isPlaying ? "暂停" : "播放")
+
+            V3PlayerModeButton(state: state, shuffle: false)
 
             Text(state.isPlaying ? "正在播放" : "已暂停")
                 .font(.system(size: 11, weight: .medium, design: .rounded))

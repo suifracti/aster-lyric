@@ -310,17 +310,21 @@ private struct V3WindowEdgeTransportButtons: View {
         Group {
             if isVertical {
                 VStack(spacing: 5) {
+                    V3PlayerModeButton(state: state, shuffle: true)
                     likeButton
                     previousButton
                     playPauseButton
                     nextButton
+                    V3PlayerModeButton(state: state, shuffle: false)
                 }
             } else {
                 HStack(spacing: 5) {
+                    V3PlayerModeButton(state: state, shuffle: true)
                     likeButton
                     previousButton
                     playPauseButton
                     nextButton
+                    V3PlayerModeButton(state: state, shuffle: false)
                 }
             }
         }
@@ -496,7 +500,7 @@ private enum V3WindowEdgeControlPositioner {
         }
 
         let isVertical = edge.isVertical
-        let baseSize = CGSize(width: isVertical ? 38 : 143, height: isVertical ? 143 : 38)
+        let baseSize = CGSize(width: isVertical ? 38 : 213, height: isVertical ? 213 : 38)
         let availableLong = isVertical ? height : width
         let availableShort = isVertical ? width : height
         let baseLong = isVertical ? baseSize.height : baseSize.width

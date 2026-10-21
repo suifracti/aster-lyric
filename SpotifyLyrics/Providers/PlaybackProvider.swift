@@ -228,6 +228,17 @@ public enum PlaybackProviderError: LocalizedError, Equatable, Sendable {
     }
 }
 
+public enum PlayerRepeatMode: String, Sendable {
+    case off, all, one
+    var next: Self { self == .off ? .all : self == .all ? .one : .off }
+    var label: String { self == .off ? "循环关闭" : self == .all ? "列表循环" : "单曲循环" }
+}
+
+public struct PlayerPlaybackModes: Equatable, Sendable {
+    public var shuffle: Bool
+    public var repeatMode: PlayerRepeatMode
+}
+
 @MainActor
 public protocol PlaybackProvider: AnyObject {
     var displayName: String { get }
@@ -240,9 +251,13 @@ public protocol PlaybackProvider: AnyObject {
     func previous() async throws
     func next() async throws
     func seek(to position: TimeInterval) async throws
+    func playbackModes(shuffle: Bool?, repeatMode: PlayerRepeatMode?) async throws -> PlayerPlaybackModes
 }
 
 public extension PlaybackProvider {
+    func playbackModes(shuffle: Bool?, repeatMode: PlayerRepeatMode?) async throws -> PlayerPlaybackModes {
+        throw PlaybackProviderError.commandFailed("当前播放器不支持随机与循环")
+    }
     /// Non-desktop providers retain their existing snapshot implementation.
     func calibratePosition() async -> PlaybackSnapshot { await refresh() }
     func artworkURL(for track: ProviderTrack, source: PlaybackSourceIdentity) async -> URL? { track.artworkURL }

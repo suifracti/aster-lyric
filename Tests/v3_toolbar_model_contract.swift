@@ -7,6 +7,24 @@ import SwiftUI
 
 final class V3ToolbarPresentationTests: XCTestCase {
     @MainActor
+    func testShuffleAndRepeatUseThePlayersOwnSettings() async throws {
+        let spotify = SpotifyDesktopProvider(scriptRunner: { script, _ in
+            XCTAssertTrue(script.contains("set shuffling to true"))
+            XCTAssertTrue(script.contains("set repeating to false"))
+            return "true|false"
+        }, applicationIsInstalled: { true }, applicationIsRunning: { true })
+        let spotifyModes = try await spotify.playbackModes(shuffle: true, repeatMode: .off)
+        XCTAssertEqual(spotifyModes, PlayerPlaybackModes(shuffle: true, repeatMode: .off))
+        let music = AppleMusicDesktopProvider(scriptRunner: { script, _ in
+            XCTAssertTrue(script.contains("set shuffle enabled to false"))
+            XCTAssertTrue(script.contains("set song repeat to one"))
+            return "false|one"
+        }, applicationIsInstalled: { true }, applicationIsRunning: { true })
+        let musicModes = try await music.playbackModes(shuffle: false, repeatMode: .one)
+        XCTAssertEqual(musicModes, PlayerPlaybackModes(shuffle: false, repeatMode: .one))
+    }
+
+    @MainActor
     func testNightGentleHoursAndDefault() {
         XCTAssertFalse(V3NightPolicy.isNight(hour: 19))
         XCTAssertTrue(V3NightPolicy.isNight(hour: 20))

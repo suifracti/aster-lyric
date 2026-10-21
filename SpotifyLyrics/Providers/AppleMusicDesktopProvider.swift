@@ -145,6 +145,25 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
         try await executeCommand("tell application \"Music\" to play")
     }
 
+    public func playbackModes(shuffle: Bool?, repeatMode: PlayerRepeatMode?) async throws -> PlayerPlaybackModes {
+        guard applicationIsRunning() else { throw PlaybackProviderError.notRunning }
+        let shuffleCommand = shuffle.map { "set shuffle enabled to \($0 ? "true" : "false")" } ?? ""
+        let repeatCommand = repeatMode.map { "set song repeat to \($0.rawValue)" } ?? ""
+        let raw = try await execute(script: """
+        if application "Music" is not running then return ""
+        tell application "Music"
+            \(shuffleCommand)
+            \(repeatCommand)
+            return (shuffle enabled as text) & "|" & (song repeat as text)
+        end tell
+        """, timeout: Self.commandScriptTimeout)
+        let parts = (raw ?? "").lowercased().components(separatedBy: "|")
+        guard parts.count == 2, ["true", "false"].contains(parts[0]), let mode = PlayerRepeatMode(rawValue: parts[1]) else {
+            throw PlaybackProviderError.commandFailed("无法读取 Apple Music 随机与循环")
+        }
+        return PlayerPlaybackModes(shuffle: parts[0] == "true", repeatMode: mode)
+    }
+
     public func pause() async throws {
         try await executeCommand("tell application \"Music\" to pause")
     }

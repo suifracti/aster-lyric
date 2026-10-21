@@ -435,6 +435,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 dismissPinnedToolbarPanel()
             }
             .onReceive(state.$playbackNotice.compactMap { $0 }) { showLyricNotice($0) }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                state.refreshPlayerModes()
+            }
             .overlay { if showsListeningKeys { listeningKeyList } }
 #if DEBUG
             // Lets the offscreen visual host (Tools/experience_visual_host)

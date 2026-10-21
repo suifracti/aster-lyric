@@ -99,6 +99,10 @@ public final class ActivePlaybackProvider: PlaybackProvider {
         try await activeProvider.play()
     }
 
+    public func playbackModes(shuffle: Bool?, repeatMode: PlayerRepeatMode?) async throws -> PlayerPlaybackModes {
+        try await activeProvider.playbackModes(shuffle: shuffle, repeatMode: repeatMode)
+    }
+
     func acceptDesktopSnapshot(_ snapshot: PlaybackSnapshot) {
         switch snapshot.sourceIdentity {
         case .spotifyDesktop:
