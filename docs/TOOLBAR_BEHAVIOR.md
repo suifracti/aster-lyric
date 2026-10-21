@@ -43,7 +43,7 @@ There is no lyric bar; the user removed it on 2026-10-21. Every setting lives in
 | Lyrics are early | **Z** moves the timeline up: offset −0.1 s per press |
 | Lyrics are late | **C** moves the timeline down: offset +0.1 s per press |
 | Reset offset | **X** sets the current song's offset back to 0 |
-| Show all keys | **?** opens a centred list of every key; **?** again or **Esc** closes it |
+| Show all keys | The **/** key, which is also the **?** key, works with or without Shift. It opens a centred list of every key; the same key again or **Esc** closes it. |
 
 - A gesture change shows a small notice at the bottom of the lyrics column, such as 「字号 22」 or 「封面」, which fades after about 1 s.
 - **Letter keys** are case-insensitive and work only while the main window is focused and no text field has focus. They are not global hot keys.
