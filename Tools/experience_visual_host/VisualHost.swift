@@ -15,6 +15,34 @@ private enum ExperienceArguments {
     }
     static let surface = value("--surface", fallback: "main")
     static let size = CGSize(width: Double(value("--width", fallback: "1152")) ?? 1152, height: Double(value("--height", fallback: "720")) ?? 720)
+    /// Optional real-song fixture exported read-only from the production
+    /// database. Without it the host keeps its generated song and lyrics.
+    static let fixture: ExperienceFixture? = {
+        let path = value("--fixture-json", fallback: "")
+        guard !path.isEmpty, let data = FileManager.default.contents(atPath: path) else { return nil }
+        return try? JSONDecoder().decode(ExperienceFixture.self, from: data)
+    }()
+}
+
+private struct ExperienceFixture: Decodable {
+    struct Track: Decodable {
+        let title: String
+        let artist: String
+        let album: String
+        let duration: Double
+        let spotifyID: String?
+    }
+    struct Line: Decodable {
+        let start: Double
+        let end: Double?
+        let original: String
+        let kana: String?
+        let romaji: String?
+        let translation: String?
+    }
+    let track: Track
+    let language: String?
+    let lines: [Line]
 }
 
 @MainActor
@@ -24,7 +52,16 @@ private final class ExperiencePlaybackProvider: PlaybackProvider {
     var playing = false
     var track: ProviderTrack
     init(artwork: URL?) {
-        track = ProviderTrack(id: "spotify:track:visualfixture", title: "夜を越えて · After the rain", artist: "Visual Fixture", album: "Native rendering study", duration: 240, artworkURL: artwork)
+        if let fixture = ExperienceArguments.fixture {
+            let spotifyID = fixture.track.spotifyID.map {
+                $0.hasPrefix("spotify:") ? $0 : "spotify:track:\($0)"
+            }
+            track = ProviderTrack(id: spotifyID, title: fixture.track.title, artist: fixture.track.artist,
+                                  album: fixture.track.album, duration: fixture.track.duration,
+                                  artworkURL: artwork)
+        } else {
+            track = ProviderTrack(id: "spotify:track:visualfixture", title: "夜を越えて · After the rain", artist: "Visual Fixture", album: "Native rendering study", duration: 240, artworkURL: artwork)
+        }
     }
     func refresh() async -> PlaybackSnapshot { PlaybackSnapshot(status: .ready, track: track, position: position, isPlaying: playing) }
     func play() async throws { playing = true }
@@ -36,6 +73,16 @@ private final class ExperiencePlaybackProvider: PlaybackProvider {
 private struct ExperienceLyricsProvider: LyricsProvider {
     let name = "Generated fixture lyrics"
     func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult {
+        if let fixture = ExperienceArguments.fixture {
+            let lines = fixture.lines.map {
+                LyricLine(timestamp: $0.start, originalText: $0.original, endTime: $0.end,
+                          translationText: $0.translation, romajiText: $0.romaji, kanaText: $0.kana)
+            }
+            return .match(LyricsDocument(identity: identity, title: track.title, artist: track.artist,
+                                         album: track.album, duration: track.duration, lines: lines,
+                                         isSynchronized: true, source: .local, confidence: 1,
+                                         language: fixture.language ?? "ja"))
+        }
         let rows = [
             "窓の向こうで 雨が静かにほどけてゆく",
             "灯りをたどって 僕らは歩き出す",
@@ -89,6 +136,15 @@ private struct ExperienceLyricsProvider: LyricsProvider {
 @MainActor
 private enum ExperienceArtwork {
     static func make() -> URL? {
+        let artworkPath = ExperienceArguments.value("--artwork-path", fallback: "")
+        if !artworkPath.isEmpty {
+            let source = URL(fileURLWithPath: artworkPath)
+            let ext = source.pathExtension.isEmpty ? "jpg" : source.pathExtension
+            let destination = ExperienceArguments.root.appendingPathComponent("cover." + ext)
+            do { try FileManager.default.copyItem(at: source, to: destination) } catch { return nil }
+            guard let base = ProcessInfo.processInfo.environment["VISUAL_ARTWORK_BASE_URL"] else { return nil }
+            return URL(string: base + "/" + ExperienceArguments.root.lastPathComponent + "/" + destination.lastPathComponent)
+        }
         let kind = ExperienceArguments.value("--artwork", fallback: "square")
         guard kind != "none" else { return nil }
         let size: CGSize = kind == "panorama" ? CGSize(width: 1800, height: 360) : kind == "portrait" ? CGSize(width: 600, height: 900) : kind == "landscape" ? CGSize(width: 900, height: 540) : CGSize(width: 800, height: 800)

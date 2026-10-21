@@ -13,7 +13,11 @@ env=os.environ.copy()
 env['SPOTIFYLYRICS_DISABLE_KEYCHAIN']='1'
 env.pop('SPOTIFY_CLIENT_ID',None)
 database_root=Path(tempfile.mkdtemp(prefix='lyricsq-visual-db-'))
-env['SPOTIFYLYRICS_DATABASE_PATH']=str(database_root/'fixture.sqlite3')
+source_database=os.environ.get('VISUAL_DATABASE_PATH')
+database_path=database_root/'fixture.sqlite3'
+if source_database:
+    shutil.copyfile(source_database,database_path)
+env['SPOTIFYLYRICS_DATABASE_PATH']=str(database_path)
 env['VISUAL_ARTWORK_BASE_URL']=f'http://127.0.0.1:{server.server_port}'
 app=ROOT/'DerivedData/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics'
 try:
