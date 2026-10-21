@@ -19,62 +19,42 @@ The old 调整 button and its tabs are gone. Each panel has one job and no tabs.
 - **Near the top edge, or any panel open:** the toolbar is fully shown.
 - Buttons never move between these levels.
 
-## Lyric bar (most-used controls)
-Things people change during a song do not live in panels. They sit in a small bar next to the lyrics.
+## Gestures and keys
+There is no lyric bar; the user removed it on 2026-10-21. Every setting lives in its panel.
 
-```
- A−  A+  │  ◀ 0.0s ▶  │  原 译 读  │  ⫷ ≡ ⫸  │  ‹ 封面 ›
-```
+| Action | How |
+|---|---|
+| Font size | Pinch on the lyrics |
+| Scene | Two-finger swipe left or right on the canvas, which moves to the previous or next of the 4 categories |
+| Play / pause | **Space**, sent to the current player. It works only when no text field has focus. |
 
-| Group | Click | Notes |
-|---|---|---|
-| A− / A+ | Changes the 原文与译文 font size by 2 pt | Range 14–42. |
-| ◀ 0.0s ▶ | Moves the lyric offset by 0.1 s | Click the value to reset it to 0. |
-| 原 译 读 | Shows or hides 原文, 译文 and 读音 | They are text labels, never coloured blocks. A lit label means it is shown. 读 is greyed out when the song has no reading. |
-| Alignment | Left, centre, right | The current one is lit. |
-| ‹ name › | Switches to the previous or next of the 4 scene categories | The name is the current category. |
-
-**When it shows:**
-- It appears when the pointer rests on the lyrics column.
-- It follows the toolbar's visibility rules: hidden outside the window, and hidden while any panel is open.
-- Its place is fixed, just under the lyrics column and aligned with it. It never covers a lyric line.
-- Size: 13 pt labels and 30 pt high, so it is readable at a glance.
-
-**Every button has a tooltip** with its name and, where one exists, its shortcut written in words, for example 「放大字号（Command + 加号）」. Don't write ⌘ or ⌥ symbols.
-
-**Feedback:** each change briefly shows a small notice **just above the bar**, not in the middle of the window, such as 「字号 22」, 「偏移 +0.3s」 or 「封面」, then it fades out.
-
-## Gestures and shortcuts (optional extras)
-Every action here also has a button in the lyric bar, so nobody needs to learn them.
-
-| Action | Gesture | Shortcut |
-|---|---|---|
-| Font size | Pinch on the lyrics | Command + 加号 / 减号 |
-| Scene | Two-finger swipe left or right on the canvas | Command + 左 / 右方向键 |
-| Lyric offset | — | Option + 左 / 右方向键 |
+- A gesture change shows a small notice at the bottom of the lyrics column, such as 「字号 22」 or 「封面」, which fades after about 1 s.
+- There are no other listening shortcuts; the Command / Option shortcuts were removed.
 
 ## Panels
 - **One panel per button.** Hover shows it temporarily; click pins it. **Hover and pin show the same content.**
 - **Each panel fits on one screen**, max height 520 pt. **The panel's height fits its content**, so there is no empty space below it.
 - **No explanatory paragraphs.** Use an ⓘ tooltip when a control needs one.
-- **Each panel holds everything about its topic.** The lyric bar is only a shortcut, so its controls **also** stay in their panel, where people expect them.
+- **Each panel holds everything about its topic.**
+- **Disclosure rows** such as 「更多文字选项」 are clickable across their full width and at least 28 pt tall.
+- **On/off settings use the same switch style everywhere.** Actions such as 全屏 are buttons, set apart from the switches.
 - **Rarely used settings live in the settings window**, not in toolbar panels.
 
 | Button | Panel |
 |---|---|
 | 歌词库 | This song's versions grouped by type (原词 / 译文 / 读音 / 时间轴). The adopted one is checked; click another to adopt it. Each row shows source, date and line count. 「打开歌词库」 is at the bottom. |
-| 搜索 | A search field prefilled with the current song. Local results show at once; online results are added when they arrive. Top 5, plus 「全部结果」, which opens the full search. |
-| 译文 | 翻译 / 读音. **AI model picker** (one row). The saved-translation version picker. 「翻译整首」 and 「重新翻译」. 新歌词自动翻译. 并排对比. |
-| 文字 | **显示: 原文 / 译文 / 读音.** **原文与译文 size.** **对齐.** 清晰度 (关闭 / 文字阴影 / 柔和光晕, default 关闭). 罗马音 / 拼音. 注音排版. 读音与辅助字 size. 假名 size. The ⓘ sits on the same line as its label. |
+| 搜索 | A search field prefilled with the current song. Results are grouped as **本地已存** and **在线**. Each row shows a cover thumbnail, title · artist · album, duration, and badges for what is saved (词 / 译 / 读). The adopted one is checked. A row's status reads 「已采用」, 「点击采用」 or 「搜索中…」. Up and down arrows move the selection and Return adopts it. Top 5 per group, plus 「全部结果」, which opens the full search. |
+| 译文 | 翻译 / 读音. **AI model picker** and **思考强度 picker** (one row each). Both show display names; the current model is shown the same way as the others in the list. Choosing another model must switch and persist. The saved-translation version picker. 「翻译整首」 and 「重新翻译」. 新歌词自动翻译. 并排对比. |
+| 文字 | **显示: 原文 / 译文 / 读音.** **原文与译文 size.** **对齐: 跟随场景 / 左 / 中 / 右.** 「跟随场景」 replaces 「自动」; its tooltip says which side the current scene uses. 清晰度 (关闭 / 文字阴影 / 柔和光晕, default 关闭). 罗马音 / 拼音. 注音排版. 读音与辅助字 size. 假名 size. The ⓘ sits on the same line as its label. |
 | 画面 | The 4 categories from `V3SceneFamily`. Below them, the selected category's style list, including 经典版. 背景封面模糊. 显示歌曲缩略图 / 前景封面. **播放呈现 (标准播放栏 / 窗口边缘).** **背景动态 (关闭 / 轻柔 / 鲜明).** A collapsed 「更多画面选项」 holding the rest of the picture controls (取景方式, 前景封面尺寸与位置, 背景缩放, 悬停时显示播放信息). |
-| 更多 | Window modes (桌面歌词, 顶部胶囊, 菜单栏歌词, 全屏). 桌面歌词交互. 恢复歌词时间. |
+| 更多 | 当前歌词偏移: −0.1s, a value field, +0.1s, 归零. Window modes as **switches**: 桌面歌词, 顶部胶囊, 菜单栏歌词. 全屏歌词 is a button. 桌面歌词交互. 恢复歌词时间. |
 | 设置 | No panel; it opens settings. |
 
 **Nothing is removed.** Every control that was in a toolbar panel before 2026-10-20 stays reachable from its panel, folding into a collapsed section where needed. The settings window may show them as well.
 
 **Moved to the settings window:** 翻译服务 login and connection details (the model picker stays in 译文), 悬停预览, 恢复此风格的默认值, and every explanatory paragraph.
 
-**Removed from 更多:** 「歌词版本」, which 歌词库 now covers, and the offset, which the lyric bar now covers.
+**Removed from 更多:** 「歌词版本」, which 歌词库 now covers.
 
 ## Hover and pin rules
 These apply to 歌词库, 搜索, 译文, 文字, 画面 and 更多.
@@ -115,6 +95,7 @@ Clicks that land on the popover's transparent arrow or shadow area are forwarded
 - **Pinned panel:** follows the system's light or dark setting.
 
 ## Priority
+- **Every scene and style shows the player** (transport and progress) according to 播放呈现; none hides it permanently.
 - An open panel takes priority over the toolbar.
 - The toolbar takes priority over the window-edge controls.
 - While the pointer is in the toolbar area or any panel is open, the edge play buttons stay hidden and only the progress rail shows.
