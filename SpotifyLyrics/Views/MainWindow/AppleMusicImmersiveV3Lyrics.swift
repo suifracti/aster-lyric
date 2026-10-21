@@ -1123,6 +1123,15 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
         }
     }
 
+    /// 文字阴影 exists for bright, busy covers. A dimmed line at 0.14 opacity
+    /// is too faint for any halo to outline, so shadow mode raises the dim
+    /// floor enough that non-active lines and their translations stay
+    /// readable while the active line still leads by a wide margin.
+    private var presentedOpacity: Double {
+        guard showsReadingShadow, isSynchronized, !isActive else { return rowOpacity }
+        return rowOpacity + (1 - rowOpacity) * 0.34
+    }
+
     private var rowBlur: CGFloat {
         guard isSynchronized, clampedDistance > 1 else { return 0 }
         switch clampedDistance {
@@ -1151,10 +1160,15 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
             textAlignment: textAlignment
         )
         .equatable()
-        .shadow(color: showsReadingShadow ? .black.opacity(0.65) : .clear,
-                radius: showsReadingShadow ? 6 : 0, x: 0, y: 2)
+        // Two layers: a tight outline that separates glyphs from the art, and
+        // a wider halo that carries 译文 and non-active lines. Neither adds a
+        // background plate.
+        .shadow(color: showsReadingShadow ? .black.opacity(0.95) : .clear,
+                radius: 2.5, x: 0, y: 1)
+        .shadow(color: showsReadingShadow ? .black.opacity(0.72) : .clear,
+                radius: 10, x: 0, y: 2)
         .offset(x: CGFloat(agentPresentationMap.horizontalOffset(for: line.performerID)))
-        .opacity(rowOpacity)
+        .opacity(presentedOpacity)
         .blur(radius: reduceMotion ? 0 : rowBlur)
         .animation(nil, value: isActive)
         .animation(nil, value: layoutSignature)

@@ -510,10 +510,9 @@ struct AppleMusicImmersiveV3FocusTransportControls: View {
 
             V3PlayerModeButton(state: state, shuffle: false)
 
-            Text(state.isPlaying ? "正在播放" : "已暂停")
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.62))
-
+            // No 「正在播放 / 已暂停」 caption: the play/pause glyph already
+            // tells the state, and on a 460pt 内页 footer the caption was
+            // squeezed into a vertical 「已…」.
             AppleMusicImmersiveV3PlaybackProgress(
                 state: state,
                 density: .focus,

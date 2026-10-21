@@ -249,6 +249,7 @@ Based on real-song screenshots of Light source, 花の塔 and Runa: two bright c
 
 **Fixes found in the screenshots:**
 - **Mini player time** (封面, 内页, 专注): the time wraps, e.g. 「00:2 / 0 03:05」. Show it on one line, using tabular digits.
+- **Mini player caption:** drop 「正在播放 / 已暂停」. The play/pause button already shows the state, and in the 460pt 内页 footer the caption was squeezed into a vertical 「已…」.
 - **唱片卡 header:** it still says 「LYRIC ISLAND · LISTENING EDITION」. Change it to 「ASTER · LYRIC · LISTENING EDITION」.
 - **内页:** remove the explanatory text under the cover (「点击已同步的歌词可跳转……」).
 - **Reading line:** hide it when the reading is identical to the original line, as with all-kana lines.
@@ -256,6 +257,7 @@ Based on real-song screenshots of Light source, 花の塔 and Runa: two bright c
 **Bright-cover readability:**
 - **When:** in 封面 (both 静止 and 流动) and 舞台, if the cover is bright (average luminance above about 0.6) and 清晰度 is 关闭.
 - **What:** automatically apply 文字阴影.
+- **Strength:** two layers — a tight outline plus a wider halo — strong enough that non-current lines and 译文 stay readable on a bright cover. Shadow mode also raises the dim floor for non-current lines, because a 15% line cannot be rescued by any halo. No background plate is ever added.
 - **Opting out:** a switch under 清晰度 in the 文字 panel, 「亮封面自动加阴影」, default on. Turning it off keeps 关闭 truly off.
 - **No override:** an explicit 文字阴影 or 柔和光晕 choice is never changed.
 - **Elsewhere:** other scenes and dark covers are unaffected.
