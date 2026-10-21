@@ -32,6 +32,11 @@ private struct V3PlaybackInteractionKey: EnvironmentKey {
     static let defaultValue = V3PlaybackInteractionRelay()
 }
 
+private struct V3ToolbarFramePreferenceKey: PreferenceKey {
+    static let defaultValue = CGRect.zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+}
+
 private struct V3PlaybackRegionPreferenceKey: PreferenceKey {
     static let defaultValue: CGRect = .null
 
@@ -174,6 +179,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var isFocusMode = false
     @State private var isSideDrawerOpen = false
     @State private var sideDrawerTab = V3SideDrawer.Tab.library
+    @State private var toolbarBounds = CGRect.zero
     @State private var lyricNotice: String?
     @State private var lyricNoticeTask: Task<Void, Never>?
     @State private var hoveredStyle: V3ArtworkPresentation?
@@ -348,7 +354,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         exitPoint: lastWindowExitPoint,
                         pointerInsideWindow: isPointerInsideCanvas,
                         // Priority: an open panel, then the toolbar, then the edge.
-                        suppressControls: toolbar.suppressesEdgeControls(nearTop: isPointerInToolbarRegion, otherPanelOpen: toolbarPanelIsPresented)
+                        suppressControls: toolbar.suppressesEdgeControls(nearTop: false, otherPanelOpen: toolbarPanelIsPresented),
+                        toolbarBounds: toolbarBounds
                     )
                     .frame(width: geometry.size.width, height: geometry.size.height)
                 }
@@ -379,6 +386,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
+            .coordinateSpace(name: "v3-window-canvas")
+            .onPreferenceChange(V3ToolbarFramePreferenceKey.self) { frame in
+                if toolbarBounds != frame { toolbarBounds = frame }
+            }
             .clipped()
             .contentShape(Rectangle())
             .onContinuousHover(coordinateSpace: .local) { phase in
@@ -1773,6 +1784,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .environment(\.lyricIslandCompactTools, size.width < 720)
         .padding(5)
         .background(.regularMaterial.opacity(0.78), in: Capsule())
+        .background(GeometryReader { geometry in
+            Color.clear.preference(key: V3ToolbarFramePreferenceKey.self,
+                value: geometry.frame(in: .named("v3-window-canvas")))
+        })
         .overlay(Capsule().strokeBorder(Color.white.opacity(0.16), lineWidth: 0.7))
         .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 4)
         .onChange(of: toolbar.mode) { old, new in toolbarModeChanged(from: old, to: new) }

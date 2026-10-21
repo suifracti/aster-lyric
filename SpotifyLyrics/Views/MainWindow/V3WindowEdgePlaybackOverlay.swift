@@ -11,10 +11,14 @@ struct V3WindowEdgePlaybackOverlay: View {
     let pointerInsideWindow: Bool
     /// The toolbar or an open panel owns the pointer; only the rail stays.
     var suppressControls = false
+    var toolbarBounds = CGRect.zero
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.v3PlaybackInteractionChanged) private var interactionChanged
     @State private var edgeInteraction = V3WindowEdgeInteractionState()
+    private struct RailHover: Equatable { let point: CGPoint; let fraction: Double }
+    @State private var railHover: RailHover?
+    @State private var pointerOverToolbar = false
     @State private var draftFraction: Double?
     @State private var dragTrackKey: String?
     @State private var windowVisible = false
@@ -25,7 +29,7 @@ struct V3WindowEdgePlaybackOverlay: View {
     private let borderInset: CGFloat = 1.5
     private let borderRadius: CGFloat = 12
     private var controlsVisible: Bool {
-        edgeInteraction.isVisible && edgeInteraction.pointerInside && !suppressControls
+        edgeInteraction.isVisible && edgeInteraction.pointerInside && !suppressControls && !pointerOverToolbar
     }
     private var animatesColor: Bool { colorMode == "flow" && !reduceMotion && state.isPlaying && windowVisible }
 
@@ -33,13 +37,14 @@ struct V3WindowEdgePlaybackOverlay: View {
         GeometryReader { geometry in
             let size = geometry.size
             let songHue = V3WindowEdgeSongColor.hue(for: state.currentTrackIdentity?.stableKey ?? "no-track")
-            let controlPosition = edgeInteraction.layout(size: size, fallbackExitPoint: exitPoint)
+            let controlPosition = edgeInteraction.layout(size: size, fallbackExitPoint: exitPoint, toolbarBounds: toolbarBounds)
+            let playerVisible = controlsVisible && !controlPosition.frame.intersects(toolbarExclusion)
 
             ZStack(alignment: .topLeading) {
                 // Only the thin edge band takes pointer events; the lyric canvas stays interactive.
-                V3WindowEdgeHitBand(inset: borderInset, cornerRadius: borderRadius)
+                V3WindowEdgeHitBand()
                     .fill(Color.clear)
-                    .contentShape(V3WindowEdgeHitBand(inset: borderInset, cornerRadius: borderRadius))
+                    .contentShape(V3WindowEdgeHitBand())
                     .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
                         .onChanged { value in updateDraft(at: value.location, size: size) }
                         .onEnded { value in finishSeek(at: value.location, size: size) })
@@ -61,21 +66,38 @@ struct V3WindowEdgePlaybackOverlay: View {
                     let color = accent(at: context.date, songHue: songHue)
                     ZStack(alignment: .topLeading) {
                         ZStack {
-                            border.stroke(color.opacity(0.22), style: StrokeStyle(lineWidth: 2.1, lineCap: .round))
+                            border.stroke(color.opacity(0.22), style: StrokeStyle(lineWidth: railHover == nil ? 2.1 : 4, lineCap: .round))
                             border.trim(from: 0, to: progressFraction)
-                                .stroke(color, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                                .stroke(color, style: StrokeStyle(lineWidth: railHover == nil ? 2.2 : 4, lineCap: .round))
                         }
                         .transaction { $0.animation = nil }
                         .allowsHitTesting(false).accessibilityHidden(true)
-                        V3WindowEdgeTransportButtons(state: state, accent: color,
-                                                     isVertical: controlPosition.isVertical)
-                            .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
-                            .scaleEffect(controlPosition.scale)
-                            .opacity(controlsVisible ? 1 : 0)
-                            .allowsHitTesting(controlsVisible)
-                            .accessibilityHidden(!controlsVisible)
-                            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: controlsVisible)
-                            .position(controlPosition.center)
+                        ZStack {
+                            V3WindowEdgeTransportButtons(state: state, accent: color,
+                                isVertical: controlPosition.isVertical,
+                                elapsed: Self.timeText(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime)),
+                                total: Self.timeText(state.currentTrack.duration))
+                                .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
+                                .scaleEffect(controlPosition.scale * (playerVisible || reduceMotion ? 1 : 0.92))
+                                .opacity(playerVisible ? 1 : 0)
+                                .allowsHitTesting(playerVisible)
+                                .accessibilityHidden(!playerVisible)
+                                .position(controlPosition.center)
+                                .animation(.easeOut(duration: playerVisible ? 0.18 : 0.14), value: playerVisible)
+                                .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 1), value: controlPosition.center)
+                                .id(controlPosition.edge)
+                                .transition(.opacity)
+                        }
+                        .animation(.easeOut(duration: 0.18), value: controlPosition.edge)
+                        if let hover = railHover {
+                            Text(Self.timeText(hover.fraction * state.currentTrack.duration))
+                                .font(.system(size: 11, weight: .medium)).monospacedDigit()
+                                .padding(.horizontal, 7).padding(.vertical, 4)
+                                .foregroundStyle(V3WindowEdgeColor.foreground(on: color))
+                                .background(color, in: Capsule())
+                                .position(railLabelPosition(hover.point, size: size))
+                                .allowsHitTesting(false).accessibilityHidden(true)
+                        }
                     }
                 }
 
@@ -95,6 +117,7 @@ struct V3WindowEdgePlaybackOverlay: View {
             }
         }
         .onChange(of: state.currentTrackIdentity) { _, _ in
+            railHover = nil
             if dragTrackKey != nil {
                 // Keep the original gesture identity until release so a track
                 // change cannot redirect an unfinished drag onto the new song.
@@ -123,13 +146,46 @@ struct V3WindowEdgePlaybackOverlay: View {
     private func updatePointer(_ point: CGPoint?, size: CGSize, dragging: Bool) {
         // Keep per-pixel input local. Only a visibility/anchor transition writes
         // SwiftUI state, so idle/lyric-region mouse motion does not redraw views.
-        let next = edgeInteraction.updating(point: point, size: size, dragging: dragging)
+        let next = edgeInteraction.updating(point: point, size: size, dragging: dragging, toolbarBounds: toolbarBounds)
         if next != edgeInteraction { edgeInteraction = next }
+        let overToolbar = point.map { toolbarExclusion.contains($0) } ?? false
+        if pointerOverToolbar != overToolbar { pointerOverToolbar = overToolbar }
+        var hover: RailHover?
+        if canSeek, let point,
+           dragging || min(point.x, point.y, size.width - point.x, size.height - point.y) <= 14,
+           let fraction = V3ResponsiveGeometry.edgeProgressFraction(at: point, canvasSize: size) {
+            hover = RailHover(point: point, fraction: fraction)
+        }
+        if railHover != hover { railHover = hover }
     }
 
     private func clearPointer() {
+        railHover = nil
+        pointerOverToolbar = false
         let next = edgeInteraction.hiding()
         if next != edgeInteraction { edgeInteraction = next }
+    }
+
+    private var toolbarExclusion: CGRect {
+        toolbarBounds.isEmpty ? .null : toolbarBounds.insetBy(dx: -8, dy: -8)
+    }
+
+    private static func timeText(_ seconds: TimeInterval) -> String {
+        let value = Int(max(0, seconds.isFinite ? seconds : 0))
+        return String(format: "%d:%02d", value / 60, value % 60)
+    }
+
+    private func railLabelPosition(_ point: CGPoint, size: CGSize) -> CGPoint {
+        let distances = [point.y, size.width - point.x, size.height - point.y, point.x]
+        let edge = distances.enumerated().min(by: { $0.element < $1.element })?.offset ?? 0
+        let x = min(max(point.x, 48), max(48, size.width - 48))
+        let y = min(max(point.y, 24), max(24, size.height - 24))
+        switch edge {
+        case 0: return CGPoint(x: x, y: min(70, size.height / 2))
+        case 1: return CGPoint(x: max(size.width - 70, size.width / 2), y: y)
+        case 2: return CGPoint(x: x, y: max(size.height - 64, size.height / 2))
+        default: return CGPoint(x: min(70, size.width / 2), y: y)
+        }
     }
 
     private var border: V3WindowEdgeRoundedRectShape {
@@ -245,11 +301,13 @@ private struct V3WindowEdgePointerTracker: NSViewRepresentable {
 }
 
 private struct V3WindowEdgeHitBand: Shape {
-    let inset: CGFloat
-    let cornerRadius: CGFloat
     func path(in rect: CGRect) -> Path {
-        V3WindowEdgeRoundedRectShape(inset: inset, cornerRadius: cornerRadius)
-            .path(in: rect).strokedPath(StrokeStyle(lineWidth: 22))
+        var path = Path()
+        path.addRect(CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: 14))
+        path.addRect(CGRect(x: rect.minX, y: rect.maxY - 14, width: rect.width, height: 14))
+        path.addRect(CGRect(x: rect.minX, y: rect.minY, width: 14, height: rect.height))
+        path.addRect(CGRect(x: rect.maxX - 14, y: rect.minY, width: 14, height: rect.height))
+        return path
     }
 }
 
@@ -304,6 +362,8 @@ private struct V3WindowEdgeTransportButtons: View {
     @V3ContentPlaybackState var state: PlaybackState
     let accent: Color
     let isVertical: Bool
+    let elapsed: String
+    let total: String
 
     @ViewBuilder
     var body: some View {
@@ -316,6 +376,8 @@ private struct V3WindowEdgeTransportButtons: View {
                     playPauseButton
                     nextButton
                     V3PlayerModeButton(state: state, shuffle: false)
+                    Text(elapsed + "\n/ " + total).font(.system(size: 9)).monospacedDigit()
+                        .multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.8))
                 }
             } else {
                 HStack(spacing: 5) {
@@ -325,6 +387,8 @@ private struct V3WindowEdgeTransportButtons: View {
                     playPauseButton
                     nextButton
                     V3PlayerModeButton(state: state, shuffle: false)
+                    Text(elapsed + " / " + total).font(.system(size: 9)).monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.8))
                 }
             }
         }
@@ -458,26 +522,31 @@ private struct V3WindowEdgeRoundedRectShape: Shape {
 // BEGIN EDGE INTERACTION PURE CORE
 // Foundation geometry only. Tests compile this exact section on macOS/Linux.
 private enum V3WindowEdgeControlPositioner {
-    enum Edge: Equatable {
+    enum Edge: Equatable, Hashable {
         case top, right, bottom, left
 
         var isVertical: Bool { self == .left || self == .right }
     }
 
     struct Layout {
+        let edge: Edge
         let center: CGPoint
         let isVertical: Bool
         let baseSize: CGSize
         let scale: CGFloat
+        var frame: CGRect {
+            CGRect(x: center.x - baseSize.width * scale / 2, y: center.y - baseSize.height * scale / 2,
+                   width: baseSize.width * scale, height: baseSize.height * scale)
+        }
     }
 
-    static func layout(size: CGSize, exitPoint: CGPoint?, preferredEdge: Edge? = nil) -> Layout {
+    static func layout(size: CGSize, exitPoint: CGPoint?, preferredEdge: Edge? = nil, avoiding toolbar: CGRect = .zero) -> Layout {
         let width = max(0, size.width.isFinite ? size.width : 0)
         let height = max(0, size.height.isFinite ? size.height : 0)
         let defaultCenter = CGPoint(x: width / 2, y: height / 2)
 
         guard width > 0, height > 0 else {
-            return Layout(center: defaultCenter, isVertical: false, baseSize: .zero, scale: 0)
+            return Layout(edge: .bottom, center: defaultCenter, isVertical: false, baseSize: .zero, scale: 0)
         }
 
         let edge: Edge
@@ -500,7 +569,7 @@ private enum V3WindowEdgeControlPositioner {
         }
 
         let isVertical = edge.isVertical
-        let baseSize = CGSize(width: isVertical ? 38 : 213, height: isVertical ? 213 : 38)
+        let baseSize = CGSize(width: isVertical ? 38 : 294, height: isVertical ? 246 : 38)
         let availableLong = isVertical ? height : width
         let availableShort = isVertical ? width : height
         let baseLong = isVertical ? baseSize.height : baseSize.width
@@ -533,7 +602,34 @@ private enum V3WindowEdgeControlPositioner {
             )
         }
 
-        return Layout(center: center, isVertical: isVertical, baseSize: baseSize, scale: scale)
+        let result = Layout(edge: edge, center: center, isVertical: isVertical, baseSize: baseSize, scale: scale)
+        guard !toolbar.isEmpty else { return result }
+        let blocked = toolbar.insetBy(dx: -8, dy: -8)
+        guard result.frame.intersects(blocked) else { return result }
+        var candidates: [Layout] = []
+        let topSpace = blocked.minX - 88 - 2
+        if topSpace > 0 {
+            let base = CGSize(width: 294, height: 38)
+            let factor = min(1, topSpace / base.width, height / base.height)
+            let half = base.width * factor / 2
+            let x = clamped(point.x, lower: 88 + half, upper: blocked.minX - half - 1, fallback: 88 + half)
+            let candidate = Layout(edge: .top, center: CGPoint(x: x, y: 31), isVertical: false, baseSize: base, scale: factor)
+            if !candidate.frame.intersects(blocked) { candidates.append(candidate) }
+        }
+        let rightSpace = height - blocked.maxY - 3
+        if rightSpace > 0 {
+            let base = CGSize(width: 38, height: 246)
+            let factor = min(1, rightSpace / base.height, width / base.width)
+            let half = base.height * factor / 2
+            let y = clamped(point.y, lower: blocked.maxY + half + 1, upper: height - half - 2, fallback: height - half - 2)
+            let candidate = Layout(edge: .right, center: CGPoint(x: width - 22, y: y), isVertical: true, baseSize: base, scale: factor)
+            if !candidate.frame.intersects(blocked) { candidates.append(candidate) }
+        }
+        return candidates.min { a, b in
+            let da = pow(a.center.x - point.x, 2) + pow(a.center.y - point.y, 2)
+            let db = pow(b.center.x - point.x, 2) + pow(b.center.y - point.y, 2)
+            return da < db
+        } ?? result
     }
 
     private static func clamped(_ value: CGFloat, lower: CGFloat, upper: CGFloat, fallback: CGFloat) -> CGFloat {
@@ -572,11 +668,12 @@ private struct V3WindowEdgeInteractionState: Equatable {
     private(set) var isVisible = false
     private(set) var anchor: Anchor?
 
-    func layout(size: CGSize, fallbackExitPoint: CGPoint?) -> V3WindowEdgeControlPositioner.Layout {
+    func layout(size: CGSize, fallbackExitPoint: CGPoint?, toolbarBounds: CGRect = .zero) -> V3WindowEdgeControlPositioner.Layout {
         V3WindowEdgeControlPositioner.layout(
             size: size,
             exitPoint: anchor?.point(in: size) ?? fallbackExitPoint,
-            preferredEdge: anchor?.edge
+            preferredEdge: anchor?.edge,
+            avoiding: toolbarBounds
         )
     }
 
@@ -589,7 +686,7 @@ private struct V3WindowEdgeInteractionState: Equatable {
         return result
     }
 
-    func updating(point: CGPoint?, size: CGSize, dragging: Bool) -> Self {
+    func updating(point: CGPoint?, size: CGSize, dragging: Bool, toolbarBounds: CGRect = .zero) -> Self {
         guard size.width.isFinite, size.height.isFinite,
               size.width > 0, size.height > 0,
               let point, point.x.isFinite, point.y.isFinite,
@@ -610,7 +707,7 @@ private struct V3WindowEdgeInteractionState: Equatable {
 
         if isVisible, let anchor {
             if dragging { return result } // Keep the active gesture's anchor.
-            let positioned = layout(size: size, fallbackExitPoint: nil)
+            let positioned = layout(size: size, fallbackExitPoint: nil, toolbarBounds: toolbarBounds)
             let width = positioned.baseSize.width * positioned.scale
             let height = positioned.baseSize.height * positioned.scale
             let corridor = CGRect(

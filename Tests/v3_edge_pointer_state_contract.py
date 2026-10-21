@@ -20,14 +20,14 @@ core = text.split(start, 1)[1].split(end, 1)[0]
 for banned in ('@Published', 'Timer.', 'TimelineView', 'DispatchQueue', 'Task {', 'URLSession', 'NotificationCenter'):
     assert banned not in core, banned
 assert 'if next != edgeInteraction { edgeInteraction = next }' in text
-assert 'edgeInteraction.layout(size: size, fallbackExitPoint: exitPoint)' in text
+assert 'edgeInteraction.layout(size: size, fallbackExitPoint: exitPoint, toolbarBounds: toolbarBounds)' in text
 assert 'updatePointer(point, size: size, dragging: draftFraction != nil)' in text
 assert 'updatePointer(point, size: size, dragging: false)' in text
 assert '.activeAlways' in text
 assert 'override func hitTest(_ point: NSPoint) -> NSView? { nil }' in text
-assert '.strokedPath(StrokeStyle(lineWidth: 22))' in text  # Seek band not widened.
+assert 'width: rect.width, height: 14' in text  # Explicit fourteen-point rail.
 assert 'dragTrackKey == state.currentTrackIdentity?.stableKey' in text
-assert '.animation(reduceMotion ? nil : .easeOut(duration: 0.16)' in text
+assert '.spring(response: 0.3, dampingFraction: 1)' in text
 
 TESTS = r'''
 private typealias State = V3WindowEdgeInteractionState
@@ -115,6 +115,15 @@ for size in [CGSize.zero, CGSize(width: CGFloat.nan, height: 820), CGSize(width:
     let invalid = right.updating(point: CGPoint(x: 5, y: 5), size: size, dragging: false)
     expect(!invalid.isVisible, "invalid canvas shown")
 }
+// The toolbar no longer hides the whole top edge. Avoid its rectangle and lock the free control area.
+private let toolbar = CGRect(x: 650, y: 18, width: 536, height: 44)
+private let nearToolbar = State().updating(point: CGPoint(x: 900, y: 5), size: canvas, dragging: false, toolbarBounds: toolbar)
+private let avoided = nearToolbar.layout(size: canvas, fallbackExitPoint: nil, toolbarBounds: toolbar)
+expect(nearToolbar.isVisible, "toolbar proximity hid controls")
+expect(!avoided.frame.intersects(toolbar.insetBy(dx: -8, dy: -8)), "player overlaps toolbar")
+private let onFreeButtons = nearToolbar.updating(point: avoided.center, size: canvas, dragging: false, toolbarBounds: toolbar)
+expect(onFreeButtons.anchor == nearToolbar.anchor, "avoiding controls evaded a click")
+
 // Normalized anchor keeps the player in the window when it resizes.
 private let resized = right.layout(size: CGSize(width: 800, height: 600), fallbackExitPoint: nil)
 expect(abs(resized.center.y - (400.0 / 820.0 * 600)) < 0.01, "resize lost normalized anchor")
