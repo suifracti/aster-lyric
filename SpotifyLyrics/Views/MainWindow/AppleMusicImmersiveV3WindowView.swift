@@ -1743,7 +1743,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                        ? "显示歌曲缩略图" : "显示前景封面", isOn: $settings.v3ShowForegroundArtwork)
                 visualControls.playbackPresentationControls
                 visualControls.backgroundMotionControls
-                DisclosureGroup("更多画面选项") {
+                DisclosureGroup("更多画面选项", isExpanded: $settings.v3PictureAdvancedExpanded) {
                     visualControls.pictureAdvancedControls(showsExplanations: false)
                 }
             case .more:

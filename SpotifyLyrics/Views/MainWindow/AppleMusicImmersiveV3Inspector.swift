@@ -73,10 +73,10 @@ struct V3ThemeSelectorView: View {
             HStack {
                 Text("场景").font(.system(size: 13, weight: .semibold))
                 Spacer()
-                if !compact { Toggle("悬停预览", isOn: $settings.v3SceneHoverPreviewEnabled)
+                Toggle("悬停预览", isOn: $settings.v3SceneHoverPreviewEnabled)
                     .toggleStyle(.switch).controlSize(.mini)
                     .font(.system(size: 11))
-                    .help("停留后临时预览，移开恢复，点击才采用；预览不会保存设置或调用 AI") }
+                    .help("停留后临时预览，移开恢复，点击才采用；预览不会保存设置或调用 AI")
             }
             // Four families as large cards; the chosen family's styles sit
             // underneath. Entries only — every style is an existing

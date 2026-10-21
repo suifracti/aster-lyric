@@ -185,36 +185,30 @@ struct SpotifyLyricsApp: App {
             Button("菜单栏歌词与播放") {
                 MenuBarLyricsController.shared.togglePopover()
             }
-            .keyboardShortcut("b", modifiers: [.command, .shift])
 
             Button("歌词编辑器") {
                 playbackState.prepareLyricsEditorForOpening()
                 openWindow(id: "lyrics-editor")
             }
-            .keyboardShortcut("e", modifiers: [.command, .shift])
 
             Button("歌词库与收听记录") {
                 playbackState.selectedLibraryToolTab = .library
                 openWindow(id: "personal-library-activity")
             }
-            .keyboardShortcut("l", modifiers: [.command, .shift])
 
             Divider()
 
             Button("显示/隐藏悬浮歌词") {
                 WindowManager.shared.toggleFloatingLyrics(state: playbackState)
             }
-            .keyboardShortcut("f", modifiers: [.command, .option])
 
             Button("显示/隐藏顶部胶囊") {
                 WindowManager.shared.toggleCapsule(state: playbackState)
             }
-            .keyboardShortcut("c", modifiers: [.command, .option])
 
             Button("显示/隐藏全屏歌词") {
                 WindowManager.shared.toggleFullScreen(state: playbackState)
             }
-            .keyboardShortcut("g", modifiers: [.command, .option])
 
             Button("收起顶部胶囊") {
                 WindowManager.shared.collapseCapsulePlayer()
@@ -226,7 +220,6 @@ struct SpotifyLyricsApp: App {
             Button("解除悬浮歌词鼠标穿透") {
                 WindowManager.shared.restoreFloatingInteractiveMode(state: playbackState)
             }
-            .keyboardShortcut("l", modifiers: [.command, .option])
             .help("即使悬浮歌词已鼠标穿透，也可用此命令直接恢复交互")
 
             Divider()
@@ -325,15 +318,12 @@ private struct PresentationPreviewCommands: Commands {
                 Button("打开 Presentation Preview Lab") {
                     openWindow(id: "presentation-preview-lab")
                 }
-                .keyboardShortcut("p", modifiers: [.command, .option])
                 Button("打开 Direction D 矩阵") {
                     openWindow(id: "direction-d-preview-matrix")
                 }
-                .keyboardShortcut("d", modifiers: [.command, .option])
                 Button("打开 Direction D Experimental Host") {
                     openWindow(id: "direction-d-experimental-host")
                 }
-                .keyboardShortcut("e", modifiers: [.command, .option])
             }
         }
     }

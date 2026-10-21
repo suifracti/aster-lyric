@@ -1,0 +1,200 @@
+{
+  "schema": "lyricsq-process-resources-v1",
+  "pid": 58398,
+  "label": "UI completion: main67b5be9 + Main/Inspector/WindowView diff; same Debug/DD/song/window; Light source kyiku verified via AX, SCK returns StageManager thumbnail",
+  "method": "ps cumulative process CPU time and RSS; one CPU core = 100%",
+  "warmupSeconds": 2.0,
+  "measurementSeconds": 30.011727083998267,
+  "averageCPUPercent": 0.0,
+  "startResidentBytes": 138559488,
+  "endResidentBytes": 104366080,
+  "peakResidentBytes": 138559488,
+  "samples": [
+    {
+      "monotonicSeconds": 158495.431662041,
+      "cpuSeconds": 1.75,
+      "residentBytes": 138559488,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158496.441179583,
+      "cpuSeconds": 1.75,
+      "residentBytes": 138559488,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158497.440044083,
+      "cpuSeconds": 1.75,
+      "residentBytes": 138559488,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158498.4633735,
+      "cpuSeconds": 1.75,
+      "residentBytes": 136003584,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158499.441558583,
+      "cpuSeconds": 1.75,
+      "residentBytes": 136003584,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158500.444424541,
+      "cpuSeconds": 1.75,
+      "residentBytes": 136003584,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158501.442836041,
+      "cpuSeconds": 1.75,
+      "residentBytes": 136003584,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158502.443005,
+      "cpuSeconds": 1.75,
+      "residentBytes": 133234688,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158503.443032375,
+      "cpuSeconds": 1.75,
+      "residentBytes": 133234688,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158504.443510583,
+      "cpuSeconds": 1.75,
+      "residentBytes": 133234688,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158505.443036041,
+      "cpuSeconds": 1.75,
+      "residentBytes": 133234688,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158506.443357125,
+      "cpuSeconds": 1.75,
+      "residentBytes": 133234688,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158507.442097041,
+      "cpuSeconds": 1.75,
+      "residentBytes": 133234688,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158508.446280916,
+      "cpuSeconds": 1.75,
+      "residentBytes": 133201920,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158509.443594375,
+      "cpuSeconds": 1.75,
+      "residentBytes": 133201920,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158510.443962125,
+      "cpuSeconds": 1.75,
+      "residentBytes": 133251072,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158511.442507958,
+      "cpuSeconds": 1.75,
+      "residentBytes": 133251072,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158512.443025625,
+      "cpuSeconds": 1.75,
+      "residentBytes": 133251072,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158513.443628291,
+      "cpuSeconds": 1.75,
+      "residentBytes": 104923136,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158514.441157791,
+      "cpuSeconds": 1.75,
+      "residentBytes": 104923136,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158515.442730791,
+      "cpuSeconds": 1.75,
+      "residentBytes": 104923136,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158516.441806791,
+      "cpuSeconds": 1.75,
+      "residentBytes": 104923136,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158517.442397583,
+      "cpuSeconds": 1.75,
+      "residentBytes": 104923136,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158518.438297791,
+      "cpuSeconds": 1.75,
+      "residentBytes": 104923136,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158519.442968708,
+      "cpuSeconds": 1.75,
+      "residentBytes": 104923136,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158520.442576291,
+      "cpuSeconds": 1.75,
+      "residentBytes": 104480768,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158521.440945541,
+      "cpuSeconds": 1.75,
+      "residentBytes": 104431616,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158522.435952333,
+      "cpuSeconds": 1.75,
+      "residentBytes": 104431616,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158523.440701875,
+      "cpuSeconds": 1.75,
+      "residentBytes": 104366080,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158524.4433795,
+      "cpuSeconds": 1.75,
+      "residentBytes": 104366080,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    },
+    {
+      "monotonicSeconds": 158525.443389125,
+      "cpuSeconds": 1.75,
+      "residentBytes": 104366080,
+      "executable": "/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics"
+    }
+  ]
+}
