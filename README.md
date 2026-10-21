@@ -1,44 +1,77 @@
-# lyricsQ
+<div align="center">
 
-### 跟着 Spotify / Apple Music 听歌，也认真看歌词。
+# Lyric · Aster　星弦
 
-lyricsQ 是一款原生 macOS 歌词应用，提供沉浸式主播放页、全屏歌词、桌面歌词、歌词版本管理和手动时间轴编辑入口。仓库仅提供源码和发布信息；**实时进度、任务与交接在 Obsidian**，而 [docs/STATUS.md](docs/STATUS.md) 是静态状态参考，不是当前施工入口。
+**让一句歌词，在夜色里亮起来。**
 
-## AI / 开发接手入口（2026-10-12 起）
+跟着 Spotify / Apple Music 听歌，也认真看歌词，跟着唱。
 
-- **唯一任务主源**：Obsidian Vault `03-项目与工程/Spotify Lyrics/README.md` → `Handoff.md`（当前状态和唯一活动任务）→ `Decisions.md`（按需读长期规则）。无法访问 Obsidian 时不得以旧 Issue/STATUS 自行派工。
-- **文件附件**：Obsidian `03-项目与工程/Spotify Lyrics/资料与附件.md` → [既有私有 Google Drive](https://drive.google.com/drive/folders/1cm5KnwoYn82b7R61YrXvYiCfXHE37BEs)；仅保存 App/ZIP/截图/日志等文件，不做第二份交接。
-- **源码**：GitHub `main` 是共同代码主源。修改结束默认检查并普通提交/推送、核对远端，避免本机长期分叉；明确禁止推送的任务须标记未同步。默认不创建分支/PR/Issue；正式安装、数据库、AI费用和发布仍需对应许可。
-- **防止丢成果**：接手先获取远端并核对活动工作树包含最新main；旧树、旧安装包和Drive ZIP不自动当最新。只保留输入相同的验证，不把离线通过当实机通过。见[本轮版本核对](docs/SOURCE_CONVERGENCE_2026-10-13.md)。
-- 开发约束入口：[AGENTS.md](AGENTS.md)。**已关闭 Issue #30/#33、合并 PR 与旧 Nightly 计划均仅供追溯，不是当前授权。**
+</div>
 
-## 当前正式发布
+![原版环境光主播放页](docs/evidence/experience-feedback-20260906/v3-ambient-compact.png)
 
-- 正式 GitHub Release：**v0.1.2**
-- 发布提交：`6528be3103f75fd4f63757855b9d61cd30f757d8`
-- 下载：[GitHub Release v0.1.2](https://github.com/suifracti/lyricsQ/releases/tag/v0.1.2)
-- 发布资产：`SpotifyLyrics-0.1.2.zip`、`SpotifyLyrics-0.1.2.dmg`
-- 仓库历史／功能状态参考：[STATUS（不是当前交接）](docs/STATUS.md)
+<sub>截图来自较早版本，界面正在更新中。</sub>
 
-v0.1.2 是当前正式发布身份。发布包面向 Apple Silicon（arm64）和 macOS 14 或更高版本；当前没有 Apple notarization 完成证据，不应把代码签名检查表述为公证。
+## 理念
 
-## 产品边界
+**听歌时极简，但不简陋。**
+- 平时屏幕上只有歌词和画面。
+- 需要的时候，伸手就能找到想要的功能；用完它会自己安静地退下。
+- 功能是收起来，不是删掉。
 
-当前仓库包含以下产品入口，但入口存在不等于每个边界都已完成实机验收：
+Lyric · Aster 是一款原生 macOS 歌词应用，只做两件事：**好好听歌，好好跟唱。**
 
-- 核心：V3 主播放页、原生全屏歌词。
-- 支持的次级入口：透明桌面歌词 v2、菜单栏。
-- 实验性入口：Direction D / Capsule，以及 AI、自动排轴等仍需单独验证的能力；不承诺稳定可用。
-- 兼容路径：Classic V1、桌面 legacy panel。
-- 当前没有 iOS target。
+## 能做什么
 
-Spotify 与 Apple Music / 音乐.app 在本项目中是播放器来源；歌词来源、版本匹配、逐行时间和真实逐字 timing 仍受数据质量与具体歌曲影响。不要把实验入口、代码存在或单个 contract 通过解读成完整产品验收。
+| | |
+| --- | --- |
+| **跟随播放** | 跟随 Spotify 或 Apple Music 当前播放的歌曲和进度；切歌、暂停即时响应。可以控制播放、切歌、拖动进度。 |
+| **四类场景** | 环境光 · 封面 · 内页 · 专注，每类有几种风格（包括经典版）。也可以调背景模糊、封面大小、背景动态和清晰度保护。 |
+| **自动找词** | 从多个来源自动挑合适的歌词并采用。每个版本都保留，随时可以切回；人工改过或锁定的版本不会被覆盖。 |
+| **AI 译文** | 用你自己的中文表达习惯翻译，翻好的译文存下来重复使用。可以保存多份译文，并排比较，选一份采用。 |
+| **读音** | 假名、罗马音、拼音，可以注在汉字上方、单独成行或直接替换；读错的地方点一下就能纠正。 |
+| **歌词时间** | 整首歌词提前或延后，只对这首歌的这个版本生效，不会改动原始时间轴。 |
+| **工具栏** | 鼠标悬停时临时弹出面板，点击后固定在窗口外侧。按钮有：歌词库 · 搜索 · 译文 · 文字 · 画面 · 更多 · 设置。 |
+| **更多窗口** | 全屏歌词、桌面歌词（可锁定、鼠标穿透）、顶部胶囊、菜单栏歌词。 |
+| **歌词库** | 原词、译文、读音、时间轴分别管理版本；可以编辑、导入、导出个人歌词资产。 |
+| **编辑器** | 逐行编辑原文、译文、读音和时间，可插入、拆分、合并、撤销，保存为新版本。 |
+| **听歌记录** | 最近播放与听歌统计。只包含应用运行期间观察到的播放。 |
 
-## 获取与构建
+## 按键
 
-下载正式发布包后，将应用拖入 Applications。应用使用本地签名，未有 Developer ID 与 Apple notarization 证据；系统可能要求用户在确认来源后手动允许打开。
+在主窗口里使用；正在输入框里打字时不生效。
 
-从源码构建：
+| 键 | 作用 |
+| --- | --- |
+| 空格 | 播放 / 暂停 |
+| A、D | 上一首、下一首 |
+| S | 加入 Spotify「喜欢」；已经在里面时，再按一次就移除 |
+| Z、C | 歌词快了往上调、慢了往下调，每次 0.1 秒 |
+| X | 歌词时间归零 |
+| `,` `.` | 背景模糊 −5% / +5% |
+| `/` | 模糊档位循环：0 → 25 → 50 → 75 → 100% |
+| F | 专注模式：只留歌词和背景 |
+| ?（Shift + /） | 显示全部按键 |
+
+在触控板上双指捏合可以调字号，双指左右滑可以切换场景。
+
+> 按键、收藏、歌单、单句循环、大字模式等功能正在开发中，以实际版本为准。
+
+## 已知限制
+
+- 歌词匹配不是百分之百准确。Piano Ver.、Live、Remix 这类版本可能匹配到原版或相近的录音，切换前请核对标题和时长。
+- 整首提前或延后只能修正固定的偏差。每行误差不一样时，请换一个更匹配的版本，或者在编辑器里修改。
+- 逐字高亮需要来源提供真实的逐字时间。
+- Spotify 的歌单文件夹无法读取，歌单选择里会显示成平铺列表。
+
+## 下载与安装
+
+- 正式发布版：**[v0.1.2](https://github.com/suifracti/lyricsQ/releases/tag/v0.1.2)**。这个版本的应用名还是旧名 `SpotifyLyrics`。
+- 支持 Apple Silicon（arm64），需要 macOS 14 或更高版本。
+- 应用没有 Developer ID 签名，也没有经过 Apple 公证。系统阻止打开时，请先确认下载来源，再到「隐私与安全性」里允许这一次打开。
+- 第一次控制 Spotify 或 Apple Music 时，需要在系统弹窗里允许自动化。
+
+## 从源码构建
 
 ```sh
 git clone https://github.com/suifracti/lyricsQ.git
@@ -46,26 +79,32 @@ cd lyricsQ
 open SpotifyLyrics.xcodeproj
 ```
 
-也可以构建 Debug：
+也可以用命令行构建 Debug 版本：
 
 ```sh
 xcodebuild -project SpotifyLyrics.xcodeproj \
   -scheme SpotifyLyrics \
   -configuration Debug \
-  -derivedDataPath /tmp/lyricsq-deriveddata \
+  -derivedDataPath /tmp/lyric-aster-deriveddata \
   CODE_SIGNING_ALLOWED=NO build
 ```
 
-仅供需要时查阅的源码操作与状态参考（**实际下一项仍读 Obsidian Handoff**）：
+需要 macOS 和 Xcode。不要提交个人证书、Team ID 或任何凭据。
 
-- [当前工程状态](docs/STATUS.md)
-- [开发流程](docs/DEVELOPMENT_WORKFLOW.md)
-- [提交检查](docs/SUBMISSION_BASELINE.md)
+## 数据与隐私
 
-## 数据、隐私与许可
+- 歌词、修订版本和听歌记录保存在本机的 Application Support 数据库里，偏好设置也只存在本机。
+- 登录令牌和 API Key 存在钥匙串里。
+- 查询在线歌词时，会把匹配所需的歌曲信息发给对应的歌词来源。
+- 使用 AI 翻译时，会把歌词文本发给你选择的 AI 服务。
+- 文件夹同步写到你指定的位置；会不会上传到云端，取决于那个文件夹用的同步服务。
 
-- 歌词、修订版本和收听记录默认保存在本机 Application Support 数据库；偏好设置保存在本机。
-- 授权令牌和 API Key 使用 Keychain；不要提交凭据、数据库或个人导出资产。
-- 查询在线歌词会向相应来源发送匹配所需的歌曲信息；实验性 AI 路径不应被视为稳定能力。
-- 本项目与 Spotify、Apple 及歌词来源服务无隶属或背书关系。
-- 本仓库不是开源授权项目；原创源码、文档和设计保留全部权利，使用范围见 [LICENSE](LICENSE)。
+## 版权
+
+本项目与 Spotify、Apple 及各歌词来源没有隶属或背书关系。音乐、歌词和封面归各自的权利人所有。
+
+本仓库公开可见，但**不是开源项目**。原创的源码、文档和设计保留全部权利，使用范围见 [LICENSE](LICENSE)。
+
+---
+
+<sub>Lyric · Aster 原名 lyricsQ。参与开发的 AI 请先阅读 [AGENTS.md](AGENTS.md)。</sub>
