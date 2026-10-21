@@ -192,6 +192,11 @@ struct ExperienceVisualHostApp: App {
         }
         settings.v3ArtworkPresentation = V3ArtworkPresentation.allCases.first { $0.title == ExperienceArguments.value("--style-title",fallback:"") } ?? (ExperienceArguments.value("--style",fallback:"ambient") == "stage" ? .stage : ExperienceArguments.value("--style",fallback:"ambient") == "classic" ? .classic : .ambient)
         settings.v3BigLineModeEnabled = ExperienceArguments.value("--big-line", fallback: "false") == "true"
+        if let preset = DisplayPreferences.ListeningLayerPreset(rawValue: ExperienceArguments.value("--layers", fallback: "")) {
+            var preferences = settings.displayPreferences
+            preferences.listeningLayerPreset = preset
+            settings.displayPreferences = preferences
+        }
         settings.v3ArtworkPosition=ExperienceArguments.value("--position",fallback:"left")
         let lyricPosition = ExperienceArguments.value("--lyric-position", fallback: "automatic")
         settings.v3LyricsPosition = lyricPosition

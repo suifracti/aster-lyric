@@ -4,6 +4,22 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class PresentationSourceContractTests: XCTestCase {
+    func testListeningLayerPresetsLinkExistingFlagsAndKeepReadingStyle() {
+        var preferences = DisplayPreferences(showRomaji: true, kanaDisplayMode: .inlineRuby)
+        preferences.listeningLayerPreset = .translationOnly
+        XCTAssertFalse(preferences.showOriginal)
+        XCTAssertTrue(preferences.showTranslation)
+        XCTAssertFalse(preferences.showKana)
+        XCTAssertTrue(preferences.showRomaji, "The reading sub-options are retained")
+        preferences.listeningLayerPreset = .readingOnly
+        XCTAssertFalse(preferences.showOriginal || preferences.showTranslation)
+        XCTAssertEqual(preferences.kanaDisplayMode, .inlineRuby)
+        preferences.listeningLayerPreset = .all
+        XCTAssertTrue(preferences.showOriginal && preferences.showTranslation && preferences.showKana)
+        preferences.showTranslation = false
+        XCTAssertEqual(preferences.listeningLayerPreset, .custom)
+    }
+
     @MainActor
     func testReadingProtectionDefaultsAndLegacySettings() {
         let suite = "lyricsq-reading-protection-\(UUID())"

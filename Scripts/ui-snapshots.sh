@@ -43,6 +43,8 @@ declare -a CASES=(
   "scene-originalAmbient|--scene originalAmbient --toolbar faint"
   "big-line|--scene originalAmbient --big-line true --toolbar faint"
   "countdown|--scene originalAmbient --countdown true --time 6 --toolbar faint"
+  "reading-only|--scene originalAmbient --layers readingOnly --toolbar faint"
+  "translation-only|--scene originalAmbient --layers translationOnly --toolbar faint"
   "scene-flowingField|--scene flowingField --toolbar faint"
   "scene-coverPhoto|--scene coverPhoto --toolbar faint"
   "scene-linerNotes|--scene linerNotes --toolbar faint"

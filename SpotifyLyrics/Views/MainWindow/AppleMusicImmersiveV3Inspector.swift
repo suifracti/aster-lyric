@@ -463,6 +463,13 @@ struct V3VisualControls {
             Toggle("大字模式", isOn: $settings.v3BigLineModeEnabled)
             HStack {
                 Text("显示")
+                Picker("显示方式", selection: displayBinding(\.listeningLayerPreset)) {
+                    ForEach(DisplayPreferences.ListeningLayerPreset.allCases.filter {
+                        $0 != .custom || settings.displayPreferences.listeningLayerPreset == .custom
+                    }) { preset in Text(preset.title).tag(preset) }
+                }.labelsHidden().pickerStyle(.segmented)
+            }
+            HStack {
                 Toggle("原文", isOn: displayBinding(\.showOriginal))
                 Toggle("译文", isOn: displayBinding(\.showTranslation))
                 Toggle("读音", isOn: displayBinding(\.showKana))

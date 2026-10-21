@@ -1340,7 +1340,8 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
     }
 
     private var shouldShowRomaji: Bool {
-        isPinyinProjection ? preferences.showPinyin : preferences.showRomaji
+        preferences.listeningLayerPreset != .translationOnly
+            && (isPinyinProjection ? preferences.showPinyin : preferences.showRomaji)
     }
 
     private var rubyOpacity: Double {

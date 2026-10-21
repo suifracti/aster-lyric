@@ -1503,6 +1503,36 @@ public enum KanaDisplayMode: String, CaseIterable, Identifiable, Codable, Sendab
 }
 
 public struct DisplayPreferences: Equatable {
+    public enum ListeningLayerPreset: String, CaseIterable, Identifiable {
+        case all, readingOnly, translationOnly, custom
+        public var id: String { rawValue }
+        public var title: String {
+            switch self {
+            case .all: return "全部"
+            case .readingOnly: return "只看读音"
+            case .translationOnly: return "只看译文"
+            case .custom: return "自定义"
+            }
+        }
+    }
+    /// A projection of the existing switches, never another saved preference.
+    public var listeningLayerPreset: ListeningLayerPreset {
+        get {
+            switch (showOriginal, showTranslation, showKana) {
+            case (true, true, true): return .all
+            case (false, false, true): return .readingOnly
+            case (false, true, false): return .translationOnly
+            default: return .custom
+            }
+        }
+        set {
+            guard newValue != .custom else { return }
+            showOriginal = newValue == .all
+            showTranslation = newValue == .all || newValue == .translationOnly
+            showKana = newValue == .all || newValue == .readingOnly
+        }
+    }
+
     public var showOriginal: Bool = true
     public var showTranslation: Bool = true
     public var showRomaji: Bool = true
