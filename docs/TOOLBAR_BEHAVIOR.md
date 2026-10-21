@@ -157,3 +157,18 @@ Clicks that land on the popover's transparent arrow or shadow area are forwarded
 - **Width:** 360 pt, or 40% of the window if that is smaller.
 - **Background:** dark frosted glass, like hover panels.
 - **Trial:** the user tries it for a few days. If it's kept, 译文, 更多 and common settings move in next. If it isn't, it is removed.
+
+## Edge player and progress rail (user feedback 2026-10-21)
+**Following near the toolbar:**
+- The edge player keeps following the pointer near the toolbar.
+- The toolbar hides it only inside the toolbar's own rectangle plus 8 pt.
+- When the pointer's nearest edge point falls in that area, the player sits at the closest free point: on the top edge just left of the toolbar, or on the right edge just below it.
+- The toolbar and edge player must never overlap.
+
+**Seeking on the progress rail:**
+- **Hit area:** the clickable band is 14 pt thick along the rail. The visible line stays thin.
+- **Hover:** when the pointer is within that band, the line thickens to 4 pt, and a small time label follows the pointer, for example 「1:23」, showing where a click would seek.
+- **Seeking:** click seeks. Dragging scrubs with the label updating and seeks on release; while dragging, the lyrics do not jump.
+- **Accent colour:** the rail and the label use the cover accent once 封面配色 exists.
+
+**Player information:** the edge player pill shows the elapsed and total time in small text, for example 「0:35 / 3:13」, beside the play controls. Nothing else is added.
