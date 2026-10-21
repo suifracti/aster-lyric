@@ -1,0 +1,15 @@
+AX frontmost 0
+active true
+Lyric Island {
+    Height = 879;
+    Width = 1436;
+    X = 981;
+    Y = 142;
+} onscreen 1
+active false
+Lyric Island {
+    Height = 879;
+    Width = 1438;
+    X = 1105;
+    Y = 455;
+} onscreen 1

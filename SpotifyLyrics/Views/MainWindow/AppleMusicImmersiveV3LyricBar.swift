@@ -18,6 +18,10 @@ struct V3LyricActions {
         return "字号 \(Int(display.fontSize))"
     }
 
+    static func nextBlurPreset(after value: Double) -> Double {
+        [0.0, 25, 50, 75, 100].first { $0 > value } ?? 0
+    }
+
     func scene(_ direction: Int) -> String {
         let families = V3SceneFamily.allCases
         let index = families.firstIndex(of: family)!
@@ -32,7 +36,7 @@ struct V3LyricActions {
 /// Main-window listening keys; text entry and system key combinations pass through.
 enum V3ListeningKey: Equatable {
     case playPause, previous, next, like, resetOffset, focus, help, escape
-    case offset(Double), blurFine(Double), blurStep(Int)
+    case offset(Double), blurFine(Double), blurCycle
 
     static func resolve(_ text: String, modifiers: NSEvent.ModifierFlags, repeating: Bool,
                         focused: Bool, editing: Bool) -> Self? {
@@ -47,12 +51,10 @@ enum V3ListeningKey: Equatable {
         case "z": return .offset(-0.1)
         case "c": return .offset(0.1)
         case "x": return .resetOffset
-        case "[": return .blurStep(-1)
-        case "]": return .blurStep(1)
+        case "/", "?": return modifiers.contains(.shift) ? .help : .blurCycle
         case ",", "<": return .blurFine(-5)
         case ".", ">": return .blurFine(5)
         case "f": return .focus
-        case "?": return .help
         case "\u{1b}": return .escape
         default: return nil
         }

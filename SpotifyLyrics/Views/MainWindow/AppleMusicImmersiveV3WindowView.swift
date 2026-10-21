@@ -1398,12 +1398,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         case .blurFine(let delta):
             settings.v3BackdropBlurRadius = min(100, max(0, settings.v3BackdropBlurRadius + delta))
             showLyricNotice("模糊 \(Int(settings.v3BackdropBlurRadius))%")
-        case .blurStep(let direction):
-            let presets: [Double] = [0, 60, 100]
-            let value = settings.v3BackdropBlurRadius
-            settings.v3BackdropBlurRadius = direction > 0
-                ? presets.first(where: { $0 > value }) ?? 100 : presets.last(where: { $0 < value }) ?? 0
-            showLyricNotice(settings.v3BackdropBlurRadius == 0 ? "清晰" : settings.v3BackdropBlurRadius == 60 ? "柔和" : "很糊")
+        case .blurCycle:
+            settings.v3BackdropBlurRadius = V3LyricActions.nextBlurPreset(after: settings.v3BackdropBlurRadius)
+            showLyricNotice("模糊 \(Int(settings.v3BackdropBlurRadius))%")
         case .focus:
             isFocusMode.toggle(); dismissPinnedToolbarPanel()
             showLyricNotice(isFocusMode ? "专注模式" : "退出专注模式")
@@ -1417,7 +1414,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private var listeningKeyList: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack { Text("听歌按键").font(.headline); Spacer(); Button("关闭") { showsListeningKeys = false } }
-            ForEach(["空格 · 播放 / 暂停", "A / D · 上一首 / 下一首", "S · 喜欢，再按移除", "Z / C · 偏移 −0.1s / +0.1s", "X · 偏移归零", "[ / ] · 清晰 / 柔和 / 很糊", ", / . · 模糊 −5% / +5%", "F · 专注模式", "? · 全部按键", "Esc · 关闭面板 / 退出专注"], id: \.self) { Text($0) }
+            ForEach(["空格 · 播放 / 暂停", "A / D · 上一首 / 下一首", "S · 喜欢，再按移除", "Z / C · 偏移 −0.1s / +0.1s", "X · 偏移归零", "/ · 模糊 0 / 25 / 50 / 75 / 100%", ", / . · 模糊 −5% / +5%", "F · 专注模式", "Shift + / · 全部按键", "Esc · 关闭面板 / 退出专注"], id: \.self) { Text($0) }
         }
         .padding(22).frame(width: 320)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
@@ -1793,7 +1790,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             toolbarEntry(panel.title, symbol: panel.symbol, selected: toolbar.isSelected(panel))
         }
         .v3FirstClick { clickToolbarPanel(panel) }
-        .help(panel == .picture ? "画面 · [ / ] 三档模糊，, / . 微调模糊" : panel == .more ? "更多 · Z / C 调整偏移，X 归零" : panel.title)
+        .help(panel == .picture ? "画面 · / 五档模糊，, / . 微调模糊" : panel == .more ? "更多 · Z / C 调整偏移，X 归零" : panel.title)
         .onHover { inside in
             toolbarTriggerHover(panel, inside: inside)
         }

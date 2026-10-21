@@ -50,7 +50,15 @@ final class V3ToolbarPresentationTests: XCTestCase {
         XCTAssertNotNil(LyricIslandArtworkColors.listeningAccent(colour))
     }
 
+    @MainActor
     func testListeningKeysAndLikeConfirmation() {
+        XCTAssertEqual(V3ListeningKey.resolve("/", modifiers: [], repeating: false, focused: true, editing: false), .blurCycle)
+        XCTAssertEqual(V3ListeningKey.resolve("/", modifiers: [.shift], repeating: false, focused: true, editing: false), .help)
+        XCTAssertEqual(V3ListeningKey.resolve("?", modifiers: [], repeating: false, focused: true, editing: false), .blurCycle)
+        for unused in ["[", "]"] {
+            XCTAssertNil(V3ListeningKey.resolve(unused, modifiers: [], repeating: false, focused: true, editing: false))
+        }
+        XCTAssertEqual([0.0, 25, 35, 50, 75, 100].map(V3LyricActions.nextBlurPreset), [25, 50, 50, 75, 100, 0])
         XCTAssertEqual(V3ListeningKey.resolve("A", modifiers: [], repeating: false, focused: true, editing: false), .previous)
         XCTAssertEqual(V3ListeningKey.resolve("z", modifiers: [], repeating: true, focused: true, editing: false), .offset(-0.1))
         XCTAssertEqual(V3ListeningKey.resolve(",", modifiers: [], repeating: true, focused: true, editing: false), .blurFine(-5))
