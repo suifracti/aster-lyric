@@ -2701,10 +2701,27 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
-    private func synchronize(with snapshot: PlaybackSnapshot, observedAtMonotonic: TimeInterval? = nil) {
+    private func synchronize(with incoming: PlaybackSnapshot, observedAtMonotonic: TimeInterval? = nil) {
         // A refresh that was already in flight when Mock Preview was entered
         // must not be allowed to resurrect a real Spotify session.
         guard !isMockPreviewMode else { return }
+        var snapshot = incoming
+        // Spotify can revert its title/album on pause and subsequent reads.
+        // Keep the accepted recording within this playback occurrence only;
+        // a different ID, artist or duration still starts a new lyric session.
+        if incoming.status.isReady, incoming.sourceIdentity == .spotifyDesktop,
+           let track = incoming.track, let id = track.id, !id.isEmpty,
+           let prior = desktopSnapshots[.spotifyDesktop]?.track, prior.id == id,
+           abs(prior.duration - track.duration) <= 1,
+           !TrackIdentity.normalizedComponent(prior.artist).isEmpty,
+           TrackIdentity.normalizedComponent(prior.artist) == TrackIdentity.normalizedComponent(track.artist) {
+            let retained = ProviderTrack(id: prior.id, title: prior.title, artist: prior.artist,
+                album: prior.album, duration: prior.duration,
+                artworkURL: track.artworkURL ?? prior.artworkURL,
+                spotifyURL: prior.spotifyURL ?? track.spotifyURL, isrc: prior.isrc)
+            snapshot = PlaybackSnapshot(status: incoming.status, track: retained,
+                position: incoming.position, isPlaying: incoming.isPlaying, sourceIdentity: incoming.sourceIdentity)
+        }
         defer { updatePlaybackScheduling() }
         if snapshot.status.isReady, snapshot.track != nil {
             lastObservedDesktopSource = snapshot.sourceIdentity

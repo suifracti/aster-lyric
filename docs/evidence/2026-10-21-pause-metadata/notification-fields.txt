@@ -1,0 +1,6 @@
+Observe notifications only; no player commands. Duration: 240 seconds.
+2026-10-21 07:24:14 +0000 Player State=Playing | Track ID=spotify:track:5q1FDwA4jrO0mZQjQQWEEJ | Name=MOON-VINE | Artist=kase. | Album=Light in the Distance | Duration=233664 | Playback Position=0
+2026-10-21 07:24:26 +0000 Player State=Playing | Track ID=spotify:track:4cTnxwbzLd90onQ9bKm9V6 | Name=些細な幸福だけで灯っていた。 | Artist=kyiku | Album=やどり | Duration=246490 | Playback Position=0
+2026-10-21 07:25:54 +0000 Player State=Paused | Track ID=spotify:track:4cTnxwbzLd90onQ9bKm9V6 | Name=Light source | Artist=kyiku | Album=Even if it was a small prayer | Duration=246490 | Playback Position=87.787
+2026-10-21 07:26:08 +0000 Player State=Playing | Track ID=spotify:track:4cTnxwbzLd90onQ9bKm9V6 | Name=Light source | Artist=kyiku | Album=Even if it was a small prayer | Duration=246490 | Playback Position=88.046
+2026-10-21 07:26:12 +0000 Player State=Paused | Track ID=spotify:track:4cTnxwbzLd90onQ9bKm9V6 | Name=Light source | Artist=kyiku | Album=Even if it was a small prayer | Duration=246490 | Playback Position=91.381

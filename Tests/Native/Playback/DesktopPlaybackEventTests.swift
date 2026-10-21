@@ -134,8 +134,13 @@ final class DesktopPlaybackEventTests: XCTestCase {
         state.startProvider()
         try await wait { state.hasLiveTrack }
         let initialRefreshes = provider.refreshes
-        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil,
-            userInfo: ["Player State": "Paused", "Playback Position": 34])
+        let identity = state.currentTrackIdentity
+        let revision = state.lyricsSession.revision
+        // Spotify sent different display metadata on pause, with the same recording ID, artist and duration.
+        var paused = payload("Stale display title", state: "Paused", position: 34)
+        paused["Track ID"] = provider.snapshot.track!.id!
+        paused["Album"] = "Stale display album"
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: paused)
         try await wait { !state.isPlaying }
         XCTAssertEqual(state.currentTrack.title, "Initial")
         XCTAssertEqual(state.currentTime, 34, accuracy: 0.2)
@@ -143,10 +148,15 @@ final class DesktopPlaybackEventTests: XCTestCase {
         XCTAssertNil(state.calibrationTimer)
         await state.calibratePlaybackPositionIfNeeded()
         XCTAssertEqual(provider.refreshes, initialRefreshes)
-        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: payload(state: "Playing", position: 35))
+        var resumed = paused
+        resumed["Player State"] = "Playing"
+        resumed["Playback Position"] = 35
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: resumed)
         try await wait { state.isPlaying }
         XCTAssertNotNil(state.timer)
         XCTAssertEqual(state.currentTime, 35, accuracy: 0.2)
+        XCTAssertEqual(state.currentTrackIdentity, identity)
+        XCTAssertEqual(state.lyricsSession.revision, revision, "pause/resume must retain the loaded lyric document")
     }
 
     func testHiddenWindowsStopClockAndShowingCatchesUpImmediately() async throws {

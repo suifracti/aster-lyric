@@ -1,0 +1,12 @@
+Regression before fix:
+/Users/apple/backup/sptifylyrics/Tests/Native/Playback/DesktopPlaybackEventTests.swift:145: error: -[SpotifyLyricsTests.DesktopPlaybackEventTests testPauseNotificationStopsPollingAndResumeRestartsClock] : XCTAssertEqual failed: ("Stale display title") is not equal to ("Initial")
+/Users/apple/backup/sptifylyrics/Tests/Native/Playback/DesktopPlaybackEventTests.swift:158: error: -[SpotifyLyricsTests.DesktopPlaybackEventTests testPauseNotificationStopsPollingAndResumeRestartsClock] : XCTAssertEqual failed: ("Optional(spotify-id:aaaaaaaaaaaaaaaaaaaaaa|metadata:staledisplaytitle|fixture|staledisplayalbum|240)") is not equal to ("Optional(spotify-id:aaaaaaaaaaaaaaaaaaaaaa|metadata:initial|fixture|cache|240)")
+/Users/apple/backup/sptifylyrics/Tests/Native/Playback/DesktopPlaybackEventTests.swift:159: error: -[SpotifyLyricsTests.DesktopPlaybackEventTests testPauseNotificationStopsPollingAndResumeRestartsClock] : XCTAssertEqual failed: ("2") is not equal to ("1") - pause/resume must retain the loaded lyric document
+
+After fix:
+Executed 65 tests, with 0 failures (0 unexpected) in 13.805 (13.843) seconds
+Executed 65 tests, with 0 failures (0 unexpected) in 13.805 (13.843) seconds
+** TEST SUCCEEDED **
+
+Debug arm64 app build:
+** BUILD SUCCEEDED **

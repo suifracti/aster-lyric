@@ -1,0 +1,2 @@
+/private/tmp/lyricsq-67b5be9-derived/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics
+SHA256 21680ef0980989462365c5cd424344d1539c57f8d848992fe263f358c32d6cd6
