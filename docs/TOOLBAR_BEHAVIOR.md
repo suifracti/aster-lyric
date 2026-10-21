@@ -27,9 +27,21 @@ There is no lyric bar; the user removed it on 2026-10-21. Every setting lives in
 | Font size | Pinch on the lyrics |
 | Scene | Two-finger swipe left or right on the canvas, which moves to the previous or next of the 4 categories |
 | Play / pause | **Space**, sent to the current player. It works only when no text field has focus. |
+| Previous / next track | **A** / **D** |
+| Save the song | **S** adds the current song to the app's own playlist 「lyricsQ 收藏」 (details below) |
+| Lyrics are early | **Z** moves the timeline up: offset −0.1 s per press |
+| Lyrics are late | **C** moves the timeline down: offset +0.1 s per press |
+| Reset offset | **X** sets the current song's offset back to 0 |
 
 - A gesture change shows a small notice at the bottom of the lyrics column, such as 「字号 22」 or 「封面」, which fades after about 1 s.
-- There are no other listening shortcuts; the Command / Option shortcuts were removed.
+- **Letter keys** are case-insensitive and work only while the main window is focused and no text field has focus. They are not global hot keys.
+- **Every key press shows the same small notice**, for example 「上一首」, 「偏移 −0.3s」, 「已收藏到 lyricsQ 收藏」 or 「已在歌单中」.
+- **Holding Z or C repeats.** The offset is the same per-song offset as in 更多.
+- **S, saving the song:**
+  - **Spotify:** use the existing Spotify connection (`SpotifyAuthorizationManager`). Create the private playlist 「lyricsQ 收藏」 once and add the track. Pressing S again on a song already in it does nothing except show 「已在歌单中」.
+  - **Spotify not connected, or missing playlist permission:** show 「需要连接 Spotify」 with a button that opens the connection settings.
+  - **Apple Music:** add the song to a local playlist with the same name.
+- **No Command / Option shortcuts.** Each panel lists its keys in tooltips, written as plain letters.
 
 ## Panels
 - **One panel per button.** Hover shows it temporarily; click pins it. **Hover and pin show the same content.**
