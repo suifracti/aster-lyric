@@ -188,6 +188,7 @@ struct ExperienceVisualHostApp: App {
             settings.displayPreferences = display
         }
         settings.v3ArtworkPresentation = V3ArtworkPresentation.allCases.first { $0.title == ExperienceArguments.value("--style-title",fallback:"") } ?? (ExperienceArguments.value("--style",fallback:"ambient") == "stage" ? .stage : ExperienceArguments.value("--style",fallback:"ambient") == "classic" ? .classic : .ambient)
+        settings.v3BigLineModeEnabled = ExperienceArguments.value("--big-line", fallback: "false") == "true"
         settings.v3ArtworkPosition=ExperienceArguments.value("--position",fallback:"left")
         let lyricPosition = ExperienceArguments.value("--lyric-position", fallback: "automatic")
         settings.v3LyricsPosition = lyricPosition

@@ -293,6 +293,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let v3ScenePresets = "v3.scene.presets.v1"
         public static let v3SceneRenderers = "v3.scene.renderers.v1"
         public static let v3SceneHoverPreviewEnabled = "v3.scene.hoverPreview.v1"
+        public static let v3BigLineModeEnabled = "v3.bigLineMode.enabled.v1"
         public static let v3NightGentleEnabled = "v3.nightGentle.enabled.v1"
         public static let v3PictureAdvancedExpanded = "v3.picture.advancedExpanded.v1"
         public static let v3ReadingProtection = "v3.readingProtection.v2"
@@ -445,6 +446,9 @@ public final class AppSettingsStore: ObservableObject {
     private var isProjectingScene = false
     @Published public var v3SceneHoverPreviewEnabled = false {
         didSet { defaults.set(v3SceneHoverPreviewEnabled, forKey: Key.v3SceneHoverPreviewEnabled) }
+    }
+    @Published public var v3BigLineModeEnabled = false {
+        didSet { defaults.set(v3BigLineModeEnabled, forKey: Key.v3BigLineModeEnabled) }
     }
     @Published public var v3NightGentleEnabled = false {
         didSet { defaults.set(v3NightGentleEnabled, forKey: Key.v3NightGentleEnabled) }
@@ -1297,6 +1301,7 @@ public final class AppSettingsStore: ObservableObject {
         // Upgrade never rewrites the last selected legacy renderer. New scenes are opt-in.
         self.v3SceneHoverPreviewEnabled = defaults.object(forKey: Key.v3SceneHoverPreviewEnabled) as? Bool
             ?? (defaults.object(forKey: Key.v3ArtworkPresentation) != nil)
+        self.v3BigLineModeEnabled = defaults.bool(forKey: Key.v3BigLineModeEnabled)
         self.v3NightGentleEnabled = defaults.bool(forKey: Key.v3NightGentleEnabled)
         self.v3PictureAdvancedExpanded = defaults.object(forKey: Key.v3PictureAdvancedExpanded) as? Bool ?? true
         self.v3ReadingProtection = V3ReadingProtection.restored(defaults.string(forKey: Key.v3ReadingProtection))

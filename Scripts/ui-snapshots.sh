@@ -41,6 +41,7 @@ declare -a CASES=(
   "pin-more-light|--panel pin:more --appearance light"
   "pin-picture-narrow-screen|--panel pin:picture --width 1700 --height 900"
   "scene-originalAmbient|--scene originalAmbient --toolbar faint"
+  "big-line|--scene originalAmbient --big-line true --toolbar faint"
   "scene-flowingField|--scene flowingField --toolbar faint"
   "scene-coverPhoto|--scene coverPhoto --toolbar faint"
   "scene-linerNotes|--scene linerNotes --toolbar faint"

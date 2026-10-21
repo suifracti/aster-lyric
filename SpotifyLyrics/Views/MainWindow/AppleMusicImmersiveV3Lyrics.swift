@@ -1062,6 +1062,7 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
 
     private var rowOpacity: Double {
         guard isSynchronized else { return 1 }
+        if settings.v3BigLineModeEnabled { return isActive ? 1 : 0.3 }
         let factor = max(0.15, min(1, preferences.opacity / 0.85))
         if isActive { return 1 }
 
@@ -1108,7 +1109,7 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
             presentationClock: presentationClock,
             scriptConversion: settings.readingPreferences.scriptConversion,
             dictionaryRevision: ReadingUserDictionaryStore.currentRevision,
-            presentationScale: presentationScale,
+            presentationScale: presentationScale * (settings.v3BigLineModeEnabled && isSynchronized ? (isActive ? 2 : 0.6) : 1),
             textAlignment: textAlignment
         )
         .equatable()
