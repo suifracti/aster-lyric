@@ -9,6 +9,8 @@ private final class EventPlaybackProvider: PlaybackProvider {
         track: ProviderTrack(id: "spotify:track:AAAAAAAAAAAAAAAAAAAAAA", title: "Initial", artist: "Fixture", album: "Cache", duration: 240),
         position: 10, isPlaying: true, sourceIdentity: .spotifyDesktop)
     var refreshes = 0
+    var artworkResult: URL?
+    func artworkURL(for track: ProviderTrack, source: PlaybackSourceIdentity) async -> URL? { artworkResult ?? track.artworkURL }
     var modes = PlayerPlaybackModes(shuffle: false, repeatMode: .off)
     var modeReadFails = false
     var nativeShuffleWrites: [Bool] = []
@@ -215,12 +217,16 @@ final class DesktopPlaybackEventTests: XCTestCase {
         state.startProvider()
         try await wait { state.liveLyricsVersionID == versionID }
         let revision = state.lyricsSession.revision
-        for (status, title, artist, album) in [("Paused", "Light source", "kyiku", "Even if it was a small prayer"),
-                                              ("Playing", saved.title, "kyiku refreshed", saved.album)] {
+        let artwork = URL(string: "https://example.com/light-source-artwork.jpg")!
+        provider.artworkResult = artwork
+        for (status, title, artist, album) in [("Paused", saved.title, "kyiku", saved.album),
+                                              ("Playing", "Light source", "kyiku refreshed", "Even if it was a small prayer")] {
             center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo:
                 ["Player State": status, "Track ID": id, "Name": title, "Artist": artist,
                  "Album": album, "Duration": 246_490, "Playback Position": 12])
             try await wait { state.isPlaying == (status == "Playing") }
+            try await wait { state.currentTrack.artworkURL == artwork }
+            XCTAssertEqual(state.currentTrack.artworkURL, artwork)
             XCTAssertEqual(state.liveLyricsVersionID, versionID)
             XCTAssertEqual(state.lyricsSession.revision, revision)
             XCTAssertEqual(state.liveLyrics.first?.originalText, "採用済み")

@@ -7,6 +7,12 @@ extension ProviderTrack {
                       artworkURL: url, spotifyURL: spotifyURL, isrc: isrc)
     }
 
+    var desktopRecordingKey: String {
+        let track = Track(title: title, artist: artist, album: album, duration: duration,
+                          spotifyId: id, spotifyURL: spotifyURL)
+        return TrackIdentity.playbackID(for: track) ?? desktopRecordingIdentity.stableKey
+    }
+
     var desktopRecordingIdentity: TrackIdentity {
         TrackIdentity(title: title, artist: artist, album: album, duration: duration,
                       spotifyTrackID: id, spotifyURI: spotifyURL?.absoluteString, isrc: isrc)
@@ -77,7 +83,7 @@ struct DesktopPlaybackUpdate: Sendable {
                 artist: track.artist.isEmpty && sameID ? (prior?.artist ?? "") : track.artist,
                 album: track.album.isEmpty && sameID ? (prior?.album ?? "") : track.album,
                 duration: track.duration)
-            let sameRecording = prior?.desktopRecordingIdentity == merged.desktopRecordingIdentity
+            let sameRecording = prior?.desktopRecordingKey == merged.desktopRecordingKey
             next = ProviderTrack(id: track.id ?? (sameRecording ? prior?.id : nil),
                 title: merged.title, artist: merged.artist, album: merged.album, duration: merged.duration,
                 artworkURL: track.artworkURL ?? (sameRecording ? prior?.artworkURL : nil),
@@ -86,7 +92,7 @@ struct DesktopPlaybackUpdate: Sendable {
         } else if let prior, identityHint == nil || prior.id == identityHint {
             next = prior
         } else { return nil }
-        let sameRecording = prior?.desktopRecordingIdentity == next.desktopRecordingIdentity
+        let sameRecording = prior?.desktopRecordingKey == next.desktopRecordingKey
         let value = position ?? (track == nil || sameRecording ? estimatedPosition : 0)
         return PlaybackSnapshot(status: .ready, track: next, position: min(max(0, value), next.duration),
                                 isPlaying: isPlaying, sourceIdentity: source)

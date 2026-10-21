@@ -1203,8 +1203,8 @@ public final class PlaybackState: ObservableObject {
 
     private func loadDesktopArtworkIfNeeded(_ snapshot: PlaybackSnapshot) {
         guard let track = snapshot.track, track.artworkURL == nil else { return }
-        let identity = track.desktopRecordingIdentity
-        let key = snapshot.sourceIdentity.rawValue + ":" + identity.stableKey
+        let recordingKey = track.desktopRecordingKey
+        let key = snapshot.sourceIdentity.rawValue + ":" + recordingKey
         guard desktopArtworkKey != key else { return }
         desktopArtworkKey = key
         desktopArtworkTask?.cancel()
@@ -1212,10 +1212,9 @@ public final class PlaybackState: ObservableObject {
         desktopArtworkTask = Task { @MainActor [weak self] in
             guard let url = await provider.artworkURL(for: track, source: snapshot.sourceIdentity),
                   !Task.isCancelled, let self,
-                  self.hasLiveTrack, self.currentTrackIdentity == identity,
-                  self.lastObservedDesktopSource == snapshot.sourceIdentity,
+                  self.hasLiveTrack, self.lastObservedDesktopSource == snapshot.sourceIdentity,
                   let accepted = self.desktopSnapshots[snapshot.sourceIdentity],
-                  let latestTrack = accepted.track else { return }
+                  let latestTrack = accepted.track, latestTrack.desktopRecordingKey == recordingKey else { return }
             let enriched = latestTrack.withArtworkURL(url)
             let updated = PlaybackSnapshot(status: accepted.status, track: enriched,
                 position: accepted.position, isPlaying: accepted.isPlaying, sourceIdentity: accepted.sourceIdentity)
