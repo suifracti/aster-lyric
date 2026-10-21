@@ -63,6 +63,8 @@ public final class PlaybackState: ObservableObject {
     private var changingPlayerModes = false
     private var spotifySingleTrackRepeat = false
     private var restartingRepeatedTrack = false
+    @Published public private(set) var loopedLyricLineID: UUID?
+    private var lyricLineLoop: (identity: TrackIdentity, revision: UInt64, start: TimeInterval, end: TimeInterval)?
 
     private let provider: PlaybackProvider
     private let desktopEvents: DesktopPlaybackEvents?
@@ -634,6 +636,37 @@ public final class PlaybackState: ObservableObject {
         guard activeIdentity == documentIdentity,
               currentRevision == documentRevision else { return false }
         seek(to: position, source: source)
+        return true
+    }
+
+    public func cancelLyricLineLoop() {
+        lyricLineLoop = nil
+        loopedLyricLineID = nil
+    }
+
+    public func toggleLyricLineLoop(lineID: UUID, documentIdentity: TrackIdentity, documentRevision: UInt64) {
+        if loopedLyricLineID == lineID { cancelLyricLineLoop(); return }
+        guard canSeekDisplayedLyrics, !isShowingSearchPreview,
+              documentIdentity == currentTrackIdentity, documentRevision == lyricsSession.revision,
+              liveLyricsAreSynchronized,
+              let index = liveLyrics.firstIndex(where: { $0.id == lineID }),
+              let start = LyricsTimeline.validSeekTimestamp(for: liveLyrics[index],
+                  isSynchronized: true, duration: currentTrack.duration) else { return }
+        let end = liveLyrics.dropFirst(index + 1).first(where: { $0.timestamp > start })?.timestamp ?? currentTrack.duration
+        guard end > start else { return }
+        lyricLineLoop = (documentIdentity, documentRevision, start, end)
+        loopedLyricLineID = lineID
+        seek(to: max(0, start - presentationClock.presentationOffset), source: "lyric-line-loop")
+        playbackNotice = "循环这一句"
+    }
+
+    private func repeatLyricLineIfNeeded() -> Bool {
+        guard let loop = lyricLineLoop else { return false }
+        guard loop.identity == currentTrackIdentity, loop.revision == lyricsSession.revision else {
+            cancelLyricLineLoop(); return false
+        }
+        guard isPlaying, presentationTimeNow >= loop.end else { return false }
+        seek(to: max(0, loop.start - presentationClock.presentationOffset), source: "lyric-line-loop")
         return true
     }
 
@@ -2768,6 +2801,7 @@ public final class PlaybackState: ObservableObject {
         }
 
         if identityChanged {
+            cancelLyricLineLoop()
             lyricsOffsetScopeBinding?.clear()
             alignmentTask?.cancel()
             clearSearchPreview()
@@ -2854,6 +2888,7 @@ public final class PlaybackState: ObservableObject {
 
     private func clearLiveTrackIfNeeded() {
         guard !isMockPreviewMode else { return }
+        cancelLyricLineLoop()
         desktopArtworkTask?.cancel()
         desktopArtworkKey = nil
         lastObservedDesktopSource = .unknown
@@ -3051,6 +3086,7 @@ public final class PlaybackState: ObservableObject {
     }
 
     private func tick() {
+        if repeatLyricLineIfNeeded() { return }
         if restartRepeatedTrackIfNeeded() { return }
         if isMockPreviewMode {
             publishTickTime(playbackPositionNow)

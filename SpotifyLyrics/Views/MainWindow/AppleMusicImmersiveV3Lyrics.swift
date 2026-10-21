@@ -33,6 +33,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
         let preview: Bool
         let instrumental: Bool
         let wordClock: LyricsPresentationClock?
+        let loopedLineID: UUID?
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -51,7 +52,8 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
             synchronized: sync, revision: documentRevision, loadState: documentState,
             language: isPreview ? nil : state.liveLyricsLanguage, preferences: state.preferences,
             preview: isPreview, instrumental: hasExplicitInstrumentalMark,
-            wordClock: usesWordClock ? state.presentationClock : nil)
+            wordClock: usesWordClock ? state.presentationClock : nil,
+            loopedLineID: state.loopedLyricLineID)
     }
 
     private func scheduleContentRefresh() {
@@ -263,6 +265,11 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                         documentRevision: documentRevision,
                         verticalPadding: verticalPadding,
                         isPreview: isPreview,
+                        loopedLineID: isPreview ? nil : state.loopedLyricLineID,
+                        onToggleLoop: { lineID in
+                            state.toggleLyricLineLoop(lineID: lineID, documentIdentity: seekDocumentIdentity,
+                                documentRevision: seekDocumentRevision)
+                        },
                         onSeek: { timestamp in
                             state.seekFromDisplayedLyrics(
                                 to: timestamp,
@@ -460,6 +467,8 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     let documentRevision: UInt64
     let verticalPadding: CGFloat
     let isPreview: Bool
+    let loopedLineID: UUID?
+    let onToggleLoop: (UUID) -> Void
     let onSeek: (TimeInterval) -> Void
     let onRuby: ((String, String) -> Void)?
     let onCopyLine: (String) -> Void
@@ -485,6 +494,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             && lhs.documentRevision == rhs.documentRevision
             && lhs.verticalPadding == rhs.verticalPadding
             && lhs.isPreview == rhs.isPreview
+            && lhs.loopedLineID == rhs.loopedLineID
     }
 
     private var needsWordClock: Bool {
@@ -547,7 +557,17 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
         .equatable()
         .environmentObject(settings)
         .environment(\.rubyCorrectionAction, onRuby == nil ? nil : rubyActionRelay)
+        .overlay(alignment: .trailing) {
+            if loopedLineID == line.id {
+                Button { onToggleLoop(line.id) } label: { Image(systemName: "repeat").font(.system(size: 13)) }
+                    .buttonStyle(.plain).help("取消循环").accessibilityLabel("取消循环")
+            }
+        }
         .contextMenu {
+            if !isPreview, LyricsTimeline.validSeekTimestamp(for: line, isSynchronized: synchronized, duration: duration) != nil {
+                Button(loopedLineID == line.id ? "取消循环" : "循环这一句", systemImage: "repeat") { onToggleLoop(line.id) }
+                Divider()
+            }
             Button("复制这一行", systemImage: "doc.on.doc") {
                 onCopyLine(line.originalText)
             }

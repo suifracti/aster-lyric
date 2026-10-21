@@ -36,7 +36,8 @@ private final class EventPlaybackProvider: PlaybackProvider {
     func pause() async throws {}
     func next() async throws {}
     func previous() async throws {}
-    func seek(to position: TimeInterval) async throws {}
+    var seeks: [TimeInterval] = []
+    func seek(to position: TimeInterval) async throws { seeks.append(position) }
 }
 
 private struct EventOfflineLyrics: LyricsProvider {
@@ -73,6 +74,28 @@ final class DesktopPlaybackEventTests: XCTestCase {
         state.togglePlayerMode(shuffle: false)
         try await wait { state.playerModes?.repeatMode == .off }
         XCTAssertEqual(provider.nativeRepeatWrites, [.all, .off, .off])
+    }
+
+    func testLyricLineRepeatsUntilCancelledAndStopsOnTrackChange() async throws {
+        let (state, provider, _, center) = fixture()
+        state.startProvider()
+        try await wait { state.hasLiveTrack }
+        let identity = try XCTUnwrap(state.currentTrackIdentity)
+        let lines = [LyricLine(timestamp: 10, originalText: "One"), LyricLine(timestamp: 20, originalText: "Two")]
+        state.lyricsSession.adopt(document: LyricsDocument(identity: identity, title: "Initial", artist: "Fixture",
+            album: "Cache", duration: 240, lines: lines, isSynchronized: true, source: .manualCreate, confidence: 1))
+        state.toggleLyricLineLoop(lineID: lines[0].id, documentIdentity: identity, documentRevision: state.liveLyricsSessionRevision)
+        try await wait { provider.seeks.count == 1 }
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil,
+            userInfo: ["Player State": "Playing", "Playback Position": 20])
+        try await wait { provider.seeks.count == 2 }
+        XCTAssertEqual(provider.seeks, [10, 10])
+        state.cancelLyricLineLoop()
+        XCTAssertNil(state.loopedLyricLineID)
+        state.toggleLyricLineLoop(lineID: lines[0].id, documentIdentity: identity, documentRevision: state.liveLyricsSessionRevision)
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: payload())
+        try await wait { state.currentTrack.title == "Event B" }
+        XCTAssertNil(state.loopedLyricLineID)
     }
 
     private func payload(_ title: String = "Event B", state: String = "Playing", position: Double = 32) -> [AnyHashable: Any] {
