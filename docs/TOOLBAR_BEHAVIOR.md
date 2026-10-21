@@ -28,7 +28,9 @@ There is no lyric bar; the user removed it on 2026-10-21. Every setting lives in
 | Scene | Two-finger swipe left or right on the canvas, which moves to the previous or next of the 4 categories |
 | Play / pause | **Space**, sent to the current player. It works only when no text field has focus. |
 | Previous / next track | **A** / **D** |
-| Save the song | **S** adds the current song to the app's own playlist 「lyricsQ 收藏」 (details below) |
+| Like the song | **S** adds the current song to Spotify 「已点赞的歌曲」 (details below) |
+| Background blur | **[** less blur / **]** more blur, stepping through 清晰 → 柔和 → 很糊 |
+| Focus mode | **F** toggles it (see below) |
 | Lyrics are early | **Z** moves the timeline up: offset −0.1 s per press |
 | Lyrics are late | **C** moves the timeline down: offset +0.1 s per press |
 | Reset offset | **X** sets the current song's offset back to 0 |
@@ -36,14 +38,25 @@ There is no lyric bar; the user removed it on 2026-10-21. Every setting lives in
 
 - A gesture change shows a small notice at the bottom of the lyrics column, such as 「字号 22」 or 「封面」, which fades after about 1 s.
 - **Letter keys** are case-insensitive and work only while the main window is focused and no text field has focus. They are not global hot keys.
-- **Every key press shows the same small notice**, for example 「上一首」, 「偏移 −0.3s」, 「已收藏到 lyricsQ 收藏」 or 「已在歌单中」.
+- **Every key press shows the same small notice**, for example 「上一首」, 「偏移 −0.3s」, 「已加入喜欢」 or 「已在喜欢中」.
 - **Holding Z or C repeats.** The offset is the same per-song offset as in 更多.
-- **S, saving the song:**
-  - **Spotify:** use the existing Spotify connection (`SpotifyAuthorizationManager`). Create the private playlist 「lyricsQ 收藏」 once and add the track. Pressing S again on a song already in it does nothing except show 「已在歌单中」.
-  - **Spotify not connected, or missing playlist permission:** show 「需要连接 Spotify」 with a button that opens the connection settings.
-  - **Apple Music:** add the song to a local playlist with the same name.
-- **Heart button:** the player (transport) has a heart. It is filled when the song is in 「lyricsQ 收藏」, and clicking it does the same as S.
+- **S, liking the song:**
+  - **Spotify:** use the existing Spotify connection (`SpotifyAuthorizationManager`) and save the track to the user's Liked Songs. If it is already liked, only show 「已在喜欢中」.
+  - **Spotify not connected, or missing library permission:** show 「需要连接 Spotify」 with a button that opens the connection settings.
+  - **Apple Music:** mark the song as favourite.
+- **Heart button:** the player (transport) has a heart. It is filled when the song is liked or favourited, and clicking it toggles that state.
 - **No Command / Option shortcuts.** Each panel lists its keys in tooltips, written as plain letters.
+
+## Listening extras (user-approved 2026-10-21)
+**Scope:** lyricsQ is for listening to music and singing along. Don't add learning, sharing or social features.
+
+- **Cover colours:** take the accent colour from the cover's palette and use it for the current-line highlight, the progress bar and the panel accent. It changes with each song. If the cover has almost no colour (saturation below about 0.08), use the current neutral colour. Reuse `LyricIslandArtworkColors`.
+- **Night dimming:** a single switch, 「夜间柔和」, in 画面 → 更多画面选项, default off. Between 20:00 and 07:00 it lowers canvas brightness by 15% and caps 背景动态 at 轻柔. There are no other settings and no numbers for the user to set.
+- **Focus mode:** **F** hides the toolbar, the title and the player, leaving only the lyrics and the background. **F** again or **Esc** brings them back. While it is on, the pointer does not bring the toolbar back.
+- **Shuffle and repeat:** two small buttons in the player that drive the current player's own shuffle and repeat settings and show their state.
+- **Loop one line:** right-click a lyric line → 「循环这一句」. Playback jumps back to that line's start each time it reaches the next line. The looped line has a small loop mark. Clicking the mark, right-click → 「取消循环」, or a track change stops the loop.
+- **Big-line mode:** a 「大字模式」 switch in the 文字 panel. The current line is drawn at about twice the size; the other lines are 60% size and dimmed. It is meant for singing along from a distance.
+- **Click to seek** already exists; keep it unchanged.
 
 ## Panels
 - **One panel per button.** Hover shows it temporarily; click pins it. **Hover and pin show the same content.**
