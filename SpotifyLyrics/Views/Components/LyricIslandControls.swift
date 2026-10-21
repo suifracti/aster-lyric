@@ -72,6 +72,40 @@ struct V3NumericSlider: View {
     }
 }
 
+enum V3NightPolicy {
+    static func isNight(hour: Int) -> Bool { hour >= 20 || hour < 7 }
+}
+private struct V3NightGentleKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var v3NightGentle: Bool {
+        get { self[V3NightGentleKey.self] }
+        set { self[V3NightGentleKey.self] = newValue }
+    }
+}
+private struct V3NightGentle: ViewModifier {
+    let enabled: Bool
+    @State private var active = false
+    func body(content: Content) -> some View {
+        content
+            .colorMultiply(Color(white: active ? 0.85 : 1))
+            .environment(\.v3NightGentle, active)
+            .task(id: enabled) {
+                active = false
+                while enabled && !Task.isCancelled {
+                    let calendar = Calendar.current, now = Date()
+                    active = V3NightPolicy.isNight(hour: calendar.component(.hour, from: now))
+                    let next = [7, 20].compactMap {
+                        calendar.nextDate(after: now, matching: DateComponents(hour: $0), matchingPolicy: .nextTime)
+                    }.min()!
+                    try? await Task.sleep(for: .seconds(next.timeIntervalSince(now)))
+                }
+            }
+    }
+}
+extension View {
+    func v3NightGentle(enabled: Bool) -> some View { modifier(V3NightGentle(enabled: enabled)) }
+}
+
 private struct V3CoverAccentKey: EnvironmentKey { static let defaultValue = Color.white }
 extension EnvironmentValues {
     var v3CoverAccent: Color {

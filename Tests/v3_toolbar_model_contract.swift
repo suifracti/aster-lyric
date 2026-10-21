@@ -7,6 +7,21 @@ import SwiftUI
 
 final class V3ToolbarPresentationTests: XCTestCase {
     @MainActor
+    func testNightGentleHoursAndDefault() {
+        XCTAssertFalse(V3NightPolicy.isNight(hour: 19))
+        XCTAssertTrue(V3NightPolicy.isNight(hour: 20))
+        XCTAssertTrue(V3NightPolicy.isNight(hour: 6))
+        XCTAssertFalse(V3NightPolicy.isNight(hour: 7))
+        let suite = "night-\(UUID())"
+        let store = UserDefaults(suiteName: suite)!
+        defer { store.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: store)
+        XCTAssertFalse(settings.v3NightGentleEnabled)
+        settings.v3NightGentleEnabled = true
+        XCTAssertTrue(AppSettingsStore(defaults: store).v3NightGentleEnabled)
+    }
+
+    @MainActor
     func testCoverAccentKeepsNeutralCoversNeutral() {
         let plain = BackdropPalette(primary: .neutral, secondary: .neutral, glow: .neutral,
             luminance: 0.8, saturation: 0.02, readabilityVeilOpacity: 0, textureOpacity: 0)

@@ -378,6 +378,8 @@ struct V3VisualControls {
 
     func pictureAdvancedControls(showsExplanations: Bool) -> some View {
         VStack(alignment: .leading, spacing: 14) {
+            Toggle("夜间柔和", isOn: $settings.v3NightGentleEnabled)
+                .help("20:00–07:00 降低亮度15%，背景动态最高为轻柔。")
             let renderer = settings.v3ArtworkPresentation
             let scene = settings.v3ListeningScene
             if scene != .focusedLyrics && scene != .linerNotes {

@@ -488,6 +488,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         )
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
+        .v3NightGentle(enabled: settings.v3NightGentleEnabled)
         .environment(\.v3CoverAccent, coverAccent ?? .white)
         .tint(coverAccent)
         .accentColor(coverAccent)

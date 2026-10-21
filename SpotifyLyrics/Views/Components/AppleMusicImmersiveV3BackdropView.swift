@@ -34,6 +34,7 @@ enum V3BackdropArtworkGeometry {
 /// Cover data is reduced and sampled once per artwork URL; the
 /// SwiftUI view never rebuilds a full-resolution blur on every time tick.
 struct AppleMusicImmersiveV3BackdropView: View {
+    @Environment(\.v3NightGentle) private var nightGentle
     let track: Track
     let identity: TrackIdentity?
     var isInstrumental: Bool = false
@@ -290,7 +291,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
     @ViewBuilder
     private func atmosphereField(for presentation: V3ArtworkPresentation) -> some View {
-        let level = settings.v3AtmosphereLevel(for: presentation, scene: listeningScene)
+        let level = min(nightGentle ? 1 : 2, settings.v3AtmosphereLevel(for: presentation, scene: listeningScene))
         if level > 0, let kind = atmosphereKind(for: presentation) {
             V3AtmosphereFieldView(
                 kind: kind,
@@ -328,7 +329,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 primary: ambientColor(palette.primary, saturation: 0.88, maximumLuminance: 0.58),
                 secondary: ambientColor(palette.secondary, saturation: 0.78, maximumLuminance: 0.40),
                 glow: ambientColor(palette.glow, saturation: 0.84, maximumLuminance: 0.62),
-                level: settings.v3AtmosphereLevel(for: artworkPresentation, scene: listeningScene),
+                level: min(nightGentle ? 1 : 2, settings.v3AtmosphereLevel(for: artworkPresentation, scene: listeningScene)),
                 isPlaying: isPlaying, isVisible: isWindowVisible,
                 reduceMotion: accessibilityReduceMotion || reduceTransparency,
                 softness: normalizedBlur
