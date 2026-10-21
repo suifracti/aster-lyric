@@ -120,7 +120,7 @@ struct V3ThemeSelectorView: View {
             let colors = await LyricIslandArtworkColors.palette(for: artworkURL)
             guard !Task.isCancelled else { return }
             thumbnail = image
-            tint = LyricIslandArtworkColors.edgeAccent(colors)
+            tint = LyricIslandArtworkColors.listeningAccent(colors) ?? .accentColor
         }
         .onChange(of: settings.v3SceneHoverPreviewEnabled) { _, _ in clearPreview() }
         .onChange(of: settings.v3ListeningSceneRawValue) { _, _ in browsedFamily = nil }

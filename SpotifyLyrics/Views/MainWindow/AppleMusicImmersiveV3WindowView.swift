@@ -169,6 +169,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var isTranslationComparisonPresented = false
     @State private var isVersionPickerPresented = false
     @State private var pinchStartFontSize: CGFloat?
+    @State private var coverAccent: Color?
     @State private var showsListeningKeys = false
     @State private var isFocusMode = false
     @State private var lyricNotice: String?
@@ -487,6 +488,15 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         )
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
+        .environment(\.v3CoverAccent, coverAccent ?? .white)
+        .tint(coverAccent)
+        .accentColor(coverAccent)
+        .task(id: compositionTrack.artworkURL) {
+            guard let url = compositionTrack.artworkURL else { coverAccent = nil; return }
+            let palette = await LyricIslandArtworkColors.palette(for: url)
+            guard !Task.isCancelled else { return }
+            coverAccent = LyricIslandArtworkColors.listeningAccent(palette)
+        }
         .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: liveOnly ? state.liveLyrics : state.lyrics))
         .environment(\.v3PlaybackInteractionChanged, playbackInteractionRelay)
         .environment(\.lyricIslandScene, compositionScene)
@@ -1916,6 +1926,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             toolbarPanel(for: panel)
         }
         .frame(width: 360, alignment: .topLeading)
+        .tint(coverAccent)
+        .accentColor(coverAccent)
         .background {
             switch style {
             case .hoverGlass:

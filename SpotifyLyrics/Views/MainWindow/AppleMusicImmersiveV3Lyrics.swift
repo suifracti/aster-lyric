@@ -1103,6 +1103,7 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
 }
 
 private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
+    @Environment(\.v3CoverAccent) private var coverAccent
     @Environment(\.v3PreviewPresentation) private var previewPresentation
     @Environment(\.v3ExplicitInstrumentalMark) private var hasExplicitInstrumentalMark
     let line: LyricLine
@@ -1365,11 +1366,11 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                         tokens: inlineRubyTokens,
                         baseFont: .system(size: baseSize, weight: rowWeight, design: .rounded),
                         rubyFont: .system(size: rubySize, weight: .regular, design: .rounded),
-                        baseColor: .white,
+                        baseColor: isActive ? coverAccent : .white,
                         rubyColor: .white.opacity(rubyOpacity),
                         rubySpacing: 1,
                         tokenVerticalSpacing: 3,
-                        maxWidth: readableLineWidth
+                        maxWidth: readableLineWidth, highlightColor: coverAccent
                     )
                     .environment(\.rubyCorrectionAction, isPinyinProjection ? nil : correctRuby)
                 }
@@ -1382,7 +1383,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                     showsOriginalAnnotation: true,
                     baseFont: .system(size: baseSize, weight: rowWeight, design: .rounded),
                     annotationFont: .system(size: rubySize, weight: .regular, design: .rounded),
-                    baseColor: .white,
+                    baseColor: isActive ? coverAccent : .white,
                     annotationColor: .white.opacity(rubyOpacity),
                     maxWidth: readableLineWidth
                 )
@@ -1413,7 +1414,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                     #endif
                     Text(semanticDisplayText)
                         .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(isActive ? coverAccent : .white)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if preferences.kanaDisplayMode == .independentLine, shouldShowKana,
@@ -1428,7 +1429,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
             } else if shouldShowKana, let kana = displayKanaText {
                 Text(kana)
                     .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(isActive ? coverAccent : .white)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -1496,11 +1497,11 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                     currentTime: presentationTime,
                     baseFont: baseFont,
                     rubyFont: rubyFont,
-                    baseColor: .white,
+                    baseColor: isActive ? coverAccent : .white,
                     rubyColor: .white.opacity(rubyOpacity),
                     rubySpacing: 1,
                     tokenVerticalSpacing: 3,
-                    maxWidth: readableLineWidth
+                    maxWidth: readableLineWidth, highlightColor: coverAccent
                 )
                 .environment(\.rubyCorrectionAction, isPinyinProjection ? nil : correctRuby)
             }
@@ -1514,7 +1515,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                 currentTime: 0,
                 baseFont: baseFont,
                 rubyFont: rubyFont,
-                baseColor: .white,
+                baseColor: isActive ? coverAccent : .white,
                 rubyColor: .white.opacity(rubyOpacity),
                 rubySpacing: 1,
                 tokenVerticalSpacing: 3,
@@ -1612,6 +1613,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
 }
 
 private struct AppleMusicImmersiveV3TimedRowView: View {
+    @Environment(\.v3CoverAccent) private var coverAccent
     @Environment(\.lyricTextAlignment) private var textAlignment
     let layout: TimedMultilineLayout
     let currentTime: TimeInterval
@@ -1645,7 +1647,7 @@ private struct AppleMusicImmersiveV3TimedRowView: View {
                     GeometryReader { geo in
                         Text(text)
                             .font(font)
-                            .foregroundColor(.white)
+                            .foregroundColor(coverAccent)
                             .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
                             .mask(alignment: .leading) {
                                 Rectangle()

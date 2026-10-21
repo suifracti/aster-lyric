@@ -106,7 +106,7 @@ struct V3WindowEdgePlaybackOverlay: View {
             guard colorMode == "artwork" else { return }
             let palette = await LyricIslandArtworkColors.palette(for: state.currentTrack.artworkURL)
             guard !Task.isCancelled else { return }
-            coverAccent = LyricIslandArtworkColors.edgeAccent(palette)
+            coverAccent = LyricIslandArtworkColors.listeningAccent(palette) ?? .white
         }
         .onChange(of: animatesColor) { _, active in
             if let colorStartedAt { colorElapsed += max(0, Date().timeIntervalSince(colorStartedAt)) }

@@ -6,6 +6,17 @@ import SwiftUI
 @testable import SpotifyLyrics
 
 final class V3ToolbarPresentationTests: XCTestCase {
+    @MainActor
+    func testCoverAccentKeepsNeutralCoversNeutral() {
+        let plain = BackdropPalette(primary: .neutral, secondary: .neutral, glow: .neutral,
+            luminance: 0.8, saturation: 0.02, readabilityVeilOpacity: 0, textureOpacity: 0)
+        XCTAssertNil(LyricIslandArtworkColors.listeningAccent(plain))
+        XCTAssertNil(LyricIslandArtworkColors.listeningAccent(.neutral))
+        let colour = BackdropPalette(primary: BackdropColor(red: 0.9, green: 0.2, blue: 0.1), secondary: .neutral,
+            glow: .neutral, luminance: 0.4, saturation: 0.7, readabilityVeilOpacity: 0, textureOpacity: 0)
+        XCTAssertNotNil(LyricIslandArtworkColors.listeningAccent(colour))
+    }
+
     func testListeningKeysAndLikeConfirmation() {
         XCTAssertEqual(V3ListeningKey.resolve("A", modifiers: [], repeating: false, focused: true, editing: false), .previous)
         XCTAssertEqual(V3ListeningKey.resolve("z", modifiers: [], repeating: true, focused: true, editing: false), .offset(-0.1))

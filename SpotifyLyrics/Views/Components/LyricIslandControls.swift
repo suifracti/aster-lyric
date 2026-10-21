@@ -72,6 +72,14 @@ struct V3NumericSlider: View {
     }
 }
 
+private struct V3CoverAccentKey: EnvironmentKey { static let defaultValue = Color.white }
+extension EnvironmentValues {
+    var v3CoverAccent: Color {
+        get { self[V3CoverAccentKey.self] }
+        set { self[V3CoverAccentKey.self] = newValue }
+    }
+}
+
 /// Shares the existing, once-per-cover sampler with all listening surfaces.
 /// Nothing here is called from a TimelineView or from a lyric row.
 @MainActor
@@ -98,6 +106,11 @@ enum LyricIslandArtworkColors {
         order.removeAll { $0 == url }; order.append(url)
         if order.count > 48 { palettes[order.removeFirst()] = nil }
         return value
+    }
+
+    static func listeningAccent(_ palette: BackdropPalette) -> Color? {
+        guard palette != .neutral, palette.saturation >= 0.08 else { return nil }
+        return edgeAccent(palette)
     }
 
     static func edgeAccent(_ palette: BackdropPalette) -> Color {

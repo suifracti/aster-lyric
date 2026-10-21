@@ -38,6 +38,7 @@ enum AppleMusicImmersiveV3ProgressDensity: Equatable {
 /// A restrained playback rail shared by every V3 size projection. It owns no
 /// clock and only sends an explicit seek after the user finishes editing.
 private struct AppleMusicImmersiveV3PlaybackProgress: View {
+    @Environment(\.v3CoverAccent) private var coverAccent
     @Environment(\.v3PlaybackVisible) private var playbackVisible
     @V3ContentPlaybackState var state: PlaybackState
     let density: AppleMusicImmersiveV3ProgressDensity
@@ -70,8 +71,8 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
     private var progressActiveGradient: LinearGradient {
         LinearGradient(
             colors: [
-                Color.white.opacity(isEmphasized ? 0.96 : 0.86),
-                Color.white.opacity(isEmphasized ? 0.82 : 0.68)
+                coverAccent.opacity(isEmphasized ? 0.96 : 0.86),
+                coverAccent.opacity(isEmphasized ? 0.82 : 0.68)
             ],
             startPoint: .leading,
             endPoint: .trailing
