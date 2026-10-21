@@ -123,8 +123,10 @@ private enum ExperienceArtwork {
 
 private final class ExperienceVisualHostDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Direct command-line launches must open the fixture's WindowGroup too.
-        NSApp.activate(ignoringOtherApps: true)
+        // Offscreen capture must never take focus: a batch of snapshots would
+        // otherwise shove the user's windows aside on every launch. An
+        // accessory app still creates the WindowGroup window for cacheDisplay.
+        NSApp.setActivationPolicy(.accessory)
     }
 }
 
