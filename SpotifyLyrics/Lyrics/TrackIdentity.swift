@@ -81,6 +81,15 @@ public struct TrackIdentity: Hashable, Sendable, CustomStringConvertible {
 
     public var description: String { stableKey }
 
+    /// Playback bindings use the player's recording ID; search still uses the full metadata identity.
+    public static func playbackID(for track: Track) -> String? {
+        if let id = normalizeIdentifier(track.spotifyId), id.hasPrefix("applemusic:"), id.count > "applemusic:".count {
+            return id
+        }
+        return (canonicalSpotifyTrackID(track.spotifyId) ?? canonicalSpotifyTrackID(track.spotifyURL?.absoluteString))
+            .map { "spotify:track:\($0)" }
+    }
+
     public static func normalizedComponent(_ value: String) -> String {
         let folded = value
             .precomposedStringWithCompatibilityMapping

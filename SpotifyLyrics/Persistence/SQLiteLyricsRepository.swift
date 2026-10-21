@@ -10,6 +10,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     private var database: OpaquePointer?
     private var prepared = false
     private var redirectResolver: TrackIdentityRedirectResolver?
+    private var adoptedPlaybackKeys: [String: String] = [:]
     private var manualAdoptionRequestIDs: [String: UUID] = [:]
     private struct SearchVersionText {
         let original: String
@@ -196,8 +197,12 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     public func loadBestStored(track: Track, identity: TrackIdentity) async throws -> StoredLyricsDocument? {
         try ensurePrepared()
-        _ = track
-
+        // An adopted recording is authoritative even when the player refreshes its display metadata.
+        if let key = try adoptedStableKey(for: track) {
+            adoptedPlaybackKeys.removeValue(forKey: key)
+            if identity.stableKey != key { adoptedPlaybackKeys[identity.stableKey] = key }
+            LyricsE2ELog.log("PERSISTENCE adopted playback ID=\(TrackIdentity.playbackID(for: track) ?? "") observed=\(identity.stableKey) stored=\(key)")
+        }
         let canonicalKey = try resolvedCanonicalStableKey(identity.stableKey)
         guard let trackRecord = try fetchTrack(stableKey: canonicalKey) else {
             return nil
@@ -3021,12 +3026,33 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         return sqlite3_step(statement) == SQLITE_ROW
     }
 
+    private func adoptedStableKey(for track: Track) throws -> String? {
+        guard let id = TrackIdentity.playbackID(for: track) else { return nil }
+        let bareID = id.hasPrefix("spotify:track:") ? String(id.dropFirst("spotify:track:".count)) : id
+        let query = try prepare("""
+            SELECT t.stable_key FROM tracks t JOIN lyrics_versions v ON v.track_stable_key = t.stable_key
+            WHERE (lower(t.spotify_id) IN (?, ?) OR lower(t.spotify_uri) = ?)
+              AND v.is_preferred = 1
+              AND NOT EXISTS (SELECT 1 FROM lyrics_selection_revocations r WHERE r.track_stable_key = t.stable_key)
+            ORDER BY v.updated_at DESC, v.id DESC LIMIT 1;
+            """)
+        defer { sqlite3_finalize(query) }
+        try bindText(bareID, at: 1, to: query)
+        try bindText(id, at: 2, to: query)
+        try bindText(id, at: 3, to: query)
+        let result = sqlite3_step(query)
+        guard result == SQLITE_ROW || result == SQLITE_DONE else { throw lastError() }
+        return result == SQLITE_ROW ? columnText(query, index: 0) : nil
+    }
+
     private func resolvedCanonicalStableKey(_ stableKey: String) throws -> String {
+        let stableKey = adoptedPlaybackKeys[stableKey] ?? stableKey
         guard let redirectResolver else { return stableKey }
         return try redirectResolver.resolve(stableKey)
     }
 
     private func resolvedIdentityFamily(stableKey: String) throws -> [String] {
+        let stableKey = adoptedPlaybackKeys[stableKey] ?? stableKey
         guard let redirectResolver else { return [stableKey] }
         return try redirectResolver.identityFamily(for: stableKey)
     }
@@ -4962,6 +4988,19 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         let family = try resolvedIdentityFamily(stableKey: trackStableKey)
         guard let version = try fetchLyricsVersion(versionID: lyricsVersionID), family.contains(version.trackStableKey) else {
             throw LyricsEditingRepositoryError.identityMismatch
+        }
+        if let track = try fetchTrack(stableKey: version.trackStableKey), let id = track.spotifyID {
+            let bareID = TrackIdentity.canonicalSpotifyTrackID(id) ?? id.lowercased()
+            let uri = TrackIdentity.canonicalSpotifyURI(id) ?? id.lowercased()
+            let clearRecording = try prepare("""
+                UPDATE lyrics_versions SET is_preferred = 0 WHERE track_stable_key IN
+                (SELECT stable_key FROM tracks WHERE lower(spotify_id) IN (?, ?) OR lower(spotify_uri) = ?);
+                """)
+            defer { sqlite3_finalize(clearRecording) }
+            try bindText(bareID, at: 1, to: clearRecording)
+            try bindText(uri, at: 2, to: clearRecording)
+            try bindText(uri, at: 3, to: clearRecording)
+            try stepDone(clearRecording)
         }
         let clear = try prepare("UPDATE lyrics_versions SET is_preferred = 0 WHERE track_stable_key IN (\(placeholders(count: family.count)));")
         defer { sqlite3_finalize(clear) }

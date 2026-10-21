@@ -115,7 +115,8 @@ final class DesktopPlaybackEventTests: XCTestCase {
     }
 
     private func fixture(running: @escaping (PlaybackSourceIdentity) -> Bool = { _ in true },
-                         visible: @escaping () -> Bool = { true }) -> (PlaybackState, EventPlaybackProvider, DesktopPlaybackEvents, NotificationCenter) {
+                         visible: @escaping () -> Bool = { true },
+                         repository suppliedRepository: SQLiteLyricsRepository? = nil) -> (PlaybackState, EventPlaybackProvider, DesktopPlaybackEvents, NotificationCenter) {
         let suite = "lyricsq-events-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.set(false, forKey: AppSettingsStore.Key.autoSearchLyricsOnTrackChange)
@@ -123,7 +124,7 @@ final class DesktopPlaybackEventTests: XCTestCase {
         let settings = AppSettingsStore(defaults: defaults)
         settings.playbackSourceMode = .auto
         let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
-        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("test.sqlite3"),
+        let repository = suppliedRepository ?? SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("test.sqlite3"),
             alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
         let center = NotificationCenter()
         let events = DesktopPlaybackEvents(center: center, workspaceCenter: NotificationCenter(),
@@ -162,20 +163,67 @@ final class DesktopPlaybackEventTests: XCTestCase {
         XCTAssertEqual(provider.refreshes, initialRefreshes)
     }
 
+    func testLightSourceAdoptionSurvivesColdStartPauseAndMetadataRefresh() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("test.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await repo.prepare()
+        // Real notification/catalog mismatch, 2026-10-21: one Spotify ID, two titles/albums.
+        let id = "spotify:track:4cTnxwbzLd90onQ9bKm9V6"
+        let saved = Track(title: "些細な幸福だけで灯っていた。", artist: "kyiku", album: "やどり", duration: 246.49, spotifyId: id)
+        let identity = TrackIdentity(track: saved)
+        let document = LyricsDocument(identity: identity, title: saved.title, artist: saved.artist,
+            album: saved.album, duration: saved.duration,
+            lines: [LyricLine(timestamp: 1, originalText: "採用済み")], isSynchronized: true, source: .qqExperimental, confidence: 1)
+        let version = try await repo.save(track: saved, identity: identity, document: document)
+        let versionID = try XCTUnwrap(version.versionID)
+        try await repo.adoptLyricsVersion(trackStableKey: identity.stableKey, lyricsVersionID: versionID)
+        let reopened = SQLiteLyricsRepository(databaseURL: repo.databaseURL,
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        let (state, provider, _, center) = fixture(repository: reopened)
+        provider.snapshot = PlaybackSnapshot(status: .ready,
+            track: ProviderTrack(id: id, title: "Light source", artist: "kyiku", album: "Even if it was a small prayer", duration: 246.49),
+            position: 10, isPlaying: true, sourceIdentity: .spotifyDesktop)
+        state.startProvider()
+        try await wait { state.liveLyricsVersionID == versionID }
+        let revision = state.lyricsSession.revision
+        for (status, title, artist, album) in [("Paused", "Light source", "kyiku", "Even if it was a small prayer"),
+                                              ("Playing", saved.title, "kyiku refreshed", saved.album)] {
+            center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo:
+                ["Player State": status, "Track ID": id, "Name": title, "Artist": artist,
+                 "Album": album, "Duration": 246_490, "Playback Position": 12])
+            try await wait { state.isPlaying == (status == "Playing") }
+            XCTAssertEqual(state.liveLyricsVersionID, versionID)
+            XCTAssertEqual(state.lyricsSession.revision, revision)
+            XCTAssertEqual(state.liveLyrics.first?.originalText, "採用済み")
+        }
+        // The observed key must still resolve the adopted asset for editor/offset/version actions.
+        let observed = TrackIdentity(title: "Light source", artist: "kyiku", album: "Even if it was a small prayer", duration: 246.49, spotifyTrackID: id)
+        let editable = try await reopened.loadEditableVersion(versionID: versionID, track: saved, identity: observed)
+        XCTAssertEqual(editable?.record.id, versionID)
+        // Music's existing persistent IDs are stored in spotify_id, with no schema change.
+        let music = Track(title: saved.title, artist: saved.artist, album: saved.album, duration: saved.duration, spotifyId: "applemusic:ABCDEF")
+        let musicIdentity = TrackIdentity(track: music)
+        let musicDoc = LyricsDocument(identity: musicIdentity, title: music.title, artist: music.artist, album: music.album, duration: music.duration, lines: document.lines, isSynchronized: true, source: .qqExperimental, confidence: 1)
+        let musicVersion = try await repo.save(track: music, identity: musicIdentity, document: musicDoc)
+        try await repo.adoptLyricsVersion(trackStableKey: musicIdentity.stableKey, lyricsVersionID: XCTUnwrap(musicVersion.versionID))
+        let changedMusic = Track(title: "Changed Music metadata", artist: "Changed artist", album: "Changed album", duration: 247, spotifyId: "applemusic:ABCDEF")
+        let loadedMusic = try await repo.loadBestStored(track: changedMusic, identity: TrackIdentity(track: changedMusic))
+        XCTAssertEqual(loadedMusic?.versionID, musicVersion.versionID)
+    }
+
     func testPauseNotificationStopsPollingAndResumeRestartsClock() async throws {
         let (state, provider, _, center) = fixture()
         state.startProvider()
         try await wait { state.hasLiveTrack }
         let initialRefreshes = provider.refreshes
-        let identity = state.currentTrackIdentity
-        let revision = state.lyricsSession.revision
-        // Spotify sent different display metadata on pause, with the same recording ID, artist and duration.
+        // With no adopted version, metadata updates may start a new search identity.
         var paused = payload("Stale display title", state: "Paused", position: 34)
         paused["Track ID"] = provider.snapshot.track!.id!
         paused["Album"] = "Stale display album"
         center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: paused)
         try await wait { !state.isPlaying }
-        XCTAssertEqual(state.currentTrack.title, "Initial")
+        XCTAssertEqual(state.currentTrack.title, "Stale display title")
         XCTAssertEqual(state.currentTime, 34, accuracy: 0.2)
         XCTAssertNil(state.timer)
         XCTAssertNil(state.calibrationTimer)
@@ -188,8 +236,7 @@ final class DesktopPlaybackEventTests: XCTestCase {
         try await wait { state.isPlaying }
         XCTAssertNotNil(state.timer)
         XCTAssertEqual(state.currentTime, 35, accuracy: 0.2)
-        XCTAssertEqual(state.currentTrackIdentity, identity)
-        XCTAssertEqual(state.lyricsSession.revision, revision, "pause/resume must retain the loaded lyric document")
+        XCTAssertEqual(state.currentTrack.title, "Stale display title")
     }
 
     func testHiddenWindowsStopClockAndShowingCatchesUpImmediately() async throws {

@@ -527,13 +527,11 @@ public final class PlaybackState: ObservableObject {
     public var lyricsSessionRevision: UInt64 {
         isShowingSearchPreview ? searchPreviewSession.revision : lyricsSession.revision
     }
-    /// Identity of the current Desktop playback snapshot, independent from
-    /// the session's last adopted document.  During the synchronous handoff
-    /// between a provider track update and `lyricsSession.begin`, these two
-    /// identities can briefly differ; live projections must fail closed then.
+    /// An adopted document stays bound to its player recording ID across display-metadata refreshes.
     public var liveTrackIdentity: TrackIdentity? {
         guard hasLiveTrack, !isMockPreviewMode else { return nil }
-        return TrackIdentity(track: currentTrack)
+        return lyricsSession.hasAdoptedLyrics(for: currentTrack)
+            ? lyricsSession.activeIdentity : TrackIdentity(track: currentTrack)
     }
 
     /// Shared source/identity capability boundary for the existing live
@@ -2734,27 +2732,8 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
-    private func synchronize(with incoming: PlaybackSnapshot, observedAtMonotonic: TimeInterval? = nil) {
-        // A refresh that was already in flight when Mock Preview was entered
-        // must not be allowed to resurrect a real Spotify session.
+    private func synchronize(with snapshot: PlaybackSnapshot, observedAtMonotonic: TimeInterval? = nil) {
         guard !isMockPreviewMode else { return }
-        var snapshot = incoming
-        // Spotify can revert its title/album on pause and subsequent reads.
-        // Keep the accepted recording within this playback occurrence only;
-        // a different ID, artist or duration still starts a new lyric session.
-        if incoming.status.isReady, incoming.sourceIdentity == .spotifyDesktop,
-           let track = incoming.track, let id = track.id, !id.isEmpty,
-           let prior = desktopSnapshots[.spotifyDesktop]?.track, prior.id == id,
-           abs(prior.duration - track.duration) <= 1,
-           !TrackIdentity.normalizedComponent(prior.artist).isEmpty,
-           TrackIdentity.normalizedComponent(prior.artist) == TrackIdentity.normalizedComponent(track.artist) {
-            let retained = ProviderTrack(id: prior.id, title: prior.title, artist: prior.artist,
-                album: prior.album, duration: prior.duration,
-                artworkURL: track.artworkURL ?? prior.artworkURL,
-                spotifyURL: prior.spotifyURL ?? track.spotifyURL, isrc: prior.isrc)
-            snapshot = PlaybackSnapshot(status: incoming.status, track: retained,
-                position: incoming.position, isPlaying: incoming.isPlaying, sourceIdentity: incoming.sourceIdentity)
-        }
         defer { updatePlaybackScheduling() }
         if snapshot.status.isReady, snapshot.track != nil {
             lastObservedDesktopSource = snapshot.sourceIdentity
@@ -2791,7 +2770,8 @@ public final class PlaybackState: ObservableObject {
         if providerStatus != snapshot.status { providerStatus = snapshot.status }
 
         let nextTrack = Track(providerTrack: providerTrack)
-        let nextIdentity = TrackIdentity(track: nextTrack)
+        let nextIdentity = lyricsSession.hasAdoptedLyrics(for: nextTrack)
+            ? (lyricsSession.activeIdentity ?? TrackIdentity(track: nextTrack)) : TrackIdentity(track: nextTrack)
         let identityChanged = !hasLiveTrack || lyricsSession.activeIdentity != nextIdentity
         let observedAt = Date()
 

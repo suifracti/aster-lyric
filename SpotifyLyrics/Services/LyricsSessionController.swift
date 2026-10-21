@@ -78,6 +78,12 @@ public final class LyricsSessionController: ObservableObject {
         begin(track: track, identity: identity, resetQueryOverride: true)
     }
 
+    public func hasAdoptedLyrics(for track: Track) -> Bool {
+        guard activeLyricsVersionID != nil, !lyrics.isEmpty, let activeTrack,
+              let id = TrackIdentity.playbackID(for: track) else { return false }
+        return TrackIdentity.playbackID(for: activeTrack) == id
+    }
+
     public func updateProviders(_ providers: [LyricsProvider]) {
         cancelCurrentRequest()
         revision &+= 1
