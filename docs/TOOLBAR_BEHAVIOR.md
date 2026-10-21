@@ -32,6 +32,7 @@ There is no lyric bar; the user removed it on 2026-10-21. Every setting lives in
 | Lyrics are early | **Z** moves the timeline up: offset −0.1 s per press |
 | Lyrics are late | **C** moves the timeline down: offset +0.1 s per press |
 | Reset offset | **X** sets the current song's offset back to 0 |
+| Show all keys | **?** opens a centred list of every key; **?** again or **Esc** closes it |
 
 - A gesture change shows a small notice at the bottom of the lyrics column, such as 「字号 22」 or 「封面」, which fades after about 1 s.
 - **Letter keys** are case-insensitive and work only while the main window is focused and no text field has focus. They are not global hot keys.
@@ -41,6 +42,7 @@ There is no lyric bar; the user removed it on 2026-10-21. Every setting lives in
   - **Spotify:** use the existing Spotify connection (`SpotifyAuthorizationManager`). Create the private playlist 「lyricsQ 收藏」 once and add the track. Pressing S again on a song already in it does nothing except show 「已在歌单中」.
   - **Spotify not connected, or missing playlist permission:** show 「需要连接 Spotify」 with a button that opens the connection settings.
   - **Apple Music:** add the song to a local playlist with the same name.
+- **Heart button:** the player (transport) has a heart. It is filled when the song is in 「lyricsQ 收藏」, and clicking it does the same as S.
 - **No Command / Option shortcuts.** Each panel lists its keys in tooltips, written as plain letters.
 
 ## Panels
