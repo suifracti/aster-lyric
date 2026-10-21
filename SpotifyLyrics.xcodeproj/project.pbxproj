@@ -1159,7 +1159,7 @@
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SpotifyLyrics 使用语音识别，从你导入的本地音频生成日语歌词草稿（不会读取 Spotify 受保护音频）。";
 				INFOPLIST_KEY_NSScreenCaptureUsageDescription = "Debug Spike：仅捕获 Spotify 应用正在播放的音频，用于实验性歌词时间轴研究。不捕获麦克风、不捕获其他 App、不保存或导出音频文件，也不上传。";
 				INFOPLIST_KEY_LSMinimumSystemVersion = "14.0";
-				INFOPLIST_KEY_CFBundleDisplayName = SpotifyLyrics;
+				INFOPLIST_KEY_CFBundleDisplayName = "Aster · Lyric";
 				INFOPLIST_KEY_CFBundleIconFile = "SpotifyLyrics.icns";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.spotifylyrics.app;
@@ -1186,7 +1186,7 @@
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SpotifyLyrics 使用语音识别，从你导入的本地音频生成日语歌词草稿（不会读取 Spotify 受保护音频）。";
 				INFOPLIST_KEY_NSScreenCaptureUsageDescription = "Debug Spike：仅捕获 Spotify 应用正在播放的音频，用于实验性歌词时间轴研究。不捕获麦克风、不捕获其他 App、不保存或导出音频文件，也不上传。";
 				INFOPLIST_KEY_LSMinimumSystemVersion = "14.0";
-				INFOPLIST_KEY_CFBundleDisplayName = SpotifyLyrics;
+				INFOPLIST_KEY_CFBundleDisplayName = "Aster · Lyric";
 				INFOPLIST_KEY_CFBundleIconFile = "SpotifyLyrics.icns";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.spotifylyrics.app;
