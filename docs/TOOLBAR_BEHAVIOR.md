@@ -41,10 +41,12 @@ There is no lyric bar; the user removed it on 2026-10-21. Every setting lives in
 - **Every key press shows the same small notice**, for example 「上一首」, 「偏移 −0.3s」, 「已加入喜欢」 or 「已在喜欢中」.
 - **Holding Z or C repeats.** The offset is the same per-song offset as in 更多.
 - **S, liking the song:**
-  - **Spotify:** use the existing Spotify connection (`SpotifyAuthorizationManager`) and save the track to the user's Liked Songs. If it is already liked, only show 「已在喜欢中」.
-  - **Spotify not connected, or missing library permission:** show 「需要连接 Spotify」 with a button that opens the connection settings.
-  - **Apple Music:** mark the song as favourite.
-- **Heart button:** the player (transport) has a heart. It is filled when the song is liked or favourited, and clicking it toggles that state.
+  - The app only checks, adds and removes the current track in Liked Songs. Spotify scopes: `user-library-read` and `user-library-modify`, nothing else.
+  - **Not liked:** S adds it and shows 「已加入喜欢」.
+  - **Already liked:** S shows 「已在喜欢中 · 再按 S 移除」. A second S within 3 s removes it and shows 「已移出喜欢」.
+  - **Spotify not connected, or missing permission:** show 「需要连接 Spotify」 with a button that opens the connection settings.
+  - **Apple Music:** the same flow, using its favourite flag.
+- **Heart button:** the player (transport) has a heart. It is filled when the song is liked or favourited. Clicking it adds the song, or, when it is already liked, removes it. Same notices as S.
 - **No Command / Option shortcuts.** Each panel lists its keys in tooltips, written as plain letters.
 
 ## Listening extras (user-approved 2026-10-21)
@@ -138,3 +140,19 @@ Clicks that land on the popover's transparent arrow or shadow area are forwarded
   - Before merging, every UI batch gets a 30 s CPU/RSS check: same build, same song, same window, against the previous batch.
   - A repeatable rise blocks the merge.
   - Animations update only their own small views.
+
+## Side drawer (trial, after the current round)
+**Purpose:** pages that don't change the picture open inside the app instead of in separate windows.
+
+- **Position:** it slides in from the **left** and covers the cover/artwork side.
+  - The lyrics column does not move or reflow and keeps scrolling.
+  - In layouts where lyrics are on the left, it slides in from the right instead, always on the side away from the lyrics.
+- **Opening:** a thin handle shows when the pointer reaches that edge. Hover or click opens the drawer.
+- **Closing:** Esc, clicking outside, or moving the pointer away for 1 s closes it.
+- **Tabs, trial scope:** 歌词库 and 搜索 only, with the same content as their full windows' main views. Reuse those views; don't fork them.
+- **Not included:**
+  - Panels that change the picture (文字, 画面) stay as floating or pinned panels outside the window.
+  - Deep settings stay in the settings window.
+- **Width:** 360 pt, or 40% of the window if that is smaller.
+- **Background:** dark frosted glass, like hover panels.
+- **Trial:** the user tries it for a few days. If it's kept, 译文, 更多 and common settings move in next. If it isn't, it is removed.
