@@ -219,3 +219,43 @@ Clicks that land on the popover's transparent arrow or shadow area are forwarded
 - **Apple Music:** the same picker using its local playlists, with no 「已按讚的歌曲」 row. Its favourite is the heart.
 - **Errors:** a short notice such as 「添加失败，稍后再试」. No retry queue.
 
+
+## Scene merge (R3, user-approved 2026-10-21)
+Based on real-song screenshots of Light source, 花の塔 and Runa: two bright covers and one dark.
+
+**Entries:** 16 become 4 categories with 9 styles. The separate 「经典版」 group is removed.
+
+| Category | Styles |
+|---|---|
+| 环境光 | 原版环境光 · 柔和光晕 · 独立色场 · 柔光羽化 |
+| 封面 | 封面 (switch: 静止 / 流动) · 舞台 |
+| 内页 | 内页 · 唱片卡 |
+| 专注 | 专注 |
+
+**Where each old entry goes:**
+- **经典·原版环境光 → 原版环境光.** It was pixel-identical in all three songs.
+- **经典·柔光羽化 → 柔光羽化.**
+- **经典·封面柔焦 → 原版环境光.** Add a 「背景明暗」 slider to 原版环境光 so the lighter look stays reachable.
+- **经典·柔和光晕 and 经典·纯高斯 → 柔和光晕.**
+- **封面柔焦 and 纯高斯 → 封面.** The 静止 / 流动 switch picks the existing renderer.
+- **完整舞台 and 经典·封面舞台 → 舞台.** The existing 对齐 setting decides which side the lyrics sit on.
+- **纯净歌词 and 经典·纯净歌词 → 专注.** The existing 显示歌曲缩略图 switch covers the difference.
+- **经典·封面海报 → 唱片卡.**
+
+**Rules:**
+- Merging changes entries only. Every renderer, its raw ID and its separate preferences stay.
+- `flowingField + classic` keeps its own drawing branch.
+- Migrate users on removed entries to the merged entry that draws the same picture, and keep their parameters.
+
+**Fixes found in the screenshots:**
+- **Mini player time** (封面, 内页, 专注): the time wraps, e.g. 「00:2 / 0 03:05」. Show it on one line, using tabular digits.
+- **唱片卡 header:** it still says 「LYRIC ISLAND · LISTENING EDITION」. Change it to 「ASTER · LYRIC · LISTENING EDITION」.
+- **内页:** remove the explanatory text under the cover (「点击已同步的歌词可跳转……」).
+- **Reading line:** hide it when the reading is identical to the original line, as with all-kana lines.
+
+**Bright-cover readability:**
+- **When:** in 封面 (both 静止 and 流动) and 舞台, if the cover is bright (average luminance above about 0.6) and 清晰度 is 关闭.
+- **What:** automatically apply 文字阴影.
+- **Opting out:** a switch under 清晰度 in the 文字 panel, 「亮封面自动加阴影」, default on. Turning it off keeps 关闭 truly off.
+- **No override:** an explicit 文字阴影 or 柔和光晕 choice is never changed.
+- **Elsewhere:** other scenes and dark covers are unaffected.
