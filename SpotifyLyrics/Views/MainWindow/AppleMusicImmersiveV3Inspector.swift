@@ -63,7 +63,7 @@ struct V3ThemeSelectorView: View {
     /// The family that owns the current selection, new scene or classic preset.
     private var currentFamily: V3SceneFamily {
         if let scene = settings.v3ListeningScene { return V3SceneFamily.family(of: scene) }
-        return V3SceneFamily.family(ofClassic: settings.v3ArtworkPresentation)
+        return V3SceneFamily.family(ofLegacy: settings.v3ArtworkPresentation)
     }
 
     private var shownFamily: V3SceneFamily { browsedFamily ?? currentFamily }
@@ -94,16 +94,8 @@ struct V3ThemeSelectorView: View {
                         .lineLimit(1) }
                 }
                 .padding(.bottom, 4)
-                ForEach(shownFamily.styles, id: \.self) { style in
-                    styleRow(scene: style.scene, renderer: style.renderer,
-                             title: style.scene.rendererTitle(style.renderer),
-                             detail: style.renderer == style.scene.defaultRenderer && style.scene.renderers.count == 1
-                                ? style.scene.detail : nil)
-                }
-                Text("经典版").font(.system(size: 11, weight: .medium)).foregroundStyle(Color.secondary)
-                    .padding(.top, 8).padding(.bottom, 2)
-                ForEach(shownFamily.classics) { renderer in
-                    styleRow(scene: nil, renderer: renderer, title: "经典 · " + renderer.title, detail: nil)
+                ForEach(shownFamily.entries) { entry in
+                    entryRow(entry, in: shownFamily)
                 }
             }
             .padding(10)
@@ -167,48 +159,97 @@ struct V3ThemeSelectorView: View {
     }
 
     /// Selection always matches scene + renderer: the same renderer draws
-    /// differently inside a scene and as a classic preset.
-    private func styleRow(scene: V3ListeningScene?, renderer: V3ArtworkPresentation,
-                          title: String, detail: String?) -> some View {
-        let selected = settings.v3ListeningScene == scene && settings.v3ArtworkPresentation == renderer
-        let previewing = !selected && preview == renderer && previewScene == scene
-        return Button { adopt(scene, renderer: renderer) } label: {
-            HStack(spacing: 8) {
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 13))
-                    .foregroundStyle(selected ? tint : Color.secondary.opacity(0.6))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.system(size: 12.5, weight: selected ? .semibold : .regular))
-                    if !compact, let detail {
-                        Text(detail).font(.system(size: 11)).foregroundStyle(Color.secondary).lineLimit(1)
+    /// differently inside a scene and as a legacy preset.
+    private func entryRow(_ entry: V3SceneFamily.Entry, in family: V3SceneFamily) -> some View {
+        let selected = family.isSelected(entry, settings: settings)
+        let renderer = family.adoptRenderer(for: entry, settings: settings)
+        let previewing = !selected && preview == renderer && previewScene == entry.scene
+        // The switch must stay outside the button: inside a plain button's label
+        // the segmented control never receives the click.
+        return HStack(spacing: 8) {
+            Button { adopt(entry, in: family) } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 13))
+                        .foregroundStyle(selected ? tint : Color.secondary.opacity(0.6))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(entry.title).font(.system(size: 12.5, weight: selected ? .semibold : .regular))
+                        if !compact, let detail = entry.detail {
+                            Text(detail).font(.system(size: 11)).foregroundStyle(Color.secondary).lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    if previewing && !entry.isCoverPair {
+                        Text("预览").font(.system(size: 11)).foregroundStyle(tint)
                     }
                 }
-                Spacer(minLength: 0)
-                if previewing { Text("预览").font(.system(size: 11)).foregroundStyle(tint) }
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 6).padding(.vertical, 5)
-            .background(selected ? tint.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(previewing ? tint.opacity(0.45) : .clear, style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .buttonStyle(.plain)
+            .onHover { hovering($0, scene: entry.scene, renderer: renderer) }
+            if entry.isCoverPair {
+                Picker("背景", selection: Binding(
+                    get: { settings.v3ArtworkPresentation == .classicGaussian ? 1 : 0 },
+                    set: { chooseCoverMotion($0 == 1 ? .classicGaussian : .ambient) }
+                )) {
+                    Text("静止").tag(1)
+                    Text("流动").tag(0)
+                }
+                .pickerStyle(.segmented).controlSize(.mini).labelsHidden()
+                .frame(width: 84)
+                .accessibilityIdentifier("v3.cover.motion")
+            }
         }
-        .buttonStyle(.plain)
-        .onHover { hovering($0, scene: scene, renderer: renderer) }
-        .accessibilityIdentifier(scene == nil ? "v3.style." + renderer.rawValue
-                                 : "v3.scene." + scene!.rawValue + "." + renderer.rawValue)
+        .padding(.horizontal, 6).padding(.vertical, 5)
+        .background(selected ? tint.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8)
+            .strokeBorder(previewing ? tint.opacity(0.45) : .clear, style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
+        .accessibilityIdentifier(entry.scene == nil ? "v3.style." + renderer.rawValue
+                                 : "v3.scene." + entry.scene!.rawValue + "." + renderer.rawValue)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func adopt(_ entry: V3SceneFamily.Entry, in family: V3SceneFamily) {
+        clearPreview()
+        if let scene = entry.scene {
+            settings.selectV3Scene(scene, renderer: family.adoptRenderer(for: entry, settings: settings))
+        } else {
+            settings.selectLegacyV3Presentation(entry.renderer)
+        }
+    }
+
+    /// 静止 = 纯高斯, 流动 = 封面柔焦. Picking 流动 turns its background motion
+    /// on when it was still; an existing 轻柔/鲜明 choice is kept.
+    private func chooseCoverMotion(_ renderer: V3ArtworkPresentation) {
+        clearPreview()
+        settings.selectV3Scene(.coverPhoto, renderer: renderer)
+        if renderer == .ambient,
+           settings.v3AtmosphereLevel(for: .ambient, scene: .coverPhoto) == 0 {
+            settings.setV3AtmosphereLevel(1, for: .ambient)
+        }
     }
 }
 
 /// Entry grouping only. Families map onto existing scene + renderer pairs and
-/// the eight classic presets; nothing here is persisted.
+/// the two remaining classic presets; nothing here is persisted.
 enum V3SceneFamily: String, CaseIterable, Identifiable {
     case ambient, cover, linerNotes, focus
     var id: String { rawValue }
 
-    struct Style: Hashable {
-        let scene: V3ListeningScene
-        let renderer: V3ArtworkPresentation
+    /// One visible row. `renderers` holds one ID, or the 静止 / 流动 pair for
+    /// 封面. Merging changes rows only: every renderer keeps its raw ID and
+    /// its own stored parameters.
+    struct Entry: Hashable, Identifiable {
+        let scene: V3ListeningScene?
+        let renderers: [V3ArtworkPresentation]
+        let title: String
+        let detail: String?
+        var id: String {
+            (scene?.rawValue ?? "legacy") + "/" + renderers.map(\.rawValue).joined(separator: "+")
+        }
+        var renderer: V3ArtworkPresentation { renderers[0] }
+        var isCoverPair: Bool { renderers.count > 1 }
+        var isLegacy: Bool { scene == nil }
     }
 
     var title: String {
@@ -249,23 +290,59 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
 
     var primaryScene: V3ListeningScene { scenes[0] }
 
-    var styles: [Style] {
-        scenes.flatMap { scene in scene.renderers.map { Style(scene: scene, renderer: $0) } }
-    }
-
-    /// Classic presets keep their own rawIDs and values.
-    var classics: [V3ArtworkPresentation] {
+    /// 4 categories, 9 styles. 经典·柔和光晕 and 经典·封面海报 survive as the
+    /// 柔和光晕 and 唱片卡 rows.
+    var entries: [Entry] {
         switch self {
-        case .ambient: return [.authenticAmbient, .classic, .ambientFeathered]
-        case .cover: return [.ambient, .classicGaussian, .stage]
-        case .linerNotes: return [.albumPoster]
-        case .focus: return [.lyricsOnly]
+        case .ambient:
+            return [
+                Entry(scene: .originalAmbient, renderers: [.authenticAmbient],
+                      title: "原版环境光", detail: "完整封面；背景明暗可调"),
+                Entry(scene: nil, renderers: [.classic],
+                      title: "柔和光晕", detail: "柔和偏暗的封面光晕，随专辑色彩扩散"),
+                Entry(scene: .flowingField, renderers: [.classic],
+                      title: "独立色场", detail: "独立色场，背景动态可调"),
+                Entry(scene: .flowingField, renderers: [.ambientFeathered],
+                      title: "柔光羽化", detail: "封面边缘渐隐融入光晕"),
+            ]
+        case .cover:
+            return [
+                Entry(scene: .coverPhoto, renderers: [.ambient, .classicGaussian],
+                      title: "封面", detail: nil),
+                Entry(scene: .coverPhoto, renderers: [.stage],
+                      title: "舞台", detail: "完整封面居中，模糊背景补齐"),
+            ]
+        case .linerNotes:
+            return [
+                Entry(scene: .linerNotes, renderers: [.albumPoster],
+                      title: "内页", detail: "题头、版心与段落"),
+                Entry(scene: nil, renderers: [.albumPoster],
+                      title: "唱片卡", detail: "完整封面与歌曲信息组成海报"),
+            ]
+        case .focus:
+            return [
+                Entry(scene: .focusedLyrics, renderers: [.lyricsOnly],
+                      title: "专注", detail: "安静底色与受控行宽，连续阅读优先"),
+            ]
         }
     }
 
+    func isSelected(_ entry: Entry, settings: AppSettingsStore) -> Bool {
+        settings.v3ListeningScene == entry.scene
+            && entry.renderers.contains(settings.v3ArtworkPresentation)
+    }
+
+    /// The renderer a click adopts. 封面 keeps whichever side of the
+    /// 静止 / 流动 switch is already in use.
+    func adoptRenderer(for entry: Entry, settings: AppSettingsStore) -> V3ArtworkPresentation {
+        if entry.renderers.contains(settings.v3ArtworkPresentation) {
+            return settings.v3ArtworkPresentation
+        }
+        return entry.renderer
+    }
+
     func contains(scene: V3ListeningScene?, renderer: V3ArtworkPresentation) -> Bool {
-        if let scene { return scenes.contains(scene) }
-        return classics.contains(renderer)
+        entries.contains { $0.scene == scene && $0.renderers.contains(renderer) }
     }
 
     /// Shared by the full selector and its four hover shortcuts.
@@ -281,8 +358,10 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
         allCases.first { $0.scenes.contains(scene) } ?? .ambient
     }
 
-    static func family(ofClassic renderer: V3ArtworkPresentation) -> V3SceneFamily {
-        allCases.first { $0.classics.contains(renderer) } ?? .ambient
+    static func family(ofLegacy renderer: V3ArtworkPresentation) -> V3SceneFamily {
+        allCases.first { family in
+            family.entries.contains { $0.isLegacy && $0.renderers.contains(renderer) }
+        } ?? .ambient
     }
 }
 
@@ -400,6 +479,18 @@ struct V3VisualControls {
                             .font(.system(size: 11)).foregroundStyle(Color.secondary)
                     }
                     backdropScaleControls
+                }
+                if scene == .originalAmbient && renderer == .authenticAmbient {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("背景明暗").font(.system(size: 12, weight: .medium))
+                        V3NumericSlider(value: Binding(
+                            get: { settings.v3BackgroundBrightness(for: renderer, scene: scene) },
+                            set: { settings.setV3BackgroundBrightness($0, for: renderer) }
+                        ), in: 0.6...1.4, step: 0.05, unit: "%", displayScale: 100)
+                            .accessibilityLabel("背景明暗")
+                            .accessibilityIdentifier("v3.backgroundBrightness")
+                    }
+                    .help("100% 保持现有观感；调高让偏暗的封面更接近旧的轻盈版。")
                 }
                 if showsExplanations {
                     backgroundMotionControls

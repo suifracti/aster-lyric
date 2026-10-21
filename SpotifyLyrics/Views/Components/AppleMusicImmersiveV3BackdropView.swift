@@ -462,13 +462,19 @@ struct AppleMusicImmersiveV3BackdropView: View {
             style.paletteSaturation * 1.18 + (increaseContrast ? 0.06 : 0)
         )
         let diffusionRadius = perceptualBlur * 48.0
+        // 背景明暗 only rescales the luminance clamps and the artwork opacity, so
+        // at 100% the composition is byte-identical to the old 原版环境光 and the
+        // lighter 封面柔焦 look stays reachable above 100%.
+        let brightness = settings.v3BackgroundBrightness(for: .authenticAmbient, scene: listeningScene)
 
         // A luminance-clamped album field keeps very bright artwork legible
         // without falling back to an unrelated black canvas.
         LinearGradient(
             colors: [
-                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.42),
-                ambientColor(palette.secondary, saturation: saturation * 0.90, maximumLuminance: 0.30),
+                ambientColor(palette.primary, saturation: saturation,
+                             maximumLuminance: min(0.85, 0.42 * brightness)),
+                ambientColor(palette.secondary, saturation: saturation * 0.90,
+                             maximumLuminance: min(0.85, 0.30 * brightness)),
                 Color(red: 0.055, green: 0.060, blue: 0.072)
             ],
             startPoint: coverLightCenter,
@@ -480,15 +486,17 @@ struct AppleMusicImmersiveV3BackdropView: View {
         // The full-resolution snapshot avoids baked-in blur at the clear endpoint.
         framedArtwork(image: image, scale: backdropImageScale, blur: diffusionRadius)
             .saturation(saturation)
-            .opacity(0.56)
+            .opacity(min(0.74, 0.56 * brightness))
 
         atmosphereField(for: .authenticAmbient)
 
         RadialGradient(
             colors: [
-                ambientColor(palette.glow, saturation: saturation, maximumLuminance: 0.58)
+                ambientColor(palette.glow, saturation: saturation,
+                             maximumLuminance: min(0.85, 0.58 * brightness))
                     .opacity(0.34),
-                ambientColor(palette.primary, saturation: saturation, maximumLuminance: 0.40)
+                ambientColor(palette.primary, saturation: saturation,
+                             maximumLuminance: min(0.85, 0.40 * brightness))
                     .opacity(0.12),
                 .clear
             ],

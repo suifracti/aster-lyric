@@ -8,7 +8,7 @@ struct V3LyricActions {
 
     var family: V3SceneFamily {
         settings.v3ListeningScene.map(V3SceneFamily.family(of:))
-            ?? V3SceneFamily.family(ofClassic: settings.v3ArtworkPresentation)
+            ?? V3SceneFamily.family(ofLegacy: settings.v3ArtworkPresentation)
     }
 
     func fontSize(_ delta: CGFloat) -> String {

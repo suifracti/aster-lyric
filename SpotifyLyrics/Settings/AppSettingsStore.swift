@@ -236,13 +236,17 @@ public struct V3ScenePreset: Codable, Equatable, Sendable {
     public var completeArtwork: Bool
     public var lyricsPosition: String
     public var atmosphere: Int
+    /// 背景明暗 for 原版环境光: 1 keeps the established look, higher lifts the
+    /// background so the old lighter 封面柔焦 entry stays reachable.
+    public var backgroundBrightness: Double
     public static func initial(scene: V3ListeningScene, renderer: V3ArtworkPresentation) -> Self {
         Self(blur: renderer == .authenticAmbient ? 25 : renderer == .stage ? 0 : renderer == .classicGaussian ? 58 : 36,
              foregroundScale: 1, foregroundPosition: "left",
              foregroundVisible: scene == .originalAmbient || scene == .flowingField || scene == .linerNotes,
              backdropScale: 1, completeArtwork: renderer == .stage || renderer == .ambientFeathered,
              lyricsPosition: scene == .coverPhoto ? "right" : "automatic",
-             atmosphere: scene == .flowingField && renderer == .classic ? 1 : 0)
+             atmosphere: scene == .flowingField && renderer == .classic ? 1 : 0,
+             backgroundBrightness: 1)
     }
     public func normalized() -> Self {
         var p = self
@@ -252,7 +256,25 @@ public struct V3ScenePreset: Codable, Equatable, Sendable {
         p.foregroundPosition = ["left", "center", "right"].contains(foregroundPosition) ? foregroundPosition : "left"
         p.lyricsPosition = ["automatic", "left", "center", "right"].contains(lyricsPosition) ? lyricsPosition : "automatic"
         p.atmosphere = min(2, max(0, atmosphere))
+        p.backgroundBrightness = backgroundBrightness.isFinite
+            ? min(1.4, max(0.6, backgroundBrightness)) : 1
         return p
+    }
+}
+
+extension V3ScenePreset {
+    /// Presets written before 背景明暗 existed decode with the neutral value.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        blur = try container.decode(Double.self, forKey: .blur)
+        foregroundScale = try container.decode(Double.self, forKey: .foregroundScale)
+        foregroundPosition = try container.decode(String.self, forKey: .foregroundPosition)
+        foregroundVisible = try container.decode(Bool.self, forKey: .foregroundVisible)
+        backdropScale = try container.decode(Double.self, forKey: .backdropScale)
+        completeArtwork = try container.decode(Bool.self, forKey: .completeArtwork)
+        lyricsPosition = try container.decode(String.self, forKey: .lyricsPosition)
+        atmosphere = try container.decode(Int.self, forKey: .atmosphere)
+        backgroundBrightness = try container.decodeIfPresent(Double.self, forKey: .backgroundBrightness) ?? 1
     }
 }
 
@@ -293,6 +315,8 @@ public final class AppSettingsStore: ObservableObject {
         public static let v3ScenePresets = "v3.scene.presets.v1"
         public static let v3SceneRenderers = "v3.scene.renderers.v1"
         public static let v3SceneHoverPreviewEnabled = "v3.scene.hoverPreview.v1"
+        /// One-shot marker for the R3 entry merge (16 entries → 4 categories / 9 styles).
+        public static let v3SceneEntriesMerged = "v3.scene.entriesMerged.v1"
         public static let v3BigLineModeEnabled = "v3.bigLineMode.enabled.v1"
         public static let v3NightGentleEnabled = "v3.nightGentle.enabled.v1"
         public static let v3PictureAdvancedExpanded = "v3.picture.advancedExpanded.v1"
@@ -1023,6 +1047,20 @@ public final class AppSettingsStore: ObservableObject {
         return min(2, max(0, v3AtmosphereLevels[presentation.rawValue] ?? 0))
     }
 
+    /// 背景明暗 belongs to 原版环境光's scene preset; legacy renderers keep
+    /// their established look.
+    public func v3BackgroundBrightness(for presentation: V3ArtworkPresentation,
+                                       scene: V3ListeningScene?) -> Double {
+        guard let scene else { return 1 }
+        return v3Preset(for: scene, renderer: presentation).backgroundBrightness
+    }
+
+    public func setV3BackgroundBrightness(_ value: Double, for presentation: V3ArtworkPresentation) {
+        guard v3ListeningScene != nil else { return }
+        let next = value.isFinite ? min(1.4, max(0.6, value)) : 1
+        updateScenePreset { $0.backgroundBrightness = next }
+    }
+
     public func setV3AtmosphereLevel(_ level: Int, for presentation: V3ArtworkPresentation) {
         let storedLevel = min(2, max(0, level))
         if v3ListeningScene != nil { updateScenePreset { $0.atmosphere = storedLevel }; return }
@@ -1338,6 +1376,77 @@ public final class AppSettingsStore: ObservableObject {
         if let raw = defaults.string(forKey: Key.v3ListeningScene), let scene = V3ListeningScene(rawValue: raw) {
             self.v3ListeningSceneRawValue = scene.rawValue
             applySceneProjection(scene, renderer: v3Renderer(for: scene))
+        }
+        migrateMergedSceneEntriesIfNeeded()
+    }
+
+    /// The R3 entry merge removes six 经典版 entries. Anyone sitting on one of
+    /// them moves to the merged entry that draws the same picture, carrying the
+    /// old parameters into the target so the first frame matches what they had.
+    /// 经典·柔和光晕 and 经典·封面海报 stay as entries and are left alone.
+    private func migrateMergedSceneEntriesIfNeeded() {
+        guard !defaults.bool(forKey: Key.v3SceneEntriesMerged) else { return }
+        defaults.set(true, forKey: Key.v3SceneEntriesMerged)
+        guard v3ListeningScene == nil,
+              let legacy = V3ArtworkPresentation(rawValue: v3ArtworkPresentationRawValue) else { return }
+        switch legacy {
+        case .authenticAmbient:
+            adoptMergedEntry(scene: .originalAmbient, renderer: .authenticAmbient, legacy: legacy)
+        case .ambient:
+            adoptMergedEntry(scene: .originalAmbient, renderer: .authenticAmbient, legacy: legacy)
+        case .ambientFeathered:
+            adoptMergedEntry(scene: .flowingField, renderer: .ambientFeathered, legacy: legacy)
+        case .stage:
+            adoptMergedEntry(scene: .coverPhoto, renderer: .stage, legacy: legacy)
+        case .lyricsOnly:
+            adoptMergedEntry(scene: .focusedLyrics, renderer: .lyricsOnly, legacy: legacy)
+        case .classicGaussian:
+            copyLegacyParameters(from: .classicGaussian, to: .classic)
+            selectLegacyV3Presentation(.classic)
+        case .classic, .albumPoster:
+            break
+        }
+    }
+
+    private func adoptMergedEntry(scene: V3ListeningScene,
+                                  renderer: V3ArtworkPresentation,
+                                  legacy: V3ArtworkPresentation) {
+        var preset = V3ScenePreset.initial(scene: scene, renderer: renderer)
+        preset.blur = v3BlurByPresentation[legacy] ?? preset.blur
+        preset.foregroundScale = v3PreviewScale(for: legacy, scene: nil)
+        preset.foregroundPosition = v3PreviewPosition(for: legacy, scene: nil)
+        preset.foregroundVisible = defaults.object(forKey: Key.v3ShowForegroundArtwork) as? Bool
+            ?? preset.foregroundVisible
+        preset.backdropScale = v3PreviewBackdropScale(for: legacy, scene: nil)
+        preset.completeArtwork = v3BackgroundShowsCompleteArtwork(for: legacy)
+        preset.lyricsPosition = v3PreviewLyricsPosition(for: legacy, scene: nil)
+        preset.atmosphere = v3AtmosphereLevel(for: legacy, scene: nil)
+        scenePresets[Self.sceneKey(scene, renderer)] = preset.normalized()
+        selectV3Scene(scene, renderer: renderer)
+    }
+
+    private func copyLegacyParameters(from source: V3ArtworkPresentation, to target: V3ArtworkPresentation) {
+        if let blur = defaults.object(forKey: Self.v3BlurDefaultsKey(for: source)) as? Double {
+            v3BlurByPresentation[target] = blur
+            defaults.set(blur, forKey: Self.v3BlurDefaultsKey(for: target))
+        }
+        if let scale = defaults.object(forKey: Self.v3ScaleDefaultsKey(for: source)) as? Double {
+            defaults.set(scale, forKey: Self.v3ScaleDefaultsKey(for: target))
+        }
+        if let position = defaults.string(forKey: Self.v3PositionDefaultsKey(for: source)) {
+            defaults.set(position, forKey: Self.v3PositionDefaultsKey(for: target))
+        }
+        if let framing = v3BackgroundFraming[source.rawValue] {
+            v3BackgroundFraming[target.rawValue] = framing
+        }
+        if let atmosphere = v3AtmosphereLevels[source.rawValue] {
+            v3AtmosphereLevels[target.rawValue] = atmosphere
+        }
+        if let backdrop = v3AdditionalBackdropScales[source.rawValue] {
+            v3AdditionalBackdropScales[target.rawValue] = backdrop
+        }
+        if source == .classicGaussian, target == .classic {
+            v3ClassicBackdropSizeScale = v3GaussianBackdropSizeScale
         }
     }
 

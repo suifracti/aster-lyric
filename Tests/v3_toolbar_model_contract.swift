@@ -312,6 +312,46 @@ final class V3ToolbarPresentationTests: XCTestCase {
         XCTAssertEqual(first.1, .lyricsOnly)
     }
 
+    @MainActor
+    func testSceneEntriesMergeToNineStyles() {
+        XCTAssertEqual(V3SceneFamily.allCases.count, 4)
+        XCTAssertEqual(V3SceneFamily.allCases.reduce(0) { $0 + $1.entries.count }, 9)
+        XCTAssertEqual(V3SceneFamily.ambient.entries.map(\.title), ["原版环境光", "柔和光晕", "独立色场", "柔光羽化"])
+        XCTAssertEqual(V3SceneFamily.cover.entries.map(\.title), ["封面", "舞台"])
+        XCTAssertEqual(V3SceneFamily.linerNotes.entries.map(\.title), ["内页", "唱片卡"])
+        XCTAssertEqual(V3SceneFamily.focus.entries.map(\.title), ["专注"])
+        // 封面 keeps both existing renderers behind one row: 静止 / 流动.
+        XCTAssertEqual(V3SceneFamily.cover.entries[0].renderers, [.ambient, .classicGaussian])
+    }
+
+    /// Someone sitting on 经典·纯高斯 moves to 柔和光晕 and keeps their blur.
+    @MainActor
+    func testRemovedLegacyEntriesMigrateToTheMergedEntry() {
+        let suite = "lyricsq-scene-merge-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(58.0, forKey: AppSettingsStore.Key.v3GaussianBlur)
+        defaults.set(V3ArtworkPresentation.classicGaussian.rawValue,
+                     forKey: AppSettingsStore.Key.v3ArtworkPresentation)
+        let settings = AppSettingsStore(defaults: defaults)
+        XCTAssertNil(settings.v3ListeningScene)
+        XCTAssertEqual(settings.v3ArtworkPresentation, .classic)
+        XCTAssertEqual(settings.v3BackdropBlurRadius, 58, accuracy: 0.001)
+    }
+
+    /// 经典·原版环境光 becomes 原版环境光, which is the same picture.
+    @MainActor
+    func testPixelIdenticalLegacyEntryMovesIntoItsScene() {
+        let suite = "lyricsq-scene-merge-scene-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(V3ArtworkPresentation.authenticAmbient.rawValue,
+                     forKey: AppSettingsStore.Key.v3ArtworkPresentation)
+        let settings = AppSettingsStore(defaults: defaults)
+        XCTAssertEqual(settings.v3ListeningScene, .originalAmbient)
+        XCTAssertEqual(settings.v3ArtworkPresentation, .authenticAmbient)
+    }
+
     func testHoverPanelStaysInsideTheMainWindow() {
         let owner = CGRect(x: 704, y: 540, width: 1152, height: 720)
         let overflowing = CGRect(x: 1547, y: 825, width: 346, height: 376)
