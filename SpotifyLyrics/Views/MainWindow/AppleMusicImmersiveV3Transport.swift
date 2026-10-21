@@ -342,6 +342,7 @@ struct StageHUDView: View {
                 }
                 .font(.system(size: 10, weight: .medium).monospacedDigit())
                 .foregroundStyle(.white.opacity(0.72))
+                .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
         }
@@ -525,6 +526,12 @@ struct AppleMusicImmersiveV3FocusTransportControls: View {
             }
                 .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
                 .foregroundStyle(.white.opacity(0.46))
+                // The compact player is the first thing a narrow canvas
+                // squeezes; reserve the clock's full width so 「0:35 / 3:13」
+                // stays on one line and the progress rail gives way instead.
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(1)
         }
         .padding(.horizontal, LyricsDesignTokens.Spacing.sm)
         .padding(.vertical, LyricsDesignTokens.Spacing.xs)

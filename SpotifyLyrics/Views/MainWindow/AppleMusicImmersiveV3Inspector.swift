@@ -493,6 +493,9 @@ struct V3VisualControls {
                 Picker("清晰度", selection: $settings.v3ReadingProtection) {
                     ForEach(V3ReadingProtection.allCases) { value in Text(value.title).tag(value) }
                 }.pickerStyle(.segmented).labelsHidden()
+                Toggle("亮封面自动加阴影", isOn: $settings.v3BrightCoverShadowEnabled)
+                    .font(.system(size: 12))
+                    .help("封面、舞台遇亮封面且清晰度为关闭时自动加文字阴影；关闭后「关闭」保持完全不加。")
             }
             HStack(spacing: 10) {
                 Toggle("罗马音", isOn: displayBinding(\.showRomaji))

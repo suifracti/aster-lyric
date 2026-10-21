@@ -114,6 +114,17 @@ extension EnvironmentValues {
     }
 }
 
+/// The window resolves 清晰度 once per composition (including the bright-cover
+/// automatic shadow) and hands the result down; nil means rows fall back to
+/// the raw setting.
+private struct V3ResolvedReadingProtectionKey: EnvironmentKey { static let defaultValue: V3ReadingProtection? = nil }
+extension EnvironmentValues {
+    var v3ResolvedReadingProtection: V3ReadingProtection? {
+        get { self[V3ResolvedReadingProtectionKey.self] }
+        set { self[V3ResolvedReadingProtectionKey.self] = newValue }
+    }
+}
+
 /// Shares the existing, once-per-cover sampler with all listening surfaces.
 /// Nothing here is called from a TimelineView or from a lyric row.
 @MainActor

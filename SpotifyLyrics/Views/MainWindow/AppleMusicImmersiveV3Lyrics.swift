@@ -1043,9 +1043,13 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.v3ResolvedReadingProtection) private var resolvedReadingProtection
     private var showsReadingShadow: Bool {
-        settings.v3ReadingProtection.effective(reduceTransparency: reduceTransparency,
-                                               increasedContrast: contrast == .increased) == .shadow
+        // The window resolves the bright-cover automatic shadow once per
+        // composition; without it rows use the raw 清晰度 setting.
+        (resolvedReadingProtection ?? settings.v3ReadingProtection)
+            .effective(reduceTransparency: reduceTransparency,
+                       increasedContrast: contrast == .increased) == .shadow
     }
     @Environment(\.lyricAgentPresentationMap) private var agentPresentationMap
 
@@ -1307,7 +1311,16 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
     private var inlineRubyTokens: [LyricRubyToken]? { rubyPresentation.rubyTokens }
 
     private var shouldRenderInlineRuby: Bool {
-        preferences.showOriginal && shouldShowRuby && rubyPresentation.hasRuby && (isPinyinProjection ? preferences.showPinyin : true)
+        preferences.showOriginal && shouldShowRuby && rubyPresentation.hasRuby
+            && (isPinyinProjection ? preferences.showPinyin : true)
+            && !readingRepeatsOriginal
+    }
+
+    /// An all-kana line already reads as its own reading. A second kana row
+    /// would repeat the line verbatim, so the reading layer stays hidden.
+    private var readingRepeatsOriginal: Bool {
+        guard let kana = displayKanaText, !kana.isEmpty else { return false }
+        return normalizedDisplayText(kana) == normalizedDisplayText(effectiveOriginalText)
     }
 
     private var distinctRomaji: String? {
@@ -1474,7 +1487,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if preferences.kanaDisplayMode == .independentLine, shouldShowKana,
-                   let kana = displayKanaText {
+                   !readingRepeatsOriginal, let kana = displayKanaText {
                     Text(kana)
                         .font(.system(size: auxiliarySize, weight: .medium, design: .rounded))
                         .foregroundStyle(.white.opacity(rubyOpacity))
@@ -1482,7 +1495,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                         .fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity)
                 }
-            } else if shouldShowKana, let kana = displayKanaText {
+            } else if shouldShowKana, !readingRepeatsOriginal, let kana = displayKanaText {
                 Text(kana)
                     .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
                     .foregroundStyle(isActive ? coverAccent : .white)

@@ -51,6 +51,12 @@ struct LineDisplayView: View {
         return romaji
     }
 
+    /// An all-kana line is its own reading; a second row would repeat it.
+    private var readingRepeatsOriginal: Bool {
+        guard let kana = displayKanaText, !kana.isEmpty else { return false }
+        return normalizedDisplayText(kana) == normalizedDisplayText(line.originalText)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if prefs.kanaDisplayMode == .kanaReplacement,
@@ -89,6 +95,7 @@ struct LineDisplayView: View {
 
                 if prefs.kanaDisplayMode == .independentLine,
                    prefs.showKana,
+                   !readingRepeatsOriginal,
                    let kana = displayKanaText,
                    !kana.isEmpty {
                     Text(kana)

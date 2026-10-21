@@ -175,6 +175,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var isVersionPickerPresented = false
     @State private var pinchStartFontSize: CGFloat?
     @State private var coverAccent: Color?
+    @State private var coverLuminance: Double = 0
     @State private var showsListeningKeys = false
     @State private var isFocusMode = false
     @State private var isSideDrawerOpen = false
@@ -190,6 +191,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private var compositionArtworkPosition: String { settings.v3PreviewPosition(for: compositionStyle, scene: compositionScene) }
     private var compositionLyricsPosition: String { settings.v3PreviewLyricsPosition(for: compositionStyle, scene: compositionScene) }
     private var compositionArtworkScale: Double { settings.v3PreviewScale(for: compositionStyle, scene: compositionScene) }
+    /// 清晰度 resolved once per composition so the bright-cover automatic
+    /// shadow (封面 and 舞台 with a bright cover) applies everywhere at once.
+    private var compositionReadingProtection: V3ReadingProtection {
+        settings.v3EffectiveReadingProtection(scene: compositionScene,
+                                              renderer: compositionStyle,
+                                              coverLuminance: coverLuminance)
+    }
     private typealias ToolbarPopover = V3ToolbarModel.Panel
     private enum InspectorSurfaceStyle: Equatable { case hoverGlass, pinnedSolid }
     /// All toolbar/panel decisions live in this value; see V3ToolbarModel.
@@ -515,10 +523,11 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .tint(coverAccent)
         .accentColor(coverAccent)
         .task(id: compositionTrack.artworkURL) {
-            guard let url = compositionTrack.artworkURL else { coverAccent = nil; return }
+            guard let url = compositionTrack.artworkURL else { coverAccent = nil; coverLuminance = 0; return }
             let palette = await LyricIslandArtworkColors.palette(for: url)
             guard !Task.isCancelled else { return }
             coverAccent = LyricIslandArtworkColors.listeningAccent(palette)
+            coverLuminance = palette.luminance
         }
         .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: liveOnly ? state.liveLyrics : state.lyrics))
         .environment(\.v3PlaybackInteractionChanged, playbackInteractionRelay)
@@ -684,8 +693,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                                     showsAlbumLabel: false, cornerRadiusRatio: 0.025, preservesCompleteArtwork: true)
                         Text("原文 · 译文 · 读音")
                             .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
-                        Text("点击已同步的歌词可跳转；手动滚动阅读后可返回当前行。")
-                            .font(.caption).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
                     }.frame(width: coverColumnWidth, alignment: .leading)
                 }
                 lyricsColumn(width: compositionShowsCover ? textWidth : min(840, contentWidth),
@@ -855,7 +862,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         let coverSize = min(metrics.coverSize, max(1, metrics.artworkWidth - cardInset * 2))
         let card = VStack(alignment: .leading, spacing: compact ? 18 : 24) {
             HStack(alignment: .firstTextBaseline) {
-                Text("LYRIC ISLAND · LISTENING EDITION")
+                Text("ASTER · LYRIC · LISTENING EDITION")
                     .font(.system(size: 9, weight: .medium, design: .serif))
                     .tracking(1.1)
                     .foregroundStyle(.white.opacity(0.72))
@@ -1377,7 +1384,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
             }
             .onEnded { _ in pinchStartFontSize = nil })
-        .v3ReadingGlow(artworkURL: compositionTrack.artworkURL, policy: settings.v3ReadingProtection)
+        .v3ReadingGlow(artworkURL: compositionTrack.artworkURL, policy: compositionReadingProtection)
+        .environment(\.v3ResolvedReadingProtection, compositionReadingProtection)
         .environment(\.lyricTextAlignment, compositionLyricsPosition == "center" ? .center : compositionLyricsPosition == "right" ? .trailing : .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
