@@ -414,12 +414,18 @@ struct V3PlayerModeButton: View {
     @Environment(\.v3CoverAccent) private var accent
     private var active: Bool { shuffle ? state.playerModes?.shuffle == true : (state.playerModes?.repeatMode ?? .off) != .off }
     private var unknown: Bool { shuffle ? state.playerModes?.shuffle == nil && state.playerModes?.smartShuffle != true : state.playerModes?.repeatMode == nil }
+    /// 未知 is not 关闭: neither the glyph nor the tint may use the off
+    /// treatment, or a connected player with an unreadable state looks off.
+    private var glyphColor: Color {
+        if active { return accent }
+        return unknown ? .white.opacity(0.68) : .white.opacity(0.45)
+    }
     var body: some View {
         IslandTransportButton(
             systemImage: shuffle ? "shuffle" : state.playerModes?.repeatMode == .one ? "repeat.1" : "repeat",
             label: shuffle ? (state.playerModes?.shuffleLabel ?? "随机播放 · 未知") : (state.playerModes?.repeatLabel ?? "循环 · 未知"),
             enabled: state.canControlSpotify, primary: false,
-            tint: active ? accent : .white.opacity(0.45), glyph: active ? accent : .white.opacity(0.45)
+            tint: glyphColor, glyph: glyphColor
         ) { state.togglePlayerMode(shuffle: shuffle) }
         .overlay(alignment: .bottom) {
             if unknown {
