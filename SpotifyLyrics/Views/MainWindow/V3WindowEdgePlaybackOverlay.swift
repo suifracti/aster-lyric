@@ -379,6 +379,7 @@ private struct V3WindowEdgeTransportButtons: View {
                 VStack(spacing: 5) {
                     V3PlayerModeButton(state: state, shuffle: true)
                     likeButton
+                    if state.canPickPlaylists { playlistButton }
                     previousButton
                     playPauseButton
                     nextButton
@@ -390,6 +391,7 @@ private struct V3WindowEdgeTransportButtons: View {
                 HStack(spacing: 5) {
                     V3PlayerModeButton(state: state, shuffle: true)
                     likeButton
+                    if state.canPickPlaylists { playlistButton }
                     previousButton
                     playPauseButton
                     nextButton
@@ -407,20 +409,18 @@ private struct V3WindowEdgeTransportButtons: View {
 
     private var likeButton: some View {
         transportButton(image: state.isTrackLiked == true ? "heart.fill" : "heart",
-                        label: state.isTrackLiked == true ? "加入播放列表" : "喜欢 (S)",
+                        label: state.isTrackLiked == true ? "取消喜欢 (S)" : "喜欢 (S)",
                         enabled: state.hasLiveTrack, primary: false) {
-            if state.canPickPlaylists, state.isTrackLiked == true {
-                showsPlaylistPicker = true
-            } else {
-                state.toggleTrackLike()
-            }
+            state.toggleTrackLike()
         }
-        .overlay {
-            if state.canPickPlaylists {
-                V3RightClickCatcher { showsPlaylistPicker = true }
-            }
+    }
+
+    private var playlistButton: some View {
+        transportButton(image: "text.badge.plus", label: "添加到歌单",
+                        enabled: true, primary: false) {
+            showsPlaylistPicker = true
         }
-        .popover(isPresented: $showsPlaylistPicker, arrowEdge: .bottom) {
+        .popover(isPresented: $showsPlaylistPicker, arrowEdge: .top) {
             PlaylistPickerPopover(model: state.playlistPicker)
         }
     }
@@ -592,7 +592,7 @@ private enum V3WindowEdgeControlPositioner {
         }
 
         let isVertical = edge.isVertical
-        let baseSize = CGSize(width: isVertical ? 38 : 294, height: isVertical ? 246 : 38)
+        let baseSize = CGSize(width: isVertical ? 38 : 327, height: isVertical ? 279 : 38)
         let availableLong = isVertical ? height : width
         let availableShort = isVertical ? width : height
         let baseLong = isVertical ? baseSize.height : baseSize.width
@@ -632,7 +632,7 @@ private enum V3WindowEdgeControlPositioner {
         var candidates: [Layout] = []
         let topSpace = blocked.minX - 88 - 2
         if topSpace > 0 {
-            let base = CGSize(width: 294, height: 38)
+            let base = CGSize(width: 327, height: 38)
             let factor = min(1, topSpace / base.width, height / base.height)
             let half = base.width * factor / 2
             let x = clamped(point.x, lower: 88 + half, upper: blocked.minX - half - 1, fallback: 88 + half)
@@ -641,7 +641,7 @@ private enum V3WindowEdgeControlPositioner {
         }
         let rightSpace = height - blocked.maxY - 3
         if rightSpace > 0 {
-            let base = CGSize(width: 38, height: 246)
+            let base = CGSize(width: 38, height: 279)
             let factor = min(1, rightSpace / base.height, width / base.width)
             let half = base.height * factor / 2
             let y = clamped(point.y, lower: blocked.maxY + half + 1, upper: height - half - 2, fallback: height - half - 2)
