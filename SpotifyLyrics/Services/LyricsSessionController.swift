@@ -37,6 +37,9 @@ public final class LyricsSessionController: ObservableObject {
     private var recoveryTask: Task<Void, Never>?
     private var recoveryAttempts = 0
     private let recoveryCooldowns: [TimeInterval]
+    private var retryTask: Task<Void, Never>?
+    private let sourceRetryDelay: TimeInterval
+    private var retriedIdentity: TrackIdentity?
     private var isRecoveryAttempt = false
     private var activeTrack: Track?
     private var searchQueryOverride: String?
@@ -51,11 +54,13 @@ public final class LyricsSessionController: ObservableObject {
         repository: (any LyricsRepository)? = nil,
         recoveryCooldowns: [TimeInterval] = [2, 5],
         spotifyArtistResolver: SpotifyTrackArtistResolver? = nil,
-        sourceStats: LyricsSourceStats = .shared
+        sourceStats: LyricsSourceStats = .shared,
+        sourceRetryDelay: TimeInterval = 30
     ) {
         self.searchManager = LyricsSearchManager(providers: providers, name: name, spotifyArtistResolver: spotifyArtistResolver)
         self.repository = repository
         self.sourceStats = sourceStats
+        self.sourceRetryDelay = max(0, sourceRetryDelay)
         self.recoveryCooldowns = recoveryCooldowns.map { max(0, $0) }
     }
 
@@ -71,6 +76,7 @@ public final class LyricsSessionController: ObservableObject {
     deinit {
         requestTask?.cancel()
         recoveryTask?.cancel()
+        retryTask?.cancel()
     }
 
     public var activeDocument: LyricsDocument? {
@@ -106,6 +112,7 @@ public final class LyricsSessionController: ObservableObject {
         cancelCurrentRequest()
         revision &+= 1
         let requestRevision = revision
+        if activeIdentity != identity { retriedIdentity = nil }
         if resetQueryOverride || activeIdentity != identity {
             searchQueryOverride = Self.normalizedQuery(queryOverride)
         } else if let queryOverride {
@@ -386,6 +393,26 @@ public final class LyricsSessionController: ObservableObject {
                     await MainActor.run { [weak self] in
                         guard let self, self.activeIdentity == identity, self.revision == requestRevision else { return }
                         self.persistenceStatusMessage = message
+                    }
+                }
+            }
+
+            if didApply,
+               !Task.isCancelled,
+               !reviewOnly,
+               cachedReference?.isUserProtected != true,
+               Self.shouldRetrySourceFailures(outcome.result) {
+                let providers = Self.retryableProviders(in: outcome.diagnostics)
+                if !providers.isEmpty {
+                    await MainActor.run { [weak self] in
+                        self?.scheduleSourceRetry(
+                            track: track,
+                            identity: identity,
+                            revision: requestRevision,
+                            providers: providers,
+                            queryOverride: queryOverrideSnapshot,
+                            aliases: storedAliases
+                        )
                     }
                 }
             }
@@ -1070,6 +1097,158 @@ public final class LyricsSessionController: ObservableObject {
         requestTask = nil
         recoveryTask?.cancel()
         recoveryTask = nil
+        retryTask?.cancel()
+        retryTask = nil
+    }
+
+    private static func shouldRetrySourceFailures(_ result: LyricsLookupResult) -> Bool {
+        switch result {
+        case .candidates, .noLyrics, .noMatch: return true
+        case .match, .failed: return false
+        }
+    }
+
+    private static func retryableProviders(in diagnostics: [LyricsProviderDiagnostic]) -> Set<String> {
+        var providers = Set<String>()
+        for diagnostic in diagnostics {
+            guard case .failed(let failure) = diagnostic.outcome, isRetryable(failure) else { continue }
+            providers.insert(diagnostic.provider.components(separatedBy: "@").first ?? diagnostic.provider)
+        }
+        return providers
+    }
+
+    private static func isRetryable(_ failure: LyricsFailure) -> Bool {
+        switch failure {
+        case .timedOut, .networkUnavailable: return true
+        case .serverError(let code): return (500...599).contains(code)
+        default: return false
+        }
+    }
+
+    private var awaitsSourceRetry: Bool {
+        switch state {
+        case .candidates, .noLyrics, .noMatch: return true
+        default: return false
+        }
+    }
+
+    private func scheduleSourceRetry(
+        track: Track,
+        identity: TrackIdentity,
+        revision expectedRevision: UInt64,
+        providers: Set<String>,
+        queryOverride: String?,
+        aliases: [TrackAlias]
+    ) {
+        retryTask?.cancel()
+        guard retriedIdentity != identity else { return }
+        retriedIdentity = identity
+        let delay = sourceRetryDelay
+        LyricsE2ELog.log("SESSION source retry scheduled delay=\(delay)s providers=\(providers.sorted()) rev=\(expectedRevision)")
+        retryTask = Task { @MainActor [weak self] in
+            if delay > 0 {
+                do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) } catch { return }
+            }
+            guard let self, !Task.isCancelled,
+                  self.activeIdentity == identity,
+                  self.revision == expectedRevision,
+                  self.activeLyricsVersionID == nil,
+                  !self.isSearchInProgress,
+                  self.awaitsSourceRetry else { return }
+
+            let started = Date()
+            let outcome = await self.searchManager.search(
+                track: track,
+                identity: identity,
+                queryOverride: queryOverride,
+                forceRefresh: true,
+                aliases: aliases,
+                onlyProviders: providers
+            )
+            let duration = Date().timeIntervalSince(started)
+            guard !Task.isCancelled, self.activeIdentity == identity, self.revision == expectedRevision else { return }
+
+            var adopted = false
+            switch outcome.result {
+            case .match(let document):
+                if self.activeLyricsVersionID == nil,
+                   self.awaitsSourceRetry,
+                   document.identity == identity,
+                   !document.lines.isEmpty {
+                    self.apply(.match(document), identity: identity, requestRevision: expectedRevision)
+                    adopted = true
+                    await self.saveRetriedMatch(document, track: track, identity: identity, decision: outcome.automaticDecision)
+                }
+            case .candidates(let candidates):
+                self.mergeRetriedCandidates(candidates, identity: identity)
+            case .noLyrics, .noMatch, .failed:
+                break
+            }
+
+            let outcomeLabel: String
+            if case .match = outcome.result {
+                outcomeLabel = adopted ? "adopted" : "review"
+            } else {
+                outcomeLabel = LyricsSourceStats.outcome(for: outcome.result)
+            }
+            self.sourceStats.record(
+                spotifyID: identity.spotifyTrackID,
+                totalSeconds: duration,
+                result: outcome.result,
+                retry: true,
+                diagnostics: outcome.diagnostics,
+                outcome: outcomeLabel
+            )
+            self.retryTask = nil
+        }
+    }
+
+    private func saveRetriedMatch(
+        _ document: LyricsDocument,
+        track: Track,
+        identity: TrackIdentity,
+        decision: LyricsMatchDecision?
+    ) async {
+        guard let repository,
+              decision != nil || LyricsMatcher.isHighConfidence(document.confidence) else { return }
+        let expectedRevision = revision
+        do {
+            let saved: LyricsPersistenceSaveResult?
+            if let decision {
+                saved = try await repository.saveAutomaticallySelected(
+                    track: track,
+                    identity: identity,
+                    document: document,
+                    decision: LyricsAutomaticSelectionEvidence(
+                        identity: identity,
+                        tier: decision.tier.rawValue,
+                        hardReject: decision.hardReject,
+                        versionConflict: decision.versionConflict
+                    )
+                )
+            } else {
+                saved = try await repository.save(track: track, identity: identity, document: document)
+            }
+            if let saved, saved.versionID != nil,
+               activeIdentity == identity, revision == expectedRevision {
+                activeLyricsVersionID = saved.versionID
+                activeSourceContentHash = saved.sourceContentHash
+            }
+        } catch {
+            LyricsE2ELog.log("SESSION retry persistence failed error=\(error.localizedDescription)")
+        }
+    }
+
+    private func mergeRetriedCandidates(_ candidates: [LyricsCandidate], identity: TrackIdentity) {
+        var merged = Dictionary(availableCandidates.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+        for candidate in candidates where candidate.identity == identity {
+            merged[candidate.id] = candidate
+        }
+        let sorted = merged.values.sorted(by: LyricsCandidate.hasPrecedence)
+        availableCandidates = sorted
+        if case .candidates = state {
+            state = .candidates(identity, sorted)
+        }
     }
 
     private func scheduleRecovery(track: Track, identity: TrackIdentity, revision expectedRevision: UInt64) {

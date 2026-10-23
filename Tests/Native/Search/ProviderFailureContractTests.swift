@@ -79,6 +79,32 @@ private struct ProviderFailureCountingLyricsProvider: LyricsProvider {
     }
 }
 
+private final class ProviderFailureToggle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var failing = true
+    var isFailing: Bool {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return failing
+        }
+        set {
+            lock.lock()
+            failing = newValue
+            lock.unlock()
+        }
+    }
+}
+
+private struct ProviderFailureScriptedLyricsProvider: LyricsProvider {
+    let name: String
+    let toggle: ProviderFailureToggle
+    let result: LyricsLookupResult
+    func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult {
+        toggle.isFailing ? .failed(.timedOut) : result
+    }
+}
+
 private final class ProviderFailureCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var storedValue = 0
@@ -565,5 +591,62 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertEqual(object?["outcome"] as? String, "none")
         XCTAssertEqual(object?["retry"] as? Bool, false)
         XCTAssertNotNil(object?["sources"] as? [[String: Any]])
+    }
+
+    func testRetriedFailedSourceIsAdoptedOnce() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("source-retry-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let stats = LyricsSourceStats(fileURL: root.appendingPathComponent("source-stats.jsonl"))
+        let track = Track(title: "Retry Song", artist: "Retry Artist", album: "Retry Album", duration: 200)
+        let identity = TrackIdentity(track: track)
+        let qqToggle = ProviderFailureToggle()
+        let reviewCandidate = LyricsCandidate(
+            id: "review-candidate", identity: identity, title: "Retry Song", artist: track.artist,
+            album: track.album, duration: 260, lines: [LyricLine(timestamp: 0, originalText: "review")],
+            source: .local, confidence: 0.7
+        )
+        let retriedDocument = LyricsDocument(
+            identity: identity, title: track.title, artist: track.artist, album: track.album,
+            duration: track.duration, lines: [LyricLine(timestamp: 1, originalText: "retried")],
+            isSynchronized: true, source: .qqExperimental, confidence: 0.95
+        )
+        let controller = LyricsSessionController(
+            providers: [
+                ProviderFailureFixedLyricsProvider(name: "local-review", result: .candidates([reviewCandidate])),
+                ProviderFailureScriptedLyricsProvider(name: "QQ Music Experimental", toggle: qqToggle, result: .match(retriedDocument))
+            ],
+            sourceStats: stats,
+            sourceRetryDelay: 0.15
+        )
+
+        controller.begin(track: track, identity: identity)
+        for _ in 0..<100 {
+            if case .candidates = controller.state { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        guard case .candidates = controller.state else {
+            XCTFail("Expected a review result before the retry, got \(controller.state)")
+            return
+        }
+
+        qqToggle.isFailing = false
+        for _ in 0..<150 {
+            if controller.activeDocument != nil { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        XCTAssertEqual(controller.activeDocument?.source, .qqExperimental)
+        XCTAssertEqual(controller.activeDocument?.lines.first?.originalText, "retried")
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        let contents = try String(contentsOf: stats.fileURL, encoding: .utf8)
+        let retryLines = contents.split(separator: "\n").compactMap { line -> [String: Any]? in
+            guard let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  object["retry"] as? Bool == true else { return nil }
+            return object
+        }
+        XCTAssertEqual(retryLines.count, 1)
+        XCTAssertEqual(retryLines.first?["outcome"] as? String, "adopted")
     }
 }

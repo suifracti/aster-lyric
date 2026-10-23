@@ -341,7 +341,8 @@ public final class LyricsSearchManager: @unchecked Sendable {
         aliases: [TrackAlias] = [],
         collectCandidatesOnly: Bool = false,
         onProvisional: (@Sendable (LyricsDocument) async -> Void)? = nil,
-        onCandidates: (@Sendable ([LyricsCandidate]) async -> Void)? = nil
+        onCandidates: (@Sendable ([LyricsCandidate]) async -> Void)? = nil,
+        onlyProviders: Set<String>? = nil
     ) async -> SearchOutcome {
         if Task.isCancelled {
             return SearchOutcome(result: .failed(.cancelled), diagnostics: [])
@@ -381,7 +382,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
             LyricsE2ELog.log("MANAGER negative-cache hit identity=\(identity.stableKey) result=\(cached)")
             return SearchOutcome(result: cached.lookupResult, diagnostics: [])
         }
-        let configuredProviders = providerSnapshot()
+        let configuredProviders = providerSnapshot().filter { onlyProviders?.contains($0.name) ?? true }
         LyricsE2ELog.log("MANAGER start title=\(track.title) artist=\(track.artist) variants=\(variants.count) providers=\(configuredProviders.map { $0.name }) queryOverride=\(queryOverride ?? "")")
         var diagnostics: [LyricsProviderDiagnostic] = []
         var acceptedCandidates: [String: LyricsCandidate] = [:]
