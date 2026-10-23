@@ -359,6 +359,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         state: state,
                         colorHex: settings.v3EdgeProgressColorHex,
                         colorMode: settings.v3EdgeProgressColorMode,
+                        coverLuminance: coverLuminance,
                         exitPoint: lastWindowExitPoint,
                         pointerInsideWindow: isPointerInsideCanvas,
                         // Priority: an open panel, then the toolbar, then the edge.

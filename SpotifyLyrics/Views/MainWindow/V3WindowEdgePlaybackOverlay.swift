@@ -7,6 +7,7 @@ struct V3WindowEdgePlaybackOverlay: View {
     @V3ContentPlaybackState var state: PlaybackState
     let colorHex: String
     let colorMode: String
+    let coverLuminance: Double
     let exitPoint: CGPoint?
     let pointerInsideWindow: Bool
     /// The toolbar or an open panel owns the pointer; only the rail stays.
@@ -29,7 +30,10 @@ struct V3WindowEdgePlaybackOverlay: View {
     private let borderInset: CGFloat = 1.5
     private let borderRadius: CGFloat = 12
     private var controlsVisible: Bool {
-        edgeInteraction.isVisible && edgeInteraction.pointerInside && !suppressControls && !pointerOverToolbar
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--edge-player-expanded") { return true }
+#endif
+        return edgeInteraction.isVisible && edgeInteraction.pointerInside && !suppressControls && !pointerOverToolbar
     }
     private var animatesColor: Bool { colorMode == "flow" && !reduceMotion && state.isPlaying && windowVisible }
 
@@ -75,6 +79,7 @@ struct V3WindowEdgePlaybackOverlay: View {
                         ZStack {
                             V3WindowEdgeTransportButtons(state: state, accent: color,
                                 isVertical: controlPosition.isVertical,
+                                brightCover: coverLuminance > 0.6,
                                 elapsed: Self.timeText(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime)),
                                 total: Self.timeText(state.currentTrack.duration))
                                 .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
@@ -362,6 +367,7 @@ private struct V3WindowEdgeTransportButtons: View {
     @V3ContentPlaybackState var state: PlaybackState
     let accent: Color
     let isVertical: Bool
+    let brightCover: Bool
     let elapsed: String
     let total: String
     @State private var showsPlaylistPicker = false
@@ -378,7 +384,7 @@ private struct V3WindowEdgeTransportButtons: View {
                     nextButton
                     V3PlayerModeButton(state: state, shuffle: false)
                     Text(elapsed + "\n/ " + total).font(.system(size: 9)).monospacedDigit()
-                        .multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.8))
+                        .multilineTextAlignment(.center).foregroundStyle(.white.opacity(brightCover ? 0.92 : 0.8))
                 }
             } else {
                 HStack(spacing: 5) {
@@ -389,12 +395,13 @@ private struct V3WindowEdgeTransportButtons: View {
                     nextButton
                     V3PlayerModeButton(state: state, shuffle: false)
                     Text(elapsed + " / " + total).font(.system(size: 9)).monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(.white.opacity(brightCover ? 0.92 : 0.8))
                 }
             }
         }
         .padding(4)
         .background(.ultraThinMaterial, in: Capsule())
+        .background(Capsule().fill(Color.black.opacity(brightCover ? 0.28 : 0)))
         .overlay(Capsule().strokeBorder(Color.white.opacity(0.22), lineWidth: 0.8))
     }
 

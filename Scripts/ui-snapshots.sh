@@ -18,6 +18,8 @@ python3 "$ROOT/Tools/experience_visual_host/build.py" > /dev/null
 
 # Fix the scene toolbar state too; its pointer fade can otherwise be captured mid-animation.
 declare -a CASES=(
+  "edge-bright|--artwork white --scene coverPhoto --toolbar faint --edge-player-expanded"
+  "edge-dark|--artwork dark --scene coverPhoto --toolbar faint --edge-player-expanded"
   "toolbar-faint|--toolbar faint"
   "toolbar-full|--toolbar full"
   "lyric-notice|--toolbar notice"
