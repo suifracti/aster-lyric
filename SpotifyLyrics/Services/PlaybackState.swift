@@ -63,6 +63,7 @@ public final class PlaybackState: ObservableObject {
     private let spotifyPlaybackModesReader: (@MainActor () async throws -> PlayerPlaybackModes)?
     private let spotifyPlaybackModesWriter: (@MainActor (Bool?, PlayerRepeatMode?) async throws -> Void)?
     private var changingPlayerModes = false
+    private var pendingPlayerModes: [Bool: PlayerPlaybackModes] = [:]
     @Published public private(set) var loopedLyricLineID: UUID?
     private var lyricLineLoop: (identity: TrackIdentity, revision: UInt64, start: TimeInterval, end: TimeInterval)?
 
@@ -1586,77 +1587,102 @@ public final class PlaybackState: ObservableObject {
     }
 
     public func togglePlayerMode(shuffle: Bool) {
-        LyricsE2ELog.log("PLAYER mode tap shuffle=\(shuffle) canControl=\(canControlSpotify) busy=\(changingPlayerModes) status=\(providerStatus) live=\(hasLiveTrack) source=\(playbackSourceIdentity.rawValue)")
-        guard canControlSpotify, !changingPlayerModes else {
-            LyricsE2ELog.log("PLAYER mode tap ignored shuffle=\(shuffle)")
+        guard canControlSpotify else { return }
+        let before = playerModes ?? PlayerPlaybackModes(shuffle: false, repeatMode: .off)
+        var target = before
+        if shuffle {
+            target.shuffle = before.smartShuffle == true ? false : !(before.shuffle ?? false)
+            target.smartShuffle = false
+        } else { target.repeatMode = (before.repeatMode ?? .off).next }
+        playerModes = target
+        playbackNotice = shuffle ? target.shuffleLabel : target.repeatLabel
+        if changingPlayerModes {
+            pendingPlayerModes[shuffle] = target
             return
         }
         changingPlayerModes = true
         let source = playbackSourceIdentity
         Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { self.changingPlayerModes = false }
-            do {
-                // Cycle from the last known state. Falling back to unknown on a
-                // failed read restarted the cycle at its first step every time,
-                // so 循环 could never leave 列表循环 and 随机 could never turn off.
-                var current = (try? await self.readPlayerModes(source: source))
-                    ?? self.playerModes
-                    ?? PlayerPlaybackModes(shuffle: nil, repeatMode: nil)
-                // Unknown starts at on; smart shuffle may be disabled, never enabled by this app.
-                let nextShuffle = current.smartShuffle == true ? false : !(current.shuffle ?? false)
-                let nextRepeat = current.repeatMode?.next ?? .all
+            defer { self.changingPlayerModes = false; self.pendingPlayerModes.removeAll() }
+            var confirmed = before
+            var next: (Bool, PlayerPlaybackModes)? = (shuffle, target)
+            while let (isShuffle, desired) = next {
                 guard self.playbackSourceIdentity == source else { return }
-                var modeNotice: String?
-                if source == .spotifyDesktop {
-                    var useScript = false
-                    do {
-                        if let writer = self.spotifyPlaybackModesWriter {
-                            try await writer(shuffle ? nextShuffle : nil, shuffle ? nil : nextRepeat)
-                        } else {
-                            let token = try await self.spotifyAuthorizationManager.accessToken(requiredScopes: SpotifyOAuthConfiguration.playbackWriteScopes)
-                            try await self.spotifyLibraryService.setPlaybackModes(shuffle: shuffle ? nextShuffle : nil,
-                                repeatMode: shuffle ? nil : nextRepeat, accessToken: token)
-                        }
-                    } catch {
-                        // Only missing authorization or HTTP 403 permits the desktop fallback.
-                        switch error {
-                        case SpotifyAuthorizationError.notConfigured, SpotifyAuthorizationError.notAuthorized,
-                             SpotifyCatalogError.unauthorized, SpotifyCatalogError.forbidden,
-                             SpotifyAuthorizationError.tokenExchange(.unauthorized): useScript = true
-                        default: throw error
-                        }
+                do {
+                    let (written, notice) = try await self.writePlayerMode(shuffle: isShuffle, target: desired, source: source)
+                    guard self.playbackSourceIdentity == source else { return }
+                    if isShuffle { confirmed.shuffle = written.shuffle; confirmed.smartShuffle = written.smartShuffle }
+                    else { confirmed.repeatMode = written.repeatMode }
+                    // A completed write must not overwrite a newer tap's immediate display.
+                    if self.pendingPlayerModes[isShuffle] == nil {
+                        if isShuffle { self.playerModes?.shuffle = written.shuffle; self.playerModes?.smartShuffle = written.smartShuffle }
+                        else { self.playerModes?.repeatMode = written.repeatMode }
+                        if let notice { self.playbackNotice = notice }
                     }
-                    if useScript {
-                        if !shuffle && nextRepeat == .one {
-                            modeNotice = "单曲循环需要在设置里补充 Spotify 授权"
-                        }
-                        let scriptRepeat: PlayerRepeatMode = current.repeatMode == .off || current.repeatMode == nil ? .all : .off
-                        _ = try await self.provider.playbackModes(shuffle: shuffle ? nextShuffle : nil,
-                            repeatMode: shuffle ? nil : scriptRepeat)
-                        if shuffle { current.shuffle = nextShuffle; current.smartShuffle = false }
-                        else { current.repeatMode = scriptRepeat }
-                        // The fallback has only two repeat modes; no simulated seek at song end.
-                        LyricsE2ELog.log("PLAYER mode write route=script")
-                    } else {
-                        LyricsE2ELog.log("PLAYER mode write route=web success")
-                        // Spotify's read state can lag a successful write; normal refreshes reconcile it later.
-                        if shuffle { current.shuffle = nextShuffle; current.smartShuffle = false }
-                        else { current.repeatMode = nextRepeat }
-                    }
-                } else {
-                    current = try await self.provider.playbackModes(shuffle: shuffle ? nextShuffle : nil,
-                        repeatMode: shuffle ? nil : nextRepeat)
+                    LyricsE2ELog.log("PLAYER mode wrote shuffle=\(isShuffle) state=\(written)")
+                } catch {
+                    guard self.playbackSourceIdentity == source else { return }
+                    self.playerModes = confirmed
+                    self.playbackNotice = error.localizedDescription
+                    LyricsE2ELog.log("PLAYER mode write failed shuffle=\(isShuffle) error=\(error.localizedDescription)")
+                    return
                 }
-                guard self.playbackSourceIdentity == source else { return }
-                LyricsE2ELog.log("PLAYER mode state shuffle=\(String(describing: current.shuffle)) repeat=\(String(describing: current.repeatMode)) smart=\(String(describing: current.smartShuffle))")
-                self.playerModes = current
-                self.playbackNotice = modeNotice ?? (shuffle ? current.shuffleLabel : current.repeatLabel)
-            } catch {
-                LyricsE2ELog.log("PLAYER mode write failed shuffle=\(shuffle) error=\(error.localizedDescription)")
-                self.playbackNotice = error.localizedDescription
+                if let queued = self.pendingPlayerModes.first {
+                    self.pendingPlayerModes.removeValue(forKey: queued.key)
+                    next = (queued.key, queued.value)
+                } else { next = nil }
             }
         }
+    }
+
+    private func writePlayerMode(shuffle: Bool, target: PlayerPlaybackModes,
+                                 source: PlaybackSourceIdentity) async throws -> (PlayerPlaybackModes, String?) {
+        let nextShuffle = target.shuffle ?? false
+        let nextRepeat = target.repeatMode ?? .off
+        var current = target
+        var modeNotice: String?
+        if source == .spotifyDesktop {
+            var useScript = false
+            do {
+                if let writer = spotifyPlaybackModesWriter {
+                    try await writer(shuffle ? nextShuffle : nil, shuffle ? nil : nextRepeat)
+                } else {
+                    let token = try await spotifyAuthorizationManager.accessToken(requiredScopes: SpotifyOAuthConfiguration.playbackWriteScopes)
+                    try await spotifyLibraryService.setPlaybackModes(shuffle: shuffle ? nextShuffle : nil,
+                        repeatMode: shuffle ? nil : nextRepeat, accessToken: token)
+                }
+            } catch {
+                // Only missing authorization or HTTP 403 permits the desktop fallback.
+                switch error {
+                case SpotifyAuthorizationError.notConfigured, SpotifyAuthorizationError.notAuthorized,
+                     SpotifyCatalogError.unauthorized, SpotifyCatalogError.forbidden,
+                     SpotifyAuthorizationError.tokenExchange(.unauthorized): useScript = true
+                default: throw error
+                }
+            }
+            if useScript {
+                if !shuffle && nextRepeat == .one {
+                    modeNotice = "单曲循环需要在设置里补充 Spotify 授权"
+                }
+                let scriptRepeat: PlayerRepeatMode = nextRepeat == .one ? .off : nextRepeat
+                _ = try await provider.playbackModes(shuffle: shuffle ? nextShuffle : nil,
+                    repeatMode: shuffle ? nil : scriptRepeat)
+                if shuffle { current.shuffle = nextShuffle; current.smartShuffle = false }
+                else { current.repeatMode = scriptRepeat }
+                // The fallback has only two repeat modes; no simulated seek at song end.
+                LyricsE2ELog.log("PLAYER mode write route=script")
+            } else {
+                LyricsE2ELog.log("PLAYER mode write route=web success")
+                // Spotify's read state can lag a successful write; normal refreshes reconcile it later.
+                if shuffle { current.shuffle = nextShuffle; current.smartShuffle = false }
+                else { current.repeatMode = nextRepeat }
+            }
+        } else {
+            current = try await provider.playbackModes(shuffle: shuffle ? nextShuffle : nil,
+                repeatMode: shuffle ? nil : nextRepeat)
+        }
+        return (current, modeNotice)
     }
 
     private func trackLikeValue(track: Track, source: PlaybackSourceIdentity, set value: Bool? = nil) async throws -> Bool {

@@ -16,6 +16,8 @@ private final class EventPlaybackProvider: PlaybackProvider {
     var nativeShuffleWrites: [Bool] = []
     var nativeRepeatWrites: [PlayerRepeatMode] = []
     var webReadbackOverride: PlayerPlaybackModes?
+    var heldModeWrite: CheckedContinuation<Void, Never>?
+    var holdModeWrite = false
     var webWriteError: Error?
     var webRepeatWrites: [PlayerRepeatMode] = []
     var webShuffleWrites: [Bool] = []
@@ -50,13 +52,32 @@ private struct EventOfflineLyrics: LyricsProvider {
 
 @MainActor
 final class DesktopPlaybackEventTests: XCTestCase {
+    func testThreeRapidRepeatTapsSendOnlyTheFinalPendingMode() async throws {
+        let (state, provider, _, _) = fixture()
+        state.startProvider()
+        try await wait { state.playerModes != nil }
+        provider.holdModeWrite = true
+        state.togglePlayerMode(shuffle: false)
+        XCTAssertEqual(state.playerModes?.repeatMode, .all)
+        try await wait { provider.heldModeWrite != nil }
+        state.togglePlayerMode(shuffle: false)
+        XCTAssertEqual(state.playerModes?.repeatMode, .one)
+        state.togglePlayerMode(shuffle: false)
+        XCTAssertEqual(state.playerModes?.repeatMode, .off)
+        provider.heldModeWrite?.resume()
+        provider.heldModeWrite = nil
+        try await wait { provider.webRepeatWrites.count == 2 }
+        XCTAssertEqual(provider.webRepeatWrites, [.all, .off])
+        XCTAssertEqual(provider.modes.repeatMode, .off)
+    }
+
     func testSpotifyWebRepeatUsesThreeNativeStatesWithoutSeeking() async throws {
         let (state, provider, _, center) = fixture()
         state.startProvider()
         try await wait { state.playerModes != nil }
         for mode in [PlayerRepeatMode.all, .one, .off] {
             state.togglePlayerMode(shuffle: false)
-            try await wait { state.playerModes?.repeatMode == mode }
+            try await wait { provider.webRepeatWrites.last == mode }
         }
         XCTAssertEqual(provider.webRepeatWrites, [.all, .one, .off])
         XCTAssertTrue(provider.nativeRepeatWrites.isEmpty)
@@ -67,9 +88,9 @@ final class DesktopPlaybackEventTests: XCTestCase {
         // HTTP 403 falls back to the script's two repeat states.
         provider.webWriteError = SpotifyCatalogError.forbidden
         state.togglePlayerMode(shuffle: false)
-        try await wait { state.playerModes?.repeatMode == .all }
+        try await wait { provider.nativeRepeatWrites.count == 1 }
         state.togglePlayerMode(shuffle: false)
-        try await wait { state.playerModes?.repeatMode == .off }
+        try await wait { provider.nativeRepeatWrites.count == 2 }
         XCTAssertEqual(provider.nativeRepeatWrites, [.all, .off])
         XCTAssertEqual(state.playbackNotice, "单曲循环需要在设置里补充 Spotify 授权")
     }
@@ -80,11 +101,11 @@ final class DesktopPlaybackEventTests: XCTestCase {
         try await wait { state.playerModes != nil }
         provider.webReadbackOverride = PlayerPlaybackModes(shuffle: false, repeatMode: .off)
         state.togglePlayerMode(shuffle: true)
-        try await wait { state.playbackNotice != nil }
+        try await wait { provider.webShuffleWrites.count == 1 }
         XCTAssertEqual(provider.webShuffleWrites, [true])
         XCTAssertEqual(state.playerModes?.shuffle, true)
         state.togglePlayerMode(shuffle: false)
-        try await wait { state.playerModes?.repeatMode == .all }
+        try await wait { provider.webRepeatWrites.count == 1 }
         XCTAssertEqual(provider.webRepeatWrites, [.all])
         // Spotify still reports the old values; only a normal refresh applies them.
         state.refreshPlayerModes()
@@ -208,6 +229,10 @@ final class DesktopPlaybackEventTests: XCTestCase {
                 if provider.modeReadFails { throw SpotifyCatalogError.unauthorized }
                 return provider.modes
             }, spotifyPlaybackModesWriter: { shuffle, repeatMode in
+                if provider.holdModeWrite {
+                    provider.holdModeWrite = false
+                    await withCheckedContinuation { provider.heldModeWrite = $0 }
+                }
                 if let error = provider.webWriteError { throw error }
                 if let shuffle {
                     provider.webShuffleWrites.append(shuffle)
