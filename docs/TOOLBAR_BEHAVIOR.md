@@ -197,14 +197,13 @@ Clicks that land on the popover's transparent arrow or shadow area are forwarded
 **Player information:** the edge player pill shows the elapsed and total time in small text, for example 「0:35 / 3:13」, beside the play controls. Nothing else is added.
 
 ## Add to playlist (like Spotify's 「新增至播放清單」)
-**Entry:**
-- **Heart:**
-  - Not liked: clicking it likes the song.
-  - Already liked: clicking it opens the playlist picker.
-- **Right-click on the heart** always opens the picker.
+**Entry (changed 2026-10-23; the user found the old "heart opens the picker once liked" rule undiscoverable):**
+- **Heart:** only like / unlike. One click toggles, with the same notices as S. It never opens the picker.
+- **「添加到歌单」 button:** a separate button right after the heart in the player pill, SF Symbol `text.badge.plus`, tooltip 「添加到歌单」. Clicking it opens the picker. Shown only when playlists are available (`canPickPlaylists`).
+- **Right-click on the heart:** removed; the button replaces it.
 - **S** stays as defined above.
 
-**Picker** (a popover from the heart, in the hover-panel style):
+**Picker** (a popover from the 「添加到歌单」 button, in the hover-panel style):
 - **Top:** a search field, 「尋找播放清單」, which filters by name.
 - **Next:** 「建立新清單」, which creates a private playlist named after what you typed (or 「新清單」) and adds the song.
 - **List:**
