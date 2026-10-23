@@ -144,20 +144,6 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
         try await executeCommand("tell application \"Spotify\" to play")
     }
 
-    public func restartTrack(id: String) async throws -> Bool {
-        guard let trackID = TrackIdentity.spotifyRequestTrackID(id), isRunning else { return false }
-        let result = try await execute(script: """
-        if application "Spotify" is not running then return "false"
-        tell application "Spotify"
-            considering case
-                if (id of current track as text) is not "spotify:track:\(trackID)" then return "false"
-            end considering
-            set player position to 0
-            return "true"
-        end tell
-        """, timeout: Self.commandScriptTimeout)
-        return result?.lowercased() == "true"
-    }
 
     public func playbackModes(shuffle: Bool?, repeatMode: PlayerRepeatMode?) async throws -> PlayerPlaybackModes {
         guard isRunning else { throw PlaybackProviderError.notRunning }

@@ -88,8 +88,28 @@ struct SpotifyWebCatalogContract {
             authorizationEndpoint: URL(string: "https://accounts.example.test/authorize")!,
             tokenEndpoint: tokenEndpoint
         )
+        precondition(SpotifyOAuthConfiguration.authorizationScopes.contains("user-modify-playback-state"), "Playback writes require authorization")
         let accessFixture = String(repeating: "a", count: 24)
         let refreshedFixture = String(repeating: "b", count: 24)
+
+        for (mode, value) in [(PlayerRepeatMode.off, "off"), (.all, "context"), (.one, "track")] {
+            StubURLProtocol.handler = { request in
+                precondition(request.httpMethod == "PUT")
+                precondition(request.url?.path == "/v1/me/player/repeat")
+                precondition(request.url?.query == "state=" + value)
+                return (204, [:], Data())
+            }
+            try await service.setPlaybackModes(shuffle: nil, repeatMode: mode, accessToken: accessFixture)
+        }
+        for enabled in [true, false] {
+            StubURLProtocol.handler = { request in
+                precondition(request.httpMethod == "PUT")
+                precondition(request.url?.path == "/v1/me/player/shuffle")
+                precondition(request.url?.query == "state=" + String(enabled))
+                return (204, [:], Data())
+            }
+            try await service.setPlaybackModes(shuffle: enabled, repeatMode: nil, accessToken: accessFixture)
+        }
 
         let payload = """
         {

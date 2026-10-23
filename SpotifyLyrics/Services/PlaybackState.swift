@@ -61,9 +61,8 @@ public final class PlaybackState: ObservableObject {
     private var isChangingLike = false
     private let spotifyLibraryService = SpotifyCatalogService()
     private let spotifyPlaybackModesReader: (@MainActor () async throws -> PlayerPlaybackModes)?
+    private let spotifyPlaybackModesWriter: (@MainActor (Bool?, PlayerRepeatMode?) async throws -> Void)?
     private var changingPlayerModes = false
-    private var spotifySingleTrackRepeat = false
-    private var restartingRepeatedTrack = false
     @Published public private(set) var loopedLyricLineID: UUID?
     private var lyricLineLoop: (identity: TrackIdentity, revision: UInt64, start: TimeInterval, end: TimeInterval)?
 
@@ -170,9 +169,11 @@ public final class PlaybackState: ObservableObject {
         alignmentService: (any AlignmentService)? = nil,
         desktopEvents: DesktopPlaybackEvents? = nil,
         lyricsWindowsVisible: (() -> Bool)? = nil,
-        spotifyPlaybackModesReader: (@MainActor () async throws -> PlayerPlaybackModes)? = nil
+        spotifyPlaybackModesReader: (@MainActor () async throws -> PlayerPlaybackModes)? = nil,
+        spotifyPlaybackModesWriter: (@MainActor (Bool?, PlayerRepeatMode?) async throws -> Void)? = nil
     ) {
         self.spotifyPlaybackModesReader = spotifyPlaybackModesReader
+        self.spotifyPlaybackModesWriter = spotifyPlaybackModesWriter
         let resolvedSettings = settings ?? AppSettingsStore()
         self.settingsStore = resolvedSettings
         self.lyricsOffsetScopeBinding = LyricsOffsetScopeBinding(store: resolvedSettings.lyricsOffsetStore)
@@ -1559,9 +1560,6 @@ public final class PlaybackState: ObservableObject {
                 let token = try await spotifyAuthorizationManager.accessToken(requiredScopes: SpotifyOAuthConfiguration.playbackScopes)
                 modes = try await spotifyLibraryService.playbackModes(accessToken: token)
             }
-            if spotifySingleTrackRepeat {
-                if modes.repeatMode == .off || modes.repeatMode == nil { modes.repeatMode = .one }
-            }
         } else { modes = try await provider.playbackModes(shuffle: nil, repeatMode: nil) }
         return modes
     }
@@ -1582,7 +1580,6 @@ public final class PlaybackState: ObservableObject {
                 LyricsE2ELog.log("PLAYER modes unavailable source=\(source) error=\(error.localizedDescription) kept=\(String(describing: modes))")
             }
             guard self.playbackSourceIdentity == source, !self.changingPlayerModes else { return }
-            if source == .spotifyDesktop, let mode = modes?.repeatMode, mode != .one { self.spotifySingleTrackRepeat = false }
             if self.playerModes != modes { self.playerModes = modes }
             LyricsE2ELog.log("PLAYER modes source=\(source) shuffle=\(String(describing: modes?.shuffle)) repeat=\(String(describing: modes?.repeatMode)) smart=\(String(describing: modes?.smartShuffle))")
         }
@@ -1605,22 +1602,50 @@ public final class PlaybackState: ObservableObject {
                 // so 循环 could never leave 列表循环 and 随机 could never turn off.
                 var current = (try? await self.readPlayerModes(source: source))
                     ?? self.playerModes
-                    ?? PlayerPlaybackModes(shuffle: nil, repeatMode: self.spotifySingleTrackRepeat ? .one : nil)
+                    ?? PlayerPlaybackModes(shuffle: nil, repeatMode: nil)
                 // Unknown starts at on; smart shuffle may be disabled, never enabled by this app.
                 let nextShuffle = current.smartShuffle == true ? false : !(current.shuffle ?? false)
                 let nextRepeat = current.repeatMode?.next ?? .all
-                let nativeRepeat: PlayerRepeatMode = source == .spotifyDesktop && nextRepeat == .one ? .off : nextRepeat
                 guard self.playbackSourceIdentity == source else { return }
-                LyricsE2ELog.log("PLAYER mode write shuffle=\(shuffle) next=\(shuffle ? String(describing: nextShuffle) : String(describing: nativeRepeat)) provider=\(self.provider.displayName)")
-                let written = try await self.provider.playbackModes(shuffle: shuffle ? nextShuffle : nil,
-                                                                    repeatMode: shuffle ? nil : nativeRepeat)
-                LyricsE2ELog.log("PLAYER mode wrote shuffle=\(shuffle) result=\(String(describing: written))")
-                guard self.playbackSourceIdentity == source else { return }
-                if shuffle { current.shuffle = nextShuffle; current.smartShuffle = false }
-                else {
-                    current.repeatMode = nextRepeat
-                    if source == .spotifyDesktop { self.spotifySingleTrackRepeat = nextRepeat == .one }
+                if source == .spotifyDesktop {
+                    var useScript = false
+                    do {
+                        if let writer = self.spotifyPlaybackModesWriter {
+                            try await writer(shuffle ? nextShuffle : nil, shuffle ? nil : nextRepeat)
+                        } else {
+                            let token = try await self.spotifyAuthorizationManager.accessToken(requiredScopes: SpotifyOAuthConfiguration.playbackWriteScopes)
+                            try await self.spotifyLibraryService.setPlaybackModes(shuffle: shuffle ? nextShuffle : nil,
+                                repeatMode: shuffle ? nil : nextRepeat, accessToken: token)
+                        }
+                    } catch {
+                        // Only missing authorization or HTTP 403 permits the desktop fallback.
+                        switch error {
+                        case SpotifyAuthorizationError.notConfigured, SpotifyAuthorizationError.notAuthorized,
+                             SpotifyCatalogError.unauthorized, SpotifyCatalogError.forbidden,
+                             SpotifyAuthorizationError.tokenExchange(.unauthorized): useScript = true
+                        default: throw error
+                        }
+                    }
+                    if useScript {
+                        let scriptRepeat: PlayerRepeatMode = current.repeatMode == .off || current.repeatMode == nil ? .all : .off
+                        _ = try await self.provider.playbackModes(shuffle: shuffle ? nextShuffle : nil,
+                            repeatMode: shuffle ? nil : scriptRepeat)
+                        if shuffle { current.shuffle = nextShuffle; current.smartShuffle = false }
+                        else { current.repeatMode = scriptRepeat }
+                        // The fallback has only two repeat modes; no simulated seek at song end.
+                        if let observed = try? await self.readPlayerModes(source: source) { current = observed }
+                        LyricsE2ELog.log("PLAYER mode write route=script")
+                    } else {
+                        LyricsE2ELog.log("PLAYER mode write route=web success")
+                        // Keep readback outside the write catch: a failed GET must never resend via script.
+                        current = try await self.readPlayerModes(source: source)
+                    }
+                } else {
+                    current = try await self.provider.playbackModes(shuffle: shuffle ? nextShuffle : nil,
+                        repeatMode: shuffle ? nil : nextRepeat)
                 }
+                guard self.playbackSourceIdentity == source else { return }
+                LyricsE2ELog.log("PLAYER mode state shuffle=\(String(describing: current.shuffle)) repeat=\(String(describing: current.repeatMode)) smart=\(String(describing: current.smartShuffle))")
                 self.playerModes = current
                 self.playbackNotice = shuffle ? current.shuffleLabel : current.repeatLabel
             } catch {
@@ -2997,7 +3022,6 @@ public final class PlaybackState: ObservableObject {
         guard playbackSourceIdentity != next else { return }
         let previous = playbackSourceIdentity
         playbackSourceIdentity = next
-        if next != .spotifyDesktop { spotifySingleTrackRepeat = false }
         AutomaticAlignmentJobController.shared.notifyPlaybackSourceChanged(
             previous: previous,
             next: next
@@ -3127,41 +3151,8 @@ public final class PlaybackState: ObservableObject {
         _ = lyricsSession.retryAfterNetworkRecovery(track: currentTrack, identity: identity)
     }
 
-    private func restartRepeatedTrackIfNeeded() -> Bool {
-        guard spotifySingleTrackRepeat, playbackSourceIdentity == .spotifyDesktop,
-              hasLiveTrack, isPlaying, currentTrack.duration > 0,
-              playbackPositionNow >= currentTrack.duration,
-              let id = currentTrack.spotifyId else { return false }
-        guard !restartingRepeatedTrack else { return true }
-        restartingRepeatedTrack = true
-        invalidateProviderRefresh()
-        let identity = currentTrackIdentity
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.restartingRepeatedTrack = false }
-            do {
-                let restarted = try await self.provider.restartTrack(id: id)
-                guard self.playbackSourceIdentity == .spotifyDesktop, self.currentTrackIdentity == identity else { return }
-                if restarted {
-                    self.resetPlaybackAnchor(to: 0, source: .seek)
-                } else {
-                    self.spotifySingleTrackRepeat = false
-                    self.playerModes?.repeatMode = .off
-                    self.playbackNotice = "歌曲已切换，未执行单曲循环"
-                }
-            } catch {
-                guard self.playbackSourceIdentity == .spotifyDesktop, self.currentTrackIdentity == identity else { return }
-                self.spotifySingleTrackRepeat = false
-                self.playerModes?.repeatMode = .off
-                self.playbackNotice = "单曲循环失败：" + error.localizedDescription
-            }
-        }
-        return true
-    }
-
     private func tick() {
         if repeatLyricLineIfNeeded() { return }
-        if restartRepeatedTrackIfNeeded() { return }
         if isMockPreviewMode {
             publishTickTime(playbackPositionNow)
             if PlaybackTickTimeUpdatePolicy.shouldFinishMockPlayback(

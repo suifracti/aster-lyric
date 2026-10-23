@@ -48,12 +48,14 @@ public struct SpotifyOAuthConfiguration: Equatable, Sendable {
     public static let libraryScopes: Set<String> = ["user-library-read", "user-library-modify"]
 
     public static let playbackScopes: Set<String> = ["user-read-playback-state"]
+    public static let playbackWriteScopes: Set<String> = ["user-modify-playback-state"]
     public static let playlistScopes: Set<String> = [
         "playlist-read-private", "playlist-read-collaborative",
         "playlist-modify-private", "playlist-modify-public"
     ]
     public static let authorizationScopes = libraryScopes
         .union(playbackScopes)
+        .union(playbackWriteScopes)
         .union(playlistScopes)
 
     public static let apiBaseURL = URL(string: "https://api.spotify.com/v1")!
@@ -231,6 +233,26 @@ public final class SpotifyCatalogService: @unchecked Sendable {
         default: mode = nil
         }
         return PlayerPlaybackModes(shuffle: state.shuffle_state, repeatMode: mode, smartShuffle: state.smart_shuffle)
+    }
+
+    func setPlaybackModes(shuffle: Bool?, repeatMode: PlayerRepeatMode?, accessToken: String) async throws {
+        let endpoint: String
+        let value: String
+        if let shuffle {
+            endpoint = "shuffle"
+            value = shuffle ? "true" : "false"
+        } else if let repeatMode {
+            endpoint = "repeat"
+            switch repeatMode {
+            case .off: value = "off"
+            case .all: value = "context"
+            case .one: value = "track"
+            }
+        } else { return }
+        var components = URLComponents(url: baseURL.appendingPathComponent("me/player/" + endpoint), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "state", value: value)]
+        guard let url = components.url else { throw SpotifyCatalogError.invalidURL }
+        _ = try await sendAPIRequest(url: url, accessToken: accessToken, method: "PUT")
     }
 
     func isTrackSaved(id: String, accessToken: String) async throws -> Bool {

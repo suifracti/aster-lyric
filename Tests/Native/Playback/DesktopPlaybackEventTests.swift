@@ -15,16 +15,14 @@ private final class EventPlaybackProvider: PlaybackProvider {
     var modeReadFails = false
     var nativeShuffleWrites: [Bool] = []
     var nativeRepeatWrites: [PlayerRepeatMode] = []
-    var restartedTrackIDs: [String] = []
+    var webReadbackOverride: PlayerPlaybackModes?
+    var webWriteError: Error?
+    var webRepeatWrites: [PlayerRepeatMode] = []
+    var webShuffleWrites: [Bool] = []
     func playbackModes(shuffle: Bool?, repeatMode: PlayerRepeatMode?) async throws -> PlayerPlaybackModes {
         if let shuffle { modes.shuffle = shuffle; modes.smartShuffle = false; nativeShuffleWrites.append(shuffle) }
         if let repeatMode { modes.repeatMode = repeatMode; nativeRepeatWrites.append(repeatMode) }
         return modes
-    }
-    func restartTrack(id: String) async throws -> Bool {
-        guard id == snapshot.track?.id else { return false }
-        restartedTrackIDs.append(id)
-        return true
     }
     var holdNext = false
     var pending: CheckedContinuation<PlaybackSnapshot, Never>?
@@ -52,36 +50,47 @@ private struct EventOfflineLyrics: LyricsProvider {
 
 @MainActor
 final class DesktopPlaybackEventTests: XCTestCase {
-    func testSpotifySingleRepeatCyclesAndRestartsTheSameTrackAtItsEnd() async throws {
-        let desktop = SpotifyDesktopProvider(scriptRunner: { script, _ in
-            XCTAssertTrue(script.contains("if (id of current track as text) is not \"spotify:track:AAAAAAAAAAAAAAAAAAAAAA\" then return \"false\""))
-            XCTAssertTrue(script.contains("set player position to 0"))
-            var compileError: NSDictionary?
-            XCTAssertTrue(NSAppleScript(source: script)!.compileAndReturnError(&compileError), "\(String(describing: compileError))")
-            return "true"
-        }, applicationIsInstalled: { true }, applicationIsRunning: { true })
-        let restarted = try await desktop.restartTrack(id: "spotify:track:AAAAAAAAAAAAAAAAAAAAAA")
-        XCTAssertTrue(restarted)
+    func testSpotifyWebRepeatUsesThreeNativeStatesWithoutSeeking() async throws {
         let (state, provider, _, center) = fixture()
         state.startProvider()
         try await wait { state.playerModes != nil }
+        for mode in [PlayerRepeatMode.all, .one, .off] {
+            state.togglePlayerMode(shuffle: false)
+            try await wait { state.playerModes?.repeatMode == mode }
+        }
+        XCTAssertEqual(provider.webRepeatWrites, [.all, .one, .off])
+        XCTAssertTrue(provider.nativeRepeatWrites.isEmpty)
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil,
+                    userInfo: ["Player State": "Playing", "Playback Position": 240])
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(provider.seeks.isEmpty)
+        // HTTP 403 falls back to the script's two repeat states.
+        provider.webWriteError = SpotifyCatalogError.forbidden
         state.togglePlayerMode(shuffle: false)
         try await wait { state.playerModes?.repeatMode == .all }
         state.togglePlayerMode(shuffle: false)
-        try await wait { state.playerModes?.repeatMode == .one }
-        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil,
-                    userInfo: ["Player State": "Playing", "Playback Position": 240])
-        try await wait { !provider.restartedTrackIDs.isEmpty }
-        XCTAssertEqual(provider.restartedTrackIDs, ["spotify:track:AAAAAAAAAAAAAAAAAAAAAA"])
-        XCTAssertLessThan(state.currentTime, 1)
-        XCTAssertTrue(state.isPlaying)
-        state.togglePlayerMode(shuffle: false)
         try await wait { state.playerModes?.repeatMode == .off }
-        XCTAssertEqual(provider.nativeRepeatWrites, [.all, .off, .off])
+        XCTAssertEqual(provider.nativeRepeatWrites, [.all, .off])
+    }
+
+    func testWebWriteUsesReadbackAndDoesNotFallbackForNetworkFailure() async throws {
+        let (state, provider, _, _) = fixture()
+        state.startProvider()
+        try await wait { state.playerModes != nil }
+        provider.webReadbackOverride = PlayerPlaybackModes(shuffle: false, repeatMode: .off)
+        state.togglePlayerMode(shuffle: true)
+        try await wait { state.playbackNotice != nil }
+        XCTAssertEqual(provider.webShuffleWrites, [true])
+        XCTAssertEqual(state.playerModes?.shuffle, false)
+        provider.webWriteError = URLError(.notConnectedToInternet)
+        state.togglePlayerMode(shuffle: true)
+        try await wait { state.playbackNotice == URLError(.notConnectedToInternet).localizedDescription }
+        XCTAssertTrue(provider.nativeShuffleWrites.isEmpty)
     }
 
     func testUnknownModesFirstClickEnablesAndSmartShuffleOnlyTurnsOff() async throws {
         let (state, provider, _, _) = fixture()
+        provider.webWriteError = SpotifyAuthorizationError.notAuthorized
         provider.modeReadFails = true
         state.startProvider()
         try await wait { state.hasLiveTrack }
@@ -108,6 +117,7 @@ final class DesktopPlaybackEventTests: XCTestCase {
         try await wait { state.playerModes != nil }
 
         // The account read is gone for the rest of the test: no token, or 204.
+        provider.webWriteError = SpotifyAuthorizationError.notAuthorized
         provider.modeReadFails = true
 
         state.togglePlayerMode(shuffle: true)
@@ -121,10 +131,8 @@ final class DesktopPlaybackEventTests: XCTestCase {
         try await wait { provider.nativeRepeatWrites.count == 1 }
         state.togglePlayerMode(shuffle: false)
         try await wait { provider.nativeRepeatWrites.count == 2 }
-        state.togglePlayerMode(shuffle: false)
-        try await wait { provider.nativeRepeatWrites.count == 3 }
-        XCTAssertEqual(provider.nativeRepeatWrites, [.all, .off, .off],
-                       "循环必须从列表循环继续走到单曲循环，再回到不循环")
+        XCTAssertEqual(provider.nativeRepeatWrites, [.all, .off],
+                       "脚本回退只切换列表循环和不循环")
         XCTAssertEqual(state.playerModes?.repeatMode, .off)
 
         state.refreshPlayerModes()
@@ -192,6 +200,18 @@ final class DesktopPlaybackEventTests: XCTestCase {
             spotifyPlaybackModesReader: {
                 if provider.modeReadFails { throw SpotifyCatalogError.unauthorized }
                 return provider.modes
+            }, spotifyPlaybackModesWriter: { shuffle, repeatMode in
+                if let error = provider.webWriteError { throw error }
+                if let shuffle {
+                    provider.webShuffleWrites.append(shuffle)
+                    provider.modes.shuffle = shuffle
+                    provider.modes.smartShuffle = false
+                }
+                if let repeatMode {
+                    provider.webRepeatWrites.append(repeatMode)
+                    provider.modes.repeatMode = repeatMode
+                }
+                if let observed = provider.webReadbackOverride { provider.modes = observed }
             })
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         return (state, provider, events, center)

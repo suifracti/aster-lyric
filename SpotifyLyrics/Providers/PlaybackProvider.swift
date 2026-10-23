@@ -259,11 +259,9 @@ public protocol PlaybackProvider: AnyObject {
     func next() async throws
     func seek(to position: TimeInterval) async throws
     func playbackModes(shuffle: Bool?, repeatMode: PlayerRepeatMode?) async throws -> PlayerPlaybackModes
-    func restartTrack(id: String) async throws -> Bool
 }
 
 public extension PlaybackProvider {
-    func restartTrack(id: String) async throws -> Bool { throw PlaybackProviderError.noTrack }
     func playbackModes(shuffle: Bool?, repeatMode: PlayerRepeatMode?) async throws -> PlayerPlaybackModes {
         throw PlaybackProviderError.commandFailed("当前播放器不支持随机与循环")
     }
