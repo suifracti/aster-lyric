@@ -78,6 +78,7 @@
 		A60F09060000000000000301 /* KugouExperimentalLyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60F09060000000000000300 /* KugouExperimentalLyricsProvider.swift */; };
 		110000452D83400100000001 /* LocalAudioASRService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000452D83400100000000 /* LocalAudioASRService.swift */; };
 		110000462D83400100000001 /* LyricsE2ELog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000462D83400100000000 /* LyricsE2ELog.swift */; };
+		1100007F2D83400100000001 /* LyricsSourceStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1100007F2D83400100000000 /* LyricsSourceStats.swift */; };
 		110000472D83400100000001 /* AlignmentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000472D83400100000000 /* AlignmentModels.swift */; };
 		110000482D83400100000001 /* AlignmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000482D83400100000000 /* AlignmentService.swift */; };
 		110000492D83400100000001 /* AudioPCMConverter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000492D83400100000000 /* AudioPCMConverter.swift */; };
@@ -309,6 +310,7 @@
 		A60F09060000000000000300 /* KugouExperimentalLyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KugouExperimentalLyricsProvider.swift; sourceTree = "<group>"; };
 		110000452D83400100000000 /* LocalAudioASRService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAudioASRService.swift; sourceTree = "<group>"; };
 		110000462D83400100000000 /* LyricsE2ELog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsE2ELog.swift; sourceTree = "<group>"; };
+		1100007F2D83400100000000 /* LyricsSourceStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsSourceStats.swift; sourceTree = "<group>"; };
 		110000472D83400100000000 /* AlignmentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlignmentModels.swift; sourceTree = "<group>"; };
 		110000482D83400100000000 /* AlignmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlignmentService.swift; sourceTree = "<group>"; };
 		110000492D83400100000000 /* AudioPCMConverter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPCMConverter.swift; sourceTree = "<group>"; };
@@ -724,6 +726,7 @@
 				110000182D83400100000000 /* CompositeLyricsProvider.swift */,
 				1100002F2D83400100000000 /* LyricsSearchManager.swift */,
 				110000462D83400100000000 /* LyricsE2ELog.swift */,
+				1100007F2D83400100000000 /* LyricsSourceStats.swift */,
 				1100004C2D83400100000000 /* LocalAlignedLyricsStore.swift */,
 				1100004B2D83400100000000 /* SpeechForcedAlignmentService.swift */,
 				1100004A2D83400100000000 /* LineForcedAligner.swift */,
@@ -997,6 +1000,7 @@
 				1100002E2D83400100000001 /* CurrentTrackResolver.swift in Sources */,
 				1100002F2D83400100000001 /* LyricsSearchManager.swift in Sources */,
 				110000462D83400100000001 /* LyricsE2ELog.swift in Sources */,
+				1100007F2D83400100000001 /* LyricsSourceStats.swift in Sources */,
 				1100004C2D83400100000001 /* LocalAlignedLyricsStore.swift in Sources */,
 				1100004B2D83400100000001 /* SpeechForcedAlignmentService.swift in Sources */,
 				1100004A2D83400100000001 /* LineForcedAligner.swift in Sources */,

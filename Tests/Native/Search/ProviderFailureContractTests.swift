@@ -538,4 +538,32 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertEqual(networkFailure.userFacingTitle, "歌词暂不可用")
         XCTAssertTrue(networkFailure.recoveryMessage.contains("限流"))
     }
+
+    func testSearchEndAppendsOneParseableSourceStatsLine() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("source-stats-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fileURL = root.appendingPathComponent("source-stats.jsonl")
+        let stats = LyricsSourceStats(fileURL: fileURL)
+        let controller = LyricsSessionController(
+            providers: [ProviderFailureFixedLyricsProvider(name: "QQ Music Experimental", result: .noMatch)],
+            sourceStats: stats
+        )
+        let track = Track(title: "Stats Song", artist: "Stats Artist", album: "Stats Album", duration: 200)
+        let identity = TrackIdentity(track: track)
+
+        controller.begin(track: track, identity: identity)
+        for _ in 0..<100 {
+            if !controller.isSearchInProgress { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        let contents = try String(contentsOf: fileURL, encoding: .utf8)
+        let lines = contents.split(separator: "\n")
+        XCTAssertEqual(lines.count, 1, "one finished search must append exactly one line")
+        let object = try JSONSerialization.jsonObject(with: Data(lines[0].utf8)) as? [String: Any]
+        XCTAssertEqual(object?["outcome"] as? String, "none")
+        XCTAssertEqual(object?["retry"] as? Bool, false)
+        XCTAssertNotNil(object?["sources"] as? [[String: Any]])
+    }
 }

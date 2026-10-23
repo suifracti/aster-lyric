@@ -30,6 +30,7 @@ public final class LyricsSessionController: ObservableObject {
 
     private let searchManager: LyricsSearchManager
     private let repository: (any LyricsRepository)?
+    private let sourceStats: LyricsSourceStats
     private var requestTask: Task<Void, Never>?
     private var manualAdoptionRequestIDs: [TrackIdentity: UUID] = [:]
     private var manualAdoptionRequestRevisions: [TrackIdentity: UInt64] = [:]
@@ -49,10 +50,12 @@ public final class LyricsSessionController: ObservableObject {
         name: String = "LyricsSearchManager",
         repository: (any LyricsRepository)? = nil,
         recoveryCooldowns: [TimeInterval] = [2, 5],
-        spotifyArtistResolver: SpotifyTrackArtistResolver? = nil
+        spotifyArtistResolver: SpotifyTrackArtistResolver? = nil,
+        sourceStats: LyricsSourceStats = .shared
     ) {
         self.searchManager = LyricsSearchManager(providers: providers, name: name, spotifyArtistResolver: spotifyArtistResolver)
         self.repository = repository
+        self.sourceStats = sourceStats
         self.recoveryCooldowns = recoveryCooldowns.map { max(0, $0) }
     }
 
@@ -138,11 +141,13 @@ public final class LyricsSessionController: ObservableObject {
             "SESSION begin rev=\(requestRevision) identity=\(identity.stableKey) title=\(track.title) artist=\(track.artist) duration=\(track.duration) spotifyId=\(track.spotifyId ?? "")"
         )
 
-        requestTask = Task { [weak self, searchManager, repository] in
+        let sourceStats = sourceStats
+        requestTask = Task { [weak self, searchManager, repository, sourceStats] in
             defer {
                 if let self, self.activeIdentity == identity, self.revision == requestRevision { self.isSearchInProgress = false }
             }
             var outcome: SearchOutcome?
+            var searchDuration: TimeInterval?
             var cachedReference: StoredLyricsDocument?
             var persistenceError: String?
             var repositoryReady = false
@@ -225,6 +230,7 @@ public final class LyricsSessionController: ObservableObject {
                     let protectsRefresh = forceRefresh && cachedReference?.isUserProtected == true
                     let suppressProvisional = reviewOnly || protectsRefresh
                     let retainsPlainCache = cachedReference?.document.isSynchronized == false
+                    let searchStartedAt = Date()
                     let searched = await searchManager.search(
                         track: track,
                         identity: identity,
@@ -254,6 +260,7 @@ public final class LyricsSessionController: ObservableObject {
                             }
                         }
                     )
+                    searchDuration = Date().timeIntervalSince(searchStartedAt)
                     if protectsRefresh, let cached = cachedReference {
                         var alternatives = searched.alternatives
                         if alternatives.isEmpty, case .match(let document) = searched.result {
@@ -304,6 +311,15 @@ public final class LyricsSessionController: ObservableObject {
             LyricsE2ELog.log("SESSION search finished rev=\(requestRevision) result=\(Self.describe(outcome.result)) diag=\(outcome.diagnostics.count)")
             for d in outcome.diagnostics {
                 LyricsE2ELog.log("  DIAG \(d.provider) \(Self.describeDiag(d.outcome)) \(String(format: "%.2f", d.duration))s")
+            }
+            if let searchDuration {
+                sourceStats.record(
+                    spotifyID: identity.spotifyTrackID,
+                    totalSeconds: searchDuration,
+                    result: outcome.result,
+                    retry: false,
+                    diagnostics: outcome.diagnostics
+                )
             }
             let didApply = await MainActor.run { [weak self] () -> Bool in
                 guard let self,
