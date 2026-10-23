@@ -359,6 +359,28 @@ struct SettingsPageHeader: View {
     }
 }
 
+/// Left-aligned status line used by the Spotify connection block.
+private struct SpotifyStatusRow: View {
+    let title: String
+    let value: String
+    let tone: Color
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(tone)
+                .frame(width: 6, height: 6)
+            Text(title)
+                .foregroundStyle(.secondary)
+                .frame(width: 64, alignment: .leading)
+            Text(value)
+                .fontWeight(.medium)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+    }
+}
+
 /// System-Settings-style coloured icon tile for the sidebar.
 private struct SettingsIconTile: View {
     let systemImage: String
@@ -554,6 +576,9 @@ private struct ServicesAndSourcesSettingsView: View {
     @State private var clientIDDraft = ""
     @State private var discoveryQuery = ""
     @State private var isExternalDiscoveryExpanded = false
+    @State private var isDeveloperConfigExpanded = false
+    @State private var isAdvancedExpanded = false
+    @State private var accountName: String?
 
     private var authorization: SpotifyAuthorizationManager {
         playbackState.spotifyAuthorizationManager
@@ -589,53 +614,46 @@ private struct ServicesAndSourcesSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Section("桌面播放控制") {
-                    LabeledContent("当前播放连接", value: playbackState.providerStatus.userFacingMessage)
-                    Text("Spotify Desktop 播放控制无需在线授权；准确读取随机／循环状态需要下方授权，已有连接请重新授权以补充播放状态读取权限。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Spotify Web 在线曲库") {
-                    LabeledContent("授权状态", value: authorization.state.userFacingMessage)
-                    DisclosureGroup("配置在线曲库授权") {
-                        HStack {
-                            TextField("Client ID", text: $clientIDDraft)
-                                .textFieldStyle(.roundedBorder)
-                            Button("保存") { authorization.updateClientID(clientIDDraft) }
-                                .buttonStyle(.bordered)
-                        }
-                        Text("只填写 Spotify Developer Dashboard 中的 Client ID，不需要 Client Secret。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        HStack {
-                            Button("授权 Spotify") { authorize() }
-                                .buttonStyle(.borderedProminent)
-                            Button("刷新授权状态") { authorization.refreshAuthorizationState() }
-                        }
-                        HStack {
-                            Button("断开授权") { authorization.disconnect() }
-                                .disabled(!authorization.state.isAuthorized)
-                            Button("清除 Keychain Token") { authorization.disconnect() }
-                                .disabled(!authorization.state.isAuthorized)
-                        }
-                        LabeledContent("Dashboard 注册地址") {
-                            Text(authorization.dashboardRedirectURI)
-                                .font(.system(.caption, design: .monospaced))
-                                .textSelection(.enabled)
-                        }
-                        LabeledContent("当前本地监听地址") {
-                            Text(authorization.localRedirectURI ?? "未启动（授权时动态分配端口）")
-                                .font(.system(.caption, design: .monospaced))
-                                .textSelection(.enabled)
-                        }
-                        Text("Dashboard 只需注册不带端口的回环地址；授权时应用会临时监听一个动态端口，并在请求和换取 Token 时使用同一个完整地址。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text("授权失败不会影响 Spotify Desktop 当前播放和本地歌词链路。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                Section {
+                    SpotifyStatusRow(title: "桌面播放", value: desktopPlaybackLabel, tone: desktopPlaybackTone)
+                    SpotifyStatusRow(title: "账号授权", value: accountAuthorizationLabel, tone: accountAuthorizationTone)
+                    if authorization.state.isAuthorized {
+                        SpotifyStatusRow(title: "账号", value: accountName ?? "Spotify 账号", tone: .secondary)
                     }
+
+                    spotifyPrimaryAction
+
+                    DisclosureGroup("开发者配置", isExpanded: $isDeveloperConfigExpanded) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                TextField("Client ID", text: $clientIDDraft)
+                                    .textFieldStyle(.roundedBorder)
+                                    .onSubmit { saveClientID() }
+                                Button("保存") { saveClientID() }
+                                    .disabled(clientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        == (authorization.clientID ?? ""))
+                            }
+                            Text("只填 Client ID，不需要 Client Secret。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.top, 4)
+                    }
+
+                    DisclosureGroup("高级", isExpanded: $isAdvancedExpanded) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            advancedAddressRow("Dashboard 回调地址", value: authorization.dashboardRedirectURI)
+                            advancedAddressRow("当前监听地址", value: authorization.localRedirectURI ?? "未启动")
+                            HStack(spacing: 10) {
+                                Button("刷新授权状态") { authorization.refreshAuthorizationState() }
+                                Button("清除授权凭据") { authorization.disconnect() }
+                                    .disabled(!authorization.state.isAuthorized)
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+                } header: {
+                    Text("Spotify")
                 }
             } else {
                 Section("歌词来源模式") {
@@ -713,11 +731,128 @@ private struct ServicesAndSourcesSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { clientIDDraft = authorization.clientID ?? "" }
+        .onAppear {
+            clientIDDraft = authorization.clientID ?? ""
+            if !authorization.isConfigured { isDeveloperConfigExpanded = true }
+        }
+        .task(id: authorization.state.isAuthorized) {
+            guard authorization.state.isAuthorized else {
+                accountName = nil
+                return
+            }
+            accountName = await authorization.authorizedAccountName()
+        }
+    }
+
+    private var desktopPlaybackLabel: String {
+        switch playbackState.providerStatus {
+        case .ready, .noTrack: return "已连接"
+        case .connecting: return "连接中"
+        case .notInstalled: return "未安装"
+        case .notRunning: return "未运行"
+        case .permissionDenied: return "无权限"
+        case .mockPreview: return "预览"
+        case .unavailable: return "未连接"
+        }
+    }
+
+    private var desktopPlaybackTone: Color {
+        switch playbackState.providerStatus {
+        case .ready, .noTrack: return .green
+        case .connecting: return .orange
+        default: return .secondary
+        }
+    }
+
+    private var accountAuthorizationLabel: String {
+        guard authorization.isConfigured else { return "未配置" }
+        switch authorization.state {
+        case .authorized:
+            return authorization.needsSupplementaryAuthorization ? "需要补充授权" : "已连接"
+        case .authorizing:
+            return "等待授权…"
+        case .notConfigured:
+            return "未配置"
+        default:
+            return "未连接"
+        }
+    }
+
+    private var accountAuthorizationTone: Color {
+        guard authorization.isConfigured else { return .secondary }
+        switch authorization.state {
+        case .authorized:
+            return authorization.needsSupplementaryAuthorization ? .orange : .green
+        case .authorizing:
+            return .orange
+        case .failed:
+            return .red
+        default:
+            return .secondary
+        }
+    }
+
+    @ViewBuilder
+    private var spotifyPrimaryAction: some View {
+        if !authorization.isConfigured {
+            VStack(alignment: .leading, spacing: 6) {
+                Button("填写 Client ID") { isDeveloperConfigExpanded = true }
+                    .buttonStyle(.borderedProminent)
+                Text("先在开发者配置中填写 Client ID，才能连接 Spotify。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 2)
+        } else if authorization.needsSupplementaryAuthorization {
+            VStack(alignment: .leading, spacing: 6) {
+                Button("补充授权") { authorize() }
+                    .buttonStyle(.borderedProminent)
+                Text("重新授权以读取随机与循环状态。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 2)
+        } else if !authorization.state.isAuthorized {
+            VStack(alignment: .leading, spacing: 6) {
+                Button(authorization.state == .authorizing ? "等待授权…" : "连接 Spotify") { authorize() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(authorization.state == .authorizing)
+                Text("连接后可读取随机与循环状态，并使用已实现的账号功能。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if case .failed(let message) = authorization.state, !message.isEmpty {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+            .padding(.top, 2)
+        }
+    }
+
+    private func advancedAddressRow(_ title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+        }
+    }
+
+    private func saveClientID() {
+        let trimmed = clientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        authorization.updateClientID(trimmed)
+        clientIDDraft = trimmed
+        isDeveloperConfigExpanded = trimmed.isEmpty
     }
 
     private func authorize() {
-        authorization.updateClientID(clientIDDraft)
+        let trimmed = clientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty, trimmed != authorization.clientID {
+            authorization.updateClientID(trimmed)
+        }
         authorization.authorize()
     }
 

@@ -116,6 +116,27 @@ public final class SpotifyAuthorizationManager: ObservableObject {
 
     public var isConfigured: Bool { clientID != nil }
 
+    /// Scopes recorded with the stored token. Older records may not carry a
+    /// scope string; those count as incomplete rather than fully granted.
+    public var authorizedScopes: Set<String> {
+        guard let scope = cachedToken?.scope else { return [] }
+        return Set(scope.split(separator: " ").map(String.init))
+    }
+
+    /// True when the stored authorization does not cover everything the app
+    /// asks for, so the settings page can offer 补充授权 instead of 连接.
+    public var needsSupplementaryAuthorization: Bool {
+        guard state.isAuthorized else { return false }
+        return !SpotifyOAuthConfiguration.authorizationScopes.isSubset(of: authorizedScopes)
+    }
+
+    /// Display name for the connected account, when Spotify exposes it. This
+    /// is deliberately best-effort: the name is decoration, not a gate.
+    public func authorizedAccountName() async -> String? {
+        guard state.isAuthorized, let token = try? await accessToken() else { return nil }
+        return try? await catalogService.currentUserDisplayName(accessToken: token)
+    }
+
     /// Compatibility accessor for callers that used the old single URI field.
     /// It never claims that the Dashboard must register a dynamic port.
     public var redirectURI: String {

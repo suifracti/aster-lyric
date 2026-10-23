@@ -258,6 +258,48 @@ struct SpotifyWebCatalogContract {
         _ = try await cachedManager.accessToken()
         precondition(cachedStore.loadCount == 1, "token store must be loaded once per authorization manager")
 
+        let partialStore = CountingSpotifyTokenStore(record: SpotifyTokenRecord(
+            accessToken: accessFixture,
+            refreshToken: accessFixture,
+            expiresAt: Date().addingTimeInterval(3600),
+            scope: "user-read-playback-state"
+        ))
+        let partialManager = await MainActor.run {
+            SpotifyAuthorizationManager(
+                configuration: SpotifyOAuthConfiguration(clientID: "client-id"),
+                tokenStore: partialStore,
+                catalogService: service
+            )
+        }
+        precondition(partialManager.needsSupplementaryAuthorization,
+                     "a token with only the playback scope must ask for 补充授权")
+
+        let fullScope = SpotifyOAuthConfiguration.authorizationScopes.sorted().joined(separator: " ")
+        let fullStore = CountingSpotifyTokenStore(record: SpotifyTokenRecord(
+            accessToken: accessFixture,
+            refreshToken: accessFixture,
+            expiresAt: Date().addingTimeInterval(3600),
+            scope: fullScope
+        ))
+        let fullManager = await MainActor.run {
+            SpotifyAuthorizationManager(
+                configuration: SpotifyOAuthConfiguration(clientID: "client-id"),
+                tokenStore: fullStore,
+                catalogService: service
+            )
+        }
+        precondition(!fullManager.needsSupplementaryAuthorization,
+                     "a token with every requested scope must stay 已连接")
+
+        StubURLProtocol.handler = { request in
+            precondition(request.url?.path == "/v1/me")
+            precondition(request.value(forHTTPHeaderField: "Authorization") == "Bearer \(accessFixture)")
+            return (200, ["Content-Type": "application/json"],
+                    #"{"display_name":"Aster User","id":"aster"}"#.data(using: .utf8)!)
+        }
+        let accountName = try await service.currentUserDisplayName(accessToken: accessFixture)
+        precondition(accountName == "Aster User")
+
         let keychainService = "com.spotifylyrics.contract.\(UUID().uuidString)"
         let keychainStore = KeychainSpotifyTokenStore(service: keychainService, account: "contract")
         let keychainFixture = SpotifyTokenRecord(

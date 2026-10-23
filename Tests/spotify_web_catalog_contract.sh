@@ -17,8 +17,11 @@ swiftc -D DEBUG -parse-as-library \
   SpotifyLyrics/Lyrics/JapaneseReadingPipeline.swift \
   SpotifyLyrics/Lyrics/JapaneseKanaGenerator.swift \
   SpotifyLyrics/Lyrics/LyricsE2ELog.swift \
+  SpotifyLyrics/DebugDatabaseSafety.swift \
+  SpotifyLyrics/Lyrics/PersonalLyricsLibraryModels.swift \
   SpotifyLyrics/Search/SongSearchModels.swift \
   SpotifyLyrics/Search/TrackSearchModels.swift \
+  SpotifyLyrics/Providers/PlaybackProvider.swift \
   SpotifyLyrics/Spotify/SpotifyAPIModels.swift \
   SpotifyLyrics/Spotify/SpotifyTokenStore.swift \
   SpotifyLyrics/Spotify/SpotifyCatalogService.swift \

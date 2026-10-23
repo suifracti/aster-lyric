@@ -198,6 +198,8 @@ struct ExperienceVisualHostApp: App {
         let defaults=UserDefaults(suiteName:"com.lyricsq.visual-fixture.\(UUID().uuidString)")!
         defaults.set(false,forKey:AppSettingsStore.Key.restoreWindowState)
         defaults.set(false,forKey:AppSettingsStore.Key.automaticAlignmentEnabled)
+        let fixtureClientID = ExperienceArguments.value("--spotify-client-id", fallback: "")
+        if !fixtureClientID.isEmpty { defaults.set(fixtureClientID, forKey: "spotify.clientID") }
         if ProcessInfo.processInfo.arguments.contains("--aux-layers") {
             defaults.set(KanaDisplayMode.independentLine.rawValue, forKey: AppSettingsStore.Key.kanaDisplayMode)
         }

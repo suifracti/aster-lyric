@@ -267,6 +267,28 @@ public final class SpotifyCatalogService: @unchecked Sendable {
         return url
     }
 
+    // MARK: - Profile
+
+    /// Best-effort account label for the settings status row. The endpoint
+    /// answers with the granted scopes; a missing scope only costs the label,
+    /// never the stored authorization.
+    func currentUserDisplayName(accessToken: String) async throws -> String? {
+        let data = try await sendAPIRequest(url: baseURL.appendingPathComponent("me"), accessToken: accessToken)
+        struct Profile: Decodable {
+            let displayName: String?
+            let id: String?
+            enum CodingKeys: String, CodingKey {
+                case displayName = "display_name"
+                case id
+            }
+        }
+        guard let profile = try? JSONDecoder().decode(Profile.self, from: data) else { return nil }
+        if let name = profile.displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            return name
+        }
+        return profile.id
+    }
+
     // MARK: - Playlists
 
     func currentUserPlaylists(accessToken: String) async throws -> [SpotifyPlaylistDTO] {
