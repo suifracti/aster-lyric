@@ -368,25 +368,18 @@ public final class LyricsSessionController: ObservableObject {
                !Task.isCancelled,
                document.identity == identity,
                !document.lines.isEmpty,
-               cachedReference == nil,
-               outcome.automaticDecision != nil || LyricsMatcher.isHighConfidence(document.confidence) {
+               cachedReference == nil {
                 do {
-                    let saved: LyricsPersistenceSaveResult?
-                    if let decision = outcome.automaticDecision {
-                        saved = try await repository?.saveAutomaticallySelected(track: track, identity: identity, document: document, decision: LyricsAutomaticSelectionEvidence(identity: identity, tier: decision.tier.rawValue, hardReject: decision.hardReject, versionConflict: decision.versionConflict))
-                    } else {
-                        saved = try await repository?.save(track: track, identity: identity, document: document)
-                    }
+                    let saved = try await persistMatch(
+                        document,
+                        track: track,
+                        identity: identity,
+                        decision: outcome.automaticDecision,
+                        expectedRevision: requestRevision
+                    )
                     LyricsE2ELog.log(
                         "SESSION persistence save rev=\(requestRevision) disposition=\(String(describing: saved?.disposition)) lines=\(document.lines.count)"
                     )
-                    if let saved, saved.versionID != nil {
-                        await MainActor.run { [weak self] in
-                            guard let self, self.activeIdentity == identity, self.revision == requestRevision else { return }
-                            self.activeLyricsVersionID = saved.versionID
-                            self.activeSourceContentHash = saved.sourceContentHash
-                        }
-                    }
                 } catch {
                     let message = error.localizedDescription
                     LyricsE2ELog.log("PERSISTENCE save failed rev=\(requestRevision) error=\(message)")
@@ -1203,37 +1196,58 @@ public final class LyricsSessionController: ObservableObject {
         }
     }
 
+    /// Writes an accepted match and adopts the stored version while the
+    /// request is still current. The first search and the failed-source retry
+    /// both call this, so the two paths cannot drift in how a match is saved.
+    @discardableResult
+    private func persistMatch(
+        _ document: LyricsDocument,
+        track: Track,
+        identity: TrackIdentity,
+        decision: LyricsMatchDecision?,
+        expectedRevision: UInt64
+    ) async throws -> LyricsPersistenceSaveResult? {
+        guard let repository,
+              decision != nil || LyricsMatcher.isHighConfidence(document.confidence) else { return nil }
+        let saved: LyricsPersistenceSaveResult?
+        if let decision {
+            saved = try await repository.saveAutomaticallySelected(
+                track: track,
+                identity: identity,
+                document: document,
+                decision: LyricsAutomaticSelectionEvidence(
+                    identity: identity,
+                    tier: decision.tier.rawValue,
+                    hardReject: decision.hardReject,
+                    versionConflict: decision.versionConflict
+                )
+            )
+        } else {
+            saved = try await repository.save(track: track, identity: identity, document: document)
+        }
+        if let saved, saved.versionID != nil,
+           activeIdentity == identity, revision == expectedRevision {
+            activeLyricsVersionID = saved.versionID
+            activeSourceContentHash = saved.sourceContentHash
+        }
+        return saved
+    }
+
     private func saveRetriedMatch(
         _ document: LyricsDocument,
         track: Track,
         identity: TrackIdentity,
         decision: LyricsMatchDecision?
     ) async {
-        guard let repository,
-              decision != nil || LyricsMatcher.isHighConfidence(document.confidence) else { return }
         let expectedRevision = revision
         do {
-            let saved: LyricsPersistenceSaveResult?
-            if let decision {
-                saved = try await repository.saveAutomaticallySelected(
-                    track: track,
-                    identity: identity,
-                    document: document,
-                    decision: LyricsAutomaticSelectionEvidence(
-                        identity: identity,
-                        tier: decision.tier.rawValue,
-                        hardReject: decision.hardReject,
-                        versionConflict: decision.versionConflict
-                    )
-                )
-            } else {
-                saved = try await repository.save(track: track, identity: identity, document: document)
-            }
-            if let saved, saved.versionID != nil,
-               activeIdentity == identity, revision == expectedRevision {
-                activeLyricsVersionID = saved.versionID
-                activeSourceContentHash = saved.sourceContentHash
-            }
+            try await persistMatch(
+                document,
+                track: track,
+                identity: identity,
+                decision: decision,
+                expectedRevision: expectedRevision
+            )
         } catch {
             LyricsE2ELog.log("SESSION retry persistence failed error=\(error.localizedDescription)")
         }

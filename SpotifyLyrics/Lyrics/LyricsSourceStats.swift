@@ -81,8 +81,30 @@ public final class LyricsSourceStats: @unchecked Sendable {
         case .candidates(let count): return "candidates(\(count))"
         case .noLyrics: return "noLyrics"
         case .noMatch: return "noMatch"
-        case .failed(let failure): return "failed(\(failure.userFacingMessage))"
+        case .failed(let failure): return "failed(\(rawReason(failure)))"
         }
+    }
+
+    /// Record what actually failed, not the sentence shown to the user:
+    /// timedOut, serverError(503), networkUnavailable. Free-form messages are
+    /// left out so the exported lines stay stable enough to compare.
+    private static func rawReason(_ failure: LyricsFailure) -> String {
+        switch failure {
+        case .networkUnavailable: return "networkUnavailable"
+        case .timedOut: return "timedOut"
+        case .rateLimited(let retryAfter):
+            return retryAfter.map { "rateLimited(\(number($0)))" } ?? "rateLimited"
+        case .serverError(let statusCode): return "serverError(\(statusCode))"
+        case .parseFailure: return "parseFailure"
+        case .cancelled: return "cancelled"
+        case .identityUnconfirmed(let count, _): return "identityUnconfirmed(\(count))"
+        case .lyricsBodyUnavailable: return "lyricsBodyUnavailable"
+        case .unknown: return "unknown"
+        }
+    }
+
+    private static func number(_ seconds: TimeInterval) -> String {
+        seconds.rounded() == seconds ? String(Int(seconds)) : String(format: "%.1f", seconds)
     }
 
     private func append(_ data: Data) {
