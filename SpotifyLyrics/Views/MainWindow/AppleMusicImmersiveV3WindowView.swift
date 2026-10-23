@@ -1387,6 +1387,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             .onEnded { _ in pinchStartFontSize = nil })
         .v3ReadingGlow(artworkURL: compositionTrack.artworkURL, policy: compositionReadingProtection)
         .environment(\.v3ResolvedReadingProtection, compositionReadingProtection)
+        .environment(\.lyricsCandidateBrightCover, coverLuminance > 0.6)
         .environment(\.lyricTextAlignment, compositionLyricsPosition == "center" ? .center : compositionLyricsPosition == "right" ? .trailing : .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

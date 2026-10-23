@@ -1,5 +1,16 @@
 import SwiftUI
 
+private struct LyricsCandidateBrightCoverKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var lyricsCandidateBrightCover: Bool {
+        get { self[LyricsCandidateBrightCoverKey.self] }
+        set { self[LyricsCandidateBrightCoverKey.self] = newValue }
+    }
+}
+
 struct LyricsCanvasView: View {
     @ObservedObject var state: PlaybackState
     var onSearch: (() -> Void)? = nil
@@ -618,6 +629,7 @@ struct LyricsCanvasView: View {
 /// the shared lyric session remains the owner of candidates. No timer or
 /// preview session is created here.
 struct LyricsStateContentFirstView: View {
+    @Environment(\.lyricsCandidateBrightCover) private var brightCover
     @V3ContentPlaybackState var state: PlaybackState
     var compact = false
     var lyricsFocus = false
@@ -930,7 +942,8 @@ struct LyricsStateContentFirstView: View {
                     .foregroundStyle(LyricsDesignTokens.primaryText)
                 Text("这些结果仍有身份或编曲差异，未自动替你采用。选择一次会保存，后续可继续复用。")
                     .font(.system(size: compact ? 12 : 14, design: .rounded))
-                    .foregroundStyle(LyricsDesignTokens.mutedText)
+                    .foregroundStyle(brightCover ? Color.white.opacity(0.9) : LyricsDesignTokens.mutedText)
+                    .shadow(color: .black.opacity(brightCover ? 0.85 : 0), radius: 3, y: 1)
 
                 ForEach(candidates) { candidate in
                     candidateRow(candidate)
@@ -939,7 +952,8 @@ struct LyricsStateContentFirstView: View {
                 if state.isShowingSearchPreview {
                     Label("预览中不会更改当前播放歌曲歌词版本", systemImage: "eye")
                         .font(.system(size: 11, design: .rounded))
-                        .foregroundStyle(LyricsDesignTokens.mutedText)
+                        .foregroundStyle(brightCover ? Color.white.opacity(0.9) : LyricsDesignTokens.mutedText)
+                        .shadow(color: .black.opacity(brightCover ? 0.85 : 0), radius: 3, y: 1)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 4)
                 } else {
@@ -947,7 +961,8 @@ struct LyricsStateContentFirstView: View {
                         state.selectNoLyricsVersion()
                     }
                     .buttonStyle(.borderless)
-                    .foregroundStyle(LyricsDesignTokens.mutedText)
+                    .foregroundStyle(brightCover ? Color.white.opacity(0.9) : LyricsDesignTokens.mutedText)
+                    .shadow(color: .black.opacity(brightCover ? 0.85 : 0), radius: 3, y: 1)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.top, 4)
                 }
@@ -958,6 +973,8 @@ struct LyricsStateContentFirstView: View {
                         compact: true,
                         compactLabel: "导入或创建"
                     )
+                    .foregroundColor(brightCover ? Color.white.opacity(0.9) : nil)
+                    .shadow(color: .black.opacity(brightCover ? 0.85 : 0), radius: 3, y: 1)
                     .frame(maxWidth: .infinity, alignment: .center)
                 }
                 Spacer(minLength: compact ? 8 : 20)
