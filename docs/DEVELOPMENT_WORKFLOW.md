@@ -11,12 +11,14 @@
 ## 最少的编译和运行
 
 - 输入不变的已通过测试直接复用；若可用现成对应二进制，优先实机看效果，否则只做必要构建。文档变更不编译 Xcode。
-- 参考 unsigned Debug 构建（确实需要时才执行）：
+- 实机运行的 Debug 构建（Keychain ACL 与 TCC 授权依赖稳定的 Apple Development 身份）：
 ```sh
 xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics \
-  -configuration Debug CODE_SIGNING_ALLOWED=NO \
-  -derivedDataPath /tmp/lyricsq-deriveddata build
+  -configuration Debug \
+  -derivedDataPath build/DerivedData build
 ```
+  Debug 配置固定使用 `CODE_SIGN_STYLE = Manual` + `CODE_SIGN_IDENTITY = "Apple Development"`，由本机现有开发证书签名；Team 与证书不进仓库。不要为了“免签名”加 `CODE_SIGNING_ALLOWED=NO`：那会退回 ad-hoc，每次构建换一次 cdhash，钥匙串 ACL 与 TCC 授权都会失效。
+- 只做编译检查时可用 unsigned 构建，但它不能用来验证钥匙串、自动化或截图权限。
 - 只运行受影响的定向检查、真实用户要看的 App 画面；普通编译错误在已授权任务内修复，不把每个失败变成新增 Issue/PR/审计。
 - 翻译请求、业务 Keychain、正式 SQLite、用户播放状态、`/Applications` 安装覆盖、数据迁移不因“轻量测试”自动允许。
 

@@ -65,9 +65,8 @@ public final class SpotifyAuthorizationManager: ObservableObject {
     private let tokenStore: any SpotifyTokenStore
     private let catalogService: SpotifyCatalogService
     private var pendingFlow: PendingFlow?
-    // Keychain reads can show system authorization UI. Keep one result (or
-    // one failure) for the lifetime of this manager so a search burst cannot
-    // enqueue the same prompt several times.
+    // One Keychain read per manager lifetime. Keep the result (or the failure)
+    // so a search burst cannot repeat the same read.
     private var hasLoadedToken = false
     private var cachedToken: SpotifyTokenRecord?
     private var cachedTokenLoadError: SpotifyAuthorizationError?
@@ -262,9 +261,8 @@ public final class SpotifyAuthorizationManager: ObservableObject {
         }
     }
 
-    /// Re-reads the existing Keychain record on explicit user request. This
-    /// is intentionally not called by every search, because Keychain access
-    /// may present a system prompt for an ad-hoc build.
+    /// Re-reads the existing Keychain record on explicit user request. This is
+    /// intentionally not called by every search; one explicit read is enough.
     public func refreshAuthorizationState() {
         guard clientID != nil else {
             state = .notConfigured

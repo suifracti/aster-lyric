@@ -1157,10 +1157,12 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
-				/* Debug signing: Automatic + Team from Config/DebugSigning*.xcconfig (not ad-hoc). */
-				CODE_SIGN_STYLE = Automatic;
-				/* Empty identity: Automatic selects Apple Development / Mac Development. */
-				CODE_SIGN_IDENTITY = "";
+				/* Debug signing: a stable Apple Development identity, selected
+				   by class so no personal certificate or Team ID is committed.
+				   Ad-hoc Debug builds get a new cdhash on every build, which
+				   invalidates both TCC grants and Keychain ACLs. */
+				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_ENTITLEMENTS = SpotifyLyrics/SpotifyLyricsDebug.entitlements;
 				/* Avoid main stub + SpotifyLyrics.debug.dylib TCC identity split. */
 				ENABLE_DEBUG_DYLIB = NO;

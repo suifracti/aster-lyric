@@ -32,7 +32,11 @@ swiftc -D DEBUG -parse-as-library \
   "$TMP_DIR/main.swift" \
   -o "$TMP_DIR/spotify-web-catalog-contract"
 "$TMP_DIR/spotify-web-catalog-contract"
-grep -q 'kSecUseDataProtectionKeychain' SpotifyLyrics/Spotify/SpotifyTokenStore.swift
+if grep -q 'kSecUseDataProtectionKeychain' SpotifyLyrics/Spotify/SpotifyTokenStore.swift; then
+  echo "SpotifyTokenStore must not use the data protection keychain: ad-hoc builds have no application-identifier entitlement" >&2
+  exit 1
+fi
+grep -q 'kSecUseAuthenticationUI' SpotifyLyrics/Spotify/SpotifyTokenStore.swift
 grep -q 'spotify-oauth.v3' SpotifyLyrics/Spotify/SpotifyTokenStore.swift
 grep -q 'SecAccessCreate' SpotifyLyrics/Spotify/SpotifyTokenStore.swift
 grep -q 'dashboardRedirectURI = "http://127.0.0.1/callback"' SpotifyLyrics/Spotify/SpotifyCatalogService.swift

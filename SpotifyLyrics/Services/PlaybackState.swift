@@ -1574,11 +1574,10 @@ public final class PlaybackState: ObservableObject {
             let modes: PlayerPlaybackModes?
             do { modes = try await self.readPlayerModes(source: source) }
             catch {
-                // A failed read must not erase what we already know. When the
-                // account read is unavailable (no token, 204 from /me/player),
-                // wiping the state turned both buttons back into 未知 on the
-                // next refresh — app activation or a track change — so a click
-                // made a moment earlier looked ignored.
+                // A failed read keeps the last known state so the next click
+                // still advances from what the player was set to. That value
+                // is the last operation state, not a fresh reading; it must
+                // never be reported as the current player state.
                 modes = self.playerModes
                 LyricsE2ELog.log("PLAYER modes unavailable source=\(source) error=\(error.localizedDescription) kept=\(String(describing: modes))")
             }
