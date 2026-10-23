@@ -74,7 +74,7 @@ final class DesktopPlaybackEventTests: XCTestCase {
         XCTAssertEqual(state.playbackNotice, "单曲循环需要在设置里补充 Spotify 授权")
     }
 
-    func testWebWriteUsesReadbackAndDoesNotFallbackForNetworkFailure() async throws {
+    func testWebWriteKeepsWrittenModesUntilNormalRefreshAndDoesNotRetry() async throws {
         let (state, provider, _, _) = fixture()
         state.startProvider()
         try await wait { state.playerModes != nil }
@@ -82,7 +82,13 @@ final class DesktopPlaybackEventTests: XCTestCase {
         state.togglePlayerMode(shuffle: true)
         try await wait { state.playbackNotice != nil }
         XCTAssertEqual(provider.webShuffleWrites, [true])
-        XCTAssertEqual(state.playerModes?.shuffle, false)
+        XCTAssertEqual(state.playerModes?.shuffle, true)
+        state.togglePlayerMode(shuffle: false)
+        try await wait { state.playerModes?.repeatMode == .all }
+        XCTAssertEqual(provider.webRepeatWrites, [.all])
+        // Spotify still reports the old values; only a normal refresh applies them.
+        state.refreshPlayerModes()
+        try await wait { state.playerModes?.shuffle == false && state.playerModes?.repeatMode == .off }
         provider.webWriteError = URLError(.notConnectedToInternet)
         state.togglePlayerMode(shuffle: true)
         try await wait { state.playbackNotice == URLError(.notConnectedToInternet).localizedDescription }

@@ -1637,12 +1637,12 @@ public final class PlaybackState: ObservableObject {
                         if shuffle { current.shuffle = nextShuffle; current.smartShuffle = false }
                         else { current.repeatMode = scriptRepeat }
                         // The fallback has only two repeat modes; no simulated seek at song end.
-                        if let observed = try? await self.readPlayerModes(source: source) { current = observed }
                         LyricsE2ELog.log("PLAYER mode write route=script")
                     } else {
                         LyricsE2ELog.log("PLAYER mode write route=web success")
-                        // Keep readback outside the write catch: a failed GET must never resend via script.
-                        current = try await self.readPlayerModes(source: source)
+                        // Spotify's read state can lag a successful write; normal refreshes reconcile it later.
+                        if shuffle { current.shuffle = nextShuffle; current.smartShuffle = false }
+                        else { current.repeatMode = nextRepeat }
                     }
                 } else {
                     current = try await self.provider.playbackModes(shuffle: shuffle ? nextShuffle : nil,
