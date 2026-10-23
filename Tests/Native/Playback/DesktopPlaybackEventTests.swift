@@ -102,6 +102,37 @@ final class DesktopPlaybackEventTests: XCTestCase {
         XCTAssertEqual(state.playerModes?.smartShuffle, false)
     }
 
+    func testModesCycleFromTheLastKnownStateWhenReadsFail() async throws {
+        let (state, provider, _, _) = fixture()
+        state.startProvider()
+        try await wait { state.playerModes != nil }
+
+        // The account read is gone for the rest of the test: no token, or 204.
+        provider.modeReadFails = true
+
+        state.togglePlayerMode(shuffle: true)
+        try await wait { provider.nativeShuffleWrites.count == 1 }
+        state.togglePlayerMode(shuffle: true)
+        try await wait { provider.nativeShuffleWrites.count == 2 }
+        XCTAssertEqual(provider.nativeShuffleWrites, [true, false],
+                       "第二次点击必须把随机关掉，而不是又被未知重置成开")
+
+        state.togglePlayerMode(shuffle: false)
+        try await wait { provider.nativeRepeatWrites.count == 1 }
+        state.togglePlayerMode(shuffle: false)
+        try await wait { provider.nativeRepeatWrites.count == 2 }
+        state.togglePlayerMode(shuffle: false)
+        try await wait { provider.nativeRepeatWrites.count == 3 }
+        XCTAssertEqual(provider.nativeRepeatWrites, [.all, .off, .off],
+                       "循环必须从列表循环继续走到单曲循环，再回到不循环")
+        XCTAssertEqual(state.playerModes?.repeatMode, .off)
+
+        state.refreshPlayerModes()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(state.playerModes?.repeatMode, .off,
+                       "读取失败不能把已知状态抹回未知")
+    }
+
     func testLyricLineRepeatsUntilCancelledAndStopsOnTrackChange() async throws {
         let (state, provider, _, center) = fixture()
         state.startProvider()

@@ -1574,8 +1574,12 @@ public final class PlaybackState: ObservableObject {
             let modes: PlayerPlaybackModes?
             do { modes = try await self.readPlayerModes(source: source) }
             catch {
-                modes = nil
-                LyricsE2ELog.log("PLAYER modes unavailable source=\(source) error=\(error.localizedDescription)")
+                // A failed read must not erase what we already know. When the
+                // account read is unavailable (no token, 204 from /me/player),
+                // wiping the state turned every button back into 未知 ten
+                // seconds after a click, so the click looked ignored.
+                modes = self.playerModes
+                LyricsE2ELog.log("PLAYER modes unavailable source=\(source) error=\(error.localizedDescription) kept=\(String(describing: modes))")
             }
             guard self.playbackSourceIdentity == source, !self.changingPlayerModes else { return }
             if source == .spotifyDesktop, let mode = modes?.repeatMode, mode != .one { self.spotifySingleTrackRepeat = false }
@@ -1585,22 +1589,32 @@ public final class PlaybackState: ObservableObject {
     }
 
     public func togglePlayerMode(shuffle: Bool) {
-        guard canControlSpotify, !changingPlayerModes else { return }
+        LyricsE2ELog.log("PLAYER mode tap shuffle=\(shuffle) canControl=\(canControlSpotify) busy=\(changingPlayerModes) status=\(providerStatus) live=\(hasLiveTrack) source=\(playbackSourceIdentity.rawValue)")
+        guard canControlSpotify, !changingPlayerModes else {
+            LyricsE2ELog.log("PLAYER mode tap ignored shuffle=\(shuffle)")
+            return
+        }
         changingPlayerModes = true
         let source = playbackSourceIdentity
         Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.changingPlayerModes = false }
             do {
+                // Cycle from the last known state. Falling back to unknown on a
+                // failed read restarted the cycle at its first step every time,
+                // so 循环 could never leave 列表循环 and 随机 could never turn off.
                 var current = (try? await self.readPlayerModes(source: source))
+                    ?? self.playerModes
                     ?? PlayerPlaybackModes(shuffle: nil, repeatMode: self.spotifySingleTrackRepeat ? .one : nil)
                 // Unknown starts at on; smart shuffle may be disabled, never enabled by this app.
                 let nextShuffle = current.smartShuffle == true ? false : !(current.shuffle ?? false)
                 let nextRepeat = current.repeatMode?.next ?? .all
                 let nativeRepeat: PlayerRepeatMode = source == .spotifyDesktop && nextRepeat == .one ? .off : nextRepeat
                 guard self.playbackSourceIdentity == source else { return }
-                _ = try await self.provider.playbackModes(shuffle: shuffle ? nextShuffle : nil,
-                                                         repeatMode: shuffle ? nil : nativeRepeat)
+                LyricsE2ELog.log("PLAYER mode write shuffle=\(shuffle) next=\(shuffle ? String(describing: nextShuffle) : String(describing: nativeRepeat)) provider=\(self.provider.displayName)")
+                let written = try await self.provider.playbackModes(shuffle: shuffle ? nextShuffle : nil,
+                                                                    repeatMode: shuffle ? nil : nativeRepeat)
+                LyricsE2ELog.log("PLAYER mode wrote shuffle=\(shuffle) result=\(String(describing: written))")
                 guard self.playbackSourceIdentity == source else { return }
                 if shuffle { current.shuffle = nextShuffle; current.smartShuffle = false }
                 else {
@@ -1609,7 +1623,10 @@ public final class PlaybackState: ObservableObject {
                 }
                 self.playerModes = current
                 self.playbackNotice = shuffle ? current.shuffleLabel : current.repeatLabel
-            } catch { self.playbackNotice = error.localizedDescription }
+            } catch {
+                LyricsE2ELog.log("PLAYER mode write failed shuffle=\(shuffle) error=\(error.localizedDescription)")
+                self.playbackNotice = error.localizedDescription
+            }
         }
     }
 
