@@ -427,12 +427,6 @@ struct V3PlayerModeButton: View {
             enabled: state.canControlSpotify, primary: false,
             tint: glyphColor, glyph: glyphColor
         ) { state.togglePlayerMode(shuffle: shuffle) }
-        .overlay(alignment: .bottom) {
-            if unknown {
-                Text("未知").font(.system(size: 8)).foregroundStyle(.white.opacity(0.65))
-                    .allowsHitTesting(false).accessibilityHidden(true)
-            }
-        }
         .overlay(alignment: .topTrailing) {
             if shuffle && state.playerModes?.smartShuffle == true {
                 Image(systemName: "sparkle").font(.system(size: 8)).foregroundStyle(accent)
