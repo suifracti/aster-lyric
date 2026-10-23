@@ -1607,6 +1607,7 @@ public final class PlaybackState: ObservableObject {
                 let nextShuffle = current.smartShuffle == true ? false : !(current.shuffle ?? false)
                 let nextRepeat = current.repeatMode?.next ?? .all
                 guard self.playbackSourceIdentity == source else { return }
+                var modeNotice: String?
                 if source == .spotifyDesktop {
                     var useScript = false
                     do {
@@ -1627,6 +1628,9 @@ public final class PlaybackState: ObservableObject {
                         }
                     }
                     if useScript {
+                        if !shuffle && nextRepeat == .one {
+                            modeNotice = "单曲循环需要在设置里补充 Spotify 授权"
+                        }
                         let scriptRepeat: PlayerRepeatMode = current.repeatMode == .off || current.repeatMode == nil ? .all : .off
                         _ = try await self.provider.playbackModes(shuffle: shuffle ? nextShuffle : nil,
                             repeatMode: shuffle ? nil : scriptRepeat)
@@ -1647,7 +1651,7 @@ public final class PlaybackState: ObservableObject {
                 guard self.playbackSourceIdentity == source else { return }
                 LyricsE2ELog.log("PLAYER mode state shuffle=\(String(describing: current.shuffle)) repeat=\(String(describing: current.repeatMode)) smart=\(String(describing: current.smartShuffle))")
                 self.playerModes = current
-                self.playbackNotice = shuffle ? current.shuffleLabel : current.repeatLabel
+                self.playbackNotice = modeNotice ?? (shuffle ? current.shuffleLabel : current.repeatLabel)
             } catch {
                 LyricsE2ELog.log("PLAYER mode write failed shuffle=\(shuffle) error=\(error.localizedDescription)")
                 self.playbackNotice = error.localizedDescription

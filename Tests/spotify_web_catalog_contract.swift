@@ -92,6 +92,17 @@ struct SpotifyWebCatalogContract {
         let accessFixture = String(repeating: "a", count: 24)
         let refreshedFixture = String(repeating: "b", count: 24)
 
+        for (raw, expected) in [("off", PlayerRepeatMode.off), ("context", .all), ("track", .one)] {
+            StubURLProtocol.handler = { request in
+                precondition(request.url?.path == "/v1/me/player")
+                precondition(request.cachePolicy == .reloadIgnoringLocalCacheData)
+                precondition(request.value(forHTTPHeaderField: "Cache-Control") == "no-cache")
+                return (200, [:], Data(("{\"repeat_state\":\"" + raw + "\"}").utf8))
+            }
+            let observed = try await service.playbackModes(accessToken: accessFixture)
+            precondition(observed.repeatMode == expected)
+        }
+
         for (mode, value) in [(PlayerRepeatMode.off, "off"), (.all, "context"), (.one, "track")] {
             StubURLProtocol.handler = { request in
                 precondition(request.httpMethod == "PUT")

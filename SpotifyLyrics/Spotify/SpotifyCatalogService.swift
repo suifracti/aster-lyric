@@ -216,7 +216,7 @@ public final class SpotifyCatalogService: @unchecked Sendable {
     }
 
     func playbackModes(accessToken: String) async throws -> PlayerPlaybackModes {
-        let data = try await sendAPIRequest(url: baseURL.appendingPathComponent("me/player"), accessToken: accessToken)
+        let data = try await sendAPIRequest(url: baseURL.appendingPathComponent("me/player"), accessToken: accessToken, fresh: true)
         // 204 means no active playback, not "off".
         guard !data.isEmpty else { return PlayerPlaybackModes(shuffle: nil, repeatMode: nil) }
         struct State: Decodable {
@@ -390,9 +390,14 @@ public final class SpotifyCatalogService: @unchecked Sendable {
             .appendingPathComponent("items")
     }
 
-    private func sendAPIRequest(url: URL, accessToken: String, method: String = "GET", body: Data? = nil) async throws -> Data {
+    private func sendAPIRequest(url: URL, accessToken: String, method: String = "GET", body: Data? = nil, fresh: Bool = false) async throws -> Data {
         var request = URLRequest(url: url)
         request.httpMethod = method
+        if fresh {
+            // Playback state is live; a cached response can undo the write's display.
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        }
         request.timeoutInterval = 15
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")

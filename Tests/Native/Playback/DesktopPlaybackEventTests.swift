@@ -71,6 +71,7 @@ final class DesktopPlaybackEventTests: XCTestCase {
         state.togglePlayerMode(shuffle: false)
         try await wait { state.playerModes?.repeatMode == .off }
         XCTAssertEqual(provider.nativeRepeatWrites, [.all, .off])
+        XCTAssertEqual(state.playbackNotice, "单曲循环需要在设置里补充 Spotify 授权")
     }
 
     func testWebWriteUsesReadbackAndDoesNotFallbackForNetworkFailure() async throws {
