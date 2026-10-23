@@ -8,3 +8,8 @@
 // Personal Team (free) is enough for local Debug ScreenCaptureKit testing.
 
 DEVELOPMENT_TEAM = YOUR_TEAM_ID_HERE
+
+// Optional: stable local signing identity, so Keychain ACLs and TCC grants
+// survive rebuilds instead of tracking a per-build ad-hoc cdhash.
+// CODE_SIGN_STYLE = Manual
+// CODE_SIGN_IDENTITY = Apple Development

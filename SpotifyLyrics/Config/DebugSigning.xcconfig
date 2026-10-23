@@ -1,21 +1,20 @@
-// Debug-only signing for local ScreenCaptureKit / TCC stability.
+// Debug-only signing for local ScreenCaptureKit / TCC / Keychain stability.
 // Does NOT apply to Release (Release keeps project ad-hoc until product distribution).
 //
-// Team ID is NOT committed. Create a sibling file (gitignored):
+// Defaults are machine-neutral: nothing here requires a local certificate or a
+// Team ID, so CI and other checkouts keep building exactly as before.
+// Machines that need a stable signing identity put their settings in the
+// gitignored sibling file, included last so it wins:
 //   DebugSigning.local.xcconfig
-// from DebugSigning.local.xcconfig.example after you have an Apple Development identity.
-//
-// Optional include: if missing, DEVELOPMENT_TEAM stays empty and Automatic signing will fail
-// until the local file exists — that is intentional (no silent ad-hoc fallback).
-
-#include? "DebugSigning.local.xcconfig"
+// (copy DebugSigning.local.xcconfig.example and fill in the values)
 
 // Single main executable — no SpotifyLyrics.debug.dylib split for TCC.
 ENABLE_DEBUG_DYLIB = NO
 
-// Let Xcode Automatic Signing pick Apple Development / Mac Development.
+// Machine-neutral default: no identity, no team. Without the local file a
+// plain Debug build is unsigned, which matches the previous behaviour and
+// keeps CI and other machines unaffected.
 CODE_SIGN_STYLE = Automatic
-// Leave identity empty so Automatic can resolve the right cert for macOS.
 CODE_SIGN_IDENTITY =
 
-// DEVELOPMENT_TEAM must be set in DebugSigning.local.xcconfig
+#include? "DebugSigning.local.xcconfig"

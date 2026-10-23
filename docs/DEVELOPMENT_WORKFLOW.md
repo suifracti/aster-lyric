@@ -17,7 +17,7 @@ xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics \
   -configuration Debug \
   -derivedDataPath build/DerivedData build
 ```
-  Debug 配置固定使用 `CODE_SIGN_STYLE = Manual` + `CODE_SIGN_IDENTITY = "Apple Development"`，由本机现有开发证书签名；Team 与证书不进仓库。不要为了“免签名”加 `CODE_SIGNING_ALLOWED=NO`：那会退回 ad-hoc，每次构建换一次 cdhash，钥匙串 ACL 与 TCC 授权都会失效。
+  Debug 签名只由 `SpotifyLyrics/Config/DebugSigning*.xcconfig` 决定，工程文件不再写死证书或 Team：默认保持无身份（其他 checkout 与 CI 行为不变），需要稳定身份的机器在本机 gitignored 的 `DebugSigning.local.xcconfig` 里设 `CODE_SIGN_STYLE = Manual` + `CODE_SIGN_IDENTITY = Apple Development` 与 `DEVELOPMENT_TEAM`。实机验证钥匙串时不要加 `CODE_SIGNING_ALLOWED=NO`：那会退回 ad-hoc，每次构建换一次 cdhash，钥匙串 ACL 与 TCC 授权都会失效。
 - 只做编译检查时可用 unsigned 构建，但它不能用来验证钥匙串、自动化或截图权限。
 - 只运行受影响的定向检查、真实用户要看的 App 画面；普通编译错误在已授权任务内修复，不把每个失败变成新增 Issue/PR/审计。
 - 翻译请求、业务 Keychain、正式 SQLite、用户播放状态、`/Applications` 安装覆盖、数据迁移不因“轻量测试”自动允许。
