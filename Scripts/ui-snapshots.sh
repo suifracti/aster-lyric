@@ -75,9 +75,23 @@ for entry in "${CASES[@]}"; do
   args="${entry#*|}"
   if ((${#selected[@]})) && [[ ! " ${selected[*]} " =~ " $name " ]]; then continue; fi
   rm -f "$OUT/$name".png "$OUT/$name"-panel*.png
-  # shellcheck disable=SC2086
-  PYTHONUNBUFFERED=1 python3 "$ROOT/Tools/experience_visual_host/run.py" $args --surface main \
-    --output "$OUT/$name.png" > "$OUT/$name.log" 2>&1 || echo "FAILED $name (see $OUT/$name.log)"
-  ls "$OUT/$name"*.png 2>/dev/null | sed "s|$OUT/|  |"
+  PYTHONUNBUFFERED=1 python3 - "$ROOT" "$OUT" "$name" "$args" <<'PY_TIMEOUT'
+import os, shlex, signal, subprocess, sys
+root, out, name, args = sys.argv[1:]
+with open(f"{out}/{name}.log", "w") as log:
+    process = subprocess.Popen(
+        [sys.executable, f"{root}/Tools/experience_visual_host/run.py",
+         *shlex.split(args), "--surface", "main", "--output", f"{out}/{name}.png"],
+        stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    try:
+        if process.wait(timeout=60):
+            print(f"FAILED {name} (see {out}/{name}.log)")
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+        print("Screenshot timed out after 60 seconds.", file=log)
+        print(f"FAILED {name} (timeout 60s; see {out}/{name}.log)")
+PY_TIMEOUT
+  ls "$OUT/$name"*.png 2>/dev/null | sed "s|$OUT/|  |" || true
 done
 echo "Snapshots in $OUT"
