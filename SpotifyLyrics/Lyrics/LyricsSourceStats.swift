@@ -10,8 +10,19 @@ import Foundation
 public final class LyricsSourceStats: @unchecked Sendable {
     public static let shared = LyricsSourceStats(fileURL: defaultFileURL)
 
+    /// Native tests and the visual fixture must stay out of the real file:
+    /// their synthetic searches are indistinguishable from listening once
+    /// written. Tests write under the isolated test home, the fixture under
+    /// its own temporary directory.
     static var defaultFileURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
+#if DEBUG
+        if Bundle.main.bundleIdentifier == "com.lyricsq.experience-visual-host" {
+            return FileManager.default.temporaryDirectory
+                .appendingPathComponent("lyricsq-visual-host", isDirectory: true)
+                .appendingPathComponent("source-stats.jsonl")
+        }
+#endif
+        return LyricsQStorage.homeDirectory
             .appendingPathComponent("Library/Logs/SpotifyLyrics/source-stats.jsonl")
     }
 

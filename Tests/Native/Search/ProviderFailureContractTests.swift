@@ -593,6 +593,13 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertNotNil(object?["sources"] as? [[String: Any]])
     }
 
+    func testSourceStatsKeepTestSearchesOutOfTheRealLog() {
+        let real = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/SpotifyLyrics/source-stats.jsonl")
+        XCTAssertNotEqual(LyricsSourceStats.shared.fileURL, real)
+        XCTAssertTrue(LyricsSourceStats.shared.fileURL.path.hasPrefix(NativeTestRuntime.root.path + "/"))
+    }
+
     func testRetriedFailedSourceIsAdoptedOnce() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("source-retry-\(UUID().uuidString)", isDirectory: true)
