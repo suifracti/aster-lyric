@@ -273,6 +273,26 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
         return a.id < b.id
     }
 
+    /// One provider can list the same lyrics twice under different catalogue
+    /// ids (a single and its album entry). Identical text from one source is
+    /// one choice, so keep only the entry that already sorts first.
+    public static func removingDuplicateLyrics(_ candidates: [LyricsCandidate]) -> [LyricsCandidate] {
+        guard candidates.count > 1 else { return candidates }
+        var seen = Set<String>()
+        var unique: [LyricsCandidate] = []
+        unique.reserveCapacity(candidates.count)
+        for candidate in candidates {
+            var fingerprint = candidate.source.rawValue
+            for line in candidate.lines {
+                let text = line.originalText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { continue }
+                fingerprint += "\u{1F}" + text
+            }
+            if seen.insert(fingerprint).inserted { unique.append(candidate) }
+        }
+        return unique
+    }
+
     /// Full provider result promoted to a document without rewriting its
     /// source, confidence, independent identity claims or lyric lines.
     public func makeDocument() -> LyricsDocument {

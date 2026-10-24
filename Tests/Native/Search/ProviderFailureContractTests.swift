@@ -668,6 +668,48 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertEqual(outcome.automaticSelection?.durationDelta ?? 0, 25, accuracy: 0.1)
     }
 
+    func testOneSourceListingTheSameLyricsTwiceShowsOneCandidate() async throws {
+        // Real data: NetEase lists YOU & IDOL twice, as a single and as an
+        // album entry, with the same lyrics text. KuGou's copy carries the
+        // same text too but is a different source, so both stay selectable.
+        let track = Track(id: "spotify:track:4YlXzUxQGF2K8TTqaE7fuZ", title: "YOU & IDOL",
+                          artist: "相対性理論", album: "TOWN AGE", duration: 201,
+                          spotifyId: "spotify:track:4YlXzUxQGF2K8TTqaE7fuZ")
+        let identity = TrackIdentity(track: track)
+        func candidate(_ id: String, source: LyricsSource, duration: TimeInterval,
+                       lines: [String]) -> LyricsCandidate {
+            LyricsCandidate(
+                id: id, identity: identity, title: "YOU & IDOL", artist: "相対性理論",
+                album: "TOWN AGE", duration: duration,
+                lines: lines.map { LyricLine(timestamp: 0, originalText: $0) },
+                isSynchronized: false, source: source, confidence: 0.9, providerSourceID: id
+            )
+        }
+        let lyrics = ["君の声が聞こえる", "この夜を越えて", "まだ見ぬ朝へ"]
+        let manager = LyricsSearchManager(providers: [
+            ProviderFailureFixedLyricsProvider(name: "NetEase Experimental", result: .candidates([
+                candidate("1974443812", source: .neteaseExperimental, duration: 226.0, lines: lyrics),
+                candidate("2626000001", source: .neteaseExperimental, duration: 226.2, lines: lyrics)
+            ])),
+            ProviderFailureFixedLyricsProvider(name: "Kuwo Experimental", result: .candidates([
+                candidate("kuwo-8821", source: .kuwoExperimental, duration: 240.0, lines: lyrics),
+                candidate("kuwo-9902", source: .kuwoExperimental, duration: 241.0,
+                          lines: lyrics + ["違う歌詞の行"])
+            ]))
+        ])
+
+        let outcome = await manager.search(track: track, identity: identity)
+
+        guard case .candidates(let listed) = outcome.result else {
+            XCTFail("Expected review candidates, got \(outcome.result)")
+            return
+        }
+        XCTAssertEqual(listed.count, 3)
+        XCTAssertEqual(listed.filter { $0.source == .neteaseExperimental }.count, 1)
+        XCTAssertEqual(listed.filter { $0.source == .kuwoExperimental }.count, 2)
+        XCTAssertEqual(outcome.alternatives.count, 3)
+    }
+
     func testSourceStatsKeepTestSearchesOutOfTheRealLog() {
         let real = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/SpotifyLyrics/source-stats.jsonl")

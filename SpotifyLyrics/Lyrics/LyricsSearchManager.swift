@@ -873,7 +873,9 @@ public final class LyricsSearchManager: @unchecked Sendable {
                 } ?? "agreement=none"
                 LyricsE2ELog.log("MANAGER AUTO_ADOPT \(selectionPath) provider=\(selected.providerName) strategy=\(variant.strategy.rawValue) kind=\(variant.queryKind.rawValue) tier=\(selected.decision.tier) score=\(selected.decision.score) timingPriority=\(selected.timingPriority) \(agreementNote) evidence=\(selected.decision.explanation.joined(separator: ";")) lines=\(enriched.lines.count) sync=\(enriched.isSynchronized)")
                 return SearchOutcome(result: .match(enriched), diagnostics: diagnostics,
-                    alternatives: acceptedCandidates.values.sorted(by: LyricsCandidate.hasPrecedence),
+                    alternatives: LyricsCandidate.removingDuplicateLyrics(
+                        acceptedCandidates.values.sorted(by: LyricsCandidate.hasPrecedence)
+                    ),
                     automaticDecision: selected.decision,
                     automaticSelection: selected.agreement)
             }
@@ -915,8 +917,9 @@ public final class LyricsSearchManager: @unchecked Sendable {
         }
 
         if !acceptedCandidates.isEmpty {
-            let sorted = acceptedCandidates.values
-                .sorted(by: LyricsCandidate.hasPrecedence)
+            let sorted = LyricsCandidate.removingDuplicateLyrics(
+                acceptedCandidates.values.sorted(by: LyricsCandidate.hasPrecedence)
+            )
             return SearchOutcome(result: .candidates(sorted), diagnostics: diagnostics, alternatives: sorted)
         }
 
