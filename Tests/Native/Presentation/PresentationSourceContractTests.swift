@@ -35,6 +35,19 @@ final class PresentationSourceContractTests: XCTestCase {
         XCTAssertEqual(settings.v3AtmosphereLevel(for: .ambient), 0)
     }
 
+    func testTopEdgePlayerClearsToolbarOrUsesBottomWithoutShrinking() {
+        for (width, toolbarX, expectedEdge) in [(1200.0, 600.0, V3WindowEdgeControlPositioner.Edge.top),
+                                               (700.0, 300.0, .bottom)] {
+            let toolbar = CGRect(x: toolbarX, y: 18, width: width - toolbarX - 20, height: 44)
+            let layout = V3WindowEdgeControlPositioner.layout(size: CGSize(width: width, height: 800),
+                exitPoint: CGPoint(x: width - 50, y: 0), preferredEdge: .top, avoiding: toolbar)
+            XCTAssertEqual(layout.edge, expectedEdge)
+            XCTAssertEqual(layout.scale, 1)
+            XCTAssertFalse(layout.frame.intersects(toolbar))
+            if expectedEdge == .top { XCTAssertEqual(toolbar.minX - layout.frame.maxX, 12, accuracy: 0.01) }
+        }
+    }
+
     func testListeningLayerPresetsLinkExistingFlagsAndKeepReadingStyle() {
         var preferences = DisplayPreferences(showRomaji: true, kanaDisplayMode: .inlineRuby)
         preferences.listeningLayerPreset = .translationOnly

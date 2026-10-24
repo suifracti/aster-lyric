@@ -544,7 +544,7 @@ private struct V3WindowEdgeRoundedRectShape: Shape {
 
 // BEGIN EDGE INTERACTION PURE CORE
 // Foundation geometry only. Tests compile this exact section on macOS/Linux.
-private enum V3WindowEdgeControlPositioner {
+enum V3WindowEdgeControlPositioner {
     enum Edge: Equatable, Hashable {
         case top, right, bottom, left
 
@@ -629,6 +629,14 @@ private enum V3WindowEdgeControlPositioner {
         guard !toolbar.isEmpty else { return result }
         let blocked = toolbar.insetBy(dx: -8, dy: -8)
         guard result.frame.intersects(blocked) else { return result }
+        if edge == .top {
+            let leftCenter = toolbar.minX - 12 - halfLength
+            if leftCenter - halfLength >= 90 {
+                return Layout(edge: .top, center: CGPoint(x: leftCenter, y: center.y),
+                              isVertical: false, baseSize: baseSize, scale: scale)
+            }
+            return layout(size: size, exitPoint: CGPoint(x: point.x, y: height), preferredEdge: .bottom)
+        }
         var candidates: [Layout] = []
         let topSpace = blocked.minX - 88 - 2
         if topSpace > 0 {
