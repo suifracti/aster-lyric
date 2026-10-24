@@ -180,6 +180,11 @@ public final class LyricsSearchManager: @unchecked Sendable {
         }
     }
 
+    private enum ProbeEvent: Sendable {
+        case result(ProviderProbeResult)
+        case graceTick
+    }
+
     private static func probeNetworkProviders(
         track: Track,
         identity: TrackIdentity,
@@ -190,42 +195,80 @@ public final class LyricsSearchManager: @unchecked Sendable {
         onProvisional: (@Sendable (LyricsDocument) async -> Void)? = nil,
         onCandidates: (@Sendable ([LyricsCandidate]) async -> Void)? = nil
     ) async -> [ProviderProbeResult] {
-        await withTaskGroup(of: ProviderProbeResult.self) { group in
+        await withTaskGroup(of: ProbeEvent.self) { group in
             var next = 0
             var settled = false
+            var graceStarted = false
+            var results: [ProviderProbeResult] = []
             func enqueueNext() {
                 guard !settled, !Task.isCancelled, next < providers.count else { return }
                 let indexedProvider = providers[next]
                 next += 1
                 group.addTask {
-                    await probe(indexedProvider, track: track, identity: identity)
+                    .result(await probe(indexedProvider, track: track, identity: identity))
+                }
+            }
+            /// A plain-text result may already be adoptable, but a source with
+            /// real timestamps is worth a short wait inside the same round.
+            func startGrace() {
+                guard !graceStarted else { return }
+                graceStarted = true
+                group.addTask {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    return .graceTick
+                }
+            }
+            func precedingResolved(_ index: Int) -> Bool {
+                providers.filter { $0.index < index }.allSatisfy { prior in
+                    results.contains { $0.index == prior.index }
                 }
             }
             for _ in 0..<min(3, providers.count) { enqueueNext() }
-            var results: [ProviderProbeResult] = []
-            for await result in group {
-                if !settled {
-                    results.append(result)
-                    // A safely identified original can appear while preceding
-                    // sources settle. Final ranking/persistence still occurs
-                    // after the bounded group; no candidate confirmation needed.
-                    if !collectCandidatesOnly, !Task.isCancelled, let document = automaticProvisionalDocument(result, metadata: metadata, variant: variant) {
-                        await onProvisional?(document)
+            for await event in group {
+                switch event {
+                case .graceTick:
+                    guard !settled, !collectCandidatesOnly else { continue }
+                    if let plain = results.filter({ hasAutomaticResult($0, metadata: metadata, variant: variant) })
+                        .min(by: { $0.index < $1.index }), precedingResolved(plain.index) {
+                        settled = true
+                        group.cancelAll()
                     }
-                    if !Task.isCancelled {
-                        let previews = safePreviewCandidates(result, metadata: metadata, variant: variant)
-                        if !previews.isEmpty { await onCandidates?(previews) }
+                case .result(let result):
+                    if !settled {
+                        results.append(result)
+                        // A safely identified original can appear while preceding
+                        // sources settle. Final ranking/persistence still occurs
+                        // after the bounded group; no candidate confirmation needed.
+                        if !collectCandidatesOnly, !Task.isCancelled, let document = automaticProvisionalDocument(result, metadata: metadata, variant: variant) {
+                            await onProvisional?(document)
+                        }
+                        if !Task.isCancelled {
+                            let previews = safePreviewCandidates(result, metadata: metadata, variant: variant)
+                            if !previews.isEmpty { await onCandidates?(previews) }
+                        }
                     }
+                    if Task.isCancelled { group.cancelAll() }
+                    else if !collectCandidatesOnly, !settled {
+                        let automatic = results.filter {
+                            hasAutomaticResult($0, metadata: metadata, variant: variant)
+                        }
+                        let timed = automatic.filter {
+                            hasAutomaticResult($0, metadata: metadata, variant: variant, requiresTiming: true)
+                        }
+                        if let timedReady = timed.min(by: { $0.index < $1.index }),
+                           precedingResolved(timedReady.index) {
+                            // Once an eligible timed result and its preceding
+                            // providers have resolved, unrelated lower-priority
+                            // work cannot keep the listening UI blocked.
+                            settled = true
+                            group.cancelAll()
+                        } else if let plainReady = automatic.min(by: { $0.index < $1.index }),
+                                  precedingResolved(plainReady.index) {
+                            startGrace()
+                            enqueueNext()
+                        } else { enqueueNext() }
+                    } else { enqueueNext() }
                 }
-                if Task.isCancelled { group.cancelAll() }
-                else if !collectCandidatesOnly, !settled, let ready = results.filter({ hasAutomaticResult($0, metadata: metadata, variant: variant) }).min(by: { $0.index < $1.index }),
-                        providers.filter({ $0.index < ready.index }).allSatisfy({ prior in results.contains { $0.index == prior.index } }) {
-                    // Once an eligible result and its preceding providers have
-                    // resolved, unrelated lower-priority network work cannot
-                    // keep the listening UI blocked until its own timeout.
-                    settled = true
-                    group.cancelAll()
-                } else { enqueueNext() }
             }
             return results.sorted { $0.index < $1.index }
         }
@@ -260,7 +303,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         return accepted.values.sorted(by: LyricsCandidate.hasPrecedence)
     }
 
-    private static func hasAutomaticResult(_ probe: ProviderProbeResult, metadata: TrackMetadata, variant: LyricsQueryVariant) -> Bool {
+    private static func hasAutomaticResult(_ probe: ProviderProbeResult, metadata: TrackMetadata, variant: LyricsQueryVariant, requiresTiming: Bool = false) -> Bool {
         let candidates: [LyricsCandidate]
         switch probe.result {
         case .candidates(let list): candidates = list
@@ -276,6 +319,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         return candidates.contains { candidate in
             guard candidate.identity == metadata.identity,
                   !candidate.requiresTextOnlyPreview,
+                  !requiresTiming || timingPriority(of: candidate) > 0,
                   candidate.lines.contains(where: { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { return false }
             let decision = LyricsSafeMatcher.decide(candidate: candidate, metadata: metadata, aliasUsed: metadata.aliases.first { $0.id == variant.aliasIDs.first }, queryVariant: variant)
             return decision.tier == .autoHigh || decision.tier == .autoMedium
@@ -1075,16 +1119,17 @@ public final class LyricsSearchManager: @unchecked Sendable {
 
     private static func bestAutomaticAdoption(in candidates: [AutomaticAdoption]) -> AutomaticAdoption? {
         candidates.max { lhs, rhs in
-            // Timing is preferred only among already safely matched recordings.
+            // Every candidate here is already safely matched. Between them a
+            // real timeline beats plain text, and word timing beats line timing.
+            if lhs.timingPriority != rhs.timingPriority {
+                return lhs.timingPriority < rhs.timingPriority
+            }
             if lhs.decision.score != rhs.decision.score {
                 return lhs.decision.score < rhs.decision.score
             }
             let lhsTier = automaticTierPriority(lhs.decision.tier)
             let rhsTier = automaticTierPriority(rhs.decision.tier)
             if lhsTier != rhsTier { return lhsTier < rhsTier }
-            if lhs.timingPriority != rhs.timingPriority {
-                return lhs.timingPriority < rhs.timingPriority
-            }
             if lhs.providerIndex != rhs.providerIndex {
                 return lhs.providerIndex > rhs.providerIndex
             }

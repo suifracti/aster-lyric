@@ -593,6 +593,45 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertNotNil(object?["sources"] as? [[String: Any]])
     }
 
+    func testAWaitingTimedVersionBeatsPlainTextInTheSameRound() async throws {
+        // Real data: the second play reports 228.5 s. LRCLIB answered first
+        // with plain text while NetEase and KuGou offered the same recording
+        // with a real timeline moments later.
+        let track = Track(id: "spotify:track:4YlXzUxQGF2K8TTqaE7fuZ", title: "YOU & IDOL",
+                          artist: "相対性理論", album: "TOWN AGE", duration: 228.5,
+                          spotifyId: "spotify:track:4YlXzUxQGF2K8TTqaE7fuZ")
+        let identity = TrackIdentity(track: track)
+        let text = "君の声が聞こえる"
+        let plain = LyricsCandidate(id: "lrclib", identity: identity, title: "YOU & IDOL",
+            artist: "相対性理論", album: "TOWN AGE", duration: 228.5,
+            lines: [LyricLine(timestamp: 0, originalText: text)], isSynchronized: false,
+            source: .lrclib, confidence: 0.95, providerSourceID: "lrclib")
+        let wordSpan = TimedTextSpan(id: 0, text: text, startTime: 12, endTime: 15,
+            utf16Start: 0, utf16Length: text.utf16.count)
+        let wordTimed = LyricsCandidate(id: "netease", identity: identity, title: "YOU & IDOL",
+            artist: "相対性理論", album: "TOWN AGE", duration: 228.6,
+            lines: [LyricLine(timestamp: 12, originalText: text, timedSpans: [wordSpan])],
+            isSynchronized: true, source: .neteaseExperimental, confidence: 0.9, providerSourceID: "netease")
+        let lineTimed = LyricsCandidate(id: "kuwo", identity: identity, title: "YOU & IDOL",
+            artist: "相対性理論", album: "TOWN AGE", duration: 229,
+            lines: [LyricLine(timestamp: 12, originalText: text)], isSynchronized: true,
+            source: .kuwoExperimental, confidence: 0.9, providerSourceID: "kuwo")
+        let manager = LyricsSearchManager(providers: [
+            ProviderFailureDelayedLyricsProvider(name: "LRCLIB", delay: 20_000_000, result: .candidates([plain])),
+            ProviderFailureDelayedLyricsProvider(name: "NetEase Experimental", delay: 300_000_000, result: .candidates([wordTimed])),
+            ProviderFailureDelayedLyricsProvider(name: "Kuwo Experimental", delay: 500_000_000, result: .candidates([lineTimed]))
+        ])
+
+        let outcome = await manager.search(track: track, identity: identity)
+
+        guard case .match(let document) = outcome.result else {
+            XCTFail("Expected an automatic adoption, got \(outcome.result)")
+            return
+        }
+        XCTAssertEqual(document.source, .neteaseExperimental)
+        XCTAssertTrue(document.lines.first?.hasValidTimedSpans() == true)
+    }
+
     func testSourceStatsKeepTestSearchesOutOfTheRealLog() {
         let real = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/SpotifyLyrics/source-stats.jsonl")
