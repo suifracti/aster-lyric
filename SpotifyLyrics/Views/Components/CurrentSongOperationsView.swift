@@ -1351,6 +1351,7 @@ private struct LyricsVersionPickerView: View {
                 Text("来源：\(provenance)").font(.caption2).foregroundStyle(.secondary).lineLimit(2).help(provenance)
             }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
                 .background(selectedID == key ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                .contentShape(Rectangle())
         }.buttonStyle(.plain).disabled(isBusy)
     }
 
@@ -1364,6 +1365,7 @@ private struct LyricsVersionPickerView: View {
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
             }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
                 .background(selectedID == key ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                .contentShape(Rectangle())
         }.buttonStyle(.plain).disabled(isBusy)
     }
 

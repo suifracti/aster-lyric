@@ -1,9 +1,40 @@
+import AppKit
 import Foundation
 import SwiftUI
 import XCTest
 @testable import SpotifyLyrics
 
 final class PresentationSourceContractTests: XCTestCase {
+    @MainActor
+    func testAtmospherePresetRespondsInItsPaddedArea() async throws {
+        let suite = "preset-hit-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        settings.v3ArtworkPresentation = .ambient
+        settings.setV3AtmosphereLevel(2, for: .ambient)
+        let host = NSHostingView(rootView: V3VisualControls(settings: settings)
+            .atmosphereButton("关闭", level: 0).frame(width: 180))
+        let window = NSWindow(contentRect: NSRect(x: -2000, y: -2000, width: 180, height: 40),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = host
+        window.orderBack(nil)
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(50))
+        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        try XCTSkipIf((host.accessibilityChildren() ?? []).isEmpty,
+                      "The native host exposes no SwiftUI accessibility children; confirm the padded tile in the real app.")
+        let point = window.convertPoint(toScreen: NSPoint(x: 8, y: 20))
+        let button = try XCTUnwrap(host.accessibilityHitTest(point) as? NSAccessibilityProtocol)
+        XCTAssertEqual(button.accessibilityRole(), .button)
+        XCTAssertTrue(button.accessibilityPerformPress())
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(settings.v3AtmosphereLevel(for: .ambient), 0)
+    }
+
     func testListeningLayerPresetsLinkExistingFlagsAndKeepReadingStyle() {
         var preferences = DisplayPreferences(showRomaji: true, kanaDisplayMode: .inlineRuby)
         preferences.listeningLayerPreset = .translationOnly

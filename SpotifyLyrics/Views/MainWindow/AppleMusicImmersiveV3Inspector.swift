@@ -643,15 +643,18 @@ struct V3VisualControls {
         IslandSectionHeader(title: title)
     }
 
-    private func atmosphereButton(_ title: String, level: Int) -> some View {
+    func atmosphereButton(_ title: String, level: Int) -> some View {
         let selected = settings.v3AtmosphereLevel(for: settings.v3ArtworkPresentation) == level
-        return Button(title) {
+        return Button {
             settings.setV3AtmosphereLevel(level, for: settings.v3ArtworkPresentation)
+        } label: {
+            Text(title)
+                .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(selected ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8))
+                .contentShape(Rectangle())
         }
-        .font(.system(size: 11, weight: selected ? .semibold : .regular))
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(selected ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8))
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -685,33 +688,45 @@ struct V3VisualControls {
 
     @ViewBuilder
     private func blurPresetButton(_ title: String, val: Double) -> some View {
-        Button(title) {
+        Button {
             settings.v3BackdropBlurRadius = val
+        } label: {
+            Text(title)
+                .font(.system(size: 11, weight: abs(settings.v3BackdropBlurRadius - val) < 5 ? .bold : .regular))
+                .foregroundStyle(abs(settings.v3BackdropBlurRadius - val) < 5 ? Color.blue : Color.secondary)
+                .frame(minWidth: 40, minHeight: 28)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .font(.system(size: 11, weight: abs(settings.v3BackdropBlurRadius - val) < 5 ? .bold : .regular))
-        .foregroundStyle(abs(settings.v3BackdropBlurRadius - val) < 5 ? Color.blue : Color.secondary)
     }
 
     @ViewBuilder
     private func sizePresetButton(_ title: String, val: Double) -> some View {
-        Button(title) {
+        Button {
             settings.v3ArtworkSizeScale = val
+        } label: {
+            Text(title)
+                .font(.system(size: 11, weight: abs(settings.v3ArtworkSizeScale - val) < 0.04 ? .bold : .regular))
+                .foregroundStyle(abs(settings.v3ArtworkSizeScale - val) < 0.04 ? Color.blue : Color.secondary)
+                .frame(minWidth: 40, minHeight: 28)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .font(.system(size: 11, weight: abs(settings.v3ArtworkSizeScale - val) < 0.04 ? .bold : .regular))
-        .foregroundStyle(abs(settings.v3ArtworkSizeScale - val) < 0.04 ? Color.blue : Color.secondary)
     }
 
     @ViewBuilder
     private func backdropScalePresetButton(_ title: String, val: Double) -> some View {
         let currentScale = settings.v3BackdropScale(for: settings.v3ArtworkPresentation)
-        Button(title) {
+        Button {
             settings.setV3BackdropScale(val, for: settings.v3ArtworkPresentation)
+        } label: {
+            Text(title)
+                .font(.system(size: 11, weight: abs(currentScale - val) < 0.04 ? .bold : .regular))
+                .foregroundStyle(abs(currentScale - val) < 0.04 ? Color.blue : Color.secondary)
+                .frame(minWidth: 40, minHeight: 28)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .font(.system(size: 11, weight: abs(currentScale - val) < 0.04 ? .bold : .regular))
-        .foregroundStyle(abs(currentScale - val) < 0.04 ? Color.blue : Color.secondary)
     }
 }
 
