@@ -1160,13 +1160,9 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
             textAlignment: textAlignment
         )
         .equatable()
-        // Two layers: a tight outline that separates glyphs from the art, and
-        // a wider halo that carries 译文 and non-active lines. Neither adds a
-        // background plate.
+        // A tight glyph outline keeps bright covers readable without a wide dark halo.
         .shadow(color: showsReadingShadow ? .black.opacity(0.95) : .clear,
                 radius: 2.5, x: 0, y: 1)
-        .shadow(color: showsReadingShadow ? .black.opacity(0.72) : .clear,
-                radius: 10, x: 0, y: 2)
         .offset(x: CGFloat(agentPresentationMap.horizontalOffset(for: line.performerID)))
         .opacity(presentedOpacity)
         .blur(radius: reduceMotion ? 0 : rowBlur)

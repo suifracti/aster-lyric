@@ -259,7 +259,7 @@ Based on real-song screenshots of Light source, 花の塔 and Runa: two bright c
 **Bright-cover readability:**
 - **When:** in 封面 (both 静止 and 流动) and 舞台, if the cover is bright (average luminance above about 0.6) and 清晰度 is 关闭.
 - **What:** automatically apply 文字阴影.
-- **Strength:** two layers — a tight outline plus a wider halo — strong enough that non-current lines and 译文 stay readable on a bright cover. Shadow mode also raises the dim floor for non-current lines, because a 15% line cannot be rescued by any halo. No background plate is ever added.
+- **Strength:** a single tight glyph outline, about 2–3pt radius; no wide halo or dark fog. Shadow mode keeps the existing dim floor for non-current lines so 译文 and surrounding lines remain readable. No background plate is added.
 - **Opting out:** a switch under 清晰度 in the 文字 panel, 「亮封面自动加阴影」, default on. Turning it off keeps 关闭 truly off.
 - **No override:** an explicit 文字阴影 or 柔和光晕 choice is never changed.
 - **Elsewhere:** other scenes and dark covers are unaffected.
