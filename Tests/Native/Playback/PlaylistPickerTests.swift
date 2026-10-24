@@ -6,6 +6,7 @@ private final class FakePlaylistCatalog: PlaylistCataloging {
     var rows: [PlaylistSummary]
     var itemIDs: [String: [String]]
     var tokenError: Error?
+    var membershipCheck: ((String, String) async throws -> Bool)?
     var likedRowTitle = "已点赞的歌曲"
     var likedCountValue: Int?
     var sourceKey = "spotify"
@@ -37,6 +38,7 @@ private final class FakePlaylistCatalog: PlaylistCataloging {
 
     func contains(trackID: String, inPlaylist id: String, accessToken: String) async throws -> Bool {
         itemReads.append(id)
+        if let membershipCheck { return try await membershipCheck(trackID, id) }
         return itemIDs[id]?.contains(trackID) == true
     }
 
@@ -49,6 +51,20 @@ private final class FakePlaylistCatalog: PlaylistCataloging {
         removed.append((id, trackID))
         itemIDs[id]?.removeAll { $0 == trackID }
     }
+}
+
+private final class PlaylistFixtureURLProtocol: URLProtocol {
+    static var response: ((URLRequest) -> (Int, [String: Any]))!
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let (status, body) = Self.response(request)
+        let reply = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: reply, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: try! JSONSerialization.data(withJSONObject: body))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }
 
 @MainActor
@@ -79,6 +95,48 @@ final class PlaylistPickerTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 5_000_000)
         }
         XCTFail("等待状态超时", file: file, line: line)
+    }
+
+    func testRelinkedSavedSongsAcrossPlaylistPagesAndFailedCheckStopsSpinning() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PlaylistFixtureURLProtocol.self]
+        let service = SpotifyCatalogService(session: URLSession(configuration: configuration),
+            baseURL: URL(string: "https://playlist.test/v1")!)
+        let original = track
+        PlaylistFixtureURLProtocol.response = { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems ?? []
+            if request.url!.path == "/v1/me/playlists" {
+                if query.first(where: { $0.name == "offset" })?.value == "0" {
+                    return (200, ["items": [["id": "songs", "name": "歌曲", "snapshot_id": "s1"]],
+                                  "next": "https://playlist.test/v1/me/playlists?offset=1"])
+                }
+                return (200, ["items": [["id": "folder-song", "name": "04 · J-R&B / City Pop"],
+                                        ["id": "failed", "name": "Unavailable"]]])
+            }
+            XCTAssertEqual(query.first(where: { $0.name == "market" })?.value, "from_token")
+            if request.url!.path.contains("/failed/") { return (500, ["error": ["status": 500]]) }
+            let field = request.url!.path.contains("/songs/") ? "item" : "track"
+            return (200, ["items": [[field: ["id": "replacement", "linked_from": ["id": original]]]]])
+        }
+        defer { PlaylistFixtureURLProtocol.response = nil }
+        let rows = try await service.currentUserPlaylists(accessToken: "fixture")
+        XCTAssertEqual(rows.map(\.name), ["歌曲", "04 · J-R&B / City Pop", "Unavailable"])
+        let catalog = FakePlaylistCatalog(rows: rows.map {
+            PlaylistSummary(id: $0.id, name: $0.name, trackCount: 1, snapshotID: $0.snapshotID, imageURL: nil)
+        })
+        catalog.membershipCheck = { track, playlist in
+            try await service.playlistTrackIDs(playlist, accessToken: "fixture").contains(track)
+        }
+        let model = model(catalog)
+        for row in catalog.rows { model.ensureMembership(for: row) }
+        await waitUntil { model.checking.isEmpty }
+        XCTAssertTrue(model.isMember(catalog.rows[0]))
+        XCTAssertTrue(model.isMember(catalog.rows[1]))
+        XCTAssertFalse(model.isMember(catalog.rows[2]))
+        let noTrack = PlaylistPickerModel(catalog: catalog, trackID: { nil },
+                                         likedState: { false }, applyLiked: { $0 })
+        noTrack.ensureMembership(for: catalog.rows[0])
+        await waitUntil { noTrack.checking.isEmpty }
     }
 
     func testSearchFiltersByNameAndKeepsSpotifyOrder() async {

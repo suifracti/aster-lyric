@@ -140,11 +140,16 @@ struct SpotifyPlaylistItemDTO: Decodable {
     let item: SpotifyPlaylistItemTrackDTO?
     let track: SpotifyPlaylistItemTrackDTO?
 
-    var trackID: String? { (item ?? track)?.id }
+    var trackIDs: [String] {
+        let value = item ?? track
+        return [value?.id, value?.linked_from?.id].compactMap { $0 }
+    }
 }
 
 struct SpotifyPlaylistItemTrackDTO: Decodable {
     let id: String?
+    let linked_from: OriginalTrack?
+    struct OriginalTrack: Decodable { let id: String? }
 }
 
 struct SpotifyAPIErrorEnvelope: Decodable {

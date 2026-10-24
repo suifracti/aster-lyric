@@ -317,8 +317,15 @@ public final class PlaylistPickerModel: ObservableObject {
         let sourceKey = catalog.sourceKey
         membershipTasks[playlist.id] = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { self.membershipTasks[playlist.id] = nil }
-            guard let track = self.trackID() else { return }
+            let started = Date()
+            defer {
+                self.membershipTasks[playlist.id] = nil
+                self.checking.remove(playlist.id)
+            }
+            guard let track = self.trackID() else {
+                LyricsE2ELog.log("PLAYLIST check skipped id=\(playlist.id) no-current-track")
+                return
+            }
             do {
                 let token = try await self.catalog.accessToken()
                 let isMember = try await self.catalog.contains(trackID: track, inPlaylist: playlist.id, accessToken: token)
@@ -329,10 +336,11 @@ public final class PlaylistPickerModel: ObservableObject {
                 self.membership[playlist.id] = isMember ? [track] : []
                 self.cachedSnapshots[playlist.id] = playlist.snapshotID
                 self.stale.remove(playlist.id)
+                LyricsE2ELog.log("PLAYLIST check finished id=\(playlist.id) member=\(isMember) seconds=\(Date().timeIntervalSince(started))")
             } catch {
-                // A failed check leaves the row unchecked rather than blocking it.
+                self.membership[playlist.id] = []
+                LyricsE2ELog.log("PLAYLIST check failed id=\(playlist.id) seconds=\(Date().timeIntervalSince(started)) error=\(error.localizedDescription)")
             }
-            self.checking.remove(playlist.id)
         }
     }
 

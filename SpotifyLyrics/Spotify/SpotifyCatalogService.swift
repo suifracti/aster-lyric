@@ -330,6 +330,7 @@ public final class SpotifyCatalogService: @unchecked Sendable {
             let page: SpotifyPlaylistPageDTO
             do { page = try JSONDecoder().decode(SpotifyPlaylistPageDTO.self, from: data) }
             catch { throw SpotifyCatalogError.parseFailure }
+            LyricsE2ELog.log("PLAYLIST list page offset=\(offset) count=\(page.items.count) hasNext=\(page.next != nil)")
             playlists.append(contentsOf: page.items)
             offset += page.items.count
             guard page.next != nil, !page.items.isEmpty else { break }
@@ -356,14 +357,17 @@ public final class SpotifyCatalogService: @unchecked Sendable {
             ) else { throw SpotifyCatalogError.invalidURL }
             parts.queryItems = [
                 URLQueryItem(name: "limit", value: "100"),
-                URLQueryItem(name: "offset", value: String(offset))
+                URLQueryItem(name: "offset", value: String(offset)),
+                URLQueryItem(name: "market", value: "from_token")
             ]
             guard let url = parts.url else { throw SpotifyCatalogError.invalidURL }
+            LyricsE2ELog.log("PLAYLIST items request id=\(playlistID) offset=\(offset)")
             let data = try await sendAPIRequest(url: url, accessToken: accessToken)
             let page: SpotifyPlaylistItemPageDTO
             do { page = try JSONDecoder().decode(SpotifyPlaylistItemPageDTO.self, from: data) }
             catch { throw SpotifyCatalogError.parseFailure }
-            ids.append(contentsOf: page.items.compactMap(\.trackID))
+            LyricsE2ELog.log("PLAYLIST items response id=\(playlistID) offset=\(offset) count=\(page.items.count)")
+            ids.append(contentsOf: page.items.flatMap(\.trackIDs))
             offset += page.items.count
             guard page.next != nil, !page.items.isEmpty else { break }
         }
