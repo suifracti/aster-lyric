@@ -95,6 +95,7 @@ final class V3ToolbarPresentationTests: XCTestCase {
         let scopes = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "scope" }!.value!
         XCTAssertEqual(Set(scopes.split(separator: " ").map(String.init)),
                        ["user-library-read", "user-library-modify", "user-read-playback-state",
+                        "user-modify-playback-state",
                         "playlist-read-private", "playlist-read-collaborative",
                         "playlist-modify-private", "playlist-modify-public"])
     }
