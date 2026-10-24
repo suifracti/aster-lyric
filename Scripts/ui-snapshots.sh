@@ -23,6 +23,7 @@ declare -a CASES=(
   "toolbar-faint|--toolbar faint"
   "toolbar-full|--toolbar full"
   "lyric-notice|--toolbar notice"
+  "auto-selection|--toolbar auto-selection"
   "model-picker|--surface models --model-fixture --appearance light"
   "hover-library|--panel hover:library"
   "pin-library|--panel pin:library"

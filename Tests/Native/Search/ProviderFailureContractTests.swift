@@ -632,6 +632,42 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertTrue(document.lines.first?.hasValidTimedSpans() == true)
     }
 
+    func testMultipleSourcesAgreeingOnOneRecordingAdoptDespiteSpotifyDurationGap() async throws {
+        // Real data: Spotify lists YOU & IDOL as 3:21 (201 s) while every
+        // source offers the full 3:46–3:49 master (~226–229 s).
+        let track = Track(id: "spotify:track:4YlXzUxQGF2K8TTqaE7fuZ", title: "YOU & IDOL",
+                          artist: "相対性理論", album: "TOWN AGE", duration: 201,
+                          spotifyId: "spotify:track:4YlXzUxQGF2K8TTqaE7fuZ")
+        let identity = TrackIdentity(track: track)
+        func candidate(_ id: String, duration: TimeInterval, source: LyricsSource) -> LyricsCandidate {
+            LyricsCandidate(
+                id: id, identity: identity, title: "YOU & IDOL", artist: "相対性理論",
+                album: "TOWN AGE", duration: duration,
+                lines: [LyricLine(timestamp: 12, originalText: "君の声が聞こえる")],
+                isSynchronized: true, source: source, confidence: 0.9, providerSourceID: id
+            )
+        }
+        let manager = LyricsSearchManager(providers: [
+            ProviderFailureFixedLyricsProvider(name: "NetEase Experimental",
+                result: .candidates([candidate("ne", duration: 226.0, source: .neteaseExperimental)])),
+            ProviderFailureFixedLyricsProvider(name: "QQ Music Experimental",
+                result: .candidates([candidate("qq", duration: 227.6, source: .qqExperimental)])),
+            ProviderFailureFixedLyricsProvider(name: "Kuwo Experimental",
+                result: .candidates([candidate("kuwo", duration: 228.9, source: .kuwoExperimental)]))
+        ])
+
+        let outcome = await manager.search(track: track, identity: identity)
+
+        guard case .match(let document) = outcome.result else {
+            XCTFail("Expected the agreeing sources to be adopted, got \(outcome.result)")
+            return
+        }
+        XCTAssertFalse(document.lines.isEmpty)
+        XCTAssertEqual(outcome.automaticDecision?.tier, .autoMedium)
+        XCTAssertEqual(outcome.automaticSelection?.sourceCount, 3)
+        XCTAssertEqual(outcome.automaticSelection?.durationDelta ?? 0, 25, accuracy: 0.1)
+    }
+
     func testSourceStatsKeepTestSearchesOutOfTheRealLog() {
         let real = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/SpotifyLyrics/source-stats.jsonl")

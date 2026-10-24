@@ -18,6 +18,10 @@ public final class LyricsSessionController: ObservableObject {
     @Published public private(set) var activeIdentity: TrackIdentity?
     @Published public private(set) var activeLyricsVersionID: UUID?
     @Published public private(set) var activeSourceContentHash: String?
+    /// The current lyrics were adopted because several sources agreed on one
+    /// recording, even though its length differs from Spotify's own duration.
+    @Published public private(set) var automaticSelection: LyricsAutomaticSelection?
+    private var automaticSelectionHash: String?
     @Published public private(set) var alignmentProvenanceAvailability: AlignmentProvenanceAvailability = .unavailable
     @Published public private(set) var revision: UInt64 = 0
     @Published public private(set) var isSearchInProgress = false
@@ -46,6 +50,13 @@ public final class LyricsSessionController: ObservableObject {
 
     /// Zero-operation automatic alignment reuses the session repository.
     public var repositoryForAutomaticAlignment: (any LyricsRepository)? { repository }
+
+    /// Hidden as soon as another version takes over the lyrics column.
+    public var activeAutomaticSelection: LyricsAutomaticSelection? {
+        guard let automaticSelection, let automaticSelectionHash,
+              automaticSelectionHash == activeSourceContentHash else { return nil }
+        return automaticSelection
+    }
 
     /// Primary production path: multi-variant LyricsSearchManager (not a dead Orchestrator).
     public init(
@@ -110,6 +121,8 @@ public final class LyricsSessionController: ObservableObject {
         // Keep the current projection while checking the persisted refresh boundary.
         let retainsCurrentProjection = forceRefresh && activeIdentity == identity && activeLyricsVersionID != nil && !lyrics.isEmpty
         cancelCurrentRequest()
+        automaticSelection = nil
+        automaticSelectionHash = nil
         revision &+= 1
         let requestRevision = revision
         if activeIdentity != identity { retriedIdentity = nil }
@@ -350,6 +363,13 @@ public final class LyricsSessionController: ObservableObject {
                     self.activeSourceContentHash = cachedReference.sourceContentHash
                     self.alignmentProvenanceAvailability = cachedReference.alignmentProvenanceAvailability
                 }
+                if case .match = outcome.result, let selection = outcome.automaticSelection {
+                    self.automaticSelection = selection
+                    self.automaticSelectionHash = self.activeSourceContentHash
+                } else {
+                    self.automaticSelection = nil
+                    self.automaticSelectionHash = nil
+                }
                 return true
             }
 
@@ -540,6 +560,8 @@ public final class LyricsSessionController: ObservableObject {
     public func clear() {
         sourceFailureSummary = nil
         cancelCurrentRequest()
+        automaticSelection = nil
+        automaticSelectionHash = nil
         revision &+= 1
         activeIdentity = nil
         activeLyricsVersionID = nil

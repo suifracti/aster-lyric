@@ -100,6 +100,9 @@ public final class LyricsSearchManager: @unchecked Sendable {
         let candidateIndex: Int
         let providerName: String
         let cameFromCandidates: Bool
+        /// Set when several sources independently agree on one recording whose
+        /// length differs from Spotify's own duration.
+        let agreement: LyricsAutomaticSelection?
     }
 
     private struct EvaluatedCandidate {
@@ -591,7 +594,8 @@ public final class LyricsSearchManager: @unchecked Sendable {
                             providerIndex: probe.index,
                             candidateIndex: 0,
                             providerName: provider.name,
-                            cameFromCandidates: false
+                            cameFromCandidates: false,
+                            agreement: nil
                         ))
                     }
                     if decision.tier != .reject {
@@ -627,7 +631,8 @@ public final class LyricsSearchManager: @unchecked Sendable {
                                 providerIndex: probe.index,
                                 candidateIndex: candidateIndex,
                                 providerName: provider.name,
-                                cameFromCandidates: true
+                                cameFromCandidates: true,
+                                agreement: nil
                             ))
                         }
                         if decision.tier != .reject {
@@ -720,7 +725,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
                             automaticAdoptions.append(AutomaticAdoption(document: item.document, decision: decision,
                                 timingPriority: Self.timingPriority(of: item.candidate), providerIndex: item.providerIndex,
                                 candidateIndex: item.candidateIndex, providerName: item.providerName,
-                                cameFromCandidates: item.cameFromCandidates))
+                                cameFromCandidates: item.cameFromCandidates, agreement: nil))
                         }
                     }
                     diagnostics.append(LyricsProviderDiagnostic(provider: "LinkCore verified artist entity",
@@ -771,7 +776,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
                             automaticAdoptions.append(AutomaticAdoption(document: item.document, decision: decision,
                                 timingPriority: Self.timingPriority(of: item.candidate), providerIndex: item.providerIndex,
                                 candidateIndex: item.candidateIndex, providerName: item.providerName,
-                                cameFromCandidates: item.cameFromCandidates))
+                                cameFromCandidates: item.cameFromCandidates, agreement: nil))
                         }
                     }
                     diagnostics.append(LyricsProviderDiagnostic(provider: "Spotify exact-track aliases",
@@ -786,6 +791,15 @@ public final class LyricsSearchManager: @unchecked Sendable {
                 !($0.translationText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }) {
                 translationDonors["\(item.providerIndex)\u{1F}\(item.candidate.id)"] = item
+            }
+
+            // Two or more sources that independently return the same title,
+            // artist and near-identical length describe one recording, even
+            // when Spotify's own duration is far from it. A single source
+            // keeps the existing review path.
+            if !collectCandidatesOnly, automaticAdoptions.isEmpty,
+               let agreed = Self.agreementAdoption(in: evaluatedCandidates, metadata: meta) {
+                automaticAdoptions.append(agreed)
             }
 
             if !collectCandidatesOnly, let selected = Self.bestAutomaticAdoption(in: automaticAdoptions) {
@@ -854,10 +868,14 @@ public final class LyricsSearchManager: @unchecked Sendable {
                 }
                 let enriched = Self.finalizeDocument(selectedDocument, identity: identity)
                 let selectionPath = selected.cameFromCandidates ? "from-candidates" : "provider-result"
-                LyricsE2ELog.log("MANAGER AUTO_ADOPT \(selectionPath) provider=\(selected.providerName) strategy=\(variant.strategy.rawValue) kind=\(variant.queryKind.rawValue) tier=\(selected.decision.tier) score=\(selected.decision.score) timingPriority=\(selected.timingPriority) evidence=\(selected.decision.explanation.joined(separator: ";")) lines=\(enriched.lines.count) sync=\(enriched.isSynchronized)")
+                let agreementNote = selected.agreement.map {
+                    "agreement=\($0.sourceCount)-sources delta=\(Int($0.durationDelta.rounded()))s"
+                } ?? "agreement=none"
+                LyricsE2ELog.log("MANAGER AUTO_ADOPT \(selectionPath) provider=\(selected.providerName) strategy=\(variant.strategy.rawValue) kind=\(variant.queryKind.rawValue) tier=\(selected.decision.tier) score=\(selected.decision.score) timingPriority=\(selected.timingPriority) \(agreementNote) evidence=\(selected.decision.explanation.joined(separator: ";")) lines=\(enriched.lines.count) sync=\(enriched.isSynchronized)")
                 return SearchOutcome(result: .match(enriched), diagnostics: diagnostics,
                     alternatives: acceptedCandidates.values.sorted(by: LyricsCandidate.hasPrecedence),
-                    automaticDecision: selected.decision)
+                    automaticDecision: selected.decision,
+                    automaticSelection: selected.agreement)
             }
         }
 
@@ -1117,6 +1135,92 @@ public final class LyricsSearchManager: @unchecked Sendable {
         return hasValidLineTiming ? 1 : 0
     }
 
+    /// Two sources returning the same title, primary artist and length confirm
+    /// the recording itself, not a coincidence with Spotify's duration.
+    private static func agreementAdoption(
+        in evaluated: [EvaluatedCandidate],
+        metadata: TrackMetadata
+    ) -> AutomaticAdoption? {
+        guard metadata.track.duration.isFinite, metadata.track.duration > 0 else { return nil }
+        var bestPerProvider: [String: EvaluatedCandidate] = [:]
+        for item in evaluated {
+            guard item.candidate.identity == metadata.identity,
+                  !item.candidate.requiresTextOnlyPreview,
+                  !item.decision.hardReject,
+                  !item.decision.versionConflict,
+                  item.candidate.lines.contains(where: {
+                      !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                  }),
+                  agreesOnExactTitleAndArtist(item.decision),
+                  !declaresExcludedVersion(item.candidate) else { continue }
+            if let current = bestPerProvider[item.providerName],
+               !agreementPrefers(item, over: current) { continue }
+            bestPerProvider[item.providerName] = item
+        }
+        guard bestPerProvider.count >= 2 else { return nil }
+
+        let agreeing = Array(bestPerProvider.values)
+        let durations = agreeing.map(\.candidate.duration)
+        guard durations.allSatisfy({ $0.isFinite && $0 > 0 }),
+              let shortest = durations.min(), let longest = durations.max(),
+              longest - shortest <= 5 else { return nil }
+        guard let best = agreeing.max(by: { agreementPrefers($1, over: $0) }) else { return nil }
+
+        let selection = LyricsAutomaticSelection(
+            sourceCount: agreeing.count,
+            durationDelta: abs(metadata.track.duration - best.candidate.duration)
+        )
+        let base = best.decision
+        let decision = LyricsMatchDecision(
+            tier: .autoMedium,
+            score: base.score,
+            versionConflict: false,
+            queryKind: base.queryKind,
+            reasons: base.reasons + ["multiSourceAgreement"],
+            evidence: base.evidence + [
+                LyricsMatchEvidence(code: "multiSourceAgreement", delta: 0),
+                LyricsMatchEvidence(code: "agreementDurationDelta", delta: 0)
+            ],
+            hardReject: false
+        )
+        return AutomaticAdoption(
+            document: best.document,
+            decision: decision,
+            timingPriority: timingPriority(of: best.candidate),
+            providerIndex: best.providerIndex,
+            candidateIndex: best.candidateIndex,
+            providerName: best.providerName,
+            cameFromCandidates: best.cameFromCandidates,
+            agreement: selection
+        )
+    }
+
+    private static func agreesOnExactTitleAndArtist(_ decision: LyricsMatchDecision) -> Bool {
+        let reasons = Set(decision.reasons)
+        guard reasons.contains("titleExact") else { return false }
+        return reasons.contains("primaryArtistExact")
+            || reasons.contains("primaryArtistReadingExact")
+            || reasons.contains("primaryArtistAlias")
+            || reasons.contains("spotifyCreditedArtistReadingExact")
+    }
+
+    /// A cover, remix or live take is a different recording even when the
+    /// title and artist tags look identical.
+    private static func declaresExcludedVersion(_ candidate: LyricsCandidate) -> Bool {
+        let tags = TrackTextNormalizer.extractVersionTags(fromTitle: candidate.title)
+        return tags.contains(.cover) || tags.contains(.remix) || tags.contains(.live)
+    }
+
+    /// Timed lyrics first, word-by-word before line timing, then match score.
+    private static func agreementPrefers(_ lhs: EvaluatedCandidate, over rhs: EvaluatedCandidate) -> Bool {
+        let lhsTiming = timingPriority(of: lhs.candidate)
+        let rhsTiming = timingPriority(of: rhs.candidate)
+        if lhsTiming != rhsTiming { return lhsTiming > rhsTiming }
+        if lhs.decision.score != rhs.decision.score { return lhs.decision.score > rhs.decision.score }
+        if lhs.providerIndex != rhs.providerIndex { return lhs.providerIndex < rhs.providerIndex }
+        return lhs.candidateIndex < rhs.candidateIndex
+    }
+
     private static func bestAutomaticAdoption(in candidates: [AutomaticAdoption]) -> AutomaticAdoption? {
         candidates.max { lhs, rhs in
             // Every candidate here is already safely matched. Between them a
@@ -1236,11 +1340,25 @@ public final class LyricsSearchManager: @unchecked Sendable {
     }
 }
 
+/// Why an otherwise review-only result was adopted anyway: several sources
+/// agreed on one recording whose length differs from Spotify's own duration.
+public struct LyricsAutomaticSelection: Equatable, Sendable {
+    public let sourceCount: Int
+    public let durationDelta: TimeInterval
+
+    public init(sourceCount: Int, durationDelta: TimeInterval) {
+        self.sourceCount = sourceCount
+        self.durationDelta = durationDelta
+    }
+}
+
 public struct SearchOutcome {
     public let result: LyricsLookupResult
     public let diagnostics: [LyricsProviderDiagnostic]
     public let alternatives: [LyricsCandidate]
     public let automaticDecision: LyricsMatchDecision?
+    /// Present only when the adoption came from multi-source agreement.
+    public let automaticSelection: LyricsAutomaticSelection?
 
     public var sourceFailureSummary: String? { Self.sourceFailureSummary(for: diagnostics) }
 
@@ -1255,11 +1373,12 @@ public struct SearchOutcome {
         return failures.isEmpty ? nil : failures.joined(separator: "；")
     }
 
-    public init(result: LyricsLookupResult, diagnostics: [LyricsProviderDiagnostic], alternatives: [LyricsCandidate] = [], automaticDecision: LyricsMatchDecision? = nil) {
+    public init(result: LyricsLookupResult, diagnostics: [LyricsProviderDiagnostic], alternatives: [LyricsCandidate] = [], automaticDecision: LyricsMatchDecision? = nil, automaticSelection: LyricsAutomaticSelection? = nil) {
         self.result = result
         self.diagnostics = diagnostics
         self.alternatives = alternatives
         self.automaticDecision = automaticDecision
+        self.automaticSelection = automaticSelection
     }
 }
 

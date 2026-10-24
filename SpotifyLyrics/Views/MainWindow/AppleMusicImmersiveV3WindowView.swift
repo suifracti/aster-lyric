@@ -183,6 +183,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var toolbarBounds = CGRect.zero
     @State private var lyricNotice: String?
     @State private var lyricNoticeTask: Task<Void, Never>?
+    /// Visual-host preview only; real playback fills this from the session.
+    @State private var previewAutomaticSelection: LyricsAutomaticSelection?
     @State private var hoveredStyle: V3ArtworkPresentation?
     @State private var hoveredScene: V3ListeningScene?
     private var compositionScene: V3ListeningScene? { hoveredStyle == nil ? settings.v3ListeningScene : hoveredScene }
@@ -1409,6 +1411,29 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     .transition(.opacity)
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if !isFocusMode, let selection = previewAutomaticSelection ?? state.liveLyricsAutomaticSelection {
+                let seconds = Int(selection.durationDelta.rounded())
+                Button {
+                    openLyricsLibrary()
+                } label: {
+                    Text("自动选择 · 时长与 Spotify 相差 \(seconds) 秒")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .shadow(color: .black.opacity(0.35), radius: 2, y: 0.5)
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("查看这首歌的其他版本")
+                .accessibilityLabel("自动选择，时长与 Spotify 相差 \(seconds) 秒；打开版本列表")
+            }
+        }
+    }
+
+    private func openLyricsLibrary() {
+        sideDrawerTab = .library
+        isSideDrawerOpen = true
     }
 
     private func handleListeningKey(_ key: V3ListeningKey) {
@@ -1686,6 +1711,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             sideDrawerTab = info["panel"] as? String == "search" ? .search : .library
             isSideDrawerOpen = true
         case "notice": lyricNotice = "字号 22"
+        case "auto-selection": previewAutomaticSelection = LyricsAutomaticSelection(sourceCount: 3, durationDelta: 25)
         case "faint": isPointerInsideCanvas = true
         case "full": isPointerInsideCanvas = true; toolsVisible = true
         case "hover": if let panel { toolsVisible = true; apply(toolbar.pointerOnTrigger(panel, inside: true)) }

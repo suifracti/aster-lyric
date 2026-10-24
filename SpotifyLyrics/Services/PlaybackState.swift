@@ -929,6 +929,10 @@ public final class PlaybackState: ObservableObject {
     public var isSearchingAdditionalLyricsVersions: Bool {
         liveLyricsDocumentMatchesCurrentTrack && lyricsSession.isSearchingAdditionalVersions
     }
+    public var liveLyricsAutomaticSelection: LyricsAutomaticSelection? {
+        guard liveLyricsDocumentMatchesCurrentTrack else { return nil }
+        return lyricsSession.activeAutomaticSelection
+    }
     public var additionalLyricsVersionsMessage: String {
         liveLyricsDocumentMatchesCurrentTrack ? lyricsSession.additionalVersionsMessage : ""
     }
