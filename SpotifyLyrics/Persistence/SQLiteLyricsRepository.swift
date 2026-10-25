@@ -1270,7 +1270,16 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             defer { sqlite3_finalize(identityStatement) }
             try bindText(context.lyricsVersionID.uuidString, at: 1, to: identityStatement)
             guard sqlite3_step(identityStatement) == SQLITE_ROW,
-                  columnText(identityStatement, index: 0) == context.identity.stableKey else {
+                  let sourceKey = columnText(identityStatement, index: 0) else {
+                throw TranslationRepositoryError.sourceContentMismatch
+            }
+            let canonicalSource = try resolvedCanonicalStableKey(sourceKey)
+            let canonicalContext = try resolvedCanonicalStableKey(context.identity.stableKey)
+            // An adopted version can retain older title/album metadata for the same Spotify recording.
+            let sameRecording = context.identity.spotifyTrackID.map {
+                canonicalSource.hasPrefix("spotify-id:\($0)|metadata:")
+            } ?? false
+            guard canonicalSource == canonicalContext || sameRecording else {
                 throw TranslationRepositoryError.sourceContentMismatch
             }
             if request.phase == .saved {

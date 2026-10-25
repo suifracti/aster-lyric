@@ -4,6 +4,43 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class LibraryRevisionsContractTests: XCTestCase {
+    func testReceivedTranslationSurvivesRecordingMetadataChange() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("translation.sqlite3"),
+                                         alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await repo.prepare()
+        let stored = Track(title: "些細な幸福だけで灯っていた。", artist: "kyiku", album: "やどり",
+                           duration: 246, spotifyId: "4cTnxwbzLd90onQ9bKm9V6")
+        let playing = Track(title: "Light source", artist: "kyiku", album: "Even if it was a small prayer",
+                            duration: 246, spotifyId: stored.spotifyId)
+        let document = LyricsDocument(identity: TrackIdentity(track: stored), title: stored.title,
+            artist: stored.artist, album: stored.album, duration: 246,
+            lines: [LyricLine(timestamp: 0, originalText: "原词保持不变")],
+            isSynchronized: true, source: .lrclib, confidence: 1)
+        let source = try await repo.save(track: stored, identity: document.identity, document: document)
+        let version = try XCTUnwrap(source.versionID), hash = try XCTUnwrap(source.sourceContentHash)
+        let configuration = AITranslationConfiguration(model: "fixture", engineID: TranslationEngineID.codexChatGPT.rawValue)
+        let context = TranslationCompletionContext(identity: TrackIdentity(track: playing), lyricsVersionID: version,
+            sourceContentHash: hash, originalLines: document.lines.map(\.originalText), targetLanguage: "zh-Hans",
+            providerCacheIdentity: configuration.providerCacheIdentity, configurationPromptHash: configuration.promptHash,
+            engineID: configuration.engineID, allowsAppleFallback: false)
+        let key = try context.requestKey()
+        var request = try await repo.beginTranslationRequest(key: key, explicitRetry: false)
+        request.phase = .dispatching
+        try await repo.updateTranslationRequest(request)
+        request.phase = .received
+        request.result = AITranslationDraft(lines: [AITranslationLine(index: 0, translation: "已收到的翻译")],
+            targetLanguage: "zh-Hans", model: "fixture", baseURLHost: "fixture", promptHash: "fixture",
+            sourceContentHash: hash, engineID: configuration.engineID)
+        try await repo.updateTranslationRequest(request)
+        let saved = try await repo.completeTranslationRequest(key: key, attemptID: request.attemptID, context: context)
+        XCTAssertEqual(saved.record.lyricsVersionID, version)
+        XCTAssertEqual(saved.lines.first?.translatedText, "已收到的翻译")
+        let ledger = try await repo.loadTranslationRequest(key: key)
+        XCTAssertEqual(ledger?.phase, .saved)
+        XCTAssertEqual(ledger?.attemptID, request.attemptID)
+    }
+
     @MainActor
     func testLibraryRevisionsPreserveLineageAndSelection() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("library-revisions-\(UUID())")

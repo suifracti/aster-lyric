@@ -1549,6 +1549,16 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
                 .disabled(!allowsTranslationRequests || !settings.aiTranslationConfiguration.isConfigured || state.liveLyrics.isEmpty)
             }
+            if case .failed = state.translationState {
+                Label(state.translationState.userFacingMessage, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .textSelection(.enabled)
+            } else if !state.translationProgressMessage.isEmpty {
+                Text(state.translationProgressMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             if !compact && !allowsTranslationRequests {
                 Text("没有剩余模型请求预算；苹果系统翻译及已保存版本仍可使用。")
                     .font(.caption).foregroundStyle(.secondary)
