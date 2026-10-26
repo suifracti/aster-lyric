@@ -263,3 +263,15 @@ Based on real-song screenshots of Light source, 花の塔 and Runa: two bright c
 - **Opting out:** a switch under 清晰度 in the 文字 panel, 「亮封面自动加阴影」, default on. Turning it off keeps 关闭 truly off.
 - **No override:** an explicit 文字阴影 or 柔和光晕 choice is never changed.
 - **Elsewhere:** other scenes and dark covers are unaffected.
+
+## Lyrics matching and preloading (user-approved 2026-10-26)
+**Spotify's playing duration is unreliable.** Spotify Desktop reports a different length for the same track on different plays: shion was reported as 150.8 s on one play and 168.0 s on another; YOU & IDOL as 201 s and 228.5 s. The suspected cause is playlist mixing or transitions.
+- Matching, the 「自动选择 · 时长与 Spotify 相差 N 秒」 hint and the artist-credit lookup use the **catalog metadata fetched by Spotify track ID**: duration, full artist list and title.
+- An exact track-ID match is trusted; it does not also need the playing duration to agree.
+- The playing duration is used only for the progress bar.
+
+**Preloading:**
+- Setting 「提前加载下一首歌词」 in 设置 → 歌词, default on.
+- When a track starts, read the Spotify queue and search lyrics for the next 2 tracks in the background, with the same rules and storage as a normal search.
+- Preloading only searches lyrics; AI translation is never preloaded and runs only when the track actually plays.
+- Stats lines from preloading carry `preload: true`.
