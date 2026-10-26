@@ -215,6 +215,26 @@ public final class SpotifyCatalogService: @unchecked Sendable {
         }
     }
 
+    /// Queue entries can also be episodes; only songs have lyrics to preload.
+    func upcomingTracks(accessToken: String) async throws -> [Track] {
+        let data = try await sendAPIRequest(url: baseURL.appendingPathComponent("me/player/queue"),
+                                            accessToken: accessToken, fresh: true)
+        struct Item: Decodable {
+            let track: SpotifyTrackDTO?
+            enum CodingKeys: String, CodingKey { case type }
+            init(from decoder: Decoder) throws {
+                let fields = try decoder.container(keyedBy: CodingKeys.self)
+                track = try fields.decode(String.self, forKey: .type) == "track"
+                    ? SpotifyTrackDTO(from: decoder) : nil
+            }
+        }
+        struct Queue: Decodable { let queue: [Item] }
+        guard let queue = try? JSONDecoder().decode(Queue.self, from: data) else {
+            throw SpotifyCatalogError.parseFailure
+        }
+        return queue.queue.compactMap(\.track).prefix(2).map(SpotifyTrackMapper.track)
+    }
+
     func playbackModes(accessToken: String) async throws -> PlayerPlaybackModes {
         let data = try await sendAPIRequest(url: baseURL.appendingPathComponent("me/player"), accessToken: accessToken, fresh: true)
         // 204 means no active playback, not "off".

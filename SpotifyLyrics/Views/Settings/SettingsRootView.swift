@@ -109,7 +109,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     private var searchTerms: String {
         switch self {
         case .general: return "Spotify Apple Music 自动连接 Client ID 授权 在线曲库"
-        case .lyricsAndText: return "显示翻译 显示原文 字号 字体 透明度 繁简 转换 自动搜索 自动排轴 时间轴"
+        case .lyricsAndText: return "显示翻译 显示原文 字号 字体 透明度 繁简 转换 自动搜索 提前加载 预加载 下一首 自动排轴 时间轴"
         case .appearance: return "布局 背景 模糊 环境光 封面舞台 经典放大 柔光羽化 纯净歌词 封面海报 菜单栏 置顶 悬浮 透明 颜色 窗口状态"
         case .reading: return "日语 中文 注音 Ruby 声调 本地引擎 自动生成 人工词典 优先级 读音候选"
         case .advancedAndData: return "数据库 存储 索引 重置 日志 导出 清除"
@@ -432,6 +432,7 @@ struct LyricsSearchSettingsSections: View {
     var body: some View {
         Section("切歌与同步") {
             Toggle("切歌后自动搜索歌词", isOn: $settings.autoSearchLyricsOnTrackChange)
+            Toggle("提前加载下一首歌词", isOn: $settings.preloadUpcomingLyrics)
             LyricsPresentationOffsetControl(settings: settings)
         }
         Section("自动排轴") {

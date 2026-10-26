@@ -107,6 +107,8 @@ public final class PlaybackState: ObservableObject {
     private var providerRefreshGeneration: UInt64 = 0
     private var refreshRequestedWhileBusy = false
     private var providerRefreshTask: Task<Void, Never>?
+    private var lyricsPreloadTask: Task<Void, Never>?
+    private var preloadLyricsProviders: [LyricsProvider] = []
     private var persistencePreparationTask: Task<Void, Never>?
     private var searchPreviewTask: Task<Void, Never>?
     private var listeningHistorySession: ListeningHistorySession?
@@ -200,6 +202,7 @@ public final class PlaybackState: ObservableObject {
                 mode: resolvedSettings.lyricsSourceMode
             )
         }
+        self.preloadLyricsProviders = lyricsProviders
         self.usesConfiguredLyricsProviders = lyricsProvider == nil
         self.alignmentService = alignmentService ?? SpeechForcedAlignmentService()
         let resolvedRepository: any LyricsRepository = lyricsRepository ?? SQLiteLyricsRepository()
@@ -332,6 +335,12 @@ public final class PlaybackState: ObservableObject {
             .sink { [weak self] keepOnTop in
                 guard let self, self.preferences.alwaysOnTop != keepOnTop else { return }
                 self.preferences.alwaysOnTop = keepOnTop
+            }
+            .store(in: &self.settingsCancellables)
+        resolvedSettings.$preloadUpcomingLyrics
+            .dropFirst()
+            .sink { [weak self] enabled in
+                if !enabled { self?.lyricsPreloadTask?.cancel() }
             }
             .store(in: &self.settingsCancellables)
         resolvedSettings.$lyricsProviderConfiguration
@@ -479,6 +488,7 @@ public final class PlaybackState: ObservableObject {
 
     deinit {
         desktopArtworkTask?.cancel()
+        lyricsPreloadTask?.cancel()
         timer?.invalidate()
         calibrationTimer?.invalidate()
         providerRefreshTask?.cancel()
@@ -1498,6 +1508,8 @@ public final class PlaybackState: ObservableObject {
             configuration: configuration,
             mode: mode
         )
+        lyricsPreloadTask?.cancel()
+        preloadLyricsProviders = providers
         lyricsSession.updateProviders(providers)
         searchPreviewSession.updateProviders(providers)
         objectWillChange.send()
@@ -1554,6 +1566,35 @@ public final class PlaybackState: ObservableObject {
         providerRefreshTask?.cancel()
         providerRefreshTask = Task { @MainActor [weak self] in
             await self?.refreshProvider()
+        }
+    }
+
+    private func preloadUpcomingLyrics() {
+        lyricsPreloadTask?.cancel()
+        guard settingsStore.preloadUpcomingLyrics, hasLiveTrack, usesConfiguredLyricsProviders,
+              playbackSourceIdentity == .spotifyDesktop else { return }
+        let providers = preloadLyricsProviders
+        let repository = lyricsRepository
+        let authorization = spotifyAuthorizationManager
+        let service = spotifyLibraryService
+        lyricsPreloadTask = Task {
+            do {
+                let token = try await authorization.accessToken(requiredScopes: SpotifyOAuthConfiguration.playbackScopes)
+                let tracks = try await service.upcomingTracks(accessToken: token)
+                try Task.checkCancellation()
+                LyricsE2ELog.log("PRELOAD queue count=\(tracks.count)")
+                await withTaskGroup(of: Void.self) { group in
+                    for track in tracks {
+                        group.addTask { @MainActor in
+                            let session = LyricsSessionController(providers: providers, repository: repository,
+                                spotifyArtistResolver: .shared, isPreload: true)
+                            await session.loadForPreloading(track: track)
+                        }
+                    }
+                }
+            } catch {
+                if !Task.isCancelled { LyricsE2ELog.log("PRELOAD unavailable error=\(error.localizedDescription)") }
+            }
         }
     }
 
@@ -2961,6 +3002,7 @@ public final class PlaybackState: ObservableObject {
                 identity: nextIdentity,
                 automaticallySearch: settingsStore.autoSearchLyricsOnTrackChange
             )
+            preloadUpcomingLyrics()
 #if DEBUG
             let newGeneration = lyricsSession.revision
             let nowIso = ISO8601DateFormatter().string(from: Date())

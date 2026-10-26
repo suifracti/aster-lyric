@@ -42,6 +42,7 @@ public final class LyricsSourceStats: @unchecked Sendable {
         totalSeconds: TimeInterval,
         result: LyricsLookupResult,
         retry: Bool,
+        preload: Bool = false,
         diagnostics: [LyricsProviderDiagnostic],
         outcome: String? = nil,
         date: Date = Date()
@@ -59,6 +60,7 @@ public final class LyricsSourceStats: @unchecked Sendable {
             "totalSeconds": Self.rounded(totalSeconds),
             "outcome": outcome ?? Self.outcome(for: result),
             "retry": retry,
+            "preload": preload,
             "sources": sources
         ]
         guard JSONSerialization.isValidJSONObject(entry),

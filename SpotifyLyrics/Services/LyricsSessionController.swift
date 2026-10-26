@@ -35,6 +35,8 @@ public final class LyricsSessionController: ObservableObject {
     private let searchManager: LyricsSearchManager
     private let repository: (any LyricsRepository)?
     private let sourceStats: LyricsSourceStats
+    private let isPreload: Bool
+    private static var preloadedRecordingIDs: Set<String> = []
     private var requestTask: Task<Void, Never>?
     private var manualAdoptionRequestIDs: [TrackIdentity: UUID] = [:]
     private var manualAdoptionRequestRevisions: [TrackIdentity: UInt64] = [:]
@@ -66,11 +68,13 @@ public final class LyricsSessionController: ObservableObject {
         recoveryCooldowns: [TimeInterval] = [2, 5],
         spotifyArtistResolver: SpotifyTrackArtistResolver? = nil,
         sourceStats: LyricsSourceStats = .shared,
-        sourceRetryDelay: TimeInterval = 30
+        sourceRetryDelay: TimeInterval = 30,
+        isPreload: Bool = false
     ) {
         self.searchManager = LyricsSearchManager(providers: providers, name: name, spotifyArtistResolver: spotifyArtistResolver)
         self.repository = repository
         self.sourceStats = sourceStats
+        self.isPreload = isPreload
         self.sourceRetryDelay = max(0, sourceRetryDelay)
         self.recoveryCooldowns = recoveryCooldowns.map { max(0, $0) }
     }
@@ -108,6 +112,23 @@ public final class LyricsSessionController: ObservableObject {
         cancelCurrentRequest()
         revision &+= 1
         searchManager.updateProviders(providers)
+    }
+
+    /// Uses the normal search/adoption/storage path, without a PlaybackState or
+    /// translation observer. Wait through persistence before releasing the session.
+    func loadForPreloading(track: Track) async {
+        guard !Task.isCancelled else { return }
+        begin(track: track, identity: TrackIdentity(track: track))
+        let task = requestTask
+        await withTaskCancellationHandler {
+            await task?.value
+        } onCancel: {
+            task?.cancel()
+        }
+        if isPreload, !Task.isCancelled, activeLyricsVersionID != nil,
+           let id = TrackIdentity.playbackID(for: track) {
+            Self.preloadedRecordingIDs.insert(id)
+        }
     }
 
     public func begin(
@@ -162,7 +183,7 @@ public final class LyricsSessionController: ObservableObject {
         )
 
         let sourceStats = sourceStats
-        requestTask = Task { [weak self, searchManager, repository, sourceStats] in
+        requestTask = Task { [weak self, searchManager, repository, sourceStats, isPreload] in
             defer {
                 if let self, self.activeIdentity == identity, self.revision == requestRevision { self.isSearchInProgress = false }
             }
@@ -212,7 +233,8 @@ public final class LyricsSessionController: ObservableObject {
                                 self.alignmentProvenanceAvailability = cached.alignmentProvenanceAvailability
                             }
                             // Continue searching, but only into alternatives until explicit adoption.
-                        } else if automaticallySearch && !cached.document.isSynchronized && !cached.isUserProtected {
+                        } else if automaticallySearch && !cached.document.isSynchronized && !cached.isUserProtected
+                            && !Self.preloadedRecordingIDs.contains(TrackIdentity.playbackID(for: track) ?? "") {
                             await MainActor.run { [weak self] in
                                 guard let self, self.activeIdentity == identity, self.revision == requestRevision else { return }
                                 self.apply(.match(cached.document), identity: identity, requestRevision: requestRevision)
@@ -340,6 +362,7 @@ public final class LyricsSessionController: ObservableObject {
                     totalSeconds: searchDuration,
                     result: outcome.result,
                     retry: false,
+                    preload: isPreload,
                     diagnostics: outcome.diagnostics
                 )
             }
@@ -1215,6 +1238,7 @@ public final class LyricsSessionController: ObservableObject {
                 totalSeconds: duration,
                 result: outcome.result,
                 retry: true,
+                preload: self.isPreload,
                 diagnostics: outcome.diagnostics,
                 outcome: outcomeLabel
             )

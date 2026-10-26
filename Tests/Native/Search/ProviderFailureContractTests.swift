@@ -69,6 +69,35 @@ private final class CatalogDurationFixture: URLProtocol {
     override func stopLoading() {}
 }
 
+private final class QueuePreloadFixture: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let queue = ["AAAAAAAAAAAAAAAAAAAAAA", "BBBBBBBBBBBBBBBBBBBBBB", "CCCCCCCCCCCCCCCCCCCCCC"].map { id in
+            ["type": "track", "id": id, "uri": "spotify:track:\(id)", "name": id,
+             "artists": [["name": "angelize"]], "album": ["name": "shion", "images": []],
+             "duration_ms": 168000, "explicit": false] as [String: Any]
+        }
+        let data = try! JSONSerialization.data(withJSONObject: ["queue": queue])
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+private struct PreloadCountingProvider: LyricsProvider {
+    let name = "preload-fixture"
+    let counter: ProviderFailureCounter
+    func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult {
+        counter.increment()
+        return .match(LyricsDocument(identity: identity, title: track.title, artist: track.artist,
+            album: track.album, duration: track.duration,
+            lines: [LyricLine(timestamp: 1, originalText: "電波を超え届く君のもとへ")],
+            isSynchronized: track.spotifyId?.hasPrefix("A") == true, source: .qqExperimental, confidence: 0.95))
+    }
+}
+
 private struct ProviderFailureFixedLyricsProvider: LyricsProvider {
     let name: String
     let result: LyricsLookupResult
@@ -695,6 +724,44 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertEqual(adopted.lines.count, 37)
         XCTAssertEqual(outcome.automaticDecision?.tier, .autoHigh)
         XCTAssertTrue(outcome.automaticDecision?.reasons.contains("durationClose") == true)
+    }
+
+    func testPreloadedQueueTrackPlaysFromStorageWithoutAnotherSearch() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("lyrics-preload-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("test.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        let stats = LyricsSourceStats(fileURL: root.appendingPathComponent("stats.jsonl"))
+        let counter = ProviderFailureCounter()
+        let source = PreloadCountingProvider(counter: counter)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [QueuePreloadFixture.self]
+        let tracks = try await SpotifyCatalogService(session: URLSession(configuration: config))
+            .upcomingTracks(accessToken: "fixture")
+        XCTAssertEqual(tracks.count, 2)
+        for track in tracks {
+            let preload = LyricsSessionController(providers: [source], repository: repo, sourceStats: stats, isPreload: true)
+            await preload.loadForPreloading(track: track)
+        }
+        XCTAssertEqual(counter.value, 2)
+        for (index, queued) in tracks.enumerated() {
+            // An adopted timed version survives Desktop's duration discrepancy;
+            // a cached plain version is not searched again just to add timing.
+            let playing = Track(title: queued.title, artist: queued.artist, album: queued.album,
+                                duration: index == 0 ? 150.8 : queued.duration, spotifyId: queued.spotifyId)
+            let live = LyricsSessionController(providers: [source], repository: repo, sourceStats: stats)
+            await live.loadForPreloading(track: playing)
+            XCTAssertEqual(live.lyrics.count, 1)
+            XCTAssertNotNil(live.activeLyricsVersionID)
+            XCTAssertEqual(counter.value, 2, "Playing the saved track must not start another provider search")
+        }
+        let lines = try String(contentsOf: stats.fileURL, encoding: .utf8).split(separator: "\n")
+        XCTAssertEqual(lines.count, 2)
+        for line in lines {
+            let entry = try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
+            XCTAssertEqual(entry?["preload"] as? Bool, true)
+        }
     }
 
     func testMultipleSourcesAgreeingOnOneRecordingAdoptDespiteSpotifyDurationGap() async throws {

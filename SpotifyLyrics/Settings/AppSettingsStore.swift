@@ -338,6 +338,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let connectSpotifyOnLaunch = "general.connectSpotifyOnLaunch"
         public static let playbackSourceMode = "playback.sourceMode"
         public static let autoSearchLyricsOnTrackChange = "general.autoSearchLyricsOnTrackChange"
+        public static let preloadUpcomingLyrics = "general.preloadUpcomingLyrics"
         /// Product zero-operation automatic alignment (default off).
         public static let automaticAlignmentEnabled = "automaticAlignment.enabled.v1"
         public static let keepMainWindowOnTop = "general.keepMainWindowOnTop"
@@ -687,6 +688,10 @@ public final class AppSettingsStore: ObservableObject {
 
     @Published public var autoSearchLyricsOnTrackChange: Bool {
         didSet { defaults.set(autoSearchLyricsOnTrackChange, forKey: Key.autoSearchLyricsOnTrackChange) }
+    }
+
+    @Published public var preloadUpcomingLyrics: Bool {
+        didSet { defaults.set(preloadUpcomingLyrics, forKey: Key.preloadUpcomingLyrics) }
     }
 
     /// When enabled, playing an unsynced plain-lyrics track may auto-capture and align.
@@ -1309,6 +1314,7 @@ public final class AppSettingsStore: ObservableObject {
             playbackSourceMode = .auto
         }
         autoSearchLyricsOnTrackChange = defaults.object(forKey: Key.autoSearchLyricsOnTrackChange) as? Bool ?? true
+        preloadUpcomingLyrics = defaults.object(forKey: Key.preloadUpcomingLyrics) as? Bool ?? true
         automaticAlignmentEnabled = defaults.object(forKey: Key.automaticAlignmentEnabled) as? Bool ?? false
         // Keep the normal window behavior by default. Users can opt into
         // always-on-top explicitly in Settings; existing saved choices are
