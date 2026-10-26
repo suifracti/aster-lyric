@@ -4,6 +4,45 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class LibraryRevisionsContractTests: XCTestCase {
+    func testYouAndIdolNewDurationKeyRedirectsToSelectedLyrics() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("identity.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await repo.prepare()
+        let old = Track(title: "YOU & IDOL", artist: "相対性理論", album: "TOWN AGE", duration: 201,
+                        spotifyId: "4YlXzUxQGF2K8TTqaE7fuZ")
+        let identity = TrackIdentity(track: old)
+        let document = LyricsDocument(identity: identity, title: old.title, artist: old.artist, album: old.album,
+            duration: 229, lines: [LyricLine(timestamp: 1, originalText: "已选歌词")],
+            isSynchronized: true, source: .qqExperimental, confidence: 1)
+        let saved = try await repo.save(track: old, identity: identity, document: document)
+        let version = try XCTUnwrap(saved.versionID)
+        try await repo.adoptLyricsVersion(trackStableKey: identity.stableKey, lyricsVersionID: version)
+        let playing = Track(title: old.title, artist: old.artist, album: old.album, duration: 229, spotifyId: old.spotifyId)
+        let newIdentity = TrackIdentity(track: playing)
+        let before = try await repo.redirectCount()
+        let loaded = try await repo.loadBestStored(track: playing, identity: newIdentity)
+        XCTAssertEqual(loaded?.versionID, version)
+        XCTAssertEqual(loaded?.document.lines.first?.originalText, "已选歌词")
+        let after = try await repo.redirectCount()
+        XCTAssertEqual(after, before + 1)
+        var database: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(repo.databaseURL.path, &database, SQLITE_OPEN_READONLY, nil), SQLITE_OK)
+        defer { sqlite3_close(database) }
+        var statement: OpaquePointer?
+        XCTAssertEqual(sqlite3_prepare_v2(database, "SELECT COUNT(*) FROM track_identity_merge_audit WHERE action = 'redirect-only';", -1, &statement, nil), SQLITE_OK)
+        defer { sqlite3_finalize(statement) }
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW)
+        XCTAssertEqual(sqlite3_column_int(statement, 0), 1)
+        let canonical = try await repo.resolveStableKey(newIdentity.stableKey)
+        XCTAssertEqual(canonical, identity.stableKey)
+        let reopened = SQLiteLyricsRepository(databaseURL: repo.databaseURL,
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await reopened.prepare()
+        let again = try await reopened.loadBestStored(track: playing, identity: newIdentity)
+        XCTAssertEqual(again?.versionID, version)
+    }
+
     func testReceivedTranslationSurvivesRecordingMetadataChange() async throws {
         let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
         let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("translation.sqlite3"),
