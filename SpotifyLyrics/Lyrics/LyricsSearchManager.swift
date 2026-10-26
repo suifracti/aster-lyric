@@ -573,6 +573,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
                         aliasUsed: alias(for: variant),
                         queryVariant: variant
                     )
+                    LyricsE2ELog.log("MATCH provider=\(provider.name) rank=\(variant.rank) sourceID=\(candidate.providerSourceID ?? candidate.id) title=\(candidate.title) artist=\(candidate.artist) duration=\(candidate.duration) tier=\(decision.tier.rawValue) evidence=\(decision.explanation.joined(separator: ";"))")
                     evaluatedCandidates.append(EvaluatedCandidate(candidate: candidate, document: document,
                         decision: decision, providerIndex: probe.index, candidateIndex: 0,
                         providerName: provider.name, cameFromCandidates: false))

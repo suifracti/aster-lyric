@@ -674,6 +674,29 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertTrue(outcome.automaticDecision?.reasons.contains("durationClose") == true)
     }
 
+    func testShionSingleQQMatchUsesCatalogDurationRatherThanProviderConfidence() async throws {
+        // 2026-10-26 07:38:06: QQ MATCH, 37 synchronized lines, confidence 0.9.
+        let track = Track(title: "shion", artist: "angelize", album: "shion", duration: 150.8,
+                          spotifyId: "spotify:track:0t5DDnfp0dkgeSnokvbIQY")
+        let identity = TrackIdentity(track: track)
+        let document = LyricsDocument(identity: identity, title: "shion", artist: "Angelize", album: "shion",
+            duration: 168, lines: (0..<37).map { LyricLine(timestamp: Double($0 * 4), originalText: "電波を超え届く君のもとへ") },
+            isSynchronized: true, source: .qqExperimental, confidence: 0.9, providerSourceID: "qq:shion")
+        let source = ProviderFailureFixedLyricsProvider(name: "QQ Music Experimental", result: .match(document))
+        let oldDuration = await LyricsSearchManager(providers: [source]).search(track: track, identity: identity)
+        guard case .candidates = oldDuration.result else { return XCTFail("Expected to reproduce the reported downgrade") }
+        XCTAssertTrue(oldDuration.diagnostics.flatMap(\.matchDecisions).contains { $0.reasons.contains("durationFar") })
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [CatalogDurationFixture.self]
+        let outcome = await LyricsSearchManager(providers: [source],
+            spotifyArtistResolver: SpotifyTrackArtistResolver(session: URLSession(configuration: config)))
+            .search(track: track, identity: identity)
+        guard case .match(let adopted) = outcome.result else { return XCTFail("A single qualified QQ result must be adopted") }
+        XCTAssertEqual(adopted.lines.count, 37)
+        XCTAssertEqual(outcome.automaticDecision?.tier, .autoHigh)
+        XCTAssertTrue(outcome.automaticDecision?.reasons.contains("durationClose") == true)
+    }
+
     func testMultipleSourcesAgreeingOnOneRecordingAdoptDespiteSpotifyDurationGap() async throws {
         // Real data: Spotify lists YOU & IDOL as 3:21 (201 s) while every
         // source offers the full 3:46–3:49 master (~226–229 s).
