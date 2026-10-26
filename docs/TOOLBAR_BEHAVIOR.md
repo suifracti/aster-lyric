@@ -275,3 +275,13 @@ Based on real-song screenshots of Light source, 花の塔 and Runa: two bright c
 - When a track starts, read the Spotify queue and search lyrics for the next 2 tracks in the background, with the same rules and storage as a normal search.
 - Preloading only searches lyrics; AI translation is never preloaded and runs only when the track actually plays.
 - Stats lines from preloading carry `preload: true`.
+
+## One Spotify ID, one song (user-approved 2026-10-26)
+**Problem:** the stable key is `spotify-id:ID|metadata:title|artist|album|duration`. When Spotify's metadata changes, one recording splits into several keys: a different-script title, or a different reported duration (`…|201` and `…|229`). This caused 「歌词身份待确认」, lost selections and rejected translation saves.
+
+**Rule:** a Spotify track ID identifies the song. The key format stays the same.
+- When a new key appears and another key with the same Spotify ID already exists, automatically add a `track_identity_redirects` entry from the new key to the existing one. Prefer the key that holds the user's selected lyrics; otherwise use the oldest.
+- Lyrics, translations, offsets and selections then follow the redirect.
+- **Existing splits:** run a one-time pass that adds the same redirects. It never deletes rows, records every merge in the existing merge audit table, and backs up the database first.
+- **Once the redirects work, remove the earlier one-off patches for this problem:** the translation-save "same recording" prefix check and the Spotify-ID fallback for selected lyrics. Remove them only after the tests pass.
+- Tracks without a Spotify ID (Apple Music, local files) keep the current behaviour.
