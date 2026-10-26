@@ -397,26 +397,25 @@ public final class LyricsSearchManager: @unchecked Sendable {
         let started = Date()
         let searchID = String(UUID().uuidString.prefix(8))
         defer { LyricsE2ELog.log("SEARCH end id=\(searchID) total=\(String(format: "%.3f", Date().timeIntervalSince(started)))s cancelled=\(Task.isCancelled)") }
+        let playbackTrack = track
+        let playbackMetadata = TrackMetadata.bootstrap(from: playbackTrack)
+        let automaticQuery = (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let catalogTrack = automaticQuery ? await spotifyArtistResolver?.matchingTrack(for: playbackTrack) : nil
+        let track = catalogTrack ?? playbackTrack
         let metadata = TrackMetadata.bootstrap(from: track)
-        let mergedAliases = Self.mergeAliases(metadata.aliases, aliases)
-        // Keep identity stable with caller-supplied identity (playback).
         var meta = TrackMetadata(
             identity: identity,
             track: track,
-            aliases: mergedAliases,
+            aliases: Self.mergeAliases(Self.mergeAliases(metadata.aliases, playbackMetadata.aliases), aliases),
             versionTags: metadata.versionTags
         )
-        var attemptedSpotifyAliasEnrichment = false
-        if collectCandidatesOnly,
-           (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           let spotifyArtistResolver {
-            if let verifiedNames = await spotifyArtistResolver.artists(for: track) {
-                meta.verifiedSpotifyArtists = verifiedNames
-            }
-            let officialAliases = await spotifyArtistResolver.aliases(for: track)
+        if automaticQuery, let spotifyArtistResolver {
+            meta.verifiedSpotifyArtists = await spotifyArtistResolver.artists(for: track) ?? []
+            meta.aliases = Self.mergeAliases(meta.aliases, await spotifyArtistResolver.aliases(for: track))
             guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: []) }
-            meta.aliases = Self.mergeAliases(meta.aliases, officialAliases)
-            attemptedSpotifyAliasEnrichment = true
+            if let catalogTrack {
+                LyricsE2ELog.log("SEARCH catalog title=\(catalogTrack.title) artists=\(catalogTrack.artist) duration=\(catalogTrack.duration) playbackDuration=\(playbackTrack.duration)")
+            }
         }
         var variants = LyricsQueryPlanner.plan(for: meta, manualQuery: queryOverride)
         let cacheKey = Self.negativeCacheKey(
@@ -733,57 +732,6 @@ public final class LyricsSearchManager: @unchecked Sendable {
                 }
             }
 
-            // If the first exact query did not settle automatically, consult
-            // Spotify's exact recording even when no source candidate exists.
-            // Its title and credited artist spellings both expand bounded,
-            // artist-scoped queries; any result still passes SafeMatcher.
-            if !collectCandidatesOnly,
-               (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-               automaticAdoptions.isEmpty, !attemptedSpotifyAliasEnrichment,
-               variantCursor == 1, let spotifyArtistResolver {
-                attemptedSpotifyAliasEnrichment = true
-                let enrichmentStarted = Date()
-                if let verifiedNames = await spotifyArtistResolver.artists(for: track) {
-                    meta.verifiedSpotifyArtists = verifiedNames
-                }
-                let officialAliases = await spotifyArtistResolver.aliases(for: track)
-                guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics) }
-                if !officialAliases.isEmpty {
-                    meta.aliases = Self.mergeAliases(meta.aliases, officialAliases)
-                    var officialPlan = LyricsQueryPlanner.plan(for: meta, manualQuery: queryOverride)
-                        .filter { variant in
-                            variant.aliasIDs.contains { $0.hasPrefix("spotify-entity-") }
-                        }
-                    officialPlan = officialPlan.filter { queriedVariants.insert($0.titleQuery + "\u{1F}" + ($0.artistQuery ?? "")).inserted }
-                        .prefix(7).map { $0 }
-                    let additions = officialPlan.enumerated().map { offset, item in
-                        LyricsQueryVariant(rank: variantCursor + offset + 1, strategy: item.strategy,
-                            queryKind: item.queryKind, titleQuery: item.titleQuery,
-                            artistQuery: item.artistQuery, aliasIDs: item.aliasIDs)
-                    }
-                    variants.insert(contentsOf: additions, at: variantCursor)
-
-                    var verifiedDecisions: [LyricsMatchDecision] = []
-                    for item in evaluatedCandidates {
-                        let decision = LyricsSafeMatcher.decide(candidate: item.candidate, metadata: meta,
-                            aliasUsed: alias(for: variant), queryVariant: variant)
-                        verifiedDecisions.append(decision)
-                        if decision.tier != .reject {
-                            acceptedCandidates[item.candidate.id] = Self.enrichCandidate(item.candidate,
-                                providerName: item.providerName, variant: variant, decision: decision)
-                        }
-                        if decision.tier == .autoHigh || decision.tier == .autoMedium {
-                            automaticAdoptions.append(AutomaticAdoption(document: item.document, decision: decision,
-                                timingPriority: Self.timingPriority(of: item.candidate), providerIndex: item.providerIndex,
-                                candidateIndex: item.candidateIndex, providerName: item.providerName,
-                                cameFromCandidates: item.cameFromCandidates, agreement: nil))
-                        }
-                    }
-                    diagnostics.append(LyricsProviderDiagnostic(provider: "Spotify exact-track aliases",
-                        outcome: .match, duration: Date().timeIntervalSince(enrichmentStarted), matchDecisions: verifiedDecisions))
-                    LyricsE2ELog.log("SEARCH Spotify aliases titleAndArtists=\(officialAliases.count) rescored=\(verifiedDecisions.count) appendedQueries=\(additions.count)")
-                }
-            }
             guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics) }
 
             rejectedForExplanation.append(contentsOf: evaluatedCandidates.filter { $0.decision.tier == .reject })

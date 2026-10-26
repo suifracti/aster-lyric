@@ -7,7 +7,7 @@ public struct TrackMetadata: Equatable, Sendable {
     public let track: Track
     public var aliases: [TrackAlias]
     public var versionTags: [VersionTag]
-    /// Complete artists verified against Spotify's exact track ID, title and duration.
+    /// Complete artists verified against Spotify's exact track ID.
     /// Playback identity and the original display metadata remain unchanged.
     public var verifiedSpotifyArtists: [String] = []
 
@@ -129,7 +129,6 @@ public actor SpotifyTrackArtistResolver {
 
         func matches(_ track: Track) -> Bool {
             guard TrackTextNormalizer.normalize(title) == TrackTextNormalizer.normalize(track.title),
-                  track.duration.isFinite, track.duration > 0, abs(duration - track.duration) <= 2,
                   let primary = names.first else { return false }
             let known = TrackTextNormalizer.artistTokens(track.artist)
             let official = Set(names.map(TrackTextNormalizer.normalizeArtistToken))
@@ -167,12 +166,21 @@ public actor SpotifyTrackArtistResolver {
         return result.names
     }
 
-    /// Exact Spotify entity identity and duration can establish localized names
+    /// Catalog metadata is for matching only. Callers retain the playback identity
+    /// and duration for persistence keys and the progress rail.
+    public func matchingTrack(for track: Track) async -> Track? {
+        guard let result = await metadata(for: track) else { return nil }
+        return Track(id: track.id, title: result.title, artist: result.names.joined(separator: ", "),
+            album: track.album, duration: result.duration, artworkName: track.artworkName,
+            isrc: track.isrc, spotifyId: track.spotifyId, artworkURL: track.artworkURL,
+            spotifyURL: track.spotifyURL, artistLinks: track.artistLinks, albumURL: track.albumURL)
+    }
+
+    /// Exact Spotify entity identity can establish localized names
     /// even when Desktop and the lyric source use different scripts. Provider
     /// candidate names are never used to manufacture these aliases.
     public func aliases(for track: Track) async -> [TrackAlias] {
-        guard let result = await metadata(for: track), track.duration.isFinite,
-              track.duration > 0, abs(result.duration - track.duration) <= 2 else { return [] }
+        guard let result = await metadata(for: track) else { return [] }
         let title = TrackAlias(id: "spotify-entity-title", field: .title, kind: .localizedTitle,
             value: result.title, script: ScriptDetector.detect(result.title), source: .spotifyMetadata,
             confidence: 1, isOfficial: true)

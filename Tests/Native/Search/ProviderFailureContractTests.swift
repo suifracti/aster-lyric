@@ -52,6 +52,23 @@ private final class ProviderFailureLRCLIBSession: LRCLIBSession, @unchecked Send
     }
 }
 
+private final class CatalogDurationFixture: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let id = "0t5DDnfp0dkgeSnokvbIQY"
+        let entity: [String: Any] = ["type": "track", "id": id, "uri": "spotify:track:\(id)",
+            "title": "shion", "duration": 168000,
+            "artists": [["name": "angelize", "uri": "spotify:artist:AAAAAAAAAAAAAAAAAAAAAA"]]]
+        let json = try! JSONSerialization.data(withJSONObject: ["props": ["pageProps": ["state": ["data": ["entity": entity]]]]])
+        let body = Data(("<script id=\"__NEXT_DATA__\">" + String(decoding: json, as: UTF8.self) + "</script>").utf8)
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
 private struct ProviderFailureFixedLyricsProvider: LyricsProvider {
     let name: String
     let result: LyricsLookupResult
@@ -630,6 +647,31 @@ final class ProviderFailureContractTests: XCTestCase {
         }
         XCTAssertEqual(document.source, .neteaseExperimental)
         XCTAssertTrue(document.lines.first?.hasValidTimedSpans() == true)
+    }
+
+    func testCatalogDurationOverridesDesktopDurationWithoutChangingIdentity() async throws {
+        let track = Track(title: "shion", artist: "angelize", album: "shion", duration: 150.8,
+                          spotifyId: "spotify:track:0t5DDnfp0dkgeSnokvbIQY")
+        let identity = TrackIdentity(track: track)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [CatalogDurationFixture.self]
+        let resolver = SpotifyTrackArtistResolver(session: URLSession(configuration: config))
+        let providers = [LyricsSource.qqExperimental, .neteaseExperimental, .kuwoExperimental].enumerated().map { index, source in
+            ProviderFailureFixedLyricsProvider(name: "source-\(index)", result: .candidates([
+                LyricsCandidate(id: "source-\(index)", identity: identity, title: "shion", artist: "Angelize",
+                    album: "shion", duration: 168,
+                    lines: [LyricLine(timestamp: 1, originalText: "電波を超え届く君のもとへ")],
+                    isSynchronized: true, source: source, confidence: 0.9)
+            ]))
+        }
+        let outcome = await LyricsSearchManager(providers: providers, spotifyArtistResolver: resolver)
+            .search(track: track, identity: identity)
+        guard case .match(let document) = outcome.result else { return XCTFail("Expected catalog-backed adoption") }
+        XCTAssertEqual(document.identity, identity)
+        XCTAssertEqual(track.duration, 150.8)
+        XCTAssertEqual(document.duration, 168)
+        XCTAssertLessThan(outcome.automaticSelection?.durationDelta ?? 0, 0.5)
+        XCTAssertTrue(outcome.automaticDecision?.reasons.contains("durationClose") == true)
     }
 
     func testMultipleSourcesAgreeingOnOneRecordingAdoptDespiteSpotifyDurationGap() async throws {

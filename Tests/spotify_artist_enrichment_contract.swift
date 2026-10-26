@@ -118,7 +118,6 @@ struct SpotifyArtistEnrichmentContract {
             ("wrong ID", page(id: "0000000000000000000000")),
             ("wrong URI", page(uri: "spotify:track:0000000000000000000000")),
             ("wrong title", page(title: "A different song")),
-            ("wrong duration", page(duration: 250000)),
             ("wrong primary", page(artists: ["Mallory", "Bob"])),
             ("missing artists", page(artists: [])),
             ("malformed page", Data("<html>unavailable</html>".utf8))
@@ -195,7 +194,7 @@ struct SpotifyArtistEnrichmentContract {
         let localizedOutcome = await LyricsSearchManager(providers: [FixtureProvider(artists: "試験作者", title: "夕景の試験")], spotifyArtistResolver: resolver())
             .search(track: localized, identity: TrackIdentity(track: localized))
         guard case .match = localizedOutcome.result else { require(false, "exact official entity aliases did not resolve localized names"); return }
-        require(localizedOutcome.automaticDecision?.reasons.contains("titleAliasConfirmed") == true,
+        require(localizedOutcome.automaticDecision?.reasons.contains("titleExact") == true,
             "localized automatic selection lacks official title evidence")
         require(FixtureURLProtocol.replies.count == 1, "localized matching should reuse one official metadata response")
         FixtureURLProtocol.replies.reset(body: page(title: "夕景の試験", duration: 500000, artists: ["試験作者"]))

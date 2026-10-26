@@ -1412,7 +1412,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if !isFocusMode, let selection = previewAutomaticSelection ?? state.liveLyricsAutomaticSelection {
+            if !isFocusMode, let selection = previewAutomaticSelection ?? state.liveLyricsAutomaticSelection,
+               selection.durationDelta >= 0.5 {
                 let seconds = Int(selection.durationDelta.rounded())
                 Button {
                     openLyricsLibrary()
