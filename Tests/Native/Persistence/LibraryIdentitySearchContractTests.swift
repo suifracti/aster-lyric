@@ -33,7 +33,7 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         let aID = try await save(a, text: "原版独有歌词")
         let bID = try await save(b, text: "新版独有歌词")
         let unrelatedID = try await save(unrelated, text: "unrelated")
-        _ = try await save(conflict, text: "conflict")
+        let conflictID = try await save(conflict, text: "conflict")
         let historical = Track(title: "Historical metadata", artist: "Historical singer", album: "Old album", duration: 99, spotifyId: "historical-id")
         let historicalID = try await save(historical, text: "historical-only")
         _ = try await save(Track(title: "Duration conflict", artist: "Singer", album: "Album", duration: 100, spotifyId: "duration-conflict"), text: "short recording")
@@ -52,22 +52,22 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         VALUES ('\(translationID)','\(aID)','manualEdit','zh','fixture',1,1,'complete');
         INSERT INTO translation_lines VALUES ('\(translationID)',0,'保存译文独有词');
         INSERT INTO track_aliases(track_stable_key,field,kind,value,script,source,confidence,is_official)
-        VALUES ('\(TrackIdentity(track: b).stableKey)','title','userAlias','Alternative title','latin','user',1,0);
+        VALUES ('\(TrackIdentity(track: a).stableKey)','title','userAlias','Alternative title','latin','user',1,0);
         """
         try executeSQL(fixtureSQL, at: databaseURL)
 
         let entries = try await repo.loadPersonalLibraryEntries()
-        XCTAssertEqual(entries.count, 6, "Same Spotify recording with subsecond duration drift must occupy one row; conflicting identities stay separate")
-        let family = try XCTUnwrap(entries.first { $0.lyricsVersionCount == 3 })
+        XCTAssertEqual(entries.count, 4, "One Spotify ID stays one song across artist and duration changes; different IDs and metadata-only tracks stay separate")
+        let family = try XCTUnwrap(entries.first { $0.lyricsVersionCount == 4 })
         let loadedDetail = try await repo.loadPersonalLibraryTrackDetail(stableKey: family.trackStableKey)
         let detail = try XCTUnwrap(loadedDetail)
-        XCTAssertEqual(Set(detail.lyricsVersions.map(\.id)), Set([aID, bID, historicalID]), "Grouping must retain both physical keys' versions")
+        XCTAssertEqual(Set(detail.lyricsVersions.map(\.id)), Set([aID, bID, conflictID, historicalID]), "Grouping must retain both physical keys' versions")
         XCTAssertTrue(detail.readingVersions.contains { $0.id == readingID })
         XCTAssertTrue(detail.translationVersions.contains { $0.id == translationID })
         let oldDetailResult = try await repo.loadPersonalLibraryTrackDetail(stableKey: TrackIdentity(track: b).stableKey)
         let oldDetail = try XCTUnwrap(oldDetailResult)
         XCTAssertEqual(oldDetail.entry.trackStableKey, family.trackStableKey)
-        XCTAssertEqual(oldDetail.lyricsVersions.count, 3)
+        XCTAssertEqual(oldDetail.lyricsVersions.count, 4)
 
         for query in ["原版独有", "新版独有", "historical-only", "SAVEDREADINGNEEDLE", "SÁVEDREADINGNEEDLE", "karada", "ＫＡＲＡＤＡ", "保存译文独有", "Alternative title"] {
             let found = try await repo.loadPersonalLibraryEntries(searchQuery: query)
@@ -81,7 +81,7 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         XCTAssertTrue(injection.isEmpty)
 
         let package = try await repo.exportPersonalLibraryPackage(stableKey: family.trackStableKey)
-        XCTAssertEqual(Set(package.lyricsVersions.map(\.id)), Set([aID, bID, historicalID]), "Export must not lose versions hidden by grouping")
+        XCTAssertEqual(Set(package.lyricsVersions.map(\.id)), Set([aID, bID, conflictID, historicalID]), "Export must not lose versions hidden by grouping")
         try await repo.setPersonalLibraryActiveLyrics(trackStableKey: family.trackStableKey, lyricsVersionID: bID)
         let best = try await repo.loadBestStored(track: a, identity: TrackIdentity(track: a))
         XCTAssertEqual(best?.versionID, bID, "Selecting a sibling-key version must affect playback")
@@ -90,9 +90,9 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
 
         let reopened = SQLiteLyricsRepository(databaseURL: databaseURL, alignmentProvenanceDirectory: root.appendingPathComponent("reopened"))
         let reopenedEntries = try await reopened.loadPersonalLibraryEntries()
-        XCTAssertEqual(reopenedEntries.count, 6)
+        XCTAssertEqual(reopenedEntries.count, 4)
         let redirects = try await reopened.redirectCount()
-        XCTAssertEqual(redirects, 1, "Read-time grouping must not write redirect migrations")
+        XCTAssertEqual(redirects, 4, "New Spotify keys persist redirects; explicit historical redirects are retained")
         let beforeNormalization = await repo.searchNormalizationCounts()
         _ = try await save(a, text: "newly-saved-cache-needle")
         let updatedSearch = try await repo.loadPersonalLibraryEntries(searchQuery: "NEWLY-SAVED-CACHE-NEEDLE")

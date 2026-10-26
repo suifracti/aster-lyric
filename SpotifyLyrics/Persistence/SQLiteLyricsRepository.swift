@@ -10,7 +10,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     private var database: OpaquePointer?
     private var prepared = false
     private var redirectResolver: TrackIdentityRedirectResolver?
-    private var adoptedPlaybackKeys: [String: String] = [:]
+    private var adoptedMusicPlaybackKeys: [String: String] = [:]
     private var manualAdoptionRequestIDs: [String: UUID] = [:]
     private struct SearchVersionText {
         let original: String
@@ -197,12 +197,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     public func loadBestStored(track: Track, identity: TrackIdentity) async throws -> StoredLyricsDocument? {
         try ensurePrepared()
-        // An adopted recording is authoritative even when the player refreshes its display metadata.
-        if let key = try adoptedStableKey(for: track) {
-            adoptedPlaybackKeys.removeValue(forKey: key)
-            if identity.stableKey != key { adoptedPlaybackKeys[identity.stableKey] = key }
-            LyricsE2ELog.log("PERSISTENCE adopted playback ID=\(TrackIdentity.playbackID(for: track) ?? "") observed=\(identity.stableKey) stored=\(key)")
+        // Apple Music persistent IDs retain their existing metadata-refresh behaviour.
+        // Spotify identity changes use the persisted redirect table instead.
+        if let key = try adoptedAppleMusicStableKey(for: track) {
+            adoptedMusicPlaybackKeys.removeValue(forKey: key)
+            if identity.stableKey != key { adoptedMusicPlaybackKeys[identity.stableKey] = key }
         }
+        // An adopted recording is authoritative even when the player refreshes its display metadata.
         let canonicalKey = try resolvedCanonicalStableKey(identity.stableKey)
         guard let trackRecord = try fetchTrack(stableKey: canonicalKey) else {
             return nil
@@ -1027,8 +1028,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     }
 
     /// Returns a canonical offset scope only when the requested saved version
-    /// belongs to the supplied track identity family. This is a read-only
-    /// validation path; it does not create track/version rows or redirects.
+    /// belongs to the supplied track identity family. New Spotify keys may
+    /// gain a redirect, but no track/version rows are created.
     public func canonicalStableKeyForSavedLyricsVersion(
         trackStableKey: String,
         versionID: UUID
@@ -1275,11 +1276,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             }
             let canonicalSource = try resolvedCanonicalStableKey(sourceKey)
             let canonicalContext = try resolvedCanonicalStableKey(context.identity.stableKey)
-            // An adopted version can retain older title/album metadata for the same Spotify recording.
-            let sameRecording = context.identity.spotifyTrackID.map {
-                canonicalSource.hasPrefix("spotify-id:\($0)|metadata:")
-            } ?? false
-            guard canonicalSource == canonicalContext || sameRecording else {
+            guard canonicalSource == canonicalContext else {
                 throw TranslationRepositoryError.sourceContentMismatch
             }
             if request.phase == .saved {
@@ -2953,28 +2950,14 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     private func reloadRedirectResolver() throws {
         guard database != nil else { throw LyricsRepositoryError.unavailable("SQLite handle 已关闭") }
 
-        let keyStatement = try prepare("SELECT stable_key, spotify_id, spotify_uri, title, artist_display, album, duration FROM tracks;")
+        let keyStatement = try prepare("SELECT stable_key FROM tracks;")
         defer { sqlite3_finalize(keyStatement) }
         var knownKeys = Set<String>()
-        var recordingGroups: [String: [(key: String, duration: Double)]] = [:]
         while sqlite3_step(keyStatement) == SQLITE_ROW {
             guard let key = columnText(keyStatement, index: 0) else {
                 throw LyricsRepositoryError.invalidData("Track stable_key 缺失")
             }
             knownKeys.insert(key)
-            // Older playback snapshots used integer seconds while edited or
-            // refreshed snapshots retained fractions. Treat that drift as one
-            // recording only with a shared provider ID AND matching metadata.
-            if let id = TrackIdentity.canonicalSpotifyTrackID(columnText(keyStatement, index: 1))
-                ?? TrackIdentity.canonicalSpotifyTrackID(columnText(keyStatement, index: 2)) {
-                let title = TrackIdentity.normalizedComponent(columnText(keyStatement, index: 3) ?? "")
-                let artist = TrackIdentity.normalizedComponent(columnText(keyStatement, index: 4) ?? "")
-                let album = TrackIdentity.normalizedComponent(columnText(keyStatement, index: 5) ?? "")
-                let duration = sqlite3_column_double(keyStatement, 6)
-                if !title.isEmpty, !artist.isEmpty, duration.isFinite, duration > 0 {
-                    recordingGroups[[id, title, artist, album].joined(separator: "|"), default: []].append((key, duration))
-                }
-            }
         }
 
         var redirects: [String: String] = [:]
@@ -3008,24 +2991,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         for source in redirects.keys {
             _ = try resolver.resolve(source)
         }
-        // This is an in-memory equivalence only: all physical rows, version
-        // IDs and explicit redirects remain intact. A wider duration spread
-        // is ambiguous, so never build a transitive chain of near matches.
-        for group in recordingGroups.values where group.count > 1 {
-            guard let minimum = group.map(\.duration).min(), let maximum = group.map(\.duration).max(),
-                  maximum - minimum <= 1 else { continue }
-            let explicitTargets = try Set(group.compactMap { member -> String? in
-                guard redirects[member.key] != nil else { return nil }
-                return try resolver.resolve(member.key)
-            })
-            // An explicit cross-recording redirect outranks automatic grouping.
-            guard explicitTargets.count <= 1, explicitTargets.isSubset(of: Set(group.map(\.key))),
-                  let canonical = explicitTargets.first ?? group.map(\.key).sorted().first else { continue }
-            for member in group where member.key != canonical && redirects[member.key] == nil {
-                redirects[member.key] = canonical
-            }
-        }
-        redirectResolver = TrackIdentityRedirectResolver(redirects: redirects, knownStableKeys: knownKeys)
+        redirectResolver = resolver
     }
 
     private func hasTable(_ name: String) throws -> Bool {
@@ -3035,20 +3001,16 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         return sqlite3_step(statement) == SQLITE_ROW
     }
 
-    private func adoptedStableKey(for track: Track) throws -> String? {
-        guard let id = TrackIdentity.playbackID(for: track) else { return nil }
-        let bareID = id.hasPrefix("spotify:track:") ? String(id.dropFirst("spotify:track:".count)) : id
+    private func adoptedAppleMusicStableKey(for track: Track) throws -> String? {
+        guard let id = TrackIdentity.playbackID(for: track), id.hasPrefix("applemusic:") else { return nil }
         let query = try prepare("""
             SELECT t.stable_key FROM tracks t JOIN lyrics_versions v ON v.track_stable_key = t.stable_key
-            WHERE (lower(t.spotify_id) IN (?, ?) OR lower(t.spotify_uri) = ?)
-              AND v.is_preferred = 1
+            WHERE lower(t.spotify_id) = ? AND v.is_preferred = 1
               AND NOT EXISTS (SELECT 1 FROM lyrics_selection_revocations r WHERE r.track_stable_key = t.stable_key)
             ORDER BY v.updated_at DESC, v.id DESC LIMIT 1;
             """)
         defer { sqlite3_finalize(query) }
-        try bindText(bareID, at: 1, to: query)
-        try bindText(id, at: 2, to: query)
-        try bindText(id, at: 3, to: query)
+        try bindText(id, at: 1, to: query)
         let result = sqlite3_step(query)
         guard result == SQLITE_ROW || result == SQLITE_DONE else { throw lastError() }
         return result == SQLITE_ROW ? columnText(query, index: 0) : nil
@@ -3116,14 +3078,14 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     private func resolvedCanonicalStableKey(_ stableKey: String) throws -> String {
         try redirectNewSpotifyKey(stableKey)
-        let stableKey = adoptedPlaybackKeys[stableKey] ?? stableKey
+        let stableKey = adoptedMusicPlaybackKeys[stableKey] ?? stableKey
         guard let redirectResolver else { return stableKey }
         return try redirectResolver.resolve(stableKey)
     }
 
     private func resolvedIdentityFamily(stableKey: String) throws -> [String] {
         try redirectNewSpotifyKey(stableKey)
-        let stableKey = adoptedPlaybackKeys[stableKey] ?? stableKey
+        let stableKey = adoptedMusicPlaybackKeys[stableKey] ?? stableKey
         guard let redirectResolver else { return [stableKey] }
         return try redirectResolver.identityFamily(for: stableKey)
     }
