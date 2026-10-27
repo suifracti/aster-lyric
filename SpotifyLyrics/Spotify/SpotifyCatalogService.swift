@@ -255,6 +255,12 @@ public final class SpotifyCatalogService: @unchecked Sendable {
         return PlayerPlaybackModes(shuffle: state.shuffle_state, repeatMode: mode, smartShuffle: state.smart_shuffle)
     }
 
+    func playTrack(_ id: String, accessToken: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["uris": ["spotify:track:" + id]])
+        _ = try await sendAPIRequest(url: baseURL.appendingPathComponent("me/player/play"), accessToken: accessToken,
+                                    method: "PUT", body: body)
+    }
+
     func setPlaybackModes(shuffle: Bool?, repeatMode: PlayerRepeatMode?, accessToken: String) async throws {
         let endpoint: String
         let value: String

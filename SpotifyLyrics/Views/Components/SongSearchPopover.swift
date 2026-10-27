@@ -329,6 +329,7 @@ struct SongSearchResultRow: View {
     @V3ContentPlaybackState var state: PlaybackState
     var showsSeparator = true
     var isSelected = false
+    var onViewLyrics: (() -> Void)? = nil
 
     private var matchesDisplayedTrack: Bool {
         TrackIdentity(track: result.track) == TrackIdentity(track: state.displayedTrack)
@@ -344,7 +345,7 @@ struct SongSearchResultRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Button { state.loadSearchResult(result) } label: {
+            Button { onViewLyrics?(); state.loadSearchResult(result) } label: {
                 HStack(spacing: 10) {
                     AsyncImage(url: result.artworkURL ?? result.track.artworkURL) { image in
                         image.resizable().scaledToFill()
@@ -374,7 +375,7 @@ struct SongSearchResultRow: View {
                     Spacer(minLength: 0)
                     VStack(alignment: .trailing, spacing: 3) {
                         if isAdopted { Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor) }
-                        Text(isLoading ? "搜索中…" : isAdopted ? "已采用" : "点击采用")
+                        Text(isLoading ? "搜索中…" : "查看歌词")
                             .font(.system(size: 10, weight: .medium)).foregroundStyle(Color.accentColor)
                         Text(result.source.displayName).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                     }
@@ -382,19 +383,19 @@ struct SongSearchResultRow: View {
                 .padding(.horizontal, 8).padding(.vertical, 9)
                 .contentShape(Rectangle())
             }.buttonStyle(.plain)
-            if result.source == .spotifyCatalog, let url = result.track.spotifyURL {
-                Button { NSWorkspace.shared.open(url) } label: {
-                    Image(systemName: "arrow.up.right.square").foregroundStyle(.secondary)
-                }.buttonStyle(.plain).help("在 Spotify 打开")
+            if TrackIdentity.spotifyRequestTrackID(result.track.spotifyId ?? result.track.spotifyURL?.absoluteString) != nil {
+                Button { state.playSearchTrack(result.track) } label: {
+                    Image(systemName: "play.fill").foregroundStyle(.secondary)
+                }.buttonStyle(.plain).help("播放这首歌")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(isSelected ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6))
         .overlay(alignment: .bottom) { if showsSeparator { Divider() } }
         .accessibilityLabel("歌曲结果：\(result.track.title)，\(result.track.artist)")
-        .accessibilityHint("采用这首歌的歌词")
+        .accessibilityHint("查看这首歌的歌词")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityValue(isSelected ? "已选中" : isAdopted ? "已采用" : "点击采用")
+        .accessibilityValue(isSelected ? "已选中" : isAdopted ? "已采用" : "查看歌词")
     }
 
     private func formatDuration(_ value: TimeInterval) -> String {

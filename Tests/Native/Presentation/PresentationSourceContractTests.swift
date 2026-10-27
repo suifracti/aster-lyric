@@ -5,6 +5,15 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class PresentationSourceContractTests: XCTestCase {
+    func testSearchListsThePlayingSongOnceAndMergesDuplicateOtherSongs() {
+        let playing = Track(title: "運命のふりをして", artist: "Fixture", album: "One", duration: 180, spotifyId: "playing")
+        let other = Track(title: "Other", artist: "Fixture", album: "Two", duration: 200, spotifyId: "other")
+        let rows = [SongSearchResult(id: "playing", source: .local, track: playing, confidence: 1),
+                    SongSearchResult(id: "local", source: .local, track: other, confidence: 1),
+                    SongSearchResult(id: "online", source: .spotifyCatalog, track: other, confidence: 1)]
+        XCTAssertEqual(V3SearchPanel.otherSongs(rows, current: playing).map(\.track.title), ["Other"])
+    }
+
     func testResizeEdgeAtThreePointsCannotStartAProgressSeek() {
         let path = V3WindowEdgeHitBand().path(in: CGRect(x: 0, y: 0, width: 900, height: 700))
         for point in [CGPoint(x: 450, y: 3), CGPoint(x: 3, y: 350), CGPoint(x: 897, y: 350), CGPoint(x: 450, y: 697)] {

@@ -2576,6 +2576,21 @@ public final class PlaybackState: ObservableObject {
     /// Starts a lyrics preview for a selected catalog result. The preview uses
     /// its own session, so selecting arbitrary Spotify catalog metadata never
     /// changes the Desktop playback track or its time anchor.
+    public func playSearchTrack(_ track: Track) {
+        guard let id = TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString) else {
+            songSearchSelectionMessage = "这首歌没有可播放的 Spotify ID"
+            return
+        }
+        Task {
+            do {
+                let token = try await spotifyAuthorizationManager.accessToken(requiredScopes: SpotifyOAuthConfiguration.playbackWriteScopes)
+                try await spotifyLibraryService.playTrack(id, accessToken: token)
+                songSearchSelectionMessage = "已请求播放"
+            } catch SpotifyCatalogError.forbidden { songSearchSelectionMessage = "需要 Spotify Premium" }
+            catch { songSearchSelectionMessage = error.localizedDescription }
+        }
+    }
+
     public func loadSearchResult(_ result: SongSearchResult) {
         guard !isMockPreviewMode else {
             songSearchSelectionMessage = "请先退出 Mock Preview，再加载真实歌曲歌词"

@@ -79,7 +79,7 @@ struct V3LibrarySearchPanel: View {
                     Divider()
                     Group {
                         if presentation.tab == .search {
-                            SongSearchPopover(manager: state.songSearchManager, playbackState: state, embedded: true)
+                            V3SearchPanel(state: state, search: state.songSearchManager)
                         } else {
                             libraryContent
                         }
@@ -98,12 +98,16 @@ struct V3LibrarySearchPanel: View {
             .frame(width: geometry.size.width, height: geometry.size.height)
             .onExitCommand { presentation.dismiss() }
             .modifier(PersonalLibrarySheets(service: library))
-            .onAppear { library.refresh() }
+            .onAppear {
+                library.refresh()
+                if presentation.tab == .search, query.isEmpty { query = SongSearchQuery(track: state.currentTrack).text }
+            }
             .onChange(of: library.entries) { _, _ in if selectedKey == nil { selectInitialEntry() } }
             .onChange(of: filter) { _, _ in selectInitialEntry() }
             .onChange(of: query) { _, _ in updateSearch() }
             .onChange(of: presentation.tab) { _, tab in
                 if tab == .library { library.searchQuery = query; library.refresh(); selectInitialEntry() }
+                else if tab == .search, query.isEmpty { query = SongSearchQuery(track: state.currentTrack).text }
             }
             .onChange(of: batch.isRunning) { _, running in if !running { library.refresh() } }
             .onDisappear { batch.stop() }

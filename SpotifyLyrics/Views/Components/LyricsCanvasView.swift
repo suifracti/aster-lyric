@@ -1064,11 +1064,13 @@ struct LyricsStateContentFirstView: View {
     }
 }
 
-private struct LyricsCandidatePreviewSheet: View {
+struct LyricsCandidatePreviewSheet: View {
     let candidate: LyricsCandidate
     let onAdopt: () async throws -> LyricsPersistenceSaveResult
     let onConfirmLocked: () async throws -> LyricsPersistenceSaveResult?
     let onCancelLocked: () -> Void
+    var embedded = false
+    var adoptionRequest: UUID? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var isSaving = false
     @State private var isLockConfirmationPresented = false
@@ -1129,15 +1131,13 @@ private struct LyricsCandidatePreviewSheet: View {
                     }
                 }
             }
-            .frame(minHeight: 300)
+            .frame(minHeight: embedded ? nil : 300)
 
             HStack {
                 Spacer()
-                Button("取消") {
-                    onCancelLocked()
-                    dismiss()
+                if !embedded {
+                    Button("取消") { onCancelLocked(); dismiss() }.disabled(isSaving)
                 }
-                .disabled(isSaving)
                 Button(isSaving ? "正在保存…" : "采用此版本") {
                     performAdoption(confirmingLocks: false)
                 }
@@ -1151,8 +1151,11 @@ private struct LyricsCandidatePreviewSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(22)
-        .frame(width: 620, height: 600)
+        .padding(embedded ? 14 : 22)
+        .frame(width: embedded ? nil : 620, height: embedded ? nil : 600)
+        .onChange(of: adoptionRequest, initial: true) { _, request in
+            if request != nil { performAdoption(confirmingLocks: false) }
+        }
         .interactiveDismissDisabled(isSaving)
         .confirmationDialog(
             "歌词版本已锁定",
@@ -1195,7 +1198,7 @@ private struct LyricsCandidatePreviewSheet: View {
                         break
                     }
                     onCancelLocked()
-                    dismiss()
+                    if !embedded { dismiss() }
                 case .lockedConflict:
                     conflictingLockedVersionIDs = result.conflictingLockedVersionIDs
                     isLockConfirmationPresented = true
