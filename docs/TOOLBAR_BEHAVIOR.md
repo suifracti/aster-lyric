@@ -306,3 +306,38 @@ A control never appears on both sides. Where the other side used to have it, sho
 - `v3EdgeProgressEnabled = true` → 窗口边缘;
 - otherwise `v3PlaybackDetailsOnHover = true` → 悬停时显示;
 - otherwise → 标准播放栏.
+
+## Round 3 finishing items (user delegated decisions to Claude, 2026-10-27)
+**画面 panel:**
+- Blur presets are 0 / 25 / 50 / 75 / 100, the same as the `/` key cycle.
+- The panel height fits its content up to 520 pt and scrolls beyond that. Nothing is clipped; 「显示歌曲缩略图」 was half cut off.
+- Options that don't apply to the selected scene are hidden, not disabled.
+
+**封面 / 舞台 lyric placement:**
+- Lyric position 「自动」, the default, avoids the cover's subject.
+- Run one Vision request per artwork (attention-based saliency plus face rectangles), cached by artwork URL. Compute the result in window coordinates, after the background crop.
+- Place the lyrics column on the horizontal side opposite the salient centre, in the lower part of the window.
+- If the subject is centred and wide, use bottom-centre with a narrower column.
+- Manual 左 / 中 / 右 always wins.
+- No downloaded models; if Vision fails, fall back to the current bottom-trailing placement.
+
+**Edge player:**
+- **Vertical mode:** the time shows on two lines (elapsed over total) at 10 pt with monospaced digits, and is never truncated. Today it shows 「0:03…」.
+- Every button gets the same small hover circle and the same spacing.
+- 「添加到歌单」 is the same size as the heart.
+
+**Side drawer replaced by a centred floating panel. This resolves the drawer / edge-player conflict on the left edge.**
+- Clicking 歌词库 or 搜索 in the toolbar opens one centred panel.
+  - Size: at most 760 × 600 pt, keeping at least 40 pt from the window edges.
+  - Layout: tabs 歌词库 | 搜索 at the top, with the same content as today's drawer.
+- The rest of the window dims and blurs slightly behind it.
+- Esc, a click outside, or clicking the same toolbar button closes it.
+- While it is open, the edge player and its hit band are hidden.
+- A small 「在新窗口打开」 button opens the existing full window.
+- Hover quick panels are unchanged.
+- `V3SideDrawer` is removed once the panel works.
+
+**AI translation "not refreshing":**
+- The 译文 panel's model picker gets a refresh button that reloads the provider's model list, showing 「刷新中…」 and any error inline.
+- 翻译整首 must show progress and then the result, or an inline error.
+- Find and report the real cause; don't add retries.
