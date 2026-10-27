@@ -30,6 +30,45 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     @Published public private(set) var revisionError: String?
     @Published public private(set) var revisionBusy = false
 
+    struct VersionPreview: Identifiable {
+        let id = UUID()
+        let title: String
+        let text: String
+    }
+    @Published var versionPreview: VersionPreview?
+    func previewVersion(lyricsID: UUID, entry: PersonalLyricsLibraryEntry,
+                        translation: PersonalTranslationVersionItem? = nil,
+                        reading: PersonalReadingVersionItem? = nil, timingID: UUID? = nil) {
+        Task {
+            do {
+                let track = libraryTrack(for: entry)
+                try await repository.prepare()
+                guard let source = try await repository.loadEditableVersion(versionID: lyricsID, track: track, identity: TrackIdentity(track: track)) else {
+                    throw LyricsEditingRepositoryError.sourceNotFound
+                }
+                var text = source.document.lines.map(\.originalText).joined(separator: "\n")
+                if let translation {
+                    let versions = try await repository.loadTranslationVersions(lyricsVersionID: lyricsID,
+                        targetLanguage: translation.targetLanguage, sourceContentHash: source.sourceContentHash)
+                    guard let version = versions.first(where: { $0.record.id == translation.id }) else { throw TranslationRepositoryError.versionNotFound }
+                    text = version.lines.map(\.translatedText).joined(separator: "\n")
+                } else if let reading {
+                    let versions = try await repository.loadReadingVersions(lyricsVersionID: lyricsID,
+                        representationID: reading.representationID, sourceContentHash: source.sourceContentHash)
+                    guard let version = versions.first(where: { $0.record.id == reading.id }) else { throw ReadingRepositoryError.versionNotFound }
+                    text = version.lines.map { $0.readingText ?? "" }.joined(separator: "\n")
+                } else if let timingID,
+                          let timing = try await repository.loadPersonalLibraryTimingVersion(id: timingID),
+                          let draft = LibraryTimingRevisionDraft(track: track, lyricsSource: source, source: timing) {
+                    text = draft.lines.map { line in
+                        line.spans.map { String(format: "%.2f–%.2f ", $0.startTime, $0.endTime) + $0.source.text }.joined(separator: " ")
+                    }.joined(separator: "\n")
+                }
+                versionPreview = VersionPreview(title: entry.title, text: text)
+            } catch { statusMessage = "预览失败：" + error.localizedDescription }
+        }
+    }
+
     public func beginRevision(versionID: UUID, entry: PersonalLyricsLibraryEntry) {
         guard !revisionBusy else { return }
         revisionBusy = true

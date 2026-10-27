@@ -91,36 +91,7 @@ public struct PersonalLyricsLibraryView: View {
         }
         .onChange(of: batch.isRunning) { _, running in if !running { service.refresh() } }
         .onDisappear { batch.stop() }
-        .sheet(item: $service.revisionDraft) { draft in
-            LibraryLyricsRevisionSheet(service: service, initialDraft: draft)
-        }
-        .sheet(item: $service.translationRevisionDraft) { draft in
-            LibraryTranslationRevisionSheet(service: service, initialDraft: draft)
-        }
-        .sheet(item: $service.readingRevisionDraft) { draft in
-            LibraryReadingRevisionSheet(service: service, initialDraft: draft)
-        }
-        .sheet(item: $service.timingRevisionDraft) { draft in
-            LibraryTimingRevisionSheet(service: service, initialDraft: draft)
-        }
-        .sheet(isPresented: $service.showImportPreviewSheet) {
-            if let preview = service.importPreview {
-                PersonalLibraryImportPreviewSheet(preview: preview, onConfirm: {
-                    service.confirmImport()
-                }, onCancel: {
-                    service.cancelImport()
-                })
-            }
-        }
-        .sheet(isPresented: $service.showDataImportPreviewSheet) {
-            if let preview = service.dataImportPreview {
-                PersonalDataImportPreviewSheet(preview: preview, onConfirm: {
-                    service.confirmPersonalDataImport()
-                }, onCancel: {
-                    service.cancelPersonalDataImport()
-                })
-            }
-        }
+        .modifier(PersonalLibrarySheets(service: service))
         .onAppear {
             service.refresh()
         }
@@ -499,12 +470,13 @@ public struct PersonalLibraryTrackDetailView: View {
     @ObservedObject var service: PersonalLyricsLibraryService
     let stableKey: String
     var compact = false
+    var showsActions = false
     @State private var selectedSection: VersionSection = .all
     @State private var translationDeletionCandidate: PersonalTranslationVersionItem?
     @State private var showTranslationDeletionConfirmation = false
 
     private enum VersionSection: String, CaseIterable, Identifiable {
-        case missing = "缺歌词", all = "全部", lyrics = "原词", translations = "译文", readings = "读音", timing = "时间轴"
+        case all = "全部", lyrics = "原词", translations = "译文", readings = "读音", timing = "时间轴"
         var id: Self { self }
     }
 
@@ -723,6 +695,10 @@ public struct PersonalLibraryTrackDetailView: View {
         return VStack(alignment: .leading, spacing: 8) {
             versionAdoptionRow(source: DatabaseSourceIdentifier.displayName(for: lv.source), date: lv.updatedAt, lineCount: lv.lineCount,
                 isCurrent: compact ? playback.liveLyricsVersionID == lv.id : lv.isCurrent) { adoptLyrics(lv, entry: entry) }
+            if showsActions {
+                versionActions(preview: { service.previewVersion(lyricsID: lv.id, entry: entry) },
+                    edit: { service.beginRevision(versionID: lv.id, entry: entry) })
+            }
             if !compact {
             HStack {
                 HStack(spacing: 6) {
@@ -776,6 +752,10 @@ public struct PersonalLibraryTrackDetailView: View {
             versionAdoptionRow(source: tv.sourceKind.uppercased(), date: tv.updatedAt, lineCount: tv.lineCount,
                 isCurrent: compact ? playback.selectedTranslation?.record.id == tv.id : tv.isCurrent) { adoptTranslation(tv, entry: entry) }
                 .disabled(tv.isArchived)
+            if showsActions {
+                versionActions(preview: { service.previewVersion(lyricsID: tv.lyricsVersionID, entry: entry, translation: tv) },
+                    edit: { service.beginTranslationRevision(version: tv, entry: entry) })
+            }
             if !compact {
             HStack {
                 HStack(spacing: 6) {
@@ -838,6 +818,10 @@ public struct PersonalLibraryTrackDetailView: View {
             versionAdoptionRow(source: rv.sourceKind, date: rv.updatedAt, lineCount: rv.lineCount,
                 isCurrent: compact ? playback.selectedReadingVersion?.record.id == rv.id : rv.isCurrent) { adoptReading(rv, entry: entry) }
                 .disabled(rv.isArchived)
+            if showsActions {
+                versionActions(preview: { service.previewVersion(lyricsID: rv.lyricsVersionID, entry: entry, reading: rv) },
+                    edit: { service.beginReadingRevision(version: rv, entry: entry) })
+            }
             if !compact {
             HStack {
                 HStack(spacing: 6) {
@@ -889,6 +873,10 @@ public struct PersonalLibraryTrackDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             versionAdoptionRow(source: tm.source.uppercased(), date: tm.createdAt, lineCount: service.selectedTrackDetail?.lyricsVersions.first(where: { $0.id == tm.lyricsVersionID })?.lineCount ?? 0,
                 isCurrent: tm.isCurrent) { adoptTiming(tm, entry: entry) }
+            if showsActions {
+                versionActions(preview: { service.previewVersion(lyricsID: tm.lyricsVersionID, entry: entry, timingID: tm.id) },
+                    edit: { service.beginTimingRevision(version: tm, entry: entry) })
+            }
             if !compact {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -915,6 +903,13 @@ public struct PersonalLibraryTrackDetailView: View {
         .versionRowSurface(isCurrent: tm.isCurrent)
     }
 
+    private func versionActions(preview: @escaping () -> Void, edit: @escaping () -> Void) -> some View {
+        HStack {
+            Button("预览", action: preview)
+            Button("编辑", action: edit).disabled(service.revisionBusy)
+        }.buttonStyle(.bordered).controlSize(.small)
+    }
+
     private func versionAdoptionRow(source: String, date: Date, lineCount: Int,
                                     isCurrent: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -926,6 +921,7 @@ public struct PersonalLibraryTrackDetailView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
+                if showsActions { Text(isCurrent ? "已采用" : "采用").font(.caption) }
             }
             .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
         }
@@ -1682,5 +1678,49 @@ private struct LibraryDetailScrolling: ViewModifier {
     let enabled: Bool
     @ViewBuilder func body(content: Content) -> some View {
         if enabled { ScrollView { content } } else { content }
+    }
+}
+
+/// Shared by the full library and the centred panel; import/edit flows stay identical.
+struct PersonalLibrarySheets: ViewModifier {
+    @ObservedObject var service: PersonalLyricsLibraryService
+    func body(content: Content) -> some View {
+        content
+        .sheet(item: $service.versionPreview) { preview in
+            VStack(alignment: .leading, spacing: 12) {
+                HStack { Text(preview.title).font(.headline); Spacer(); Button("关闭") { service.versionPreview = nil } }
+                ScrollView { Text(preview.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+            }.padding(20).frame(width: 540, height: 440)
+        }
+        .sheet(item: $service.revisionDraft) { draft in
+            LibraryLyricsRevisionSheet(service: service, initialDraft: draft)
+        }
+        .sheet(item: $service.translationRevisionDraft) { draft in
+            LibraryTranslationRevisionSheet(service: service, initialDraft: draft)
+        }
+        .sheet(item: $service.readingRevisionDraft) { draft in
+            LibraryReadingRevisionSheet(service: service, initialDraft: draft)
+        }
+        .sheet(item: $service.timingRevisionDraft) { draft in
+            LibraryTimingRevisionSheet(service: service, initialDraft: draft)
+        }
+        .sheet(isPresented: $service.showImportPreviewSheet) {
+            if let preview = service.importPreview {
+                PersonalLibraryImportPreviewSheet(preview: preview, onConfirm: {
+                    service.confirmImport()
+                }, onCancel: {
+                    service.cancelImport()
+                })
+            }
+        }
+        .sheet(isPresented: $service.showDataImportPreviewSheet) {
+            if let preview = service.dataImportPreview {
+                PersonalDataImportPreviewSheet(preview: preview, onConfirm: {
+                    service.confirmPersonalDataImport()
+                }, onCancel: {
+                    service.cancelPersonalDataImport()
+                })
+            }
+        }
     }
 }
