@@ -1,32 +1,9 @@
-#!/bin/zsh
+#!/usr/bin/env bash
+# Compile against the real app module; the standalone source list had drifted.
 set -euo pipefail
-
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
-
-swiftc -parse-as-library \
-  "$ROOT_DIR/SpotifyLyrics/Models/Models.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/TrackIdentity.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsModels.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/AlignmentModels.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/TrackAlias.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/TrackMetadata.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/TrackTextNormalizer.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/JapaneseRomanizer.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/JapaneseReadingPipeline.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/JapaneseKanaGenerator.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsQueryPlanner.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsSafeMatcher.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsRecoveryModels.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsE2ELog.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsSearchManager.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/TimedTranscript.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/LRCParser.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsMatcher.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Lyrics/LRCLIBLyricsProvider.swift" \
-  "$ROOT_DIR/SpotifyLyrics/Providers/QQExperimentalLyricsProvider.swift" \
-  "$ROOT_DIR/Tests/piano_search_contract.swift" \
-  -o "$TMP_DIR/piano-search-contract"
-
-"$TMP_DIR/piano-search-contract" "$@"
+if [[ " ${*:-} " == *" live "* ]]; then
+  echo "NOT_RUN: this contract is offline; use the app for a live provider search." >&2
+  exit 2
+fi
+exec bash "$ROOT_DIR/Scripts/test-native.sh" -only-testing:SpotifyLyricsTests/ProviderFailureContractTests/testPianoRecordingKeepsArrangementAndArtistIdentityRules "$@"

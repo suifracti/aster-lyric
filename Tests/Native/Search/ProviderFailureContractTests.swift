@@ -223,6 +223,68 @@ private final class ProviderFailureNetEaseFixtureURLProtocol: URLProtocol, @unch
 
 @MainActor
 final class ProviderFailureContractTests: XCTestCase {
+    func testPianoRecordingKeepsArrangementAndArtistIdentityRules() {
+        let track = Track(title: "アーカイブ - Piano Ver.", artist: "stb", album: "アーカイブ", duration: 240, spotifyId: "5O45JO2bYhtyah2flZ9TI0")
+        let identity = TrackIdentity(track: track)
+        let metadata = TrackMetadata.bootstrap(from: track)
+        let candidate = LyricsCandidate(id: "fixture", identity: identity, title: "アーカイブ", artist: "stb;NEA;ささ。", album: "アーカイブ", duration: 240, lines: [LyricLine(timestamp: 0, originalText: "Generated test line")], source: .qqExperimental, confidence: 0.87)
+        let decision = LyricsSafeMatcher.decide(candidate: candidate, metadata: metadata)
+        print("Decision", decision.tier, decision.score, decision.reasons)
+        XCTAssert(decision.tier == .candidates, "Semicolon artist + arrangement title must yield selectable candidate, never automatic")
+        XCTAssert(decision.versionConflict)
+        XCTAssert(TrackTextNormalizer.extractVersionTags(fromTitle: "Piano Man").isEmpty)
+        XCTAssert(TrackTextNormalizer.stripVersionMarkers(fromTitle: "Piano Man") == "Piano Man")
+        for title in ["アーカイブ - Piano Ver.", "アーカイブ (Piano Version)", "アーカイブ（ピアノ版）"] {
+            XCTAssert(TrackTextNormalizer.extractVersionTags(fromTitle: title).contains(.piano))
+            XCTAssert(TrackTextNormalizer.stripVersionMarkers(fromTitle: title) == "アーカイブ")
+        }
+        XCTAssert(TrackTextNormalizer.artistTokens("stb;NEA;ささ。").primary == "stb")
+        XCTAssert(TrackTextNormalizer.artistTokens("HUNTR/X").primary == "HUNTR/X")
+        XCTAssert(LyricsQueryPlanner.plan(for: metadata).contains { $0.titleQuery == "アーカイブ" && $0.artistQuery == "stb" })
+        let unrelated = LyricsCandidate(id: "unrelated", identity: identity, title: "アーカイブ", artist: "Other Artist;NEA", album: "アーカイブ", duration: 240, lines: candidate.lines, source: .qqExperimental, confidence: 0.9)
+        XCTAssert(LyricsSafeMatcher.decide(candidate: unrelated, metadata: metadata).tier == .reject)
+        func copy(title: String = "アーカイブ", artist: String = "stb;NEA;ささ。", spotifyID: String? = nil, explanation: [String] = []) -> LyricsCandidate {
+            LyricsCandidate(id: "copy", identity: identity, title: title, artist: artist, album: candidate.album, duration: candidate.duration, lines: candidate.lines, source: candidate.source, confidence: candidate.confidence, spotifyTrackID: spotifyID, matchExplanation: explanation)
+        }
+        XCTAssert(LyricsSafeMatcher.decide(candidate: copy(spotifyID: "unrelated-recording"), metadata: metadata).tier == .reject)
+        let exact = copy(title: track.title, artist: track.artist)
+        let exactDecision = LyricsSafeMatcher.decide(candidate: exact, metadata: metadata)
+        XCTAssert(!exactDecision.versionConflict)
+        XCTAssert(exactDecision.tier == .autoHigh || exactDecision.tier == .autoMedium)
+        XCTAssert(copy(explanation: decision.explanation).arrangementNotice != nil)
+        XCTAssert(exact.arrangementNotice == nil)
+
+        // Verified Spotify artists scenario: stb (Piano Ver.) with Spotify official artists stb, NEA, ささ。, KASUMI
+        var enrichedMetadata = metadata
+        enrichedMetadata.verifiedSpotifyArtists = ["stb", "NEA", "ささ。", "KASUMI"]
+
+        // 1. Piano Ver. candidate with known collaborator subset (stb;NEA;ささ。) must be auto-adopted
+        let pianoCandidate = copy(title: "アーカイブ (Piano Ver.)", artist: "stb;NEA;ささ。")
+        let pianoDecision = LyricsSafeMatcher.decide(candidate: pianoCandidate, metadata: enrichedMetadata)
+        XCTAssert(!pianoDecision.versionConflict, "Piano Ver. candidate must not have version conflict")
+        XCTAssert(pianoDecision.tier == .autoHigh || pianoDecision.tier == .autoMedium,
+                     "Piano Ver. candidate with verified Spotify artist subset must be auto-adopted: \(pianoDecision.tier)")
+        XCTAssert(pianoDecision.reasons.contains("featuredArtistsVerifiedSubset"),
+                     "Must record featuredArtistsVerifiedSubset evidence: \(pianoDecision.reasons)")
+        XCTAssert(!pianoDecision.reasons.contains("missingFeaturedArtist"),
+                     "Must not penalize missing secondary Spotify artist when candidate subset is verified")
+        XCTAssert(!pianoDecision.reasons.contains("extraFeaturedArtist"),
+                     "Must not flag extra featured artist when all candidate artists are in official list")
+
+        // 2. Safety barrier: Plain アーカイブ must NEVER be auto-adopted for Piano Ver.
+        let plainCandidate = copy(title: "アーカイブ", artist: "stb;NEA;ささ。")
+        let plainDecision = LyricsSafeMatcher.decide(candidate: plainCandidate, metadata: enrichedMetadata)
+        XCTAssert(plainDecision.versionConflict, "Plain arrangement must have version conflict for Piano Ver. track")
+        XCTAssert(plainDecision.tier == .candidates, "Plain arrangement must NEVER be auto-adopted for Piano Ver. track: \(plainDecision.tier)")
+
+        // 3. Unverified guest artist must remain .candidates
+        let unverifiedCandidate = copy(title: "アーカイブ (Piano Ver.)", artist: "stb;NEA;RandomStranger")
+        let unverifiedDecision = LyricsSafeMatcher.decide(candidate: unverifiedCandidate, metadata: enrichedMetadata)
+        XCTAssert(unverifiedDecision.tier == .candidates, "Candidate with unverified artist must remain .candidates: \(unverifiedDecision.tier)")
+        XCTAssert(unverifiedDecision.reasons.contains("extraFeaturedArtist"), "Must flag extraFeaturedArtist")
+
+    }
+
     func testNetEaseAliasesAndMetadataOnlyFailureRemainDistinct() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ProviderFailureNetEaseFixtureURLProtocol.self]
@@ -756,6 +818,10 @@ final class ProviderFailureContractTests: XCTestCase {
             XCTAssertNotNil(live.activeLyricsVersionID)
             XCTAssertEqual(counter.value, 2, "Playing the saved track must not start another provider search")
         }
+        let returned = LyricsSessionController(providers: [source], repository: repo, sourceStats: stats)
+        await returned.loadForPreloading(track: tracks[0]) // A → B → A uses the adopted cache.
+        XCTAssertFalse(returned.lyrics.isEmpty)
+        XCTAssertEqual(counter.value, 2)
         let lines = try String(contentsOf: stats.fileURL, encoding: .utf8).split(separator: "\n")
         XCTAssertEqual(lines.count, 2)
         for line in lines {
