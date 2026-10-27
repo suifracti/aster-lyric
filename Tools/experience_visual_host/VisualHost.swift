@@ -312,7 +312,8 @@ struct ExperienceVisualHostApp: App {
         let provider=ExperiencePlaybackProvider(artwork:ExperienceArtwork.make())
         let repository=SQLiteLyricsRepository(databaseURL:ExperienceArguments.databaseURL, alignmentProvenanceDirectory:root.appendingPathComponent("provenance"))
         _settings=StateObject(wrappedValue:settings)
-        let playback = PlaybackState(provider:provider,lyricsProvider:ExperienceLyricsProvider(),lyricsRepository:repository,settings:settings)
+        let playback = PlaybackState(provider:provider,lyricsProvider:ExperienceLyricsProvider(),lyricsRepository:repository,settings:settings,
+            spotifyAuthorization: SpotifyAuthorizationManager(configuration: SpotifyOAuthConfiguration(clientID: nil)))
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ExperiencePlaylistProtocol.self]
         let catalog = ExperiencePlaylistCatalog()

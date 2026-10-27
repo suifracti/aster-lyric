@@ -174,7 +174,8 @@ public final class PlaybackState: ObservableObject {
         desktopEvents: DesktopPlaybackEvents? = nil,
         lyricsWindowsVisible: (() -> Bool)? = nil,
         spotifyPlaybackModesReader: (@MainActor () async throws -> PlayerPlaybackModes)? = nil,
-        spotifyPlaybackModesWriter: (@MainActor (Bool?, PlayerRepeatMode?) async throws -> Void)? = nil
+        spotifyPlaybackModesWriter: (@MainActor (Bool?, PlayerRepeatMode?) async throws -> Void)? = nil,
+        spotifyAuthorization: SpotifyAuthorizationManager? = nil
     ) {
         self.spotifyPlaybackModesReader = spotifyPlaybackModesReader
         self.spotifyPlaybackModesWriter = spotifyPlaybackModesWriter
@@ -191,7 +192,7 @@ public final class PlaybackState: ObservableObject {
             usesDesktopEvents ? WindowManager.shared.hasExposedLyricsWindow : true
         }
         let sharedIndex = LocalLyricsIndex.shared
-        let authorizationManager = SpotifyAuthorizationManager()
+        let authorizationManager = spotifyAuthorization ?? SpotifyAuthorizationManager()
         self.spotifyAuthorizationManager = authorizationManager
         let lyricsProviders: [LyricsProvider]
         if let lyricsProvider {
