@@ -285,3 +285,24 @@ Based on real-song screenshots of Light source, 花の塔 and Runa: two bright c
 - **Existing splits:** run a one-time pass that adds the same redirects. It never deletes rows, records every merge in the existing merge audit table, and backs up the database first.
 - **Once the redirects work, remove the earlier one-off patches for this problem:** the translation-save "same recording" prefix check and the Spotify-ID fallback for selected lyrics. Remove them only after the tests pass.
 - Tracks without a Spotify ID (Apple Music, local files) keep the current behaviour.
+
+## Toolbar vs Settings: each control lives in one place (user-approved 2026-10-27)
+**Rule:** visible effects live in the toolbar: 画面, 文字 and 译文. Settings holds connection and configuration only: playback source, accounts, startup, lyric sources and auto-alignment, preloading, AI service and keys, data, and the appearance details of the separate desktop-lyrics and menu-bar windows.
+
+A control never appears on both sides. Where the other side used to have it, show one grey line such as 「显示开关在 工具栏 → 文字」. Clicking that line opens the panel.
+
+| Control | Lives in | Remove from |
+|---|---|---|
+| 显示原文 / 译文 / 罗马音 / 拼音 | Toolbar 文字 / 译文 | Settings 歌词与翻译 and 读音; the current-song operations panel |
+| 注音排版 (kana mode), 远处歌词隐藏辅助读音 | Toolbar 文字 | Settings 读音 (it keeps only the user dictionary and 假名替换); the current-song operations panel |
+| AI 模型, 思考强度 | Toolbar 译文 | Settings AI 翻译 (it keeps service, key, endpoint and personal style) |
+| 新歌词自动翻译 | Toolbar 译文 | Settings 歌词与翻译 |
+| 菜单栏歌词 on/off | Toolbar 更多 | Settings 外观 (it keeps the window's appearance details) |
+| 场景悬停预览 | Toolbar 画面 | Settings |
+| 主窗口布局 | Toolbar 画面 | Settings |
+| 播放呈现 | Toolbar 画面 | — |
+
+**播放呈现** becomes one three-way choice: **标准播放栏 / 悬停时显示 / 窗口边缘**. It replaces the separate 「播放信息仅悬停显示」 toggle, so the choice and what the user sees always match. Migration:
+- `v3EdgeProgressEnabled = true` → 窗口边缘;
+- otherwise `v3PlaybackDetailsOnHover = true` → 悬停时显示;
+- otherwise → 标准播放栏.
