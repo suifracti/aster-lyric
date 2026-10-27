@@ -256,7 +256,7 @@ public struct V3ScenePreset: Codable, Equatable, Sendable {
              foregroundScale: 1, foregroundPosition: "left",
              foregroundVisible: scene == .originalAmbient || scene == .flowingField || scene == .linerNotes,
              backdropScale: 1, completeArtwork: renderer == .stage || renderer == .ambientFeathered,
-             lyricsPosition: scene == .coverPhoto ? "right" : "automatic",
+             lyricsPosition: "automatic",
              atmosphere: scene == .flowingField && renderer == .classic ? 1 : 0,
              backgroundBrightness: 1)
     }

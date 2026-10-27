@@ -29,6 +29,7 @@ final class PresentationSourceContractTests: XCTestCase {
 
     @MainActor
     func testRightHandCoverSubjectPlacesLyricsLeftAfterCropping() {
+        XCTAssertEqual(V3ScenePreset.initial(scene: .coverPhoto, renderer: .ambient).lyricsPosition, "automatic")
         let analysis = V3ArtworkSubject.Analysis(imageSize: CGSize(width: 800, height: 800),
             bounds: CGRect(x: 0.67, y: 0.20, width: 0.24, height: 0.65))
         let canvas = CGSize(width: 1200, height: 800)
