@@ -820,7 +820,8 @@ public final class AppSettingsStore: ObservableObject {
     private var activeReadingVersion: UUID?
 
     public func applyReadingLanguage(versionID: UUID, text: String) {
-        guard activeReadingVersion != versionID else { return }
+        guard activeReadingVersion != versionID,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let language = detectedReadingLanguages[versionID] ?? ReadingLanguageGroup.detect(text)
         detectedReadingLanguages[versionID] = language
         activeReadingVersion = versionID

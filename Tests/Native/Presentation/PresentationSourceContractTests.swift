@@ -73,6 +73,10 @@ final class PresentationSourceContractTests: XCTestCase {
         settings.applyReadingLanguage(versionID: japanese, text: "君の声が聞こえる。いつまでもあなたと一緒にいたい。")
         XCTAssertEqual(settings.displayPreferences, initial)
         settings.displayPreferences.showRomaji = false
+        let emptyVersion = UUID()
+        settings.applyReadingLanguage(versionID: emptyVersion, text: " \n")
+        XCTAssertEqual(settings.activeReadingLanguage, .japanese, "无歌词时不能猜成其他语言或切换偏好")
+        XCTAssertFalse(settings.displayPreferences.showRomaji)
         settings.applyReadingLanguage(versionID: chinese, text: "我想和你一起走过春天，听见你的声音，看见远方的灯光。")
         XCTAssertEqual(settings.activeReadingLanguage, .chinese)
         XCTAssertEqual(settings.displayPreferences.showRomaji, initial.showRomaji)
