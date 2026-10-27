@@ -6,10 +6,19 @@ import XCTest
 
 final class PresentationSourceContractTests: XCTestCase {
     @MainActor
-    func testStoppingLibraryCompletionDoesNotStartAnotherSong() async {
+    func testStoppingLibraryCompletionDoesNotStartAnotherSong() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("missing.sqlite3"))
+        try await repository.prepare()
+        let tracks = [Track(title: "Missing one", artist: "Artist", album: "Fixture", duration: 180),
+                      Track(title: "Missing two", artist: "Artist", album: "Fixture", duration: 180)]
+        for track in tracks { try await (repository as any LyricsRepository).saveTrackMetadata(.bootstrap(from: track)) }
+        let missing = try await repository.loadPersonalLibraryEntries(includeMissingLyrics: true)
+        XCTAssertEqual(missing.filter { $0.lyricsVersionCount == 0 }.count, 2)
         let batch = LyricsBatchCompletion()
         var searched: [String] = []
-        batch.start(tracks: [Track(title: "Missing one", artist: "Artist", album: "Fixture", duration: 180), Track(title: "Missing two", artist: "Artist", album: "Fixture", duration: 180)]) { track in
+        batch.start(tracks: tracks) { track in
             searched.append(track.title)
             batch.stop()
         }
