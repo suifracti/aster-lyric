@@ -19,6 +19,7 @@ struct V3WindowEdgePlaybackOverlay: View {
     @State private var edgeInteraction = V3WindowEdgeInteractionState()
     private struct RailHover: Equatable { let point: CGPoint; let fraction: Double }
     @State private var railHover: RailHover?
+    @State private var scrubbingPill = false
     @State private var pointerOverToolbar = false
     @State private var draftFraction: Double?
     @State private var dragTrackKey: String?
@@ -83,7 +84,7 @@ struct V3WindowEdgePlaybackOverlay: View {
                                 elapsed: Self.timeText(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime)),
                                 total: Self.timeText(state.currentTrack.duration),
                                 fraction: Double(progressFraction),
-                                draftChanged: setDraft,
+                                draftChanged: { fraction in scrubbingPill = true; setDraft(fraction) },
                                 draftEnded: { fraction in finishDraft(fraction: fraction) })
                                 .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
                                 .scaleEffect(controlPosition.scale * (playerVisible || reduceMotion ? 1 : 0.92))
@@ -97,7 +98,7 @@ struct V3WindowEdgePlaybackOverlay: View {
                                 .transition(.opacity)
                         }
                         .animation(.easeOut(duration: 0.18), value: controlPosition.edge)
-                        if let hover = railHover {
+                        if let hover = scrubbingPill ? draftFraction.map({ RailHover(point: controlPosition.center, fraction: $0) }) : railHover {
                             Text(Self.timeText(hover.fraction * state.currentTrack.duration))
                                 .font(.system(size: 11, weight: .medium)).monospacedDigit()
                                 .padding(.horizontal, 7).padding(.vertical, 4)
@@ -257,6 +258,7 @@ struct V3WindowEdgePlaybackOverlay: View {
         if dragTrackKey != nil { interactionChanged(false) }
         draftFraction = nil
         dragTrackKey = nil
+        scrubbingPill = false
     }
 
     private func accent(at date: Date, songHue: Double) -> Color {
@@ -501,21 +503,10 @@ private struct V3WindowEdgeTransportButtons: View {
                     let value = min(1, max(0, isVertical ? 1 - gesture.location.y / geometry.size.height : gesture.location.x / geometry.size.width))
                     draftEnded(value); pillDraft = nil
                 })
-            .overlay(alignment: .top) {
-                if let pillDraft {
-                    Text(Self.timeText(pillDraft * state.currentTrack.duration))
-                        .font(.system(size: 11)).monospacedDigit().fixedSize()
-                        .padding(5).background(.regularMaterial, in: Capsule()).offset(y: -28)
-                }
-            }
         }
         .frame(width: isVertical ? 10 : 44, height: isVertical ? 28 : 14)
         .accessibilityLabel("播放进度")
     }
-    private static func timeText(_ seconds: Double) -> String {
-        String(format: "%d:%02d", Int(max(0, seconds)) / 60, Int(max(0, seconds)) % 60)
-    }
-
     private var nextButton: some View {
         transportButton(
             image: "forward.fill",
