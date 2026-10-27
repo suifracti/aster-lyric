@@ -433,9 +433,10 @@ struct V3VisualControls {
     }
 
     var playbackPresentationControls: some View {
-        Picker("播放呈现", selection: $settings.v3EdgeProgressEnabled) {
-            Text("标准播放栏").tag(false)
-            Text("窗口边缘").tag(true)
+        Picker("播放呈现", selection: $settings.v3PlaybackPresentation) {
+            ForEach(V3PlaybackPresentation.allCases) { mode in
+                Text(mode.title).tag(mode)
+            }
         }.pickerStyle(.segmented)
     }
 
@@ -531,13 +532,6 @@ struct V3VisualControls {
                     colorHex: $settings.v3EdgeProgressColorHex,
                     colorMode: $settings.v3EdgeProgressColorMode, showsModeToggle: false,
                     showsExplanation: showsExplanations)
-            } else {
-                Toggle("悬停时显示播放信息", isOn: $settings.v3PlaybackDetailsOnHover)
-                    .help("移入封面或播放区域显示；关闭后播放栏保持可见。")
-                if showsExplanations {
-                    Text("移入封面或播放区域显示；关闭后播放栏保持可见。")
-                        .font(.system(size: 11)).foregroundStyle(Color.secondary)
-                }
             }
             Toggle("确认纯音乐时使用简洁画面", isOn: $settings.v3InstrumentalPureImmersion)
                 .help("仅对已确认纯音乐生效；找不到歌词不代表纯音乐。")

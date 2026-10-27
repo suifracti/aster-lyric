@@ -65,6 +65,27 @@ final class PresentationSourceContractTests: XCTestCase {
     }
 
     @MainActor
+    func testPlaybackPresentationMigratesLegacyFlagsAndStandardStaysVisible() {
+        let suite = "playback-presentation-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        for (edge, hover, expected) in [(false, false, V3PlaybackPresentation.standard),
+                                        (false, true, .onHover), (true, false, .windowEdge),
+                                        (true, true, .windowEdge)] {
+            defaults.set(edge, forKey: AppSettingsStore.Key.v3EdgeProgressEnabled)
+            defaults.set(hover, forKey: AppSettingsStore.Key.v3PlaybackDetailsOnHover)
+            let settings = AppSettingsStore(defaults: defaults)
+            XCTAssertEqual(settings.v3PlaybackPresentation, expected)
+            settings.v3PlaybackPresentation = .standard
+            XCTAssertFalse(settings.v3EdgeProgressEnabled)
+            XCTAssertTrue(V3ResponsiveGeometry.playbackDetailsVisible(
+                hoverOnly: settings.v3PlaybackDetailsOnHover, pointerInRegion: false,
+                interacting: false, panelPresented: false))
+            XCTAssertEqual(AppSettingsStore(defaults: defaults).v3PlaybackPresentation, .standard)
+        }
+    }
+
+    @MainActor
     func testReadingProtectionDefaultsAndLegacySettings() {
         let suite = "lyricsq-reading-protection-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!

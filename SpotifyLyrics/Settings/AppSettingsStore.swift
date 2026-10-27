@@ -27,6 +27,18 @@ public enum FloatingLyricsInteractionMode: String, CaseIterable, Codable, Sendab
     }
 }
 
+public enum V3PlaybackPresentation: String, CaseIterable, Identifiable, Sendable {
+    case standard, onHover, windowEdge
+    public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .standard: return "标准播放栏"
+        case .onHover: return "悬停时显示"
+        case .windowEdge: return "窗口边缘"
+        }
+    }
+}
+
 /// Listening themes are independent of the stable IDs of their renderers.
 public enum V3ArtworkTheme: String, CaseIterable, Identifiable, Sendable {
     case stage, lyricsOnly, albumPoster, ambient, enlarged
@@ -822,6 +834,18 @@ public final class AppSettingsStore: ObservableObject {
     /// exclusively in Keychain and is never mirrored into UserDefaults.
     @Published public var aiTranslationAPIKeyConfigured: Bool {
         didSet { defaults.set(aiTranslationAPIKeyConfigured, forKey: Key.aiAPIKeyConfigured) }
+    }
+
+    // Project the existing flags rather than creating another persisted preference.
+    public var v3PlaybackPresentation: V3PlaybackPresentation {
+        get {
+            if v3EdgeProgressEnabled { return .windowEdge }
+            return v3PlaybackDetailsOnHover ? .onHover : .standard
+        }
+        set {
+            v3EdgeProgressEnabled = newValue == .windowEdge
+            v3PlaybackDetailsOnHover = newValue == .onHover
+        }
     }
 
     @Published public var v3PlaybackDetailsOnHover: Bool {
