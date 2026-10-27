@@ -342,3 +342,29 @@ A control never appears on both sides. Where the other side used to have it, sho
 - The 译文 panel's model picker gets a refresh button that reloads the provider's model list, showing 「刷新中…」 and any error inline.
 - 翻译整首 must show progress and then the result, or an inline error.
 - Find and report the real cause; don't add retries.
+
+## Listening extras, round 4 (user-approved 2026-10-27)
+**1. Readings follow the song's language.**
+- Detect the lyrics' language with the built-in `NLLanguageRecognizer`, once per lyric version.
+- Remember the reading toggles (原文 / 译文 / 罗马音 / 拼音 / 注音排版) separately for 日语, 中文, 韩语 and 其他.
+- When a song starts, apply the set for its language. Changing a toggle while a song plays updates that language's set.
+- First run: every language starts from the user's current toggles, so nothing visibly changes until the user adjusts one.
+- 文字 panel: a small caption 「当前：日语设置」 shows which set is active.
+
+**2. Fill in missing lyrics from the library.**
+- 歌词库 gets a filter 「缺歌词」 that lists tracks with no stored lyrics.
+- Next to it, a 「全部补全」 button searches them one by one with the normal free-source search and auto-adopt rules.
+- Show progress as 「12 / 66」. A stop button cancels.
+- Never call AI translation or any paid service; manual or locked lyrics are untouched.
+- Each search is logged to source-stats with `batch: true`.
+
+**3. Sleep timer.**
+- In the 更多 panel: 「睡眠定时」 with 关闭 / 15 分钟 / 30 分钟 / 60 分钟 / 本曲结束后.
+- When it fires, pause playback through the existing play/pause path.
+- While active, show the remaining time on that row. It resets after it fires.
+- No volume fade.
+
+**4. Current-line glow.**
+- In the 文字 panel: slider 「当前句发光」 0–100%.
+- The default equals today's look, so nothing changes until the user moves it.
+- 0% means no glow at all. The slider affects only the current line, never other lines.
