@@ -204,7 +204,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     private let defaults: UserDefaults
     private var pendingSyncFolderURL: URL?
 
-    private func libraryTrack(for entry: PersonalLyricsLibraryEntry) -> Track {
+    func libraryTrack(for entry: PersonalLyricsLibraryEntry) -> Track {
         Track(
             title: entry.title,
             artist: entry.artist,
@@ -232,7 +232,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         let query = searchQuery
         Task {
             do {
-                let list = try await repository.loadPersonalLibraryEntries(searchQuery: query.isEmpty ? nil : query)
+                let list = try await repository.loadPersonalLibraryEntries(searchQuery: query.isEmpty ? nil : query, includeMissingLyrics: true)
                 self.entries = list
                 self.isLoading = false
                 self.statusMessage = list.isEmpty ? "个人歌词库为空" : "共 \(list.count) 首本地资产歌曲"

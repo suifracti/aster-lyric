@@ -49,6 +49,7 @@ declare -a CASES=(
   "countdown|--scene originalAmbient --countdown true --time 6 --toolbar faint"
   "reading-only|--scene originalAmbient --layers readingOnly --toolbar faint"
   "translation-only|--scene originalAmbient --layers translationOnly --toolbar faint"
+  "library-missing|--navigation library --library-missing --toolbar faint"
   "navigation-library|--navigation library --toolbar faint"
   "navigation-search|--navigation search --toolbar faint"
   "scene-flowingField|--scene flowingField --toolbar faint"

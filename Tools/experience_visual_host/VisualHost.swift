@@ -343,6 +343,12 @@ private struct ExperienceFixtureRoot: View {
                         let repository = SQLiteLyricsRepository(databaseURL: ExperienceArguments.databaseURL,
                             alignmentProvenanceDirectory: ExperienceArguments.root.appendingPathComponent("provenance"))
                         try! await repository.prepare()
+                        if ProcessInfo.processInfo.arguments.contains("--library-missing") {
+                            for title in ["まだ見つからない歌", "雨のあと", "明日への手紙"] {
+                                let missing = Track(title: title, artist: "Visual Fixture", album: "Missing lyrics", duration: 210)
+                                try! await repository.saveTrackMetadata(.bootstrap(from: missing))
+                            }
+                        }
                         let saved = try! await repository.save(track: track, identity: identity, document: document)
                         try! await repository.setPersonalLibraryActiveLyrics(trackStableKey: identity.stableKey,
                                                                              lyricsVersionID: saved.versionID!)

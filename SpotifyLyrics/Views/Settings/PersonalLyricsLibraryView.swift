@@ -3,17 +3,19 @@ import SwiftUI
 public struct PersonalLyricsLibraryView: View {
     @EnvironmentObject private var playback: PlaybackState
     @StateObject private var service = PersonalLyricsLibraryService()
+    @StateObject private var batch = LyricsBatchCompletion()
     @State private var selectedStableKey: String?
-    @State private var libraryFilter: LibraryFilter = .all
+    @State private var libraryFilter: LibraryFilter = ProcessInfo.processInfo.arguments.contains("--library-missing") ? .missing : .all
     @State private var showSyncFolder = false
     private let embeddedInSettings: Bool
 
     private enum LibraryFilter: String, CaseIterable, Identifiable {
-        case all = "全部", translations = "有译文", manual = "人工歌词 / 译文", locked = "锁定歌词 / 译文"
+        case missing = "缺歌词", all = "全部", translations = "有译文", manual = "人工歌词 / 译文", locked = "锁定歌词 / 译文"
         var id: Self { self }
 
         func includes(_ entry: PersonalLyricsLibraryEntry) -> Bool {
             switch self {
+            case .missing: return entry.lyricsVersionCount == 0
             case .all: return true
             case .translations: return entry.translationVersionCount > 0
             case .manual: return entry.hasManualLyrics || entry.hasManualTranslation
@@ -87,6 +89,8 @@ public struct PersonalLyricsLibraryView: View {
                 }
             }
         }
+        .onChange(of: batch.isRunning) { _, running in if !running { service.refresh() } }
+        .onDisappear { batch.stop() }
         .sheet(item: $service.revisionDraft) { draft in
             LibraryLyricsRevisionSheet(service: service, initialDraft: draft)
         }
@@ -275,6 +279,16 @@ public struct PersonalLyricsLibraryView: View {
                     Label(libraryFilter.rawValue, systemImage: "line.3.horizontal.decrease.circle")
                 }
                 .fixedSize()
+                if batch.isRunning {
+                    Text("\(batch.completed) / \(batch.total)").font(.caption).monospacedDigit()
+                    Button("停止") { batch.stop() }
+                } else if libraryFilter == .missing {
+                    Button("全部补全") {
+                        let tracks = visibleEntries.filter { !$0.hasLockedLyrics && !$0.hasManualLyrics }
+                            .map { service.libraryTrack(for: $0) }
+                        batch.start(tracks: tracks) { await playback.completeMissingLyrics(track: $0) }
+                    }.disabled(visibleEntries.isEmpty)
+                }
                 Spacer()
                 Text("\(visibleEntries.count) 首")
                     .font(.caption)
@@ -490,7 +504,7 @@ public struct PersonalLibraryTrackDetailView: View {
     @State private var showTranslationDeletionConfirmation = false
 
     private enum VersionSection: String, CaseIterable, Identifiable {
-        case all = "全部", lyrics = "原词", translations = "译文", readings = "读音", timing = "时间轴"
+        case missing = "缺歌词", all = "全部", lyrics = "原词", translations = "译文", readings = "读音", timing = "时间轴"
         var id: Self { self }
     }
 

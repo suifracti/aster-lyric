@@ -6,6 +6,19 @@ import XCTest
 
 final class PresentationSourceContractTests: XCTestCase {
     @MainActor
+    func testStoppingLibraryCompletionDoesNotStartAnotherSong() async {
+        let batch = LyricsBatchCompletion()
+        var searched: [String] = []
+        batch.start(tracks: [Track(title: "Missing one", artist: "Artist", album: "Fixture", duration: 180), Track(title: "Missing two", artist: "Artist", album: "Fixture", duration: 180)]) { track in
+            searched.append(track.title)
+            batch.stop()
+        }
+        for _ in 0..<20 { if !batch.isRunning { break }; await Task.yield() }
+        XCTAssertEqual(searched, ["Missing one"])
+        XCTAssertFalse(batch.isRunning)
+    }
+
+    @MainActor
     func testJapaneseAndChineseSongsRestoreTheirOwnReadingSwitches() {
         let suite = "reading-language-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!

@@ -43,6 +43,7 @@ public final class LyricsSourceStats: @unchecked Sendable {
         result: LyricsLookupResult,
         retry: Bool,
         preload: Bool = false,
+        batch: Bool = false,
         diagnostics: [LyricsProviderDiagnostic],
         outcome: String? = nil,
         date: Date = Date()
@@ -61,6 +62,7 @@ public final class LyricsSourceStats: @unchecked Sendable {
             "outcome": outcome ?? Self.outcome(for: result),
             "retry": retry,
             "preload": preload,
+            "batch": batch,
             "sources": sources
         ]
         guard JSONSerialization.isValidJSONObject(entry),

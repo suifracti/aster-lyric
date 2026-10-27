@@ -1570,6 +1570,12 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
+    public func completeMissingLyrics(track: Track) async {
+        let session = LyricsSessionController(providers: preloadLyricsProviders,
+            repository: lyricsRepository, spotifyArtistResolver: .shared, isBatch: true)
+        await session.loadForPreloading(track: track)
+    }
+
     private func preloadUpcomingLyrics() {
         lyricsPreloadTask?.cancel()
         guard settingsStore.preloadUpcomingLyrics, hasLiveTrack, usesConfiguredLyricsProviders,

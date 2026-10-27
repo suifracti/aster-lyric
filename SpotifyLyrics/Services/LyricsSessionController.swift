@@ -36,6 +36,7 @@ public final class LyricsSessionController: ObservableObject {
     private let repository: (any LyricsRepository)?
     private let sourceStats: LyricsSourceStats
     private let isPreload: Bool
+    private let isBatch: Bool
     private static var preloadedRecordingIDs: Set<String> = []
     private var requestTask: Task<Void, Never>?
     private var manualAdoptionRequestIDs: [TrackIdentity: UUID] = [:]
@@ -69,12 +70,14 @@ public final class LyricsSessionController: ObservableObject {
         spotifyArtistResolver: SpotifyTrackArtistResolver? = nil,
         sourceStats: LyricsSourceStats = .shared,
         sourceRetryDelay: TimeInterval = 30,
-        isPreload: Bool = false
+        isPreload: Bool = false,
+        isBatch: Bool = false
     ) {
         self.searchManager = LyricsSearchManager(providers: providers, name: name, spotifyArtistResolver: spotifyArtistResolver)
         self.repository = repository
         self.sourceStats = sourceStats
         self.isPreload = isPreload
+        self.isBatch = isBatch
         self.sourceRetryDelay = max(0, sourceRetryDelay)
         self.recoveryCooldowns = recoveryCooldowns.map { max(0, $0) }
     }
@@ -183,7 +186,7 @@ public final class LyricsSessionController: ObservableObject {
         )
 
         let sourceStats = sourceStats
-        requestTask = Task { [weak self, searchManager, repository, sourceStats, isPreload] in
+        requestTask = Task { [weak self, searchManager, repository, sourceStats, isPreload, isBatch] in
             defer {
                 if let self, self.activeIdentity == identity, self.revision == requestRevision { self.isSearchInProgress = false }
             }
@@ -363,6 +366,7 @@ public final class LyricsSessionController: ObservableObject {
                     result: outcome.result,
                     retry: false,
                     preload: isPreload,
+                    batch: isBatch,
                     diagnostics: outcome.diagnostics
                 )
             }
@@ -1183,7 +1187,7 @@ public final class LyricsSessionController: ObservableObject {
         aliases: [TrackAlias]
     ) {
         retryTask?.cancel()
-        guard retriedIdentity != identity else { return }
+        guard !isBatch, retriedIdentity != identity else { return }
         retriedIdentity = identity
         let delay = sourceRetryDelay
         LyricsE2ELog.log("SESSION source retry scheduled delay=\(delay)s providers=\(providers.sorted()) rev=\(expectedRevision)")
@@ -1239,6 +1243,7 @@ public final class LyricsSessionController: ObservableObject {
                 result: outcome.result,
                 retry: true,
                 preload: self.isPreload,
+                batch: self.isBatch,
                 diagnostics: outcome.diagnostics,
                 outcome: outcomeLabel
             )

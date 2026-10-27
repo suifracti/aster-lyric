@@ -3755,15 +3755,23 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     /// - Adopted or locked translation versions (`is_locked = 1` or `is_manually_edited = 1` or active complete translation)
     /// - Saved reading versions (`reading_versions` attached to lyrics)
     /// - Saved fine timing versions (`lyrics_timing_versions` attached to lyrics)
-    public func loadPersonalLibraryEntries(searchQuery: String? = nil) throws -> [PersonalLyricsLibraryEntry] {
+    public func loadPersonalLibraryEntries(searchQuery: String? = nil, includeMissingLyrics: Bool = false) throws -> [PersonalLyricsLibraryEntry] {
         try prepare()
         let searchText = searchQuery?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !searchText.isEmpty { return try searchCachedLibrary(searchText) }
+        if !searchText.isEmpty {
+            let saved = try searchCachedLibrary(searchText)
+            guard includeMissingLyrics else { return saved }
+            let needle = Self.normalizedLibrarySearchText(searchText)
+            let missing = try loadPersonalLibraryEntries(includeMissingLyrics: true).filter {
+                $0.lyricsVersionCount == 0 && Self.normalizedLibrarySearchText("\($0.title) \($0.artist) \($0.album ?? "")").contains(needle)
+            }
+            return saved + missing
+        }
         // Newly saved keys must join their recording family without a restart.
         try reloadRedirectResolver()
         let statement = try prepare("""
             SELECT stable_key FROM tracks AS t
-            WHERE EXISTS (SELECT 1 FROM lyrics_versions WHERE track_stable_key = t.stable_key)
+            WHERE \(includeMissingLyrics ? "1" : "EXISTS (SELECT 1 FROM lyrics_versions WHERE track_stable_key = t.stable_key)")
             ORDER BY stable_key;
             """)
         defer { sqlite3_finalize(statement) }
