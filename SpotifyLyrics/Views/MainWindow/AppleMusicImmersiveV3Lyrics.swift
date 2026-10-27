@@ -1160,6 +1160,9 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
             textAlignment: textAlignment
         )
         .equatable()
+        // Only the current line emits light; readability protection stays independent.
+        .shadow(color: isActive ? .white.opacity(0.6 * settings.v3CurrentLineGlow) : .clear,
+                radius: 8, x: 0, y: 0)
         // A tight glyph outline keeps bright covers readable without a wide dark halo.
         .shadow(color: showsReadingShadow ? .black.opacity(0.95) : .clear,
                 radius: 2.5, x: 0, y: 1)

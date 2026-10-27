@@ -588,6 +588,10 @@ struct V3VisualControls {
                     .font(.system(size: 12))
                     .help("封面、舞台遇亮封面且清晰度为关闭时自动加文字阴影；关闭后「关闭」保持完全不加。")
             }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("当前句发光")
+                V3NumericSlider(value: $settings.v3CurrentLineGlow, in: 0...1, step: 0.01, unit: "%", displayScale: 100)
+            }
             HStack(spacing: 10) {
                 Toggle("罗马音", isOn: displayBinding(\.showRomaji))
                 Toggle("拼音", isOn: displayBinding(\.showPinyin))

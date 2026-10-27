@@ -333,6 +333,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let v3NightGentleEnabled = "v3.nightGentle.enabled.v1"
         public static let v3PictureAdvancedExpanded = "v3.picture.advancedExpanded.v1"
         public static let v3ReadingProtection = "v3.readingProtection.v2"
+        public static let v3CurrentLineGlow = "v3.currentLineGlow.v1"
         public static let v3BrightCoverShadowEnabled = "v3.brightCoverShadow.enabled.v1"
         public static let menuBarWidthMode = "menuBar.widthMode.v1"
         public static let menuBarWidth = "menuBar.width.v1"
@@ -496,6 +497,10 @@ public final class AppSettingsStore: ObservableObject {
     }
     @Published public var v3ReadingProtection: V3ReadingProtection = .off {
         didSet { defaults.set(v3ReadingProtection.rawValue, forKey: Key.v3ReadingProtection) }
+    }
+    // There was no separate emissive line glow: zero preserves the existing look.
+    @Published public var v3CurrentLineGlow: Double = 0 {
+        didSet { defaults.set(v3CurrentLineGlow, forKey: Key.v3CurrentLineGlow) }
     }
     /// On by default: a bright cover with 清晰度 off still gets a text shadow.
     @Published public var v3BrightCoverShadowEnabled = true {
@@ -1428,6 +1433,7 @@ public final class AppSettingsStore: ObservableObject {
         self.v3PictureAdvancedExpanded = defaults.object(forKey: Key.v3PictureAdvancedExpanded) as? Bool ?? true
         self.v3ReadingProtection = V3ReadingProtection.restored(defaults.string(forKey: Key.v3ReadingProtection))
         defaults.set(v3ReadingProtection.rawValue, forKey: Key.v3ReadingProtection)
+        self.v3CurrentLineGlow = min(1, max(0, defaults.double(forKey: Key.v3CurrentLineGlow)))
         self.v3BrightCoverShadowEnabled = defaults.object(forKey: Key.v3BrightCoverShadowEnabled) as? Bool ?? true
         self.menuBarWidthMode = defaults.string(forKey: Key.menuBarWidthMode) == "fixed" ? "fixed" : "adaptive"
         let requestedWidth = defaults.object(forKey: Key.menuBarWidth) as? Double ?? 240
