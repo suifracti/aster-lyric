@@ -233,6 +233,7 @@
 		A1B2C3D72D83400100000001 /* AppleMusicPlaylistCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D72D83400000000000 /* AppleMusicPlaylistCatalog.swift */; };
 		6AA0115DEFD02FBE35002A8F /* V3ArtworkSubject.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E71A532AFA7B1171B4171CD /* V3ArtworkSubject.swift */; };
 		BCB9A8387836D0270DF19860 /* V3LibrarySearchPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B66A09EEF171C1407B62B5B /* V3LibrarySearchPanel.swift */; };
+		98B3367ECFF1E5C7593BC502 /* ReadingLanguageProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40ED79AA32660E9934FFB1D /* ReadingLanguageProfile.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -468,6 +469,7 @@
 		A1B2C3D72D83400000000000 /* AppleMusicPlaylistCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicPlaylistCatalog.swift; sourceTree = "<group>"; };
 		5E71A532AFA7B1171B4171CD /* V3ArtworkSubject.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3ArtworkSubject.swift; sourceTree = "<group>"; };
 		5B66A09EEF171C1407B62B5B /* V3LibrarySearchPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3LibrarySearchPanel.swift; sourceTree = "<group>"; };
+		B40ED79AA32660E9934FFB1D /* ReadingLanguageProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingLanguageProfile.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -817,6 +819,7 @@
 			children = (
 				110007012D83400100000000 /* ScopedLyricsOffsetStore.swift */,
 				1100005D2D83400100000000 /* AppSettingsStore.swift */,
+				B40ED79AA32660E9934FFB1D /* ReadingLanguageProfile.swift */,
 				A7100701ABCDEF0100000002 /* TranslationModelSettingsStore.swift */,
 				A7100702ABCDEF0100000002 /* TranslationCLISetupStore.swift */,
 				1100005E2D83400100000000 /* LyricsProviderConfiguration.swift */,
@@ -1085,6 +1088,7 @@
 				1100005B2D83400100000001 /* SpotifyTrackMapper.swift in Sources */,
 				1100005C2D83400100000001 /* SpotifySearchProvider.swift in Sources */,
 				1100005D2D83400100000001 /* AppSettingsStore.swift in Sources */,
+				98B3367ECFF1E5C7593BC502 /* ReadingLanguageProfile.swift in Sources */,
 				A7100701ABCDEF0100000001 /* TranslationModelSettingsStore.swift in Sources */,
 				A7100702ABCDEF0100000001 /* TranslationCLISetupStore.swift in Sources */,
 				110007012D83400100000001 /* ScopedLyricsOffsetStore.swift in Sources */,

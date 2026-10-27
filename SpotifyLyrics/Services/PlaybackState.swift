@@ -1026,6 +1026,7 @@ public final class PlaybackState: ObservableObject {
             readingSession.clear()
             return
         }
+        settingsStore.applyReadingLanguage(versionID: versionID, text: document.lines.map(\.originalText).joined(separator: "\n"))
         readingSession.synchronize(
             lyricsVersionID: versionID,
             sourceContentHash: sourceHash,

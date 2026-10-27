@@ -549,6 +549,8 @@ struct V3VisualControls {
 
     var textPage: some View {
         VStack(alignment: .leading, spacing: 13) {
+            Text("当前：\((settings.activeReadingLanguage ?? .other).title)设置")
+                .font(.caption).foregroundStyle(.secondary)
             Toggle("大字模式", isOn: $settings.v3BigLineModeEnabled)
             HStack {
                 Text("显示")

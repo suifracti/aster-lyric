@@ -800,7 +800,33 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     @Published public var displayPreferences: DisplayPreferences {
-        didSet { persistDisplayPreferences(displayPreferences) }
+        didSet {
+            persistDisplayPreferences(displayPreferences)
+            if let activeReadingLanguage {
+                readingLanguageProfiles[activeReadingLanguage.rawValue] = ReadingLanguageProfile(displayPreferences)
+                persistReadingLanguages()
+            }
+        }
+    }
+
+    @Published public private(set) var activeReadingLanguage: ReadingLanguageGroup?
+    private var readingLanguageProfiles: [String: ReadingLanguageProfile] = [:]
+    private var detectedReadingLanguages: [UUID: ReadingLanguageGroup] = [:]
+    private var activeReadingVersion: UUID?
+
+    public func applyReadingLanguage(versionID: UUID, text: String) {
+        guard activeReadingVersion != versionID else { return }
+        let language = detectedReadingLanguages[versionID] ?? ReadingLanguageGroup.detect(text)
+        detectedReadingLanguages[versionID] = language
+        activeReadingVersion = versionID
+        activeReadingLanguage = language
+        if let profile = readingLanguageProfiles[language.rawValue] {
+            displayPreferences = profile.applying(to: displayPreferences)
+        }
+    }
+
+    private func persistReadingLanguages() {
+        defaults.set(try? JSONEncoder().encode(readingLanguageProfiles), forKey: "display.languageProfiles")
     }
 
     @Published public var readingPreferences: ReadingPreferences {
@@ -1370,7 +1396,16 @@ public final class AppSettingsStore: ObservableObject {
         capsuleWindowHorizontalOffset = defaults.object(forKey: Key.capsuleWindowHorizontalOffset) as? Double ?? 0
         capsuleWindowScreenID = defaults.string(forKey: Key.capsuleWindowScreenID)
         capsuleWindowWasVisible = defaults.object(forKey: Key.capsuleWindowWasVisible) as? Bool ?? false
-        displayPreferences = Self.loadDisplayPreferences(defaults: defaults, keepOnTop: keepOnTop)
+        let initialDisplay = Self.loadDisplayPreferences(defaults: defaults, keepOnTop: keepOnTop)
+        displayPreferences = initialDisplay
+        if let data = defaults.data(forKey: "display.languageProfiles"),
+           let profiles = try? JSONDecoder().decode([String: ReadingLanguageProfile].self, from: data) {
+            readingLanguageProfiles = profiles
+        }
+        for language in ReadingLanguageGroup.allCases where readingLanguageProfiles[language.rawValue] == nil {
+            readingLanguageProfiles[language.rawValue] = ReadingLanguageProfile(initialDisplay)
+        }
+        defaults.set(try? JSONEncoder().encode(readingLanguageProfiles), forKey: "display.languageProfiles")
         readingPreferences = Self.loadReadingPreferences(defaults: defaults)
         lyricsProviderConfiguration = Self.loadProviderConfiguration(defaults: defaults)
         lyricsSourceModeRawValue = defaults.string(forKey: Key.lyricsSourceMode)

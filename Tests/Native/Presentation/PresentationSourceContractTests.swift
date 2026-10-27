@@ -6,6 +6,29 @@ import XCTest
 
 final class PresentationSourceContractTests: XCTestCase {
     @MainActor
+    func testJapaneseAndChineseSongsRestoreTheirOwnReadingSwitches() {
+        let suite = "reading-language-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        let japanese = UUID(), chinese = UUID()
+        let initial = settings.displayPreferences
+        settings.applyReadingLanguage(versionID: japanese, text: "君の声が聞こえる。いつまでもあなたと一緒にいたい。")
+        XCTAssertEqual(settings.displayPreferences, initial)
+        settings.displayPreferences.showRomaji = false
+        settings.applyReadingLanguage(versionID: chinese, text: "我想和你一起走过春天，听见你的声音，看见远方的灯光。")
+        XCTAssertEqual(settings.activeReadingLanguage, .chinese)
+        XCTAssertEqual(settings.displayPreferences.showRomaji, initial.showRomaji)
+        settings.displayPreferences.showPinyin = false
+        settings.applyReadingLanguage(versionID: japanese, text: "cached")
+        XCTAssertEqual(settings.activeReadingLanguage, .japanese)
+        XCTAssertFalse(settings.displayPreferences.showRomaji)
+        XCTAssertEqual(settings.displayPreferences.showPinyin, initial.showPinyin)
+        settings.applyReadingLanguage(versionID: chinese, text: "cached")
+        XCTAssertFalse(settings.displayPreferences.showPinyin)
+    }
+
+    @MainActor
     func testTranslationPanelOfflineRefreshAndMissingLyricsReportAnError() async throws {
         let suite = "translation-panel-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
