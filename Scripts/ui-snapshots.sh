@@ -20,6 +20,7 @@ python3 "$ROOT/Tools/experience_visual_host/build.py" > /dev/null
 declare -a CASES=(
   "edge-bright|--artwork white --scene coverPhoto --toolbar faint --edge-player-expanded"
   "edge-dark|--artwork dark --scene coverPhoto --toolbar faint --edge-player-expanded"
+  "edge-vertical|--artwork white --scene coverPhoto --toolbar faint --edge-player-expanded --edge-player-vertical"
   "toolbar-faint|--toolbar faint"
   "toolbar-full|--toolbar full"
   "lyric-notice|--toolbar notice"

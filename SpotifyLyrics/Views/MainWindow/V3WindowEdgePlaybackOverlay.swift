@@ -41,7 +41,7 @@ struct V3WindowEdgePlaybackOverlay: View {
         GeometryReader { geometry in
             let size = geometry.size
             let songHue = V3WindowEdgeSongColor.hue(for: state.currentTrackIdentity?.stableKey ?? "no-track")
-            let controlPosition = edgeInteraction.layout(size: size, fallbackExitPoint: exitPoint, toolbarBounds: toolbarBounds)
+            let controlPosition = controlsLayout(size: size)
             let playerVisible = controlsVisible && !controlPosition.frame.intersects(toolbarExclusion)
 
             ZStack(alignment: .topLeading) {
@@ -146,6 +146,15 @@ struct V3WindowEdgePlaybackOverlay: View {
             cancelDraft()
             clearPointer()
         }
+    }
+
+    private func controlsLayout(size: CGSize) -> V3WindowEdgeControlPositioner.Layout {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--edge-player-vertical") {
+            return V3WindowEdgeControlPositioner.layout(size: size, exitPoint: CGPoint(x: 0, y: size.height / 2), preferredEdge: .left)
+        }
+#endif
+        return edgeInteraction.layout(size: size, fallbackExitPoint: exitPoint, toolbarBounds: toolbarBounds)
     }
 
     private func updatePointer(_ point: CGPoint?, size: CGSize, dragging: Bool) {
@@ -377,25 +386,31 @@ private struct V3WindowEdgeTransportButtons: View {
         Group {
             if isVertical {
                 VStack(spacing: 5) {
-                    V3PlayerModeButton(state: state, shuffle: true)
+                    V3PlayerModeButton(state: state, shuffle: true, size: .compact)
                     likeButton
                     if state.canPickPlaylists { playlistButton }
                     previousButton
                     playPauseButton
                     nextButton
-                    V3PlayerModeButton(state: state, shuffle: false)
-                    Text(elapsed + "\n/ " + total).font(.system(size: 9)).monospacedDigit()
-                        .multilineTextAlignment(.center).foregroundStyle(.white.opacity(brightCover ? 0.92 : 0.8))
+                    V3PlayerModeButton(state: state, shuffle: false, size: .compact)
+                    VStack(spacing: 1) {
+                        Text(elapsed)
+                        Text(total)
+                    }
+                    .font(.system(size: 10)).monospacedDigit()
+                    .lineLimit(1).fixedSize()
+                    .foregroundStyle(.white.opacity(brightCover ? 0.92 : 0.8))
+                    .accessibilityLabel("已播 \(elapsed)，总长 \(total)")
                 }
             } else {
                 HStack(spacing: 5) {
-                    V3PlayerModeButton(state: state, shuffle: true)
+                    V3PlayerModeButton(state: state, shuffle: true, size: .compact)
                     likeButton
                     if state.canPickPlaylists { playlistButton }
                     previousButton
                     playPauseButton
                     nextButton
-                    V3PlayerModeButton(state: state, shuffle: false)
+                    V3PlayerModeButton(state: state, shuffle: false, size: .compact)
                     Text(elapsed + " / " + total).font(.system(size: 9)).monospacedDigit()
                         .foregroundStyle(.white.opacity(brightCover ? 0.92 : 0.8))
                 }
@@ -592,7 +607,7 @@ enum V3WindowEdgeControlPositioner {
         }
 
         let isVertical = edge.isVertical
-        let baseSize = CGSize(width: isVertical ? 38 : 327, height: isVertical ? 279 : 38)
+        let baseSize = CGSize(width: isVertical ? 52 : 327, height: isVertical ? 286 : 40)
         let availableLong = isVertical ? height : width
         let availableShort = isVertical ? width : height
         let baseLong = isVertical ? baseSize.height : baseSize.width

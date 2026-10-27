@@ -406,6 +406,7 @@ private struct V3PlaybackButtons: View {
 struct V3PlayerModeButton: View {
     @V3ContentPlaybackState var state: PlaybackState
     let shuffle: Bool
+    var size: IslandTransportButton.Size = .regular
     @Environment(\.v3CoverAccent) private var accent
     private var active: Bool { shuffle ? state.playerModes?.shuffle == true : (state.playerModes?.repeatMode ?? .off) != .off }
     private var unknown: Bool { shuffle ? state.playerModes?.shuffle == nil && state.playerModes?.smartShuffle != true : state.playerModes?.repeatMode == nil }
@@ -419,7 +420,7 @@ struct V3PlayerModeButton: View {
         IslandTransportButton(
             systemImage: shuffle ? "shuffle" : state.playerModes?.repeatMode == .one ? "repeat.1" : "repeat",
             label: shuffle ? (state.playerModes?.shuffleLabel ?? "随机播放 · 未知") : (state.playerModes?.repeatLabel ?? "循环 · 未知"),
-            enabled: state.canControlSpotify, primary: false,
+            enabled: state.canControlSpotify, primary: false, size: size,
             tint: glyphColor, glyph: glyphColor
         ) { state.togglePlayerMode(shuffle: shuffle) }
         .overlay(alignment: .topTrailing) {
