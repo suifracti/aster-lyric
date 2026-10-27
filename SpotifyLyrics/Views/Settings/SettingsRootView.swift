@@ -906,18 +906,26 @@ struct TranslationProviderControls: View {
 
     /// Shared with the listening panel; changing a model uses the same provider policy.
     var modelPicker: some View {
-        Picker("AI 模型", selection: modelBinding) {
-            if !settings.aiCachedModels.contains(where: { $0.id == settings.aiTranslationConfiguration.model }) {
-                Text(settings.aiTranslationConfiguration.model.isEmpty ? "选择模型" : settings.aiTranslationConfiguration.model)
-                    .tag(settings.aiTranslationConfiguration.model)
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("AI 模型", selection: modelBinding) {
+                if !settings.aiCachedModels.contains(where: { $0.id == settings.aiTranslationConfiguration.model }) {
+                    Text(settings.aiTranslationConfiguration.model.isEmpty ? "选择模型" : settings.aiTranslationConfiguration.model)
+                        .tag(settings.aiTranslationConfiguration.model)
+                }
+                ForEach(settings.aiCachedModels, id: \.id) { model in
+                    Text(model.displayName).tag(model.id)
+                }
             }
-            ForEach(settings.aiCachedModels, id: \.id) { model in
-                Text(model.displayName).tag(model.id)
+            .disabled(provider == TranslationEngineID.appleSystem.rawValue)
+            .onAppear { _ = settings.translationModelSettings }
+            .accessibilityIdentifier("ai.model")
+            DisclosureGroup("手动填写模型 ID") {
+                TextField("此服务的模型 ID", text: modelBinding)
+                    .textFieldStyle(.roundedBorder)
             }
+            .font(.caption)
+            .disabled(provider == TranslationEngineID.appleSystem.rawValue)
         }
-        .disabled(provider == TranslationEngineID.appleSystem.rawValue)
-        .onAppear { _ = settings.translationModelSettings }
-        .accessibilityIdentifier("ai.model")
     }
 
     var reasoningPicker: some View {

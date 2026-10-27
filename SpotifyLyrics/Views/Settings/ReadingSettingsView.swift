@@ -82,18 +82,8 @@ struct ReadingSettingsView: View {
                 detail: "调整假名、罗马音与拼音，或为特殊人名和词语补充读音。"
             )
 
-            Section("读音显示") {
-                Toggle("显示罗马音", isOn: displayBinding(\.showRomaji))
-                Toggle("显示拼音", isOn: displayBinding(\.showPinyin))
-                Picker("假名显示模式", selection: displayBinding(\.kanaDisplayMode)) {
-                    Text("汉字上方注音").tag(KanaDisplayMode.inlineRuby)
-                    Text("独立假名行").tag(KanaDisplayMode.independentLine)
-                    Text("假名替换").tag(KanaDisplayMode.kanaReplacement)
-                    Text("隐藏").tag(KanaDisplayMode.hidden)
-                }
-                Text(settings.displayPreferences.kanaDisplayMode.detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Section("读音配置") {
+                ToolbarPanelLink(title: "读音显示、注音排版与假名替换在 工具栏 → 文字", panel: .text)
                 Picker("默认读音层", selection: readingBinding(\.japaneseRepresentationID)) {
                     Text("假名").tag(ReadingRepresentationID.kana.rawValue)
                     Text("罗马音").tag(ReadingRepresentationID.romaji.rawValue)
@@ -103,7 +93,6 @@ struct ReadingSettingsView: View {
                     Text("声调数字").tag(ReadingRepresentationID.pinyinToneNumbers.rawValue)
                     Text("无声调").tag(ReadingRepresentationID.pinyinPlain.rawValue)
                 }
-                numericSlider("假名字号", value: doubleBinding(\.rubyFontSize), range: 8...18, format: "%.0f pt")
             }
 
             Section("本地读音生成") {
@@ -254,28 +243,6 @@ struct ReadingSettingsView: View {
         .onAppear { reloadDictionary() }
     }
 
-    private func displayBinding<Value>(_ keyPath: WritableKeyPath<DisplayPreferences, Value>) -> Binding<Value> {
-        Binding(
-            get: { settings.displayPreferences[keyPath: keyPath] },
-            set: { value in
-                var next = settings.displayPreferences
-                next[keyPath: keyPath] = value
-                settings.displayPreferences = next
-            }
-        )
-    }
-
-    private func doubleBinding(_ keyPath: WritableKeyPath<DisplayPreferences, CGFloat>) -> Binding<Double> {
-        Binding(
-            get: { Double(settings.displayPreferences[keyPath: keyPath]) },
-            set: { value in
-                var next = settings.displayPreferences
-                next[keyPath: keyPath] = CGFloat(value)
-                settings.displayPreferences = next
-            }
-        )
-    }
-
     private func readingBinding<Value>(_ keyPath: WritableKeyPath<ReadingPreferences, Value>) -> Binding<Value> {
         Binding(
             get: { settings.readingPreferences[keyPath: keyPath] },
@@ -285,22 +252,6 @@ struct ReadingSettingsView: View {
                 settings.readingPreferences = next
             }
         )
-    }
-
-    private func numericSlider(
-        _ title: String,
-        value: Binding<Double>,
-        range: ClosedRange<Double>,
-        format: String,
-        scale: Double = 1
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-            V3NumericSlider(value: value, in: range, step: scale == 100 ? 0.01 : 1,
-                            unit: format.contains("pt") ? "pt" : (scale == 100 ? "%" : ""),
-                            displayScale: scale)
-                .accessibilityLabel(title)
-        }
     }
 
     private func reloadDictionary() {
