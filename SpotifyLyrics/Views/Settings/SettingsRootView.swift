@@ -12,6 +12,7 @@ final class SettingsNavigationRoute: ObservableObject {
 
     @Published private(set) var pendingAISettings = false
     @Published var pendingConnectionSettings = false
+    @Published var requestedToolbarPanel: V3ToolbarModel.Panel?
     func requestConnectionSettings() {
         pendingConnectionSettings = true
         NotificationCenter.default.post(name: .lyricIslandOpenConnectionSettings, object: nil)
@@ -27,6 +28,26 @@ final class SettingsNavigationRoute: ObservableObject {
         guard pendingAISettings else { return false }
         pendingAISettings = false
         return true
+    }
+}
+
+struct ToolbarPanelLink: View {
+    let title: String
+    let panel: V3ToolbarModel.Panel
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button {
+            SettingsNavigationRoute.shared.requestedToolbarPanel = panel
+            openWindow(id: "main-window")
+        } label: {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -132,6 +153,10 @@ struct SettingsRootView: View {
     @StateObject private var navigationRoute = SettingsNavigationRoute.shared
     @State private var selection: SettingsCategory = .general
     @State private var searchText = ""
+
+    init(initialPage: String? = nil) {
+        _selection = State(initialValue: initialPage.flatMap(SettingsCategory.init(rawValue:)) ?? .general)
+    }
 
     private var visibleCategories: [SettingsCategory] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -451,34 +476,13 @@ private struct AppearanceSettingsView: View {
     @EnvironmentObject private var playback: PlaybackState
     @EnvironmentObject private var settings: AppSettingsStore
 
-    private var visualControls: V3VisualControls { V3VisualControls(settings: settings) }
-
     var body: some View {
         Form {
             SettingsPageHeader(title: "外观", detail: "选择适合自己的歌词画面，并调整主窗口、桌面歌词和菜单栏。")
 
             Section("主窗口") {
-                Picker("默认主窗口布局", selection: mainWindowLayoutSelection) {
-                    ForEach(MainWindowLayoutStyle.userSelectableCases) { layout in
-                        Text(layout.title).tag(layout.rawValue)
-                    }
-                }
-                if settings.mainWindowLayoutStyleRawValue == MainWindowLayoutStyle.directionDV4.rawValue {
-                    Text("Direction D 为实验布局；歌曲工作台的部分信息与操作尚未接入。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if settings.mainWindowLayoutStyleRawValue == MainWindowLayoutStyle.appleMusicImmersiveV3.rawValue {
-                    LyricIslandSceneSettingsPicker(settings: settings)
-                    Toggle("悬停预览", isOn: $settings.v3SceneHoverPreviewEnabled)
-                    Button("恢复此风格的默认值") { settings.resetCurrentV3Scene() }
-                    visualControls.playbackPresentationControls
-                    DisclosureGroup("画面精细调整") { visualControls.pictureAdvancedControls }
-                    DisclosureGroup("更多文字选项") { visualControls.textAdvancedControls }
-                    Text("画面精细调整在独立工具窗中完成，不会改变主窗尺寸。")
-                        .font(.caption).foregroundStyle(.secondary)
-
-                }
+                ToolbarPanelLink(title: "主窗口布局、场景与播放呈现在 工具栏 → 画面", panel: .picture)
+                ToolbarPanelLink(title: "文字外观在 工具栏 → 文字", panel: .text)
                 DisclosureGroup("经典伴随布局") {
                     Picker("经典伴随呈现", selection: $settings.classicCompanionPresentationRawValue) {
                         ForEach(ClassicCompanionPresentation.allCases) { presentation in
@@ -537,7 +541,7 @@ private struct AppearanceSettingsView: View {
             }
 
             Section("菜单栏") {
-                Toggle("在菜单栏显示歌词", isOn: $settings.menuBarLyricsEnabled)
+                ToolbarPanelLink(title: "菜单栏歌词开关在 工具栏 → 更多", panel: .more)
                 MenuBarLyricsAppearanceControls(settings: settings)
                 Text("关闭后仅显示播放状态图标，点击图标仍可打开歌词与播放控制。")
                     .font(.caption)
@@ -555,18 +559,7 @@ private struct AppearanceSettingsView: View {
         )
     }
 
-    private var mainWindowLayoutSelection: Binding<String> {
-        Binding(
-            get: { settings.mainWindowLayoutStyleRawValue },
-            set: { rawValue in
-                guard let style = MainWindowLayoutStyle(rawValue: rawValue) else { return }
-                _ = settings.applyPresentationSelection(
-                    category: .mainWindow,
-                    stableID: style.presentationStableID
-                )
-            }
-        )
-    }
+
 }
 
 private struct ServicesAndSourcesSettingsView: View {
@@ -1046,20 +1039,12 @@ struct TranslationProviderControls: View {
                 }
             }
             if provider != TranslationEngineID.appleSystem.rawValue {
-                TextField("此服务的模型 ID", text: modelBinding)
-                    .textFieldStyle(.roundedBorder)
-                modelPicker
-                if supportsReasoningControl {
-                    reasoningPicker
-                    Text("选项只来自当前模型明确公布的推理强度。当前没有已验证的选项时，请先刷新模型目录或检查此服务的能力说明。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
                 if [TranslationEngineID.codexChatGPT.rawValue, TranslationEngineID.grokBuild.rawValue,
                     TranslationEngineID.geminiCLI.rawValue, TranslationEngineID.antigravityCLI.rawValue].contains(provider) {
                     ProviderConversationControls(provider: provider)
                 }
                 if provider == TranslationEngineID.geminiCLI.rawValue {
-                    Text("Gemini CLI 暂无可读取的模型目录，请填写此连接支持的 Gemini 模型 ID。切换服务会保留各自配置。")
+                    Text("Gemini CLI 暂无可读取的模型目录，请在工具栏 → 译文选择此连接支持的模型。切换服务会保留各自配置。")
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
                     HStack {
@@ -1193,16 +1178,12 @@ private struct AISettingsView: View {
                         Text(profile.name).tag(profile.id.uuidString)
                     }
                 }
-                Toggle("自动翻译新歌词", isOn: configurationBinding(\.autoTranslateNewLyrics))
-                Text(settings.aiTranslationConfiguration.autoTranslateNewLyrics
-                    ? "当前已开启：新歌词可能触发所选翻译服务的请求。失败不会循环重试。"
-                    : "当前已关闭：需要在歌曲操作中主动翻译，已有译文仍可显示。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                ToolbarPanelLink(title: "新歌词自动翻译在 工具栏 → 译文", panel: .translation)
             }
 
-            Section("当前服务与模型") {
+            Section("翻译服务") {
                 TranslationProviderControls(settings: settings)
+                ToolbarPanelLink(title: "AI 模型与思考强度在 工具栏 → 译文", panel: .translation)
                 let selectedEngine = TranslationEngineRegistry.make(stableID: settings.aiTranslationConfiguration.engineID).metadata
                 Text(engineAvailabilityText(selectedEngine))
                     .font(.caption)

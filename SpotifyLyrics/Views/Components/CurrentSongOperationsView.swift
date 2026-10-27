@@ -403,24 +403,7 @@ struct CurrentSongOperationsView: View {
     }
 
     private var languageSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("显示层")
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-            Toggle("显示翻译", isOn: displayBinding(\.showTranslation))
-            Toggle("显示假名", isOn: kanaBinding)
-            Toggle("显示罗马音", isOn: displayBinding(\.showRomaji))
-            if settings.displayPreferences.showKana {
-                Picker("假名模式", selection: displayBinding(\.kanaDisplayMode)) {
-                    Text("汉字上方注音").tag(KanaDisplayMode.inlineRuby)
-                    Text("独立假名行").tag(KanaDisplayMode.independentLine)
-                    Text("假名替换").tag(KanaDisplayMode.kanaReplacement)
-                }
-                .pickerStyle(.menu)
-            }
-            Text("隐藏翻译只改变显示层；无翻译版本会改变当前选择。")
-                .font(.system(size: 10, design: .rounded))
-                .foregroundStyle(.secondary)
-        }
+        ToolbarPanelLink(title: "显示开关与注音排版在 工具栏 → 文字", panel: .text)
     }
 
     private var translationSection: some View {
@@ -1001,28 +984,6 @@ struct CurrentSongOperationsView: View {
                 var next = settings.aiTranslationConfiguration
                 next[keyPath: keyPath] = value
                 settings.aiTranslationConfiguration = next
-            }
-        )
-    }
-
-    private func displayBinding<Value>(_ keyPath: WritableKeyPath<DisplayPreferences, Value>) -> Binding<Value> {
-        Binding(
-            get: { settings.displayPreferences[keyPath: keyPath] },
-            set: { value in
-                var next = settings.displayPreferences
-                next[keyPath: keyPath] = value
-                settings.displayPreferences = next
-            }
-        )
-    }
-
-    private var kanaBinding: Binding<Bool> {
-        Binding(
-            get: { settings.displayPreferences.showKana },
-            set: { value in
-                var next = settings.displayPreferences
-                next.showKana = value
-                settings.displayPreferences = next
             }
         )
     }

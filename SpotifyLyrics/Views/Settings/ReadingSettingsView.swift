@@ -25,82 +25,15 @@ struct LyricsAndTextSettingsView: View {
                 )
             }
 
-            Section("显示内容") {
-                Toggle("显示原文", isOn: displayBinding(\.showOriginal))
-                Toggle("显示翻译", isOn: displayBinding(\.showTranslation))
-                Text("显示翻译只控制已有译文的显示；生成新译文由 AI 翻译设置控制。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Picker("繁简转换", selection: readingBinding(\.scriptConversionID)) {
-                    Text("不转换").tag(ScriptConversionID.none.rawValue)
-                    Text("繁体转简体").tag(ScriptConversionID.traditionalToSimplified.rawValue)
-                    Text("简体转繁体").tag(ScriptConversionID.simplifiedToTraditional.rawValue)
-                }
-                Text("转换只影响显示层，不修改原文、歌词版本或翻译。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                SettingsDestinationRow(title: "读音与注音", detail: "假名、罗马音、拼音与人工词典", systemImage: "character.phonetic", action: onOpenReading)
-            }
-
-            Section("字号与阅读层级") {
-                numericSlider("当前歌词字号", value: doubleBinding(\.fontSize), range: 14...42, format: "%.0f pt")
-                numericSlider("辅助文本字号", value: doubleBinding(\.assistantFontSize), range: 10...24, format: "%.0f pt")
-                numericSlider("非当前歌词透明度", value: displayBinding(\.opacity), range: 0.15...1, format: "%.0f%%", scale: 100)
-                Toggle("远处歌词隐藏辅助文本", isOn: displayBinding(\.hideDistantAuxiliary))
+            Section("显示与阅读") {
+                ToolbarPanelLink(title: "显示开关、字号与阅读外观在 工具栏 → 文字", panel: .text)
+                ToolbarPanelLink(title: "新歌词自动翻译在 工具栏 → 译文", panel: .translation)
+                SettingsDestinationRow(title: "读音与人工词典", detail: "本地读音生成与词条配置", systemImage: "character.phonetic", action: onOpenReading)
             }
 
             LyricsSearchSettingsSections()
         }
         .formStyle(.grouped)
-    }
-
-    private func displayBinding<Value>(_ keyPath: WritableKeyPath<DisplayPreferences, Value>) -> Binding<Value> {
-        Binding(
-            get: { settings.displayPreferences[keyPath: keyPath] },
-            set: { value in
-                var next = settings.displayPreferences
-                next[keyPath: keyPath] = value
-                settings.displayPreferences = next
-            }
-        )
-    }
-
-    private func doubleBinding(_ keyPath: WritableKeyPath<DisplayPreferences, CGFloat>) -> Binding<Double> {
-        Binding(
-            get: { Double(settings.displayPreferences[keyPath: keyPath]) },
-            set: { value in
-                var next = settings.displayPreferences
-                next[keyPath: keyPath] = CGFloat(value)
-                settings.displayPreferences = next
-            }
-        )
-    }
-
-    private func readingBinding<Value>(_ keyPath: WritableKeyPath<ReadingPreferences, Value>) -> Binding<Value> {
-        Binding(
-            get: { settings.readingPreferences[keyPath: keyPath] },
-            set: { value in
-                var next = settings.readingPreferences
-                next[keyPath: keyPath] = value
-                settings.readingPreferences = next
-            }
-        )
-    }
-
-    private func numericSlider(
-        _ title: String,
-        value: Binding<Double>,
-        range: ClosedRange<Double>,
-        format: String,
-        scale: Double = 1
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-            V3NumericSlider(value: value, in: range, step: scale == 100 ? 0.01 : 1,
-                            unit: format.contains("pt") ? "pt" : (scale == 100 ? "%" : ""),
-                            displayScale: scale)
-                .accessibilityLabel(title)
-        }
     }
 
 }

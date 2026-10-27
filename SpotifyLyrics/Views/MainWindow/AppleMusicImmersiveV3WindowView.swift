@@ -158,6 +158,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         }
     }
     @ObservedObject var settings: AppSettingsStore
+    @ObservedObject private var settingsRoute = SettingsNavigationRoute.shared
     @Binding var layoutStyleRawValue: String
     var liveOnly: Bool = false
     @Environment(\.lyricPresentationScale) private var presentationScale
@@ -463,6 +464,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 showsListeningKeys = false
                 isFocusMode = false
                 dismissPinnedToolbarPanel()
+            }
+            .onChange(of: settingsRoute.requestedToolbarPanel, initial: true) { _, panel in
+                guard let panel else { return }
+                isFocusMode = false
+                toolsVisible = true
+                if pinnedToolbarPanel != panel { clickToolbarPanel(panel) }
+                settingsRoute.requestedToolbarPanel = nil
             }
             .onReceive(state.$playbackNotice.compactMap { $0 }) { showLyricNotice($0) }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
