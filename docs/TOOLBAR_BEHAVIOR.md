@@ -368,3 +368,34 @@ A control never appears on both sides. Where the other side used to have it, sho
 - In the 文字 panel: slider 「当前句发光」 0–100%.
 - The default equals today's look, so nothing changes until the user moves it.
 - 0% means no glow at all. The slider affects only the current line, never other lines.
+
+## Round 5: edge seeking, library / playlists / search panel (2026-10-27; user asked for all-at-once delivery)
+**Edge player seeking.** Users kept grabbing the window-resize edge instead of the rail.
+- The rail hit band moves inside the window, 6–20 pt from the edge. It is currently 0–14 pt, which overlaps macOS's resize zone.
+- The edge pill gets its own short draggable progress track, beside the time in vertical mode and before it in horizontal mode, with the existing time bubble while dragging.
+
+**Centred panel redesign: one place for 歌词库 · 搜索 · 歌单.**
+- **Header row:**
+  - tabs 歌词库 | 搜索 | 歌单;
+  - one search field for the active tab;
+  - a 「⋯」 menu holding 导出, 导入数据, 导入资产, 刷新 and 私人文件夹同步;
+  - 在新窗口打开 and ×.
+- **Two columns:** a compact list on the left (about 300 pt) and the selected item's detail on the right. No grey inner box.
+- **歌词库 tab:**
+  - **Filter chips:** 全部 · 当前歌曲 · 缺歌词 · 有译文 · 手动编辑. Selecting 缺歌词 shows 全部补全.
+  - **Rows:** 44 pt high, 32 pt cover, title and artist, badges 词 N / 译 N.
+  - **Right column:** that song's versions, grouped 原词 / 译文 / 读音 / 时间轴 like the hover panel, with 采用 / 预览 / 编辑.
+  - Opens with the current song selected.
+- **搜索 tab:** two clearly named sections.
+  - **「这首歌的歌词」:** provider candidates for the current song. Each shows the source, a 逐字 / 逐行 / 纯文本 badge, the duration difference and 预览 on hover. The action is 「采用此版本」.
+  - **「其他歌曲」:** library and Spotify-catalog songs. The action is 「查看歌词」, plus a ▶ that plays the song.
+  - The current song appears once, not in both sections. Local results show first; online results stream in.
+- **歌单 tab:**
+  - **Left column:** 接下来播放 (from `/me/player/queue`), then 已点赞的歌曲, then the user's playlists (flat; Spotify gives no folders).
+  - **Right column:** the selected playlist's tracks. Double-click a track, or press its ▶, to play it in that playlist's context (`PUT /me/player/play` with `context_uri` and an offset; the existing playback-write scope covers it). A 403 shows 「需要 Spotify Premium」.
+  - Each playlist row shows a circle that is ✓ when the current song is in it. Clicking the circle adds or removes the song, reusing the picker's membership logic.
+- **New toolbar button 歌单** (`music.note.list`) between 搜索 and 译文.
+  - Toolbar order: 歌词库 · 搜索 · 歌单 · 译文 · 文字 · 画面 · 更多 | 设置.
+  - **Hover:** the next 5 songs in the queue.
+  - **Click:** opens the panel on the 歌单 tab.
+- The player's 「添加到歌单」 button keeps its quick popover for the current song.
