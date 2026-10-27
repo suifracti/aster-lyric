@@ -39,6 +39,22 @@ final class PresentationSourceContractTests: XCTestCase {
         XCTAssertEqual(V3ArtworkSubjectLayout.placement(subject: subject, canvas: canvas, manualPosition: "right").position, "right")
     }
 
+    func testCenteredLibrarySearchOpensSwitchesAndDismissesWithoutAnEdgeHitBand() {
+        var panel = V3LibrarySearchPresentation()
+        panel.toggle(.library)
+        XCTAssertEqual(panel.tab, .library)
+        XCTAssertTrue(panel.isPresented)
+        panel.toggle(.search)
+        XCTAssertEqual(panel.tab, .search)
+        panel.toggle(.search)
+        XCTAssertFalse(panel.isPresented)
+        panel.open(.library)
+        panel.dismiss() // Escape and outside clicks use the same close action.
+        XCTAssertFalse(panel.isPresented)
+        XCTAssertEqual(V3LibrarySearchPresentation.size(in: CGSize(width: 700, height: 580)), CGSize(width: 620, height: 500))
+        XCTAssertEqual(V3LibrarySearchPresentation.size(in: CGSize(width: 1200, height: 900)), CGSize(width: 760, height: 600))
+    }
+
     @MainActor
     func testAtmospherePresetRespondsInItsPaddedArea() async throws {
         let suite = "preset-hit-\(UUID())"

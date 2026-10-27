@@ -166,7 +166,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var isSearchPresented = false
     @State private var isWindowMenuPresented = false
     @State private var showsAIReadingControls = false
     @State private var hoveredAIReadingControls: Bool?
@@ -180,8 +179,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var coverSubject: V3ArtworkSubject.Analysis?
     @State private var showsListeningKeys = false
     @State private var isFocusMode = false
-    @State private var isSideDrawerOpen = false
-    @State private var sideDrawerTab = V3SideDrawer.Tab.library
+    @State private var librarySearch = V3LibrarySearchPresentation()
     @State private var toolbarBounds = CGRect.zero
     @State private var lyricNotice: String?
     @State private var lyricNoticeTask: Task<Void, Never>?
@@ -337,31 +335,18 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 // width in a tall window. Keep that drawing overflow inside
                 // the canvas so it cannot shift the top-trailing foreground.
                 .frame(width: geometry.size.width, height: geometry.size.height)
+                .blur(radius: librarySearch.isPresented ? 3 : 0)
 
                 GeometryReader { canvasGeometry in
-                    ZStack(alignment: .topTrailing) {
-                        layout(for: canvasGeometry)
-
-                        HStack(spacing: 16) {
-                            Spacer(minLength: 0)
-                            toolBar(for: canvasGeometry.size)
-                                .opacity(toolbarOpacity)
-                                .allowsHitTesting(toolbarOpacity > 0)
-                                .accessibilityHidden(toolbarOpacity == 0)
-                                .animation(
-                                    LyricsDesignTokens.Motion.animation(reduceMotion: reduceMotion),
-                                    value: toolbarOpacity
-                                )
-                        }
-                        .padding(.horizontal, 24)
-                        .padding(.top, 18)
-                    }
-                    .frame(width: canvasGeometry.size.width, height: canvasGeometry.size.height)
+                    layout(for: canvasGeometry)
+                        .frame(width: canvasGeometry.size.width, height: canvasGeometry.size.height)
                 }
                 .frame(width: canvasWidth, height: geometry.size.height)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .blur(radius: librarySearch.isPresented ? 3 : 0)
+                .allowsHitTesting(!librarySearch.isPresented)
 
-                if settings.v3EdgeProgressEnabled && !isFocusMode {
+                if settings.v3EdgeProgressEnabled && !isFocusMode && !librarySearch.isPresented {
                     V3WindowEdgePlaybackOverlay(
                         state: state,
                         colorHex: settings.v3EdgeProgressColorHex,
@@ -376,11 +361,24 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     .frame(width: geometry.size.width, height: geometry.size.height)
                 }
 
-                if !isFocusMode, !liveOnly {
-                    V3SideDrawer(isOpen: $isSideDrawerOpen, tab: $sideDrawerTab,
-                        fromTrailing: compositionArtworkPosition == "right", state: state)
+                if librarySearch.isPresented {
+                    V3LibrarySearchPanel(presentation: $librarySearch, state: state)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
+
+                HStack(spacing: 16) {
+                    Spacer(minLength: 0)
+                    toolBar(for: geometry.size)
+                        .opacity(toolbarOpacity)
+                        .allowsHitTesting(toolbarOpacity > 0)
+                        .accessibilityHidden(toolbarOpacity == 0)
+                        .animation(
+                            LyricsDesignTokens.Motion.animation(reduceMotion: reduceMotion),
+                            value: toolbarOpacity
+                        )
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 18)
 
                 // Hover shows the temporary panel inside the app; a click pins
                 // it as a separate tool window to the right of the main window.
@@ -839,7 +837,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 width: max(1, geometry.size.width - 48),
                 compact: true,
                 lyricsFocus: true,
-                onSearch: { isSearchPresented = true }
+                onSearch: { librarySearch.open(.search) }
             )
             .padding(.horizontal, LyricsDesignTokens.Spacing.windowSmall)
             .padding(.top, 76)
@@ -879,7 +877,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             .frame(width: readingWidth, height: headerHeight, alignment: .leading)
 
             lyricsColumn(width: readingWidth, compact: compact, lyricsFocus: true,
-                         onSearch: { isSearchPresented = true })
+                         onSearch: { librarySearch.open(.search) })
                 .frame(width: readingWidth, height: lyricHeight)
 
             if footerHeight > 0 {
@@ -1478,8 +1476,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     }
 
     private func openLyricsLibrary() {
-        sideDrawerTab = .library
-        isSideDrawerOpen = true
+        librarySearch.open(.library)
     }
 
     private func handleListeningKey(_ key: V3ListeningKey) {
@@ -1765,9 +1762,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private func applyToolbarDebugCommand(_ info: [AnyHashable: Any]) {
         let panel = (info["panel"] as? String).flatMap(ToolbarPopover.init(rawValue:))
         switch info["command"] as? String {
-        case "drawer":
-            sideDrawerTab = info["panel"] as? String == "search" ? .search : .library
-            isSideDrawerOpen = true
+        case "navigation":
+            librarySearch.open(info["panel"] as? String == "search" ? .search : .library)
         case "notice": lyricNotice = "字号 22"
         case "auto-selection": previewAutomaticSelection = LyricsAutomaticSelection(sourceCount: 3, durationDelta: 25)
         case "faint": isPointerInsideCanvas = true
@@ -1780,33 +1776,32 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 #endif
 
     private var toolbarPanelIsPresented: Bool {
-        isWindowMenuPresented || isSearchPresented || isVersionPickerPresented
-            || activeToolbarPopover != nil || pinnedToolbarPanel != nil || isSideDrawerOpen
+        isWindowMenuPresented || isVersionPickerPresented
+            || activeToolbarPopover != nil || pinnedToolbarPanel != nil || librarySearch.isPresented
     }
 
     /// Every panel-button click, whichever path delivered it.
     private func clickToolbarPanel(_ panel: ToolbarPopover) {
-        isSideDrawerOpen = false
         V3ToolbarLog.logger.notice("click \(panel.description, privacy: .public) mode-before=\(String(describing: toolbar.mode), privacy: .public)")
         toolbarDismissTask?.cancel()
-        toolbar.click(panel)
-        isSearchPresented = false
         isWindowMenuPresented = false
-        if panel == .library {
-            if liveOnly { MenuBarLyricsController.shared.openLibrary() }
-            else { openWindow(id: "personal-library-activity") }
-        } else if panel == .search {
-            isSearchPresented = true
+        if panel == .library || panel == .search {
+            toolbar.dismiss()
+            librarySearch.toggle(panel == .library ? .library : .search)
+        } else {
+            librarySearch.dismiss()
+            toolbar.click(panel)
         }
     }
 
     private func dismissPinnedToolbarPanel() {
-        isSideDrawerOpen = false
+        librarySearch.dismiss()
         toolbarDismissTask?.cancel()
         toolbar.dismiss()
     }
 
     private func toolbarTriggerHover(_ panel: ToolbarPopover, inside: Bool) {
+        guard !librarySearch.isPresented else { return }
         apply(toolbar.pointerOnTrigger(panel, inside: inside))
     }
 
@@ -1830,7 +1825,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         if toolbar.hoverPanel == nil || toolbar.hoverPanel == .more { hoveredAIReadingControls = nil }
         if new != .idle {
             isWindowMenuPresented = false
-            isSearchPresented = false
+            librarySearch.dismiss()
         } else {
             toolbarDismissTask?.cancel()
         }
@@ -1890,26 +1885,18 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
     private func openAppSettings() {
         toolbar.click()
-        isSearchPresented = false
+        librarySearch.dismiss()
         if liveOnly { MenuBarLyricsController.shared.openSettings() }
         else { openSettings() }
     }
 
-    @ViewBuilder
     private func toolbarPanelButton(_ panel: ToolbarPopover) -> some View {
-        if panel == .search {
-            toolbarPanelTrigger(panel)
-                .popover(isPresented: $isSearchPresented, arrowEdge: .top) {
-                    SongSearchPopover(manager: state.songSearchManager, playbackState: state)
-                }
-        } else {
-            toolbarPanelTrigger(panel)
-        }
+        toolbarPanelTrigger(panel)
     }
 
     private func toolbarPanelTrigger(_ panel: ToolbarPopover) -> some View {
         Button { clickToolbarPanel(panel) } label: {
-            toolbarEntry(panel.title, symbol: panel.symbol, selected: toolbar.isSelected(panel))
+            toolbarEntry(panel.title, symbol: panel.symbol, selected: toolbar.isSelected(panel) || librarySearch.tab?.rawValue == panel.rawValue)
         }
         .v3FirstClick { clickToolbarPanel(panel) }
         .help(panel == .picture ? "画面 · / 五档模糊，, / . 微调模糊" : panel == .more ? "更多 · Z / C 调整偏移，X 归零" : panel.title)

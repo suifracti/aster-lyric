@@ -334,7 +334,7 @@ private struct ExperienceFixtureRoot: View {
                 MenuBarLyricsController.shared.setOpenEditorHandler { openWindow(id: "lyrics-editor") }
                 MenuBarLyricsController.shared.setOpenSettingsHandler { openSettings() }
                 MenuBarLyricsController.shared.setOpenMainWindowHandler { openWindow(id: "fixture-main") }
-                if ["library", "search"].contains(where: { ExperienceArguments.value("--panel", fallback: "").contains($0) }) {
+                if ["library", "search"].contains(where: { ExperienceArguments.value("--panel", fallback: "").contains($0) || ExperienceArguments.value("--navigation", fallback: "").contains($0) }) {
                     let track = Track(id: "spotify:track:visualfixture", title: "夜を越えて · After the rain",
                         artist: "Visual Fixture", album: "Native rendering study", duration: 240,
                         spotifyId: "visualfixture", artworkURL: ExperienceArtwork.make())
@@ -524,10 +524,10 @@ private struct ExperienceFixtureRoot: View {
                                                     userInfo: ["command": parts[0], "panel": parts[1]])
                 }
                 if !toolbar.isEmpty || !panel.isEmpty { try? await Task.sleep(for: .milliseconds(800)) }
-                let drawer = ExperienceArguments.value("--drawer", fallback: "")
-                if !drawer.isEmpty {
+                let navigation = ExperienceArguments.value("--navigation", fallback: "")
+                if !navigation.isEmpty {
                     NotificationCenter.default.post(name: .v3ToolbarDebugCommand, object: nil,
-                        userInfo: ["command": "drawer", "panel": drawer])
+                        userInfo: ["command": "navigation", "panel": navigation])
                     try? await Task.sleep(for: .milliseconds(300))
                 }
                 if !panel.isEmpty {

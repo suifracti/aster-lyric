@@ -112,6 +112,13 @@ struct SpotifyLyricsApp: App {
         }
         .defaultSize(width: 1100, height: 720)
 
+        Window("搜索", id: "song-search") {
+            SongSearchPopover(manager: playbackState.songSearchManager, playbackState: playbackState, embedded: true)
+                .environmentObject(playbackState)
+                .environmentObject(appSettings)
+        }
+        .defaultSize(width: 760, height: 600)
+
         Window("歌词库与收听记录", id: "personal-library-activity") {
             UnifiedLibraryHistoryWindowView()
                 .environmentObject(playbackState)
