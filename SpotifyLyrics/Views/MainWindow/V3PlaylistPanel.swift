@@ -55,7 +55,10 @@ struct V3PlaylistPanel: View {
                 Divider()
                 VStack(alignment: .leading, spacing: 8) {
                     Text(selectedTitle).font(.headline).padding(.horizontal, 12).padding(.top, 12)
-                    if browser.isLoading { ProgressView().controlSize(.small).padding() }
+                    if browser.selectedTracksAreLoading { ProgressView().controlSize(.small).padding() }
+                    if let message = browser.emptyMessage {
+                        Text(message).font(.caption).foregroundStyle(.secondary).padding(12)
+                    }
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(tracks) { item in

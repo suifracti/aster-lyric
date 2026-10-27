@@ -23,6 +23,14 @@ public final class PlaylistBrowserModel: ObservableObject {
     private var tracksTask: Task<Void, Never>?
     private var queueTask: Task<Void, Never>?
 
+    public var selectedTracksAreLoading: Bool {
+        selectedID == Self.queueID ? isQueueLoading : isLoading
+    }
+    public var emptyMessage: String? {
+        guard tracks.isEmpty, !selectedTracksAreLoading, notice == nil else { return nil }
+        return selectedID == Self.queueID ? "接下来没有待播歌曲" : "歌单里还没有歌曲"
+    }
+
     public init(service: SpotifyCatalogService, picker: PlaylistPickerModel,
                 accessToken: @escaping @MainActor (Set<String>) async throws -> String) {
         self.service = service; self.picker = picker; self.accessToken = accessToken

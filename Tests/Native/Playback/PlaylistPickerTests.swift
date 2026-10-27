@@ -202,6 +202,29 @@ final class PlaylistPickerTests: XCTestCase {
         await fulfillment(of: [playRequest], timeout: 2)
     }
 
+    func testPlaylistBrowserDistinguishesEmptyContentFromAuthorizationErrors() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PlaylistFixtureURLProtocol.self]
+        let service = SpotifyCatalogService(session: URLSession(configuration: configuration), baseURL: URL(string: "https://playlist.test/v1")!)
+        let browser = PlaylistBrowserModel(service: service, picker: model(FakePlaylistCatalog(rows: [])), accessToken: { _ in "fixture" })
+        defer { PlaylistFixtureURLProtocol.response = nil }
+        for status in [401, 403, 200] {
+            PlaylistFixtureURLProtocol.response = { _ in (status, ["items": [], "queue": [], "error": ["status": status]]) }
+            browser.select("empty")
+            await waitUntil { !browser.isLoading }
+            if status == 200 {
+                XCTAssertEqual(browser.emptyMessage, "歌单里还没有歌曲")
+                browser.loadQueue()
+                await waitUntil { !browser.isQueueLoading }
+                browser.select(PlaylistBrowserModel.queueID)
+                XCTAssertEqual(browser.emptyMessage, "接下来没有待播歌曲")
+            } else {
+                XCTAssertNil(browser.emptyMessage, "授权错误不能伪装成空歌单")
+                XCTAssertEqual(browser.notice, (status == 401 ? SpotifyCatalogError.unauthorized : .forbidden).localizedDescription)
+            }
+        }
+    }
+
     func testSearchFiltersByNameAndKeepsSpotifyOrder() async {
         let catalog = FakePlaylistCatalog(rows: [row("1", "夜の歌"), row("2", "Morning"), row("3", "夜行性")])
         let model = model(catalog)
