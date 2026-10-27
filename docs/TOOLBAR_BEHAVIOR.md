@@ -317,7 +317,8 @@ A control never appears on both sides. Where the other side used to have it, sho
 - Lyric position 「自动」, the default, avoids the cover's subject.
 - Run one Vision request per artwork (attention-based saliency plus face rectangles), cached by artwork URL. Compute the result in window coordinates, after the background crop.
 - Place the lyrics column on the horizontal side opposite the salient centre, in the lower part of the window.
-- If the subject is centred and wide, use bottom-centre with a narrower column.
+- If the subject is centred, compare the salient area in the left and right halves and use the emptier side. The column keeps its normal width; never narrow it. (Corrected 2026-10-27: bottom-centre plus a narrow column put lyrics on the subject and split lines badly.)
+- The column's bottom edge stays above the player bar.
 - Manual 左 / 中 / 右 always wins.
 - No downloaded models; if Vision fails, fall back to the current bottom-trailing placement.
 
