@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile and exercise the exact Foundation-only reducer in the production file.
+"""Compile and exercise the exact production reducer and SwiftUI hit-band geometry in the production file.
 
 This is NOT a macOS GUI, frame-time, CPU, memory or WindowServer benchmark.
 Run from any directory: python3 Tests/v3_edge_pointer_state_contract.py
@@ -25,7 +25,11 @@ assert 'updatePointer(point, size: size, dragging: draftFraction != nil)' in tex
 assert 'updatePointer(point, size: size, dragging: false)' in text
 assert '.activeAlways' in text
 assert 'override func hitTest(_ point: NSPoint) -> NSView? { nil }' in text
-assert 'width: rect.width, height: 14' in text  # Explicit fourteen-point rail.
+# Compile the production Shape itself; do not mirror its rectangle arithmetic here.
+hit_start = text.index('struct V3WindowEdgeHitBand: Shape {')
+hit_band = text[hit_start:text.index('\n@MainActor', hit_start)]
+assert '.contentShape(V3WindowEdgeHitBand())' in text
+assert 'V3WindowEdgeHitBand().path(in: CGRect(origin: .zero, size: size)).contains(point)' in text
 assert 'dragTrackKey == state.currentTrackIdentity?.stableKey' in text
 assert '.spring(response: 0.3, dampingFraction: 1)' in text
 
@@ -48,6 +52,21 @@ private func at(_ edge: Edge, depth: CGFloat = 25, tangent: CGFloat = 400) -> CG
     case .right: return CGPoint(x: canvas.width - depth, y: tangent)
     case .bottom: return CGPoint(x: tangent, y: canvas.height - depth)
     case .left: return CGPoint(x: depth, y: tangent)
+    }
+}
+// Resize border stays free; the entire inset seeking band survives resize/orientation.
+for size in [CGSize(width: 900, height: 700), CGSize(width: 700, height: 900),
+             CGSize(width: 1210, height: 820)] {
+    let rect = CGRect(origin: CGPoint(x: 11, y: 17), size: size)
+    let path = V3WindowEdgeHitBand().path(in: rect)
+    for depth: CGFloat in [3, 5.99, 6.01, 12, 19.99, 20.01] {
+        let expected = depth > 6 && depth < 20
+        for point in [CGPoint(x: rect.midX, y: rect.minY + depth),
+                      CGPoint(x: rect.midX, y: rect.maxY - depth),
+                      CGPoint(x: rect.minX + depth, y: rect.midY),
+                      CGPoint(x: rect.maxX - depth, y: rect.midY)] {
+            expect(path.contains(point) == expected, "wrong seek band at depth \(depth), canvas \(size)")
+        }
     }
 }
 private var state = State()
@@ -167,7 +186,7 @@ if not compiler:
 with tempfile.TemporaryDirectory(prefix='lyric-edge-contract-') as temp:
     temp = Path(temp)
     main = temp / 'main.swift'
-    main.write_text('import Foundation\n#if canImport(CoreGraphics)\nimport CoreGraphics\n#endif\n' + core + '\n' + TESTS, encoding='utf-8')
+    main.write_text('import Foundation\nimport SwiftUI\n' + hit_band + core + '\n' + TESTS, encoding='utf-8')
     for flags in (['-Onone'], ['-O']):
         exe = temp / ('test' + flags[0])
         subprocess.run([compiler, '-swift-version', '5', *flags, str(main), '-o', str(exe)], check=True, timeout=60)

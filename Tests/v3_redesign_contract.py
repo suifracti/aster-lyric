@@ -81,11 +81,15 @@ popover_host=window[window.index('func v3ToolPopover<Content: View>'):window.ind
 pinned_host=window[window.index('struct V3PinnedInspectorPanelHost'):window.index('struct QuietToolbarButtonStyle')]
 assert 'v3HoverToolPanelRoot(content())' in popover_host, 'hover panels must use the historical dark glass color scheme'
 assert 'popover.appearance = NSAppearance(named: .darkAqua)' in popover_host, 'hover popovers must restore their historical Dark Aqua material appearance'
-assert pinned_host.count('v3ToolPanelRoot(parent.content)') >= 2, 'pinned tool content must override inherited dark color scheme on create and update'
+assert 'let content = v3ToolPanelRoot(parent.content.onPreferenceChange(' in pinned_host, 'wrap the retained panel content once, with its sizing preference'
+assert 'hosting.rootView = content' in pinned_host, 'updates must reuse the system-appearance wrapper'
+assert 'NSHostingController(rootView: content)' in pinned_host, 'creation must use the same wrapped content'
+assert 'content.environment(\\.colorScheme, V3SystemAppearance.colorScheme)' in window, 'fixed tools must override the main window appearance'
+assert 'controller.view.appearance = V3SystemAppearance.current' in pinned_host and 'panel.appearance = system' in pinned_host, 'hosting view and fixed window must retain system appearance'
 assert 'anchor.onWindowAttachment = { [weak coordinator]' in pinned_host, 'pinned host must retry when its zero-size anchor joins the owner window'
 assert 'override func viewDidMoveToWindow()' in window[window.index('final class V3ToolAnchorView'):window.index('private struct V3ToolPopoverAnchor')], 'tool anchor must signal its AppKit window attachment'
 normalized_window=' '.join(window.split())
-surface=window[window.index('private func inspectorSurface(for panel: ToolbarPopover, style: InspectorSurfaceStyle)'):window.index('private var moreInspectorContent')]
+surface=window[window.index('private func inspectorSurface(for panel: ToolbarPopover, style: InspectorSurfaceStyle)'):window.index('private func sectionEyebrow', window.index('private func inspectorSurface'))]
 assert '.regularMaterial' in surface, 'hover tool panels must retain their frosted glass surface'
 assert 'Color(nsColor: .windowBackgroundColor)' in surface, 'pinned tool panels must use an opaque system-colored surface'
 assert 'V3SystemAppearance.colorScheme == .dark ? Color.black : Color.white' not in surface, 'historical glass must not be covered by an opaque white tint'
