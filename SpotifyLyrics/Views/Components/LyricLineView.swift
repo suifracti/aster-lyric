@@ -669,7 +669,7 @@ struct RubyLineView: View {
 /// digits for its surface runs. Grouping by that stable prefix prevents
 /// `言`/`われ` or `思`/`い` from being wrapped onto different rows while
 /// retaining the corrected per-span ruby mapping.
-private func rubyTokenGroups(_ tokens: [LyricRubyToken]) -> [[LyricRubyToken]] {
+func rubyTokenGroups(_ tokens: [LyricRubyToken]) -> [[LyricRubyToken]] {
     var groups: [[LyricRubyToken]] = []
     var currentKey: Int?
 

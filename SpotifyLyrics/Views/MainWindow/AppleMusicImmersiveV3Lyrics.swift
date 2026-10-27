@@ -1,8 +1,41 @@
 import Foundation
 import SwiftUI
 import AppKit
+import CoreText
 import Combine
 import os
+
+enum V3BigLineLayout {
+    struct Measurement {
+        var lines: Int
+        var height: CGFloat
+        var width: CGFloat
+    }
+    static func text(_ text: String, size: CGFloat, width: CGFloat) -> Measurement {
+        let font = TimedTextComposer.makeSystemFont(size: size, weight: NSFont.Weight(V3LyricMotionPolicy.layoutNSWeight))
+        let ranges = V3LyricDisplayLineBreaker.ranges(text, font: font, width: width)
+        let source = text as NSString
+        let measuredWidth = ranges.map {
+            CTLineGetTypographicBounds(CTLineCreateWithAttributedString(NSAttributedString(string: source.substring(with: $0), attributes: [.font: font])), nil, nil, nil)
+        }.max() ?? 0
+        return Measurement(lines: ranges.count,
+            height: CGFloat(ranges.count) * ceil(CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)), width: measuredWidth)
+    }
+    static func fit(preferredSize: CGFloat, maxHeight: CGFloat,
+                    measure: (CGFloat) -> Measurement) -> CGFloat {
+        func fits(_ size: CGFloat) -> Bool {
+            let value = measure(size)
+            return value.lines <= 2 && value.height <= maxHeight
+        }
+        if fits(preferredSize) { return preferredSize }
+        var low: CGFloat = 0, high = preferredSize
+        for _ in 0..<12 {
+            let middle = (low + high) / 2
+            if fits(middle) { low = middle } else { high = middle }
+        }
+        return max(0.1, low)
+    }
+}
 
 private struct V3LyricsCopyRequest: Identifiable {
     let id = UUID()
@@ -236,7 +269,8 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
     ) -> some View {
         GeometryReader { geometry in
             ScrollViewReader { proxy in
-                let scrollAnchor = V3ResponsiveGeometry.lyricScrollAnchor(
+                let bigLine = settings.v3BigLineModeEnabled && synchronized
+                let scrollAnchor = bigLine ? 0 : V3ResponsiveGeometry.lyricScrollAnchor(
                     viewportHeight: geometry.size.height,
                     stage: stage
                 )
@@ -264,7 +298,8 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                         preferences: state.preferences,
                         presentationClock: state.presentationClock,
                         documentRevision: documentRevision,
-                        verticalPadding: verticalPadding,
+                        verticalPadding: bigLine ? 0 : verticalPadding,
+                        bigLineAvailableHeight: bigLine ? max(1, geometry.size.height - 32) : nil,
                         isPreview: isPreview,
                         loopedLineID: isPreview ? nil : state.loopedLyricLineID,
                         onToggleLoop: { lineID in
@@ -317,7 +352,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                 .id("lyrics-document-\(documentRevision)")
 
                 Group {
-                    if synchronized {
+                    if synchronized && !bigLine {
                         scroll.mask(
                             LinearGradient(
                                 stops: [
@@ -334,6 +369,13 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                         // Plain lyrics are a reading surface: no fake current
                         // line, no distance hierarchy, no clipped first/last row.
                         scroll
+                    }
+                }
+                .padding(.vertical, bigLine ? 16 : 0)
+                .onChange(of: settings.v3BigLineModeEnabled) { _, _ in
+                    DispatchQueue.main.async {
+                        scrollToCurrentLine(using: proxy, lines: lines, currentIndex: currentIndex,
+                            synchronized: synchronized, animated: false, anchorY: scrollAnchor)
                     }
                 }
                 .onAppear {
@@ -435,12 +477,14 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
         )
 #endif
         let action = { proxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: anchorY)) }
-        if animated {
+        if animated && !settings.v3BigLineModeEnabled {
             // Defer so wrap/opacity from this index change commit first.
             // withAnimation around scrollTo otherwise interpolates layout.
             DispatchQueue.main.async {
                 withAnimation(v3LineFollowAnimation, action)
             }
+        } else if settings.v3BigLineModeEnabled {
+            DispatchQueue.main.async(execute: action)
         } else {
             action()
         }
@@ -467,6 +511,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     let presentationClock: LyricsPresentationClock
     let documentRevision: UInt64
     let verticalPadding: CGFloat
+    let bigLineAvailableHeight: CGFloat?
     let isPreview: Bool
     let loopedLineID: UUID?
     let onToggleLoop: (UUID) -> Void
@@ -494,6 +539,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             && (!lhs.needsWordClock || lhs.presentationClock == rhs.presentationClock)
             && lhs.documentRevision == rhs.documentRevision
             && lhs.verticalPadding == rhs.verticalPadding
+            && lhs.bigLineAvailableHeight == rhs.bigLineAvailableHeight
             && lhs.isPreview == rhs.isPreview
             && lhs.loopedLineID == rhs.loopedLineID
     }
@@ -522,7 +568,9 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
         let _ = rubyActionRelay.action = onRuby
         let countdown = countdownWindow
         VStack(alignment: textAlignment.lyricHorizontalAlignment, spacing: rowSpacing) {
-            ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
+            ForEach(Array(lines.enumerated()).filter {
+                bigLineAvailableHeight == nil || $0.offset >= (currentIndex ?? 0)
+            }, id: \.element.id) { index, line in
                 if let window = countdown, window.lineIndex == index {
                     V3VocalCountdown(window: window, clock: presentationClock)
                         .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
@@ -557,13 +605,14 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             isActive: isActive,
             distance: readingScene == .linerNotes ? 0 : (readingScene == .focusedLyrics ? min(1, distance) : distance),
             isSynchronized: synchronized,
-            availableWidth: availableWidth,
+            availableWidth: bigLineAvailableHeight == nil ? availableWidth : max(1, availableWidth - 20),
             compact: compact,
             preferences: preferences,
             language: language,
             trackStableKey: trackStableKey,
             artistDisplay: artistDisplay,
-            presentationClock: presentationClock
+            presentationClock: presentationClock,
+            bigLineAvailableHeight: isActive ? bigLineAvailableHeight : nil
         )
         .equatable()
         .environmentObject(settings)
@@ -1039,6 +1088,7 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
     let trackStableKey: String?
     let artistDisplay: String?
     var presentationClock: LyricsPresentationClock = LyricsPresentationClock()
+    var bigLineAvailableHeight: CGFloat? = nil
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -1059,6 +1109,7 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
             && lhs.clampedDistance == rhs.clampedDistance
             && lhs.isSynchronized == rhs.isSynchronized
             && lhs.availableWidth == rhs.availableWidth
+            && lhs.bigLineAvailableHeight == rhs.bigLineAvailableHeight
             && lhs.compact == rhs.compact
             && lhs.preferences == rhs.preferences
             && lhs.language == rhs.language
@@ -1157,7 +1208,8 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
             scriptConversion: settings.readingPreferences.scriptConversion,
             dictionaryRevision: ReadingUserDictionaryStore.currentRevision,
             presentationScale: presentationScale * (settings.v3BigLineModeEnabled && isSynchronized ? (isActive ? 2 : 0.6) : 1),
-            textAlignment: textAlignment
+            textAlignment: textAlignment,
+            bigLineAvailableHeight: bigLineAvailableHeight
         )
         .equatable()
         // Only the current line emits light; readability protection stays independent.
@@ -1194,6 +1246,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
     let dictionaryRevision: Int
     let presentationScale: CGFloat
     let textAlignment: TextAlignment
+    var bigLineAvailableHeight: CGFloat? = nil
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.rubyCorrectionAction) private var correctRuby
@@ -1205,6 +1258,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
             && lhs.isNearActive == rhs.isNearActive
             && lhs.isSynchronized == rhs.isSynchronized
             && lhs.availableWidth == rhs.availableWidth
+            && lhs.bigLineAvailableHeight == rhs.bigLineAvailableHeight
             && lhs.compact == rhs.compact
             && lhs.preferences == rhs.preferences
             && lhs.language == rhs.language
@@ -1235,20 +1289,71 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
         return max(lowerBound, CGFloat(upperBound) - layerPenalty) * presentationScale
     }
 
-    private var baseSize: CGFloat {
+    private var preferredBaseSize: CGFloat {
         guard isSynchronized else {
             return min((compact ? 30 : 36) * presentationScale, activeBaseSize)
         }
         return activeBaseSize
     }
 
-    private var rubySize: CGFloat {
-        // baseSize * 0.44 provides readable 15-17pt ruby annotations for active lines
-        max(compact ? 12 : 14, min(22, baseSize * 0.44 * preferences.rubyFontSize / 10))
+    private var preferredRubySize: CGFloat {
+        max(compact ? 12 : 14, min(22, preferredBaseSize * 0.44 * preferences.rubyFontSize / 10))
     }
-    private var auxiliarySize: CGFloat {
-        min(compact ? 16 : 18, max(12, baseSize * 0.44 * preferences.assistantFontSize / 14))
+    private var preferredAuxiliarySize: CGFloat {
+        min(compact ? 16 : 18, max(12, preferredBaseSize * 0.44 * preferences.assistantFontSize / 14))
     }
+    private static let bigLineSizeCache: NSCache<NSString, NSNumber> = {
+        let cache = NSCache<NSString, NSNumber>(); cache.countLimit = 256; return cache
+    }()
+    private var baseSize: CGFloat {
+        guard let height = bigLineAvailableHeight else { return preferredBaseSize }
+        let key = "\(line.id)|\(effectiveOriginalText)|\(displayKanaText ?? "")|\(distinctRomaji ?? "")|\(line.translationText ?? "")|\(preferences)|\(height)|\(readableLineWidth)|\(preferredBaseSize)|\(dictionaryRevision)" as NSString
+        if let size = Self.bigLineSizeCache.object(forKey: key) { return CGFloat(size.doubleValue) }
+        let fitted = V3BigLineLayout.fit(preferredSize: preferredBaseSize, maxHeight: height) { size in
+            let ratio = size / preferredBaseSize
+            var main = V3BigLineLayout.Measurement(lines: 0, height: 0, width: 0)
+            if shouldRenderInlineRuby || (preferences.showOriginal && preferences.kanaDisplayMode == .kanaReplacement && shouldShowKana) {
+                let base = TimedTextComposer.makeSystemFont(size: size, weight: NSFont.Weight(V3LyricMotionPolicy.layoutNSWeight))
+                let ruby = TimedTextComposer.makeSystemFont(size: preferredRubySize * ratio, weight: .regular)
+                let groups = rubyTokenGroups(inlineRubyTokens ?? [LyricRubyToken(id: 0, surface: effectiveOriginalText, ruby: displayKanaText)])
+                var rowWidth: CGFloat = 0
+                for group in groups {
+                    let reserve: CGFloat = group.count > 1 && group.filter { $0.ruby != nil }.count == 1 ? 10 : 0
+                    let width = group.reduce(reserve) { total, token in
+                        let text = NSAttributedString(string: token.surface, attributes: [.font: base])
+                        let annotation = NSAttributedString(string: token.ruby ?? "", attributes: [.font: ruby])
+                        return total + CGFloat(max(CTLineGetTypographicBounds(CTLineCreateWithAttributedString(text), nil, nil, nil),
+                            CTLineGetTypographicBounds(CTLineCreateWithAttributedString(annotation), nil, nil, nil)))
+                    }
+                    if main.lines == 0 || rowWidth + width > readableLineWidth { main.lines += 1; rowWidth = 0 }
+                    rowWidth += width
+                    main.width = max(main.width, rowWidth)
+                }
+                main.height = CGFloat(main.lines) * (ceil(CTFontGetAscent(base) + CTFontGetDescent(base)) + ceil(CTFontGetAscent(ruby) + CTFontGetDescent(ruby)) + 4)
+                if main.width > readableLineWidth { main.lines = 3 }
+            } else if preferences.showOriginal || shouldShowKana {
+                main = V3BigLineLayout.text(preferences.showOriginal ? effectiveOriginalText : (displayKanaText ?? ""), size: size, width: readableLineWidth)
+            }
+            var auxiliary: [(String, CGFloat)] = []
+            if preferences.showOriginal && preferences.kanaDisplayMode == .independentLine && shouldShowKana && !readingRepeatsOriginal {
+                auxiliary.append((displayKanaText ?? "", preferredAuxiliarySize * ratio))
+            }
+            if shouldShowRomaji, let romaji = distinctRomaji { auxiliary.append((romaji, preferredAuxiliarySize * ratio)) }
+            if preferences.showTranslation, let translation = line.translationText {
+                auxiliary.append((translation, max(14, preferredAuxiliarySize * 0.94) * ratio))
+            }
+            for (text, fontSize) in auxiliary where !text.isEmpty {
+                main.height += 8 + V3BigLineLayout.text(text, size: fontSize, width: readableLineWidth).height
+            }
+            return main
+        }
+        Self.bigLineSizeCache.setObject(NSNumber(value: Double(fitted)), forKey: key)
+        return fitted
+    }
+    private var fittedRatio: CGFloat { bigLineAvailableHeight == nil ? 1 : baseSize / preferredBaseSize }
+    private var rubySize: CGFloat { preferredRubySize * fittedRatio }
+    private var auxiliarySize: CGFloat { preferredAuxiliarySize * fittedRatio }
+    private var translationSize: CGFloat { max(14, preferredAuxiliarySize * 0.94) * fittedRatio }
 
     private var shouldShowRuby: Bool {
         preferences.kanaDisplayMode == .inlineRuby
@@ -1292,7 +1397,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
     }
 
     private var readableLineWidth: CGFloat {
-        min(max(240, availableWidth), LyricsDesignTokens.readableLyricLineMaxWidth * presentationScale)
+        min(bigLineAvailableHeight == nil ? max(240, availableWidth) : max(1, availableWidth), LyricsDesignTokens.readableLyricLineMaxWidth * presentationScale)
     }
 
     fileprivate static let balancedTextCache: NSCache<NSString, NSString> = {
@@ -1526,7 +1631,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
 
             if preferences.showTranslation, let translation = line.translationText, !translation.isEmpty {
                 Text(translation)
-                    .font(.system(size: max(14, auxiliarySize * 0.94), weight: .medium, design: .rounded))
+                    .font(.system(size: translationSize, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(isActive ? 0.86 : ((previewPresentation ?? settings.v3ArtworkPresentation) == .ambientFeathered ? 0.76 : 0.54)))
                     .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)

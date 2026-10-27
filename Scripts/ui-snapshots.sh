@@ -46,6 +46,8 @@ declare -a CASES=(
   "pin-more-light|--panel pin:more --appearance light"
   "pin-picture-narrow-screen|--panel pin:picture --width 1700 --height 900"
   "scene-originalAmbient|--scene originalAmbient --toolbar faint"
+  "big-line-cover|--scene coverPhoto --artwork white --big-line true --aux-layers --time 18 --fixture-json '${LYRICSQ_BIG_LINE_FIXTURE:-}' --toolbar faint"
+  "big-line-ambient|--scene originalAmbient --artwork white --big-line true --aux-layers --time 18 --fixture-json '${LYRICSQ_BIG_LINE_FIXTURE:-}' --toolbar faint"
   "big-line|--scene originalAmbient --big-line true --toolbar faint"
   "countdown|--scene originalAmbient --countdown true --time 6 --toolbar faint"
   "reading-only|--scene originalAmbient --layers readingOnly --toolbar faint"

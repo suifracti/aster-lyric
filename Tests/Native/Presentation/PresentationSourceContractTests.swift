@@ -5,6 +5,21 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class PresentationSourceContractTests: XCTestCase {
+    func testBigLineShowsTheWholeUnmeiPhraseWithinTwoLinesAndTheColumnHeight() {
+        let phrase = "ずっと前から決めてたんだね"
+        for width: CGFloat in [280, 600] {
+            let size = V3BigLineLayout.fit(preferredSize: 84, maxHeight: 160) {
+                V3BigLineLayout.text(phrase, size: $0, width: width)
+            }
+            let fitted = V3BigLineLayout.text(phrase, size: size, width: width)
+            XCTAssertLessThanOrEqual(fitted.lines, 2)
+            XCTAssertLessThanOrEqual(fitted.height, 160)
+            XCTAssertLessThanOrEqual(fitted.width, width)
+            XCTAssertEqual(V3LyricDisplayLineBreaker.breakText(phrase, fontSize: size,
+                weight: V3LyricMotionPolicy.layoutNSWeight, availableWidth: width).replacingOccurrences(of: "\n", with: ""), phrase)
+        }
+    }
+
     @MainActor
     func testStoppingLibraryCompletionDoesNotStartAnotherSong() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
