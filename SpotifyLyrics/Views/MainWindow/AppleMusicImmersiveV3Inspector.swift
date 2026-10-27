@@ -400,8 +400,7 @@ struct V3VisualControls {
     }
 
     @ViewBuilder var blurControls: some View {
-        if !usesQuietBackground && !(settings.v3ListeningScene == .flowingField && settings.v3ArtworkPresentation == .classic)
-            && settings.v3ArtworkPresentation != .lyricsOnly {
+        if settings.v3ArtworkPresentation != .stage || settings.v3BackgroundShowsCompleteArtwork(for: .stage) {
         VStack(alignment: .leading, spacing: 6) {
             Text("背景封面模糊")
                 .font(.system(size: 12, weight: .medium))
