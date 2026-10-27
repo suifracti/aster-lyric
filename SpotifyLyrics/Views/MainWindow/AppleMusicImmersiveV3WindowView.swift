@@ -642,7 +642,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     }
 
     private func photographicReadingPlacement(canvas: CGSize) -> V3ArtworkSubjectLayout.Placement {
-        var subject: CGRect?
+        var subjects: [CGRect]?
         if let coverSubject {
             let complete = settings.v3BackgroundShowsCompleteArtwork(for: compositionStyle, scene: compositionScene)
             let scale = settings.v3PreviewBackdropScale(for: compositionStyle, scene: compositionScene)
@@ -661,16 +661,18 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     rect.origin.x += min(overscan, max(-overscan, offset))
                 }
             }
-            subject = coverSubject.subject(in: rect)
+            subjects = coverSubject.subjects(in: rect)
         }
-        return V3ArtworkSubjectLayout.placement(subject: subject, canvas: canvas, manualPosition: compositionLyricsPosition)
+        return V3ArtworkSubjectLayout.placement(subjects: subjects, canvas: canvas, manualPosition: compositionLyricsPosition)
     }
 
     private func photographicLayout(in geometry: GeometryProxy) -> some View {
         let compact = geometry.size.width < 760
         let placement = photographicReadingPlacement(canvas: geometry.size)
-        let readingWidth = min(760, max(1, geometry.size.width * (compact ? min(0.90, placement.widthFraction / 0.57 * 0.90) : placement.widthFraction)))
-        let readingHeight = max(1, geometry.size.height * 0.66 - 56)
+        let readingWidth = min(760, max(1, geometry.size.width * (compact ? 0.90 : placement.widthFraction)))
+        let playerHeight: CGFloat = settings.v3EdgeProgressEnabled ? 0 : 44
+        let readingHeight = max(1, min(geometry.size.height * 0.66 - 56,
+            geometry.size.height - 76 - 32 - playerHeight - 12))
         let alignment: Alignment = placement.position == "left" ? .bottomLeading
             : placement.position == "center" ? .bottom : .bottomTrailing
         return ZStack(alignment: .topLeading) {
@@ -690,6 +692,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             VStack(spacing: 12) {
                 lyricsColumn(width: readingWidth, compact: compact, stage: true)
                     .frame(width: readingWidth, height: readingHeight)
+                    .clipped()
                 sceneTransport(width: min(440, readingWidth))
             }
             .padding(.horizontal, compact ? 20 : 40).padding(.bottom, 32)

@@ -7,13 +7,15 @@ import Vision
 enum V3ArtworkSubject {
     struct Analysis: Sendable {
         let imageSize: CGSize
-        /// Normalized top-left coordinates, matching SwiftUI's canvas.
-        let bounds: CGRect
+        /// Normalized top-left attention/face regions, matching SwiftUI's canvas.
+        let regions: [CGRect]
 
-        func subject(in artworkRect: CGRect) -> CGRect {
-            CGRect(x: artworkRect.minX + bounds.minX * artworkRect.width,
-                   y: artworkRect.minY + bounds.minY * artworkRect.height,
-                   width: bounds.width * artworkRect.width, height: bounds.height * artworkRect.height)
+        func subjects(in artworkRect: CGRect) -> [CGRect] {
+            regions.map { region in
+                CGRect(x: artworkRect.minX + region.minX * artworkRect.width,
+                       y: artworkRect.minY + region.minY * artworkRect.height,
+                       width: region.width * artworkRect.width, height: region.height * artworkRect.height)
+            }
         }
     }
 
@@ -41,10 +43,9 @@ enum V3ArtworkSubject {
                 try VNImageRequestHandler(cgImage: image).perform([attention, faces])
                 let regions = (attention.results?.first?.salientObjects ?? []).map(\.boundingBox)
                     + (faces.results ?? []).map(\.boundingBox)
-                guard let first = regions.first else { return nil }
-                let bounds = regions.dropFirst().reduce(first) { $0.union($1) }
+                guard !regions.isEmpty else { return nil }
                 return Analysis(imageSize: CGSize(width: image.width, height: image.height),
-                    bounds: CGRect(x: bounds.minX, y: 1 - bounds.maxY, width: bounds.width, height: bounds.height))
+                    regions: regions.map { CGRect(x: $0.minX, y: 1 - $0.maxY, width: $0.width, height: $0.height) })
             } catch {
                 return nil
             }
@@ -55,22 +56,41 @@ enum V3ArtworkSubject {
 enum V3ArtworkSubjectLayout {
     struct Placement {
         let position: String
-        let widthFraction: CGFloat
+        var widthFraction: CGFloat { 0.57 }
     }
 
-    static func placement(subject: CGRect?, canvas: CGSize, manualPosition: String) -> Placement {
+    static func placement(subjects: [CGRect]?, canvas: CGSize, manualPosition: String) -> Placement {
         if ["left", "center", "right"].contains(manualPosition) {
-            return Placement(position: manualPosition, widthFraction: 0.57)
+            return Placement(position: manualPosition)
         }
-        guard let subject else { return Placement(position: "right", widthFraction: 0.57) }
-        let visible = subject.intersection(CGRect(origin: .zero, size: canvas))
-        guard !visible.isNull, !visible.isEmpty else {
-            return Placement(position: "right", widthFraction: 0.57)
+        let canvasRect = CGRect(origin: .zero, size: canvas)
+        let visible = (subjects ?? []).map { $0.intersection(canvasRect) }.filter { !$0.isNull && !$0.isEmpty }
+        guard let first = visible.first else { return Placement(position: "right") }
+        let bounds = visible.dropFirst().reduce(first) { $0.union($1) }
+        let centre = bounds.midX / max(1, canvas.width)
+        if (0.35...0.65).contains(centre) {
+            let left = CGRect(x: 0, y: 0, width: canvas.width / 2, height: canvas.height)
+            let right = left.offsetBy(dx: canvas.width / 2, dy: 0)
+            return Placement(position: coveredArea(visible, in: left) < coveredArea(visible, in: right) ? "left" : "right")
         }
-        let centre = visible.midX / max(1, canvas.width)
-        if (0.35...0.65).contains(centre), visible.width >= canvas.width * 0.48 {
-            return Placement(position: "center", widthFraction: 0.40)
+        return Placement(position: centre >= 0.5 ? "left" : "right")
+    }
+
+    /// Count overlapping attention/face rectangles once when comparing the two halves.
+    private static func coveredArea(_ regions: [CGRect], in half: CGRect) -> CGFloat {
+        let regions = regions.map { $0.intersection(half) }.filter { !$0.isNull && !$0.isEmpty }
+        let edges = Set(regions.flatMap { [$0.minX, $0.maxX] }).sorted()
+        var area: CGFloat = 0
+        for (left, right) in zip(edges, edges.dropFirst()) {
+            let strip = regions.filter { $0.minX < right && $0.maxX > left }.sorted { $0.minY < $1.minY }
+            var end = -CGFloat.infinity
+            var height: CGFloat = 0
+            for rect in strip {
+                height += max(0, rect.maxY - max(end, rect.minY))
+                end = max(end, rect.maxY)
+            }
+            area += (right - left) * height
         }
-        return Placement(position: centre >= 0.5 ? "left" : "right", widthFraction: 0.57)
+        return area
     }
 }

@@ -28,16 +28,18 @@ final class PresentationSourceContractTests: XCTestCase {
     }
 
     @MainActor
-    func testRightHandCoverSubjectPlacesLyricsLeftAfterCropping() {
+    func testCenteredSubjectWithEmptierRightHalfKeepsNormalLyricWidth() {
         XCTAssertEqual(V3ScenePreset.initial(scene: .coverPhoto, renderer: .ambient).lyricsPosition, "automatic")
-        let analysis = V3ArtworkSubject.Analysis(imageSize: CGSize(width: 800, height: 800),
-            bounds: CGRect(x: 0.67, y: 0.20, width: 0.24, height: 0.65))
+        let analysis = V3ArtworkSubject.Analysis(imageSize: CGSize(width: 800, height: 800), regions: [
+                CGRect(x: 0.16, y: 0.10, width: 0.32, height: 0.80),
+                CGRect(x: 0.48, y: 0.35, width: 0.36, height: 0.20)])
         let canvas = CGSize(width: 1200, height: 800)
         let crop = V3BackdropArtworkGeometry.rect(canvas: canvas, artwork: analysis.imageSize, scale: 1.12, complete: false)
-        let subject = analysis.subject(in: crop)
-        XCTAssertGreaterThan(subject.midX, canvas.width / 2)
-        XCTAssertEqual(V3ArtworkSubjectLayout.placement(subject: subject, canvas: canvas, manualPosition: "automatic").position, "left")
-        XCTAssertEqual(V3ArtworkSubjectLayout.placement(subject: subject, canvas: canvas, manualPosition: "right").position, "right")
+        let subjects = analysis.subjects(in: crop)
+        let placement = V3ArtworkSubjectLayout.placement(subjects: subjects, canvas: canvas, manualPosition: "automatic")
+        XCTAssertEqual(placement.position, "right")
+        XCTAssertEqual(placement.widthFraction, 0.57)
+        XCTAssertEqual(V3ArtworkSubjectLayout.placement(subjects: subjects, canvas: canvas, manualPosition: "left").position, "left")
     }
 
     func testCenteredLibrarySearchOpensSwitchesAndDismissesWithoutAnEdgeHitBand() {
