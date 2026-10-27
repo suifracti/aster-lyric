@@ -231,12 +231,18 @@ public final class TranslationSessionController: ObservableObject {
     }
 
     public func translateCurrentLyrics() {
-        guard let context else { return }
+        guard let context else {
+            state = .failed("当前歌词尚未就绪，请先采用歌词版本")
+            return
+        }
         startTranslation(context, forceNewVersion: false, explicitRequest: true)
     }
 
     public func retranslateCurrentLyrics() {
-        guard let context else { return }
+        guard let context else {
+            state = .failed("当前歌词尚未就绪，请先采用歌词版本")
+            return
+        }
         startTranslation(context, forceNewVersion: true, explicitRequest: true)
     }
 

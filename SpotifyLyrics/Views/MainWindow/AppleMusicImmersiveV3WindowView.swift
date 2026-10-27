@@ -1549,8 +1549,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             ))
             .disabled(!allowsAutomaticTranslation || !settings.aiTranslationConfiguration.isConfigured)
             if case .loading = state.translationState {
-                HStack { ProgressView().controlSize(.small)
-                    Button("取消") { state.cancelTranslation() } }
+                HStack {
+                    ProgressView("翻译中…").controlSize(.small)
+                    Button("取消") { state.cancelTranslation() }
+                }
             } else {
                 HStack {
                     Button("翻译整首") { state.translateCurrentLyrics() }

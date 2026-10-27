@@ -6,6 +6,28 @@ import XCTest
 
 final class PresentationSourceContractTests: XCTestCase {
     @MainActor
+    func testTranslationPanelOfflineRefreshAndMissingLyricsReportAnError() async throws {
+        let suite = "translation-panel-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let configuration = AITranslationConfiguration(model: "offline", engineID: TranslationEngineID.codexChatGPT.rawValue)
+        let directory = TranslationModelSettingsStore(defaults: defaults, configuration: configuration,
+            loader: { _ in throw NSError(domain: "offline", code: 1, userInfo: [NSLocalizedDescriptionKey: "离线模型目录错误"]) })
+        directory.refresh(configuration)
+        XCTAssertEqual(directory.status, .loading)
+        for _ in 0..<100 {
+            if directory.status != .loading { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        guard case .unavailable(let error) = directory.status else { return XCTFail("必须显示目录错误") }
+        XCTAssertTrue(error.contains("离线模型目录错误"))
+        let repository = SQLiteLyricsRepository(databaseURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let translation = TranslationSessionController(repository: repository, engine: nil, acceptanceBudget: nil)
+        translation.translateCurrentLyrics()
+        XCTAssertEqual(translation.state, .failed("当前歌词尚未就绪，请先采用歌词版本"))
+    }
+
+    @MainActor
     func testAtmospherePresetRespondsInItsPaddedArea() async throws {
         let suite = "preset-hit-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!

@@ -907,18 +907,32 @@ struct TranslationProviderControls: View {
     /// Shared with the listening panel; changing a model uses the same provider policy.
     var modelPicker: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Picker("AI 模型", selection: modelBinding) {
-                if !settings.aiCachedModels.contains(where: { $0.id == settings.aiTranslationConfiguration.model }) {
-                    Text(settings.aiTranslationConfiguration.model.isEmpty ? "选择模型" : settings.aiTranslationConfiguration.model)
-                        .tag(settings.aiTranslationConfiguration.model)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Picker("AI 模型", selection: modelBinding) {
+                    if !settings.aiCachedModels.contains(where: { $0.id == settings.aiTranslationConfiguration.model }) {
+                        Text(settings.aiTranslationConfiguration.model.isEmpty ? "选择模型" : settings.aiTranslationConfiguration.model)
+                            .tag(settings.aiTranslationConfiguration.model)
+                    }
+                    ForEach(settings.aiCachedModels, id: \.id) { model in
+                        Text(model.displayName).tag(model.id)
+                    }
                 }
-                ForEach(settings.aiCachedModels, id: \.id) { model in
-                    Text(model.displayName).tag(model.id)
+                .disabled(provider == TranslationEngineID.appleSystem.rawValue)
+                .onAppear { _ = settings.translationModelSettings }
+                .accessibilityIdentifier("ai.model")
+                Button(settings.aiModelDirectoryStatus == .loading ? "刷新中…" : "刷新") {
+                    settings.refreshAIModelDirectory()
                 }
+                .disabled(settings.aiModelDirectoryStatus == .loading || provider == TranslationEngineID.appleSystem.rawValue)
+                .accessibilityLabel("刷新 AI 模型")
             }
-            .disabled(provider == TranslationEngineID.appleSystem.rawValue)
-            .onAppear { _ = settings.translationModelSettings }
-            .accessibilityIdentifier("ai.model")
+            switch settings.aiModelDirectoryStatus {
+            case .unauthorized, .endpointUnsupported, .empty:
+                Text(settings.aiModelDirectoryStatus.userFacingTitle).font(.caption).foregroundStyle(.orange)
+            case .unavailable(let error):
+                Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+            default: EmptyView()
+            }
             DisclosureGroup("手动填写模型 ID") {
                 TextField("此服务的模型 ID", text: modelBinding)
                     .textFieldStyle(.roundedBorder)
