@@ -12,6 +12,9 @@ final class PresentationSourceContractTests: XCTestCase {
                     SongSearchResult(id: "local", source: .local, track: other, confidence: 1),
                     SongSearchResult(id: "online", source: .spotifyCatalog, track: other, confidence: 1)]
         XCTAssertEqual(V3SearchPanel.otherSongs(rows, current: playing).map(\.track.title), ["Other"])
+        let anotherRecording = Track(title: playing.title, artist: playing.artist, album: "Another recording", duration: 180, spotifyId: "another-recording")
+        XCTAssertEqual(V3SearchPanel.otherSongs([SongSearchResult(id: "another-recording", source: .spotifyCatalog,
+            track: anotherRecording, confidence: 1)], current: playing).count, 1)
     }
 
     func testResizeEdgeAtThreePointsCannotStartAProgressSeek() {

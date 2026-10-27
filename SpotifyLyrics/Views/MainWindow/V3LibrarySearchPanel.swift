@@ -25,7 +25,11 @@ struct V3LibrarySearchPanel: View {
     @StateObject private var library = PersonalLyricsLibraryService()
     @StateObject private var batch = LyricsBatchCompletion()
     @State private var selectedKey: String?
-    @State private var query = ""
+    @State private var queries: [V3LibrarySearchPresentation.Tab: String] = [:]
+    private var query: String {
+        get { queries[presentation.tab ?? .library] ?? "" }
+        nonmutating set { queries[presentation.tab ?? .library] = newValue }
+    }
     @State private var filter: LibraryFilter = ProcessInfo.processInfo.arguments.contains("--library-missing") ? .missing : .all
 
     private enum LibraryFilter: String, CaseIterable {
@@ -62,7 +66,7 @@ struct V3LibrarySearchPanel: View {
                             ForEach(V3LibrarySearchPresentation.Tab.allCases) { Text($0.title).tag($0) }
                         }
                         .pickerStyle(.segmented).labelsHidden().frame(width: 210)
-                        TextField(presentation.tab == .search ? "搜索歌曲或艺人" : presentation.tab == .playlists ? "搜索歌单或歌曲" : "搜索歌词库", text: $query)
+                        TextField(presentation.tab == .search ? "搜索歌曲或艺人" : presentation.tab == .playlists ? "搜索歌单或歌曲" : "搜索歌词库", text: Binding(get: { query }, set: { query = $0 }))
                             .textFieldStyle(.roundedBorder)
                             .onSubmit { updateSearch() }
                         managementMenu

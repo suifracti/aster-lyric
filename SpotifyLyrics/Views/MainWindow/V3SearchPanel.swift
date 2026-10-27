@@ -31,8 +31,9 @@ struct V3SearchPanel: View {
         return results.filter { result in
             if let current {
                 let lhs = TrackIdentity(track: result.track), rhs = TrackIdentity(track: current)
-                if let id = lhs.spotifyTrackID, id == rhs.spotifyTrackID { return false }
-                if TrackTextNormalizer.normalize(result.track.title) == TrackTextNormalizer.normalize(current.title),
+                if let id = lhs.spotifyTrackID, let currentID = rhs.spotifyTrackID {
+                    if id == currentID { return false }
+                } else if TrackTextNormalizer.normalize(result.track.title) == TrackTextNormalizer.normalize(current.title),
                    TrackTextNormalizer.normalizeArtistToken(result.track.artist) == TrackTextNormalizer.normalizeArtistToken(current.artist) { return false }
             }
             return seen.insert(result.searchMergeKey).inserted
