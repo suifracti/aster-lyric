@@ -395,7 +395,13 @@ struct V3VisualControls {
         return "自定"
     }
 
-    var blurControls: some View {
+    private var usesQuietBackground: Bool {
+        settings.v3ListeningScene == .focusedLyrics || settings.v3ListeningScene == .linerNotes
+    }
+
+    @ViewBuilder var blurControls: some View {
+        if !usesQuietBackground && !(settings.v3ListeningScene == .flowingField && settings.v3ArtworkPresentation == .classic)
+            && settings.v3ArtworkPresentation != .lyricsOnly {
         VStack(alignment: .leading, spacing: 6) {
             Text("背景封面模糊")
                 .font(.system(size: 12, weight: .medium))
@@ -404,9 +410,11 @@ struct V3VisualControls {
             HStack {
                 blurPresetButton("0%", val: 0); Spacer()
                 blurPresetButton("25%", val: 25); Spacer()
-                blurPresetButton("60%", val: 60); Spacer()
+                blurPresetButton("50%", val: 50); Spacer()
+                blurPresetButton("75%", val: 75); Spacer()
                 blurPresetButton("100%", val: 100)
             }
+        }
         }
     }
 
@@ -441,7 +449,7 @@ struct V3VisualControls {
     }
 
     @ViewBuilder var backgroundMotionControls: some View {
-        if settings.v3ArtworkPresentation != .classicGaussian {
+        if !usesQuietBackground && settings.v3ArtworkPresentation != .classicGaussian {
             HStack {
                 Text("背景动态")
                 Spacer()
@@ -450,9 +458,6 @@ struct V3VisualControls {
                 atmosphereButton("鲜明", level: 2)
             }
             .help("暂停、窗口隐藏或系统减少动态效果时停止装饰运动。")
-        } else {
-            Label("纯高斯保持静态", systemImage: "circle.lefthalf.filled")
-                .font(.system(size: 12)).foregroundStyle(Color.secondary)
         }
     }
 

@@ -35,6 +35,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
             .background(GeometryReader { geometry in
                 Color.clear.preference(key: V3ToolPanelHeight.self, value: geometry.size.height)
             })
