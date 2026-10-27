@@ -177,6 +177,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var pinchStartFontSize: CGFloat?
     @State private var coverAccent: Color?
     @State private var coverLuminance: Double = 0
+    @State private var coverSubject: V3ArtworkSubject.Analysis?
     @State private var showsListeningKeys = false
     @State private var isFocusMode = false
     @State private var isSideDrawerOpen = false
@@ -193,6 +194,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private var compositionStyle: V3ArtworkPresentation { hoveredStyle ?? settings.v3ArtworkPresentation }
     private var compositionArtworkPosition: String { settings.v3PreviewPosition(for: compositionStyle, scene: compositionScene) }
     private var compositionLyricsPosition: String { settings.v3PreviewLyricsPosition(for: compositionStyle, scene: compositionScene) }
+    private var usesArtworkSubjectPlacement: Bool {
+        compositionScene == .coverPhoto || (compositionScene == nil && compositionStyle == .stage)
+    }
     private var compositionArtworkScale: Double { settings.v3PreviewScale(for: compositionStyle, scene: compositionScene) }
     /// 清晰度 resolved once per composition so the bright-cover automatic
     /// shadow (封面 and 舞台 with a bright cover) applies everywhere at once.
@@ -540,6 +544,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             coverAccent = LyricIslandArtworkColors.listeningAccent(palette)
             coverLuminance = palette.luminance
         }
+        .task(id: "\(usesArtworkSubjectPlacement)|\(compositionTrack.artworkURL?.absoluteString ?? "none")") {
+            coverSubject = nil
+            guard usesArtworkSubjectPlacement else { return }
+            let subject = await V3ArtworkSubject.analysis(for: compositionTrack.artworkURL)
+            guard !Task.isCancelled else { return }
+            coverSubject = subject
+        }
         .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: liveOnly ? state.liveLyrics : state.lyrics))
         .environment(\.v3PlaybackInteractionChanged, playbackInteractionRelay)
         .environment(\.lyricIslandScene, compositionScene)
@@ -632,12 +643,38 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
+    private func photographicReadingPlacement(canvas: CGSize) -> V3ArtworkSubjectLayout.Placement {
+        var subject: CGRect?
+        if let coverSubject {
+            let complete = settings.v3BackgroundShowsCompleteArtwork(for: compositionStyle, scene: compositionScene)
+            let scale = settings.v3PreviewBackdropScale(for: compositionStyle, scene: compositionScene)
+            let effectiveScale = V3BackdropArtworkGeometry.imageScale(requested: scale, complete: complete)
+            var rect: CGRect
+            if compositionStyle == .stage && complete {
+                rect = V3ResponsiveGeometry.stageArtworkRect(canvasSize: canvas,
+                    artworkAspectRatio: coverSubject.imageSize.width / coverSubject.imageSize.height)
+            } else {
+                rect = V3BackdropArtworkGeometry.rect(canvas: canvas, artwork: coverSubject.imageSize,
+                    scale: effectiveScale, complete: complete)
+                if compositionStyle == .classicGaussian && !complete {
+                    let offset = V3BackdropArtworkGeometry.horizontalOffset(width: canvas.width,
+                        scale: scale, effectiveScale: effectiveScale, position: compositionArtworkPosition)
+                    let overscan = max(0, (rect.width - canvas.width) / 2)
+                    rect.origin.x += min(overscan, max(-overscan, offset))
+                }
+            }
+            subject = coverSubject.subject(in: rect)
+        }
+        return V3ArtworkSubjectLayout.placement(subject: subject, canvas: canvas, manualPosition: compositionLyricsPosition)
+    }
+
     private func photographicLayout(in geometry: GeometryProxy) -> some View {
         let compact = geometry.size.width < 760
-        let readingWidth = min(760, max(1, geometry.size.width * (compact ? 0.90 : 0.57)))
+        let placement = photographicReadingPlacement(canvas: geometry.size)
+        let readingWidth = min(760, max(1, geometry.size.width * (compact ? min(0.90, placement.widthFraction / 0.57 * 0.90) : placement.widthFraction)))
         let readingHeight = max(1, geometry.size.height * 0.66 - 56)
-        let alignment: Alignment = compositionLyricsPosition == "left" ? .bottomLeading
-            : compositionLyricsPosition == "center" ? .bottom : .bottomTrailing
+        let alignment: Alignment = placement.position == "left" ? .bottomLeading
+            : placement.position == "center" ? .bottom : .bottomTrailing
         return ZStack(alignment: .topLeading) {
             HStack(spacing: 12) {
                 if compositionShowsCover {
@@ -1167,7 +1204,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             canvasSize: geometry.size,
             artworkAspectRatio: 1,
             position: compositionArtworkPosition,
-            lyricPosition: compositionLyricsPosition,
+            lyricPosition: photographicReadingPlacement(canvas: geometry.size).position,
             readingScale: presentationScale
         )
         let hudWidth = max(1, min(960, canvasWidth - (compact ? 40 : 80)))

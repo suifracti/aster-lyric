@@ -232,6 +232,7 @@
 		A1B2C3D42D83400100000001 /* PlaylistPickerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D42D83400000000000 /* PlaylistPickerModel.swift */; };
 		A1B2C3D52D83400100000001 /* PlaylistPickerPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D52D83400000000000 /* PlaylistPickerPopover.swift */; };
 		A1B2C3D72D83400100000001 /* AppleMusicPlaylistCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D72D83400000000000 /* AppleMusicPlaylistCatalog.swift */; };
+		6AA0115DEFD02FBE35002A8F /* V3ArtworkSubject.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E71A532AFA7B1171B4171CD /* V3ArtworkSubject.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -466,6 +467,7 @@
 		A1B2C3D42D83400000000000 /* PlaylistPickerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistPickerModel.swift; sourceTree = "<group>"; };
 		A1B2C3D52D83400000000000 /* PlaylistPickerPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistPickerPopover.swift; sourceTree = "<group>"; };
 		A1B2C3D72D83400000000000 /* AppleMusicPlaylistCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicPlaylistCatalog.swift; sourceTree = "<group>"; };
+		5E71A532AFA7B1171B4171CD /* V3ArtworkSubject.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3ArtworkSubject.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -702,6 +704,7 @@
 				E8951C4FD56903AA1BB468F4 /* DesktopPlaybackEvents.swift */,
 				1100000F2D83400100000000 /* MockPlaybackProvider.swift */,
 				110000102D83400100000000 /* ArtworkImageLoader.swift */,
+				5E71A532AFA7B1171B4171CD /* V3ArtworkSubject.swift */,
 				110000432D83400100000000 /* NetEaseExperimentalLyricsProvider.swift */,
 				110000442D83400100000000 /* QQExperimentalLyricsProvider.swift */,
 				A60F09060000000000000100 /* LyricsOVHProvider.swift */,
@@ -965,6 +968,7 @@
 				9325E1D1CCBCA0FCE0FDF9CC /* DesktopPlaybackEvents.swift in Sources */,
 				1100000F2D83400100000001 /* MockPlaybackProvider.swift in Sources */,
 				110000102D83400100000001 /* ArtworkImageLoader.swift in Sources */,
+				6AA0115DEFD02FBE35002A8F /* V3ArtworkSubject.swift in Sources */,
 				110000122D83400100000001 /* TrackIdentity.swift in Sources */,
 				110000132D83400100000001 /* LyricsModels.swift in Sources */,
 				110000142D83400100000001 /* LRCParser.swift in Sources */,

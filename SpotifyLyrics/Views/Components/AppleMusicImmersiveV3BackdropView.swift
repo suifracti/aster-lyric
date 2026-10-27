@@ -20,6 +20,20 @@ enum V3BackdropArtworkGeometry {
         return scale * (complete ? 1 : 1.12)
     }
 
+    static func horizontalOffset(width: CGFloat, scale: CGFloat, effectiveScale: CGFloat, position: String) -> CGFloat {
+        guard scale > 0.8 else { return 0 }
+        let progress = (scale - 0.8) / (1.4 - 0.8)
+        let targetRatio: CGFloat
+        switch position {
+        case "right": targetRatio = 0.10
+        case "center": targetRatio = 0
+        default: targetRatio = -0.10
+        }
+        let requestedOffset = targetRatio * width * progress
+        let availableOverscan = max(0, (effectiveScale - 1.0) * width * 0.5)
+        return min(availableOverscan, max(-availableOverscan, requestedOffset))
+    }
+
     static func rect(canvas: CGSize, artwork: CGSize, scale: Double, complete: Bool) -> CGRect {
         let aspect = max(0.01, artwork.width / max(1, artwork.height))
         let fitHeight = min(canvas.height, canvas.width / aspect)
@@ -838,17 +852,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
     }
 
     private func classicArtworkOffset(for width: CGFloat, scale: CGFloat, effectiveScale: CGFloat) -> CGFloat {
-        guard scale > 0.8 else { return 0 }
-        let progress = (scale - 0.8) / (1.4 - 0.8)
-        let targetRatio: CGFloat
-        switch artworkPosition {
-        case "right": targetRatio = 0.10
-        case "center": targetRatio = 0
-        default: targetRatio = -0.10
-        }
-        let requestedOffset = targetRatio * width * progress
-        let availableOverscan = max(0, (effectiveScale - 1.0) * width * 0.5)
-        return min(availableOverscan, max(-availableOverscan, requestedOffset))
+        V3BackdropArtworkGeometry.horizontalOffset(width: width, scale: scale, effectiveScale: effectiveScale,
+                                                   position: artworkPosition)
     }
 
     @MainActor

@@ -53,6 +53,8 @@ declare -a CASES=(
   "drawer-search|--drawer search --toolbar faint"
   "scene-flowingField|--scene flowingField --toolbar faint"
   "scene-coverPhoto|--scene coverPhoto --toolbar faint"
+  "cover-subject-a|--scene coverPhoto --artwork bright --artwork-path '${LYRICSQ_COVER_A:-}' --toolbar faint"
+  "cover-subject-b|--scene coverPhoto --artwork dark --artwork-path '${LYRICSQ_COVER_B:-}' --toolbar faint"
   "scene-linerNotes|--scene linerNotes --toolbar faint"
   "scene-focusedLyrics|--scene focusedLyrics --toolbar faint"
   "scene-flowingField-feathered|--scene flowingField --renderer v3ArtworkPresentation.feathered.v1 --toolbar faint"
