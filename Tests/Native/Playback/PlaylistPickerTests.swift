@@ -127,7 +127,13 @@ final class PlaylistPickerTests: XCTestCase {
         catalog.membershipCheck = { track, playlist in
             try await service.playlistTrackIDs(playlist, accessToken: "fixture").contains(track)
         }
-        let model = model(catalog)
+        let playing = Track(title: "Light source", artist: "kyiku", album: "Even if it was a small prayer",
+                            duration: 246.49, spotifyId: "spotify:track:" + original)
+        let requestID = PlaybackState.playlistRequestTrackID(for: playing, source: .spotifyDesktop)
+        XCTAssertEqual(requestID, original, "The player's mixed-case ID must reach the playlist API unchanged")
+        XCTAssertEqual(TrackIdentity(track: playing).spotifyTrackID, original.lowercased(), "Storage identity stays unchanged")
+        let model = PlaylistPickerModel(catalog: catalog, trackID: { requestID },
+                                         likedState: { false }, applyLiked: { $0 })
         for row in catalog.rows { model.ensureMembership(for: row) }
         await waitUntil { model.checking.isEmpty }
         XCTAssertTrue(model.isMember(catalog.rows[0]))

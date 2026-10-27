@@ -1824,11 +1824,12 @@ public final class PlaybackState: ObservableObject {
     /// playlist API expects.
     private var playlistTrackID: String? {
         guard hasLiveTrack else { return nil }
-        let track = currentTrack
-        if playbackSourceIdentity == .appleMusic {
-            return TrackIdentity.playbackID(for: track)
-        }
-        return TrackIdentity(track: track).spotifyTrackID
+        return Self.playlistRequestTrackID(for: currentTrack, source: playbackSourceIdentity)
+    }
+
+    static func playlistRequestTrackID(for track: Track, source: PlaybackSourceIdentity) -> String? {
+        if source == .appleMusic { return TrackIdentity.playbackID(for: track) }
+        return TrackIdentity.spotifyRequestTrackID(track.spotifyId)
     }
 
     public var canPickPlaylists: Bool {
