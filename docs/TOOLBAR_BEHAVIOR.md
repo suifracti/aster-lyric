@@ -407,17 +407,17 @@ A control never appears on both sides. Where the other side used to have it, sho
 
 ### 事实基线（实施前必须刷新）
 
-- 审计时 GitHub \`main = 91e1814db1b527c6513855de24f39f7dafc9c211\`。**这是截点，不是固定施工基线**；Codex 启动和每次提交前先 \`git fetch\`，核对真正 \`origin/main\` 与 dirty，不 reset/clean/stash/force-push，不覆盖 \`.planning/\`、\`.workbuddy/\`、正式数据库或本机未提交代码。
-- Round 5 **代码已提交**：大字模式防裁切 \`5ff0d7b4\`，边缘seek内移+短拖动条 \`5defd615\`，歌词库双栏 \`53a14735\`，搜索分组 \`49b2591e\`，歌单与队列 \`369f9616\`，后续修补至 \`91e1814\`。**不重复开发。**
-- Round 4 **四项代码也已经提交**：按歌词语言记忆读音显示 \`135e3744\`、免费来源批量补词 \`967e9823\`、睡眠定时 \`981e9ee9\`、当前句发光强度 \`7c27b212\`。不要再作为“第10条待选功能”立项。
-- 本机执行者报告 Debug Xcode 构建和 **110 PASS、1 SKIP、0 FAIL**，以及四张 **离屏**截图；这些不等于用户真实桌面交互、真实 Spotify 控制或稳定低占用已经通过。既有截图与报告位置：\`/Users/apple/backup/sptifylyrics/.local/round5-20261027/\`；能访问时直接复用，不要求用户重传。
-- GitHub Actions \`40478095735\` 对 \`91e1814\` 的完整 macOS App 构建及 XCTest 步骤 **通过**，但整条 workflow 为 **FAIL**，因为额外的 Python 源码合同有 **两项旧检查失败**；不能整体宣称 CI 绿灯，也不能把这两项当成已复现的 UI Bug。
+- 审计时 GitHub `main = 91e1814db1b527c6513855de24f39f7dafc9c211`。**这是截点，不是固定施工基线**；Codex 启动和每次提交前先 `git fetch`，核对真正 `origin/main` 与 dirty，不 reset/clean/stash/force-push，不覆盖 `.planning/`、`.workbuddy/`、正式数据库或本机未提交代码。
+- Round 5 **代码已提交**：大字模式防裁切 `5ff0d7b4`，边缘seek内移+短拖动条 `5defd615`，歌词库双栏 `53a14735`，搜索分组 `49b2591e`，歌单与队列 `369f9616`，后续修补至 `91e1814`。**不重复开发。**
+- Round 4 **四项代码也已经提交**：按歌词语言记忆读音显示 `135e3744`、免费来源批量补词 `967e9823`、睡眠定时 `981e9ee9`、当前句发光强度 `7c27b212`。不要再作为“第10条待选功能”立项。
+- 本机执行者报告 Debug Xcode 构建和 **110 PASS、1 SKIP、0 FAIL**，以及四张 **离屏**截图；这些不等于用户真实桌面交互、真实 Spotify 控制或稳定低占用已经通过。既有截图与报告位置：`/Users/apple/backup/sptifylyrics/.local/round5-20261027/`；能访问时直接复用，不要求用户重传。
+- GitHub Actions `40478095735` 对 `91e1814` 的完整 macOS App 构建及 XCTest 步骤 **通过**，但整条 workflow 为 **FAIL**，因为额外的 Python 源码合同有 **两项旧检查失败**；不能整体宣称 CI 绿灯，也不能把这两项当成已复现的 UI Bug。
 
 ### R6-1｜先清理这两项过时检查，不改回已批准的产品行为（P0）
 
-**A. 边缘轨道合同**：\`Tests/v3_edge_pointer_state_contract.py\` 仍硬编码期待旧 \`height: 14\` 的沿边输入区域。Round 5 已将可操作区域改到窗口内侧 **6–20pt**，避免与 macOS 窗口缩放重叠。改测试为验证**当前生产命中带真实几何**（至少包括离边缘3pt不能触发seek、6–20pt有效、窗口尺寸/方向变化后仍一致），不因为旧字符串不见了就报错。保留“旧歌曲拖动不能seek新歌曲”、鼠标跟踪不吞按钮、窗口边缘常驻进度等已有保护。
+**A. 边缘轨道合同**：`Tests/v3_edge_pointer_state_contract.py` 仍硬编码期待旧 `height: 14` 的沿边输入区域。Round 5 已将可操作区域改到窗口内侧 **6–20pt**，避免与 macOS 窗口缩放重叠。改测试为验证**当前生产命中带真实几何**（至少包括离边缘3pt不能触发seek、6–20pt有效、窗口尺寸/方向变化后仍一致），不因为旧字符串不见了就报错。保留“旧歌曲拖动不能seek新歌曲”、鼠标跟踪不吞按钮、窗口边缘常驻进度等已有保护。
 
-**B. 外置工具窗合同**：\`Tests/v3_redesign_contract.py\` 旧断言要求 \`v3ToolPanelRoot(parent.content)\` 出现至少两次。当前 \`AppleMusicImmersiveV3Toolbar.swift\` 改成一次创建 \`let content = v3ToolPanelRoot(parent.content.onPreferenceChange(...))\`，再分别用于 \`NSHostingController(rootView: content)\` 与 \`hosting.rootView = content\`。合同应验证**创建和更新同一套系统外观包装、固定窗与悬停窗的外观隔离，以及固定面板保留内容**，不以调用字符串出现次数判断功能。不得为了测试重新挂两份活跃面板，也不得删除其他身份/偏好/取消预览检查。
+**B. 外置工具窗合同**：`Tests/v3_redesign_contract.py` 旧断言要求 `v3ToolPanelRoot(parent.content)` 出现至少两次。当前 `AppleMusicImmersiveV3Toolbar.swift` 改成一次创建 `let content = v3ToolPanelRoot(parent.content.onPreferenceChange(...))`，再分别用于 `NSHostingController(rootView: content)` 与 `hosting.rootView = content`。合同应验证**创建和更新同一套系统外观包装、固定窗与悬停窗的外观隔离，以及固定面板保留内容**，不以调用字符串出现次数判断功能。不得为了测试重新挂两份活跃面板，也不得删除其他身份/偏好/取消预览检查。
 
 提交一个精确的测试修订，执行受影响的两个脚本及仓库现有 CI；要求 **native XCTest 与 source contracts 全部通过**。如果出现的是新行为失败而非陈旧断言，记录实因并定点修生产代码。不要以跳过脚本、修改 CI 成总是成功或大删断言来“修绿”。
 
@@ -429,7 +429,7 @@ A control never appears on both sides. Where the other side used to have it, sho
 2. **边缘进度/胶囊**：靠边3pt处不能seek/夺走系统窗口缩放；6–20pt能选/拖进度；横排与竖排胶囊中的短进度条都能拖动、能读时间；靠近四边唤出按钮位置不跳；轨道始终可见，拖动期间切歌不能误seek新歌。检验顶栏打开时边缘控制被压制，不抢浮层/歌词点击。
 3. **居中浮层歌词库**：默认选中当前歌；标签/过滤、左右两栏及「⋯」操作布局清晰；**预览不等于采用**；采用、锁定、人工版本与原词/译文/读音/时间轴仍对应；关闭与在新窗口打开正常，不把灰色遮罩留在主窗。
 4. **搜索**：本首「歌词版本」与「其他歌曲」分区清楚；同一录音不重复展示；不同 Spotify track ID 不被误合并；「查看歌词」不自动播放，「▶」才播放；逐字/逐行/纯文本与时长差确实取自候选证据；标签切换后各自查询与选中状态不串。
-5. **歌单/播放队列**：悬停显示队列接下来的5首；歌单双栏与收藏勾选状态清晰；模拟歌单中第3首播放时 \`offset=2\`，且使用该歌单 \`context_uri\`；Spotify 未登录、401/403、无Premium、空歌单都给正确状态，不假装“没有歌单”。**自动测试仅用可控桩，不向用户真实 Spotify 发写请求**；真实播放留用户自行试用。
+5. **歌单/播放队列**：悬停显示队列接下来的5首；歌单双栏与收藏勾选状态清晰；模拟歌单中第3首播放时 `offset=2`，且使用该歌单 `context_uri`；Spotify 未登录、401/403、无Premium、空歌单都给正确状态，不假装“没有歌单”。**自动测试仅用可控桩，不向用户真实 Spotify 发写请求**；真实播放留用户自行试用。
 
 原生截图优先使用已存在的 Round5 四张；必要时取少量新图。屏幕接口故障（例如 ScreenCaptureKit -3811）不得阻塞实施，不用重新造截图工具或移动用户全局鼠标。
 
@@ -442,12 +442,12 @@ A control never appears on both sides. Where the other side used to have it, sho
 
 ### R6-4｜自动歌词在真实欠缺曲目上做定点复核（P2）
 
-保留原有身份证据规则，**不能通过全局降低阈值换取“自动率”**。区分“来源查不到正文”“来源超时/500/503”“来源有纯文本但无时间轴”“当前曲目与候选不同录音”。可复用历史用例：HANABI/SACBEN 发行方有公开32行未同步文本；WAITING AT 3AM 当前发行页尚无正文；Piano Ver. 与普通编曲必须分辨。实际有可信歌词时完成 \`搜索→AUTO_ADOPT→主窗显示→A→B→A缓存命中\` 的日用闭环，手选/锁定版本不得被覆盖。无法获得歌词时保留诚实状态，不把没有正文推断为纯音乐。
+保留原有身份证据规则，**不能通过全局降低阈值换取“自动率”**。区分“来源查不到正文”“来源超时/500/503”“来源有纯文本但无时间轴”“当前曲目与候选不同录音”。可复用历史用例：HANABI/SACBEN 发行方有公开32行未同步文本；WAITING AT 3AM 当前发行页尚无正文；Piano Ver. 与普通编曲必须分辨。实际有可信歌词时完成 `搜索→AUTO_ADOPT→主窗显示→A→B→A缓存命中` 的日用闭环，手选/锁定版本不得被覆盖。无法获得歌词时保留诚实状态，不把没有正文推断为纯音乐。
 
 ### 性能、协作与完成判据
 
-- **优先最小修改**：各子项独立一次提交，做完正常推送 \`main\` 并读回；提交前先 fetch/reconcile 同时发生的开发，不强推，不改前面已认可的原版环境光、羽化/柔焦/高斯、四场景分类或八个 renderer rawID。
+- **优先最小修改**：各子项独立一次提交，做完正常推送 `main` 并读回；提交前先 fetch/reconcile 同时发生的开发，不强推，不改前面已认可的原版环境光、羽化/柔焦/高斯、四场景分类或八个 renderer rawID。
 - **30秒快速筛查**：影响UI/动画/窗口的修改，用同一Mac、同构建优化、同曲同窗同文字层，基线与候选比较 CPU/RSS（必要时 WindowServer）。这是回归筛查，不保证长期绝对低占用；出现持续增高先定位该项，不花半小时调鼠标脚本。禁止每行 Timer、逐帧全局 State 更新、预建所有场景或高分辨率逐帧模糊。
 - **保护数据**：不覆盖正式安装版、SQLite、Keychain、手选或锁定歌词；不擅自调用付费 AI、不扩大账号权限、自动测试不直接修改真实用户歌单。
-- **提交/报告**：每项说明实际修了什么、提交 SHA、受影响的一条真实检查及结果，\`NOT_RUN\` 单独列明。最终只发一份简短总报告（含来源测试 PASS/FAIL、Xcode XCTest、4处重要UI状态、CPU/RSS对照、尚未实测的 Spotify 写操作）。不要求用户逐步转发或做全量回归。
+- **提交/报告**：每项说明实际修了什么、提交 SHA、受影响的一条真实检查及结果，`NOT_RUN` 单独列明。最终只发一份简短总报告（含来源测试 PASS/FAIL、Xcode XCTest、4处重要UI状态、CPU/RSS对照、尚未实测的 Spotify 写操作）。不要求用户逐步转发或做全量回归。
 - **停止线**：Round6不再新增功能、不另造UI体系。上述问题均无真实缺陷时就收口；需要新设计的意见另记候选，不在本轮无边界扩大范围。
