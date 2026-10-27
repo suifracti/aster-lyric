@@ -33,6 +33,7 @@ declare -a CASES=(
   "search-panel|--surface search-panel --appearance light"
   "search-full|--surface search-full --appearance light"
   "pin-picture|--panel pin:picture"
+  "pin-more-sleep|--panel pin:more --sleep-timer"
   "pin-more|--panel pin:more"
   "hover-picture|--panel hover:picture"
   "hover-text|--panel hover:text"

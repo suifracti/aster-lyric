@@ -1930,6 +1930,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     visualControls.pictureAdvancedControls(showsExplanations: false)
                 }
             case .more:
+                SleepTimerControls(timer: state.sleepTimer, select: state.configureSleepTimer)
+                Divider()
                 LyricsPresentationOffsetControl(settings: settings, showsLegacyNotice: false, showsExplanations: false)
                 Divider()
                 windowModePanel

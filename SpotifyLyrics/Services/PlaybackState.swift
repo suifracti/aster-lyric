@@ -17,6 +17,7 @@ public enum LibraryToolTab: String, CaseIterable, Identifiable {
 
 @MainActor
 public final class PlaybackState: ObservableObject {
+    public let sleepTimer = SleepTimerController()
 #if DEBUG
     private static let seekLogger = Logger(subsystem: "com.spotifylyrics.app", category: "seek")
 #endif
@@ -1859,6 +1860,14 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
+    public func configureSleepTimer(_ option: SleepTimerOption) {
+        sleepTimer.start(option, trackID: TrackIdentity.playbackID(for: currentTrack)) { [weak self] in
+            guard let self, self.isPlaying else { return }
+            self.togglePlayPause()
+        }
+        sleepTimer.updateTrackRemaining(currentTrack.duration - playbackPositionNow)
+    }
+
     public func togglePlayPause() {
         if isMockPreviewMode {
             let position = playbackPositionNow
@@ -3048,6 +3057,7 @@ public final class PlaybackState: ObservableObject {
             previousTime: previousPosition,
             observedAtMonotonic: observedAtMonotonic
         )
+        sleepTimer.trackChanged(to: TrackIdentity.playbackID(for: nextTrack))
         if let session = listeningHistorySession,
            session.stableKey == nextIdentity.stableKey {
             updateListeningHistorySession(
@@ -3236,6 +3246,10 @@ public final class PlaybackState: ObservableObject {
     }
 
     private func tick() {
+        sleepTimer.updateTrackRemaining(currentTrack.duration - playbackPositionNow)
+        if isPlaying, currentTrack.duration > 0, playbackPositionNow >= currentTrack.duration {
+            sleepTimer.trackEnded()
+        }
         if repeatLyricLineIfNeeded() { return }
         if isMockPreviewMode {
             publishTickTime(playbackPositionNow)

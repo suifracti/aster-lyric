@@ -235,6 +235,7 @@
 		BCB9A8387836D0270DF19860 /* V3LibrarySearchPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B66A09EEF171C1407B62B5B /* V3LibrarySearchPanel.swift */; };
 		98B3367ECFF1E5C7593BC502 /* ReadingLanguageProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = B40ED79AA32660E9934FFB1D /* ReadingLanguageProfile.swift */; };
 		796C40B600DF4897DDF0E74E /* LyricsBatchCompletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBFEC539AE75EA05052D2CAB /* LyricsBatchCompletion.swift */; };
+		CAEEB3DE1D0FF81D226DB74D /* SleepTimerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBE838F1902636348F8FC30D /* SleepTimerController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -472,6 +473,7 @@
 		5B66A09EEF171C1407B62B5B /* V3LibrarySearchPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3LibrarySearchPanel.swift; sourceTree = "<group>"; };
 		B40ED79AA32660E9934FFB1D /* ReadingLanguageProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingLanguageProfile.swift; sourceTree = "<group>"; };
 		BBFEC539AE75EA05052D2CAB /* LyricsBatchCompletion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/LyricsBatchCompletion.swift; sourceTree = "<group>"; };
+		FBE838F1902636348F8FC30D /* SleepTimerController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/SleepTimerController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -501,6 +503,7 @@
 				110000032D83400100000000 /* MockData.swift */,
 				110000042D83400100000000 /* PlaybackState.swift */,
 				110000192D83400100000000 /* LyricsSessionController.swift */,
+				FBE838F1902636348F8FC30D /* SleepTimerController.swift */,
 				BBFEC539AE75EA05052D2CAB /* LyricsBatchCompletion.swift */,
 				1100006A2D83400100000000 /* TranslationSessionController.swift */,
 				1100006C2D83400100000000 /* LyricsEditorSessionController.swift */,
@@ -986,6 +989,7 @@
 				110000172D83400100000001 /* LRCLIBLyricsProvider.swift in Sources */,
 				110000182D83400100000001 /* CompositeLyricsProvider.swift in Sources */,
 				110000192D83400100000001 /* LyricsSessionController.swift in Sources */,
+				CAEEB3DE1D0FF81D226DB74D /* SleepTimerController.swift in Sources */,
 				796C40B600DF4897DDF0E74E /* LyricsBatchCompletion.swift in Sources */,
 				1100001A2D83400100000001 /* TrackBackdropView.swift in Sources */,
 				1100001B2D83400100000001 /* BackdropPalette.swift in Sources */,

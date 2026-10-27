@@ -369,6 +369,7 @@ private struct ExperienceFixtureRoot: View {
                 }
                 playback.startProvider()
                 try? await Task.sleep(for:.seconds(1))
+                if ProcessInfo.processInfo.arguments.contains("--sleep-timer") { playback.configureSleepTimer(.thirty) }
                 if ProcessInfo.processInfo.arguments.contains("--fullscreen-preview-isolation") {
                     let previewTrack = Track(id: "spotify:track:unplayedpreview",
                         title: "UNPLAYED PREVIEW — MUST NOT APPEAR FULLSCREEN", artist: "Preview artist",

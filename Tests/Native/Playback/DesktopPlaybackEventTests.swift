@@ -37,7 +37,8 @@ private final class EventPlaybackProvider: PlaybackProvider {
         return snapshot
     }
     func play() async throws {}
-    func pause() async throws {}
+    var pauseCount = 0
+    func pause() async throws { pauseCount += 1 }
     func next() async throws {}
     func previous() async throws {}
     var seeks: [TimeInterval] = []
@@ -52,6 +53,17 @@ private struct EventOfflineLyrics: LyricsProvider {
 
 @MainActor
 final class DesktopPlaybackEventTests: XCTestCase {
+    func testSleepAtTrackEndPausesWhenTheNextSongArrives() async throws {
+        let (state, provider, _, center) = fixture()
+        state.startProvider(connectSpotify: false)
+        try await wait { state.hasLiveTrack && state.isPlaying }
+        state.configureSleepTimer(.trackEnd)
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: payload())
+        try await wait { provider.pauseCount == 1 }
+        XCTAssertFalse(state.isPlaying)
+        XCTAssertEqual(state.sleepTimer.option, .off)
+    }
+
     func testThreeRapidRepeatTapsSendOnlyTheFinalPendingMode() async throws {
         let (state, provider, _, _) = fixture()
         state.startProvider()
