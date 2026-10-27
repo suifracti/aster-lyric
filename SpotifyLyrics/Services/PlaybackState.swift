@@ -1828,6 +1828,12 @@ public final class PlaybackState: ObservableObject {
         )
     }()
 
+    public lazy var playlistBrowser = PlaylistBrowserModel(service: spotifyLibraryService, picker: playlistPicker,
+        accessToken: { [weak self] scopes in
+            guard let self else { throw SpotifyAuthorizationError.notAuthorized }
+            return try await self.spotifyAuthorizationManager.accessToken(requiredScopes: scopes)
+        })
+
     /// The player's own ID for the current recording, in the shape its
     /// playlist API expects.
     private var playlistTrackID: String? {

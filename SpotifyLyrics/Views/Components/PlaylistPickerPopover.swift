@@ -198,7 +198,7 @@ struct PlaylistPickerPopover: View {
     }
 }
 
-private struct PlaylistCover: View {
+struct PlaylistCover: View {
     let url: URL?
 
     var body: some View {

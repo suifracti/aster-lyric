@@ -2,9 +2,9 @@ import SwiftUI
 
 struct V3LibrarySearchPresentation: Equatable {
     enum Tab: String, CaseIterable, Identifiable {
-        case library, search
+        case library, search, playlists
         var id: Self { self }
-        var title: String { self == .library ? "歌词库" : "搜索" }
+        var title: String { switch self { case .library: return "歌词库"; case .search: return "搜索"; case .playlists: return "歌单" } }
     }
     var tab: Tab?
     var isPresented: Bool { tab != nil }
@@ -61,15 +61,15 @@ struct V3LibrarySearchPanel: View {
                         )) {
                             ForEach(V3LibrarySearchPresentation.Tab.allCases) { Text($0.title).tag($0) }
                         }
-                        .pickerStyle(.segmented).labelsHidden().frame(width: 160)
-                        TextField(presentation.tab == .search ? "搜索歌曲或艺人" : "搜索歌词库", text: $query)
+                        .pickerStyle(.segmented).labelsHidden().frame(width: 210)
+                        TextField(presentation.tab == .search ? "搜索歌曲或艺人" : presentation.tab == .playlists ? "搜索歌单或歌曲" : "搜索歌词库", text: $query)
                             .textFieldStyle(.roundedBorder)
                             .onSubmit { updateSearch() }
                         managementMenu
                         Button("在新窗口打开") {
                             let tab = presentation.tab
                             presentation.dismiss()
-                            openWindow(id: tab == .search ? "song-search" : "personal-library-activity")
+                            openWindow(id: tab == .search ? "song-search" : tab == .playlists ? "playlist-browser" : "personal-library-activity")
                         }
                         .font(.caption).buttonStyle(.borderless)
                         Button { presentation.dismiss() } label: { Image(systemName: "xmark") }
@@ -78,7 +78,9 @@ struct V3LibrarySearchPanel: View {
                     .padding(12)
                     Divider()
                     Group {
-                        if presentation.tab == .search {
+                        if presentation.tab == .playlists {
+                            V3PlaylistPanel(browser: state.playlistBrowser, query: query).id(state.liveTrackIdentity)
+                        } else if presentation.tab == .search {
                             V3SearchPanel(state: state, search: state.songSearchManager)
                         } else {
                             libraryContent
@@ -116,7 +118,7 @@ struct V3LibrarySearchPanel: View {
     private func updateSearch() {
         if presentation.tab == .search {
             state.songSearchManager.search(query: SongSearchQuery(text: query), debounceNanoseconds: 250_000_000)
-        } else {
+        } else if presentation.tab == .library {
             library.searchQuery = query
             library.refresh()
         }
@@ -129,7 +131,10 @@ struct V3LibrarySearchPanel: View {
             Button("导出", action: library.exportPersonalData)
             Button("导入数据", action: library.presentPersonalDataImportDialog)
             Button("导入资产", action: library.presentImportDialog)
-            Button("刷新") { library.refresh(); updateSearch() }
+            Button("刷新") {
+                if presentation.tab == .playlists { state.playlistBrowser.picker.load(); state.playlistBrowser.loadQueue(); state.playlistBrowser.select(state.playlistBrowser.selectedID) }
+                else { library.refresh(); updateSearch() }
+            }
             Menu("私人文件夹同步") {
                 Button("选择文件夹", action: library.selectSyncFolder)
                 Button("立即同步", action: library.syncNow).disabled(library.syncFolderURL == nil || library.isSyncing)

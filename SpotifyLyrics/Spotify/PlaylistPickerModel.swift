@@ -206,6 +206,7 @@ public final class PlaylistPickerModel: ObservableObject {
     private let applyLiked: @MainActor (Bool) async -> Bool?
 
     private var cachedSnapshots: [String: String] = [:]
+    private var membershipTracks: [String: String] = [:]
     private var stale: Set<String> = []
     private var membershipTasks: [String: Task<Void, Never>] = [:]
     private var loadTask: Task<Void, Never>?
@@ -249,6 +250,7 @@ public final class PlaylistPickerModel: ObservableObject {
             playlists = []
             membership = [:]
             cachedSnapshots = [:]
+            membershipTracks = [:]
             stale = []
             checking = []
             phase = .idle
@@ -308,8 +310,8 @@ public final class PlaylistPickerModel: ObservableObject {
     /// Lazily fills a row's checkmark. A cached answer is reused until the
     /// playlist's snapshot changes or this app modifies that playlist.
     public func ensureMembership(for playlist: PlaylistSummary) {
-        guard membershipTasks[playlist.id] == nil else { return }
-        if !stale.contains(playlist.id), let cached = cachedSnapshots[playlist.id],
+        guard let track = trackID(), membershipTasks[playlist.id] == nil else { return }
+        if membershipTracks[playlist.id] == track, !stale.contains(playlist.id), let cached = cachedSnapshots[playlist.id],
            cached == playlist.snapshotID, membership[playlist.id] != nil {
             return
         }
@@ -334,6 +336,7 @@ public final class PlaylistPickerModel: ObservableObject {
                     return
                 }
                 self.membership[playlist.id] = isMember ? [track] : []
+                self.membershipTracks[playlist.id] = track
                 self.cachedSnapshots[playlist.id] = playlist.snapshotID
                 self.stale.remove(playlist.id)
                 LyricsE2ELog.log("PLAYLIST check finished id=\(playlist.id) member=\(isMember) seconds=\(Date().timeIntervalSince(started))")

@@ -8,12 +8,13 @@ import Foundation
 /// first-click catchers, the pinned NSPanel) must not make its own decisions.
 struct V3ToolbarModel: Equatable {
     enum Panel: String, CaseIterable, CustomStringConvertible {
-        case library, search, translation, text, picture, more
+        case library, search, playlists, translation, text, picture, more
         var description: String { rawValue }
         var title: String {
             switch self {
             case .library: return "歌词库"
             case .search: return "搜索"
+            case .playlists: return "歌单"
             case .translation: return "译文"
             case .text: return "文字"
             case .picture: return "画面"
@@ -24,6 +25,7 @@ struct V3ToolbarModel: Equatable {
             switch self {
             case .library: return "books.vertical"
             case .search: return "magnifyingglass"
+            case .playlists: return "music.note.list"
             case .translation: return "character.bubble"
             case .text: return "textformat"
             case .picture: return "photo"
@@ -126,7 +128,7 @@ struct V3ToolbarModel: Equatable {
     /// monitor). Every click visibly changes something.
     /// A nil panel is the Settings action; library/search also open their own window.
     mutating func click(_ panel: Panel? = nil) {
-        guard let panel, panel != .library, panel != .search else { dismiss(); return }
+        guard let panel, panel != .library, panel != .search, panel != .playlists else { dismiss(); return }
         pointerInPanel = nil
         mode = pinnedPanel == panel ? .idle : .pinned(panel)
     }

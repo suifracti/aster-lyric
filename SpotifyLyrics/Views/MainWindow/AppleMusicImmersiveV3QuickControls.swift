@@ -27,6 +27,8 @@ struct V3ToolbarQuickControls<Controls: View>: View {
                         .environmentObject(state)
                     Divider()
                     Button("打开歌词库", action: openLibrary)
+                case .playlists:
+                    V3PlaylistQueuePreview(browser: state.playlistBrowser)
                 case .search:
                     searchControls
                     Button("全部结果", action: openSearch)

@@ -54,6 +54,8 @@ declare -a CASES=(
   "translation-only|--scene originalAmbient --layers translationOnly --toolbar faint"
   "library-missing|--navigation library --library-missing --toolbar faint"
   "navigation-library|--navigation library --toolbar faint"
+  "navigation-playlists|--navigation playlists --toolbar faint"
+  "hover-playlists|--panel hover:playlists"
   "navigation-search|--navigation search --toolbar faint"
   "scene-flowingField|--scene flowingField --toolbar faint"
   "scene-coverPhoto|--scene coverPhoto --toolbar faint"

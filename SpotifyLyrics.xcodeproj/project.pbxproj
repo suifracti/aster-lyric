@@ -237,6 +237,8 @@
 		796C40B600DF4897DDF0E74E /* LyricsBatchCompletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBFEC539AE75EA05052D2CAB /* LyricsBatchCompletion.swift */; };
 		CAEEB3DE1D0FF81D226DB74D /* SleepTimerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBE838F1902636348F8FC30D /* SleepTimerController.swift */; };
 		A569E2C0D54C4AE25DACADD0 /* V3SearchPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 118DEDA41F433714AD0B0910 /* V3SearchPanel.swift */; };
+		8DB19C1229D5D8128CC6FA29 /* PlaylistBrowserModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 768FC1580F09DD166BCBA7B9 /* PlaylistBrowserModel.swift */; };
+		DF21E96E6A4E08F95E5BD7D0 /* V3PlaylistPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4192699E3CE13AFF565B3821 /* V3PlaylistPanel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -476,6 +478,8 @@
 		BBFEC539AE75EA05052D2CAB /* LyricsBatchCompletion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/LyricsBatchCompletion.swift; sourceTree = "<group>"; };
 		FBE838F1902636348F8FC30D /* SleepTimerController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/SleepTimerController.swift; sourceTree = "<group>"; };
 		118DEDA41F433714AD0B0910 /* V3SearchPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3SearchPanel.swift; sourceTree = "<group>"; };
+		768FC1580F09DD166BCBA7B9 /* PlaylistBrowserModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistBrowserModel.swift; sourceTree = "<group>"; };
+		4192699E3CE13AFF565B3821 /* V3PlaylistPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3PlaylistPanel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -646,6 +650,7 @@
 				1100001D2D83400100000000 /* ImmersiveSplitWindowView.swift */,
 				110000502D83400100000000 /* AppleMusicImmersiveV3WindowView.swift */,
 				5B66A09EEF171C1407B62B5B /* V3LibrarySearchPanel.swift */,
+				4192699E3CE13AFF565B3821 /* V3PlaylistPanel.swift */,
 				118DEDA41F433714AD0B0910 /* V3SearchPanel.swift */,
 				35FDDBAC403CC53CC0FAC566 /* AppleMusicImmersiveV3LyricBar.swift */,
 				29670441C088A914F1A776E1 /* AppleMusicImmersiveV3QuickControls.swift */,
@@ -819,6 +824,7 @@
 				110000592D83400100000000 /* SpotifyCatalogService.swift */,
 				1100005A2D83400100000000 /* SpotifyAuthorizationManager.swift */,
 				A1B2C3D42D83400000000000 /* PlaylistPickerModel.swift */,
+				768FC1580F09DD166BCBA7B9 /* PlaylistBrowserModel.swift */,
 			);
 			path = Spotify;
 			sourceTree = "<group>";
@@ -931,6 +937,7 @@
 				CC7BDEF42026101800000003 /* LinkCoreLyricsProvider.swift in Sources */,
 				CC7BDEF42026101800000001 /* LyricIslandControls.swift in Sources */,
 				A1B2C3D42D83400100000001 /* PlaylistPickerModel.swift in Sources */,
+				8DB19C1229D5D8128CC6FA29 /* PlaylistBrowserModel.swift in Sources */,
 				A1B2C3D52D83400100000001 /* PlaylistPickerPopover.swift in Sources */,
 				110000012D83400100000001 /* Main.swift in Sources */,
 				110000892D83400100000001 /* DebugDatabaseSafety.swift in Sources */,
@@ -1052,6 +1059,7 @@
 				110000472D83400100000001 /* AlignmentModels.swift in Sources */,
 				110000502D83400100000001 /* AppleMusicImmersiveV3WindowView.swift in Sources */,
 				BCB9A8387836D0270DF19860 /* V3LibrarySearchPanel.swift in Sources */,
+				DF21E96E6A4E08F95E5BD7D0 /* V3PlaylistPanel.swift in Sources */,
 				A569E2C0D54C4AE25DACADD0 /* V3SearchPanel.swift in Sources */,
 				AF4738C40CC270950960061F /* AppleMusicImmersiveV3LyricBar.swift in Sources */,
 				0397361CF07CC824F9B93C85 /* AppleMusicImmersiveV3QuickControls.swift in Sources */,

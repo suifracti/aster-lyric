@@ -1766,7 +1766,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         let panel = (info["panel"] as? String).flatMap(ToolbarPopover.init(rawValue:))
         switch info["command"] as? String {
         case "navigation":
-            librarySearch.open(info["panel"] as? String == "search" ? .search : .library)
+            librarySearch.open(V3LibrarySearchPresentation.Tab(rawValue: info["panel"] as? String ?? "") ?? .library)
         case "notice": lyricNotice = "字号 22"
         case "auto-selection": previewAutomaticSelection = LyricsAutomaticSelection(sourceCount: 3, durationDelta: 25)
         case "faint": isPointerInsideCanvas = true
@@ -1788,9 +1788,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         V3ToolbarLog.logger.notice("click \(panel.description, privacy: .public) mode-before=\(String(describing: toolbar.mode), privacy: .public)")
         toolbarDismissTask?.cancel()
         isWindowMenuPresented = false
-        if panel == .library || panel == .search {
+        if panel == .library || panel == .search || panel == .playlists {
             toolbar.dismiss()
-            librarySearch.toggle(panel == .library ? .library : .search)
+            librarySearch.toggle(V3LibrarySearchPresentation.Tab(rawValue: panel.rawValue) ?? .library)
         } else {
             librarySearch.dismiss()
             toolbar.click(panel)
@@ -1938,7 +1938,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 Divider()
                 desktopInteractionPanel
                 Button("恢复歌词时间") { settings.lyricsOffsetStore.resetActiveValue() }
-            case .library, .search: EmptyView()
+            case .library, .search, .playlists: EmptyView()
             }
         }
     }

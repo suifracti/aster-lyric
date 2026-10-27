@@ -46,6 +46,40 @@ private struct ExperienceFixture: Decodable {
 }
 
 @MainActor
+private final class ExperiencePlaylistCatalog: PlaylistCataloging {
+    func accessToken() async throws -> String { "fixture" }
+    func playlists(accessToken: String) async throws -> [PlaylistSummary] {
+        [PlaylistSummary(id: "night", name: "夜の散歩 · Fixture", trackCount: 5, snapshotID: "fixture-1", imageURL: nil),
+         PlaylistSummary(id: "morning", name: "朝の光 · Fixture", trackCount: 3, snapshotID: "fixture-2", imageURL: nil)]
+    }
+    func likedTrackCount() async throws -> Int? { 12 }
+    func contains(trackID: String, inPlaylist id: String, accessToken: String) async throws -> Bool { id == "night" }
+    func add(trackID: String, toPlaylist id: String, accessToken: String) async throws {}
+    func remove(trackID: String, fromPlaylist id: String, accessToken: String) async throws {}
+    func createPrivatePlaylist(named name: String, accessToken: String) async throws -> PlaylistSummary {
+        PlaylistSummary(id: "new", name: name, trackCount: 0, snapshotID: "new", imageURL: nil)
+    }
+}
+private final class ExperiencePlaylistProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "playlist.fixture" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let songs: [[String: Any]] = ["夜を越えて", "明日への手紙", "雨のあと", "遠くの灯り", "帰り道"].enumerated().map { index, title in
+            ["id": "fixture-\(index)", "type": "track", "name": title, "uri": "spotify:track:fixture-\(index)",
+             "duration_ms": 210000, "explicit": false, "artists": [["name": "Visual Fixture"]],
+             "album": ["name": "Isolated playlist fixture", "images": []]]
+        }
+        let body: [String: Any] = request.url!.path.hasSuffix("queue") ? ["queue": songs]
+            : ["items": songs.map { ["item": $0] }, "next": NSNull(), "total": songs.count]
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: try! JSONSerialization.data(withJSONObject: body))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+@MainActor
 private final class ExperiencePlaybackProvider: PlaybackProvider {
     let displayName = "Isolated visual fixture"
     var position: TimeInterval = Double(ExperienceArguments.value("--time", fallback: "18")) ?? 18
@@ -278,7 +312,14 @@ struct ExperienceVisualHostApp: App {
         let provider=ExperiencePlaybackProvider(artwork:ExperienceArtwork.make())
         let repository=SQLiteLyricsRepository(databaseURL:ExperienceArguments.databaseURL, alignmentProvenanceDirectory:root.appendingPathComponent("provenance"))
         _settings=StateObject(wrappedValue:settings)
-        _playback=StateObject(wrappedValue:PlaybackState(provider:provider,lyricsProvider:ExperienceLyricsProvider(),lyricsRepository:repository,settings:settings))
+        let playback = PlaybackState(provider:provider,lyricsProvider:ExperienceLyricsProvider(),lyricsRepository:repository,settings:settings)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ExperiencePlaylistProtocol.self]
+        let catalog = ExperiencePlaylistCatalog()
+        let picker = PlaylistPickerModel(catalog: catalog, trackID: { "visualfixture" }, likedState: { true }, applyLiked: { $0 })
+        playback.playlistBrowser = PlaylistBrowserModel(service: SpotifyCatalogService(session: URLSession(configuration: configuration),
+            baseURL: URL(string: "https://playlist.fixture/v1")!), picker: picker, accessToken: { _ in "fixture" })
+        _playback=StateObject(wrappedValue:playback)
         print("VISUAL_FIXTURE_ROOT",root.path)
     }
     var body: some Scene {

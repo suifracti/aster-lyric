@@ -216,7 +216,7 @@ public final class SpotifyCatalogService: @unchecked Sendable {
     }
 
     /// Queue entries can also be episodes; only songs have lyrics to preload.
-    func upcomingTracks(accessToken: String) async throws -> [Track] {
+    func upcomingTracks(accessToken: String, limit: Int? = 2) async throws -> [Track] {
         let data = try await sendAPIRequest(url: baseURL.appendingPathComponent("me/player/queue"),
                                             accessToken: accessToken, fresh: true)
         struct Item: Decodable {
@@ -232,7 +232,8 @@ public final class SpotifyCatalogService: @unchecked Sendable {
         guard let queue = try? JSONDecoder().decode(Queue.self, from: data) else {
             throw SpotifyCatalogError.parseFailure
         }
-        return queue.queue.compactMap(\.track).prefix(2).map(SpotifyTrackMapper.track)
+        let tracks = queue.queue.compactMap(\.track).map(SpotifyTrackMapper.track)
+        return limit.map { Array(tracks.prefix($0)) } ?? tracks
     }
 
     func playbackModes(accessToken: String) async throws -> PlayerPlaybackModes {
@@ -370,6 +371,45 @@ public final class SpotifyCatalogService: @unchecked Sendable {
                                             accessToken: accessToken, method: "POST", body: body)
         do { return try JSONDecoder().decode(SpotifyPlaylistDTO.self, from: data) }
         catch { throw SpotifyCatalogError.parseFailure }
+    }
+
+    func playlistTracks(_ playlistID: String, accessToken: String) async throws -> [SpotifyPlaylistTrack] {
+        try await browsableTracks(path: "playlists/" + playlistID + "/items", accessToken: accessToken)
+    }
+    func savedTracks(accessToken: String) async throws -> [SpotifyPlaylistTrack] {
+        try await browsableTracks(path: "me/tracks", accessToken: accessToken)
+    }
+    private func browsableTracks(path: String, accessToken: String) async throws -> [SpotifyPlaylistTrack] {
+        struct Item: Decodable {
+            let value: SpotifyTrackDTO?
+            enum CodingKeys: String, CodingKey { case item, track }
+            init(from decoder: Decoder) throws {
+                let fields = try decoder.container(keyedBy: CodingKeys.self)
+                value = (try? fields.decode(SpotifyTrackDTO.self, forKey: .item))
+                    ?? (try? fields.decode(SpotifyTrackDTO.self, forKey: .track))
+            }
+        }
+        var result: [SpotifyPlaylistTrack] = []
+        var offset = 0
+        while true {
+            var parts = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+            parts.queryItems = [URLQueryItem(name: "limit", value: "50"), URLQueryItem(name: "offset", value: String(offset)),
+                                URLQueryItem(name: "market", value: "from_token")]
+            guard let url = parts.url else { throw SpotifyCatalogError.invalidURL }
+            let data = try await sendAPIRequest(url: url, accessToken: accessToken)
+            let page = try JSONDecoder().decode(SpotifyPagingDTO<Item>.self, from: data)
+            result += page.items.enumerated().compactMap { index, item in
+                item.value.map { SpotifyPlaylistTrack(track: SpotifyTrackMapper.track(from: $0), offset: offset + index) }
+            }
+            offset += page.items.count
+            if page.next == nil || page.items.isEmpty { return result }
+        }
+    }
+    func playPlaylist(_ playlistID: String, offset: Int, accessToken: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["context_uri": "spotify:playlist:" + playlistID,
+                                                               "offset": ["position": offset]])
+        _ = try await sendAPIRequest(url: baseURL.appendingPathComponent("me/player/play"), accessToken: accessToken,
+                                    method: "PUT", body: body)
     }
 
     func playlistTrackIDs(_ playlistID: String, accessToken: String) async throws -> [String] {

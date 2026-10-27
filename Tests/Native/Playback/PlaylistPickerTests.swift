@@ -145,6 +145,63 @@ final class PlaylistPickerTests: XCTestCase {
         await waitUntil { noTrack.checking.isEmpty }
     }
 
+    func testPlaylistBrowserPlaysTrackInPlaylistContext() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PlaylistFixtureURLProtocol.self]
+        let service = SpotifyCatalogService(session: URLSession(configuration: configuration),
+            baseURL: URL(string: "https://playlist.test/v1")!)
+        let playRequest = expectation(description: "playlist-context playback request")
+        PlaylistFixtureURLProtocol.response = { request in
+            if request.url?.path == "/v1/playlists/playlist-3/items" {
+                let items: [[String: Any]] = (1...3).map { position in
+                    let artist = ["id": "artist-\(position)", "name": "Artist \(position)",
+                                  "uri": "spotify:artist:artist-\(position)"]
+                    return ["item": [
+                        "id": "track-\(position)",
+                        "name": "Track \(position)",
+                        "uri": "spotify:track:track-\(position)",
+                        "duration_ms": 180_000,
+                        "explicit": false,
+                        "artists": [artist],
+                        "album": ["name": "Album \(position)", "images": []]
+                    ]]
+                }
+                return (200, ["items": items, "next": NSNull(), "total": 3])
+            }
+            if request.url?.path == "/v1/me/player/play" {
+                XCTAssertEqual(request.httpMethod, "PUT")
+                var payload = request.httpBody ?? Data()
+                if payload.isEmpty, let stream = request.httpBodyStream {
+                    stream.open(); defer { stream.close() }
+                    var buffer = [UInt8](repeating: 0, count: 1024)
+                    while stream.hasBytesAvailable {
+                        let count = stream.read(&buffer, maxLength: buffer.count)
+                        if count <= 0 { break }
+                        payload.append(contentsOf: buffer.prefix(count))
+                    }
+                }
+                let body = try? JSONSerialization.jsonObject(with: payload) as? [String: Any]
+                XCTAssertEqual(body?["context_uri"] as? String, "spotify:playlist:playlist-3")
+                let offset = body?["offset"] as? [String: Any]
+                XCTAssertEqual(offset?["position"] as? Int, 2)
+                playRequest.fulfill()
+                return (204, ["ok": true])
+            }
+            XCTFail("Unexpected playlist browser request: \(request.url?.path ?? "<missing>")")
+            return (404, [:])
+        }
+        defer { PlaylistFixtureURLProtocol.response = nil }
+
+        let picker = model(FakePlaylistCatalog(rows: [row("playlist-3", "Mix")]))
+        let browser = PlaylistBrowserModel(service: service, picker: picker, accessToken: { _ in "fixture" })
+        browser.select("playlist-3")
+        await waitUntil { browser.tracks.count == 3 && !browser.isLoading }
+
+        guard browser.tracks.count == 3 else { return XCTFail("Fixture playlist did not load three tracks") }
+        browser.play(browser.tracks[2])
+        await fulfillment(of: [playRequest], timeout: 2)
+    }
+
     func testSearchFiltersByNameAndKeepsSpotifyOrder() async {
         let catalog = FakePlaylistCatalog(rows: [row("1", "夜の歌"), row("2", "Morning"), row("3", "夜行性")])
         let model = model(catalog)
