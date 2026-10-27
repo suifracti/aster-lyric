@@ -5,6 +5,14 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class PresentationSourceContractTests: XCTestCase {
+    func testResizeEdgeAtThreePointsCannotStartAProgressSeek() {
+        let path = V3WindowEdgeHitBand().path(in: CGRect(x: 0, y: 0, width: 900, height: 700))
+        for point in [CGPoint(x: 450, y: 3), CGPoint(x: 3, y: 350), CGPoint(x: 897, y: 350), CGPoint(x: 450, y: 697)] {
+            XCTAssertFalse(path.contains(point))
+        }
+        XCTAssertTrue(path.contains(CGPoint(x: 450, y: 12)))
+    }
+
     func testBigLineShowsTheWholeUnmeiPhraseWithinTwoLinesAndTheColumnHeight() {
         let phrase = "ずっと前から決めてたんだね"
         for width: CGFloat in [280, 600] {

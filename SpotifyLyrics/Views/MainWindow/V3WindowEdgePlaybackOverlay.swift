@@ -81,7 +81,10 @@ struct V3WindowEdgePlaybackOverlay: View {
                                 isVertical: controlPosition.isVertical,
                                 brightCover: coverLuminance > 0.6,
                                 elapsed: Self.timeText(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime)),
-                                total: Self.timeText(state.currentTrack.duration))
+                                total: Self.timeText(state.currentTrack.duration),
+                                fraction: Double(progressFraction),
+                                draftChanged: setDraft,
+                                draftEnded: { fraction in finishDraft(fraction: fraction) })
                                 .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
                                 .scaleEffect(controlPosition.scale * (playerVisible || reduceMotion ? 1 : 0.92))
                                 .opacity(playerVisible ? 1 : 0)
@@ -166,7 +169,7 @@ struct V3WindowEdgePlaybackOverlay: View {
         if pointerOverToolbar != overToolbar { pointerOverToolbar = overToolbar }
         var hover: RailHover?
         if canSeek, let point,
-           dragging || min(point.x, point.y, size.width - point.x, size.height - point.y) <= 14,
+           dragging || V3WindowEdgeHitBand().path(in: CGRect(origin: .zero, size: size)).contains(point),
            let fraction = V3ResponsiveGeometry.edgeProgressFraction(at: point, canvasSize: size) {
             hover = RailHover(point: point, fraction: fraction)
         }
@@ -220,14 +223,23 @@ struct V3WindowEdgePlaybackOverlay: View {
         return CGFloat(min(max(position / duration, 0), 1))
     }
 
-    private func updateDraft(at point: CGPoint, size: CGSize) {
-        guard canSeek, let fraction = V3ResponsiveGeometry.edgeProgressFraction(at: point, canvasSize: size) else { return }
+    private func setDraft(_ fraction: Double) {
+        guard canSeek else { return }
         if dragTrackKey == nil {
             dragTrackKey = state.currentTrackIdentity?.stableKey
             interactionChanged(true)
         }
         guard dragTrackKey == state.currentTrackIdentity?.stableKey else { return }
-        draftFraction = fraction
+        draftFraction = min(1, max(0, fraction))
+    }
+    private func finishDraft(fraction: Double) {
+        defer { cancelDraft() }
+        guard canSeek, dragTrackKey == state.currentTrackIdentity?.stableKey else { return }
+        state.seek(to: min(1, max(0, fraction)) * state.currentTrack.duration, source: "v3-edge-pill-progress")
+    }
+    private func updateDraft(at point: CGPoint, size: CGSize) {
+        guard let fraction = V3ResponsiveGeometry.edgeProgressFraction(at: point, canvasSize: size) else { return }
+        setDraft(fraction)
         updatePointer(point, size: size, dragging: true)
     }
 
@@ -314,13 +326,14 @@ private struct V3WindowEdgePointerTracker: NSViewRepresentable {
     }
 }
 
-private struct V3WindowEdgeHitBand: Shape {
+struct V3WindowEdgeHitBand: Shape {
     func path(in rect: CGRect) -> Path {
+        let outer = rect.insetBy(dx: 6, dy: 6)
         var path = Path()
-        path.addRect(CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: 14))
-        path.addRect(CGRect(x: rect.minX, y: rect.maxY - 14, width: rect.width, height: 14))
-        path.addRect(CGRect(x: rect.minX, y: rect.minY, width: 14, height: rect.height))
-        path.addRect(CGRect(x: rect.maxX - 14, y: rect.minY, width: 14, height: rect.height))
+        path.addRect(CGRect(x: outer.minX, y: outer.minY, width: outer.width, height: 14))
+        path.addRect(CGRect(x: outer.minX, y: outer.maxY - 14, width: outer.width, height: 14))
+        path.addRect(CGRect(x: outer.minX, y: outer.minY, width: 14, height: outer.height))
+        path.addRect(CGRect(x: outer.maxX - 14, y: outer.minY, width: 14, height: outer.height))
         return path
     }
 }
@@ -379,6 +392,10 @@ private struct V3WindowEdgeTransportButtons: View {
     let brightCover: Bool
     let elapsed: String
     let total: String
+    let fraction: Double
+    let draftChanged: (Double) -> Void
+    let draftEnded: (Double) -> Void
+    @State private var pillDraft: Double?
     @State private var showsPlaylistPicker = false
 
     @ViewBuilder
@@ -393,14 +410,14 @@ private struct V3WindowEdgeTransportButtons: View {
                     playPauseButton
                     nextButton
                     V3PlayerModeButton(state: state, shuffle: false, size: .compact)
-                    VStack(spacing: 1) {
-                        Text(elapsed)
-                        Text(total)
+                    HStack(spacing: 3) {
+                        pillProgress
+                        VStack(spacing: 1) { Text(elapsed); Text(total) }
+                            .font(.system(size: 10)).monospacedDigit()
+                            .lineLimit(1).fixedSize()
+                            .foregroundStyle(.white.opacity(brightCover ? 0.92 : 0.8))
+                            .accessibilityLabel("已播 \(elapsed)，总长 \(total)")
                     }
-                    .font(.system(size: 10)).monospacedDigit()
-                    .lineLimit(1).fixedSize()
-                    .foregroundStyle(.white.opacity(brightCover ? 0.92 : 0.8))
-                    .accessibilityLabel("已播 \(elapsed)，总长 \(total)")
                 }
             } else {
                 HStack(spacing: 5) {
@@ -411,6 +428,7 @@ private struct V3WindowEdgeTransportButtons: View {
                     playPauseButton
                     nextButton
                     V3PlayerModeButton(state: state, shuffle: false, size: .compact)
+                    pillProgress
                     Text(elapsed + " / " + total).font(.system(size: 9)).monospacedDigit()
                         .foregroundStyle(.white.opacity(brightCover ? 0.92 : 0.8))
                 }
@@ -460,6 +478,42 @@ private struct V3WindowEdgeTransportButtons: View {
         ) {
             state.togglePlayPause()
         }
+    }
+
+    private var pillProgress: some View {
+        GeometryReader { geometry in
+            let value = pillDraft ?? fraction
+            ZStack(alignment: isVertical ? .bottom : .leading) {
+                Capsule().fill(.white.opacity(0.25))
+                Capsule().fill(accent)
+                    .frame(width: isVertical ? 3 : geometry.size.width * value,
+                           height: isVertical ? geometry.size.height * value : 3)
+            }
+            .frame(width: isVertical ? 3 : geometry.size.width, height: isVertical ? geometry.size.height : 3)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { gesture in
+                    let value = min(1, max(0, isVertical ? 1 - gesture.location.y / geometry.size.height : gesture.location.x / geometry.size.width))
+                    pillDraft = value; draftChanged(value)
+                }
+                .onEnded { gesture in
+                    let value = min(1, max(0, isVertical ? 1 - gesture.location.y / geometry.size.height : gesture.location.x / geometry.size.width))
+                    draftEnded(value); pillDraft = nil
+                })
+            .overlay(alignment: .top) {
+                if let pillDraft {
+                    Text(Self.timeText(pillDraft * state.currentTrack.duration))
+                        .font(.system(size: 11)).monospacedDigit().fixedSize()
+                        .padding(5).background(.regularMaterial, in: Capsule()).offset(y: -28)
+                }
+            }
+        }
+        .frame(width: isVertical ? 10 : 44, height: isVertical ? 28 : 14)
+        .accessibilityLabel("播放进度")
+    }
+    private static func timeText(_ seconds: Double) -> String {
+        String(format: "%d:%02d", Int(max(0, seconds)) / 60, Int(max(0, seconds)) % 60)
     }
 
     private var nextButton: some View {
@@ -607,7 +661,7 @@ enum V3WindowEdgeControlPositioner {
         }
 
         let isVertical = edge.isVertical
-        let baseSize = CGSize(width: isVertical ? 52 : 327, height: isVertical ? 286 : 40)
+        let baseSize = CGSize(width: isVertical ? 62 : 378, height: isVertical ? 286 : 40)
         let availableLong = isVertical ? height : width
         let availableShort = isVertical ? width : height
         let baseLong = isVertical ? baseSize.height : baseSize.width
@@ -655,7 +709,7 @@ enum V3WindowEdgeControlPositioner {
         var candidates: [Layout] = []
         let topSpace = blocked.minX - 88 - 2
         if topSpace > 0 {
-            let base = CGSize(width: 327, height: 38)
+            let base = CGSize(width: 378, height: 40)
             let factor = min(1, topSpace / base.width, height / base.height)
             let half = base.width * factor / 2
             let x = clamped(point.x, lower: 88 + half, upper: blocked.minX - half - 1, fallback: 88 + half)
@@ -664,7 +718,7 @@ enum V3WindowEdgeControlPositioner {
         }
         let rightSpace = height - blocked.maxY - 3
         if rightSpace > 0 {
-            let base = CGSize(width: 38, height: 279)
+            let base = CGSize(width: 62, height: 286)
             let factor = min(1, rightSpace / base.height, width / base.width)
             let half = base.height * factor / 2
             let y = clamped(point.y, lower: blocked.maxY + half + 1, upper: height - half - 2, fallback: height - half - 2)
