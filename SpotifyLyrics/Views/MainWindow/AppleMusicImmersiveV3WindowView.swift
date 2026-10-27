@@ -335,7 +335,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 // width in a tall window. Keep that drawing overflow inside
                 // the canvas so it cannot shift the top-trailing foreground.
                 .frame(width: geometry.size.width, height: geometry.size.height)
-                .blur(radius: librarySearch.isPresented ? 3 : 0)
+                .blur(radius: librarySearch.isPresented ? 5 : 0)
 
                 GeometryReader { canvasGeometry in
                     layout(for: canvasGeometry)
@@ -343,7 +343,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
                 .frame(width: canvasWidth, height: geometry.size.height)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .blur(radius: librarySearch.isPresented ? 3 : 0)
+                .blur(radius: librarySearch.isPresented ? 5 : 0)
                 .allowsHitTesting(!librarySearch.isPresented)
 
                 if settings.v3EdgeProgressEnabled && !isFocusMode && !librarySearch.isPresented {

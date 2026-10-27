@@ -26,7 +26,7 @@ struct V3LibrarySearchPanel: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                Color.black.opacity(0.22)
+                Color.black.opacity(0.32)
                     .contentShape(Rectangle())
                     .onTapGesture { presentation.dismiss() }
                 VStack(spacing: 0) {
@@ -62,7 +62,7 @@ struct V3LibrarySearchPanel: View {
                 }
                 .frame(width: V3LibrarySearchPresentation.size(in: geometry.size).width,
                        height: V3LibrarySearchPresentation.size(in: geometry.size).height)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+                .background(Color(red: 0.10, green: 0.115, blue: 0.14), in: RoundedRectangle(cornerRadius: 18))
                 .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.12)))
                 .clipShape(RoundedRectangle(cornerRadius: 18))
                 .environment(\.colorScheme, .dark)
