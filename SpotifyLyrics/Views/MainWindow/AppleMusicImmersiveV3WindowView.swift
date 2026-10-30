@@ -1913,7 +1913,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
     private func toolbarPanel(for panel: ToolbarPopover) -> some View {
         V3ToolbarQuickControls(panel: panel, state: state, search: state.songSearchManager,
-            openLibrary: { clickToolbarPanel(.library) }, openSearch: { clickToolbarPanel(.search) }) {
+            openLibrary: { clickToolbarPanel(.library) }, openSearch: { clickToolbarPanel(.search) },
+            openPlaylists: { clickToolbarPanel(.playlists) }) {
             switch panel {
             case .translation: translationControls(compact: true)
             case .text: visualControls.textPage

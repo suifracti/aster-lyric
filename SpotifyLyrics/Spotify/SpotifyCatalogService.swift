@@ -257,7 +257,11 @@ public final class SpotifyCatalogService: @unchecked Sendable {
     }
 
     func playTrack(_ id: String, accessToken: String) async throws {
-        let body = try JSONSerialization.data(withJSONObject: ["uris": ["spotify:track:" + id]])
+        try await playTracks([id], accessToken: accessToken)
+    }
+
+    func playTracks(_ ids: [String], accessToken: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["uris": ids.map { "spotify:track:" + $0 }])
         _ = try await sendAPIRequest(url: baseURL.appendingPathComponent("me/player/play"), accessToken: accessToken,
                                     method: "PUT", body: body)
     }

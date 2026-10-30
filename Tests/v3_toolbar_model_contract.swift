@@ -138,7 +138,7 @@ final class V3ToolbarPresentationTests: XCTestCase {
         let settings = AppSettingsStore(defaults: defaults)
         let state = PlaybackState(provider: MockPlaybackProvider(), settings: settings)
         let root = V3ToolbarQuickControls(panel: .more, state: state, search: state.songSearchManager,
-                                         openLibrary: {}, openSearch: {}) { Text("短面板") }
+                                         openLibrary: {}, openSearch: {}, openPlaylists: {}) { Text("短面板") }
         .onPreferenceChange(V3ToolPanelHeight.self) { value in
             if value > 0 && value < 100 { height.fulfill() }
         }

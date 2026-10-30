@@ -7,6 +7,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
     @ObservedObject var search: SongSearchManager
     let openLibrary: () -> Void
     let openSearch: () -> Void
+    let openPlaylists: () -> Void
     @ViewBuilder var controls: () -> Controls
     @StateObject private var library = PersonalLyricsLibraryService()
     @State private var query = ""
@@ -17,7 +18,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
         ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                Text(panel.title).font(.system(size: 12, weight: .semibold))
+                Text(panel == .playlists ? "接下来播放" : panel.title).font(.system(size: 12, weight: .semibold))
                 switch panel {
                 case .library:
                     Text("\(state.liveLyricsSource?.displayName ?? "暂无歌词") · \(state.liveLyricsVersionID == nil ? "未采用版本" : "已采用版本") · \(state.liveLyrics.count) 行")
@@ -28,7 +29,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
                     Divider()
                     Button("打开歌词库", action: openLibrary)
                 case .playlists:
-                    V3PlaylistQueuePreview(browser: state.playlistBrowser)
+                    V3PlaylistQueuePreview(browser: state.playlistBrowser, openPlaylists: openPlaylists)
                 case .search:
                     searchControls
                     Button("全部结果", action: openSearch)

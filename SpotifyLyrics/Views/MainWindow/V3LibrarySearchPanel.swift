@@ -20,7 +20,7 @@ struct V3LibrarySearchPresentation: Equatable {
 /// Reuses the drawer's existing library and full search views without changing the canvas layout.
 struct V3LibrarySearchPanel: View {
     @Binding var presentation: V3LibrarySearchPresentation
-    let state: PlaybackState
+    @V3ContentPlaybackState var state: PlaybackState
     @Environment(\.openWindow) private var openWindow
     @StateObject private var library = PersonalLyricsLibraryService()
     @StateObject private var batch = LyricsBatchCompletion()
@@ -83,7 +83,7 @@ struct V3LibrarySearchPanel: View {
                     Divider()
                     Group {
                         if presentation.tab == .playlists {
-                            V3PlaylistPanel(browser: state.playlistBrowser, query: query).id(state.liveTrackIdentity)
+                            V3PlaylistPanel(browser: state.playlistBrowser, query: query, currentTrackID: state.currentTrack.spotifyId)
                         } else if presentation.tab == .search {
                             V3SearchPanel(state: state, search: state.songSearchManager)
                         } else {
@@ -132,17 +132,21 @@ struct V3LibrarySearchPanel: View {
     }
     private var managementMenu: some View {
         Menu {
-            Button("导出", action: library.exportPersonalData)
-            Button("导入数据", action: library.presentPersonalDataImportDialog)
-            Button("导入资产", action: library.presentImportDialog)
+            if presentation.tab != .playlists {
+                Button("导出", action: library.exportPersonalData)
+                Button("导入数据", action: library.presentPersonalDataImportDialog)
+                Button("导入资产", action: library.presentImportDialog)
+            }
             Button("刷新") {
                 if presentation.tab == .playlists { state.playlistBrowser.picker.load(); state.playlistBrowser.loadQueue(); state.playlistBrowser.select(state.playlistBrowser.selectedID) }
                 else { library.refresh(); updateSearch() }
             }
-            Menu("私人文件夹同步") {
-                Button("选择文件夹", action: library.selectSyncFolder)
-                Button("立即同步", action: library.syncNow).disabled(library.syncFolderURL == nil || library.isSyncing)
-                Button("取消同步", action: library.cancelSyncFolder).disabled(library.syncFolderURL == nil)
+            if presentation.tab != .playlists {
+                Menu("私人文件夹同步") {
+                    Button("选择文件夹", action: library.selectSyncFolder)
+                    Button("立即同步", action: library.syncNow).disabled(library.syncFolderURL == nil || library.isSyncing)
+                    Button("取消同步", action: library.cancelSyncFolder).disabled(library.syncFolderURL == nil)
+                }
             }
         } label: { Image(systemName: "ellipsis") }
         .menuStyle(.borderlessButton).fixedSize().help("管理歌词库")

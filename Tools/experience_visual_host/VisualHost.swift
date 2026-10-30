@@ -69,7 +69,7 @@ private final class ExperiencePlaylistProtocol: URLProtocol {
              "duration_ms": 210000, "explicit": false, "artists": [["name": "Visual Fixture"]],
              "album": ["name": "Isolated playlist fixture", "images": []]]
         }
-        let body: [String: Any] = request.url!.path.hasSuffix("queue") ? ["queue": songs]
+        let body: [String: Any] = request.url!.path.hasSuffix("queue") ? ["queue": ProcessInfo.processInfo.arguments.contains("--queue-empty") ? [] : songs]
             : ["items": songs.map { ["item": $0] }, "next": NSNull(), "total": songs.count]
         let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -579,6 +579,10 @@ private struct ExperienceFixtureRoot: View {
                         userInfo: ["command": "navigation", "panel": navigation])
                     try? await Task.sleep(for: .milliseconds(300))
                 }
+                if ProcessInfo.processInfo.arguments.contains("--playlist-hover-fixture") {
+                    playback.playlistBrowser.select("night")
+                    try? await Task.sleep(for: .milliseconds(300))
+                }
                 if !panel.isEmpty {
                     // Popovers and the pinned panel appear asynchronously.
                     for _ in 0..<40 {
@@ -594,7 +598,7 @@ private struct ExperienceFixtureRoot: View {
                     let root: AnyView
                     if ExperienceArguments.surface == "search-panel" {
                         root = AnyView(V3ToolbarQuickControls(panel: .search, state: playback,
-                            search: playback.songSearchManager, openLibrary: {}, openSearch: {}) { EmptyView() }
+                            search: playback.songSearchManager, openLibrary: {}, openSearch: {}, openPlaylists: {}) { EmptyView() }
                             .background(Color(nsColor: .windowBackgroundColor)))
                     } else if ExperienceArguments.surface == "search-full" {
                         root = AnyView(SongSearchPopover(manager: playback.songSearchManager, playbackState: playback)

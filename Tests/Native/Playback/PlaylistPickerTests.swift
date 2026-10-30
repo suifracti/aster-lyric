@@ -145,6 +145,49 @@ final class PlaylistPickerTests: XCTestCase {
         await waitUntil { noTrack.checking.isEmpty }
     }
 
+    func testQueueIsReadOnlyAndLikedPlaybackContinuesWithTheLoadedTail() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PlaylistFixtureURLProtocol.self]
+        let service = SpotifyCatalogService(session: URLSession(configuration: configuration), baseURL: URL(string: "https://playlist.test/v1")!)
+        let browser = PlaylistBrowserModel(service: service, picker: model(FakePlaylistCatalog(rows: [])), accessToken: { _ in "fixture" })
+        var writes: [[String]] = []
+        PlaylistFixtureURLProtocol.response = { request in
+            let songs: [[String: Any]] = (1...3).map { ["id": "track-\($0)", "name": "Song \($0)",
+                "type": "track", "uri": "spotify:track:track-\($0)", "explicit": false,
+                "duration_ms": 180000, "artists": [["id": "artist", "name": "Artist", "uri": "spotify:artist:artist"]],
+                "album": ["name": "Album", "images": []]] }
+            if request.httpMethod == "PUT" {
+                var payload = request.httpBody ?? Data()
+                if let stream = request.httpBodyStream {
+                    stream.open(); defer { stream.close() }
+                    var buffer = [UInt8](repeating: 0, count: 1024)
+                    while stream.hasBytesAvailable {
+                        let count = stream.read(&buffer, maxLength: buffer.count)
+                        if count <= 0 { break }
+                        payload.append(contentsOf: buffer.prefix(count))
+                    }
+                }
+                let body = try? JSONSerialization.jsonObject(with: payload) as? [String: Any]
+                writes.append(body?["uris"] as? [String] ?? [])
+                return (204, [:])
+            }
+            if request.url!.path.hasSuffix("queue") { return (200, ["queue": songs]) }
+            return (200, ["items": songs.map { ["track": $0] }, "next": NSNull(), "total": 3])
+        }
+        defer { PlaylistFixtureURLProtocol.response = nil }
+        browser.loadQueue()
+        await waitUntil { browser.tracks.count == 3 }
+        guard browser.tracks.count == 3 else { return }
+        browser.play(browser.tracks[1])
+        browser.select(PlaylistBrowserModel.likedID)
+        await waitUntil { !browser.isLoading && browser.tracks.count == 3 }
+        XCTAssertTrue(writes.isEmpty, "Queue inspection must not replace Spotify's playback context")
+        guard browser.tracks.count == 3 else { return }
+        browser.play(browser.tracks[1])
+        await waitUntil { !writes.isEmpty }
+        XCTAssertEqual(writes, [["spotify:track:track-2", "spotify:track:track-3"]])
+    }
+
     func testPlaylistBrowserPlaysTrackInPlaylistContext() async {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [PlaylistFixtureURLProtocol.self]

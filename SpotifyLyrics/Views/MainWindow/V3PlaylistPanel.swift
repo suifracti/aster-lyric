@@ -4,9 +4,20 @@ struct V3PlaylistPanel: View {
     @ObservedObject var browser: PlaylistBrowserModel
     @ObservedObject private var picker: PlaylistPickerModel
     let query: String
-    init(browser: PlaylistBrowserModel, query: String) {
+    let currentTrackID: String?
+    @State private var hoveredSidebarID: String?
+    @State private var hoveredTrackOffset: Int?
+    init(browser: PlaylistBrowserModel, query: String, currentTrackID: String? = nil) {
+        self.currentTrackID = currentTrackID
         self.browser = browser; self.query = query
         _picker = ObservedObject(wrappedValue: browser.picker)
+#if DEBUG
+        // Offscreen fixture state only; never moves the user's pointer.
+        if ProcessInfo.processInfo.arguments.contains("--playlist-hover-fixture") {
+            _hoveredSidebarID = State(initialValue: "morning")
+            _hoveredTrackOffset = State(initialValue: 0)
+        }
+#endif
     }
     private var playlists: [PlaylistSummary] {
         picker.playlists.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
@@ -20,32 +31,12 @@ struct V3PlaylistPanel: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         destination("接下来播放", symbol: "list.bullet", id: PlaylistBrowserModel.queueID)
-                        HStack {
-                            destination(picker.likedRowTitle, symbol: "heart.fill", id: PlaylistBrowserModel.likedID)
-                            Button { picker.toggleLikedSongs() } label: {
-                                membershipCircle(checked: picker.isLiked, busy: picker.pending.contains(PlaylistPickerModel.likedRowID))
-                            }.buttonStyle(.plain).disabled(picker.pending.contains(PlaylistPickerModel.likedRowID))
-                        }.padding(.trailing, 10)
+                        destination(picker.likedRowTitle, symbol: "heart.fill", id: PlaylistBrowserModel.likedID)
                         Divider().padding(.vertical, 6)
                         ForEach(playlists) { playlist in
-                            HStack(spacing: 4) {
-                                Button { browser.select(playlist.id) } label: {
-                                    HStack(spacing: 8) {
-                                        PlaylistCover(url: playlist.imageURL).frame(width: 32, height: 32)
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text(playlist.name).lineLimit(1)
-                                            Text("\(playlist.trackCount) 首").font(.caption).foregroundStyle(.secondary)
-                                        }
-                                        Spacer(minLength: 0)
-                                    }.contentShape(Rectangle())
-                                }.buttonStyle(.plain)
-                                Button { picker.toggle(playlist) } label: {
-                                    membershipCircle(checked: picker.isMember(playlist), busy: picker.isPending(playlist) || picker.isChecking(playlist))
-                                }.buttonStyle(.plain).disabled(picker.isPending(playlist) || picker.isChecking(playlist))
-                            }
-                            .padding(.horizontal, 10).frame(height: 44)
-                            .background(browser.selectedID == playlist.id ? .white.opacity(0.09) : .clear)
-                            .onAppear { picker.ensureMembership(for: playlist) }
+                            destination(playlist.name, symbol: "music.note.list", id: playlist.id, playlist: playlist)
+                                .onAppear { picker.ensureMembership(for: playlist) }
+                                .onChange(of: currentTrackID) { _, _ in picker.ensureMembership(for: playlist) }
                         }
                         if case .loading = picker.phase { ProgressView().controlSize(.small).padding() }
                         if case .failed(let error) = picker.phase { Text(error).font(.caption).padding() }
@@ -62,19 +53,11 @@ struct V3PlaylistPanel: View {
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(tracks) { item in
-                                HStack(spacing: 8) {
-                                    AsyncImage(url: item.track.artworkURL) { $0.resizable().scaledToFill() } placeholder: { Image(systemName: "music.note") }
-                                        .frame(width: 32, height: 32).clipShape(RoundedRectangle(cornerRadius: 5))
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(item.track.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                                        Text(item.track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                    }
-                                    Spacer(minLength: 0)
-                                    Button { browser.play(item) } label: { Image(systemName: "play.fill") }
-                                        .buttonStyle(.plain).help("播放这首歌")
+                                if browser.selectedID == PlaylistBrowserModel.queueID {
+                                    trackRow(item)
+                                } else {
+                                    trackRow(item).onTapGesture(count: 2) { browser.play(item) }
                                 }
-                                .padding(.horizontal, 12).frame(height: 44).contentShape(Rectangle())
-                                .onTapGesture(count: 2) { browser.play(item) }
                             }
                         }
                     }
@@ -89,23 +72,73 @@ struct V3PlaylistPanel: View {
         if browser.selectedID == PlaylistBrowserModel.likedID { return picker.likedRowTitle }
         return picker.playlists.first { $0.id == browser.selectedID }?.name ?? "歌单"
     }
-    private func destination(_ title: String, symbol: String, id: String) -> some View {
-        Button { browser.select(id) } label: {
-            Label(title, systemImage: symbol).font(.system(size: 12, weight: .medium))
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).padding(.horizontal, 10)
-                .background(browser.selectedID == id ? .white.opacity(0.09) : .clear).contentShape(Rectangle())
-        }.buttonStyle(.plain)
+    private func destination(_ title: String, symbol: String, id: String, playlist: PlaylistSummary? = nil) -> some View {
+        HStack(spacing: 4) {
+            Button { browser.select(id) } label: {
+                HStack(spacing: 8) {
+                    Group {
+                        if let playlist { PlaylistCover(url: playlist.imageURL) }
+                        else { Image(systemName: symbol).frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 5)) }
+                    }.frame(width: 32, height: 32)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title).lineLimit(1)
+                        if let playlist { Text("\(playlist.trackCount) 首").font(.caption).foregroundStyle(.secondary) }
+                    }
+                    Spacer(minLength: 0)
+                }.frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+            if id != PlaylistBrowserModel.queueID {
+                let checked = playlist.map { picker.isMember($0) } ?? picker.isLiked
+                let busy = playlist.map { picker.isPending($0) || picker.isChecking($0) }
+                    ?? picker.pending.contains(PlaylistPickerModel.likedRowID)
+                Button {
+                    if let playlist { picker.toggle(playlist) } else { picker.toggleLikedSongs() }
+                } label: { membershipCircle(checked: checked, busy: busy) }
+                    .buttonStyle(.plain).disabled(busy)
+                    .opacity(checked || busy || hoveredSidebarID == id ? 1 : 0)
+            }
+        }
+        .font(.system(size: 12, weight: .medium))
+        .padding(.horizontal, 6)
+        .background(browser.selectedID == id ? .white.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .contentShape(Rectangle())
+        .onHover { hoveredSidebarID = $0 ? id : nil }
+        .padding(.horizontal, 6)
+    }
+
+    private func trackRow(_ item: SpotifyPlaylistTrack) -> some View {
+        HStack(spacing: 8) {
+            AsyncImage(url: item.track.artworkURL) { $0.resizable().scaledToFill() } placeholder: { Image(systemName: "music.note") }
+                .frame(width: 32, height: 32).clipShape(RoundedRectangle(cornerRadius: 4))
+            VStack(alignment: .leading) {
+                Text(item.track.title).lineLimit(1)
+                Text(item.track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer()
+            if browser.selectedID != PlaylistBrowserModel.queueID {
+                Button { browser.play(item) } label: { Image(systemName: "play.fill") }
+                    .buttonStyle(.plain).help("播放这首歌")
+                    .opacity(hoveredTrackOffset == item.offset ? 1 : 0)
+            }
+        }
+        .padding(.horizontal, 12).frame(height: 44)
+        .background(hoveredTrackOffset == item.offset ? .white.opacity(0.08) : .clear)
+        .contentShape(Rectangle())
+        .onHover { hoveredTrackOffset = $0 ? item.offset : nil }
     }
     private func membershipCircle(checked: Bool, busy: Bool) -> some View {
         Group {
-            if busy { ProgressView().controlSize(.small) }
-            else { Image(systemName: checked ? "checkmark.circle.fill" : "circle").foregroundStyle(checked ? .white : .white.opacity(0.4)) }
+            if checked { Image(systemName: "checkmark.circle.fill").foregroundStyle(.white) }
+            else if busy { ProgressView().controlSize(.small) }
+            else { Image(systemName: "circle").foregroundStyle(.white.opacity(0.4)) }
         }.frame(width: 24, height: 28)
     }
 }
 
 struct V3PlaylistQueuePreview: View {
     @ObservedObject var browser: PlaylistBrowserModel
+    let openPlaylists: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(browser.queue.prefix(5).enumerated()), id: \.offset) { _, track in
@@ -119,6 +152,10 @@ struct V3PlaylistQueuePreview: View {
                 }
             }
             if browser.isQueueLoading { ProgressView().controlSize(.small) }
+            else if browser.queue.isEmpty, browser.notice == nil {
+                Text("接下来没有待播歌曲").foregroundStyle(.secondary)
+            }
+            Button("打开歌单", action: openPlaylists)
             if let notice = browser.notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
         }.task { browser.loadQueue() }
     }

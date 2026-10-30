@@ -73,12 +73,15 @@ public final class PlaylistBrowserModel: ObservableObject {
     }
     public func play(_ item: SpotifyPlaylistTrack) {
         let context = selectedID
+        guard context != Self.queueID else { return }
+        let remainingIDs = tracks.drop(while: { $0.offset != item.offset })
+            .compactMap { TrackIdentity.spotifyRequestTrackID($0.track.spotifyId) }
         Task {
             do {
                 let token = try await accessToken(SpotifyOAuthConfiguration.playbackWriteScopes)
-                if context == Self.queueID || context == Self.likedID {
-                    guard let id = TrackIdentity.spotifyRequestTrackID(item.track.spotifyId) else { return }
-                    try await service.playTrack(id, accessToken: token)
+                if context == Self.likedID {
+                    guard !remainingIDs.isEmpty else { return }
+                    try await service.playTracks(remainingIDs, accessToken: token)
                 } else {
                     try await service.playPlaylist(context, offset: item.offset, accessToken: token)
                 }
