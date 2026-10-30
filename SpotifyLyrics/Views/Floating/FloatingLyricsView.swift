@@ -4,6 +4,7 @@ import SwiftUI
 /// and WindowController only; it owns no provider, session, translation state
 /// or playback timer. All lyric rows come from the shared live session.
 struct FloatingLyricsView: View {
+    @ObservedObject private var readingCache = V3JapaneseReadingCache.shared
     @ObservedObject var state: PlaybackState
     @ObservedObject var windowController: FloatingLyricsWindowController
     @EnvironmentObject private var settings: AppSettingsStore
@@ -40,6 +41,13 @@ struct FloatingLyricsView: View {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) {
                 isHovering = hovering
             }
+        }
+        .task(id: V3JapaneseReadingCache.Preparation(lines: state.liveLyrics, language: state.liveLyricsLanguage,
+            userEntries: settings.readingUserDictionary.load(), trackStableKey: state.currentTrackIdentity?.stableKey,
+            artistDisplay: state.currentTrack.artist, scriptConversion: .none)) {
+                await V3JapaneseReadingCache.prepare(.init(lines: state.liveLyrics, language: state.liveLyricsLanguage,
+                    userEntries: settings.readingUserDictionary.load(), trackStableKey: state.currentTrackIdentity?.stableKey,
+                    artistDisplay: state.currentTrack.artist, scriptConversion: .none))
         }
         .preferredColorScheme(.dark)
         .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: state.liveLyrics))
@@ -190,11 +198,11 @@ struct FloatingLyricsView: View {
         let preferences = state.preferences
         let palette = FloatingDesktopPalette(settings: settings)
         let japanese = LyricsLanguageGate.allowsJapaneseReadings(language: state.liveLyricsLanguage, text: line.originalText)
-        let presentation = V3JapaneseReadingCache.presentation(
+        let presentation = V3JapaneseReadingCache.resolvedPresentation(
             for: line, language: state.liveLyricsLanguage,
             userEntries: settings.readingUserDictionary.load(),
             trackStableKey: state.currentTrackIdentity?.stableKey,
-            artistDisplay: state.currentTrack.artist
+            artistDisplay: state.currentTrack.artist, scriptConversion: .none
         )
         let kana = japanese && preferences.showKana ? presentation.kanaText : nil
         let isPinyin: Bool = {

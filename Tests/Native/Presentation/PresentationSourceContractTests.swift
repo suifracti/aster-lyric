@@ -5,6 +5,24 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class PresentationSourceContractTests: XCTestCase {
+    @MainActor
+    func testColdSongReadingsNeverRunInTheViewAndAreReusedAfterPreparation() async {
+        let line = LyricLine(timestamp: 0, originalText: "ずっと前から決めてたんだね")
+        let presentation = V3JapaneseReadingCache.resolvedPresentation(for: line, language: "ja",
+            userEntries: [], trackStableKey: "round7-unmei", artistDisplay: "はてなぷれいりすと",
+            scriptConversion: .none)
+        XCTAssertNil(presentation.kanaText, "A cold view read must show the original without running MeCab")
+        await V3JapaneseReadingCache.prepare(.init(lines: [line], language: "ja", userEntries: [],
+            trackStableKey: "round7-unmei", artistDisplay: "はてなぷれいりすと", scriptConversion: .none))
+        // A projection can rebuild line UUIDs without changing the reading inputs.
+        let projected = LyricLine(timestamp: 1, originalText: line.originalText)
+        let ready = V3JapaneseReadingCache.resolvedPresentation(for: projected, language: "ja",
+            userEntries: [], trackStableKey: "round7-unmei", artistDisplay: "はてなぷれいりすと", scriptConversion: .none)
+        XCTAssertNotNil(ready.kanaText)
+        XCTAssertTrue(ready.hasRuby)
+
+    }
+
     func testSearchListsThePlayingSongOnceAndMergesDuplicateOtherSongs() {
         let playing = Track(title: "運命のふりをして", artist: "Fixture", album: "One", duration: 180, spotifyId: "playing")
         let other = Track(title: "Other", artist: "Fixture", album: "Two", duration: 200, spotifyId: "other")

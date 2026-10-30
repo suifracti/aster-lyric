@@ -193,6 +193,13 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task(id: V3JapaneseReadingCache.Preparation(lines: lines, language: language,
+            userEntries: settings.readingUserDictionary.load(), trackStableKey: trackStableKey,
+            artistDisplay: artistDisplay, scriptConversion: settings.readingPreferences.scriptConversion)) {
+                await V3JapaneseReadingCache.prepare(.init(lines: lines, language: language,
+                    userEntries: settings.readingUserDictionary.load(), trackStableKey: trackStableKey,
+                    artistDisplay: artistDisplay, scriptConversion: settings.readingPreferences.scriptConversion))
+        }
         .environment(\.v3ExplicitInstrumentalMark, hasExplicitInstrumentalMark)
         .onAppear { renderedSignature = renderSignature }
         .onReceive(state.objectWillChange) { _ in scheduleContentRefresh() }
@@ -372,6 +379,13 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                     }
                 }
                 .padding(.vertical, bigLine ? 16 : 0)
+                .onReceive(V3JapaneseReadingCache.shared.$revision.dropFirst()) { _ in
+                    // Reading layers arrive together; keep the active line at the same anchor.
+                    DispatchQueue.main.async {
+                        scrollToCurrentLine(using: proxy, lines: lines, currentIndex: currentIndex,
+                            synchronized: synchronized, animated: false, anchorY: scrollAnchor)
+                    }
+                }
                 .onChange(of: settings.v3BigLineModeEnabled) { _, _ in
                     DispatchQueue.main.async {
                         scrollToCurrentLine(using: proxy, lines: lines, currentIndex: currentIndex,
@@ -436,7 +450,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
         let userEntries = settings.readingUserDictionary.load()
         let currentIndex = index ?? 0
 
-        Task(priority: .utility) {
+        V3JapaneseReadingCache.preparationQueue.async {
             let start = max(0, currentIndex)
             let end = min(lines.count, start + 3)
             for i in start..<end {
@@ -740,7 +754,36 @@ enum V3ChinesePinyinCache {
 /// Reading generation is a fallback for provider lines that do not carry a
 /// kana layer. Keep it outside the SwiftUI body so a row redraw does not run
 /// MeCab repeatedly, which otherwise makes lyric scrolling feel sticky.
-enum V3JapaneseReadingCache {
+final class V3JapaneseReadingCache: ObservableObject {
+    static let shared = V3JapaneseReadingCache()
+    @Published private(set) var revision = 0
+    static let preparationQueue = DispatchQueue(label: "lyrics.reading-preparation", qos: .userInitiated)
+
+    struct Preparation: Hashable {
+        let lines: [LyricLine]
+        let language: String?
+        let userEntries: [ReadingDictionaryEntry]
+        let trackStableKey: String?
+        let artistDisplay: String?
+        let scriptConversion: ScriptConversionID
+    }
+
+    static func prepare(_ input: Preparation) async {
+        await withCheckedContinuation { continuation in
+            preparationQueue.async {
+                for line in input.lines {
+                    _ = resolvedPresentation(for: line, language: input.language, userEntries: input.userEntries,
+                        trackStableKey: input.trackStableKey, artistDisplay: input.artistDisplay,
+                        scriptConversion: input.scriptConversion)
+                }
+                DispatchQueue.main.async {
+                    shared.revision += 1
+                    continuation.resume()
+                }
+            }
+        }
+    }
+
     static func presentation(for line: LyricLine, language: String?, userEntries: [ReadingDictionaryEntry],
                              trackStableKey: String?, artistDisplay: String?) -> JapaneseRubyPresentation {
         let original = line.readingSurfaceText ?? line.originalText
@@ -770,6 +813,7 @@ enum V3JapaneseReadingCache {
 
     private static let lock = NSLock()
     private static var values: [String: JapaneseReadingResult] = [:]
+    private static var valueOrder: [String] = []
 
     static func reading(
         for text: String,
@@ -801,11 +845,15 @@ enum V3JapaneseReadingCache {
 
         lock.lock()
         if let cached = values[key] {
+            valueOrder.removeAll { $0 == key }
+            valueOrder.append(key)
             lock.unlock()
             return cached
         }
         lock.unlock()
 
+        // View reads never invoke morphology. The whole document is prepared on the worker queue.
+        guard !Thread.isMainThread else { return nil }
         let result = providerKana.map { JapaneseReadingPipeline.analyze(originalText: normalizedText, providerKana: $0) } ?? JapaneseContextualReadingEngine.analyze(
             text: normalizedText,
             userEntries: applicableEntries,
@@ -815,14 +863,15 @@ enum V3JapaneseReadingCache {
 
         lock.lock()
         values[key] = result
-        if values.count > 256, let oldestKey = values.keys.first {
-            values.removeValue(forKey: oldestKey)
-        }
+        valueOrder.removeAll { $0 == key }
+        valueOrder.append(key)
+        if valueOrder.count > 256 { values.removeValue(forKey: valueOrder.removeFirst()) }
         lock.unlock()
         return result
     }
 
     private static var resolvedCache: [String: JapaneseRubyPresentation] = [:]
+    private static var resolvedOrder: [String] = []
 
     static func resolvedPresentation(
         for line: LyricLine,
@@ -836,15 +885,32 @@ enum V3JapaneseReadingCache {
         guard !original.isEmpty else {
             return JapaneseRubyPresentation(originalText: "", reading: nil)
         }
-        let hash = "\(line.timestamp)-\(original)"
-        let key = "\(line.id.uuidString)-\(hash)-\(language ?? "")-\(scriptConversion.rawValue)-\(userEntries.count)-\(trackStableKey ?? "")"
+        // Projection UUIDs/timestamps are not reading inputs; dictionary contents are.
+        var hasher = Hasher()
+        hasher.combine(original)
+        hasher.combine(line.kanaText)
+        hasher.combine(line.romajiText)
+        hasher.combine(line.rubyTokens)
+        hasher.combine(line.readingRepresentationID)
+        hasher.combine(language)
+        hasher.combine(scriptConversion)
+        hasher.combine(userEntries)
+        hasher.combine(trackStableKey)
+        hasher.combine(artistDisplay)
+        let key = String(hasher.finalize())
         lock.lock()
         if let cached = resolvedCache[key] {
+            resolvedOrder.removeAll { $0 == key }
+            resolvedOrder.append(key)
             lock.unlock()
             return cached
         }
         lock.unlock()
 
+        if Thread.isMainThread {
+            return JapaneseRubyPresentation(originalText: ReadingScriptConverter.convert(original, using: scriptConversion),
+                reading: nil)
+        }
         let base = presentation(
             for: line,
             language: language,
@@ -879,9 +945,9 @@ enum V3JapaneseReadingCache {
 
         lock.lock()
         resolvedCache[key] = resolved
-        if resolvedCache.count > 512, let oldest = resolvedCache.keys.first {
-            resolvedCache.removeValue(forKey: oldest)
-        }
+        resolvedOrder.removeAll { $0 == key }
+        resolvedOrder.append(key)
+        if resolvedOrder.count > 512 { resolvedCache.removeValue(forKey: resolvedOrder.removeFirst()) }
         lock.unlock()
         return resolved
     }
@@ -1227,6 +1293,7 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
 }
 
 private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
+    @ObservedObject private var readingCache = V3JapaneseReadingCache.shared
     @Environment(\.v3CoverAccent) private var coverAccent
     @Environment(\.v3PreviewPresentation) private var previewPresentation
     @Environment(\.v3ExplicitInstrumentalMark) private var hasExplicitInstrumentalMark
