@@ -10,11 +10,16 @@ view=(r/'SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift').
 a=view.index('final class V3PlaybackContentObserver:')
 b=view.index('\n@MainActor\n@propertyWrapper',a)
 observer='@MainActor\n'+view[a:b]
+progress=s[s.index('/// Observed only'):s.index('@MainActor\npublic final class PlaybackState')]
+properties=s[s.index('    public let progress ='):s.index('    /// Authoritative seeks')].replace('private(set)', '')
 program='''import Foundation
+import Observation
 import Combine
 struct PlaybackTickTimeUpdatePolicy { static func shouldPublish(currentTime:Double,nextTime:Double)->Bool { currentTime != nextTime } }
+PROGRESS
+@MainActor
 final class Probe:ObservableObject {
- @Published var currentTime:Double = 0
+ PROPERTIES
  @Published var lineIndex = 0
  var isPublishingPlaybackClockTick = false
  enum LineIndexSource { case poll, seek }
@@ -25,17 +30,22 @@ final class Probe:ObservableObject {
  var playbackAnchorMonotonic:Double=0
  var presentationTimeNow:Double { currentTime }
  var boundaryFlags:[Bool]=[]
+ func updatePlaybackScheduling() {}
  func syncPublishedLineIndex(source:LineIndexSource,previousTime:Double,incomingTime:Double) { boundaryFlags.append(isPublishingPlaybackClockTick) }
  METHOD
  ANCHOR
 }
 typealias PlaybackState = Probe
 OBSERVER
+MainActor.assumeIsolated {
 let p=Probe()
 var refreshes=0, ticks=0
-let a=p.objectWillChange.sink { if !p.isPublishingPlaybackClockTick { refreshes += 1 } }
-let b=p.$currentTime.dropFirst().sink { _ in ticks += 1 }
+let a=p.objectWillChange.sink { refreshes += 1 }
+let b=p.progress.publisher.dropFirst().sink { _ in ticks += 1 }
+var playheadInvalidated = false
+withObservationTracking { _ = p.currentTime } onChange: { MainActor.assumeIsolated { playheadInvalidated = true } }
 for n in 1...5 { p.publishTickTime(Double(n)/5) }
+precondition(playheadInvalidated, "time labels and sliders must still invalidate through Observation")
 precondition(ticks == 5 && refreshes == 0, "all clock consumers stay live without rebuilding the large surface")
 precondition(!p.isPublishingPlaybackClockTick, "tick scope must end synchronously")
 p.lineIndex=1
@@ -59,8 +69,10 @@ MainActor.assumeIsolated {
  precondition(updates == 1, "controls must still observe content changes")
  withExtendedLifetime(c) {}
 }
+withExtendedLifetime((a,b)) {}
+}
 print("PASS: clock consumers stay live; main and control observers skip only pure ticks")
-'''.replace('METHOD',method).replace('ANCHOR',anchor).replace('OBSERVER',observer)
+'''.replace('PROGRESS',progress).replace('PROPERTIES',properties).replace('METHOD',method).replace('ANCHOR',anchor).replace('OBSERVER',observer)
 with tempfile.TemporaryDirectory(prefix='lyrics-clock-filter-') as d:
  p=Path(d);(p/'main.swift').write_text(program)
  subprocess.run(['swiftc',str(p/'main.swift'),'-o',str(p/'probe')],check=True)

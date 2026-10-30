@@ -62,8 +62,8 @@ struct V3WindowEdgePlaybackOverlay: View {
                                            state.currentTrack.duration), source: "v3-edge-progress-keyboard")
                     }
 
-                // One local timeline/color value for both the progress and its
-                // buttons. The transparent hit band remains separate and narrow.
+                // Keep the rail animated independently of the transport controls.
+                // The transparent hit band remains separate and narrow.
                 TimelineView(.animation(
                     minimumInterval: reduceMotion ? 0.5 : 1.0 / 30.0,
                     paused: !windowVisible || (!state.isPlaying && !animatesColor)
@@ -77,27 +77,6 @@ struct V3WindowEdgePlaybackOverlay: View {
                         }
                         .transaction { $0.animation = nil }
                         .allowsHitTesting(false).accessibilityHidden(true)
-                        ZStack {
-                            V3WindowEdgeTransportButtons(state: state, accent: color,
-                                isVertical: controlPosition.isVertical,
-                                brightCover: coverLuminance > 0.6,
-                                elapsed: Self.timeText(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime)),
-                                total: Self.timeText(state.currentTrack.duration),
-                                fraction: Double(progressFraction),
-                                draftChanged: { fraction in scrubbingPill = true; setDraft(fraction) },
-                                draftEnded: { fraction in finishDraft(fraction: fraction) })
-                                .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
-                                .scaleEffect(controlPosition.scale * (playerVisible || reduceMotion ? 1 : 0.92))
-                                .opacity(playerVisible ? 1 : 0)
-                                .allowsHitTesting(playerVisible)
-                                .accessibilityHidden(!playerVisible)
-                                .position(controlPosition.center)
-                                .animation(.easeOut(duration: playerVisible ? 0.18 : 0.14), value: playerVisible)
-                                .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 1), value: controlPosition.center)
-                                .id(controlPosition.edge)
-                                .transition(.opacity)
-                        }
-                        .animation(.easeOut(duration: 0.18), value: controlPosition.edge)
                         if let hover = scrubbingPill ? draftFraction.map({ RailHover(point: controlPosition.center, fraction: $0) }) : railHover {
                             Text(Self.timeText(hover.fraction * state.currentTrack.duration))
                                 .font(.system(size: 11, weight: .medium)).monospacedDigit()
@@ -108,6 +87,35 @@ struct V3WindowEdgePlaybackOverlay: View {
                                 .allowsHitTesting(false).accessibilityHidden(true)
                         }
                     }
+                }
+
+                // Keep popover/state ownership alive when hidden, without ticking its controls.
+                TimelineView(.animation(
+                    minimumInterval: reduceMotion ? 0.5 : 1.0 / 30.0,
+                    paused: !playerVisible || !windowVisible || (!state.isPlaying && !animatesColor)
+                )) { context in
+                    let color = accent(at: context.date, songHue: songHue)
+                    ZStack {
+                        V3WindowEdgeTransportButtons(state: state, accent: color,
+                            isVertical: controlPosition.isVertical,
+                            brightCover: coverLuminance > 0.6,
+                            elapsed: Self.timeText(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime)),
+                            total: Self.timeText(state.currentTrack.duration),
+                            fraction: Double(progressFraction),
+                            draftChanged: { fraction in scrubbingPill = true; setDraft(fraction) },
+                            draftEnded: { fraction in finishDraft(fraction: fraction) })
+                            .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
+                            .scaleEffect(controlPosition.scale * (playerVisible || reduceMotion ? 1 : 0.92))
+                            .opacity(playerVisible ? 1 : 0)
+                            .allowsHitTesting(playerVisible)
+                            .accessibilityHidden(!playerVisible)
+                            .position(controlPosition.center)
+                            .animation(.easeOut(duration: playerVisible ? 0.18 : 0.14), value: playerVisible)
+                            .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 1), value: controlPosition.center)
+                            .id(controlPosition.edge)
+                            .transition(.opacity)
+                    }
+                    .animation(.easeOut(duration: 0.18), value: controlPosition.edge)
                 }
 
             }

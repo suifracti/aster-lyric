@@ -1,4 +1,5 @@
 import Combine
+import Observation
 import AppKit
 import UniformTypeIdentifiers
 import Foundation
@@ -15,6 +16,17 @@ public enum LibraryToolTab: String, CaseIterable, Identifiable {
     public var id: String { rawValue }
 }
 
+/// Observed only by views reading the playhead, not by the App's PlaybackState owner.
+@MainActor
+@Observable
+public final class PlaybackProgress {
+    public var currentTime: TimeInterval = 0 {
+        didSet { updates.send(currentTime) }
+    }
+    @ObservationIgnored private let updates = CurrentValueSubject<TimeInterval, Never>(0)
+    public var publisher: AnyPublisher<TimeInterval, Never> { updates.eraseToAnyPublisher() }
+}
+
 @MainActor
 public final class PlaybackState: ObservableObject {
     public let sleepTimer = SleepTimerController()
@@ -22,9 +34,15 @@ public final class PlaybackState: ObservableObject {
     private static let seekLogger = Logger(subsystem: "com.spotifylyrics.app", category: "seek")
 #endif
     @Published public private(set) var currentTrack: Track = .emptyPlaybackPlaceholder
-    @Published public private(set) var currentTime: TimeInterval = 0
-    /// Current-time subscribers still receive every tick. Large surfaces can
-    /// ignore only this synchronous objectWillChange; real content events remain live.
+    public let progress = PlaybackProgress()
+    public private(set) var currentTime: TimeInterval {
+        get { progress.currentTime }
+        set {
+            if !isPublishingPlaybackClockTick { objectWillChange.send() }
+            progress.currentTime = newValue
+        }
+    }
+    /// Authoritative seeks still publish content; ordinary ticks only update progress.
     public private(set) var isPublishingPlaybackClockTick = false
     /// Published only when the playhead crosses a lyric-line boundary, on
     /// seek/pause/resume/track change, or when the lyric document changes.

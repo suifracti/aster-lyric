@@ -443,7 +443,7 @@ public final class LiveCaptureCoordinator: ObservableObject {
 
         // Observe discontinuities and calibration; sparse hidden-window samples
         // are compared against elapsed host time rather than raw position jumps.
-        playback.$currentTime
+        playback.progress.publisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] position in
                 self?.onPosition(position)
