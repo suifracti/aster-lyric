@@ -392,11 +392,12 @@ A control never appears on both sides. Where the other side used to have it, sho
   - The current song appears once, not in both sections. Local results show first; online results stream in.
 - **歌单 tab:**
   - **Left column:** 接下来播放 (from `/me/player/queue`), then 已点赞的歌曲, then the user's playlists (flat; Spotify gives no folders).
-  - **Right column:** the selected playlist's tracks. Double-click a track, or press its ▶, to play it in that playlist's context (`PUT /me/player/play` with `context_uri` and an offset; the existing playback-write scope covers it). A 403 shows 「需要 Spotify Premium」.
-  - Each playlist row shows a circle that is ✓ when the current song is in it. Clicking the circle adds or removes the song, reusing the picker's membership logic.
+  - **Right column:** the selected playlist's tracks. Double-click a track, or press its ▶ (shown on row hover), to play it in that playlist's context (`PUT /me/player/play` with `context_uri` and an offset; the existing playback-write scope covers it). A 403 shows 「需要 Spotify Premium」.
+  - A ✓ marks each playlist that holds the current song. An empty circle appears only on row hover. Clicking either adds or removes the song, reusing the picker's membership logic.
+  - Round 7 below has the row and queue details.
 - **New toolbar button 歌单** (`music.note.list`) between 搜索 and 译文.
   - Toolbar order: 歌词库 · 搜索 · 歌单 · 译文 · 文字 · 画面 · 更多 | 设置.
-  - **Hover:** the next 5 songs in the queue.
+  - **Hover:** a panel titled 「接下来播放」 with the next 5 songs and an 「打开歌单」 button (Round 7).
   - **Click:** opens the panel on the 歌单 tab.
 - The player's 「添加到歌单」 button keeps its quick popover for the current song.
 
@@ -451,3 +452,28 @@ A control never appears on both sides. Where the other side used to have it, sho
 - **保护数据**：不覆盖正式安装版、SQLite、Keychain、手选或锁定歌词；不擅自调用付费 AI、不扩大账号权限、自动测试不直接修改真实用户歌单。
 - **提交/报告**：每项说明实际修了什么、提交 SHA、受影响的一条真实检查及结果，`NOT_RUN` 单独列明。最终只发一份简短总报告（含来源测试 PASS/FAIL、Xcode XCTest、4处重要UI状态、CPU/RSS对照、尚未实测的 Spotify 写操作）。不要求用户逐步转发或做全量回归。
 - **停止线**：Round6不再新增功能、不另造UI体系。上述问题均无真实缺陷时就收口；需要新设计的意见另记候选，不在本轮无边界扩大范围。
+
+
+## Round 7: 歌单窗口收口与歌词卡顿（2026-10-31）
+
+**Lyric rows never run the reading engine.**
+- A view `body` must not start MeCab or wait for it. Each song's readings are computed once off the main thread.
+- Lines show without readings until the result arrives, then gain them without a jump in position.
+- Find out why the existing caches miss during playback, and fix that cause.
+
+**歌单 panel, left column:**
+- 接下来播放 and 已点赞的歌曲 get a 32 pt icon tile, so their titles line up with the playlist names.
+- All rows share one selection style: rounded, inset 6 pt from the column edges.
+- Membership mark: ✓ stays visible; an empty circle shows only on row hover. 接下来播放 has none.
+
+**歌单 panel, right column:**
+- Rows get a hover highlight; ▶ shows only on hover.
+- **接下来播放 is read-only:** no ▶ and no double-click play. Spotify has no call to jump within the queue.
+- **已点赞的歌曲:** play sends the chosen song plus the loaded songs after it through `uris`, so playback continues.
+- Changing songs must not rebuild the panel or reset its scroll position.
+
+**Header:** on the 歌单 tab the 「⋯」 menu holds only 刷新. Hide 导出, 导入 and 私人文件夹同步 there.
+
+**Hover panel:** title 「接下来播放」, then the next 5 songs, then 「打开歌单」. An empty queue shows 「接下来没有待播歌曲」.
+
+The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because the toolbar can hide.
