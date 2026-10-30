@@ -814,6 +814,28 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertTrue(outcome.automaticDecision?.reasons.contains("durationClose") == true)
     }
 
+    func testReviewedQueueSongIsPreloadedOnceButStillSearchedWhenPlayed() async {
+        let track = Track(title: "活着", artist: "Sop天, 橙汁, BFG Music", album: "活着", duration: 165.373,
+                          spotifyId: "1ww8Qq9GU6VxO293E2najn")
+        let candidate = LyricsCandidate(id: "netease:1383422260", identity: TrackIdentity(track: track),
+            title: "活着（Prod.By Red killer）", artist: "Sop天, 橙汁, BFG_Music", album: track.album,
+            duration: 165.373, lines: [LyricLine(timestamp: 1, originalText: "Fixture")],
+            source: .neteaseExperimental, confidence: 0.9)
+        let counter = ProviderFailureCounter()
+        let provider = ProviderFailureCountingLyricsProvider(name: "NetEase Experimental", result: .candidates([candidate]), counter: counter)
+        let first = LyricsSessionController(providers: [provider], isPreload: true)
+        await first.loadForPreloading(track: track)
+        guard case .candidates = first.state else { return XCTFail("Reproduce the real review result") }
+        let firstCalls = counter.value
+        XCTAssertGreaterThan(firstCalls, 0)
+        let requeued = LyricsSessionController(providers: [provider], isPreload: true)
+        await requeued.loadForPreloading(track: track)
+        XCTAssertEqual(counter.value, firstCalls, "The second queue appearance must not search again")
+        let live = LyricsSessionController(providers: [provider])
+        await live.loadForPreloading(track: track)
+        XCTAssertGreaterThan(counter.value, firstCalls, "Normal playback must still follow its normal search path")
+    }
+
     func testPreloadedQueueTrackPlaysFromStorageWithoutAnotherSearch() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("lyrics-preload-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
