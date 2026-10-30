@@ -701,6 +701,32 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertNotNil(object?["sources"] as? [[String: Any]])
     }
 
+    func testLowYieldSourcesWaitAndAreSkippedAfterAutomaticAdoption() async {
+        let track = Track(title: "Known recording", artist: "Artist", album: "Album", duration: 180)
+        let identity = TrackIdentity(track: track)
+        let document = LyricsDocument(identity: identity, title: track.title, artist: track.artist,
+            album: track.album, duration: track.duration, lines: [LyricLine(timestamp: 1, originalText: "Fixture")],
+            isSynchronized: true, source: .qqExperimental, confidence: 0.95)
+        for hasLyrics in [true, false] {
+            let ovh = ProviderFailureCounter(), linkcore = ProviderFailureCounter()
+            let manager = LyricsSearchManager(providers: [
+                ProviderFailureCountingLyricsProvider(name: "lyrics.ovh", result: .noMatch, counter: ovh),
+                ProviderFailureCountingLyricsProvider(name: "LinkCore / TuneCore", result: .noMatch, counter: linkcore),
+                ProviderFailureDelayedLyricsProvider(name: "QQ Music Experimental", delay: 20_000_000,
+                    result: hasLyrics ? .match(document) : .noMatch)
+            ])
+            let outcome = await manager.search(track: track, identity: identity)
+            if hasLyrics {
+                guard case .match = outcome.result else { return XCTFail("Keep normal automatic adoption") }
+                XCTAssertEqual(ovh.value, 0)
+                XCTAssertEqual(linkcore.value, 0)
+            } else {
+                XCTAssertGreaterThan(ovh.value, 0, "The source remains available when earlier sources cannot adopt")
+                XCTAssertGreaterThan(linkcore.value, 0)
+            }
+        }
+    }
+
     func testAWaitingTimedVersionBeatsPlainTextInTheSameRound() async throws {
         // Real data: the second play reports 228.5 s. LRCLIB answered first
         // with plain text while NetEase and KuGou offered the same recording
