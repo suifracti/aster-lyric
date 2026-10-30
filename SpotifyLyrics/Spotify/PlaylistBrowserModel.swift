@@ -74,7 +74,7 @@ public final class PlaylistBrowserModel: ObservableObject {
     public func play(_ item: SpotifyPlaylistTrack) {
         let context = selectedID
         guard context != Self.queueID else { return }
-        let remainingIDs = tracks.drop(while: { $0.offset != item.offset })
+        let remainingIDs = tracks.drop(while: { $0.offset != item.offset }).prefix(100)
             .compactMap { TrackIdentity.spotifyRequestTrackID($0.track.spotifyId) }
         Task {
             do {
