@@ -65,6 +65,9 @@ private final class KuwoFixtureProtocol: URLProtocol, @unchecked Sendable {
             reset(lyric: "{\"data\":{\"lrclist\":[{\"time\":\"\(time)\",\"lineLyric\":\"No fake zero\"}]}}")
             guard case .noMatch = await provider.lookup(track: track, identity: identity) else { fatalError("invalid times") }
         }
+        // Captured from getlyric?musicId=528460531: HTTP 200, success, no lyric body.
+        reset(lyric: "{\"code\":200,\"msg\":\"success\",\"data\":{},\"success\":true}")
+        guard case .noMatch = await provider.lookup(track: track, identity: identity) else { fatalError("Kuwo's empty successful response is noMatch, not a parse failure") }
         reset(lyric: "{\"data\":{\"lrclist\":[]}}")
         guard case .noMatch = await provider.lookup(track: track, identity: identity) else { fatalError("empty lyric") }
         for code in [403, 429, 503] {

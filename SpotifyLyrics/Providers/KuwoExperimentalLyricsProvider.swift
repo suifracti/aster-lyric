@@ -43,6 +43,8 @@ public final class KuwoExperimentalLyricsProvider: LyricsProvider, @unchecked Se
                         if body["data"] is NSNull { continue }
                         throw LyricsFailure.parseFailure
                     }
+                    // Kuwo returns a successful empty object when this recording has no lyrics.
+                    if data.isEmpty, body["code"] as? Int == 200, body["success"] as? Bool == true { continue }
                     guard let records = data["lrclist"] as? [[String: Any]] else { throw LyricsFailure.parseFailure }
                     let lines = records.compactMap { record -> LyricLine? in
                         guard let rawTime = record["time"] as? String,
