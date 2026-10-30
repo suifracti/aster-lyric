@@ -72,6 +72,7 @@ public final class ArtworkImageLoader {
                 guard let httpResponse = response as? HTTPURLResponse,
                       (200..<300).contains(httpResponse.statusCode),
                       let image = NSImage(data: data) else {
+                    LyricsE2ELog.log("ARTWORK image rejected host=\(url.host ?? "local") status=\((response as? HTTPURLResponse)?.statusCode ?? 0) bytes=\(data.count)")
                     return nil
                 }
                 await MainActor.run {
@@ -79,6 +80,7 @@ public final class ArtworkImageLoader {
                 }
                 return image
             } catch {
+                LyricsE2ELog.log("ARTWORK image failed host=\(url.host ?? "local") error=\(error.localizedDescription)")
                 return nil
             }
         }

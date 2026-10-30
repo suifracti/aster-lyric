@@ -858,6 +858,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
     @MainActor
     private func loadSnapshot(for key: String) async {
+        LyricsE2ELog.log("ARTWORK backdrop begin key=\(key)")
         outgoingArtworkImage = artworkImage
         outgoingAmbientArtworkImage = ambientArtworkImage
         artworkImage = nil
@@ -886,6 +887,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
         )
         guard key == requestKey, !Task.isCancelled else { return }
 
+        LyricsE2ELog.log("ARTWORK backdrop ready key=\(key)")
         let nextArtwork = NSImage(data: snapshot.artworkData)
         let nextAmbientArtwork = NSImage(data: snapshot.ambientArtworkData)
         let nextNoise = NSImage(data: snapshot.noiseData)

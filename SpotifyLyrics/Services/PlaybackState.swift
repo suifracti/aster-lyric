@@ -1229,7 +1229,9 @@ public final class PlaybackState: ObservableObject {
         desktopArtworkTask?.cancel()
         let provider = provider
         desktopArtworkTask = Task { @MainActor [weak self] in
-            guard let url = await provider.artworkURL(for: track, source: snapshot.sourceIdentity),
+            let artwork = await provider.artworkURL(for: track, source: snapshot.sourceIdentity)
+            LyricsE2ELog.log("ARTWORK desktop id=\(track.id ?? "none") found=\(artwork != nil) cancelled=\(Task.isCancelled)")
+            guard let url = artwork,
                   !Task.isCancelled, let self,
                   self.hasLiveTrack, self.lastObservedDesktopSource == snapshot.sourceIdentity,
                   let accepted = self.desktopSnapshots[snapshot.sourceIdentity],
