@@ -484,11 +484,11 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 **Appearance follows macOS, live.**
 - Toolbar, hover panels, the centred panel, the add-to-playlist popover, settings and library windows follow the system light or dark setting, and change at once when it changes. There is no in-app appearance switch.
 - The lyric canvas, cover scenes and edge player stay as they are, because their colours come from the artwork.
-- Panels never take a tint from the cover. Tabs, links and icons use neutral system colours. Only the playing song may use the cover accent.
+- Controls never take a tint from the cover. Tabs, links and icons use neutral system colours. Only the playing song may use the cover accent. Artwork colour may show through hover-panel glass (Round 10).
 
 **Hover panels (歌单, and the same header on 歌词库 and 搜索).**
 - Header: title on the left, a quiet text link on the right: 「全部」 for 歌单, 「打开歌词库」 and 「全部结果」 for the others. These replace the bottom buttons.
-- Glass is thick enough that the artwork colour barely shows through. Hairline border, 14 pt corners.
+- Glass follows Round 10. Hairline border, 14 pt corners.
 - 歌单 panel: 300 pt wide, 14 pt padding, five 44 pt rows with a 36 pt cover, title in primary and artist in secondary colour. Rows highlight on hover.
 - It keeps showing the last known queue while refreshing, with no spinner flash, and refreshes when the song changes. The empty text stays.
 
@@ -525,4 +525,19 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 **Edge player on bright covers:** icons and time must read clearly on a white cover. Darken the capsule backing until they do.
 
 **Compact player:** the play button is the same in every scene and in both states: a near-white filled circle with a dark icon.
+
+
+## Round 10: 更通透的悬浮窗与队列跳过（2026-11-01）
+
+**Hover glass (every toolbar hover or pinned panel, in light and dark).**
+- Clearly more see-through than now: the artwork's colours and large shapes show through, blurred, about like macOS Control Center.
+- Body text stays easy to read on bright, dark and busy covers. Adjust the backing just enough for that.
+- The add-to-playlist popover uses the same glass. The centred panel stays solid.
+- Opening a panel must not put a focus ring on its first control.
+
+**接下来播放: 跳过这首.**
+- Spotify's Web API can read the queue and add to it, but has no call to remove or reorder items. Do not show a drag handle or anything else implying reorder.
+- In the hover panel and the centred panel, row hover shows an × with tooltip 「跳过这首」.
+- The row disappears at once. When that song next comes up from the queue, the app skips it immediately. The mark is then used up.
+- Marks last for this app run only. A song the user starts on purpose always plays.
 
