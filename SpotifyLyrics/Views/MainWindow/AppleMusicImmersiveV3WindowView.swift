@@ -1906,7 +1906,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .onHover { inside in
             toolbarTriggerHover(panel, inside: inside)
         }
-        .v3ToolPopover(isPresented: toolbarPopoverBinding(panel), onAnchorPress: { clickToolbarPanel(panel) }) {
+        .v3ToolPopover(isPresented: toolbarPopoverBinding(panel), onAnchorPress: { clickToolbarPanel(panel) }, width: panel == .playlists ? 300 : 360) {
             hoverTrackedPanel(panel) { inspectorSurface(for: panel, style: .hoverGlass) }
         }
     }
@@ -2045,21 +2045,18 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         VStack(spacing: 0) {
             toolbarPanel(for: panel)
         }
-        .frame(width: 360, alignment: .topLeading)
+        .frame(width: panel == .playlists ? 300 : 360, alignment: .topLeading)
         .tint(.primary)
         .background {
             switch style {
             case .hoverGlass:
-                Rectangle().fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 14).fill(.thickMaterial)
             case .pinnedSolid:
                 Color(nsColor: .windowBackgroundColor)
             }
         }
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(Color.primary.opacity(0.10))
-                .frame(width: 1)
-        }
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
         .onExitCommand { dismissPinnedToolbarPanel() }
     }
 

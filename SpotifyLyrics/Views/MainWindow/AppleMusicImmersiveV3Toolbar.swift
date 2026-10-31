@@ -8,11 +8,12 @@ import os
 /// not swallow the first click on its own toolbar anchor. Hover lifetime is
 /// owned by the existing hover state; outside clicks and Escape still dismiss.
 extension View {
-    func v3ToolPopover<Content: View>(isPresented: Binding<Bool>, onAnchorPress: @escaping () -> Void, @ViewBuilder content: () -> Content) -> some View {
+    func v3ToolPopover<Content: View>(isPresented: Binding<Bool>, onAnchorPress: @escaping () -> Void, width: CGFloat = 360, @ViewBuilder content: () -> Content) -> some View {
         background(
             V3ToolPopoverAnchor(
                 isPresented: isPresented,
                 onAnchorPress: onAnchorPress,
+                width: width,
                 // Closed panels must not construct/copy every settings page on
                 // each playback tick. Keep the anchor, build the page on demand.
                 content: isPresented.wrappedValue
@@ -147,6 +148,7 @@ enum V3HoverPanelPlacement {
 private struct V3ToolPopoverAnchor: NSViewRepresentable {
     @Binding var isPresented: Bool
     let onAnchorPress: () -> Void
+    let width: CGFloat
     let content: AnyView
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -211,7 +213,7 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
         private var appearanceSubscription: AnyCancellable?
 
         func resizeContent(height: CGFloat) {
-            let size = CGSize(width: 360, height: min(520, ceil(height)))
+            let size = CGSize(width: parent.width, height: min(520, ceil(height)))
             if popover.contentSize != size { popover.contentSize = size }
         }
 

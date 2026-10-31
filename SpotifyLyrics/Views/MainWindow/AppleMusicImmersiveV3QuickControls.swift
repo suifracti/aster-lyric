@@ -18,7 +18,13 @@ struct V3ToolbarQuickControls<Controls: View>: View {
         ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                Text(panel == .playlists ? "接下来播放" : panel.title).font(.system(size: 12, weight: .semibold))
+                HStack {
+                    Text(panel == .playlists ? "接下来播放" : panel.title).font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    if panel == .playlists { Button("全部", action: openPlaylists).buttonStyle(.plain).foregroundStyle(.secondary) }
+                    if panel == .library { Button("打开歌词库", action: openLibrary).buttonStyle(.plain).foregroundStyle(.secondary) }
+                    if panel == .search { Button("全部结果", action: openSearch).buttonStyle(.plain).foregroundStyle(.secondary) }
+                }
                 switch panel {
                 case .library:
                     Text("\(state.liveLyricsSource?.displayName ?? "暂无歌词") · \(state.liveLyricsVersionID == nil ? "未采用版本" : "已采用版本") · \(state.liveLyrics.count) 行")
@@ -26,13 +32,12 @@ struct V3ToolbarQuickControls<Controls: View>: View {
                     PersonalLibraryTrackDetailView(service: library,
                         stableKey: state.liveTrackIdentity?.stableKey ?? "", compact: true)
                         .environmentObject(state)
-                    Divider()
-                    Button("打开歌词库", action: openLibrary)
+
                 case .playlists:
-                    V3PlaylistQueuePreview(browser: state.playlistBrowser, openPlaylists: openPlaylists)
+                    V3PlaylistQueuePreview(browser: state.playlistBrowser, currentTrackID: state.currentTrack.spotifyId)
                 case .search:
                     searchControls
-                    Button("全部结果", action: openSearch)
+
                 default: controls()
                 }
             }
@@ -48,7 +53,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
         }
         }
         .scrollBounceBehavior(.basedOnSize)
-        .frame(width: 360, height: contentHeight)
+        .frame(width: panel == .playlists ? 300 : 360, height: contentHeight)
         .onPreferenceChange(V3ToolPanelHeight.self) { height in
             if height > 0 { contentHeight = min(520, ceil(height)) }
         }

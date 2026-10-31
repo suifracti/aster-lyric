@@ -66,6 +66,7 @@ struct V3PlaylistPanel: View {
             }
         }
         .onAppear { browser.open() }
+        .onChange(of: currentTrackID) { _, _ in browser.loadQueue() }
     }
     private var selectedTitle: String {
         if browser.selectedID == PlaylistBrowserModel.queueID { return "接下来播放" }
@@ -138,25 +139,30 @@ struct V3PlaylistPanel: View {
 
 struct V3PlaylistQueuePreview: View {
     @ObservedObject var browser: PlaylistBrowserModel
-    let openPlaylists: () -> Void
+    let currentTrackID: String?
+    @State private var hoveredRow: Int?
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(browser.queue.prefix(5).enumerated()), id: \.offset) { _, track in
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(browser.queue.prefix(5).enumerated()), id: \.offset) { index, track in
                 HStack(spacing: 8) {
                     AsyncImage(url: track.artworkURL) { $0.resizable().scaledToFill() } placeholder: { Image(systemName: "music.note") }
-                        .frame(width: 28, height: 28).clipShape(RoundedRectangle(cornerRadius: 4))
+                        .frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 4))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(track.title).lineLimit(1)
                         Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
+                    Spacer(minLength: 0)
                 }
+                .frame(height: 44)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(hoveredRow == index ? Color.primary.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .onHover { hoveredRow = $0 ? index : nil }
             }
-            if browser.isQueueLoading { ProgressView().controlSize(.small) }
+            if browser.isQueueLoading && browser.queue.isEmpty { ProgressView().controlSize(.small) }
             else if browser.queue.isEmpty, browser.notice == nil {
                 Text("接下来没有待播歌曲").foregroundStyle(.secondary)
             }
-            Button("打开歌单", action: openPlaylists)
             if let notice = browser.notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
-        }.task { browser.loadQueue() }
+        }.task(id: currentTrackID) { browser.loadQueue() }
     }
 }

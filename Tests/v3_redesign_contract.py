@@ -90,7 +90,7 @@ assert 'anchor.onWindowAttachment = { [weak coordinator]' in pinned_host, 'pinne
 assert 'override func viewDidMoveToWindow()' in window[window.index('final class V3ToolAnchorView'):window.index('private struct V3ToolPopoverAnchor')], 'tool anchor must signal its AppKit window attachment'
 normalized_window=' '.join(window.split())
 surface=window[window.index('private func inspectorSurface(for panel: ToolbarPopover, style: InspectorSurfaceStyle)'):window.index('private func sectionEyebrow', window.index('private func inspectorSurface'))]
-assert '.regularMaterial' in surface, 'hover tool panels must retain their frosted glass surface'
+assert '.thickMaterial' in surface, 'hover tool panels must retain their frosted glass surface'
 assert 'Color(nsColor: .windowBackgroundColor)' in surface, 'pinned tool panels must use an opaque system-colored surface'
 assert 'V3SystemAppearance.colorScheme == .dark ? Color.black : Color.white' not in surface, 'historical glass must not be covered by an opaque white tint'
 assert 'Color.primary.opacity(0.10)' in surface, 'glass panel must retain its original hairline edge'

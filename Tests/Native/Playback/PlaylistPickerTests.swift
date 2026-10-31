@@ -178,6 +178,9 @@ final class PlaylistPickerTests: XCTestCase {
         browser.loadQueue()
         await waitUntil { browser.tracks.count == 3 }
         guard browser.tracks.count == 3 else { return }
+        browser.loadQueue()
+        XCTAssertEqual(browser.queue.count, 3, "Refreshing keeps the last known queue visible")
+        await waitUntil { !browser.isQueueLoading }
         browser.play(browser.tracks[1])
         browser.select(PlaylistBrowserModel.likedID)
         await waitUntil { !browser.isLoading && browser.tracks.count == 3 }
