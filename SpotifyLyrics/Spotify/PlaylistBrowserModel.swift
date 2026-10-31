@@ -35,6 +35,12 @@ public final class PlaylistBrowserModel: ObservableObject {
     }
     public func skipQueuedTrack(_ track: Track) {
         guard let id = queueKey(track) else { return }
+        if id == currentQueueTrackID {
+            queueSkipCounts.removeValue(forKey: id)
+            manualPlaybackIntent = nil
+            advanceQueue(1)
+            return
+        }
         queueSkipCounts[id, default: 0] += 1
         queue = queueItems.map(\.track)
         syncQueueSelection()

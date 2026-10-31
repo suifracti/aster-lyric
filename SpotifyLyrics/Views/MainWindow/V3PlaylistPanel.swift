@@ -230,7 +230,7 @@ struct V3PlaylistQueuePreview: View {
     }
 }
 
-/// Queue removal is local: Spotify is advanced only when the mark is consumed.
+/// Upcoming rows are hidden locally; a row that is already playing skips immediately.
 private struct V3QueueSkipButton: View {
     @ObservedObject var browser: PlaylistBrowserModel
     let track: Track
