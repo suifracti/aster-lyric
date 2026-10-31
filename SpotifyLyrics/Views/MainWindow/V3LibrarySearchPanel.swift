@@ -160,7 +160,7 @@ struct V3LibrarySearchPanel: View {
                             Button { filter = value } label: {
                                 Text(value.rawValue).font(.system(size: 10))
                                     .padding(.horizontal, 5).padding(.vertical, 5)
-                                    .background(filter == value ? Color.accentColor.opacity(0.25) : .clear, in: Capsule())
+                                    .background(filter == value ? Color.primary.opacity(0.1) : .clear, in: Capsule())
                                     .contentShape(Capsule())
                             }.buttonStyle(.plain)
                         }

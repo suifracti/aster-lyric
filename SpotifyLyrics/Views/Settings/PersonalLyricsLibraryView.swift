@@ -664,16 +664,15 @@ public struct PersonalLibraryTrackDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(.secondary)
                     .frame(width: 18)
                 Text(title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                 Text("\(count) 个版本")
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
             }
             .padding(.top, 4)
-            Divider()
             content()
         }
     }
@@ -687,245 +686,78 @@ public struct PersonalLibraryTrackDetailView: View {
 
     // MARK: - Version Rows
 
+    private func librarySourceName(_ source: String) -> String {
+        DatabaseSourceIdentifier.source(for: source) == .unknown ? "未知来源" : DatabaseSourceIdentifier.displayName(for: source)
+    }
+
     private func lyricsVersionCard(_ lv: PersonalLyricsVersionItem, entry: PersonalLyricsLibraryEntry, versions: [PersonalLyricsVersionItem]) -> some View {
         let provenance = DatabaseSourceIdentifier.provenanceDescription(source: lv.source, parentVersionID: lv.parentVersionID) { id in
             guard let parent = versions.first(where: { $0.id == id }) else { return nil }
             return (parent.source, parent.parentVersionID)
         }
-        return VStack(alignment: .leading, spacing: 8) {
-            versionAdoptionRow(source: DatabaseSourceIdentifier.displayName(for: lv.source), date: lv.updatedAt, lineCount: lv.lineCount,
-                isCurrent: compact ? playback.liveLyricsVersionID == lv.id : lv.isCurrent) { adoptLyrics(lv, entry: entry) }
-            if showsActions {
-                versionActions(preview: { service.previewVersion(lyricsID: lv.id, entry: entry) },
-                    edit: { service.beginRevision(versionID: lv.id, entry: entry) })
-            }
-            if !compact {
-            HStack {
-                HStack(spacing: 6) {
-                    LibraryVersionLabel(kind: "lyrics", id: lv.id, originalTitle: DatabaseSourceIdentifier.displayName(for: lv.source))
-                    if lv.parentVersionID != nil { statusTag("修订版", color: .orange) }
-                    if lv.isCurrent { IslandStatusPill(title: "使用中", tone: .active) }
-                    if lv.isLocked { IslandStatusPill(title: "已锁定") }
-                    if lv.isManuallyEdited { statusTag("人工编辑", color: .secondary) }
-                    if lv.isSynced { statusTag("时间轴", color: .secondary) }
+        return LibraryVersionRow(kind: "lyrics", id: lv.id,
+            title: librarySourceName(lv.source), date: lv.updatedAt, lineCount: lv.lineCount,
+            isCurrent: compact ? playback.liveLyricsVersionID == lv.id : lv.isCurrent,
+            locked: lv.isLocked, busy: service.revisionBusy,
+            preview: { service.previewVersion(lyricsID: lv.id, entry: entry) },
+            edit: { service.beginRevision(versionID: lv.id, entry: entry) },
+            adopt: { adoptLyrics(lv, entry: entry) }) {
+                Button(lv.isLocked ? "解锁" : "锁定") {
+                    service.toggleLyricsLock(versionID: lv.id, currentLocked: lv.isLocked, trackStableKey: entry.trackStableKey)
                 }
-                Spacer(minLength: 8)
-                HStack(spacing: 8) {
-                    Button("编辑为新版本") { service.beginRevision(versionID: lv.id, entry: entry) }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(service.revisionBusy)
-                    if !lv.isCurrent {
-                        Button("设为当前") {
-                            adoptLyrics(lv, entry: entry)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-                    versionMenu {
-                        Button(lv.isLocked ? "解锁" : "锁定") {
-                            service.toggleLyricsLock(versionID: lv.id, currentLocked: lv.isLocked, trackStableKey: entry.trackStableKey)
-                        }
-                    }
-                }
-            }
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
-                GridRow {
-                    metadataLabel("来源")
-                    Text(provenance).foregroundStyle(.secondary).gridCellColumns(3)
-                }
-                GridRow {
-                    metadataLabel("内容")
-                    Text("\(lv.lineCount) 行 · \(lv.language)").foregroundStyle(.secondary)
-                    metadataLabel("更新")
-                    Text(formattedDate(lv.updatedAt)).foregroundStyle(.secondary).monospacedDigit()
-                }
-            }
-            .font(.caption)
-            }
-        }
-        .versionRowSurface(isCurrent: compact ? playback.liveLyricsVersionID == lv.id : lv.isCurrent)
+            }.help(provenance + " · " + lv.language + (lv.isManuallyEdited ? " · 人工编辑" : ""))
     }
 
     private func translationVersionCard(_ tv: PersonalTranslationVersionItem, entry: PersonalLyricsLibraryEntry) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            versionAdoptionRow(source: tv.sourceKind.uppercased(), date: tv.updatedAt, lineCount: tv.lineCount,
-                isCurrent: compact ? playback.selectedTranslation?.record.id == tv.id : tv.isCurrent) { adoptTranslation(tv, entry: entry) }
-                .disabled(tv.isArchived)
-            if showsActions {
-                versionActions(preview: { service.previewVersion(lyricsID: tv.lyricsVersionID, entry: entry, translation: tv) },
-                    edit: { service.beginTranslationRevision(version: tv, entry: entry) })
-            }
-            if !compact {
-            HStack {
-                HStack(spacing: 6) {
-                    LibraryVersionLabel(kind: "translation", id: tv.id, originalTitle: tv.sourceKind.uppercased())
-                    if tv.isCurrent { IslandStatusPill(title: "使用中", tone: .active) }
-                    if tv.isLocked { IslandStatusPill(title: "已锁定") }
-                    if tv.isArchived { statusTag("已归档", color: .secondary.opacity(0.7)) }
-                    if tv.isManuallyEdited { statusTag("人工编辑", color: .secondary) }
+        LibraryVersionRow(kind: "translation", id: tv.id,
+            title: AITranslationSourceKind(rawValue: tv.sourceKind)?.displayName ?? "译文",
+            date: tv.updatedAt, lineCount: tv.lineCount,
+            isCurrent: compact ? playback.selectedTranslation?.record.id == tv.id : tv.isCurrent,
+            locked: tv.isLocked, archived: tv.isArchived, busy: service.revisionBusy,
+            preview: { service.previewVersion(lyricsID: tv.lyricsVersionID, entry: entry, translation: tv) },
+            edit: { service.beginTranslationRevision(version: tv, entry: entry) },
+            adopt: { adoptTranslation(tv, entry: entry) }) {
+                Button(tv.isLocked ? "解锁" : "锁定") {
+                    service.toggleTranslationLock(versionID: tv.id, currentLocked: tv.isLocked, trackStableKey: entry.trackStableKey)
                 }
-                Spacer(minLength: 8)
-                HStack(spacing: 8) {
-                    Button("编辑为新版本") {
-                        service.beginTranslationRevision(version: tv, entry: entry)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(service.revisionBusy)
-                    if !tv.isCurrent && !tv.isArchived {
-                        Button("设为当前") { adoptTranslation(tv, entry: entry) }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                    }
-                    versionMenu {
-                        Button(tv.isLocked ? "解锁" : "锁定") {
-                            service.toggleTranslationLock(versionID: tv.id, currentLocked: tv.isLocked, trackStableKey: entry.trackStableKey)
-                        }
-                        Button(tv.isArchived ? "恢复" : "归档") {
-                            service.toggleTranslationArchive(versionID: tv.id, currentArchived: tv.isArchived, trackStableKey: entry.trackStableKey)
-                        }
-                        Divider()
-                        Button("删除", role: .destructive) {
-                            translationDeletionCandidate = tv
-                            showTranslationDeletionConfirmation = true
-                        }
-                        .disabled(tv.isLocked)
-                        .help(tv.isLocked ? "请先解锁版本后再删除" : "永久删除此译文版本")
-                    }
+                Button(tv.isArchived ? "恢复" : "归档") {
+                    service.toggleTranslationArchive(versionID: tv.id, currentArchived: tv.isArchived, trackStableKey: entry.trackStableKey)
                 }
-            }
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
-                GridRow {
-                    metadataLabel("目标语言")
-                    Text(tv.targetLanguage).foregroundStyle(.secondary)
-                    metadataLabel("内容")
-                    Text("\(tv.lineCount) 行").foregroundStyle(.secondary)
-                }
-                GridRow {
-                    metadataLabel("更新")
-                    Text(formattedDate(tv.updatedAt)).foregroundStyle(.secondary).monospacedDigit().gridCellColumns(3)
-                }
-            }
-            .font(.caption)
-            }
-        }
-        .versionRowSurface(isCurrent: compact ? playback.selectedTranslation?.record.id == tv.id : tv.isCurrent)
+                Divider()
+                Button("删除", role: .destructive) {
+                    translationDeletionCandidate = tv
+                    showTranslationDeletionConfirmation = true
+                }.disabled(tv.isLocked).help(tv.isLocked ? "请先解锁版本后再删除" : "永久删除此译文版本")
+            }.help(tv.targetLanguage + (tv.isManuallyEdited ? " · 人工编辑" : ""))
     }
 
     private func readingVersionCard(_ rv: PersonalReadingVersionItem, entry: PersonalLyricsLibraryEntry) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            versionAdoptionRow(source: rv.sourceKind, date: rv.updatedAt, lineCount: rv.lineCount,
-                isCurrent: compact ? playback.selectedReadingVersion?.record.id == rv.id : rv.isCurrent) { adoptReading(rv, entry: entry) }
-                .disabled(rv.isArchived)
-            if showsActions {
-                versionActions(preview: { service.previewVersion(lyricsID: rv.lyricsVersionID, entry: entry, reading: rv) },
-                    edit: { service.beginReadingRevision(version: rv, entry: entry) })
-            }
-            if !compact {
-            HStack {
-                HStack(spacing: 6) {
-                    LibraryVersionLabel(kind: "reading", id: rv.id, originalTitle: rv.representationID.contains("kana") ? "假名 (KANA)" : "罗马音 (ROMAJI)")
-                    if rv.isCurrent { IslandStatusPill(title: "使用中", tone: .active) }
-                    if rv.isLocked { IslandStatusPill(title: "已锁定") }
-                    if rv.isArchived { statusTag("已归档", color: .secondary.opacity(0.7)) }
+        LibraryVersionRow(kind: "reading", id: rv.id,
+            title: ReadingVersionSourceKind(rawValue: rv.sourceKind)?.displayName ?? "读音",
+            date: rv.updatedAt, lineCount: rv.lineCount,
+            isCurrent: compact ? playback.selectedReadingVersion?.record.id == rv.id : rv.isCurrent,
+            locked: rv.isLocked, archived: rv.isArchived, busy: service.revisionBusy,
+            preview: { service.previewVersion(lyricsID: rv.lyricsVersionID, entry: entry, reading: rv) },
+            edit: { service.beginReadingRevision(version: rv, entry: entry) },
+            adopt: { adoptReading(rv, entry: entry) }) {
+                Button(rv.isLocked ? "解锁" : "锁定") {
+                    service.toggleReadingLock(versionID: rv.id, currentLocked: rv.isLocked, trackStableKey: entry.trackStableKey)
                 }
-                Spacer(minLength: 8)
-                HStack(spacing: 8) {
-                    Button("编辑为新版本") { service.beginReadingRevision(version: rv, entry: entry) }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(service.revisionBusy)
-                    if !rv.isCurrent && !rv.isArchived {
-                        Button("设为当前") { adoptReading(rv, entry: entry) }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                    }
-                    versionMenu {
-                        Button(rv.isLocked ? "解锁" : "锁定") {
-                            service.toggleReadingLock(versionID: rv.id, currentLocked: rv.isLocked, trackStableKey: entry.trackStableKey)
-                        }
-                        Button(rv.isArchived ? "恢复" : "归档") {
-                            service.toggleReadingArchive(versionID: rv.id, currentArchived: rv.isArchived, trackStableKey: entry.trackStableKey)
-                        }
-                    }
+                Button(rv.isArchived ? "恢复" : "归档") {
+                    service.toggleReadingArchive(versionID: rv.id, currentArchived: rv.isArchived, trackStableKey: entry.trackStableKey)
                 }
-            }
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
-                GridRow {
-                    metadataLabel("来源")
-                    Text(rv.sourceKind).foregroundStyle(.secondary)
-                    metadataLabel("行数")
-                    Text("\(rv.lineCount)").foregroundStyle(.secondary)
-                }
-                GridRow {
-                    metadataLabel("更新")
-                    Text(formattedDate(rv.updatedAt)).foregroundStyle(.secondary).monospacedDigit().gridCellColumns(3)
-                }
-            }
-            .font(.caption)
-            }
-        }
-        .versionRowSurface(isCurrent: compact ? playback.selectedReadingVersion?.record.id == rv.id : rv.isCurrent)
+            }.help(rv.representationID.contains("kana") ? "假名" : "罗马音")
     }
 
     private func timingVersionCard(_ tm: PersonalTimingVersionItem, entry: PersonalLyricsLibraryEntry) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            versionAdoptionRow(source: tm.source.uppercased(), date: tm.createdAt, lineCount: service.selectedTrackDetail?.lyricsVersions.first(where: { $0.id == tm.lyricsVersionID })?.lineCount ?? 0,
-                isCurrent: tm.isCurrent) { adoptTiming(tm, entry: entry) }
-            if showsActions {
-                versionActions(preview: { service.previewVersion(lyricsID: tm.lyricsVersionID, entry: entry, timingID: tm.id) },
-                    edit: { service.beginTimingRevision(version: tm, entry: entry) })
-            }
-            if !compact {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    LibraryVersionLabel(kind: "timing", id: tm.id, originalTitle: tm.source.uppercased())
-                    if tm.isCurrent { IslandStatusPill(title: "使用中", tone: .active) }
-                }
-                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
-                    GridRow {
-                        metadataLabel("粒度")
-                        Text(tm.granularity).foregroundStyle(.secondary)
-                        metadataLabel("创建")
-                        Text(formattedDate(tm.createdAt)).foregroundStyle(.secondary).monospacedDigit()
-                    }
-                }
-                .font(.caption)
-            }
-            Spacer(minLength: 8)
-            Button("编辑为新版本") { service.beginTimingRevision(version: tm, entry: entry) }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(service.revisionBusy)
-            }
-        }
-        .versionRowSurface(isCurrent: tm.isCurrent)
-    }
-
-    private func versionActions(preview: @escaping () -> Void, edit: @escaping () -> Void) -> some View {
-        HStack {
-            Button("预览", action: preview)
-            Button("编辑", action: edit).disabled(service.revisionBusy)
-        }.buttonStyle(.bordered).controlSize(.small)
-    }
-
-    private func versionAdoptionRow(source: String, date: Date, lineCount: Int,
-                                    isCurrent: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: isCurrent ? "checkmark.circle.fill" : "circle")
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(source).fontWeight(.medium)
-                    Text(date.formatted(date: .numeric, time: .shortened) + " · \(lineCount) 行")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-                if showsActions { Text(isCurrent ? "已采用" : "采用").font(.caption) }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+        LibraryVersionRow(kind: "timing", id: tm.id,
+            title: librarySourceName(tm.source), date: tm.createdAt,
+            lineCount: service.selectedTrackDetail?.lyricsVersions.first(where: { $0.id == tm.lyricsVersionID })?.lineCount ?? 0,
+            isCurrent: tm.isCurrent, hasMenu: false, busy: service.revisionBusy,
+            preview: { service.previewVersion(lyricsID: tm.lyricsVersionID, entry: entry, timingID: tm.id) },
+            edit: { service.beginTimingRevision(version: tm, entry: entry) },
+            adopt: { adoptTiming(tm, entry: entry) }) { EmptyView() }
+            .help(tm.granularity)
     }
 
     private func adoptLyrics(_ version: PersonalLyricsVersionItem, entry: PersonalLyricsLibraryEntry) {
@@ -966,55 +798,65 @@ public struct PersonalLibraryTrackDetailView: View {
             applyToPlayback: { try await playback.adoptCurrentLyricsVersion(versionID: $0) })
     }
 
-    /// Less frequent, reversible actions (lock, archive) share one menu so
-    /// each row shows at most two buttons.
-    private func versionMenu<Items: View>(@ViewBuilder _ items: () -> Items) -> some View {
-        Menu {
-            items()
-        } label: {
-            Image(systemName: "ellipsis")
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("锁定、归档等")
-        .accessibilityLabel("更多版本操作")
-    }
 
-    private func metadataLabel(_ title: String) -> some View {
-        Text(title)
-            .foregroundStyle(.tertiary)
-            .frame(minWidth: 52, alignment: .leading)
-    }
-
-    private func statusTag(_ text: String, color: Color) -> some View {
-        Text(text)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(color)
-    }
-
-    private func formattedDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
-        return formatter.string(from: date)
-    }
 }
 
-private extension View {
-    func versionRowSurface(isCurrent: Bool) -> some View {
-        self
-            .padding(.horizontal, isCurrent ? 12 : 0)
-            .padding(.vertical, 12)
-            .background(isCurrent ? Color.accentColor.opacity(0.06) : Color.clear)
-            .overlay(alignment: .bottom) { Divider() }
-            .overlay(alignment: .leading) {
-                if isCurrent {
-                    Rectangle()
-                        .fill(Color.accentColor.opacity(0.8))
-                        .frame(width: 2)
-                        .padding(.vertical, 8)
+/// One row shared by hover, centred and standalone library surfaces.
+private struct LibraryVersionRow<Actions: View>: View {
+    let kind: String
+    let id: UUID
+    let title: String
+    let date: Date
+    let lineCount: Int
+    let isCurrent: Bool
+    var locked = false
+    var archived = false
+    var hasMenu = true
+    let busy: Bool
+    let preview: () -> Void
+    let edit: () -> Void
+    let adopt: () -> Void
+    @ViewBuilder var actions: () -> Actions
+    @State private var hovered = false
+
+    private var dateText: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = Calendar.current.component(.year, from: date) == Calendar.current.component(.year, from: .now)
+            ? "M月d日 HH:mm" : "yyyy年M月d日 HH:mm"
+        return formatter.string(from: date)
+    }
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: isCurrent ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(isCurrent ? .primary : .secondary)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    LibraryVersionLabel(kind: kind, id: id, originalTitle: title, compact: true, showsEdit: hovered)
+                    if locked { Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary) }
+                    if archived { Text("已归档").font(.caption2).foregroundStyle(.secondary) }
                 }
+                Text(dateText + " · \(lineCount) 行").font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
+            Spacer(minLength: 4)
+            if isCurrent { Text("已采用").font(.caption).foregroundStyle(.secondary) }
+            if hovered {
+                HStack(spacing: 6) {
+                    Button("预览", action: preview)
+                    Button("编辑", action: edit).disabled(busy)
+                    if !isCurrent { Button("采用", action: adopt).disabled(archived) }
+                    if hasMenu {
+                        Menu { actions() } label: { Image(systemName: "ellipsis") }
+                            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                            .accessibilityLabel("更多版本操作")
+                    }
+                }.buttonStyle(.borderless).font(.caption).tint(.primary)
+            }
+        }
+        .padding(.horizontal, 8).frame(minHeight: 48)
+        .background(isCurrent ? Color.primary.opacity(0.08) : hovered ? Color.primary.opacity(0.04) : .clear,
+                    in: RoundedRectangle(cornerRadius: 6))
+        .contentShape(Rectangle()).onHover { hovered = $0 }
     }
 }
 
@@ -1279,14 +1121,18 @@ public struct UnifiedLibraryHistoryWindowView: View {
 /// Local presentation metadata only; asset identity and source content stay immutable.
 struct LibraryVersionLabel: View {
     let originalTitle: String
+    var compact = false
+    var showsEdit = true
     @AppStorage private var customTitle: String
     @AppStorage private var note: String
     @State private var isEditing = false
     @State private var draftTitle = ""
     @State private var draftNote = ""
 
-    init(kind: String, id: UUID, originalTitle: String) {
+    init(kind: String, id: UUID, originalTitle: String, compact: Bool = false, showsEdit: Bool = true) {
         self.originalTitle = originalTitle
+        self.compact = compact
+        self.showsEdit = showsEdit
         let key = "personalLibrary.versionLabel.\(kind).\(id.uuidString)"
         _customTitle = AppStorage(wrappedValue: "", key + ".title", store: UserDefaults.lyricsQ)
         _note = AppStorage(wrappedValue: "", key + ".note", store: UserDefaults.lyricsQ)
@@ -1296,7 +1142,7 @@ struct LibraryVersionLabel: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
                 Text(customTitle.isEmpty ? originalTitle : customTitle)
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: compact ? 13 : 12, weight: compact ? .medium : .bold))
                     .lineLimit(1)
                     .help(customTitle.isEmpty ? originalTitle : customTitle)
                 Button {
@@ -1313,13 +1159,14 @@ struct LibraryVersionLabel: View {
                 .foregroundStyle(.secondary)
                 .help("名称与备注")
                 .accessibilityLabel("编辑名称与备注：\(customTitle.isEmpty ? originalTitle : customTitle)")
+                .opacity(showsEdit ? 1 : 0).allowsHitTesting(showsEdit)
             }
-            if !customTitle.isEmpty {
+            if !compact && !customTitle.isEmpty {
                 Text("原始名称：\(originalTitle)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            if !note.isEmpty {
+            if !compact && !note.isEmpty {
                 Text(note)
                     .font(.caption)
                     .foregroundStyle(.secondary)

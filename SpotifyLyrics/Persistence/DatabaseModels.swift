@@ -313,13 +313,7 @@ public struct DatabaseTranslationVersionRecord: Equatable, Sendable {
     /// Label saved provenance, never the currently selected service or a
     /// guessed provider inferred from the model's name.
     public var translationSourceTitle: String {
-        switch sourceKind {
-        case .providerEmbedded: return "歌词源译文"
-        case .manualImport: return "人工导入译文"
-        case .manualEdit: return "人工修订译文"
-        case .legacyImported: return "历史译文"
-        case .ai: break
-        }
+        if sourceKind != .ai { return sourceKind.displayName }
         let service: String
         switch TranslationEngineID(rawValue: engineID) {
         case .appleSystem: service = "苹果系统翻译"

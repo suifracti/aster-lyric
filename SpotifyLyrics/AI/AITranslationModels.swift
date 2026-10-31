@@ -8,6 +8,16 @@ public enum AITranslationSourceKind: String, CaseIterable, Codable, Sendable {
     case manualImport
     case manualEdit
     case legacyImported
+
+    public var displayName: String {
+        switch self {
+        case .ai: return "AI 翻译"
+        case .providerEmbedded: return "歌词源译文"
+        case .manualImport: return "人工导入译文"
+        case .manualEdit: return "人工修订译文"
+        case .legacyImported: return "历史译文"
+        }
+    }
 }
 
 /// Stable identifiers for the translation engines.  These are presentation

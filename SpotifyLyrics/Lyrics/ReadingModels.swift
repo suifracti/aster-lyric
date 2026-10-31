@@ -69,6 +69,14 @@ public enum ReadingVersionSourceKind: String, Codable, Sendable, Equatable {
     case legacyImported
     case providerEmbedded
     case manualEdit
+    public var displayName: String {
+        switch self {
+        case .generated: return "自动读音"
+        case .legacyImported: return "历史读音"
+        case .providerEmbedded: return "歌词源读音"
+        case .manualEdit: return "人工编辑"
+        }
+    }
 }
 
 public enum ReadingWarningCode: String, Codable, Sendable, Equatable {
