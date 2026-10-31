@@ -104,6 +104,17 @@ private func v3HoverToolPanelRoot<Content: View>(_ content: Content) -> AnyView 
     v3ToolPanelRoot(content)
 }
 
+private struct V3ToolPanelTopInsetKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 0
+}
+
+extension EnvironmentValues {
+    var v3ToolPanelTopInset: CGFloat {
+        get { self[V3ToolPanelTopInsetKey.self] }
+        set { self[V3ToolPanelTopInsetKey.self] = newValue }
+    }
+}
+
 /// The shared panel reports its laid-out content, including expanded groups.
 struct V3ToolPanelHeight: PreferenceKey {
     static let defaultValue: CGFloat = 0
@@ -402,8 +413,13 @@ struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
             }
             let content = v3ToolPanelRoot(parent.content.onPreferenceChange(V3ToolPanelHeight.self) { [weak self] height in
                 guard height > 0 else { return }
-                DispatchQueue.main.async { self?.resizeContent(height: height) }
-            })
+                DispatchQueue.main.async { self?.resizeContent(height: height + 28) }
+            }
+                .padding(.top, 28)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background { V3PanelGlass() }
+                .environment(\.v3ToolPanelTopInset, 28)
+                .ignoresSafeArea())
             if let hosting { hosting.rootView = content }
             else {
                 let controller = V3ToolPopoverHostingController(rootView: content)
@@ -413,11 +429,12 @@ struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
             }
             if panel == nil {
                 let candidate = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: contentHeight),
-                                        styleMask: [.titled, .closable, .utilityWindow, .resizable],
+                                        styleMask: [.titled, .closable, .utilityWindow, .resizable, .fullSizeContentView],
                                         backing: .buffered, defer: false)
                 candidate.isOpaque = false
                 candidate.backgroundColor = .clear
                 candidate.titlebarAppearsTransparent = true
+                candidate.titleVisibility = .hidden
                 candidate.isReleasedWhenClosed = false
                 candidate.isFloatingPanel = true
                 candidate.hidesOnDeactivate = false
@@ -451,7 +468,7 @@ struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
         }
         private func positionBeside(_ owner: NSWindow) {
             guard let panel, !userPositioned, let screen = owner.screen else { return }
-            let requested = panel.frameRect(forContentRect: CGRect(x: 0, y: 0, width: 360, height: contentHeight)).size
+            let requested = CGSize(width: 360, height: contentHeight)
             let frame = LyricIslandPanelPlacement.frame(owner: owner.frame,
                                                         visible: screen.visibleFrame, requested: requested)
             guard panel.frame != frame else { return }
@@ -467,8 +484,8 @@ struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
             if userPositioned {
                 let top = panel.frame.maxY
                 settingFrame = true
-                panel.setContentSize(CGSize(width: 360, height: height))
-                panel.setFrameTopLeftPoint(CGPoint(x: panel.frame.minX, y: top))
+                panel.setFrame(CGRect(x: panel.frame.minX, y: top - height,
+                                      width: panel.frame.width, height: height), display: true)
                 settingFrame = false
             } else { positionBeside(owner) }
         }

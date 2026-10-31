@@ -593,6 +593,13 @@ private struct ExperienceFixtureRoot: View {
                         try? await Task.sleep(for: .milliseconds(100))
                     }
                     try? await Task.sleep(for: .milliseconds(500))
+                    if panel.hasPrefix("pin:"), ProcessInfo.processInfo.arguments.contains("--panel-over-artwork"),
+                       let owner = targetWindow,
+                       let tool = NSApp.windows.first(where: { $0 !== owner && $0.isVisible && $0.frame.width > 120 && $0.frame.height > 120 }) {
+                        tool.setFrameOrigin(CGPoint(x: owner.frame.midX - tool.frame.width / 2,
+                                                    y: owner.frame.midY - tool.frame.height / 2))
+                        try? await Task.sleep(for: .milliseconds(300))
+                    }
                 }
                 var extraWindow: NSWindow?
                 if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker"].contains(ExperienceArguments.surface) {

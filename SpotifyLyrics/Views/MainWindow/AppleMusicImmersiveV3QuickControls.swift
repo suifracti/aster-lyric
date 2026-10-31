@@ -13,6 +13,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
     @State private var query = ""
     @State private var selectedSearchResultKey: String?
     @State private var contentHeight: CGFloat = 520
+    @Environment(\.v3ToolPanelTopInset) private var topInset
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -53,7 +54,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
         }
         }
         .scrollBounceBehavior(.basedOnSize)
-        .frame(width: panel == .playlists ? 300 : 360, height: contentHeight)
+        .frame(width: panel == .playlists ? 300 : 360, height: min(contentHeight, 520 - topInset))
         .onPreferenceChange(V3ToolPanelHeight.self) { height in
             if height > 0 { contentHeight = min(520, ceil(height)) }
         }

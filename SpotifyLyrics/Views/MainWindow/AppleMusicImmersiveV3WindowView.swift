@@ -2048,13 +2048,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .frame(width: panel == .playlists ? 300 : 360, alignment: .topLeading)
         .tint(.primary)
         .background {
-            switch style {
-            case .hoverGlass, .pinnedGlass:
-                V3PanelGlass()
-            }
+            if style == .hoverGlass { V3PanelGlass() }
         }
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(style == .hoverGlass ? 0.10 : 0), lineWidth: 0.5))
         .onExitCommand { dismissPinnedToolbarPanel() }
     }
 

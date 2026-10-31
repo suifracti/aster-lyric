@@ -93,7 +93,7 @@ surface=window[window.index('private func inspectorSurface(for panel: ToolbarPop
 assert 'V3PanelGlass()' in surface, 'hover and pinned panels must share native glass'
 assert 'Color(nsColor: .windowBackgroundColor)' not in surface, 'tool glass must not have an opaque window fill'
 assert 'V3SystemAppearance.colorScheme == .dark ? Color.black : Color.white' not in surface, 'historical glass must not be covered by an opaque white tint'
-assert 'Color.primary.opacity(0.10)' in surface, 'glass panel must retain its original hairline edge'
+assert 'style == .hoverGlass ? 0.10 : 0' in surface, 'hover glass keeps its hairline; pinned glass fills the window without an inset border'
 assert 'content: inspectorSurface(for: pinned, style: .pinnedGlass)' in window, 'pinned tool windows must use the shared glass surface'
 assert 'hoverTrackedPanel(panel) { inspectorSurface(for: panel, style: .hoverGlass) }' in normalized_window, 'hover panels must share the glass surface'
 assert 'isProjectingScene = true' in settings and 'selectLegacyV3Presentation' in settings
