@@ -83,7 +83,7 @@ struct V3LibrarySearchPanel: View {
                     Divider()
                     Group {
                         if presentation.tab == .playlists {
-                            V3PlaylistPanel(browser: state.playlistBrowser, query: query, currentTrackID: state.currentTrack.spotifyId)
+                            V3PlaylistPanel(browser: state.playlistBrowser, query: query, currentTrackID: state.currentTrack.spotifyId, currentArtworkURL: state.currentTrack.artworkURL)
                         } else if presentation.tab == .search {
                             V3SearchPanel(state: state, search: state.songSearchManager)
                         } else {

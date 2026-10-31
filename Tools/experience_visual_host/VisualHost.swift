@@ -65,7 +65,8 @@ private final class ExperiencePlaylistProtocol: URLProtocol {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let songs: [[String: Any]] = ["夜を越えて", "明日への手紙", "雨のあと", "遠くの灯り", "帰り道"].enumerated().map { index, title in
-            ["id": "fixture-\(index)", "type": "track", "name": title, "uri": "spotify:track:fixture-\(index)",
+            let id = index == 0 ? "visualfixture" : "fixture-\(index)"
+            return ["id": id, "type": "track", "name": title, "uri": "spotify:track:" + id,
              "duration_ms": 210000, "explicit": false, "artists": [["name": "Visual Fixture"]],
              "album": ["name": "Isolated playlist fixture", "images": []]]
         }

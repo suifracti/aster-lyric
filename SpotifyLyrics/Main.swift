@@ -120,7 +120,7 @@ struct SpotifyLyricsApp: App {
         .defaultSize(width: 760, height: 600)
 
         Window("歌单", id: "playlist-browser") {
-            V3PlaylistPanel(browser: playbackState.playlistBrowser, query: "", currentTrackID: playbackState.currentTrack.spotifyId)
+            V3PlaylistPanel(browser: playbackState.playlistBrowser, query: "", currentTrackID: playbackState.currentTrack.spotifyId, currentArtworkURL: playbackState.currentTrack.artworkURL)
                 .environmentObject(playbackState).environmentObject(appSettings)
         }.defaultSize(width: 760, height: 600)
 

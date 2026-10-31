@@ -5,10 +5,13 @@ struct V3PlaylistPanel: View {
     @ObservedObject private var picker: PlaylistPickerModel
     let query: String
     let currentTrackID: String?
+    let currentArtworkURL: URL?
+    @State private var playingAccent = Color.accentColor
     @State private var hoveredSidebarID: String?
     @State private var hoveredTrackOffset: Int?
-    init(browser: PlaylistBrowserModel, query: String, currentTrackID: String? = nil) {
+    init(browser: PlaylistBrowserModel, query: String, currentTrackID: String? = nil, currentArtworkURL: URL? = nil) {
         self.currentTrackID = currentTrackID
+        self.currentArtworkURL = currentArtworkURL
         self.browser = browser; self.query = query
         _picker = ObservedObject(wrappedValue: browser.picker)
 #if DEBUG
@@ -45,7 +48,7 @@ struct V3PlaylistPanel: View {
                 }.frame(width: min(300, geometry.size.width * 0.43))
                 Divider()
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(selectedTitle).font(.headline).padding(.horizontal, 12).padding(.top, 12)
+                    selectedHeader
                     if browser.selectedTracksAreLoading { ProgressView().controlSize(.small).padding() }
                     if let message = browser.emptyMessage {
                         Text(message).font(.caption).foregroundStyle(.secondary).padding(12)
@@ -67,12 +70,41 @@ struct V3PlaylistPanel: View {
         }
         .onAppear { browser.open() }
         .onChange(of: currentTrackID) { _, _ in browser.loadQueue() }
+        .task(id: currentArtworkURL) {
+            let palette = await LyricIslandArtworkColors.palette(for: currentArtworkURL)
+            guard !Task.isCancelled else { return }
+            playingAccent = LyricIslandArtworkColors.listeningAccent(palette) ?? .accentColor
+        }
     }
     private var selectedTitle: String {
         if browser.selectedID == PlaylistBrowserModel.queueID { return "接下来播放" }
         if browser.selectedID == PlaylistBrowserModel.likedID { return picker.likedRowTitle }
         return picker.playlists.first { $0.id == browser.selectedID }?.name ?? "歌单"
     }
+    private var selectedHeader: some View {
+        let playlist = picker.playlists.first { $0.id == browser.selectedID }
+        let isQueue = browser.selectedID == PlaylistBrowserModel.queueID
+        let count = playlist?.trackCount ?? (isQueue ? browser.queue.count : picker.likedCount ?? browser.tracks.count)
+        return HStack(spacing: 12) {
+            Group {
+                if let playlist { PlaylistCover(url: playlist.imageURL) }
+                else { Image(systemName: isQueue ? "list.bullet" : "heart.fill")
+                    .font(.title2).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.primary.opacity(0.07)) }
+            }.frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(selectedTitle).font(.headline).lineLimit(2)
+                Text("\(count) 首").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            if !isQueue {
+                Button("播放", systemImage: "play.fill") {
+                    if let first = browser.tracks.first { browser.play(first) }
+                }.disabled(browser.tracks.isEmpty || browser.isLoading)
+            }
+        }.padding(12)
+    }
+
     private func destination(_ title: String, symbol: String, id: String, playlist: PlaylistSummary? = nil) -> some View {
         HStack(spacing: 4) {
             Button { browser.select(id) } label: {
@@ -109,14 +141,16 @@ struct V3PlaylistPanel: View {
     }
 
     private func trackRow(_ item: SpotifyPlaylistTrack) -> some View {
-        HStack(spacing: 8) {
+        let playing = currentTrackID != nil && TrackIdentity.spotifyRequestTrackID(currentTrackID) == TrackIdentity.spotifyRequestTrackID(item.track.spotifyId)
+        return HStack(spacing: 8) {
             AsyncImage(url: item.track.artworkURL) { $0.resizable().scaledToFill() } placeholder: { Image(systemName: "music.note") }
                 .frame(width: 32, height: 32).clipShape(RoundedRectangle(cornerRadius: 4))
             VStack(alignment: .leading) {
-                Text(item.track.title).lineLimit(1)
+                Text(item.track.title).lineLimit(1).foregroundStyle(playing ? playingAccent : .primary)
                 Text(item.track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
+            if playing { Image(systemName: "waveform").foregroundStyle(playingAccent).accessibilityLabel("正在播放") }
             if browser.selectedID != PlaylistBrowserModel.queueID {
                 V3QueueInsertButton(browser: browser, track: item.track, hovered: hoveredTrackOffset == item.offset)
                 Button { browser.play(item) } label: { Image(systemName: "play.fill") }
