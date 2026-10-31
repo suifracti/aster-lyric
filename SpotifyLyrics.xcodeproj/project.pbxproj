@@ -240,6 +240,7 @@
 		8DB19C1229D5D8128CC6FA29 /* PlaylistBrowserModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 768FC1580F09DD166BCBA7B9 /* PlaylistBrowserModel.swift */; };
 		DF21E96E6A4E08F95E5BD7D0 /* V3PlaylistPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4192699E3CE13AFF565B3821 /* V3PlaylistPanel.swift */; };
 		E2DB54FBA5EBC7345D14030D /* V3AnimationIsland.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00FC2B2BF3EFEEE824C385EE /* V3AnimationIsland.swift */; };
+		3315F23098FEBB035649E39B /* V3PanelGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = C140F38276CD374A993F5B22 /* V3PanelGlass.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -482,6 +483,7 @@
 		768FC1580F09DD166BCBA7B9 /* PlaylistBrowserModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistBrowserModel.swift; sourceTree = "<group>"; };
 		4192699E3CE13AFF565B3821 /* V3PlaylistPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3PlaylistPanel.swift; sourceTree = "<group>"; };
 		00FC2B2BF3EFEEE824C385EE /* V3AnimationIsland.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3AnimationIsland.swift; sourceTree = "<group>"; };
+		C140F38276CD374A993F5B22 /* V3PanelGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Components/V3PanelGlass.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -504,6 +506,7 @@
 				927262AE26F723BCA63985FB /* SpotifyLyricsTests.xctest */,
 				CC7BDEF42026101800000004 /* LinkCoreLyricsProvider.swift */,
 				CC7BDEF42026101800000002 /* LyricIslandControls.swift */,
+				C140F38276CD374A993F5B22 /* V3PanelGlass.swift */,
 				110000412D83400100000000 /* Resources */,
 				110000012D83400100000000 /* Main.swift */,
 				110000892D83400100000000 /* DebugDatabaseSafety.swift */,
@@ -939,6 +942,7 @@
 			files = (
 				CC7BDEF42026101800000003 /* LinkCoreLyricsProvider.swift in Sources */,
 				CC7BDEF42026101800000001 /* LyricIslandControls.swift in Sources */,
+				3315F23098FEBB035649E39B /* V3PanelGlass.swift in Sources */,
 				A1B2C3D42D83400100000001 /* PlaylistPickerModel.swift in Sources */,
 				8DB19C1229D5D8128CC6FA29 /* PlaylistBrowserModel.swift in Sources */,
 				A1B2C3D52D83400100000001 /* PlaylistPickerPopover.swift in Sources */,

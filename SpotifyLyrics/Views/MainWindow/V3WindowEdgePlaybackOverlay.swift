@@ -466,8 +466,8 @@ private struct V3WindowEdgeTransportButtons: View {
                         enabled: true, primary: false) {
             showsPlaylistPicker = true
         }
-        .popover(isPresented: $showsPlaylistPicker, arrowEdge: .top) {
-            PlaylistPickerPopover(model: state.playlistPicker)
+        .v3ToolPopover(isPresented: $showsPlaylistPicker, onAnchorPress: { showsPlaylistPicker.toggle() }, width: 380) {
+            PlaylistPickerPopover(model: state.playlistPicker, onClose: { showsPlaylistPicker = false })
         }
     }
 

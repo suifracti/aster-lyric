@@ -204,7 +204,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                                               coverLuminance: coverLuminance)
     }
     private typealias ToolbarPopover = V3ToolbarModel.Panel
-    private enum InspectorSurfaceStyle: Equatable { case hoverGlass, pinnedSolid }
+    private enum InspectorSurfaceStyle: Equatable { case hoverGlass, pinnedGlass }
     /// All toolbar/panel decisions live in this value; see V3ToolbarModel.
     @State private var toolbar = V3ToolbarModel()
     @State private var toolbarDismissTask: Task<Void, Never>?
@@ -393,7 +393,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                             }
                         ),
                         title: pinned.title,
-                        content: inspectorSurface(for: pinned, style: .pinnedSolid)
+                        content: inspectorSurface(for: pinned, style: .pinnedGlass)
                     )
                     .frame(width: 0, height: 0)
                 }
@@ -2049,10 +2049,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .tint(.primary)
         .background {
             switch style {
-            case .hoverGlass:
-                RoundedRectangle(cornerRadius: 14).fill(.thickMaterial)
-            case .pinnedSolid:
-                Color(nsColor: .windowBackgroundColor)
+            case .hoverGlass, .pinnedGlass:
+                V3PanelGlass()
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 14))

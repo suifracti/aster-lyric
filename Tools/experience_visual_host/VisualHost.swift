@@ -1,6 +1,7 @@
 // Appended only to a temporary Main.swift by build.py. Production entry is retained
 // as an ordinary type; this test-only App is the sole executable entry point.
 import SQLite3
+import ScreenCaptureKit
 
 private enum ExperienceArguments {
     static func value(_ key: String, fallback: String) -> String {
@@ -594,10 +595,12 @@ private struct ExperienceFixtureRoot: View {
                     try? await Task.sleep(for: .milliseconds(500))
                 }
                 var extraWindow: NSWindow?
-                if ["menubar", "settings", "models", "search-panel", "search-full"].contains(ExperienceArguments.surface) {
+                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker"].contains(ExperienceArguments.surface) {
                     MenuBarLyricsController.shared.bind(playbackState: playback)
                     let root: AnyView
-                    if ExperienceArguments.surface == "search-panel" {
+                    if ExperienceArguments.surface == "playlist-picker" {
+                        root = AnyView(PlaylistPickerPopover(model: playback.playlistBrowser.picker))
+                    } else if ExperienceArguments.surface == "search-panel" {
                         root = AnyView(V3ToolbarQuickControls(panel: .search, state: playback,
                             search: playback.songSearchManager, openLibrary: {}, openSearch: {}, openPlaylists: {}) { EmptyView() }
                             .background(Color(nsColor: .windowBackgroundColor)))
@@ -615,13 +618,23 @@ private struct ExperienceFixtureRoot: View {
                     }
                     let hosting = NSHostingView(rootView: root.environment(\.colorScheme, ExperienceArguments.value("--appearance", fallback: "dark") == "light" ? .light : .dark))
                     let size = ExperienceArguments.surface == "search-full" ? CGSize(width: 440, height: 470)
+                        : ExperienceArguments.surface == "playlist-picker" ? CGSize(width: 380, height: 480)
                         : ["models", "search-panel"].contains(ExperienceArguments.surface) ? CGSize(width: 360, height: 520)
                         : ExperienceArguments.surface == "menubar" ? CGSize(width: 340, height: 560) : ExperienceArguments.size
-                    let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
+                    let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: ExperienceArguments.surface == "playlist-picker" ? [.borderless] : [.titled], backing: .buffered, defer: false)
                     window.title = "Experience extra surface"
+                    if ExperienceArguments.surface == "playlist-picker" {
+                        window.isOpaque = false
+                        window.backgroundColor = .clear
+                        if let owner = targetWindow {
+                            window.setFrameOrigin(CGPoint(x: owner.frame.midX - size.width / 2, y: owner.frame.midY - size.height / 2))
+                        }
+                    }
                     window.appearance = NSAppearance(named: ExperienceArguments.value("--appearance", fallback: "dark") == "light" ? .aqua : .darkAqua)
                     window.contentView = hosting
                     window.orderFront(nil)
+                    window.initialFirstResponder = nil
+                    window.makeFirstResponder(nil)
                     extraWindow = window
                     try? await Task.sleep(for: .milliseconds(1500))
                 }
@@ -637,6 +650,29 @@ private struct ExperienceFixtureRoot: View {
                 if !output.isEmpty {
                     let primary = extraWindow ?? targetWindow
                     if let view = primary?.contentView { render(view, to: output) }
+                    // Only fixture-owned windows are included. A window-server
+                    // composite is needed to show behind-window material accurately.
+                    if ProcessInfo.processInfo.arguments.contains("--window-composite") {
+                        if CGPreflightScreenCaptureAccess(), let screen = targetWindow?.screen {
+                            do {
+                                let shareable = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                                let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32
+                                if let display = shareable.displays.first(where: { $0.displayID == displayID }) {
+                                    let owned = shareable.windows.filter { $0.owningApplication?.processID == ProcessInfo.processInfo.processIdentifier }
+                                    let region = NSApp.windows.filter { $0.isVisible && $0.frame.width > 120 && $0.frame.height > 120 }.reduce(targetWindow?.frame ?? .zero) { $0.union($1.frame) }.intersection(screen.frame)
+                                    let config = SCStreamConfiguration()
+                                    config.sourceRect = CGRect(x: region.minX - screen.frame.minX, y: screen.frame.maxY - region.maxY, width: region.width, height: region.height)
+                                    config.width = Int(region.width * screen.backingScaleFactor)
+                                    config.height = Int(region.height * screen.backingScaleFactor)
+                                    config.showsCursor = false
+                                    let image = try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(display: display, including: owned), configuration: config)
+                                    let path = (output as NSString).deletingPathExtension + "-composite.png"
+                                    try NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                                    print("NATIVE_GLASS_COMPOSITE", path)
+                                }
+                            } catch { print("NATIVE_GLASS_NOT_RUN", error.localizedDescription) }
+                        } else { print("NATIVE_GLASS_NOT_RUN screen capture unavailable; cached view images only") }
+                    }
                     // Also capture tool windows (hover popover, pinned panel).
                     let base = (output as NSString).deletingPathExtension
                     var index = 0

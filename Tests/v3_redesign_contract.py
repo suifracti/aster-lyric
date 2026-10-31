@@ -83,18 +83,18 @@ assert 'v3HoverToolPanelRoot(content())' in popover_host, 'hover panels must use
 assert 'popover.appearance = V3SystemAppearance.current' in popover_host, 'hover popovers must follow system appearance'
 assert 'let content = v3ToolPanelRoot(parent.content.onPreferenceChange(' in pinned_host, 'wrap the retained panel content once, with its sizing preference'
 assert 'hosting.rootView = content' in pinned_host, 'updates must reuse the system-appearance wrapper'
-assert 'NSHostingController(rootView: content)' in pinned_host, 'creation must use the same wrapped content'
+assert 'V3ToolPopoverHostingController(rootView: content)' in pinned_host, 'creation must use the same wrapped content'
 assert 'content.modifier(V3SystemAppearanceModifier())' in window, 'fixed tools must override the main window appearance'
 assert 'controller.view.appearance = V3SystemAppearance.current' in pinned_host and 'panel.appearance = system' in pinned_host, 'hosting view and fixed window must retain system appearance'
 assert 'anchor.onWindowAttachment = { [weak coordinator]' in pinned_host, 'pinned host must retry when its zero-size anchor joins the owner window'
 assert 'override func viewDidMoveToWindow()' in window[window.index('final class V3ToolAnchorView'):window.index('private struct V3ToolPopoverAnchor')], 'tool anchor must signal its AppKit window attachment'
 normalized_window=' '.join(window.split())
 surface=window[window.index('private func inspectorSurface(for panel: ToolbarPopover, style: InspectorSurfaceStyle)'):window.index('private func sectionEyebrow', window.index('private func inspectorSurface'))]
-assert '.thickMaterial' in surface, 'hover tool panels must retain their frosted glass surface'
-assert 'Color(nsColor: .windowBackgroundColor)' in surface, 'pinned tool panels must use an opaque system-colored surface'
+assert 'V3PanelGlass()' in surface, 'hover and pinned panels must share native glass'
+assert 'Color(nsColor: .windowBackgroundColor)' not in surface, 'tool glass must not have an opaque window fill'
 assert 'V3SystemAppearance.colorScheme == .dark ? Color.black : Color.white' not in surface, 'historical glass must not be covered by an opaque white tint'
 assert 'Color.primary.opacity(0.10)' in surface, 'glass panel must retain its original hairline edge'
-assert 'content: inspectorSurface(for: pinned, style: .pinnedSolid)' in window, 'pinned tool windows must use the solid panel surface'
+assert 'content: inspectorSurface(for: pinned, style: .pinnedGlass)' in window, 'pinned tool windows must use the shared glass surface'
 assert 'hoverTrackedPanel(panel) { inspectorSurface(for: panel, style: .hoverGlass) }' in normalized_window, 'hover panels must share the glass surface'
 assert 'isProjectingScene = true' in settings and 'selectLegacyV3Presentation' in settings
 assert 'scenePresets[Self.sceneKey(scene, renderer)]' in settings

@@ -125,6 +125,11 @@ final class V3ToolAnchorView: NSView {
 /// the popover window key. NSHostingView's default rejects that click, which
 /// makes SwiftUI controls look inert until the panel has been clicked again.
 private final class V3ToolPopoverHostingView: NSHostingView<AnyView> {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.initialFirstResponder = nil
+        window?.makeFirstResponder(nil)
+    }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
@@ -201,10 +206,10 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, NSPopoverDelegate {
+    final class Coordinator: NSObject {
         var parent: V3ToolPopoverAnchor
         weak var anchor: NSView?
-        let popover = NSPopover()
+        let popover = V3GlassPopover()
         var hosting: V3ToolPopoverHostingController?
         private var localMonitor: Any?
         private var observers: [NSObjectProtocol] = []
@@ -232,15 +237,13 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
         init(parent: V3ToolPopoverAnchor) {
             self.parent = parent
             super.init()
-            popover.behavior = .applicationDefined
-            popover.animates = false
             popover.appearance = V3SystemAppearance.current
             appearanceSubscription = V3SystemAppearance.shared.$colorScheme.sink { [weak self] scheme in
                 let appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
                 self?.popover.appearance = appearance
                 self?.hosting?.view.appearance = appearance
             }
-            popover.delegate = self
+            popover.onClose = { [weak self] in self?.stopMonitoring() }
         }
 
         func startMonitoring() {
@@ -335,7 +338,6 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
             popover.performClose(nil)
         }
 
-        func popoverDidClose(_ notification: Notification) { stopMonitoring() }
 
         private func stopMonitoring() {
             guard forwardingWindow == nil else { return }
@@ -404,7 +406,7 @@ struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
             })
             if let hosting { hosting.rootView = content }
             else {
-                let controller = NSHostingController(rootView: content)
+                let controller = V3ToolPopoverHostingController(rootView: content)
                 controller.sizingOptions = []
                 controller.view.appearance = V3SystemAppearance.current
                 hosting = controller
@@ -413,6 +415,9 @@ struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
                 let candidate = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: contentHeight),
                                         styleMask: [.titled, .closable, .utilityWindow, .resizable],
                                         backing: .buffered, defer: false)
+                candidate.isOpaque = false
+                candidate.backgroundColor = .clear
+                candidate.titlebarAppearsTransparent = true
                 candidate.isReleasedWhenClosed = false
                 candidate.isFloatingPanel = true
                 candidate.hidesOnDeactivate = false
@@ -438,6 +443,8 @@ struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
             if !panel.isVisible {
                 positionBeside(owner)
                 panel.orderFront(nil)
+                panel.initialFirstResponder = nil
+                panel.makeFirstResponder(nil)
                 V3ToolbarLog.logger.notice("pinned panel presented")
                 startEscapeMonitoring()
             }

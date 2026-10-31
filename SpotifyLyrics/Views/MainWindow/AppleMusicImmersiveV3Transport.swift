@@ -388,8 +388,8 @@ private struct V3PlaybackButtons: View {
                 V3TransportIconButton(systemImage: "text.badge.plus", label: "添加到歌单", enabled: true) {
                     showsPlaylistPicker = true
                 }
-                .popover(isPresented: $showsPlaylistPicker, arrowEdge: .top) {
-                    PlaylistPickerPopover(model: state.playlistPicker)
+                .v3ToolPopover(isPresented: $showsPlaylistPicker, onAnchorPress: { showsPlaylistPicker.toggle() }, width: 380) {
+                    PlaylistPickerPopover(model: state.playlistPicker, onClose: { showsPlaylistPicker = false })
                 }
             }
             V3TransportIconButton(systemImage: "backward.fill", label: "上一首", enabled: state.canControlSpotify) {
@@ -499,8 +499,8 @@ struct AppleMusicImmersiveV3FocusTransportControls: View {
                 V3TransportIconButton(systemImage: "text.badge.plus", label: "添加到歌单", enabled: true) {
                     showsPlaylistPicker = true
                 }
-                .popover(isPresented: $showsPlaylistPicker, arrowEdge: .top) {
-                    PlaylistPickerPopover(model: state.playlistPicker)
+                .v3ToolPopover(isPresented: $showsPlaylistPicker, onAnchorPress: { showsPlaylistPicker.toggle() }, width: 380) {
+                    PlaylistPickerPopover(model: state.playlistPicker, onClose: { showsPlaylistPicker = false })
                 }
             }
             IslandTransportButton(

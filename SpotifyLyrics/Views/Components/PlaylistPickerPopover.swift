@@ -6,6 +6,7 @@ import SwiftUI
 struct PlaylistPickerPopover: View {
     @ObservedObject var model: PlaylistPickerModel
     @Environment(\.dismiss) private var dismiss
+    var onClose: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -16,7 +17,8 @@ struct PlaylistPickerPopover: View {
             footer
         }
         .frame(width: 380, height: 480)
-        .background(.regularMaterial)
+        .preference(key: V3ToolPanelHeight.self, value: 480)
+        .background(V3PanelGlass())
         .modifier(V3SystemAppearanceModifier())
         .onAppear { model.open() }
     }
@@ -185,7 +187,7 @@ struct PlaylistPickerPopover: View {
                 Text(notice).font(.system(size: 11)).foregroundStyle(.orange)
             }
             Spacer(minLength: 0)
-            Button("完成") { dismiss() }
+            Button("完成") { if let onClose { onClose() } else { dismiss() } }
                 .buttonStyle(.plain)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.primary)
