@@ -20,24 +20,23 @@ public final class PlaylistBrowserModel: ObservableObject {
     @Published public private(set) var hasLoadedQueue = false
     @Published public private(set) var notice: String?
     private let service: SpotifyCatalogService
+    private let advanceQueue: @MainActor (Int) -> Void
     private let accessToken: @MainActor (Set<String>) async throws -> String
     private var tracksTask: Task<Void, Never>?
     private var queueTask: Task<Void, Never>?
     private var rawQueue: [Track] = []
     private var currentQueueTrackID: String?
     private var queueSkipCounts: [String: Int] = [:]
-    private enum ManualPlaybackIntent { case track(String), previous }
+    private enum ManualPlaybackIntent { case track(String), previous, queueJump(String) }
     private var manualPlaybackIntent: ManualPlaybackIntent?
 
     private func queueKey(_ track: Track) -> String? {
         TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString)
     }
-    public func skipQueuedTrack(_ track: Track, at offset: Int? = nil) {
+    public func skipQueuedTrack(_ track: Track) {
         guard let id = queueKey(track) else { return }
         queueSkipCounts[id, default: 0] += 1
-        let index = offset.flatMap { queue.indices.contains($0) && queueKey(queue[$0]) == id ? $0 : nil }
-            ?? queue.firstIndex { queueKey($0) == id }
-        if let index { queue.remove(at: index) }
+        queue = queueItems.map(\.track)
         syncQueueSelection()
     }
     public func noteManualPlayback(_ track: Track? = nil) {
@@ -53,6 +52,9 @@ public final class PlaylistBrowserModel: ObservableObject {
     public func consumeQueueSkip(for track: Track) -> Bool {
         guard let id = queueKey(track) else { return false }
         switch manualPlaybackIntent {
+        case .queueJump(let targetID):
+            if id == targetID { manualPlaybackIntent = nil }
+            return false
         case .previous:
             manualPlaybackIntent = nil
             return false
@@ -66,18 +68,30 @@ public final class PlaylistBrowserModel: ObservableObject {
         else { queueSkipCounts[id] = count - 1 }
         return true
     }
-    private func visibleQueue(_ values: [Track]) -> [Track] {
+    public var queueItems: [SpotifyPlaylistTrack] {
         var remaining = queueSkipCounts
-        return values.filter { track in
-            guard let id = queueKey(track), let count = remaining[id], count > 0 else { return true }
-            remaining[id] = count - 1
-            return false
+        return rawQueue.enumerated().compactMap { offset, track in
+            if let id = queueKey(track), let count = remaining[id], count > 0 {
+                remaining[id] = count - 1
+                return nil
+            }
+            return SpotifyPlaylistTrack(track: track, offset: offset)
         }
+    }
+    public func jumpToQueuedTrack(at offset: Int) {
+        guard rawQueue.indices.contains(offset), let targetID = queueKey(rawQueue[offset]) else { return }
+        for track in rawQueue.prefix(offset + 1) {
+            guard let id = queueKey(track), let count = queueSkipCounts[id] else { continue }
+            if count == 1 { queueSkipCounts.removeValue(forKey: id) }
+            else { queueSkipCounts[id] = count - 1 }
+        }
+        manualPlaybackIntent = .queueJump(targetID)
+        advanceQueue(offset + 1)
     }
     public func currentTrackChanged(to track: Track) {
         currentQueueTrackID = queueKey(track)
         trimQueueThroughCurrentTrack()
-        queue = visibleQueue(rawQueue)
+        queue = queueItems.map(\.track)
         syncQueueSelection()
         loadQueue()
     }
@@ -87,7 +101,7 @@ public final class PlaylistBrowserModel: ObservableObject {
         rawQueue.removeFirst(index + 1)
     }
     private func syncQueueSelection() {
-        if selectedID == Self.queueID { tracks = queue.enumerated().map { SpotifyPlaylistTrack(track: $0.element, offset: $0.offset) } }
+        if selectedID == Self.queueID { tracks = queueItems }
     }
 
 
@@ -102,8 +116,10 @@ public final class PlaylistBrowserModel: ObservableObject {
     }
 
     public init(service: SpotifyCatalogService, picker: PlaylistPickerModel,
-                accessToken: @escaping @MainActor (Set<String>) async throws -> String) {
+                accessToken: @escaping @MainActor (Set<String>) async throws -> String,
+                advanceQueue: @escaping @MainActor (Int) -> Void) {
         self.service = service; self.picker = picker; self.accessToken = accessToken
+        self.advanceQueue = advanceQueue
     }
     public func open() { picker.open(); loadQueue() }
     public func loadQueue() {
@@ -118,7 +134,7 @@ public final class PlaylistBrowserModel: ObservableObject {
                     let upcoming = try await service.upcomingTracks(accessToken: token, limit: nil)
                     rawQueue = upcoming
                     trimQueueThroughCurrentTrack()
-                    queue = visibleQueue(rawQueue)
+                    queue = queueItems.map(\.track)
                     hasLoadedQueue = true
                     syncQueueSelection()
                     notice = nil
@@ -142,7 +158,7 @@ public final class PlaylistBrowserModel: ObservableObject {
         notice = nil
         if id == Self.queueID {
             isLoading = false
-            tracks = queue.enumerated().map { SpotifyPlaylistTrack(track: $0.element, offset: $0.offset) }
+            tracks = queueItems
             return
         }
         tracks = []; isLoading = true
@@ -171,7 +187,7 @@ public final class PlaylistBrowserModel: ObservableObject {
 
     public func play(_ item: SpotifyPlaylistTrack) {
         let context = selectedID
-        guard context != Self.queueID else { return }
+        if context == Self.queueID { jumpToQueuedTrack(at: item.offset); return }
         noteManualPlayback(item.track)
         let remainingIDs = tracks.drop(while: { $0.offset != item.offset }).prefix(100)
             .compactMap { TrackIdentity.spotifyRequestTrackID($0.track.spotifyId) }

@@ -53,7 +53,7 @@ private final class FakePlaylistCatalog: PlaylistCataloging {
     }
 }
 
-private final class PlaylistFixtureURLProtocol: URLProtocol {
+final class PlaylistFixtureURLProtocol: URLProtocol {
     static var response: ((URLRequest) -> (Int, [String: Any]))!
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -166,7 +166,7 @@ final class PlaylistPickerTests: XCTestCase {
         let browser = PlaylistBrowserModel(service: service, picker: model(FakePlaylistCatalog(rows: [])), accessToken: { scopes in
             requestedScopes.append(scopes)
             return "fixture"
-        })
+        }, advanceQueue: { _ in })
         let song = Track(id: "fixture", title: "Saved song", artist: "Fixture", album: "Album", duration: 180, spotifyId: track)
         try await browser.enqueue(song)
         await fulfillment(of: [loaded], timeout: 3)
@@ -175,11 +175,11 @@ final class PlaylistPickerTests: XCTestCase {
         XCTAssertEqual(writes, 1)
     }
 
-    func testQueueIsReadOnlyAndLikedPlaybackContinuesWithTheLoadedTail() async {
+    func testQueueJumpPreservesContextAndLikedPlaybackContinuesWithTheLoadedTail() async {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [PlaylistFixtureURLProtocol.self]
         let service = SpotifyCatalogService(session: URLSession(configuration: configuration), baseURL: URL(string: "https://playlist.test/v1")!)
-        let browser = PlaylistBrowserModel(service: service, picker: model(FakePlaylistCatalog(rows: [])), accessToken: { _ in "fixture" })
+        let browser = PlaylistBrowserModel(service: service, picker: model(FakePlaylistCatalog(rows: [])), accessToken: { _ in "fixture" }, advanceQueue: { _ in })
         var writes: [[String]] = []
         PlaylistFixtureURLProtocol.response = { request in
             let songs: [[String: Any]] = (1...3).map { ["id": "track-\($0)", "name": "Song \($0)",
@@ -214,7 +214,7 @@ final class PlaylistPickerTests: XCTestCase {
         browser.play(browser.tracks[1])
         browser.select(PlaylistBrowserModel.likedID)
         await waitUntil { !browser.isLoading && browser.tracks.count == 3 }
-        XCTAssertTrue(writes.isEmpty, "Queue inspection must not replace Spotify's playback context")
+        XCTAssertTrue(writes.isEmpty, "Queue jumps must not replace Spotify's playback context")
         guard browser.tracks.count == 3 else { return }
         browser.play(browser.tracks[1])
         await waitUntil { !writes.isEmpty }
@@ -269,7 +269,7 @@ final class PlaylistPickerTests: XCTestCase {
         defer { PlaylistFixtureURLProtocol.response = nil }
 
         let picker = model(FakePlaylistCatalog(rows: [row("playlist-3", "Mix")]))
-        let browser = PlaylistBrowserModel(service: service, picker: picker, accessToken: { _ in "fixture" })
+        let browser = PlaylistBrowserModel(service: service, picker: picker, accessToken: { _ in "fixture" }, advanceQueue: { _ in })
         browser.select("playlist-3")
         await waitUntil { browser.tracks.count == 3 && !browser.isLoading }
 
@@ -282,7 +282,7 @@ final class PlaylistPickerTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [PlaylistFixtureURLProtocol.self]
         let service = SpotifyCatalogService(session: URLSession(configuration: configuration), baseURL: URL(string: "https://playlist.test/v1")!)
-        let browser = PlaylistBrowserModel(service: service, picker: model(FakePlaylistCatalog(rows: [])), accessToken: { _ in "fixture" })
+        let browser = PlaylistBrowserModel(service: service, picker: model(FakePlaylistCatalog(rows: [])), accessToken: { _ in "fixture" }, advanceQueue: { _ in })
         defer { PlaylistFixtureURLProtocol.response = nil }
         for status in [401, 403, 200] {
             PlaylistFixtureURLProtocol.response = { _ in (status, ["items": [], "queue": [], "error": ["status": status]]) }

@@ -321,7 +321,7 @@ struct ExperienceVisualHostApp: App {
         let catalog = ExperiencePlaylistCatalog()
         let picker = PlaylistPickerModel(catalog: catalog, trackID: { "AAAAAAAAAAAAAAAAAAAAAA" }, likedState: { true }, applyLiked: { $0 })
         playback.playlistBrowser = PlaylistBrowserModel(service: SpotifyCatalogService(session: URLSession(configuration: configuration),
-            baseURL: URL(string: "https://playlist.fixture/v1")!), picker: picker, accessToken: { _ in "fixture" })
+            baseURL: URL(string: "https://playlist.fixture/v1")!), picker: picker, accessToken: { _ in "fixture" }, advanceQueue: { _ in })
         _playback=StateObject(wrappedValue:playback)
         print("VISUAL_FIXTURE_ROOT",root.path)
     }

@@ -145,16 +145,12 @@ struct V3PlaylistPanel: View {
     private func trackRow(_ item: SpotifyPlaylistTrack) -> some View {
         let playing = currentTrackID != nil && TrackIdentity.spotifyRequestTrackID(currentTrackID) == TrackIdentity.spotifyRequestTrackID(item.track.spotifyId)
         return HStack(spacing: 8) {
-            AsyncImage(url: item.track.artworkURL) { $0.resizable().scaledToFill() } placeholder: { Image(systemName: "music.note") }
-                .frame(width: 32, height: 32).clipShape(RoundedRectangle(cornerRadius: 4))
-            VStack(alignment: .leading) {
-                Text(item.track.title).lineLimit(1).foregroundStyle(playing ? playingAccent : .primary)
-                Text(item.track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer()
-            if playing { Image(systemName: "waveform").foregroundStyle(playingAccent).accessibilityLabel("正在播放") }
             if browser.selectedID == PlaylistBrowserModel.queueID {
-                V3QueueSkipButton(browser: browser, track: item.track, offset: item.offset, hovered: hoveredTrackOffset == item.offset)
+                Button { browser.play(item) } label: { trackRowLabel(item, playing: playing) }
+                    .buttonStyle(.plain)
+            } else { trackRowLabel(item, playing: playing) }
+            if browser.selectedID == PlaylistBrowserModel.queueID {
+                V3QueueSkipButton(browser: browser, track: item.track, hovered: hoveredTrackOffset == item.offset)
             } else {
                 V3QueueInsertButton(browser: browser, track: item.track, hovered: hoveredTrackOffset == item.offset)
                 Button { browser.play(item) } label: { Image(systemName: "play.fill") }
@@ -166,6 +162,20 @@ struct V3PlaylistPanel: View {
         .background(hoveredTrackOffset == item.offset ? Color.primary.opacity(0.08) : .clear)
         .contentShape(Rectangle())
         .onHover { hoveredTrackOffset = $0 ? item.offset : nil }
+    }
+    private func trackRowLabel(_ item: SpotifyPlaylistTrack, playing: Bool) -> some View {
+        HStack(spacing: 8) {
+            AsyncImage(url: item.track.artworkURL) { $0.resizable().scaledToFill() } placeholder: { Image(systemName: "music.note") }
+                .frame(width: 32, height: 32).clipShape(RoundedRectangle(cornerRadius: 4))
+            VStack(alignment: .leading) {
+                Text(item.track.title).lineLimit(1).foregroundStyle(playing ? playingAccent : .primary)
+                Text(item.track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer()
+            if playing { Image(systemName: "waveform").foregroundStyle(playingAccent).accessibilityLabel("正在播放") }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
     private func membershipCircle(checked: Bool, busy: Bool) -> some View {
         Group {
@@ -187,16 +197,24 @@ struct V3PlaylistQueuePreview: View {
     }()
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(browser.queue.prefix(5).enumerated()), id: \.offset) { index, track in
+            ForEach(Array(browser.queueItems.prefix(5))) { item in
+                let index = item.offset
+                let track = item.track
                 HStack(spacing: 8) {
-                    AsyncImage(url: track.artworkURL) { $0.resizable().scaledToFill() } placeholder: { Image(systemName: "music.note") }
-                        .frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 4))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(track.title).lineLimit(1)
-                        Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                    V3QueueSkipButton(browser: browser, track: track, offset: index, hovered: hoveredRow == index)
+                    Button { browser.jumpToQueuedTrack(at: item.offset) } label: {
+                        HStack(spacing: 8) {
+                            AsyncImage(url: track.artworkURL) { $0.resizable().scaledToFill() } placeholder: { Image(systemName: "music.note") }
+                                .frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 4))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(track.title).lineLimit(1)
+                                Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                    V3QueueSkipButton(browser: browser, track: track, hovered: hoveredRow == index)
                 }
                 .frame(height: 44)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -216,10 +234,9 @@ struct V3PlaylistQueuePreview: View {
 private struct V3QueueSkipButton: View {
     @ObservedObject var browser: PlaylistBrowserModel
     let track: Track
-    let offset: Int
     let hovered: Bool
     var body: some View {
-        Button { browser.skipQueuedTrack(track, at: offset) } label: {
+        Button { browser.skipQueuedTrack(track) } label: {
             Image(systemName: "xmark").font(.system(size: 11, weight: .medium))
                 .frame(width: 24, height: 24).contentShape(Rectangle())
         }

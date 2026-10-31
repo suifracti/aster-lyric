@@ -40,7 +40,8 @@ private final class EventPlaybackProvider: PlaybackProvider {
     var pauseCount = 0
     func pause() async throws { pauseCount += 1 }
     var nextCount = 0
-    func next() async throws { nextCount += 1 }
+    var onNext: (() async -> Void)?
+    func next() async throws { nextCount += 1; await onNext?() }
     func previous() async throws {}
     var seeks: [TimeInterval] = []
     func seek(to position: TimeInterval) async throws { seeks.append(position) }
@@ -76,6 +77,47 @@ final class DesktopPlaybackEventTests: XCTestCase {
         center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: payload(position: 0.1))
         try await wait { state.currentTrack.spotifyId == queued.id }
         XCTAssertEqual(provider.nextCount, 2)
+    }
+
+    func testQueueThirdPositionUsesThreeNextCallsIncludingHiddenSong() async throws {
+        let (state, provider, _, center) = fixture()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PlaylistFixtureURLProtocol.self]
+        let ids = ["BBBBBBBBBBBBBBBBBBBBBB", "CCCCCCCCCCCCCCCCCCCCCC", "DDDDDDDDDDDDDDDDDDDDDD"]
+        let songs = ids.map { id in
+            ProviderTrack(id: "spotify:track:" + id, title: id, artist: "Fixture", album: "Cache", duration: 240)
+        }
+        PlaylistFixtureURLProtocol.response = { _ in
+            (200, ["queue": ids.map { id in ["id": id, "name": id, "uri": "spotify:track:" + id,
+                "type": "track", "explicit": false, "duration_ms": 240000,
+                "artists": [["name": "Fixture"]], "album": ["name": "Cache", "images": []]] as [String: Any] }])
+        }
+        defer { PlaylistFixtureURLProtocol.response = nil }
+        let browser = PlaylistBrowserModel(service: SpotifyCatalogService(session: URLSession(configuration: configuration),
+            baseURL: URL(string: "https://playlist.test/v1")!), picker: state.playlistBrowser.picker,
+            accessToken: { _ in "fixture" }, advanceQueue: { [weak state] count in state?.advanceQueuedTracks(count) })
+        state.playlistBrowser = browser
+        state.startProvider(connectSpotify: false)
+        try await wait { state.hasLiveTrack && browser.queue.count == 3 }
+        guard browser.queue.count == 3 else { return }
+        let hidden = browser.queue[1]
+        browser.skipQueuedTrack(hidden)
+        XCTAssertEqual(browser.queueItems.map(\.offset), [0, 2])
+        provider.onNext = {
+            guard provider.nextCount <= songs.count else { return XCTFail("Jump added an extra Next") }
+            let song = songs[provider.nextCount - 1]
+            provider.snapshot = PlaybackSnapshot(status: .ready, track: song, position: 0, isPlaying: true, sourceIdentity: .spotifyDesktop)
+            var update = self.payload(song.title, position: 0)
+            update["Track ID"] = song.id!
+            center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: update)
+            await Task.yield()
+        }
+        browser.play(browser.queueItems[1]) // Original third position, after hiding the second.
+        try await wait { provider.nextCount >= 3 && state.currentTrack.spotifyId == songs[2].id }
+        XCTAssertEqual(provider.nextCount, 3)
+        XCTAssertFalse(browser.consumeQueueSkip(for: hidden), "Passed songs use up their marks")
+        try await wait { !browser.isQueueLoading }
+        provider.onNext = nil
     }
 
     func testRepeatOneReachingDurationKeepsPlayingUntilDesktopPositionWraps() async throws {

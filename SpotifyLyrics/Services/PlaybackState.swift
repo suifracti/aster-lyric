@@ -1854,7 +1854,13 @@ public final class PlaybackState: ObservableObject {
         accessToken: { [weak self] scopes in
             guard let self else { throw SpotifyAuthorizationError.notAuthorized }
             return try await self.spotifyAuthorizationManager.accessToken(requiredScopes: scopes)
-        })
+        }, advanceQueue: { [weak self] count in self?.advanceQueuedTracks(count) })
+
+    func advanceQueuedTracks(_ count: Int) {
+        runProviderCommand { provider in
+            for _ in 0..<count { try await provider.next() }
+        }
+    }
 
     /// The player's own ID for the current recording, in the shape its
     /// playlist API expects.
