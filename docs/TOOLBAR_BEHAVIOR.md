@@ -138,7 +138,7 @@ Clicks that land on the popover's transparent arrow or shadow area are forwarded
 
 ## Appearance
 - **Listening canvas:** always dark.
-- **Hover panel:** dark frosted glass.
+- **Hover panel:** frosted glass that follows the macOS light or dark setting (Round 8).
 - **Pinned panel:** follows the system's light or dark setting.
 
 ## Priority
@@ -477,3 +477,30 @@ A control never appears on both sides. Where the other side used to have it, sho
 **Hover panel:** title 「接下来播放」, then the next 5 songs, then 「打开歌单」. An empty queue shows 「接下来没有待播歌曲」.
 
 The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because the toolbar can hide.
+
+
+## Round 8: 跟随系统外观、悬浮窗重做、插入播放、性能收口（2026-10-31）
+
+**Appearance follows macOS, live.**
+- Toolbar, hover panels, the centred panel, the add-to-playlist popover, settings and library windows follow the system light or dark setting, and change at once when it changes. There is no in-app appearance switch.
+- The lyric canvas, cover scenes and edge player stay as they are, because their colours come from the artwork.
+- Panels never take a tint from the cover. Tabs, links and icons use neutral system colours. Only the playing song may use the cover accent.
+
+**Hover panels (歌单, and the same header on 歌词库 and 搜索).**
+- Header: title on the left, a quiet text link on the right: 「全部」 for 歌单, 「打开歌词库」 and 「全部结果」 for the others. These replace the bottom buttons.
+- Glass is thick enough that the artwork colour barely shows through. Hairline border, 14 pt corners.
+- 歌单 panel: 300 pt wide, 14 pt padding, five 44 pt rows with a 36 pt cover, title in primary and artist in secondary colour. Rows highlight on hover.
+- It keeps showing the last known queue while refreshing, with no spinner flash, and refreshes when the song changes. The empty text stays.
+
+**插入播放.**
+- A button (`text.line.first.and.arrowtriangle.forward`, tooltip 「插入播放」) sits left of ▶ on hover, in playlist and liked rows and in the songs of the search tab. Queue rows do not have it.
+- It calls `POST /me/player/queue`: the song plays after the current song and anything already inserted, and the playlist then continues.
+- On success the icon shows ✓ for 1.5 s, and the queue reloads about 1 s later, since Spotify reads lag. A 403 shows 「需要 Spotify Premium」.
+
+**Centred panel.**
+- The right column opens with a header: 56 pt cover, name, 「N 首」 and a 「播放」 button that starts from the first song. 接下来播放 has no 播放 button.
+- The playing song is marked in the list with the cover accent and a small level icon.
+
+**Performance target:** while playing in a cover scene, the Release build averages at most 15% CPU, with clicks answered at once. The look stays the same to the eye.
+
+**Repeat-one:** the end of a looping song must not read as paused. Playback state stays correct across each loop.
