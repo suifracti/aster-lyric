@@ -3081,6 +3081,11 @@ public final class PlaybackState: ObservableObject {
         // S2 live-capture continuity: Desktop position can jump after a user
         // seek without going through seek(to:). Product auto-align reuses this.
         let incoming = snapshot.position
+        if !identityChanged, wasPlaying, snapshot.isPlaying,
+           previousPosition >= nextTrack.duration - 12, incoming < 12,
+           previousPosition - incoming > 12 {
+            LyricsE2ELog.log("PLAYER position wrapped id=\(providerTrack.id ?? "") from=\(previousPosition) to=\(incoming) playing=\(isPlaying)")
+        }
         let desktopJump = !identityChanged && abs(incoming - previousPosition) > 1.5
         if hasLiveTrack, desktopJump {
             AutomaticAlignmentJobController.shared.notifySeek(from: previousPosition, to: incoming)
@@ -3306,10 +3311,8 @@ public final class PlaybackState: ObservableObject {
         } else if providerStatus.isReady, hasLiveTrack {
             if isPlaying {
                 publishTickTime(playbackPositionNow)
-                if currentTime >= currentTrack.duration {
-                    isPlaying = false
-                    resetPlaybackAnchor(to: currentTrack.duration, source: .reset)
-                }
+                // Duration is only a local clock limit. The player may repeat;
+                // only its snapshot can pause playback and stop calibration.
             } else {
                 publishTickTime(playbackAnchorPosition)
             }

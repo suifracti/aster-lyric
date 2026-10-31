@@ -53,6 +53,23 @@ private struct EventOfflineLyrics: LyricsProvider {
 
 @MainActor
 final class DesktopPlaybackEventTests: XCTestCase {
+    func testRepeatOneReachingDurationKeepsPlayingUntilDesktopPositionWraps() async throws {
+        let (state, provider, _, _) = fixture()
+        provider.snapshot = PlaybackSnapshot(status: .ready, track: provider.snapshot.track,
+            position: 239.9, isPlaying: true, sourceIdentity: .spotifyDesktop)
+        state.startProvider(connectSpotify: false)
+        try await wait { state.hasLiveTrack && state.isPlaying }
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertTrue(state.isPlaying, "The local clock reaching duration is not a pause notification")
+        XCTAssertNotNil(state.calibrationTimer)
+        provider.snapshot = PlaybackSnapshot(status: .ready, track: provider.snapshot.track,
+            position: 0.2, isPlaying: true, sourceIdentity: .spotifyDesktop)
+        await state.calibratePlaybackPositionIfNeeded()
+        XCTAssertTrue(state.isPlaying)
+        XCTAssertLessThan(state.currentTime, 1)
+        XCTAssertTrue(provider.seeks.isEmpty)
+    }
+
     func testSleepAtTrackEndPausesWhenTheNextSongArrives() async throws {
         let (state, provider, _, center) = fixture()
         state.startProvider(connectSpotify: false)
