@@ -43,20 +43,30 @@ struct V3ToolbarQuickControls<Controls: View>: View {
                 }
             }
             .padding(14)
+            .padding(.bottom, panel == .picture ? 16 : 0)
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
             .background(GeometryReader { geometry in
                 Color.clear.preference(key: V3ToolPanelHeight.self, value: geometry.size.height)
             })
         }
+        .mask {
+            if panel == .picture && contentHeight > viewportHeight {
+                VStack(spacing: 0) {
+                    Rectangle()
+                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 16)
+                }
+            } else { Rectangle() }
+        }
         .onChange(of: selectedSearchResultKey) { _, id in
             if let id { proxy.scrollTo(id, anchor: .center) }
         }
         }
         .scrollBounceBehavior(.basedOnSize)
-        .frame(width: panel == .playlists ? 300 : 360, height: min(contentHeight, 520 - topInset))
+        .frame(width: panel == .playlists ? 300 : 360, height: viewportHeight)
         .onPreferenceChange(V3ToolPanelHeight.self) { height in
-            if height > 0 { contentHeight = min(520, ceil(height)) }
+            if height > 0 { contentHeight = ceil(height) }
         }
         .modifier(PersonalLibrarySheets(service: library))
         .font(.system(size: 12))
@@ -69,6 +79,8 @@ struct V3ToolbarQuickControls<Controls: View>: View {
             }
         }
     }
+
+    private var viewportHeight: CGFloat { min(contentHeight, 520 - topInset) }
 
     private var searchControls: some View {
         VStack(alignment: .leading, spacing: 8) {
