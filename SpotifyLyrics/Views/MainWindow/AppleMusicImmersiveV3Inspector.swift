@@ -135,7 +135,10 @@ struct V3ThemeSelectorView: View {
                         .foregroundStyle(selected ? tint : Color.secondary)
                     Text(family.title).font(.system(size: 13, weight: .semibold))
                     Spacer(minLength: 0)
-                    if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(tint) }
+                    if selected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .symbolRenderingMode(.palette).foregroundStyle(.white, tint)
+                    }
                     else if previewing { Text("预览").font(.system(size: 11)).foregroundStyle(tint) }
                 }
             }
@@ -169,9 +172,16 @@ struct V3ThemeSelectorView: View {
         return HStack(spacing: 8) {
             Button { adopt(entry, in: family) } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 13))
-                        .foregroundStyle(selected ? tint : Color.secondary.opacity(0.6))
+                    Group {
+                        if selected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .symbolRenderingMode(.palette).foregroundStyle(.white, tint)
+                        } else {
+                            Image(systemName: "circle")
+                                .foregroundStyle(Color.secondary.opacity(0.6))
+                        }
+                    }
+                    .font(.system(size: 13))
                     VStack(alignment: .leading, spacing: 1) {
                         Text(entry.title).font(.system(size: 12.5, weight: selected ? .semibold : .regular))
                         if !compact, let detail = entry.detail {
