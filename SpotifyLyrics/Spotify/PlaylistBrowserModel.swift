@@ -17,6 +17,7 @@ public final class PlaylistBrowserModel: ObservableObject {
     @Published public private(set) var selectedID = queueID
     @Published public private(set) var isLoading = false
     @Published public private(set) var isQueueLoading = false
+    @Published public private(set) var hasLoadedQueue = false
     @Published public private(set) var notice: String?
     private let service: SpotifyCatalogService
     private let accessToken: @MainActor (Set<String>) async throws -> String
@@ -76,8 +77,10 @@ public final class PlaylistBrowserModel: ObservableObject {
     }
 
 
+    public var showsQueueLoading: Bool { isQueueLoading && !hasLoadedQueue }
+
     public var selectedTracksAreLoading: Bool {
-        selectedID == Self.queueID ? isQueueLoading : isLoading
+        selectedID == Self.queueID ? showsQueueLoading : isLoading
     }
     public var emptyMessage: String? {
         guard tracks.isEmpty, !selectedTracksAreLoading, notice == nil else { return nil }
@@ -94,13 +97,27 @@ public final class PlaylistBrowserModel: ObservableObject {
         isQueueLoading = true
         queueTask = Task {
             defer { isQueueLoading = false; queueTask = nil }
-            do {
-                let token = try await accessToken(SpotifyOAuthConfiguration.playbackScopes)
-                let upcoming = try await service.upcomingTracks(accessToken: token, limit: nil)
-                queue = visibleQueue(upcoming)
-                syncQueueSelection()
-                notice = nil
-            } catch { if !Task.isCancelled { notice = error.localizedDescription } }
+            for attempt in 0...1 {
+                let started = Date()
+                do {
+                    let token = try await accessToken(SpotifyOAuthConfiguration.playbackScopes)
+                    let upcoming = try await service.upcomingTracks(accessToken: token, limit: nil)
+                    queue = visibleQueue(upcoming)
+                    hasLoadedQueue = true
+                    syncQueueSelection()
+                    notice = nil
+                    LyricsE2ELog.log("QUEUE load seconds=\(String(format: "%.3f", Date().timeIntervalSince(started))) count=\(upcoming.count)")
+                    return
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    notice = error.localizedDescription
+                    LyricsE2ELog.log("QUEUE load seconds=\(String(format: "%.3f", Date().timeIntervalSince(started))) count=0 error=\(error.localizedDescription)")
+                    if attempt == 0 {
+                        do { try await Task.sleep(for: .seconds(2)) }
+                        catch { return }
+                    }
+                }
+            }
         }
     }
     public func select(_ id: String) {

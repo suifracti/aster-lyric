@@ -1181,6 +1181,7 @@ public final class PlaybackState: ObservableObject {
         guard !isProviderStarted else { return }
         isProviderStarted = true
         automaticSpotifyConnectionEnabled = connectSpotify
+        playlistBrowser.loadQueue()
         desktopEvents?.start(
             onUpdate: { [weak self] in self?.receiveDesktopUpdate($0) },
             onApplicationChanged: { [weak self] source, running in self?.desktopApplicationChanged(source: source, isRunning: running) },
@@ -3028,6 +3029,7 @@ public final class PlaybackState: ObservableObject {
         let previousID = TrackIdentity.spotifyRequestTrackID(currentTrack.spotifyId)
         let nextID = TrackIdentity.spotifyRequestTrackID(nextTrack.spotifyId)
         if nextID != previousID {
+            playlistBrowser.loadQueue()
             if playlistBrowser.consumeQueueSkip(for: nextTrack) {
                 LyricsE2ELog.log("QUEUE skip consumed id=\(nextID ?? "unknown")")
                 runProviderCommand { try await $0.next() }

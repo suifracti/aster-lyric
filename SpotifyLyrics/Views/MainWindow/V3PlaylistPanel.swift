@@ -72,7 +72,6 @@ struct V3PlaylistPanel: View {
             }
         }
         .onAppear { browser.open() }
-        .onChange(of: currentTrackID) { _, _ in browser.loadQueue() }
         .task(id: currentArtworkURL) {
             let palette = await LyricIslandArtworkColors.palette(for: currentArtworkURL)
             guard !Task.isCancelled else { return }
@@ -204,12 +203,12 @@ struct V3PlaylistQueuePreview: View {
                 .background(hoveredRow == index ? Color.primary.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 6))
                 .onHover { hoveredRow = $0 ? index : nil }
             }
-            if browser.isQueueLoading && browser.queue.isEmpty { ProgressView().controlSize(.small) }
+            if browser.showsQueueLoading { ProgressView().controlSize(.small) }
             else if browser.queue.isEmpty, browser.notice == nil {
                 Text("接下来没有待播歌曲").foregroundStyle(.secondary)
             }
             if let notice = browser.notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
-        }.task(id: currentTrackID) { browser.loadQueue() }
+        }
     }
 }
 

@@ -22,7 +22,7 @@ public enum SpotifyCatalogError: Error, Equatable, Sendable, LocalizedError {
         case .notFound: return "Spotify 曲目不存在"
         case .rateLimited: return "Spotify 搜索服务限流"
         case .networkUnavailable: return "Spotify 网络不可用"
-        case .timedOut: return "Spotify 搜索请求超时"
+        case .timedOut: return "Spotify 请求超时"
         case .serverError(let status): return "Spotify 服务错误（HTTP \(status)）"
         case .parseFailure: return "Spotify 响应解析失败"
         case .cancelled: return "Spotify 搜索已取消"
