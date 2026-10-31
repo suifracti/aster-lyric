@@ -227,6 +227,7 @@ struct V3PlaylistQueuePreview: View {
             }
             if let notice = browser.notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
         }
+        .onAppear { browser.loadQueue() }
     }
 }
 

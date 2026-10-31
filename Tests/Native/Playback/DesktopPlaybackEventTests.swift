@@ -87,8 +87,9 @@ final class DesktopPlaybackEventTests: XCTestCase {
         let songs = ids.map { id in
             ProviderTrack(id: "spotify:track:" + id, title: id, artist: "Fixture", album: "Cache", duration: 240)
         }
+        var queuedIDs: [String] = []
         PlaylistFixtureURLProtocol.response = { _ in
-            (200, ["queue": ids.map { id in ["id": id, "name": id, "uri": "spotify:track:" + id,
+            (200, ["queue": queuedIDs.map { id in ["id": id, "name": id, "uri": "spotify:track:" + id,
                 "type": "track", "explicit": false, "duration_ms": 240000,
                 "artists": [["name": "Fixture"]], "album": ["name": "Cache", "images": []]] as [String: Any] }])
         }
@@ -98,7 +99,12 @@ final class DesktopPlaybackEventTests: XCTestCase {
             accessToken: { _ in "fixture" }, advanceQueue: { [weak state] count in state?.advanceQueuedTracks(count) })
         state.playlistBrowser = browser
         state.startProvider(connectSpotify: false)
-        try await wait { state.hasLiveTrack && browser.queue.count == 3 }
+        try await wait { state.hasLiveTrack && browser.hasLoadedQueue && !browser.isQueueLoading }
+        XCTAssertTrue(browser.queue.isEmpty)
+        queuedIDs = ids
+        browser.loadQueue() // Opening the preview refreshes a previously empty queue.
+        XCTAssertFalse(browser.showsQueueLoading)
+        try await wait { browser.queue.count == 3 }
         guard browser.queue.count == 3 else { return }
         let hidden = browser.queue[1]
         browser.skipQueuedTrack(hidden)
