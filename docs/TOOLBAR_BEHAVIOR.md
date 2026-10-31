@@ -555,3 +555,14 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 **Scrolling panels.**
 - When the 画面 panel's content is taller than the panel, the bottom edge fades over about 16 pt instead of cutting a row in half.
 
+## Round 11: 版本弹窗与歌词源译文（2026-11-01）
+
+**Version popups (preview and the revision sheets).**
+- They always open on the main window, never on a hover panel. Clicking a version row in a hover panel closes that panel, then the sheet opens at its normal size.
+- Closing the sheet returns to the lyrics. The window never stays dimmed with nothing on it.
+
+**Lyric source translations (歌词源译文).**
+- When a lyric source supplies its own translation, it shows by default. The user does not have to turn it on.
+- Order: the song's manual choice, including 「不显示」, comes first. Then locked or hand-edited versions, then AI versions, then the source's translation.
+- Showing a stored source translation never starts an AI request and never changes stored data.
+
