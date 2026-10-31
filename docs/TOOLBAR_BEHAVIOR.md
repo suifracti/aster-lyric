@@ -504,3 +504,25 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 **Performance target:** while playing in a cover scene, the Release build averages at most 15% CPU, with clicks answered at once. The look stays the same to the eye.
 
 **Repeat-one:** the end of a looping song must not read as paused. Playback state stays correct across each loop.
+
+
+## Round 9: 歌词库、搜索和控件细节（2026-11-01）
+
+**Version lists (centred 歌词库 panel, new-window library, hover 歌词库).**
+- Names are always Chinese, from the existing display names. Raw source values such as `MANUALIMPORT` never show.
+- Dates read 「10月31日 19:56」, with the year only when it differs from this year.
+- Each version is one row about 48 pt high: mark, name, then 「日期 · N 行」 beneath.
+- 预览 · 编辑 · 采用 show on the right on row hover. The adopted row always shows 「已采用」.
+- Adopted rows use a neutral fill and ✓, with no blue fill and no left bar.
+- Section titles (原词 / 译文 / 读音 / 时间轴) are 13 pt semibold with a grey count and a neutral icon. Remove the divider between versions.
+- Library filter chips use the same neutral selection as the panel tabs.
+
+**Song search (hover 搜索 and the search tab).**
+- A song appears once. If it is both saved and online, keep the saved result.
+- Titles get the whole row width; source and action sit on the second line.
+- 「查看歌词」 and the selected mark use neutral colours.
+
+**Edge player on bright covers:** icons and time must read clearly on a white cover. Darken the capsule backing until they do.
+
+**Compact player:** the play button is the same in every scene and in both states: a near-white filled circle with a dark icon.
+
