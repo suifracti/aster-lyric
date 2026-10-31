@@ -79,7 +79,7 @@ struct V3PlaylistPanel: View {
                     Group {
                         if let playlist { PlaylistCover(url: playlist.imageURL) }
                         else { Image(systemName: symbol).frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 5)) }
+                            .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 5)) }
                     }.frame(width: 32, height: 32)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(title).lineLimit(1)
@@ -101,7 +101,7 @@ struct V3PlaylistPanel: View {
         }
         .font(.system(size: 12, weight: .medium))
         .padding(.horizontal, 6)
-        .background(browser.selectedID == id ? .white.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .background(browser.selectedID == id ? Color.primary.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onHover { hoveredSidebarID = $0 ? id : nil }
         .padding(.horizontal, 6)
@@ -123,15 +123,15 @@ struct V3PlaylistPanel: View {
             }
         }
         .padding(.horizontal, 12).frame(height: 44)
-        .background(hoveredTrackOffset == item.offset ? .white.opacity(0.08) : .clear)
+        .background(hoveredTrackOffset == item.offset ? Color.primary.opacity(0.08) : .clear)
         .contentShape(Rectangle())
         .onHover { hoveredTrackOffset = $0 ? item.offset : nil }
     }
     private func membershipCircle(checked: Bool, busy: Bool) -> some View {
         Group {
-            if checked { Image(systemName: "checkmark.circle.fill").foregroundStyle(.white) }
+            if checked { Image(systemName: "checkmark.circle.fill").foregroundStyle(.primary) }
             else if busy { ProgressView().controlSize(.small) }
-            else { Image(systemName: "circle").foregroundStyle(.white.opacity(0.4)) }
+            else { Image(systemName: "circle").foregroundStyle(Color.primary.opacity(0.4)) }
         }.frame(width: 24, height: 28)
     }
 }

@@ -95,10 +95,10 @@ struct V3LibrarySearchPanel: View {
                 }
                 .frame(width: V3LibrarySearchPresentation.size(in: geometry.size).width,
                        height: V3LibrarySearchPresentation.size(in: geometry.size).height)
-                .background(Color(red: 0.10, green: 0.115, blue: 0.14), in: RoundedRectangle(cornerRadius: 18))
-                .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.12)))
+                .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 18))
+                .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.primary.opacity(0.12)))
                 .clipShape(RoundedRectangle(cornerRadius: 18))
-                .environment(\.colorScheme, .dark)
+                .modifier(V3SystemAppearanceModifier())
                 .accessibilityIdentifier("v3.librarySearchPanel")
             }
             .frame(width: geometry.size.width, height: geometry.size.height)

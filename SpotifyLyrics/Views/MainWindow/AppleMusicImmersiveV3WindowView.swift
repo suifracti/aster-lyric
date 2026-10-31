@@ -533,8 +533,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .preferredColorScheme(.dark)
         .v3NightGentle(enabled: settings.v3NightGentleEnabled)
         .environment(\.v3CoverAccent, coverAccent ?? .white)
-        .tint(coverAccent)
-        .accentColor(coverAccent)
+        .tint(.primary)
         .task(id: compositionTrack.artworkURL) {
             guard let url = compositionTrack.artworkURL else { coverAccent = nil; coverLuminance = 0; return }
             let palette = await LyricIslandArtworkColors.palette(for: url)
@@ -1861,7 +1860,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
             // Global, low-frequency settings sit at the trailing end, apart
             // from the listening tools.
-            Rectangle().fill(Color.white.opacity(0.18)).frame(width: 1, height: 18)
+            Rectangle().fill(Color.primary.opacity(0.18)).frame(width: 1, height: 18)
                 .padding(.horizontal, 2)
             Button(action: openAppSettings) {
                 toolbarEntry("设置", symbol: "gearshape")
@@ -1880,8 +1879,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             Color.clear.preference(key: V3ToolbarFramePreferenceKey.self,
                 value: geometry.frame(in: .named("v3-window-canvas")))
         })
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.16), lineWidth: 0.7))
+        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.16), lineWidth: 0.7))
         .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 4)
+        .modifier(V3SystemAppearanceModifier())
         .onChange(of: toolbar.mode) { old, new in toolbarModeChanged(from: old, to: new) }
         .onDisappear { toolbarDismissTask?.cancel(); hoveredStyle = nil }
     }
@@ -1950,10 +1950,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         Label(title, systemImage: symbol)
             .labelStyle(LyricIslandToolbarLabelStyle())
             .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.white.opacity(0.94))
+            .foregroundStyle(Color.primary.opacity(0.94))
             .padding(.horizontal, 10)
             .frame(height: 36)
-            .background(selected ? Color.white.opacity(0.14) : .clear, in: Capsule())
+            .background(selected ? Color.primary.opacity(0.14) : .clear, in: Capsule())
             .contentShape(Capsule())
     }
 
@@ -2046,8 +2046,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             toolbarPanel(for: panel)
         }
         .frame(width: 360, alignment: .topLeading)
-        .tint(coverAccent)
-        .accentColor(coverAccent)
+        .tint(.primary)
         .background {
             switch style {
             case .hoverGlass:
@@ -2058,7 +2057,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         }
         .overlay(alignment: .leading) {
             Rectangle()
-                .fill(style == .hoverGlass ? Color.white.opacity(0.12) : Color.primary.opacity(0.10))
+                .fill(Color.primary.opacity(0.10))
                 .frame(width: 1)
         }
         .onExitCommand { dismissPinnedToolbarPanel() }

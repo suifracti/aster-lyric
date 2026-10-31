@@ -245,8 +245,8 @@ struct ExperienceVisualHostApp: App {
         // Tool panels read the system appearance; this sets it for this
         // fixture process only (its own defaults domain).
         switch ExperienceArguments.value("--appearance", fallback: "") {
-        case "dark": UserDefaults.standard.set("Dark", forKey: "AppleInterfaceStyle")
-        case "light": UserDefaults.standard.set("Light", forKey: "AppleInterfaceStyle")
+        case "dark": NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+        case "light": NSApplication.shared.appearance = NSAppearance(named: .aqua)
         default: break
         }
         let protection = ExperienceArguments.value("--reading-protection", fallback: "")

@@ -6,6 +6,19 @@ import XCTest
 
 final class PresentationSourceContractTests: XCTestCase {
     @MainActor
+    func testOpenPanelAppearanceTracksApplicationAppearance() async {
+        let previous = NSApp.appearance
+        defer { NSApp.appearance = previous }
+        let appearance = V3SystemAppearance.shared
+        for name in [NSAppearance.Name.aqua, .darkAqua, .aqua] {
+            NSApp.appearance = NSAppearance(named: name)
+            // KVO delivers its change to the main actor.
+            try? await Task.sleep(for: .milliseconds(30))
+            XCTAssertEqual(appearance.colorScheme, name == .aqua ? .light : .dark)
+        }
+    }
+
+    @MainActor
     func testColdSongReadingsNeverRunInTheViewAndAreReusedAfterPreparation() async {
         let line = LyricLine(timestamp: 0, originalText: "ずっと前から決めてたんだね")
         let presentation = V3JapaneseReadingCache.resolvedPresentation(for: line, language: "ja",

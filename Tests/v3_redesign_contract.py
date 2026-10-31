@@ -79,12 +79,12 @@ assert 'geometry.size.width - inspectorWidth' not in window
 assert '.fittingSize' not in window[window.index('struct V3PinnedInspectorPanelHost'):window.index('struct QuietToolbarButtonStyle')]
 popover_host=window[window.index('func v3ToolPopover<Content: View>'):window.index('struct V3PinnedInspectorPanelHost')]
 pinned_host=window[window.index('struct V3PinnedInspectorPanelHost'):window.index('struct QuietToolbarButtonStyle')]
-assert 'v3HoverToolPanelRoot(content())' in popover_host, 'hover panels must use the historical dark glass color scheme'
-assert 'popover.appearance = NSAppearance(named: .darkAqua)' in popover_host, 'hover popovers must restore their historical Dark Aqua material appearance'
+assert 'v3HoverToolPanelRoot(content())' in popover_host, 'hover panels must use the system appearance wrapper'
+assert 'popover.appearance = V3SystemAppearance.current' in popover_host, 'hover popovers must follow system appearance'
 assert 'let content = v3ToolPanelRoot(parent.content.onPreferenceChange(' in pinned_host, 'wrap the retained panel content once, with its sizing preference'
 assert 'hosting.rootView = content' in pinned_host, 'updates must reuse the system-appearance wrapper'
 assert 'NSHostingController(rootView: content)' in pinned_host, 'creation must use the same wrapped content'
-assert 'content.environment(\\.colorScheme, V3SystemAppearance.colorScheme)' in window, 'fixed tools must override the main window appearance'
+assert 'content.modifier(V3SystemAppearanceModifier())' in window, 'fixed tools must override the main window appearance'
 assert 'controller.view.appearance = V3SystemAppearance.current' in pinned_host and 'panel.appearance = system' in pinned_host, 'hosting view and fixed window must retain system appearance'
 assert 'anchor.onWindowAttachment = { [weak coordinator]' in pinned_host, 'pinned host must retry when its zero-size anchor joins the owner window'
 assert 'override func viewDidMoveToWindow()' in window[window.index('final class V3ToolAnchorView'):window.index('private struct V3ToolPopoverAnchor')], 'tool anchor must signal its AppKit window attachment'
@@ -93,7 +93,7 @@ surface=window[window.index('private func inspectorSurface(for panel: ToolbarPop
 assert '.regularMaterial' in surface, 'hover tool panels must retain their frosted glass surface'
 assert 'Color(nsColor: .windowBackgroundColor)' in surface, 'pinned tool panels must use an opaque system-colored surface'
 assert 'V3SystemAppearance.colorScheme == .dark ? Color.black : Color.white' not in surface, 'historical glass must not be covered by an opaque white tint'
-assert 'Color.white.opacity(0.12)' in surface, 'glass panel must retain its original hairline edge'
+assert 'Color.primary.opacity(0.10)' in surface, 'glass panel must retain its original hairline edge'
 assert 'content: inspectorSurface(for: pinned, style: .pinnedSolid)' in window, 'pinned tool windows must use the solid panel surface'
 assert 'hoverTrackedPanel(panel) { inspectorSurface(for: panel, style: .hoverGlass) }' in normalized_window, 'hover panels must share the glass surface'
 assert 'isProjectingScene = true' in settings and 'selectLegacyV3Presentation' in settings

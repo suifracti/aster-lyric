@@ -68,29 +68,39 @@ enum V3ToolbarLog {
     static let logger = Logger(subsystem: "com.spotifylyrics.app", category: "toolbar")
 }
 
-/// The listening canvas forces dark, which every child window would inherit.
-/// Tool panels read the user's system choice directly instead.
-private enum V3SystemAppearance {
-    static var colorScheme: ColorScheme {
-        UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark" ? .dark : .light
+/// Follow the application/system appearance, independent of the artwork canvas.
+@MainActor
+final class V3SystemAppearance: ObservableObject {
+    static let shared = V3SystemAppearance()
+    @Published private(set) var colorScheme: ColorScheme
+    private var observation: NSKeyValueObservation?
+    private init() {
+        colorScheme = Self.scheme(NSApp.effectiveAppearance)
+        observation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] app, _ in
+            Task { @MainActor in self?.colorScheme = Self.scheme(app.effectiveAppearance) }
+        }
     }
-
+    static func scheme(_ appearance: NSAppearance) -> ColorScheme {
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .dark : .light
+    }
     static var current: NSAppearance {
-        NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua) ?? NSAppearance(named: .aqua)!
+        NSAppearance(named: shared.colorScheme == .dark ? .darkAqua : .aqua)!
     }
 }
 
-/// The main lyric surface forces dark mode. Tool windows use the system
-/// appearance, so explicitly reset SwiftUI's inherited color scheme at the
-/// hosted root as well as setting the AppKit window appearance.
-private func v3ToolPanelRoot<Content: View>(_ content: Content) -> AnyView {
-    AnyView(content.environment(\.colorScheme, V3SystemAppearance.colorScheme))
+struct V3SystemAppearanceModifier: ViewModifier {
+    @ObservedObject private var appearance = V3SystemAppearance.shared
+    func body(content: Content) -> some View {
+        content.environment(\.colorScheme, appearance.colorScheme).tint(.primary)
+    }
 }
 
-/// Hover popovers keep their original dark frosted-glass treatment. Fixed
-/// panels use the user's system appearance through `v3ToolPanelRoot` instead.
+private func v3ToolPanelRoot<Content: View>(_ content: Content) -> AnyView {
+    AnyView(content.modifier(V3SystemAppearanceModifier()))
+}
+
 private func v3HoverToolPanelRoot<Content: View>(_ content: Content) -> AnyView {
-    AnyView(content.preferredColorScheme(.dark).environment(\.colorScheme, .dark))
+    v3ToolPanelRoot(content)
 }
 
 /// The shared panel reports its laid-out content, including expanded groups.
@@ -188,6 +198,7 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
         coordinator.close()
     }
 
+    @MainActor
     final class Coordinator: NSObject, NSPopoverDelegate {
         var parent: V3ToolPopoverAnchor
         weak var anchor: NSView?
@@ -197,6 +208,7 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
         private var observers: [NSObjectProtocol] = []
         private var trackingMenus = 0
         private var forwardingWindow: NSWindow?
+        private var appearanceSubscription: AnyCancellable?
 
         func resizeContent(height: CGFloat) {
             let size = CGSize(width: 360, height: min(520, ceil(height)))
@@ -220,7 +232,12 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
             super.init()
             popover.behavior = .applicationDefined
             popover.animates = false
-            popover.appearance = NSAppearance(named: .darkAqua)
+            popover.appearance = V3SystemAppearance.current
+            appearanceSubscription = V3SystemAppearance.shared.$colorScheme.sink { [weak self] scheme in
+                let appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                self?.popover.appearance = appearance
+                self?.hosting?.view.appearance = appearance
+            }
             popover.delegate = self
         }
 
@@ -348,6 +365,7 @@ struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
         coordinator.close(notifyBinding: false)
     }
 
+    @MainActor
     final class Coordinator: NSObject, NSWindowDelegate {
         var parent: V3PinnedInspectorPanelHost
         weak var anchor: NSView?
@@ -359,7 +377,16 @@ struct V3PinnedInspectorPanelHost<Content: View>: NSViewRepresentable {
         private var settingFrame = false
         private var contentHeight: CGFloat = 520
         private weak var observedOwner: NSWindow?
-        init(parent: V3PinnedInspectorPanelHost) { self.parent = parent; super.init() }
+        private var appearanceSubscription: AnyCancellable?
+        init(parent: V3PinnedInspectorPanelHost) {
+            self.parent = parent
+            super.init()
+            appearanceSubscription = V3SystemAppearance.shared.$colorScheme.sink { [weak self] scheme in
+                let appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                self?.panel?.appearance = appearance
+                self?.hosting?.view.appearance = appearance
+            }
+        }
 
         func updatePanel() {
             guard parent.isPresented else {

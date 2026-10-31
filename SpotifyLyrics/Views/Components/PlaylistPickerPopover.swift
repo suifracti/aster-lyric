@@ -10,16 +10,14 @@ struct PlaylistPickerPopover: View {
     var body: some View {
         VStack(spacing: 0) {
             searchField
-            Divider().overlay(Color.white.opacity(0.08))
+            Divider().overlay(Color.primary.opacity(0.08))
             listContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             footer
         }
         .frame(width: 380, height: 480)
-        .background(.ultraThinMaterial)
-        .background(Color.black.opacity(0.55))
-        .environment(\.colorScheme, .dark)
-        .preferredColorScheme(.dark)
+        .background(.regularMaterial)
+        .modifier(V3SystemAppearanceModifier())
         .onAppear { model.open() }
     }
 
@@ -27,16 +25,16 @@ struct PlaylistPickerPopover: View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.5))
+                .foregroundStyle(Color.primary.opacity(0.5))
             TextField("寻找播放列表", text: $model.query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
             if !model.query.isEmpty {
                 Button { model.query = "" } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(Color.primary.opacity(0.4))
                 }
                 .buttonStyle(.plain)
             }
@@ -51,16 +49,16 @@ struct PlaylistPickerPopover: View {
         case .idle, .loading:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("正在读取歌单…").font(.system(size: 13)).foregroundStyle(.white.opacity(0.7))
+                Text("正在读取歌单…").font(.system(size: 13)).foregroundStyle(Color.primary.opacity(0.7))
             }
             .frame(maxWidth: .infinity, minHeight: 120)
         case .failed(let message):
             VStack(spacing: 8) {
-                Text(message).font(.system(size: 13)).foregroundStyle(.white.opacity(0.8))
+                Text(message).font(.system(size: 13)).foregroundStyle(Color.primary.opacity(0.8))
                 Button("重试") { model.load() }
                     .buttonStyle(.plain)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
             }
             .frame(maxWidth: .infinity, minHeight: 120)
         case .ready:
@@ -74,7 +72,7 @@ struct PlaylistPickerPopover: View {
                     if model.filteredPlaylists.isEmpty, !model.trimmedQuery.isEmpty {
                         Text("没有匹配的歌单")
                             .font(.system(size: 13))
-                            .foregroundStyle(.white.opacity(0.55))
+                            .foregroundStyle(Color.primary.opacity(0.55))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                     }
@@ -88,7 +86,7 @@ struct PlaylistPickerPopover: View {
         Button { model.createPlaylist() } label: {
             HStack(spacing: 10) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.12))
+                    RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.12))
                     if model.isCreatingPlaylist {
                         ProgressView().controlSize(.small)
                     } else {
@@ -98,11 +96,11 @@ struct PlaylistPickerPopover: View {
                 .frame(width: 36, height: 36)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("新建列表").font(.system(size: 13, weight: .medium))
-                    Text("「\(model.newPlaylistName)」").font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
+                    Text("「\(model.newPlaylistName)」").font(.system(size: 11)).foregroundStyle(Color.primary.opacity(0.55))
                 }
                 Spacer()
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .contentShape(Rectangle())
@@ -123,7 +121,7 @@ struct PlaylistPickerPopover: View {
                             .fill(LinearGradient(colors: [Color(red: 0.35, green: 0.32, blue: 0.85),
                                                           Color(red: 0.85, green: 0.35, blue: 0.6)],
                                                  startPoint: .topLeading, endPoint: .bottomTrailing))
-                        Image(systemName: "heart.fill").font(.system(size: 13)).foregroundStyle(.white)
+                        Image(systemName: "heart.fill").font(.system(size: 13)).foregroundStyle(.primary)
                     }
                 ),
                 checked: model.isLiked,
@@ -160,7 +158,7 @@ struct PlaylistPickerPopover: View {
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
                 if let subtitle {
-                    Text(subtitle).font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
+                    Text(subtitle).font(.system(size: 11)).foregroundStyle(Color.primary.opacity(0.55))
                 }
             }
             Spacer(minLength: 8)
@@ -170,12 +168,12 @@ struct PlaylistPickerPopover: View {
                 } else if checked {
                     Image(systemName: "checkmark.circle.fill").font(.system(size: 13))
                 } else {
-                    Image(systemName: "circle").font(.system(size: 13)).foregroundStyle(.white.opacity(0.22))
+                    Image(systemName: "circle").font(.system(size: 13)).foregroundStyle(Color.primary.opacity(0.22))
                 }
             }
             .frame(width: 20)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.primary)
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .contentShape(Rectangle())
@@ -190,11 +188,11 @@ struct PlaylistPickerPopover: View {
             Button("完成") { dismiss() }
                 .buttonStyle(.plain)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.white.opacity(0.04))
+        .background(Color.primary.opacity(0.04))
     }
 }
 
@@ -203,7 +201,7 @@ struct PlaylistCover: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.1))
+            RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.1))
             if let url {
                 AsyncImage(url: url) { image in
                     image.resizable().scaledToFill()
@@ -214,7 +212,7 @@ struct PlaylistCover: View {
             } else {
                 Image(systemName: "music.note.list")
                     .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(Color.primary.opacity(0.5))
             }
         }
     }
