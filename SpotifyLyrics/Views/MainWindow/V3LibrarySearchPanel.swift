@@ -215,7 +215,7 @@ struct V3LibrarySearchPanel: View {
         }
         .padding(.horizontal, 10).frame(height: 44)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selectedKey == entry.id ? .white.opacity(0.09) : .clear)
+        .background(selectedKey == entry.id ? Color.primary.opacity(0.09) : .clear)
         .contentShape(Rectangle())
     }
 

@@ -95,7 +95,7 @@ struct V3SearchPanel: View {
                 Text(candidate.providerName ?? candidate.source.displayName).font(.system(size: 12, weight: .medium))
                 Spacer()
                 Text(candidate.lines.contains { $0.timedSpans?.isEmpty == false } ? "逐字" : candidate.isSynchronized ? "逐行" : "纯文本")
-                    .font(.system(size: 10)).padding(3).background(.white.opacity(0.08), in: Capsule())
+                    .font(.system(size: 10)).padding(3).background(Color.primary.opacity(0.08), in: Capsule())
             }
             Text(catalogDuration.map { String(format: "时长差 %+.1fs", candidate.duration - $0) } ?? "时长差未知")
                 .font(.caption).foregroundStyle(.secondary)
@@ -107,7 +107,7 @@ struct V3SearchPanel: View {
             }.controlSize(.small)
         }
         .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-        .background((selectedCandidate?.id == candidate.id) ? .white.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 7))
+        .background((selectedCandidate?.id == candidate.id) ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 7))
         .contentShape(Rectangle())
         .onTapGesture { selectedSongKey = nil; selectedCandidate = candidate; adoptionRequest = nil }
         .onHover { hoveredCandidate = $0 ? candidate.id : nil }
