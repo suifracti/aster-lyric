@@ -22,6 +22,53 @@ public final class PlaylistBrowserModel: ObservableObject {
     private let accessToken: @MainActor (Set<String>) async throws -> String
     private var tracksTask: Task<Void, Never>?
     private var queueTask: Task<Void, Never>?
+    private var queueSkipCounts: [String: Int] = [:]
+    private var manualPlaybackIntent: (id: String?, until: TimeInterval)?
+
+    private func queueKey(_ track: Track) -> String? {
+        TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString)
+    }
+    public func skipQueuedTrack(_ track: Track, at offset: Int? = nil) {
+        guard let id = queueKey(track) else { return }
+        queueSkipCounts[id, default: 0] += 1
+        let index = offset.flatMap { queue.indices.contains($0) && queueKey(queue[$0]) == id ? $0 : nil }
+            ?? queue.firstIndex { queueKey($0) == id }
+        if let index { queue.remove(at: index) }
+        syncQueueSelection()
+    }
+    /// An explicit App command covers the immediate player transition only.
+    public func noteManualPlayback(_ track: Track? = nil) {
+        let id: String?
+        if let track {
+            guard let key = queueKey(track) else { return }
+            id = key
+        } else { id = nil }
+        manualPlaybackIntent = (id, ProcessInfo.processInfo.systemUptime + 5)
+    }
+    public func cancelManualPlaybackIntent() { manualPlaybackIntent = nil }
+    public func consumeQueueSkip(for track: Track, naturalTransition: Bool) -> Bool {
+        let intent = manualPlaybackIntent
+        manualPlaybackIntent = nil
+        guard let id = queueKey(track), naturalTransition else { return false }
+        if let intent, intent.until >= ProcessInfo.processInfo.systemUptime,
+           intent.id == nil || intent.id == id { return false }
+        guard let count = queueSkipCounts[id], count > 0 else { return false }
+        if count == 1 { queueSkipCounts.removeValue(forKey: id) }
+        else { queueSkipCounts[id] = count - 1 }
+        return true
+    }
+    private func visibleQueue(_ values: [Track]) -> [Track] {
+        var remaining = queueSkipCounts
+        return values.filter { track in
+            guard let id = queueKey(track), let count = remaining[id], count > 0 else { return true }
+            remaining[id] = count - 1
+            return false
+        }
+    }
+    private func syncQueueSelection() {
+        if selectedID == Self.queueID { tracks = queue.enumerated().map { SpotifyPlaylistTrack(track: $0.element, offset: $0.offset) } }
+    }
+
 
     public var selectedTracksAreLoading: Bool {
         selectedID == Self.queueID ? isQueueLoading : isLoading
@@ -43,8 +90,9 @@ public final class PlaylistBrowserModel: ObservableObject {
             defer { isQueueLoading = false; queueTask = nil }
             do {
                 let token = try await accessToken(SpotifyOAuthConfiguration.playbackScopes)
-                queue = try await service.upcomingTracks(accessToken: token, limit: nil)
-                if selectedID == Self.queueID { tracks = queue.enumerated().map { SpotifyPlaylistTrack(track: $0.element, offset: $0.offset) } }
+                let upcoming = try await service.upcomingTracks(accessToken: token, limit: nil)
+                queue = visibleQueue(upcoming)
+                syncQueueSelection()
                 notice = nil
             } catch { if !Task.isCancelled { notice = error.localizedDescription } }
         }
@@ -84,6 +132,7 @@ public final class PlaylistBrowserModel: ObservableObject {
     public func play(_ item: SpotifyPlaylistTrack) {
         let context = selectedID
         guard context != Self.queueID else { return }
+        noteManualPlayback(item.track)
         let remainingIDs = tracks.drop(while: { $0.offset != item.offset }).prefix(100)
             .compactMap { TrackIdentity.spotifyRequestTrackID($0.track.spotifyId) }
         Task {
@@ -96,8 +145,8 @@ public final class PlaylistBrowserModel: ObservableObject {
                     try await service.playPlaylist(context, offset: item.offset, accessToken: token)
                 }
                 notice = "已请求播放"
-            } catch SpotifyCatalogError.forbidden { notice = "需要 Spotify Premium" }
-            catch { notice = error.localizedDescription }
+            } catch SpotifyCatalogError.forbidden { cancelManualPlaybackIntent(); notice = "需要 Spotify Premium" }
+            catch { cancelManualPlaybackIntent(); notice = error.localizedDescription }
         }
     }
     deinit { tracksTask?.cancel(); queueTask?.cancel() }

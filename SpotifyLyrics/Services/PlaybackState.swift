@@ -1929,6 +1929,7 @@ public final class PlaybackState: ObservableObject {
 
     public func previousTrack() {
         guard canControlSpotify else { return }
+        playlistBrowser.noteManualPlayback()
         runProviderCommand { provider in
             try await provider.previous()
         }
@@ -1936,6 +1937,7 @@ public final class PlaybackState: ObservableObject {
 
     public func nextTrack() {
         guard canControlSpotify else { return }
+        playlistBrowser.noteManualPlayback()
         runProviderCommand { provider in
             try await provider.next()
         }
@@ -2608,13 +2610,14 @@ public final class PlaybackState: ObservableObject {
             songSearchSelectionMessage = "这首歌没有可播放的 Spotify ID"
             return
         }
+        playlistBrowser.noteManualPlayback(track)
         Task {
             do {
                 let token = try await spotifyAuthorizationManager.accessToken(requiredScopes: SpotifyOAuthConfiguration.playbackWriteScopes)
                 try await spotifyLibraryService.playTrack(id, accessToken: token)
                 songSearchSelectionMessage = "已请求播放"
-            } catch SpotifyCatalogError.forbidden { songSearchSelectionMessage = "需要 Spotify Premium" }
-            catch { songSearchSelectionMessage = error.localizedDescription }
+            } catch SpotifyCatalogError.forbidden { playlistBrowser.cancelManualPlaybackIntent(); songSearchSelectionMessage = "需要 Spotify Premium" }
+            catch { playlistBrowser.cancelManualPlaybackIntent(); songSearchSelectionMessage = error.localizedDescription }
         }
     }
 
@@ -3023,6 +3026,19 @@ public final class PlaybackState: ObservableObject {
         if providerStatus != snapshot.status { providerStatus = snapshot.status }
 
         let nextTrack = Track(providerTrack: providerTrack)
+        if snapshot.sourceIdentity == .spotifyDesktop, hasLiveTrack,
+           let previousID = TrackIdentity.spotifyRequestTrackID(currentTrack.spotifyId),
+           let nextID = TrackIdentity.spotifyRequestTrackID(nextTrack.spotifyId), previousID != nextID {
+            // Desktop notifications carry no transition reason. Only a playing
+            // track arriving at the previous recording's end is treated as queued.
+            let natural = isPlaying && snapshot.isPlaying && currentTrack.duration > 0
+                && playbackPositionNow >= currentTrack.duration - 2
+            if playlistBrowser.consumeQueueSkip(for: nextTrack, naturalTransition: natural) {
+                LyricsE2ELog.log("QUEUE skip consumed id=\(nextID)")
+                runProviderCommand { try await $0.next() }
+                return
+            }
+        }
         let nextIdentity = lyricsSession.hasAdoptedLyrics(for: nextTrack)
             ? (lyricsSession.activeIdentity ?? TrackIdentity(track: nextTrack)) : TrackIdentity(track: nextTrack)
         let identityChanged = !hasLiveTrack || lyricsSession.activeIdentity != nextIdentity
@@ -3227,6 +3243,7 @@ public final class PlaybackState: ObservableObject {
                 guard !Task.isCancelled, self.providerRefreshGeneration == commandGeneration else { return }
                 await self.refreshProvider()
             } catch {
+                self.playlistBrowser.cancelManualPlaybackIntent()
                 self.handleProviderError(error)
             }
         }

@@ -16,6 +16,9 @@ struct V3PlaylistPanel: View {
         _picker = ObservedObject(wrappedValue: browser.picker)
 #if DEBUG
         // Offscreen fixture state only; never moves the user's pointer.
+        if ProcessInfo.processInfo.arguments.contains("--queue-hover-fixture") {
+            _hoveredTrackOffset = State(initialValue: 0)
+        }
         if ProcessInfo.processInfo.arguments.contains("--playlist-hover-fixture") {
             _hoveredSidebarID = State(initialValue: "morning")
             _hoveredTrackOffset = State(initialValue: 0)
@@ -151,7 +154,9 @@ struct V3PlaylistPanel: View {
             }
             Spacer()
             if playing { Image(systemName: "waveform").foregroundStyle(playingAccent).accessibilityLabel("正在播放") }
-            if browser.selectedID != PlaylistBrowserModel.queueID {
+            if browser.selectedID == PlaylistBrowserModel.queueID {
+                V3QueueSkipButton(browser: browser, track: item.track, offset: item.offset, hovered: hoveredTrackOffset == item.offset)
+            } else {
                 V3QueueInsertButton(browser: browser, track: item.track, hovered: hoveredTrackOffset == item.offset)
                 Button { browser.play(item) } label: { Image(systemName: "play.fill") }
                     .buttonStyle(.plain).help("播放这首歌")
@@ -175,7 +180,12 @@ struct V3PlaylistPanel: View {
 struct V3PlaylistQueuePreview: View {
     @ObservedObject var browser: PlaylistBrowserModel
     let currentTrackID: String?
-    @State private var hoveredRow: Int?
+    @State private var hoveredRow: Int? = {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--queue-hover-fixture") { return 0 }
+#endif
+        return nil
+    }()
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(browser.queue.prefix(5).enumerated()), id: \.offset) { index, track in
@@ -187,6 +197,7 @@ struct V3PlaylistQueuePreview: View {
                         Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer(minLength: 0)
+                    V3QueueSkipButton(browser: browser, track: track, offset: index, hovered: hoveredRow == index)
                 }
                 .frame(height: 44)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -199,6 +210,24 @@ struct V3PlaylistQueuePreview: View {
             }
             if let notice = browser.notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
         }.task(id: currentTrackID) { browser.loadQueue() }
+    }
+}
+
+/// Queue removal is local: Spotify is advanced only when the mark is consumed.
+private struct V3QueueSkipButton: View {
+    @ObservedObject var browser: PlaylistBrowserModel
+    let track: Track
+    let offset: Int
+    let hovered: Bool
+    var body: some View {
+        Button { browser.skipQueuedTrack(track, at: offset) } label: {
+            Image(systemName: "xmark").font(.system(size: 11, weight: .medium))
+                .frame(width: 24, height: 24).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).foregroundStyle(.secondary)
+        .help("跳过这首").accessibilityLabel("跳过这首")
+        .disabled(TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString) == nil)
+        .opacity(hovered ? 1 : 0).allowsHitTesting(hovered).accessibilityHidden(!hovered)
     }
 }
 

@@ -39,7 +39,8 @@ private final class EventPlaybackProvider: PlaybackProvider {
     func play() async throws {}
     var pauseCount = 0
     func pause() async throws { pauseCount += 1 }
-    func next() async throws {}
+    var nextCount = 0
+    func next() async throws { nextCount += 1 }
     func previous() async throws {}
     var seeks: [TimeInterval] = []
     func seek(to position: TimeInterval) async throws { seeks.append(position) }
@@ -53,6 +54,28 @@ private struct EventOfflineLyrics: LyricsProvider {
 
 @MainActor
 final class DesktopPlaybackEventTests: XCTestCase {
+    func testMarkedQueueSongSkipsOnceThenPlaysNormally() async throws {
+        let (state, provider, _, center) = fixture()
+        let original = provider.snapshot.track!
+        provider.snapshot = PlaybackSnapshot(status: .ready, track: original, position: 239.9, isPlaying: true, sourceIdentity: .spotifyDesktop)
+        state.startProvider(connectSpotify: false)
+        try await wait { state.hasLiveTrack }
+        let queued = ProviderTrack(id: "spotify:track:BBBBBBBBBBBBBBBBBBBBBB", title: "Event B", artist: "Fixture", album: "Cache", duration: 240)
+        state.playlistBrowser.skipQueuedTrack(Track(title: queued.title, artist: queued.artist, album: queued.album, duration: queued.duration, spotifyId: queued.id))
+        provider.snapshot = PlaybackSnapshot(status: .ready, track: queued, position: 0.1, isPlaying: true, sourceIdentity: .spotifyDesktop)
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: payload(position: 0.1))
+        try await wait { provider.nextCount == 1 }
+        try await wait { state.currentTrack.spotifyId == queued.id }
+        provider.snapshot = PlaybackSnapshot(status: .ready, track: original, position: 239.9, isPlaying: true, sourceIdentity: .spotifyDesktop)
+        var back = payload("Initial", position: 239.9); back["Track ID"] = original.id!
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: back)
+        try await wait { state.currentTrack.spotifyId == original.id }
+        provider.snapshot = PlaybackSnapshot(status: .ready, track: queued, position: 0.1, isPlaying: true, sourceIdentity: .spotifyDesktop)
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: payload(position: 0.1))
+        try await wait { state.currentTrack.spotifyId == queued.id }
+        XCTAssertEqual(provider.nextCount, 1)
+    }
+
     func testRepeatOneReachingDurationKeepsPlayingUntilDesktopPositionWraps() async throws {
         let (state, provider, _, _) = fixture()
         provider.snapshot = PlaybackSnapshot(status: .ready, track: provider.snapshot.track,

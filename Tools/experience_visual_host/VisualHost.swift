@@ -66,7 +66,7 @@ private final class ExperiencePlaylistProtocol: URLProtocol {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let songs: [[String: Any]] = ["夜を越えて", "明日への手紙", "雨のあと", "遠くの灯り", "帰り道"].enumerated().map { index, title in
-            let id = index == 0 ? "visualfixture" : "fixture-\(index)"
+            let id = index == 0 ? "AAAAAAAAAAAAAAAAAAAAAA" : String(repeating: "B", count: 21) + String(index)
             return ["id": id, "type": "track", "name": title, "uri": "spotify:track:" + id,
              "duration_ms": 210000, "explicit": false, "artists": [["name": "Visual Fixture"]],
              "album": ["name": "Isolated playlist fixture", "images": []]]
@@ -319,7 +319,7 @@ struct ExperienceVisualHostApp: App {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ExperiencePlaylistProtocol.self]
         let catalog = ExperiencePlaylistCatalog()
-        let picker = PlaylistPickerModel(catalog: catalog, trackID: { "visualfixture" }, likedState: { true }, applyLiked: { $0 })
+        let picker = PlaylistPickerModel(catalog: catalog, trackID: { "AAAAAAAAAAAAAAAAAAAAAA" }, likedState: { true }, applyLiked: { $0 })
         playback.playlistBrowser = PlaylistBrowserModel(service: SpotifyCatalogService(session: URLSession(configuration: configuration),
             baseURL: URL(string: "https://playlist.fixture/v1")!), picker: picker, accessToken: { _ in "fixture" })
         _playback=StateObject(wrappedValue:playback)
@@ -381,7 +381,7 @@ private struct ExperienceFixtureRoot: View {
                 if ["library", "search"].contains(where: { ExperienceArguments.value("--panel", fallback: "").contains($0) || ExperienceArguments.value("--navigation", fallback: "").contains($0) }) {
                     let track = Track(id: "spotify:track:visualfixture", title: "夜を越えて · After the rain",
                         artist: "Visual Fixture", album: "Native rendering study", duration: 240,
-                        spotifyId: "visualfixture", artworkURL: ExperienceArtwork.make())
+                        spotifyId: "AAAAAAAAAAAAAAAAAAAAAA", artworkURL: ExperienceArtwork.make())
                     let identity = TrackIdentity(track: track)
                     if case .match(let document) = await ExperienceLyricsProvider().lookup(track: track, identity: identity) {
                         let repository = SQLiteLyricsRepository(databaseURL: ExperienceArguments.databaseURL,
