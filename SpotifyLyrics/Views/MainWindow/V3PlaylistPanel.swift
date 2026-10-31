@@ -118,6 +118,7 @@ struct V3PlaylistPanel: View {
             }
             Spacer()
             if browser.selectedID != PlaylistBrowserModel.queueID {
+                V3QueueInsertButton(browser: browser, track: item.track, hovered: hoveredTrackOffset == item.offset)
                 Button { browser.play(item) } label: { Image(systemName: "play.fill") }
                     .buttonStyle(.plain).help("播放这首歌")
                     .opacity(hoveredTrackOffset == item.offset ? 1 : 0)
@@ -164,5 +165,39 @@ struct V3PlaylistQueuePreview: View {
             }
             if let notice = browser.notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
         }.task(id: currentTrackID) { browser.loadQueue() }
+    }
+}
+
+/// Shared by playlist, liked-song and catalog search rows. Never used for queue rows.
+struct V3QueueInsertButton: View {
+    let browser: PlaylistBrowserModel
+    let track: Track
+    let hovered: Bool
+    @State private var sending = false
+    @State private var inserted = false
+    @State private var error: String?
+    var body: some View {
+        HStack(spacing: 4) {
+            if let error { Text(error).font(.caption).foregroundStyle(.secondary) }
+            Button {
+                sending = true
+                error = nil
+                Task {
+                    defer { sending = false }
+                    do { try await browser.enqueue(track); inserted = true }
+                    catch SpotifyCatalogError.forbidden { error = "需要 Spotify Premium" }
+                    catch { self.error = error.localizedDescription }
+                }
+            } label: {
+                Image(systemName: inserted ? "checkmark" : "text.line.first.and.arrowtriangle.forward")
+            }
+            .buttonStyle(.plain).disabled(sending || inserted).help("插入播放")
+            .opacity(hovered || sending || inserted || error != nil ? 1 : 0)
+        }
+        .task(id: inserted) {
+            guard inserted else { return }
+            try? await Task.sleep(for: .milliseconds(1500))
+            if !Task.isCancelled { inserted = false }
+        }
     }
 }

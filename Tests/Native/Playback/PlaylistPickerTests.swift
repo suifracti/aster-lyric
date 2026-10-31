@@ -145,6 +145,36 @@ final class PlaylistPickerTests: XCTestCase {
         await waitUntil { noTrack.checking.isEmpty }
     }
 
+    func testInsertRequestsOneCaseSensitiveURIThenReloadsQueue() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [PlaylistFixtureURLProtocol.self]
+        let service = SpotifyCatalogService(session: URLSession(configuration: config), baseURL: URL(string: "https://playlist.test/v1")!)
+        let loaded = expectation(description: "queue reload after insertion")
+        var writes = 0
+        PlaylistFixtureURLProtocol.response = { request in
+            XCTAssertEqual(request.url?.path, "/v1/me/player/queue")
+            if request.httpMethod == "POST" {
+                writes += 1
+                XCTAssertEqual(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first?.value, "spotify:track:4cTnxwbzLd90onQ9bKm9V6")
+                return (204, [:])
+            }
+            loaded.fulfill()
+            return (200, ["queue": []])
+        }
+        defer { PlaylistFixtureURLProtocol.response = nil }
+        var requestedScopes: [Set<String>] = []
+        let browser = PlaylistBrowserModel(service: service, picker: model(FakePlaylistCatalog(rows: [])), accessToken: { scopes in
+            requestedScopes.append(scopes)
+            return "fixture"
+        })
+        let song = Track(id: "fixture", title: "Saved song", artist: "Fixture", album: "Album", duration: 180, spotifyId: track)
+        try await browser.enqueue(song)
+        await fulfillment(of: [loaded], timeout: 3)
+        await waitUntil { !browser.isQueueLoading }
+        XCTAssertEqual(requestedScopes.first, SpotifyOAuthConfiguration.playbackWriteScopes)
+        XCTAssertEqual(writes, 1)
+    }
+
     func testQueueIsReadOnlyAndLikedPlaybackContinuesWithTheLoadedTail() async {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [PlaylistFixtureURLProtocol.self]

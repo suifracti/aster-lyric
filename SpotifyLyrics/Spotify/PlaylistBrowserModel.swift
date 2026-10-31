@@ -71,6 +71,16 @@ public final class PlaylistBrowserModel: ObservableObject {
             } catch { if !Task.isCancelled, selectedID == id { notice = error.localizedDescription } }
         }
     }
+    public func enqueue(_ track: Track) async throws {
+        guard let id = TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString) else { return }
+        let token = try await accessToken(SpotifyOAuthConfiguration.playbackWriteScopes)
+        try await service.enqueueTrack(id, accessToken: token)
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            self?.loadQueue()
+        }
+    }
+
     public func play(_ item: SpotifyPlaylistTrack) {
         let context = selectedID
         guard context != Self.queueID else { return }

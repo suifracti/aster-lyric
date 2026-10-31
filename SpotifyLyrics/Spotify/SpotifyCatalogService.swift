@@ -256,6 +256,13 @@ public final class SpotifyCatalogService: @unchecked Sendable {
         return PlayerPlaybackModes(shuffle: state.shuffle_state, repeatMode: mode, smartShuffle: state.smart_shuffle)
     }
 
+    func enqueueTrack(_ id: String, accessToken: String) async throws {
+        var parts = URLComponents(url: baseURL.appendingPathComponent("me/player/queue"), resolvingAgainstBaseURL: false)!
+        parts.queryItems = [URLQueryItem(name: "uri", value: "spotify:track:" + id)]
+        guard let url = parts.url else { throw SpotifyCatalogError.invalidURL }
+        _ = try await sendAPIRequest(url: url, accessToken: accessToken, method: "POST")
+    }
+
     func playTrack(_ id: String, accessToken: String) async throws {
         try await playTracks([id], accessToken: accessToken)
     }

@@ -327,6 +327,7 @@ private struct SearchRecordMark: View {
 struct SongSearchResultRow: View {
     let result: SongSearchResult
     @V3ContentPlaybackState var state: PlaybackState
+    @State private var hovered = false
     var showsSeparator = true
     var isSelected = false
     var onViewLyrics: (() -> Void)? = nil
@@ -384,14 +385,16 @@ struct SongSearchResultRow: View {
                 .contentShape(Rectangle())
             }.buttonStyle(.plain)
             if TrackIdentity.spotifyRequestTrackID(result.track.spotifyId ?? result.track.spotifyURL?.absoluteString) != nil {
+                V3QueueInsertButton(browser: state.playlistBrowser, track: result.track, hovered: hovered)
                 Button { state.playSearchTrack(result.track) } label: {
                     Image(systemName: "play.fill").foregroundStyle(.secondary)
-                }.buttonStyle(.plain).help("播放这首歌")
+                }.buttonStyle(.plain).help("播放这首歌").opacity(hovered ? 1 : 0)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(isSelected ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6))
         .overlay(alignment: .bottom) { if showsSeparator { Divider() } }
+        .onHover { hovered = $0 }
         .accessibilityLabel("歌曲结果：\(result.track.title)，\(result.track.artist)")
         .accessibilityHint("查看这首歌的歌词")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
