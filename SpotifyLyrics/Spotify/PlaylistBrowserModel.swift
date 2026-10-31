@@ -23,6 +23,8 @@ public final class PlaylistBrowserModel: ObservableObject {
     private let accessToken: @MainActor (Set<String>) async throws -> String
     private var tracksTask: Task<Void, Never>?
     private var queueTask: Task<Void, Never>?
+    private var rawQueue: [Track] = []
+    private var currentQueueTrackID: String?
     private var queueSkipCounts: [String: Int] = [:]
     private enum ManualPlaybackIntent { case track(String), previous }
     private var manualPlaybackIntent: ManualPlaybackIntent?
@@ -72,6 +74,18 @@ public final class PlaylistBrowserModel: ObservableObject {
             return false
         }
     }
+    public func currentTrackChanged(to track: Track) {
+        currentQueueTrackID = queueKey(track)
+        trimQueueThroughCurrentTrack()
+        queue = visibleQueue(rawQueue)
+        syncQueueSelection()
+        loadQueue()
+    }
+    private func trimQueueThroughCurrentTrack() {
+        guard let id = currentQueueTrackID,
+              let index = rawQueue.firstIndex(where: { queueKey($0) == id }) else { return }
+        rawQueue.removeFirst(index + 1)
+    }
     private func syncQueueSelection() {
         if selectedID == Self.queueID { tracks = queue.enumerated().map { SpotifyPlaylistTrack(track: $0.element, offset: $0.offset) } }
     }
@@ -102,7 +116,9 @@ public final class PlaylistBrowserModel: ObservableObject {
                 do {
                     let token = try await accessToken(SpotifyOAuthConfiguration.playbackScopes)
                     let upcoming = try await service.upcomingTracks(accessToken: token, limit: nil)
-                    queue = visibleQueue(upcoming)
+                    rawQueue = upcoming
+                    trimQueueThroughCurrentTrack()
+                    queue = visibleQueue(rawQueue)
                     hasLoadedQueue = true
                     syncQueueSelection()
                     notice = nil

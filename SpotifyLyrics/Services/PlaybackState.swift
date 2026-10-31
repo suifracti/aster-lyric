@@ -3029,7 +3029,7 @@ public final class PlaybackState: ObservableObject {
         let previousID = TrackIdentity.spotifyRequestTrackID(currentTrack.spotifyId)
         let nextID = TrackIdentity.spotifyRequestTrackID(nextTrack.spotifyId)
         if nextID != previousID {
-            playlistBrowser.loadQueue()
+            playlistBrowser.currentTrackChanged(to: nextTrack)
             if playlistBrowser.consumeQueueSkip(for: nextTrack) {
                 LyricsE2ELog.log("QUEUE skip consumed id=\(nextID ?? "unknown")")
                 runProviderCommand { try await $0.next() }
