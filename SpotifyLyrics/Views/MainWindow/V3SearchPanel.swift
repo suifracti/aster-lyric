@@ -27,8 +27,7 @@ struct V3SearchPanel: View {
         return Self.otherSongs(results, current: state.hasLiveTrack ? state.currentTrack : nil)
     }
     static func otherSongs(_ results: [SongSearchResult], current: Track?) -> [SongSearchResult] {
-        var seen = Set<String>()
-        return results.filter { result in
+        return SongSearchResultGroup.uniqueSongs(results).filter { result in
             if let current {
                 let lhs = TrackIdentity(track: result.track), rhs = TrackIdentity(track: current)
                 if let id = lhs.spotifyTrackID, let currentID = rhs.spotifyTrackID {
@@ -36,8 +35,8 @@ struct V3SearchPanel: View {
                 } else if TrackTextNormalizer.normalize(result.track.title) == TrackTextNormalizer.normalize(current.title),
                    TrackTextNormalizer.normalizeArtistToken(result.track.artist) == TrackTextNormalizer.normalizeArtistToken(current.artist) { return false }
             }
-            return seen.insert(result.searchMergeKey).inserted
-        }.sorted { $0.isSavedLocally && !$1.isSavedLocally }
+            return true
+        }
     }
 
     var body: some View {

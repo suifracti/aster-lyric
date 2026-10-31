@@ -41,7 +41,7 @@ struct SongSearchPopover: View {
 
                 Button("搜索", action: search)
                     .buttonStyle(.borderedProminent)
-                    .tint(Color.accentColor)
+                    .tint(Color.primary)
                     .controlSize(.small)
                     .disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
@@ -78,6 +78,7 @@ struct SongSearchPopover: View {
             content
         }
         .padding(16)
+        .tint(.primary)
         .frame(width: embedded ? nil : 440, height: embedded ? nil : 470, alignment: .top)
         .onAppear {
             if let existing = manager.state.query?.text, !existing.isEmpty {
@@ -96,7 +97,7 @@ struct SongSearchPopover: View {
     private var spotifyAuthorizationSection: some View {
         HStack(spacing: 7) {
                 Image(systemName: playbackState.spotifyAuthorizationManager.state.isAuthorized ? "checkmark.seal.fill" : "globe")
-                    .foregroundStyle(playbackState.spotifyAuthorizationManager.state.isAuthorized ? Color.accentColor : .secondary)
+                    .foregroundStyle(playbackState.spotifyAuthorizationManager.state.isAuthorized ? Color.primary : .secondary)
                 Text(playbackState.spotifyAuthorizationManager.isConfigured
                     ? playbackState.spotifyAuthorizationManager.state.userFacingMessage
                     : "本地搜索可用 · 在线曲库尚未连接")
@@ -109,7 +110,7 @@ struct SongSearchPopover: View {
                         playbackState.spotifyAuthorizationManager.authorize()
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(Color.accentColor)
+                    .tint(Color.primary)
                     .controlSize(.small)
                     .disabled(isAuthorizing)
                 } else {
@@ -118,7 +119,7 @@ struct SongSearchPopover: View {
                             .font(.system(size: 11, weight: .medium, design: .rounded))
                     }
                     .buttonStyle(.borderless)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Color.primary)
                 }
         }
         .padding(9)
@@ -158,13 +159,14 @@ struct SongSearchPopover: View {
                 )
                 Button("重新搜索", action: search)
                     .buttonStyle(.bordered)
-                    .tint(Color.accentColor)
+                    .tint(Color.primary)
             }
         case .results(_, let results):
+            let visibleResults = SongSearchResultGroup.uniqueSongs(results)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(results.enumerated()), id: \.element.id) { index, result in
-                        resultRow(result, showsSeparator: index < results.count - 1)
+                    ForEach(Array(visibleResults.enumerated()), id: \.element.id) { index, result in
+                        resultRow(result, showsSeparator: index < visibleResults.count - 1)
                     }
                 }
             }
@@ -174,7 +176,7 @@ struct SongSearchPopover: View {
         if !playbackState.songSearchSelectionMessage.isEmpty {
             Text(playbackState.songSearchSelectionMessage)
                 .font(.system(size: 11, design: .rounded))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.primary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -186,7 +188,7 @@ struct SongSearchPopover: View {
     private var searchPreviewActionBanner: some View {
         HStack(spacing: 8) {
             Image(systemName: "music.note.list")
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.primary)
             Text(playbackState.searchPreviewTrack.map { "已载入预览：「\($0.title)」" } ?? "已载入预览歌词")
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(.primary)
@@ -202,7 +204,7 @@ struct SongSearchPopover: View {
                 applySearchPreview(confirmingLocks: false)
             }
             .buttonStyle(.borderedProminent)
-            .tint(Color.accentColor)
+            .tint(Color.primary)
             .controlSize(.small)
             .disabled(isApplyingPreview)
 
@@ -214,7 +216,7 @@ struct SongSearchPopover: View {
         }
         .padding(.vertical, 9)
         .overlay(alignment: .leading) {
-            Rectangle().fill(Color.accentColor.opacity(0.65)).frame(width: 2)
+            Rectangle().fill(Color.primary.opacity(0.65)).frame(width: 2)
         }
         .padding(.leading, 8)
         .confirmationDialog(
@@ -297,7 +299,7 @@ struct SongSearchPopover: View {
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .buttonStyle(.bordered)
-                    .tint(Color.accentColor)
+                    .tint(Color.primary)
                     .controlSize(.small)
                     .padding(.top, 3)
             }
@@ -344,57 +346,61 @@ struct SongSearchResultRow: View {
     }
     private var isAdopted: Bool { matchesDisplayedTrack && !state.lyrics.isEmpty && !isLoading }
 
+    private var details: String {
+        var parts = [result.track.title, result.track.artist, result.track.album]
+        if let date = result.catalogMetadata?.releaseDate { parts.append(date) }
+        if result.catalogMetadata?.explicit == true { parts.append("Explicit") }
+        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    private func viewLyrics() {
+        onViewLyrics?()
+        state.loadSearchResult(result)
+    }
+
     var body: some View {
-        HStack(spacing: 8) {
-            Button { onViewLyrics?(); state.loadSearchResult(result) } label: {
-                HStack(spacing: 10) {
-                    AsyncImage(url: result.artworkURL ?? result.track.artworkURL) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        Image(systemName: "music.note").frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(Color.secondary.opacity(0.1))
-                    }
-                    .frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 6))
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(result.track.title).font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.primary).lineLimit(1)
-                        Text("\(result.track.artist) · \(result.track.album.isEmpty ? "未知专辑" : result.track.album)")
-                            .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-                        HStack(spacing: 4) {
-                            Text(formatDuration(result.catalogMetadata?.duration ?? result.track.duration))
-                                .monospacedDigit()
-                            ForEach(result.savedLayerLabels, id: \.self) { label in
-                                Text(label).padding(.horizontal, 3)
-                                    .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
-                            }
-                            if let metadata = result.catalogMetadata {
-                                Text(metadata.releaseDate ?? "发行日期未知").lineLimit(1)
-                                if metadata.explicit { Text("Explicit") }
-                            }
-                        }.font(.system(size: 10)).foregroundStyle(.secondary)
+        HStack(spacing: 10) {
+            Button(action: viewLyrics) {
+                AsyncImage(url: result.artworkURL ?? result.track.artworkURL) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    Image(systemName: "music.note").frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.secondary.opacity(0.1))
+                }
+                .frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 6))
+            }.buttonStyle(.plain)
+            VStack(alignment: .leading, spacing: 6) {
+                Button(action: viewLyrics) {
+                    (Text(result.track.title).fontWeight(.semibold)
+                        + Text(" · " + result.track.artist + (result.track.album.isEmpty ? "" : " · " + result.track.album)))
+                        .font(.system(size: 13)).foregroundStyle(.primary).lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                HStack(spacing: 5) {
+                    Text(result.isSavedLocally ? "本地已存" : result.source.displayName).lineLimit(1)
+                    Text(formatDuration(result.catalogMetadata?.duration ?? result.track.duration)).monospacedDigit()
+                    ForEach(result.savedLayerLabels, id: \.self) { label in
+                        Text(label).padding(.horizontal, 3)
+                            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
                     }
                     Spacer(minLength: 0)
-                    VStack(alignment: .trailing, spacing: 3) {
-                        if isAdopted { Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor) }
-                        Text(isLoading ? "搜索中…" : "查看歌词")
-                            .font(.system(size: 10, weight: .medium)).foregroundStyle(Color.accentColor)
-                        Text(result.source.displayName).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    if isAdopted { Image(systemName: "checkmark.circle.fill").foregroundStyle(.primary) }
+                    Button(isLoading ? "搜索中…" : "查看歌词", action: viewLyrics)
+                        .buttonStyle(.plain).foregroundStyle(.primary).fixedSize()
+                    if TrackIdentity.spotifyRequestTrackID(result.track.spotifyId ?? result.track.spotifyURL?.absoluteString) != nil {
+                        V3QueueInsertButton(browser: state.playlistBrowser, track: result.track, hovered: hovered)
+                        Button { state.playSearchTrack(result.track) } label: { Image(systemName: "play.fill") }
+                            .buttonStyle(.plain).help("播放这首歌").opacity(hovered ? 1 : 0)
                     }
-                }
-                .padding(.horizontal, 8).padding(.vertical, 9)
-                .contentShape(Rectangle())
-            }.buttonStyle(.plain)
-            if TrackIdentity.spotifyRequestTrackID(result.track.spotifyId ?? result.track.spotifyURL?.absoluteString) != nil {
-                V3QueueInsertButton(browser: state.playlistBrowser, track: result.track, hovered: hovered)
-                Button { state.playSearchTrack(result.track) } label: {
-                    Image(systemName: "play.fill").foregroundStyle(.secondary)
-                }.buttonStyle(.plain).help("播放这首歌").opacity(hovered ? 1 : 0)
+                }.font(.system(size: 10)).foregroundStyle(.secondary)
             }
         }
+        .padding(.horizontal, 8).padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isSelected ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .background(isSelected ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
         .overlay(alignment: .bottom) { if showsSeparator { Divider() } }
         .onHover { hovered = $0 }
+        .help(details)
         .accessibilityLabel("歌曲结果：\(result.track.title)，\(result.track.artist)")
         .accessibilityHint("查看这首歌的歌词")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -413,9 +419,25 @@ struct SongSearchResultGroup: Identifiable {
     let results: [SongSearchResult]
     var id: String { title }
 
+    static func uniqueSongs(_ results: [SongSearchResult]) -> [SongSearchResult] {
+        var unique: [SongSearchResult] = []
+        for result in results.filter(\.isSavedLocally) + results.filter({ !$0.isSavedLocally }) {
+            guard !unique.contains(where: { sameSong($0.track, result.track) }) else { continue }
+            unique.append(result)
+        }
+        return unique
+    }
+    private static func sameSong(_ lhs: Track, _ rhs: Track) -> Bool {
+        let left = TrackIdentity(track: lhs), right = TrackIdentity(track: rhs)
+        if let a = left.spotifyTrackID, let b = right.spotifyTrackID { return a == b }
+        return TrackTextNormalizer.normalize(lhs.title) == TrackTextNormalizer.normalize(rhs.title)
+            && TrackTextNormalizer.normalizeArtistToken(lhs.artist) == TrackTextNormalizer.normalizeArtistToken(rhs.artist)
+    }
+
     static func panelGroups(_ results: [SongSearchResult]) -> [Self] {
-        [Self(title: "本地已存", results: Array(results.filter(\.isSavedLocally).prefix(5))),
-         Self(title: "在线", results: Array(results.filter { !$0.isSavedLocally }.prefix(5)))]
+        let unique = uniqueSongs(results)
+        return [Self(title: "本地已存", results: Array(unique.filter(\.isSavedLocally).prefix(5))),
+         Self(title: "在线", results: Array(unique.filter { !$0.isSavedLocally }.prefix(5)))]
             .filter { !$0.results.isEmpty }
     }
 }

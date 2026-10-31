@@ -85,6 +85,19 @@ private final class SongSearchFixedPlaybackProvider: PlaybackProvider {
 
 @MainActor
 final class SongSearchContractTests: XCTestCase {
+    func testSameSongAppearsOnceWithSavedResultPreferred() {
+        let localTrack = Track(title: "Light source", artist: "kyiku", album: "Single", duration: 246,
+            spotifyId: "spotify:track:4yqIha5lZw4ymk8ZxrP3kA")
+        let onlineTrack = Track(title: "Light source", artist: "kyiku", album: "Album", duration: 247,
+            spotifyId: "4yqIha5lZw4ymk8ZxrP3kA")
+        let online = SongSearchResult(id: "online", source: .spotifyCatalog, track: onlineTrack, confidence: 1)
+        let saved = SongSearchResult(id: "saved", source: .local, track: localTrack, confidence: 1)
+        let input = [online, saved, online]
+        XCTAssertEqual(SongSearchResultGroup.uniqueSongs(input).map(\.id), ["saved"])
+        XCTAssertEqual(SongSearchResultGroup.panelGroups(input).flatMap(\.results).map(\.id), ["saved"])
+        XCTAssertEqual(V3SearchPanel.otherSongs(input, current: nil).map(\.id), ["saved"])
+    }
+
     func testPanelGroupsKeepSavedBadgesWhenOnlineWinsTheMerge() async throws {
         let track = Track(title: "Saved", artist: "Artist", album: "Album", duration: 180, spotifyId: "saved-track")
         let entry = PersonalLyricsLibraryEntry(trackStableKey: "saved-track", spotifyTrackID: "saved-track",
@@ -105,8 +118,8 @@ final class SongSearchContractTests: XCTestCase {
         XCTAssertTrue(hit.isSavedLocally)
         XCTAssertEqual(hit.asTrackSearchResult().savedLibraryEntry, entry)
         let many = (0..<6).flatMap { index in
-            [SongSearchResult(id: "local-\(index)", source: .local, track: track, confidence: 1),
-             SongSearchResult(id: "online-\(index)", source: .spotifyCatalog, track: track, confidence: 1)]
+            [SongSearchResult(id: "local-\(index)", source: .local, track: Track(title: "Saved \(index)", artist: "Local", album: "", duration: 180), confidence: 1),
+             SongSearchResult(id: "online-\(index)", source: .spotifyCatalog, track: Track(title: "Online \(index)", artist: "Online", album: "", duration: 180), confidence: 1)]
         }
         let groups = SongSearchResultGroup.panelGroups(many)
         XCTAssertEqual(groups.map(\.title), ["本地已存", "在线"])
