@@ -118,7 +118,7 @@ final class DesktopPlaybackEventTests: XCTestCase {
             center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: update)
             await Task.yield()
         }
-        browser.play(browser.queueItems[1]) // Original third position, after hiding the second.
+        browser.jumpToQueuedTrack(at: browser.queueItems[1].offset) // Original third position, after hiding the second.
         try await wait { provider.nextCount >= 3 && state.currentTrack.spotifyId == songs[2].id }
         XCTAssertEqual(provider.nextCount, 3)
         XCTAssertFalse(browser.consumeQueueSkip(for: hidden), "Passed songs use up their marks")

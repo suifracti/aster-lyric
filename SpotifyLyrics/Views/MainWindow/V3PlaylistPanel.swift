@@ -231,7 +231,7 @@ struct V3PlaylistQueuePreview: View {
     }
 }
 
-/// Upcoming rows are hidden locally; a row that is already playing skips immediately.
+/// Queue rows are hidden locally and marked for a single skip when they become current.
 private struct V3QueueSkipButton: View {
     @ObservedObject var browser: PlaylistBrowserModel
     let track: Track

@@ -27,7 +27,7 @@ public final class PlaylistBrowserModel: ObservableObject {
     private var rawQueue: [Track] = []
     private var currentQueueTrackID: String?
     private var queueSkipCounts: [String: Int] = [:]
-    private enum ManualPlaybackIntent { case track(String), previous, queueJump(String) }
+    private enum ManualPlaybackIntent { case track(String), previous }
     private var manualPlaybackIntent: ManualPlaybackIntent?
 
     private func queueKey(_ track: Track) -> String? {
@@ -35,12 +35,6 @@ public final class PlaylistBrowserModel: ObservableObject {
     }
     public func skipQueuedTrack(_ track: Track) {
         guard let id = queueKey(track) else { return }
-        if id == currentQueueTrackID {
-            queueSkipCounts.removeValue(forKey: id)
-            manualPlaybackIntent = nil
-            advanceQueue(1)
-            return
-        }
         queueSkipCounts[id, default: 0] += 1
         queue = queueItems.map(\.track)
         syncQueueSelection()
@@ -58,9 +52,6 @@ public final class PlaylistBrowserModel: ObservableObject {
     public func consumeQueueSkip(for track: Track) -> Bool {
         guard let id = queueKey(track) else { return false }
         switch manualPlaybackIntent {
-        case .queueJump(let targetID):
-            if id == targetID { manualPlaybackIntent = nil }
-            return false
         case .previous:
             manualPlaybackIntent = nil
             return false
@@ -85,13 +76,12 @@ public final class PlaylistBrowserModel: ObservableObject {
         }
     }
     public func jumpToQueuedTrack(at offset: Int) {
-        guard rawQueue.indices.contains(offset), let targetID = queueKey(rawQueue[offset]) else { return }
+        guard rawQueue.indices.contains(offset) else { return }
         for track in rawQueue.prefix(offset + 1) {
             guard let id = queueKey(track), let count = queueSkipCounts[id] else { continue }
             if count == 1 { queueSkipCounts.removeValue(forKey: id) }
             else { queueSkipCounts[id] = count - 1 }
         }
-        manualPlaybackIntent = .queueJump(targetID)
         advanceQueue(offset + 1)
     }
     public func currentTrackChanged(to track: Track) {
