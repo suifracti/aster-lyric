@@ -498,7 +498,7 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 - On success the icon shows ✓ for 1.5 s, and the queue reloads about 1 s later, since Spotify reads lag. A 403 shows 「需要 Spotify Premium」.
 
 **Centred panel.**
-- The right column opens with a header: 56 pt cover, name, 「N 首」 and a 「播放」 button that starts from the first song. 接下来播放 has no 播放 button.
+- The right column opens with a header: 56 pt cover, name, 「N 首」 and a 「播放」 button that starts from the first song. 接下来播放 has no 播放 button. Its rows are clicked directly (Round 10).
 - The playing song is marked in the list with the cover accent and a small level icon.
 
 **Performance target:** while playing in a cover scene, the Release build averages at most 15% CPU, with clicks answered at once. The look stays the same to the eye.
@@ -542,6 +542,12 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 - Marks last for this app run only.
 - A song started on purpose in the app always plays: from a row, from search, or with 上一首. 插入播放 on a marked song removes its mark.
 - Spotify does not say why a song changed. If the user clicks a marked song inside Spotify, it is skipped once and the mark is used up, so clicking it again plays it. This is accepted. Do not add timing rules to tell these cases apart.
+
+**接下来播放: fast, always current, clickable (2026-11-01).**
+- The queue loads in the background at app launch and on every song change, whether or not a panel is open, so opening a panel normally shows it at once. A failed load retries once after 2 s. A spinner only appears when nothing has ever loaded.
+- On a song change, the list drops the new current song and everything before it straight away, without waiting for Spotify. The song now playing never stays as a row.
+- Clicking a row, in the hover and centred panels, jumps to that song: the app calls Next as many times as it takes, in one quick run. Songs passed over use up their marks, and the jump never adds extra skips. × keeps its own click.
+- If × is clicked on the song already playing, it skips now and leaves no mark.
 
 **Pinned panels.**
 - The glass runs to the top of the window, under the traffic lights. No separate title-bar strip, and no window title repeating the panel heading.
