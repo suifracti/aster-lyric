@@ -426,7 +426,7 @@ private struct V3WindowEdgeTransportButtons: View {
                         VStack(spacing: 1) { Text(elapsed); Text(total) }
                             .font(.system(size: 10)).monospacedDigit()
                             .lineLimit(1).fixedSize()
-                            .foregroundStyle(.white.opacity(brightCover ? 0.92 : 0.8))
+                            .foregroundStyle(.white.opacity(brightCover ? 0.96 : 0.8))
                             .accessibilityLabel("已播 \(elapsed)，总长 \(total)")
                     }
                 }
@@ -441,13 +441,15 @@ private struct V3WindowEdgeTransportButtons: View {
                     V3PlayerModeButton(state: state, shuffle: false, size: .compact)
                     pillProgress
                     Text(elapsed + " / " + total).font(.system(size: 9)).monospacedDigit()
-                        .foregroundStyle(.white.opacity(brightCover ? 0.92 : 0.8))
+                        .foregroundStyle(.white.opacity(brightCover ? 0.96 : 0.8))
                 }
             }
         }
         .padding(4)
-        .background(.ultraThinMaterial, in: Capsule())
-        .background(Capsule().fill(Color.black.opacity(brightCover ? 0.28 : 0)))
+        .background {
+            Capsule().fill(.ultraThinMaterial)
+                .overlay(Capsule().fill(Color.black.opacity(brightCover ? 0.58 : 0)))
+        }
         .overlay(Capsule().strokeBorder(Color.white.opacity(0.22), lineWidth: 0.8))
     }
 
