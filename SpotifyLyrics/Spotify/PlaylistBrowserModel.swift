@@ -23,7 +23,8 @@ public final class PlaylistBrowserModel: ObservableObject {
     private var tracksTask: Task<Void, Never>?
     private var queueTask: Task<Void, Never>?
     private var queueSkipCounts: [String: Int] = [:]
-    private var manualPlaybackIntent: (id: String?, until: TimeInterval)?
+    private enum ManualPlaybackIntent { case track(String), previous }
+    private var manualPlaybackIntent: ManualPlaybackIntent?
 
     private func queueKey(_ track: Track) -> String? {
         TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString)
@@ -36,22 +37,27 @@ public final class PlaylistBrowserModel: ObservableObject {
         if let index { queue.remove(at: index) }
         syncQueueSelection()
     }
-    /// An explicit App command covers the immediate player transition only.
     public func noteManualPlayback(_ track: Track? = nil) {
-        let id: String?
         if let track {
-            guard let key = queueKey(track) else { return }
-            id = key
-        } else { id = nil }
-        manualPlaybackIntent = (id, ProcessInfo.processInfo.systemUptime + 5)
+            guard let id = queueKey(track) else { return }
+            manualPlaybackIntent = .track(id)
+        } else { manualPlaybackIntent = .previous }
     }
     public func cancelManualPlaybackIntent() { manualPlaybackIntent = nil }
-    public func consumeQueueSkip(for track: Track, naturalTransition: Bool) -> Bool {
-        let intent = manualPlaybackIntent
-        manualPlaybackIntent = nil
-        guard let id = queueKey(track), naturalTransition else { return false }
-        if let intent, intent.until >= ProcessInfo.processInfo.systemUptime,
-           intent.id == nil || intent.id == id { return false }
+    public func finishPreviousPlaybackOnSameTrack() {
+        if case .previous = manualPlaybackIntent { manualPlaybackIntent = nil }
+    }
+    public func consumeQueueSkip(for track: Track) -> Bool {
+        guard let id = queueKey(track) else { return false }
+        switch manualPlaybackIntent {
+        case .previous:
+            manualPlaybackIntent = nil
+            return false
+        case .track(let requestedID) where requestedID == id:
+            manualPlaybackIntent = nil
+            return false
+        default: break
+        }
         guard let count = queueSkipCounts[id], count > 0 else { return false }
         if count == 1 { queueSkipCounts.removeValue(forKey: id) }
         else { queueSkipCounts[id] = count - 1 }
@@ -123,6 +129,7 @@ public final class PlaylistBrowserModel: ObservableObject {
         guard let id = TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString) else { return }
         let token = try await accessToken(SpotifyOAuthConfiguration.playbackWriteScopes)
         try await service.enqueueTrack(id, accessToken: token)
+        queueSkipCounts.removeValue(forKey: id)
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(1))
             self?.loadQueue()

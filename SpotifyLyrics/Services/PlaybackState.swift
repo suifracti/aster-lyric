@@ -1937,7 +1937,6 @@ public final class PlaybackState: ObservableObject {
 
     public func nextTrack() {
         guard canControlSpotify else { return }
-        playlistBrowser.noteManualPlayback()
         runProviderCommand { provider in
             try await provider.next()
         }
@@ -3026,18 +3025,17 @@ public final class PlaybackState: ObservableObject {
         if providerStatus != snapshot.status { providerStatus = snapshot.status }
 
         let nextTrack = Track(providerTrack: providerTrack)
-        if snapshot.sourceIdentity == .spotifyDesktop, hasLiveTrack,
-           let previousID = TrackIdentity.spotifyRequestTrackID(currentTrack.spotifyId),
-           let nextID = TrackIdentity.spotifyRequestTrackID(nextTrack.spotifyId), previousID != nextID {
-            // Desktop notifications carry no transition reason. Only a playing
-            // track arriving at the previous recording's end is treated as queued.
-            let natural = isPlaying && snapshot.isPlaying && currentTrack.duration > 0
-                && playbackPositionNow >= currentTrack.duration - 2
-            if playlistBrowser.consumeQueueSkip(for: nextTrack, naturalTransition: natural) {
-                LyricsE2ELog.log("QUEUE skip consumed id=\(nextID)")
+        let previousID = TrackIdentity.spotifyRequestTrackID(currentTrack.spotifyId)
+        let nextID = TrackIdentity.spotifyRequestTrackID(nextTrack.spotifyId)
+        if nextID != previousID {
+            if playlistBrowser.consumeQueueSkip(for: nextTrack) {
+                LyricsE2ELog.log("QUEUE skip consumed id=\(nextID ?? "unknown")")
                 runProviderCommand { try await $0.next() }
                 return
             }
+        } else {
+            // Previous can restart the current song instead of changing it.
+            playlistBrowser.finishPreviousPlaybackOnSameTrack()
         }
         let nextIdentity = lyricsSession.hasAdoptedLyrics(for: nextTrack)
             ? (lyricsSession.activeIdentity ?? TrackIdentity(track: nextTrack)) : TrackIdentity(track: nextTrack)
