@@ -14,6 +14,7 @@ struct V3PanelGlass: View {
 
 private struct V3PanelBlur: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
+#if compiler(>=6.2)
         if #available(macOS 26.0, *) {
             let view = NSGlassEffectView()
             view.style = .clear
@@ -21,6 +22,7 @@ private struct V3PanelBlur: NSViewRepresentable {
             view.tintColor = NSColor.windowBackgroundColor.withAlphaComponent(0.28)
             return view
         }
+#endif
         let view = NSVisualEffectView()
         view.material = .hudWindow
         view.blendingMode = .behindWindow
