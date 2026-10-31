@@ -544,10 +544,10 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 - Spotify does not say why a song changed. If the user clicks a marked song inside Spotify, it is skipped once and the mark is used up, so clicking it again plays it. This is accepted. Do not add timing rules to tell these cases apart.
 
 **接下来播放: fast, always current, clickable (2026-11-01).**
-- The queue loads in the background at app launch and on every song change, whether or not a panel is open, so opening a panel normally shows it at once. A failed load retries once after 2 s. A spinner only appears when nothing has ever loaded.
+- The queue loads in the background at app launch, on every song change and each time a panel opens, so opening a panel shows the last list at once and then updates it. A failed load retries once after 2 s. A spinner only appears when nothing has ever loaded.
 - On a song change, the list drops the new current song and everything before it straight away, without waiting for Spotify. The song now playing never stays as a row.
 - Clicking a row, in the hover and centred panels, jumps to that song: the app calls Next as many times as it takes, in one quick run. Songs passed over use up their marks, and the jump never adds extra skips. × keeps its own click.
-- If × is clicked on the song already playing, it skips now and leaves no mark.
+- With a repeating playlist the same song can appear later in the queue. Those rows are ordinary rows: only rows at the top of the list count as already played, and × on a later row marks it as usual.
 
 **Pinned panels.**
 - The glass runs to the top of the window, under the traffic lights. No separate title-bar strip, and no window title repeating the panel heading.
