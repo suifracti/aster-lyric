@@ -139,7 +139,9 @@ public final class PlaylistBrowserModel: ObservableObject {
                     let token = try await accessToken(SpotifyOAuthConfiguration.playbackScopes)
                     let upcoming = try await service.upcomingTracks(accessToken: token, limit: nil)
                     rawQueue = upcoming
-                    trimQueueThroughCurrentTrack()
+                    if let id = currentQueueTrackID {
+                        rawQueue.removeFirst(rawQueue.prefix { queueKey($0) == id }.count)
+                    }
                     queue = queueItems.map(\.track)
                     hasLoadedQueue = true
                     syncQueueSelection()

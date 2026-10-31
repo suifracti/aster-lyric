@@ -101,14 +101,14 @@ final class DesktopPlaybackEventTests: XCTestCase {
         state.startProvider(connectSpotify: false)
         try await wait { state.hasLiveTrack && browser.hasLoadedQueue && !browser.isQueueLoading }
         XCTAssertTrue(browser.queue.isEmpty)
-        queuedIDs = ids
+        queuedIDs = ids + [TrackIdentity.spotifyRequestTrackID(provider.snapshot.track?.id)!] // Current song repeats later.
         browser.loadQueue() // Opening the preview refreshes a previously empty queue.
         XCTAssertFalse(browser.showsQueueLoading)
-        try await wait { browser.queue.count == 3 }
-        guard browser.queue.count == 3 else { return }
+        try await wait { browser.queue.count == 4 }
+        guard browser.queue.count == 4 else { return }
         let hidden = browser.queue[1]
         browser.skipQueuedTrack(hidden)
-        XCTAssertEqual(browser.queueItems.map(\.offset), [0, 2])
+        XCTAssertEqual(browser.queueItems.map(\.offset), [0, 2, 3])
         provider.onNext = {
             guard provider.nextCount <= songs.count else { return XCTFail("Jump added an extra Next") }
             let song = songs[provider.nextCount - 1]
