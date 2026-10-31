@@ -84,7 +84,7 @@ private final class ExperiencePlaylistProtocol: URLProtocol {
 private final class ExperiencePlaybackProvider: PlaybackProvider {
     let displayName = "Isolated visual fixture"
     var position: TimeInterval = Double(ExperienceArguments.value("--time", fallback: "18")) ?? 18
-    var playing = false
+    var playing = ExperienceArguments.value("--playing", fallback: "false") == "true"
     var track: ProviderTrack
     init(artwork: URL?) {
         if let fixture = ExperienceArguments.fixture {

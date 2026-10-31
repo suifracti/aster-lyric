@@ -503,19 +503,14 @@ struct AppleMusicImmersiveV3FocusTransportControls: View {
                     PlaylistPickerPopover(model: state.playlistPicker)
                 }
             }
-            Button {
+            IslandTransportButton(
+                systemImage: state.isPlaying ? "pause.fill" : "play.fill",
+                label: state.isPlaying ? "暂停" : "播放",
+                enabled: state.canInteractWithPlayback, primary: true, size: .compact,
+                tint: .white, glyph: .white
+            ) {
                 state.togglePlayPause()
-            } label: {
-                Image(systemName: state.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.92))
-                    .frame(width: 28, height: 28)
-                    .background(Circle().fill(Color.white.opacity(0.10)))
             }
-            .buttonStyle(.plain)
-            .disabled(!state.canInteractWithPlayback)
-            .opacity(state.canInteractWithPlayback ? 1 : 0.42)
-            .accessibilityLabel(state.isPlaying ? "暂停" : "播放")
 
             V3PlayerModeButton(state: state, shuffle: false)
 
