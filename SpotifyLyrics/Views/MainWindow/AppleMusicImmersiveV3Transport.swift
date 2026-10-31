@@ -80,11 +80,15 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
     }
 
     var body: some View {
-        TimelineView(.animation(
-            minimumInterval: 1.0 / 30.0,
-            paused: !playbackVisible || !state.isPlaying || isEditing || reduceMotion
-        )) { _ in
-            progressRail
+        Group {
+            if isEmphasized {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0,
+                    paused: !playbackVisible || !state.isPlaying || isEditing || reduceMotion)) { _ in
+                    progressRail
+                }
+            } else {
+                progressRail
+            }
         }
     }
 
@@ -105,9 +109,17 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
                     ))
                     .frame(height: trackHeight)
 
-                Capsule()
-                    .fill(progressActiveGradient)
-                    .frame(width: activeWidth, height: trackHeight)
+                if isEmphasized {
+                    Capsule().fill(progressActiveGradient)
+                        .frame(width: activeWidth, height: trackHeight)
+                } else {
+                    TimedLyricHighlight(clock: state.presentationClock.withPresentationOffset(0),
+                        fragments: [TimedSpanFragment(spanID: 0, utf16Range: 0..<0, text: "",
+                            startTime: 0, endTime: duration, startX: 0, endX: width)], totalWidth: width) {
+                        Capsule().fill(progressActiveGradient).frame(width: width, height: trackHeight)
+                    }
+                    .frame(height: trackHeight)
+                }
 
                 if isEmphasized {
                     Circle()

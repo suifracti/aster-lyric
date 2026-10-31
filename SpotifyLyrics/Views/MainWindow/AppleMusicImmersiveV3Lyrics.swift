@@ -1715,16 +1715,9 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
     private func timedOriginalView(layout: TimedMultilineLayout) -> some View {
         let font = Font.system(size: baseSize, weight: rowWeight, design: .rounded)
         if isActive {
-            TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !presentationClock.isPlaying)) { _ in
-                let presentationTime = presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
-                AppleMusicImmersiveV3TimedRowView(
-                    layout: layout,
-                    currentTime: presentationTime,
-                    font: font,
-                    showsFill: isActive
-                )
-            }
-            .fixedSize(horizontal: false, vertical: true)
+            AppleMusicImmersiveV3TimedRowView(layout: layout, currentTime: 0, font: font,
+                clock: presentationClock)
+                .fixedSize(horizontal: false, vertical: true)
         } else {
             AppleMusicImmersiveV3TimedRowView(
                 layout: layout,
@@ -1741,14 +1734,13 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
         let baseFont = Font.system(size: baseSize, weight: rowWeight, design: .rounded)
         let rubyFont = Font.system(size: rubySize, weight: .regular, design: .rounded)
         if isActive {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !presentationClock.isPlaying)) { _ in
-                let presentationTime = presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
                 RubyLineView(
                     originalText: effectiveOriginalText,
                     kanaText: kana,
                     tokens: inlineRubyTokens,
+                    presentationClock: presentationClock,
                     timedLayout: rubyLayout,
-                    currentTime: presentationTime,
+                    currentTime: 0,
                     baseFont: baseFont,
                     rubyFont: rubyFont,
                     baseColor: isActive ? coverAccent : .white,
@@ -1758,7 +1750,6 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                     maxWidth: readableLineWidth, highlightColor: coverAccent
                 )
                 .environment(\.rubyCorrectionAction, isPinyinProjection ? nil : correctRuby)
-            }
             .fixedSize(horizontal: false, vertical: true)
         } else {
             RubyLineView(
@@ -1873,6 +1864,7 @@ private struct AppleMusicImmersiveV3TimedRowView: View {
     let currentTime: TimeInterval
     let font: Font
     var showsFill: Bool = true
+    var clock: LyricsPresentationClock? = nil
 
     var body: some View {
         #if DEBUG
@@ -1881,24 +1873,32 @@ private struct AppleMusicImmersiveV3TimedRowView: View {
         #endif
 
         if layout.isSingleLine, let singleLine = layout.lines.first {
-            timedVisualLine(singleLine.text, fraction: singleLine.fillFraction(at: currentTime))
+            timedVisualLine(singleLine)
         } else {
             VStack(alignment: textAlignment.lyricHorizontalAlignment, spacing: 0) {
                 ForEach(layout.lines, id: \.lineIndex) { visualLine in
-                    timedVisualLine(visualLine.text, fraction: visualLine.fillFraction(at: currentTime))
+                    timedVisualLine(visualLine)
                 }
             }
         }
     }
 
     @ViewBuilder
-    private func timedVisualLine(_ text: String, fraction: Double) -> some View {
+    private func timedVisualLine(_ visualLine: TimedVisualLine) -> some View {
+        let text = visualLine.text
+        let fraction = visualLine.fillFraction(at: currentTime)
         if showsFill {
             Text(text)
                 .font(font)
                 .foregroundColor(.white.opacity(0.42))
                 .overlay(
                     GeometryReader { geo in
+                        if let clock {
+                            TimedLyricHighlight(clock: clock, fragments: visualLine.fragments, totalWidth: visualLine.totalWidth) {
+                                Text(text).font(font).foregroundColor(coverAccent)
+                                    .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+                            }
+                        } else {
                         Text(text)
                             .font(font)
                             .foregroundColor(coverAccent)
@@ -1910,6 +1910,7 @@ private struct AppleMusicImmersiveV3TimedRowView: View {
                                         height: geo.size.height
                                     )
                             }
+                        }
                     }
                 )
         } else {

@@ -529,6 +529,7 @@ struct RubyLineView: View {
     let originalText: String
     let kanaText: String
     let tokens: [LyricRubyToken]?
+    var presentationClock: LyricsPresentationClock? = nil
     var timedLayout: TimedRubyLayout? = nil
     var currentTime: TimeInterval? = nil
     let baseFont: Font
@@ -581,6 +582,7 @@ struct RubyLineView: View {
                     HStack(alignment: .lastTextBaseline, spacing: 0) {
                         ForEach(group) { timedToken in
                             RubyTokenBlock(
+                                presentationClock: presentationClock,
                                 token: nil,
                                 timedToken: timedToken,
                                 currentTime: currentTime,
@@ -703,7 +705,8 @@ private func rubyTimedTokenGroups(_ tokens: [TimedRubyToken]) -> [[TimedRubyToke
 
 private struct RubyTokenBlock: View, Equatable {
     static func == (lhs: RubyTokenBlock, rhs: RubyTokenBlock) -> Bool {
-        lhs.token == rhs.token
+        lhs.presentationClock == rhs.presentationClock
+            && lhs.token == rhs.token
             && lhs.timedToken == rhs.timedToken
             && lhs.currentTime == rhs.currentTime
             && lhs.baseFont == rhs.baseFont
@@ -721,6 +724,7 @@ private struct RubyTokenBlock: View, Equatable {
             && lhs.showsRuby == rhs.showsRuby
     }
     @Environment(\.rubyCorrectionAction) private var correctRuby
+    var presentationClock: LyricsPresentationClock? = nil
     let token: LyricRubyToken?
     let timedToken: TimedRubyToken?
     let currentTime: TimeInterval?
@@ -815,6 +819,14 @@ private struct RubyTokenBlock: View, Equatable {
                     .font(baseFont)
                     .overlay(
                         GeometryReader { geo in
+                            if let presentationClock, let timedToken {
+                                TimedLyricHighlight(clock: presentationClock, fragments: timedToken.fragments,
+                                    totalWidth: timedToken.baseWidth, inset: outlineWidth > 0 && baseNSFont != nil ? outlineWidth + 1 : 0) {
+                                    renderedText(surface, font: baseNSFont, fill: highlightColor ?? baseColor, drawOutline: false)
+                                        .font(baseFont)
+                                        .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+                                }
+                            } else {
                             renderedText(surface, font: baseNSFont, fill: highlightColor ?? baseColor,
                                          drawOutline: false)
                                 .font(baseFont)
@@ -826,6 +838,7 @@ private struct RubyTokenBlock: View, Equatable {
                                             height: geo.size.height
                                         )
                                 }
+                            }
                         }
                     )
                     .lineLimit(1)
@@ -1127,5 +1140,77 @@ private struct RubyTokenFlowLayout: Layout {
             size: size,
             baseline: baseline.isFinite && baseline >= 0 ? baseline : size.height
         )
+    }
+}
+
+/// Text layout is static; Core Animation alone advances the left-to-right mask.
+struct TimedLyricHighlight<Content: View>: NSViewRepresentable {
+    let clock: LyricsPresentationClock
+    let fragments: [TimedSpanFragment]
+    let totalWidth: CGFloat
+    var inset: CGFloat = 0
+    @ViewBuilder let content: () -> Content
+    func makeNSView(context: Context) -> TimedLyricHighlightView<Content> {
+        TimedLyricHighlightView(root: content())
+    }
+    func updateNSView(_ view: TimedLyricHighlightView<Content>, context: Context) {
+        view.host.rootView = content()
+        view.configure(clock: clock, fragments: fragments, totalWidth: totalWidth, inset: inset)
+    }
+}
+
+final class TimedLyricHighlightView<Content: View>: NSView {
+    let host: NSHostingView<Content>
+    let reveal = CALayer()
+    private var clock: LyricsPresentationClock?
+    private var fragments: [TimedSpanFragment] = []
+    private var totalWidth: CGFloat = 0
+    private var inset: CGFloat = 0
+    init(root: Content) {
+        host = NSHostingView(rootView: root)
+        super.init(frame: .zero)
+        wantsLayer = true
+        addSubview(host)
+        host.wantsLayer = true
+        reveal.backgroundColor = NSColor.white.cgColor
+        reveal.anchorPoint = .zero
+        host.layer?.mask = reveal
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    func configure(clock: LyricsPresentationClock, fragments: [TimedSpanFragment], totalWidth: CGFloat, inset: CGFloat) {
+        guard self.clock != clock || self.fragments != fragments || self.totalWidth != totalWidth || self.inset != inset else { return }
+        self.clock = clock; self.fragments = fragments; self.totalWidth = totalWidth; self.inset = inset
+        needsLayout = true
+    }
+    override func layout() {
+        super.layout()
+        host.frame = bounds
+        guard let clock else { return }
+        let now = clock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+        let end = fragments.last?.endTime ?? now
+        func width(at time: Double) -> CGFloat {
+            let line = TimedVisualLine(lineIndex: 0, sourceUTF16Range: 0..<0, displayText: "",
+                totalWidth: totalWidth, fragments: fragments)
+            let fraction = min(1, max(0, line.fillFraction(at: time)))
+            if fraction == 0 { return 0 }
+            if fraction == 1 { return bounds.width }
+            return inset + max(0, bounds.width - 2 * inset) * fraction
+        }
+        reveal.removeAllAnimations()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        reveal.position = .zero
+        reveal.bounds = CGRect(x: 0, y: 0, width: width(at: now), height: bounds.height)
+        CATransaction.commit()
+        guard clock.isPlaying, end > now else { return }
+        let times = Array(Set([now, end] + fragments.flatMap { [$0.startTime, $0.endTime] }.filter { $0 > now && $0 < end })).sorted()
+        let animation = CAKeyframeAnimation(keyPath: "bounds.size.width")
+        animation.values = times.map { width(at: $0) }
+        animation.keyTimes = times.map { NSNumber(value: ($0 - now) / (end - now)) }
+        animation.duration = end - now
+        animation.calculationMode = .linear
+        animation.fillMode = .forwards
+        animation.isRemovedOnCompletion = false
+        reveal.add(animation, forKey: "lyricFill")
     }
 }

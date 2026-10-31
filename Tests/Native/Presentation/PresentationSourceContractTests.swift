@@ -6,6 +6,26 @@ import XCTest
 
 final class PresentationSourceContractTests: XCTestCase {
     @MainActor
+    func testTimedHighlightAnimatesOnlyMaskAndFreezesOnPause() {
+        let view = TimedLyricHighlightView(root: Text("ずっと前から決めてたんだね"))
+        view.frame = NSRect(x: 0, y: 0, width: 240, height: 40)
+        let fragment = TimedSpanFragment(spanID: 0, utf16Range: 0..<1, text: "句",
+            startTime: 10, endTime: 20, startX: 0, endX: 240)
+        let now = ProcessInfo.processInfo.systemUptime
+        view.configure(clock: LyricsPresentationClock(authoritativePosition: 15, receivedAtMonotonicTime: now,
+            isPlaying: true, trackDuration: 100), fragments: [fragment], totalWidth: 240, inset: 0)
+        view.layoutSubtreeIfNeeded()
+        XCTAssertNotNil(view.reveal.animation(forKey: "lyricFill"))
+        let textFrame = view.host.frame
+        view.configure(clock: LyricsPresentationClock(authoritativePosition: 15, receivedAtMonotonicTime: now,
+            isPlaying: false, trackDuration: 100), fragments: [fragment], totalWidth: 240, inset: 0)
+        view.layoutSubtreeIfNeeded()
+        XCTAssertNil(view.reveal.animation(forKey: "lyricFill"))
+        XCTAssertEqual(view.reveal.bounds.width, 120, accuracy: 0.1)
+        XCTAssertEqual(view.host.frame, textFrame)
+    }
+
+    @MainActor
     func testNativeRailAdvancesWithoutBodyTicksAndStopsForSeekPreview() {
         let view = V3EdgeRailView(frame: NSRect(x: 0, y: 0, width: 1116, height: 779))
         let clock = LyricsPresentationClock(authoritativePosition: 30, receivedAtMonotonicTime: ProcessInfo.processInfo.systemUptime,

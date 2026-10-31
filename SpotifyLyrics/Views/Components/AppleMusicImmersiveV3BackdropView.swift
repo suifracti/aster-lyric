@@ -991,13 +991,15 @@ struct V3AtmosphereFieldView: View {
     }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: isPaused)) { timeline in
-            GeometryReader { geometry in
-                // The timeline redraws this small field only. No per-frame State
-                // writes, image decoding, lyric work or global notifications.
-                let running = segmentStart.map { max(0, timeline.date.timeIntervalSince($0)) } ?? 0
-                let phase = (elapsed + (isPaused ? 0 : running)) * (level <= 1 ? 0.11 : 0.15)
-                field(size: geometry.size, phase: phase)
+        GeometryReader { geometry in
+            if isPaused {
+                field(size: geometry.size, phase: elapsed * (level <= 1 ? 0.11 : 0.15))
+            } else {
+                // Broad, slow gradients move less than a pixel per step at this cadence.
+                TimelineView(.animation(minimumInterval: 0.1)) { timeline in
+                    let running = segmentStart.map { max(0, timeline.date.timeIntervalSince($0)) } ?? 0
+                    field(size: geometry.size, phase: (elapsed + running) * (level <= 1 ? 0.11 : 0.15))
+                }
             }
         }
         .onChange(of: isPaused) { _, paused in
@@ -1014,45 +1016,58 @@ struct V3AtmosphereFieldView: View {
         .accessibilityHidden(true)
     }
 
-    @ViewBuilder
     private func field(size: CGSize, phase: Double) -> some View {
+        Canvas { context, _ in
+            let rectangle = Path(CGRect(origin: .zero, size: size))
+            func position(_ point: UnitPoint) -> CGPoint {
+                CGPoint(x: point.x * size.width, y: point.y * size.height)
+            }
+            func radial(colors: [Color], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {
+                context.fill(rectangle, with: .radialGradient(Gradient(colors: colors), center: position(center), startRadius: startRadius, endRadius: endRadius))
+            }
+            func radial(stops: [Gradient.Stop], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {
+                context.fill(rectangle, with: .radialGradient(Gradient(stops: stops), center: position(center), startRadius: startRadius, endRadius: endRadius))
+            }
+            func linear(colors: [Color], startPoint: UnitPoint, endPoint: UnitPoint) {
+                context.fill(rectangle, with: .linearGradient(Gradient(colors: colors), startPoint: position(startPoint), endPoint: position(endPoint)))
+            }
         let extent = max(size.width, size.height)
         let strength = level == 1 ? 0.24 : 0.40
 
         switch kind {
         case .flowingField:
             let spread = 0.36 + min(1, max(0, softness)) * 0.32
-            ZStack {
-                RadialGradient(colors: [glow.opacity(0.62), primary.opacity(0.24), .clear],
+            do {
+                radial(colors: [glow.opacity(0.62), primary.opacity(0.24), .clear],
                     center: point(x: 0.24 + sin(phase * 0.55) * 0.12,
                                   y: 0.40 + cos(phase * 0.45) * 0.12),
                     startRadius: extent * 0.035, endRadius: extent * spread)
-                RadialGradient(colors: [secondary.opacity(0.48), .clear],
+                radial(colors: [secondary.opacity(0.48), .clear],
                     center: point(x: 0.74 + cos(phase * 0.43) * 0.12,
                                   y: 0.63 + sin(phase * 0.35) * 0.14),
                     startRadius: extent * 0.025, endRadius: extent * (spread + 0.10))
-                RadialGradient(colors: [primary.opacity(0.32), .clear],
+                radial(colors: [primary.opacity(0.32), .clear],
                     center: point(x: 0.62 + sin(phase * 0.31) * 0.13,
                                   y: 0.19 + cos(phase * 0.28) * 0.10),
                     startRadius: 1, endRadius: extent * spread * 0.76)
-            }.blendMode(.screen)
+            }
         case .classic:
-            ZStack {
-                RadialGradient(
+            do {
+                radial(
                     colors: [glow.opacity(strength * 0.68), .clear],
                     center: point(x: 0.22 + sin(phase * 0.70) * 0.12,
                                   y: 0.31 + cos(phase * 0.53) * 0.10),
                     startRadius: 8,
                     endRadius: extent * 0.62
                 )
-                RadialGradient(
+                radial(
                     colors: [primary.opacity(strength * 0.48), .clear],
                     center: point(x: 0.78 + cos(phase * 0.43) * 0.09,
                                   y: 0.70 + sin(phase * 0.61) * 0.11),
                     startRadius: 16,
                     endRadius: extent * 0.54
                 )
-                RadialGradient(
+                radial(
                     colors: [secondary.opacity(strength * 0.34), .clear],
                     center: point(x: 0.47 + sin(phase * 0.31) * 0.10,
                                   y: 0.20 + cos(phase * 0.38) * 0.08),
@@ -1060,29 +1075,29 @@ struct V3AtmosphereFieldView: View {
                     endRadius: extent * 0.46
                 )
             }
-            .blendMode(.screen)
+
 
         case .authenticAmbient:
-            RadialGradient(
+            radial(
                 colors: [glow.opacity(strength * 0.58), primary.opacity(strength * 0.18), .clear],
                 center: point(x: 0.36 + sin(phase * 0.34) * 0.14,
                               y: 0.48 + cos(phase * 0.28) * 0.12),
                 startRadius: extent * 0.08,
                 endRadius: extent * 0.76
             )
-            .blendMode(.screen)
+
 
         case .ambient:
-            LinearGradient(
+            linear(
                 colors: [primary.opacity(strength * 0.52), .clear,
                          secondary.opacity(strength * 0.24), glow.opacity(strength * 0.36)],
                 startPoint: point(x: 0.02 + sin(phase * 0.24) * 0.18, y: 0.05),
                 endPoint: point(x: 0.98 + cos(phase * 0.24) * 0.18, y: 0.95)
             )
-            .blendMode(.screen)
+
 
         case .ambientFeathered:
-            RadialGradient(
+            radial(
                 stops: [
                     .init(color: secondary.opacity(strength * 0.36), location: 0),
                     .init(color: glow.opacity(strength * 0.28), location: 0.42),
@@ -1093,36 +1108,38 @@ struct V3AtmosphereFieldView: View {
                 startRadius: 0,
                 endRadius: extent * 0.72
             )
-            .blendMode(.screen)
+
 
         case .stage:
-            RadialGradient(
+            radial(
                 colors: [glow.opacity(strength * 0.44), primary.opacity(strength * 0.12), .clear],
                 center: point(x: 0.50 + sin(phase * 0.22) * 0.13,
                               y: 0.18 + cos(phase * 0.18) * 0.07),
                 startRadius: 4,
                 endRadius: extent * 0.43
             )
-            .blendMode(.screen)
+
 
         case .lyricsOnly:
-            LinearGradient(
+            linear(
                 colors: [.clear, primary.opacity(strength * 0.20), .clear],
                 startPoint: point(x: 0.06, y: 0.14 + sin(phase * 0.18) * 0.12),
                 endPoint: point(x: 0.88, y: 0.88 + cos(phase * 0.18) * 0.12)
             )
-            .blendMode(.softLight)
+
 
         case .albumPoster:
-            RadialGradient(
+            radial(
                 colors: [secondary.opacity(strength * 0.28), glow.opacity(strength * 0.18), .clear],
                 center: point(x: 0.20 + sin(phase * 0.16) * 0.06,
                               y: 0.50 + cos(phase * 0.14) * 0.08),
                 startRadius: 0,
                 endRadius: extent * 0.46
             )
-            .blendMode(.screen)
+
         }
+        }
+        .blendMode(kind == .lyricsOnly ? .softLight : .screen)
     }
 
 
