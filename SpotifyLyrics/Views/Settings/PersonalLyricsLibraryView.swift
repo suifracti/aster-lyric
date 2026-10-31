@@ -509,7 +509,7 @@ public struct PersonalLibraryTrackDetailView: View {
                                 Text(section.rawValue).tag(section)
                             }
                         }
-                        .pickerStyle(.segmented)
+                        .pickerStyle(.segmented).tint(.primary)
 
                         Text("切换当前版本会保留旧稿；锁定的版本不会被自动替换。")
                             .font(.caption)

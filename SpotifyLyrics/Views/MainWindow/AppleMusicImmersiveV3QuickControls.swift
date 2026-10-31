@@ -57,6 +57,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
         .onPreferenceChange(V3ToolPanelHeight.self) { height in
             if height > 0 { contentHeight = min(520, ceil(height)) }
         }
+        .modifier(PersonalLibrarySheets(service: library))
         .font(.system(size: 12))
         .controlSize(.small)
         .toggleStyle(.switch)
