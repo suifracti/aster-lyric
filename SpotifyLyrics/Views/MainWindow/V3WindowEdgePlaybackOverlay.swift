@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import SwiftUI
 
 /// Draws playback progress around the main window and keeps transport controls
@@ -28,8 +29,6 @@ struct V3WindowEdgePlaybackOverlay: View {
     @State private var colorElapsed: TimeInterval = 0
     @State private var colorStartedAt: Date?
 
-    private let borderInset: CGFloat = 1.5
-    private let borderRadius: CGFloat = 12
     private var controlsVisible: Bool {
 #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--edge-player-expanded") { return true }
@@ -66,17 +65,13 @@ struct V3WindowEdgePlaybackOverlay: View {
                 // The transparent hit band remains separate and narrow.
                 TimelineView(.animation(
                     minimumInterval: reduceMotion ? 0.5 : 1.0 / 30.0,
-                    paused: !windowVisible || (!state.isPlaying && !animatesColor)
+                    paused: !animatesColor
                 )) { context in
                     let color = accent(at: context.date, songHue: songHue)
                     ZStack(alignment: .topLeading) {
-                        ZStack {
-                            border.stroke(color.opacity(0.22), style: StrokeStyle(lineWidth: railHover == nil ? 2.1 : 4, lineCap: .round))
-                            border.trim(from: 0, to: progressFraction)
-                                .stroke(color, style: StrokeStyle(lineWidth: railHover == nil ? 2.2 : 4, lineCap: .round))
-                        }
-                        .transaction { $0.animation = nil }
-                        .allowsHitTesting(false).accessibilityHidden(true)
+                        V3NativeProgressRail(clock: state.presentationClock, draft: draftFraction,
+                            active: windowVisible, color: color, highlighted: railHover != nil)
+                            .allowsHitTesting(false).accessibilityHidden(true)
                         if let hover = scrubbingPill ? draftFraction.map({ RailHover(point: controlPosition.center, fraction: $0) }) : railHover {
                             Text(Self.timeText(hover.fraction * state.currentTrack.duration))
                                 .font(.system(size: 11, weight: .medium)).monospacedDigit()
@@ -212,10 +207,6 @@ struct V3WindowEdgePlaybackOverlay: View {
         case 2: return CGPoint(x: x, y: max(size.height - 64, size.height / 2))
         default: return CGPoint(x: min(70, size.width / 2), y: y)
         }
-    }
-
-    private var border: V3WindowEdgeRoundedRectShape {
-        V3WindowEdgeRoundedRectShape(inset: borderInset, cornerRadius: borderRadius)
     }
 
     private var canSeek: Bool {
@@ -559,6 +550,72 @@ private struct V3WindowEdgeTransportButton: View {
             systemImage: image, label: label, enabled: enabled,
             primary: primary, size: .compact, tint: accent, glyph: .white, action: action
         )
+    }
+}
+
+/// Core Animation advances the existing rail path without a SwiftUI layout each frame.
+private struct V3NativeProgressRail: NSViewRepresentable {
+    let clock: LyricsPresentationClock
+    let draft: Double?
+    let active: Bool
+    let color: Color
+    let highlighted: Bool
+    func makeNSView(context: Context) -> V3EdgeRailView { V3EdgeRailView() }
+    func updateNSView(_ view: V3EdgeRailView, context: Context) {
+        view.configure(clock: clock, draft: draft, active: active,
+                       color: NSColor(color).cgColor, highlighted: highlighted)
+    }
+}
+
+final class V3EdgeRailView: NSView {
+    let progressLayer = CAShapeLayer()
+    private let trackLayer = CAShapeLayer()
+    private var clock: LyricsPresentationClock?
+    private var draft: Double?
+    private var active = false
+    override var isFlipped: Bool { true }
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        for shape in [trackLayer, progressLayer] {
+            shape.fillColor = nil
+            shape.lineCap = .round
+            layer?.addSublayer(shape)
+        }
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func layout() {
+        super.layout()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        let path = V3WindowEdgeRoundedRectShape(inset: 1.5, cornerRadius: 12).path(in: bounds).cgPath
+        for shape in [trackLayer, progressLayer] { shape.frame = bounds; shape.path = path }
+        CATransaction.commit()
+    }
+    func configure(clock: LyricsPresentationClock, draft: Double?, active: Bool, color: CGColor, highlighted: Bool) {
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        trackLayer.strokeColor = color.copy(alpha: 0.22)
+        progressLayer.strokeColor = color
+        trackLayer.lineWidth = highlighted ? 4 : 2.1
+        progressLayer.lineWidth = highlighted ? 4 : 2.2
+        CATransaction.commit()
+        guard self.clock != clock || self.draft != draft || self.active != active else { return }
+        self.clock = clock; self.draft = draft; self.active = active
+        let duration = clock.trackDuration
+        let fraction = draft ?? (duration > 0 ? clock.playbackTime(at: ProcessInfo.processInfo.systemUptime) / duration : 0)
+        let start = min(1, max(0, fraction))
+        let running = active && clock.isPlaying && draft == nil && duration > 0 && start < 1
+        progressLayer.removeAnimation(forKey: "playhead")
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        progressLayer.strokeEnd = running ? 1 : start
+        CATransaction.commit()
+        if running {
+            let animation = CABasicAnimation(keyPath: "strokeEnd")
+            animation.fromValue = start; animation.toValue = 1
+            animation.duration = duration * (1 - start)
+            animation.timingFunction = CAMediaTimingFunction(name: .linear)
+            progressLayer.add(animation, forKey: "playhead")
+        }
     }
 }
 

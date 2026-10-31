@@ -6,6 +6,20 @@ import XCTest
 
 final class PresentationSourceContractTests: XCTestCase {
     @MainActor
+    func testNativeRailAdvancesWithoutBodyTicksAndStopsForSeekPreview() {
+        let view = V3EdgeRailView(frame: NSRect(x: 0, y: 0, width: 1116, height: 779))
+        let clock = LyricsPresentationClock(authoritativePosition: 30, receivedAtMonotonicTime: ProcessInfo.processInfo.systemUptime,
+            isPlaying: true, trackID: "current-song", trackDuration: 150)
+        view.configure(clock: clock, draft: nil, active: true, color: NSColor.white.cgColor, highlighted: false)
+        XCTAssertNotNil(view.progressLayer.animation(forKey: "playhead"))
+        view.configure(clock: clock, draft: 0.4, active: true, color: NSColor.white.cgColor, highlighted: true)
+        XCTAssertNil(view.progressLayer.animation(forKey: "playhead"))
+        XCTAssertEqual(view.progressLayer.strokeEnd, 0.4, accuracy: 0.001)
+        view.configure(clock: clock, draft: nil, active: false, color: NSColor.white.cgColor, highlighted: false)
+        XCTAssertNil(view.progressLayer.animation(forKey: "playhead"))
+    }
+
+    @MainActor
     func testOpenPanelAppearanceTracksApplicationAppearance() async {
         let previous = NSApp.appearance
         defer { NSApp.appearance = previous }
