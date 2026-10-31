@@ -538,6 +538,14 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 **接下来播放: 跳过这首.**
 - Spotify's Web API can read the queue and add to it, but has no call to remove or reorder items. Do not show a drag handle or anything else implying reorder.
 - In the hover panel and the centred panel, row hover shows an × with tooltip 「跳过这首」.
-- The row disappears at once. When that song next comes up from the queue, the app skips it immediately. The mark is then used up.
-- Marks last for this app run only. A song the user starts on purpose always plays.
+- The row disappears at once. Whenever that song becomes the current song, however it got there (it arrives by itself, crossfades in, or the user presses Next in the app, in Spotify or on a media key), the app skips it immediately. The mark is then used up.
+- Marks last for this app run only.
+- A song started on purpose in the app always plays: from a row, from search, or with 上一首. 插入播放 on a marked song removes its mark.
+- Spotify does not say why a song changed. If the user clicks a marked song inside Spotify, it is skipped once and the mark is used up, so clicking it again plays it. This is accepted. Do not add timing rules to tell these cases apart.
+
+**Pinned panels.**
+- The glass runs to the top of the window, under the traffic lights. No separate title-bar strip, and no window title repeating the panel heading.
+
+**Scrolling panels.**
+- When the 画面 panel's content is taller than the panel, the bottom edge fades over about 16 pt instead of cutting a row in half.
 
