@@ -967,8 +967,8 @@ enum V3AtmosphereFieldKind {
     case albumPoster
 }
 
-/// Isolated decorative layer: it owns its own clock and never changes layout.
-struct V3AtmosphereFieldView: View {
+/// The light field owns native layers and its clock; it never invalidates SwiftUI layout.
+struct V3AtmosphereFieldView: NSViewRepresentable {
     let kind: V3AtmosphereFieldKind
     let primary: Color
     let secondary: Color
@@ -977,60 +977,94 @@ struct V3AtmosphereFieldView: View {
     let isPlaying: Bool
     let isVisible: Bool
     let reduceMotion: Bool
-
     var softness: Double = 0.25
-    @State private var elapsed = 0.0
-    @State private var segmentStart: Date?
-
-    private var isPaused: Bool {
-        level == 0 || !isPlaying || !isVisible || reduceMotion
+    func makeNSView(context: Context) -> V3LightFieldView { V3LightFieldView() }
+    func updateNSView(_ view: V3LightFieldView, context: Context) {
+        view.configure(kind: kind, primary: primary, secondary: secondary, glow: glow,
+            level: level, running: isPlaying && isVisible && level > 0 && !reduceMotion, softness: softness)
     }
+    static func dismantleNSView(_ view: V3LightFieldView, coordinator: ()) { view.stop() }
+}
 
-    private func point(x: Double, y: Double) -> UnitPoint {
-        UnitPoint(x: CGFloat(x), y: CGFloat(y))
+final class V3LightFieldView: NSView {
+    private var kind: V3AtmosphereFieldKind = .albumPoster
+    private var primary = Color.clear
+    private var secondary = Color.clear
+    private var glow = Color.clear
+    private var level = 0
+    private var softness = 0.25
+    private var elapsed = 0.0
+    private var started: TimeInterval?
+    private var running = false
+    private var timer: Timer?
+    private var gradients: [CAGradientLayer] = []
+    private var gradientStops: [[Gradient.Stop]] = []
+    override var isFlipped: Bool { true }
+    override init(frame: NSRect) { super.init(frame: frame); wantsLayer = true }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    func stop() {
+        if let started { elapsed += ProcessInfo.processInfo.systemUptime - started }
+        started = nil; timer?.invalidate(); timer = nil
     }
-
-    var body: some View {
-        GeometryReader { geometry in
-            if isPaused {
-                field(size: geometry.size, phase: elapsed * (level <= 1 ? 0.11 : 0.15))
-            } else {
-                // Broad, slow gradients move less than a pixel per step at this cadence.
-                TimelineView(.animation(minimumInterval: 0.1)) { timeline in
-                    let running = segmentStart.map { max(0, timeline.date.timeIntervalSince($0)) } ?? 0
-                    field(size: geometry.size, phase: (elapsed + running) * (level <= 1 ? 0.11 : 0.15))
-                }
-            }
-        }
-        .onChange(of: isPaused) { _, paused in
-            if let segmentStart { elapsed += max(0, Date().timeIntervalSince(segmentStart)) }
-            segmentStart = paused ? nil : .now
-        }
-        .onAppear { if !isPaused { segmentStart = .now } }
-        .onDisappear {
-            if let segmentStart { elapsed += max(0, Date().timeIntervalSince(segmentStart)) }
-            segmentStart = nil
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { stop() } else { startIfNeeded() }
     }
-
-    private func field(size: CGSize, phase: Double) -> some View {
-        Canvas { context, _ in
-            let rectangle = Path(CGRect(origin: .zero, size: size))
-            func position(_ point: UnitPoint) -> CGPoint {
-                CGPoint(x: point.x * size.width, y: point.y * size.height)
+    private func startIfNeeded() {
+        guard running, window != nil, timer == nil else { return }
+        started = ProcessInfo.processInfo.systemUptime
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in self?.drawField() }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+    func configure(kind: V3AtmosphereFieldKind, primary: Color, secondary: Color, glow: Color,
+                   level: Int, running: Bool, softness: Double) {
+        self.kind = kind; self.primary = primary; self.secondary = secondary; self.glow = glow
+        self.level = level; self.softness = softness
+        if self.running != running { stop(); self.running = running }
+        startIfNeeded()
+        drawField()
+    }
+    override func layout() { super.layout(); drawField() }
+    private func point(x: Double, y: Double) -> UnitPoint { UnitPoint(x: x, y: y) }
+    private func drawField() {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let size = bounds.size
+        let time = elapsed + (started.map { ProcessInfo.processInfo.systemUptime - $0 } ?? 0)
+        let phase = time * (level <= 1 ? 0.11 : 0.15)
+        var index = 0
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        let filter = kind == .lyricsOnly ? "softLightBlendMode" : "screenBlendMode"
+        if layer?.compositingFilter as? String != filter { layer?.compositingFilter = filter }
+        func gradient(_ stops: [Gradient.Stop], type: CAGradientLayerType, start: UnitPoint, end: UnitPoint) {
+            if gradients.count <= index {
+                let value = CAGradientLayer(); gradients.append(value); gradientStops.append([]); layer?.addSublayer(value)
             }
-            func radial(colors: [Color], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {
-                context.fill(rectangle, with: .radialGradient(Gradient(colors: colors), center: position(center), startRadius: startRadius, endRadius: endRadius))
+            let value = gradients[index]
+            if gradientStops[index].count != stops.count || !zip(gradientStops[index], stops).allSatisfy({ $0.color == $1.color && $0.location == $1.location }) {
+                gradientStops[index] = stops
+                value.colors = stops.map { NSColor($0.color).cgColor }
+                value.locations = stops.map { NSNumber(value: Double($0.location)) }
             }
-            func radial(stops: [Gradient.Stop], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {
-                context.fill(rectangle, with: .radialGradient(Gradient(stops: stops), center: position(center), startRadius: startRadius, endRadius: endRadius))
-            }
-            func linear(colors: [Color], startPoint: UnitPoint, endPoint: UnitPoint) {
-                context.fill(rectangle, with: .linearGradient(Gradient(colors: colors), startPoint: position(startPoint), endPoint: position(endPoint)))
-            }
+            index += 1
+            value.isHidden = false
+            if value.frame != bounds { value.frame = bounds }
+            if value.type != type { value.type = type }
+            value.startPoint = CGPoint(x: start.x, y: start.y); value.endPoint = CGPoint(x: end.x, y: end.y)
+        }
+        func radial(stops: [Gradient.Stop], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {
+            let ratio = min(1, max(0, startRadius / max(1, endRadius)))
+            let mapped = stops.map { Gradient.Stop(color: $0.color, location: ratio + (1 - ratio) * $0.location) }
+            gradient(mapped, type: .radial, start: center,
+                end: UnitPoint(x: center.x + endRadius / size.width, y: center.y + endRadius / size.height))
+        }
+        func radial(colors: [Color], center: UnitPoint, startRadius: CGFloat, endRadius: CGFloat) {
+            radial(stops: Gradient(colors: colors).stops, center: center, startRadius: startRadius, endRadius: endRadius)
+        }
+        func linear(colors: [Color], startPoint: UnitPoint, endPoint: UnitPoint) {
+            gradient(Gradient(colors: colors).stops, type: .axial, start: startPoint, end: endPoint)
+        }
         let extent = max(size.width, size.height)
         let strength = level == 1 ? 0.24 : 0.40
 
@@ -1138,11 +1172,9 @@ struct V3AtmosphereFieldView: View {
             )
 
         }
-        }
-        .blendMode(kind == .lyricsOnly ? .softLight : .screen)
+        for value in gradients.dropFirst(index) { value.isHidden = true }
+        CATransaction.commit()
     }
-
-
 }
 
 struct V3WindowVisibilityProbe: NSViewRepresentable {

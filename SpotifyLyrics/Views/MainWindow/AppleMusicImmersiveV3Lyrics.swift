@@ -680,7 +680,8 @@ private struct V3VocalCountdown: View {
     let window: LyricsTimeline.VocalCountdownWindow
     let clock: LyricsPresentationClock
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.1, paused: !clock.isPlaying)) { _ in
+        V3AnimationIsland {
+            TimelineView(.animation(minimumInterval: 0.1, paused: !clock.isPlaying)) { _ in
             let time = clock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
             let progress = (time - window.start) / (window.end - window.start)
             HStack(spacing: 7) {
@@ -692,8 +693,9 @@ private struct V3VocalCountdown: View {
             .opacity(time >= window.start && time < window.end ? 1 : 0)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("前奏或间奏，准备进入下一句")
+            }
         }
-        .frame(height: 12)
+        .frame(width: 38, height: 12)
     }
 }
 

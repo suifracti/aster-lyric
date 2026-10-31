@@ -239,6 +239,7 @@
 		A569E2C0D54C4AE25DACADD0 /* V3SearchPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 118DEDA41F433714AD0B0910 /* V3SearchPanel.swift */; };
 		8DB19C1229D5D8128CC6FA29 /* PlaylistBrowserModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 768FC1580F09DD166BCBA7B9 /* PlaylistBrowserModel.swift */; };
 		DF21E96E6A4E08F95E5BD7D0 /* V3PlaylistPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4192699E3CE13AFF565B3821 /* V3PlaylistPanel.swift */; };
+		E2DB54FBA5EBC7345D14030D /* V3AnimationIsland.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00FC2B2BF3EFEEE824C385EE /* V3AnimationIsland.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -480,6 +481,7 @@
 		118DEDA41F433714AD0B0910 /* V3SearchPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3SearchPanel.swift; sourceTree = "<group>"; };
 		768FC1580F09DD166BCBA7B9 /* PlaylistBrowserModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistBrowserModel.swift; sourceTree = "<group>"; };
 		4192699E3CE13AFF565B3821 /* V3PlaylistPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3PlaylistPanel.swift; sourceTree = "<group>"; };
+		00FC2B2BF3EFEEE824C385EE /* V3AnimationIsland.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3AnimationIsland.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -671,6 +673,7 @@
 				110000082D83400100000000 /* LyricsCanvasView.swift */,
 				110001092D83400100000000 /* AssistExplainSheet.swift */,
 				110000092D83400100000000 /* LyricLineView.swift */,
+				00FC2B2BF3EFEEE824C385EE /* V3AnimationIsland.swift */,
 				1100000A2D83400100000000 /* TrackHeaderView.swift */,
 				1100000B2D83400100000000 /* LyricsPreferencesPopover.swift */,
 				1100001A2D83400100000000 /* TrackBackdropView.swift */,
@@ -965,6 +968,7 @@
 				110000082D83400100000001 /* LyricsCanvasView.swift in Sources */,
 				110001092D83400100000001 /* AssistExplainSheet.swift in Sources */,
 				110000092D83400100000001 /* LyricLineView.swift in Sources */,
+				E2DB54FBA5EBC7345D14030D /* V3AnimationIsland.swift in Sources */,
 				1100000A2D83400100000001 /* TrackHeaderView.swift in Sources */,
 				1100000B2D83400100000001 /* LyricsPreferencesPopover.swift in Sources */,
 				1100000C2D83400100000001 /* LyricsDesignTokens.swift in Sources */,

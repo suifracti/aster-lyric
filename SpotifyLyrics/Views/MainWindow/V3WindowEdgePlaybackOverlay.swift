@@ -63,35 +63,26 @@ struct V3WindowEdgePlaybackOverlay: View {
 
                 // Keep the rail animated independently of the transport controls.
                 // The transparent hit band remains separate and narrow.
-                TimelineView(.animation(
-                    minimumInterval: reduceMotion ? 0.5 : 1.0 / 30.0,
-                    paused: !animatesColor
-                )) { context in
-                    let color = accent(at: context.date, songHue: songHue)
-                    ZStack(alignment: .topLeading) {
-                        V3NativeProgressRail(clock: state.presentationClock, draft: draftFraction,
-                            active: windowVisible, color: color, highlighted: railHover != nil)
-                            .allowsHitTesting(false).accessibilityHidden(true)
-                        if let hover = scrubbingPill ? draftFraction.map({ RailHover(point: controlPosition.center, fraction: $0) }) : railHover {
-                            Text(Self.timeText(hover.fraction * state.currentTrack.duration))
-                                .font(.system(size: 11, weight: .medium)).monospacedDigit()
-                                .padding(.horizontal, 7).padding(.vertical, 4)
-                                .foregroundStyle(V3WindowEdgeColor.foreground(on: color))
-                                .background(color, in: Capsule())
-                                .position(railLabelPosition(hover.point, size: size))
-                                .allowsHitTesting(false).accessibilityHidden(true)
+                if animatesColor {
+                    V3AnimationIsland {
+                        TimelineView(.animation(minimumInterval: reduceMotion ? 0.5 : 1.0 / 30.0,
+                            paused: !animatesColor)) { context in
+                            railPresentation(at: context.date, songHue: songHue, pillCenter: controlPosition.center, size: size)
                         }
-                    }
+                    }.allowsHitTesting(false)
+                } else {
+                    railPresentation(at: .now, songHue: songHue, pillCenter: controlPosition.center, size: size)
                 }
 
+
                 // Keep popover/state ownership alive when hidden, without ticking its controls.
-                TimelineView(.animation(
-                    minimumInterval: reduceMotion ? 0.5 : 1.0 / 30.0,
-                    paused: !playerVisible || !windowVisible || (!state.isPlaying && !animatesColor)
-                )) { context in
-                    let color = accent(at: context.date, songHue: songHue)
-                    ZStack {
-                        V3WindowEdgeTransportButtons(state: state, accent: color,
+                V3AnimationIsland {
+                    TimelineView(.animation(
+                        minimumInterval: reduceMotion ? 0.5 : 1.0 / 30.0,
+                        paused: !playerVisible || !windowVisible || (!state.isPlaying && !animatesColor)
+                    )) { context in
+                        V3WindowEdgeTransportButtons(state: state,
+                            accent: accent(at: context.date, songHue: songHue),
                             isVertical: controlPosition.isVertical,
                             brightCover: coverLuminance > 0.6,
                             elapsed: Self.timeText(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime)),
@@ -99,19 +90,20 @@ struct V3WindowEdgePlaybackOverlay: View {
                             fraction: Double(progressFraction),
                             draftChanged: { fraction in scrubbingPill = true; setDraft(fraction) },
                             draftEnded: { fraction in finishDraft(fraction: fraction) })
-                            .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
-                            .scaleEffect(controlPosition.scale * (playerVisible || reduceMotion ? 1 : 0.92))
-                            .opacity(playerVisible ? 1 : 0)
-                            .allowsHitTesting(playerVisible)
-                            .accessibilityHidden(!playerVisible)
-                            .position(controlPosition.center)
-                            .animation(.easeOut(duration: playerVisible ? 0.18 : 0.14), value: playerVisible)
-                            .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 1), value: controlPosition.center)
-                            .id(controlPosition.edge)
-                            .transition(.opacity)
                     }
-                    .animation(.easeOut(duration: 0.18), value: controlPosition.edge)
                 }
+                .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
+                .scaleEffect(controlPosition.scale * (playerVisible || reduceMotion ? 1 : 0.92))
+                .opacity(playerVisible ? 1 : 0)
+                .allowsHitTesting(playerVisible)
+                .accessibilityHidden(!playerVisible)
+                .position(controlPosition.center)
+                .animation(.easeOut(duration: playerVisible ? 0.18 : 0.14), value: playerVisible)
+                .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 1), value: controlPosition.center)
+                .id(controlPosition.edge)
+                .transition(.opacity)
+                .animation(.easeOut(duration: 0.18), value: controlPosition.edge)
+
 
             }
             .frame(width: size.width, height: size.height, alignment: .topLeading)
@@ -258,6 +250,24 @@ struct V3WindowEdgePlaybackOverlay: View {
         draftFraction = nil
         dragTrackKey = nil
         scrubbingPill = false
+    }
+
+    private func railPresentation(at date: Date, songHue: Double, pillCenter: CGPoint, size: CGSize) -> some View {
+        let color = accent(at: date, songHue: songHue)
+        return ZStack(alignment: .topLeading) {
+            V3NativeProgressRail(clock: state.presentationClock, draft: draftFraction,
+                active: windowVisible, color: color, highlighted: railHover != nil)
+                .allowsHitTesting(false).accessibilityHidden(true)
+            if let hover = scrubbingPill ? draftFraction.map({ RailHover(point: pillCenter, fraction: $0) }) : railHover {
+                Text(Self.timeText(hover.fraction * state.currentTrack.duration))
+                    .font(.system(size: 11, weight: .medium)).monospacedDigit()
+                    .padding(.horizontal, 7).padding(.vertical, 4)
+                    .foregroundStyle(V3WindowEdgeColor.foreground(on: color))
+                    .background(color, in: Capsule())
+                    .position(railLabelPosition(hover.point, size: size))
+                    .allowsHitTesting(false).accessibilityHidden(true)
+            }
+        }
     }
 
     private func accent(at date: Date, songHue: Double) -> Color {

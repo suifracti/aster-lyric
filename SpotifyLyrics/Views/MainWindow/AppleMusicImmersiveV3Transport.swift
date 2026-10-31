@@ -82,9 +82,11 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
     var body: some View {
         Group {
             if isEmphasized {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0,
-                    paused: !playbackVisible || !state.isPlaying || isEditing || reduceMotion)) { _ in
-                    progressRail
+                V3AnimationIsland {
+                    TimelineView(.animation(minimumInterval: 1.0 / 30.0,
+                        paused: !playbackVisible || !state.isPlaying || isEditing || reduceMotion)) { _ in
+                        progressRail
+                    }
                 }
             } else {
                 progressRail
@@ -308,9 +310,12 @@ private struct V3TransportClockLabel: View {
     @V3ContentPlaybackState var state: PlaybackState
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.25, paused: !playbackVisible || !state.isPlaying)) { _ in
-            Text(Self.formatTime(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime)))
+        V3AnimationIsland {
+            TimelineView(.animation(minimumInterval: 0.25, paused: !playbackVisible || !state.isPlaying)) { _ in
+                Text(Self.formatTime(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime)))
+            }
         }
+        .frame(width: 34, height: 14, alignment: .leading)
     }
 
     private static func formatTime(_ seconds: TimeInterval) -> String {

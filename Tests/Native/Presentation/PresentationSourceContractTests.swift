@@ -6,6 +6,19 @@ import XCTest
 
 final class PresentationSourceContractTests: XCTestCase {
     @MainActor
+    func testAnimationIslandClockUpdatesKeepTheirAllocatedSize() {
+        let view = V3AnimationIslandView(root: AnyView(Text("00:09")))
+        view.frame = NSRect(x: 0, y: 0, width: 34, height: 14)
+        view.layoutSubtreeIfNeeded()
+        XCTAssertTrue(view.host.sizingOptions.isEmpty)
+        let allocated = view.frame
+        view.host.rootView = AnyView(Text("100:00"))
+        view.host.layoutSubtreeIfNeeded()
+        XCTAssertEqual(view.frame, allocated)
+        XCTAssertEqual(view.host.frame, view.bounds)
+    }
+
+    @MainActor
     func testTimedHighlightAnimatesOnlyMaskAndFreezesOnPause() {
         let view = TimedLyricHighlightView(root: Text("ずっと前から決めてたんだね"))
         view.frame = NSRect(x: 0, y: 0, width: 240, height: 40)

@@ -1168,6 +1168,7 @@ final class TimedLyricHighlightView<Content: View>: NSView {
     private var inset: CGFloat = 0
     init(root: Content) {
         host = NSHostingView(rootView: root)
+        host.sizingOptions = []
         super.init(frame: .zero)
         wantsLayer = true
         addSubview(host)
