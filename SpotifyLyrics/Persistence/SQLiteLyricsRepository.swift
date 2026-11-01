@@ -220,6 +220,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             isSynchronized: version.isSynced,
             lines: lines
         )
+        // Older cached/provider-preloaded lyrics may only have inline translations.
+        // Repair this loaded source before the translation session reads its versions.
+        if !version.isLocked, !version.isManuallyEdited,
+           !["local", "manual", "manualEdit", "manualImport", "manualCreate"].contains(version.source),
+           lines.contains(where: { $0.translationText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }) {
+            try await preserveEmbeddedTranslation(lyricsVersionID: version.id, sourceContentHash: sourceContentHash)
+        }
         var document = LyricsPersistenceMapper.document(
             identity: identity,
             track: trackRecord,

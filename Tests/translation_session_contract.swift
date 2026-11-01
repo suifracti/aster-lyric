@@ -633,12 +633,26 @@ struct TranslationSessionContract {
         // These fixtures never call a real engine.
         for manual in [false, true] {
             let otherTrack = makeTrack(manual ? "ai-first-manual" : "ai-first-partial", title: "Synthetic Native Safety")
+            var sourceLines = [LyricLine(timestamp: 0, originalText: "君の声", translationText: "保留这句"),
+                               LyricLine(timestamp: 2, originalText: "忘れない", translationText: "保留那句")]
+            if !manual {
+                sourceLines = (0..<34).map { index in
+                    let translation: String? = index < 32 ? "译文 \(index)" : nil
+                    return LyricLine(timestamp: Double(index) * 2, originalText: "原词 \(index)", translationText: translation)
+                }
+                sourceLines[0].translationText = "保留这句"
+            }
             let otherDocument = LyricsDocument(identity: TrackIdentity(track: otherTrack), title: otherTrack.title,
                 artist: otherTrack.artist, album: otherTrack.album, duration: otherTrack.duration,
-                lines: [LyricLine(timestamp: 0, originalText: "君の声", translationText: "保留这句"),
-                        LyricLine(timestamp: 2, originalText: "忘れない", translationText: manual ? "保留那句" : nil)],
+                lines: sourceLines,
                 isSynchronized: true, source: manual ? .manualImport : .neteaseExperimental, confidence: 1)
             let otherSource = try await repo.save(track: otherTrack, identity: otherDocument.identity, document: otherDocument)
+            if !manual {
+                _ = try await repo.loadBestStored(track: otherTrack, identity: otherDocument.identity)
+                let repaired = try await repo.loadTranslationVersions(lyricsVersionID: otherSource.versionID!,
+                    targetLanguage: "zh-Hans", sourceContentHash: otherSource.sourceContentHash!)
+                precondition(repaired.first?.isEmbeddedTranslation == true, "playing a cached source must repair its missing translation version")
+            }
             var otherConfig = config
             otherConfig.autoTranslateNewLyrics = manual // Sparse source translations display without dispatching AI.
             let safe = TranslationSessionController(repository: repo, service: fake,
@@ -653,7 +667,9 @@ struct TranslationSessionContract {
                 precondition(safe.project(onto: otherDocument.lines).map(\.translationText) == ["保留这句", "保留那句"])
             } else {
                 precondition(safe.selectedVersion?.isEmbeddedTranslation == true)
-                precondition(safe.project(onto: otherDocument.lines).map(\.translationText) == ["保留这句", ""])
+                let displayed = safe.project(onto: otherDocument.lines).map { $0.translationText ?? "" }
+                precondition(displayed.count == 34 && displayed.filter { !$0.isEmpty }.count == 32)
+                precondition(displayed.suffix(2) == ["", ""])
                 let savedSource = try await repo.loadBest(track: otherTrack, identity: otherDocument.identity)
                 precondition(savedSource?.lines.first?.translationText == "保留这句", "partial original asset must remain intact")
             }
