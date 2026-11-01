@@ -457,8 +457,8 @@ public final class TranslationSessionController: ObservableObject {
               selectedVersion.isComplete,
               selectedVersion.lines.count == lines.count,
               selectedVersion.lines.map(\.lineIndex) == Array(lines.indices) else {
-            // Provider Chinese is a comparison option, not an implicit default.
-            // Preserve translations attached to explicitly imported/edited lyrics.
+            // Source translations are selected after saved AI versions.
+            // Until versions load, preserve explicitly imported/edited text.
             if let context, [LyricsSource.manualEdit, .manualImport, .manualCreate].contains(context.document.source) {
                 return lines
             }
@@ -555,8 +555,9 @@ public final class TranslationSessionController: ObservableObject {
                         return
                     }
                     self.isNoSelection = false
-                    if let selected = self.chooseVersion(versions, context: context) {
-                        self.selectedVersion = selected
+                    let selected = self.chooseVersion(versions, context: context)
+                    self.selectedVersion = selected
+                    if let selected, !selected.isEmbeddedTranslation || !self.canUseAutomatically(context) {
                         self.state = .loaded(selected.record.id)
                         self.errorMessage = nil
                         if interrupted { self.progressMessage = "上次翻译已中断，结果未知；保留旧译文，不会自动重发。可主动重试。" }
@@ -569,10 +570,11 @@ public final class TranslationSessionController: ObservableObject {
                     } else if allowAutomaticRequest && self.canUseAutomatically(context) && context.configuration.autoTranslateNewLyrics && context.configuration.isConfigured {
                         self.startTranslation(context, forceNewVersion: false)
                     } else {
-                        // Old automatic results remain in history, but cannot be
-                        // presented as the selected result of a new request.
-                        self.selectedVersion = nil
-                        self.state = self.pendingCandidate.map { .candidateReady($0.record.id) } ?? .idle
+                        // Showing a saved source translation does not dispatch work.
+                        // Automatic requests keep the same eligibility checks above.
+                        self.selectedVersion = selected
+                        self.state = selected.map { .loaded($0.record.id) }
+                            ?? self.pendingCandidate.map { .candidateReady($0.record.id) } ?? .idle
                         self.errorMessage = nil
                     }
                 }
@@ -611,7 +613,9 @@ public final class TranslationSessionController: ObservableObject {
         if let edited = eligible.first(where: { $0.record.isManuallyEdited || (!$0.record.isMachineGenerated && !$0.isEmbeddedTranslation) }) { return edited }
         // Adopted history remains usable after a settings change. A mismatch is
         // never labelled a cache hit for a new explicit request.
-        return eligible.first(where: { matchesRequest($0, context: context) }) ?? eligible.first(where: { !$0.isEmbeddedTranslation })
+        return eligible.first(where: { matchesRequest($0, context: context) })
+            ?? eligible.first(where: { !$0.isEmbeddedTranslation })
+            ?? eligible.first(where: { $0.isEmbeddedTranslation })
     }
 
     private func matchesRequest(_ version: StoredTranslationVersion, context: TranslationContext) -> Bool {
@@ -641,7 +645,7 @@ public final class TranslationSessionController: ObservableObject {
     private func canUseAutomatically(_ context: TranslationContext) -> Bool {
         guard !manualNoSelection.contains(context.key),
               manualSelection[context.key] == nil else { return false }
-        if let selectedVersion, selectedVersion.record.isLocked || selectedVersion.record.isManuallyEdited || !selectedVersion.record.isMachineGenerated { return false }
+        if let selectedVersion, selectedVersion.record.isLocked || selectedVersion.record.isManuallyEdited || (!selectedVersion.record.isMachineGenerated && !selectedVersion.isEmbeddedTranslation) { return false }
         if [LyricsSource.manualEdit, .manualImport, .manualCreate].contains(context.document.source),
            context.document.lines.contains(where: { $0.translationText?.isEmpty == false }) { return false }
         return true
