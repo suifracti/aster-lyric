@@ -473,8 +473,6 @@ public struct PersonalLibraryTrackDetailView: View {
     var showsActions = false
     var beforePresentSheet: (() -> Void)?
     @State private var selectedSection: VersionSection = .all
-    @State private var translationDeletionCandidate: PersonalTranslationVersionItem?
-    @State private var showTranslationDeletionConfirmation = false
 
     private enum VersionSection: String, CaseIterable, Identifiable {
         case all = "全部", lyrics = "原词", translations = "译文", readings = "读音", timing = "时间轴"
@@ -587,29 +585,6 @@ public struct PersonalLibraryTrackDetailView: View {
         .task(id: stableKey) {
             service.selectTrack(stableKey: stableKey)
         }
-        .alert("删除译文版本？", isPresented: $showTranslationDeletionConfirmation) {
-            Button("删除", role: .destructive) {
-                confirmTranslationDeletion()
-            }
-            Button("取消", role: .cancel) {
-                translationDeletionCandidate = nil
-            }
-        } message: {
-            if let version = translationDeletionCandidate, version.isCurrent {
-                Text("将永久删除这条译文及其逐行内容。它正在使用，删除后会重新选择可用译文；原词和其他版本不受影响。")
-            } else {
-                Text("将永久删除这条译文及其逐行内容；原词和其他版本不受影响。")
-            }
-        }
-    }
-
-    private func confirmTranslationDeletion() {
-        guard let version = translationDeletionCandidate else { return }
-        translationDeletionCandidate = nil
-        Task { @MainActor in
-            guard await service.deleteTranslationVersion(versionID: version.id, trackStableKey: stableKey) else { return }
-            playback.reconcileExternalTranslationDeletion(versionID: version.id, trackStableKey: stableKey)
-        }
     }
 
     private func trackHeader(_ entry: PersonalLyricsLibraryEntry) -> some View {
@@ -702,6 +677,7 @@ public struct PersonalLibraryTrackDetailView: View {
             locked: lv.isLocked, busy: service.revisionBusy,
             preview: { presentSheet { service.previewVersion(lyricsID: lv.id, entry: entry) } },
             edit: { presentSheet { service.beginRevision(versionID: lv.id, entry: entry) } },
+            rename: { draft in presentSheet { service.versionLabelDraft = draft } },
             adopt: { adoptLyrics(lv, entry: entry) }) {
                 Button(lv.isLocked ? "解锁" : "锁定") {
                     service.toggleLyricsLock(versionID: lv.id, currentLocked: lv.isLocked, trackStableKey: entry.trackStableKey)
@@ -717,6 +693,7 @@ public struct PersonalLibraryTrackDetailView: View {
             locked: tv.isLocked, archived: tv.isArchived, busy: service.revisionBusy,
             preview: { presentSheet { service.previewVersion(lyricsID: tv.lyricsVersionID, entry: entry, translation: tv) } },
             edit: { presentSheet { service.beginTranslationRevision(version: tv, entry: entry) } },
+            rename: { draft in presentSheet { service.versionLabelDraft = draft } },
             adopt: { adoptTranslation(tv, entry: entry) }) {
                 Button(tv.isLocked ? "解锁" : "锁定") {
                     service.toggleTranslationLock(versionID: tv.id, currentLocked: tv.isLocked, trackStableKey: entry.trackStableKey)
@@ -726,8 +703,9 @@ public struct PersonalLibraryTrackDetailView: View {
                 }
                 Divider()
                 Button("删除", role: .destructive) {
-                    translationDeletionCandidate = tv
-                    showTranslationDeletionConfirmation = true
+                    presentSheet {
+                        service.translationDeletionCandidate = .init(version: tv, trackStableKey: stableKey)
+                    }
                 }.disabled(tv.isLocked).help(tv.isLocked ? "请先解锁版本后再删除" : "永久删除此译文版本")
             }.help(tv.targetLanguage + (tv.isManuallyEdited ? " · 人工编辑" : ""))
     }
@@ -740,6 +718,7 @@ public struct PersonalLibraryTrackDetailView: View {
             locked: rv.isLocked, archived: rv.isArchived, busy: service.revisionBusy,
             preview: { presentSheet { service.previewVersion(lyricsID: rv.lyricsVersionID, entry: entry, reading: rv) } },
             edit: { presentSheet { service.beginReadingRevision(version: rv, entry: entry) } },
+            rename: { draft in presentSheet { service.versionLabelDraft = draft } },
             adopt: { adoptReading(rv, entry: entry) }) {
                 Button(rv.isLocked ? "解锁" : "锁定") {
                     service.toggleReadingLock(versionID: rv.id, currentLocked: rv.isLocked, trackStableKey: entry.trackStableKey)
@@ -757,6 +736,7 @@ public struct PersonalLibraryTrackDetailView: View {
             isCurrent: tm.isCurrent, hasMenu: false, busy: service.revisionBusy,
             preview: { presentSheet { service.previewVersion(lyricsID: tm.lyricsVersionID, entry: entry, timingID: tm.id) } },
             edit: { presentSheet { service.beginTimingRevision(version: tm, entry: entry) } },
+            rename: { draft in presentSheet { service.versionLabelDraft = draft } },
             adopt: { adoptTiming(tm, entry: entry) }) { EmptyView() }
             .help(tm.granularity)
     }
@@ -823,6 +803,7 @@ private struct LibraryVersionRow<Actions: View>: View {
     let busy: Bool
     let preview: () -> Void
     let edit: () -> Void
+    let rename: (PersonalLyricsLibraryService.VersionLabelDraft) -> Void
     let adopt: () -> Void
     @ViewBuilder var actions: () -> Actions
     @State private var hovered = false
@@ -840,7 +821,7 @@ private struct LibraryVersionRow<Actions: View>: View {
                 .foregroundStyle(isCurrent ? .primary : .secondary)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 4) {
-                    LibraryVersionLabel(kind: kind, id: id, originalTitle: title, compact: true, showsEdit: hovered)
+                    LibraryVersionLabel(kind: kind, id: id, originalTitle: title, compact: true, showsEdit: hovered, onEdit: rename)
                     if locked { Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary) }
                     if archived { Text("已归档").font(.caption2).foregroundStyle(.secondary) }
                 }
@@ -1133,12 +1114,18 @@ struct LibraryVersionLabel: View {
     var showsEdit = true
     @AppStorage private var customTitle: String
     @AppStorage private var note: String
-    @State private var isEditing = false
-    @State private var draftTitle = ""
-    @State private var draftNote = ""
+    let kind: String
+    let versionID: UUID
+    let onEdit: ((PersonalLyricsLibraryService.VersionLabelDraft) -> Void)?
+    // The legacy picker outside the library keeps its presenter; library rows supply onEdit.
+    @State private var standaloneDraft: PersonalLyricsLibraryService.VersionLabelDraft?
 
-    init(kind: String, id: UUID, originalTitle: String, compact: Bool = false, showsEdit: Bool = true) {
+    init(kind: String, id: UUID, originalTitle: String, compact: Bool = false, showsEdit: Bool = true,
+         onEdit: ((PersonalLyricsLibraryService.VersionLabelDraft) -> Void)? = nil) {
         self.originalTitle = originalTitle
+        self.kind = kind
+        self.versionID = id
+        self.onEdit = onEdit
         self.compact = compact
         self.showsEdit = showsEdit
         let key = "personalLibrary.versionLabel.\(kind).\(id.uuidString)"
@@ -1154,9 +1141,10 @@ struct LibraryVersionLabel: View {
                     .lineLimit(1)
                     .help(customTitle.isEmpty ? originalTitle : customTitle)
                 Button {
-                    draftTitle = customTitle
-                    draftNote = note
-                    isEditing = true
+                    let draft = PersonalLyricsLibraryService.VersionLabelDraft(kind: kind, versionID: versionID,
+                        originalTitle: originalTitle, title: customTitle, note: note)
+                    if let onEdit { onEdit(draft) }
+                    else { standaloneDraft = draft }
                 } label: {
                     Image(systemName: "pencil")
                         .font(.system(size: 11))
@@ -1182,7 +1170,29 @@ struct LibraryVersionLabel: View {
                     .help(note)
             }
         }
-        .sheet(isPresented: $isEditing) {
+        .sheet(item: $standaloneDraft) { draft in
+            LibraryVersionLabelEditSheet(draft: draft) { standaloneDraft = nil }
+        }
+    }
+}
+
+private struct LibraryVersionLabelEditSheet: View {
+    let originalTitle: String
+    let onClose: () -> Void
+    @AppStorage private var customTitle: String
+    @AppStorage private var note: String
+    @State private var draftTitle: String
+    @State private var draftNote: String
+
+    init(draft: PersonalLyricsLibraryService.VersionLabelDraft, onClose: @escaping () -> Void) {
+        self.originalTitle = draft.originalTitle
+        self.onClose = onClose
+        _customTitle = AppStorage(wrappedValue: "", draft.storageKey + ".title", store: UserDefaults.lyricsQ)
+        _note = AppStorage(wrappedValue: "", draft.storageKey + ".note", store: UserDefaults.lyricsQ)
+        _draftTitle = State(initialValue: draft.title)
+        _draftNote = State(initialValue: draft.note)
+    }
+    var body: some View {
             VStack(alignment: .leading, spacing: 16) {
                 Text("版本名称与备注")
                     .font(.headline)
@@ -1210,17 +1220,17 @@ struct LibraryVersionLabel: View {
                     Button("恢复默认") {
                         customTitle = ""
                         note = ""
-                        isEditing = false
+                        onClose()
                     }
                     .disabled(customTitle.isEmpty && note.isEmpty && draftTitle.isEmpty && draftNote.isEmpty)
                     .help("清除自定义名称和备注，恢复原始显示")
                     Spacer()
-                    Button("取消") { isEditing = false }
+                    Button("取消") { onClose() }
                         .keyboardShortcut(.cancelAction)
                     Button("保存") {
                         customTitle = draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                         note = draftNote.trimmingCharacters(in: .whitespacesAndNewlines)
-                        isEditing = false
+                        onClose()
                     }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
@@ -1228,10 +1238,8 @@ struct LibraryVersionLabel: View {
             }
             .padding(24)
             .frame(width: 420)
-        }
     }
 }
-
 
 private struct LibraryLyricsRevisionSheet: View {
     @ObservedObject var service: PersonalLyricsLibraryService
@@ -1539,6 +1547,7 @@ private struct LibraryDetailScrolling: ViewModifier {
 /// Shared by the full library and the centred panel; import/edit flows stay identical.
 struct PersonalLibrarySheets: ViewModifier {
     @ObservedObject var service: PersonalLyricsLibraryService
+    @EnvironmentObject private var playback: PlaybackState
     func body(content: Content) -> some View {
         content
         .sheet(item: $service.versionPreview) { preview in
@@ -1546,6 +1555,27 @@ struct PersonalLibrarySheets: ViewModifier {
                 HStack { Text(preview.title).font(.headline); Spacer(); Button("关闭") { service.versionPreview = nil } }
                 ScrollView { Text(preview.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
             }.padding(20).frame(width: 540, height: 440)
+        }
+        .sheet(item: $service.versionLabelDraft) { draft in
+            LibraryVersionLabelEditSheet(draft: draft) { service.versionLabelDraft = nil }
+        }
+        .alert("删除译文版本？", isPresented: Binding(
+            get: { service.translationDeletionCandidate != nil },
+            set: { if !$0 { service.translationDeletionCandidate = nil } }
+        ), presenting: service.translationDeletionCandidate) { candidate in
+            Button("删除", role: .destructive) {
+                Task { @MainActor in
+                    guard await service.deleteTranslationVersion(versionID: candidate.version.id,
+                        trackStableKey: candidate.trackStableKey) else { return }
+                    playback.reconcileExternalTranslationDeletion(versionID: candidate.version.id,
+                        trackStableKey: candidate.trackStableKey)
+                }
+            }
+            Button("取消", role: .cancel) { service.translationDeletionCandidate = nil }
+        } message: { candidate in
+            Text(candidate.version.isCurrent
+                ? "将永久删除这条译文及其逐行内容。它正在使用，删除后会重新选择可用译文；原词和其他版本不受影响。"
+                : "将永久删除这条译文及其逐行内容；原词和其他版本不受影响。")
         }
         .sheet(item: $service.revisionDraft) { draft in
             LibraryLyricsRevisionSheet(service: service, initialDraft: draft)

@@ -30,6 +30,23 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     @Published public private(set) var revisionError: String?
     @Published public private(set) var revisionBusy = false
 
+    struct VersionLabelDraft: Identifiable {
+        let kind: String
+        let versionID: UUID
+        let originalTitle: String
+        let title: String
+        let note: String
+        var id: String { "\(kind).\(versionID.uuidString)" }
+        var storageKey: String { "personalLibrary.versionLabel.\(id)" }
+    }
+    struct TranslationDeletion: Identifiable {
+        let version: PersonalTranslationVersionItem
+        let trackStableKey: String
+        var id: UUID { version.id }
+    }
+    @Published var versionLabelDraft: VersionLabelDraft?
+    @Published var translationDeletionCandidate: TranslationDeletion?
+
     struct VersionPreview: Identifiable {
         let id = UUID()
         let title: String

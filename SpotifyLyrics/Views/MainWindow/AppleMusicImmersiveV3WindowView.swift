@@ -1768,9 +1768,17 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         switch info["command"] as? String {
         case "navigation":
             librarySearch.open(V3LibrarySearchPresentation.Tab(rawValue: info["panel"] as? String ?? "") ?? .library)
+        case "translation-delete-close": library.translationDeletionCandidate = nil
+        case "translation-delete-confirm":
+            guard let detail = library.selectedTrackDetail, let version = detail.translationVersions.first else { return }
+            dismissPinnedToolbarPanel()
+            DispatchQueue.main.async {
+                library.translationDeletionCandidate = .init(version: version, trackStableKey: detail.entry.trackStableKey)
+            }
         case "version-preview-close": library.versionPreview = nil
         case "version-preview":
-            dismissPinnedToolbarPanel()
+            toolbarDismissTask?.cancel()
+            toolbar.dismiss()
             DispatchQueue.main.async {
                 library.versionPreview = .init(title: state.currentTrack.title,
                     text: state.liveLyrics.map(\.originalText).joined(separator: "\n"))

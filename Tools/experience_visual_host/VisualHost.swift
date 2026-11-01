@@ -606,6 +606,16 @@ private struct ExperienceFixtureRoot: View {
                         userInfo: ["command": "version-preview"])
                     try? await Task.sleep(for: .milliseconds(800))
                 }
+                if ProcessInfo.processInfo.arguments.contains("--close-version-preview") {
+                    NotificationCenter.default.post(name: .v3ToolbarDebugCommand, object: nil,
+                        userInfo: ["command": "version-preview-close"])
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+                if ProcessInfo.processInfo.arguments.contains("--translation-delete-confirm") {
+                    NotificationCenter.default.post(name: .v3ToolbarDebugCommand, object: nil,
+                        userInfo: ["command": "translation-delete-confirm"])
+                    try? await Task.sleep(for: .milliseconds(800))
+                }
                 var extraWindow: NSWindow?
                 if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker"].contains(ExperienceArguments.surface) {
                     MenuBarLyricsController.shared.bind(playbackState: playback)
@@ -662,6 +672,33 @@ private struct ExperienceFixtureRoot: View {
                 if !output.isEmpty {
                     let primary = extraWindow ?? targetWindow
                     if let view = primary?.contentView { render(view, to: output) }
+                    if ProcessInfo.processInfo.arguments.contains("--offscreen-composite"),
+                       let owner = targetWindow, let ownerView = owner.contentView {
+                        let canvas = owner.convertToScreen(ownerView.convert(ownerView.bounds, to: nil))
+                        let picture = NSImage(size: canvas.size)
+                        picture.lockFocus()
+                        let overlays = NSApp.windows.filter { $0 !== owner && $0.isVisible }.reversed()
+                        for window in [owner] + overlays {
+                            guard let view = window.contentView,
+                                  let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
+                            let screenRect = window.convertToScreen(view.convert(view.bounds, to: nil))
+                            let rect = screenRect.offsetBy(dx: -canvas.minX, dy: -canvas.minY)
+                            print("OFFSCREEN_WINDOW", window.windowNumber, rect)
+                            view.cacheDisplay(in: view.bounds, to: bitmap)
+                            window.effectiveAppearance.performAsCurrentDrawingAppearance {
+                                NSColor.windowBackgroundColor.setFill()
+                                rect.fill()
+                                NSImage(cgImage: bitmap.cgImage!, size: view.bounds.size).draw(in: rect)
+                            }
+                        }
+                        picture.unlockFocus()
+                        let path = (output as NSString).deletingPathExtension + "-offscreen.png"
+                        if let data = picture.tiffRepresentation,
+                           let png = NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:]) {
+                            try? png.write(to: URL(fileURLWithPath: path))
+                            print("OFFSCREEN_COMPOSITE", path)
+                        }
+                    }
                     // Only fixture-owned windows are included. A window-server
                     // composite is needed to show behind-window material accurately.
                     if ProcessInfo.processInfo.arguments.contains("--window-composite") {
@@ -701,6 +738,12 @@ private struct ExperienceFixtureRoot: View {
                         userInfo: ["command": "version-preview-close"])
                     try? await Task.sleep(for: .milliseconds(500))
                     print("VERSION_SHEET_CLOSED", targetWindow?.attachedSheet == nil)
+                }
+                if ProcessInfo.processInfo.arguments.contains("--translation-delete-confirm") {
+                    NotificationCenter.default.post(name: .v3ToolbarDebugCommand, object: nil,
+                        userInfo: ["command": "translation-delete-close"])
+                    try? await Task.sleep(for: .milliseconds(500))
+                    print("TRANSLATION_DELETE_CANCELLED", targetWindow?.attachedSheet == nil)
                 }
                 print("WINDOWS",NSApp.windows.map { "\($0.windowNumber):\($0.title):\($0.frame)" })
                 if ProcessInfo.processInfo.arguments.contains("--keep-open"), ExperienceArguments.surface != "main", let panel = extraWindow ?? targetWindow {

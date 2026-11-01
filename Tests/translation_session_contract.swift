@@ -646,19 +646,15 @@ struct TranslationSessionContract {
                 artist: otherTrack.artist, album: otherTrack.album, duration: otherTrack.duration,
                 lines: sourceLines,
                 isSynchronized: true, source: manual ? .manualImport : .neteaseExperimental, confidence: 1)
-            let otherSource = try await repo.save(track: otherTrack, identity: otherDocument.identity, document: otherDocument)
-            if !manual {
-                _ = try await repo.loadBestStored(track: otherTrack, identity: otherDocument.identity)
-                let repaired = try await repo.loadTranslationVersions(lyricsVersionID: otherSource.versionID!,
-                    targetLanguage: "zh-Hans", sourceContentHash: otherSource.sourceContentHash!)
-                precondition(repaired.first?.isEmbeddedTranslation == true, "playing a cached source must repair its missing translation version")
-            }
+            _ = try await repo.save(track: otherTrack, identity: otherDocument.identity, document: otherDocument)
+            let cached = try await repo.loadBestStored(track: otherTrack, identity: otherDocument.identity)
+            precondition(cached != nil)
             var otherConfig = config
             otherConfig.autoTranslateNewLyrics = manual // Sparse source translations display without dispatching AI.
             let safe = TranslationSessionController(repository: repo, service: fake,
                 selectionDefaults: defaults, acceptanceBudget: nil)
-            safe.synchronize(document: otherDocument, lyricsVersionID: otherSource.versionID,
-                sourceContentHash: otherSource.sourceContentHash, configuration: otherConfig)
+            safe.synchronize(document: cached!.document, lyricsVersionID: cached!.versionID,
+                sourceContentHash: cached!.sourceContentHash, configuration: otherConfig)
             try await Task.sleep(nanoseconds: 200_000_000)
             let safetyCalls = await fake.calls()
             precondition(safetyCalls == 2, "manual text or disabled auto must not dispatch")

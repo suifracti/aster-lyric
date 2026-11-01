@@ -189,8 +189,7 @@ struct V3LibrarySearchPanel: View {
                 Divider()
                 ScrollView {
                     if let selectedKey {
-                        PersonalLibraryTrackDetailView(service: library, stableKey: selectedKey, compact: true, showsActions: true,
-                            beforePresentSheet: { presentation.dismiss() })
+                        PersonalLibraryTrackDetailView(service: library, stableKey: selectedKey, compact: true, showsActions: true)
                             .padding(14)
                     } else {
                         Text("没有符合条件的歌曲").foregroundStyle(.secondary).padding(24)
