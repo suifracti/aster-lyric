@@ -559,10 +559,12 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 
 **Version popups (preview and the revision sheets).**
 - They always open on the main window, never on a hover panel. Clicking a version row in a hover panel closes that panel, then the sheet opens at its normal size.
-- Closing the sheet returns to the lyrics. The window never stays dimmed with nothing on it.
+- This covers every popup a hover-panel version row can open: preview, revision, 版本名称与备注 and the 删除译文版本 confirmation.
+- From a hover panel, closing the sheet returns to the lyrics. The window never stays dimmed with nothing on it.
+- The large library panel lives inside the main window, so it stays open behind the sheet. Closing the sheet returns to the library, on the same song.
 
 **Lyric source translations (歌词源译文).**
 - When a lyric source supplies its own translation, it shows by default. The user does not have to turn it on.
 - Order: the song's manual choice, including 「不显示」, comes first. Then locked or hand-edited versions, then AI versions, then the source's translation.
-- Showing a stored source translation never starts an AI request and never changes stored data.
+- Showing a source translation never starts an AI request and never changes existing lyrics or translations. The first play may add the source translation as a new version row.
 
