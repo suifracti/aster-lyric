@@ -601,6 +601,11 @@ private struct ExperienceFixtureRoot: View {
                         try? await Task.sleep(for: .milliseconds(300))
                     }
                 }
+                if ProcessInfo.processInfo.arguments.contains("--version-preview") {
+                    NotificationCenter.default.post(name: .v3ToolbarDebugCommand, object: nil,
+                        userInfo: ["command": "version-preview"])
+                    try? await Task.sleep(for: .milliseconds(800))
+                }
                 var extraWindow: NSWindow?
                 if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker"].contains(ExperienceArguments.surface) {
                     MenuBarLyricsController.shared.bind(playbackState: playback)
@@ -609,7 +614,7 @@ private struct ExperienceFixtureRoot: View {
                         root = AnyView(PlaylistPickerPopover(model: playback.playlistBrowser.picker))
                     } else if ExperienceArguments.surface == "search-panel" {
                         root = AnyView(V3ToolbarQuickControls(panel: .search, state: playback,
-                            search: playback.songSearchManager, openLibrary: {}, openSearch: {}, openPlaylists: {}) { EmptyView() }
+                            search: playback.songSearchManager, library: PersonalLyricsLibraryService(), beforePresentSheet: {}, openLibrary: {}, openSearch: {}, openPlaylists: {}) { EmptyView() }
                             .background(Color(nsColor: .windowBackgroundColor)))
                     } else if ExperienceArguments.surface == "search-full" {
                         root = AnyView(SongSearchPopover(manager: playback.songSearchManager, playbackState: playback)
@@ -690,6 +695,12 @@ private struct ExperienceFixtureRoot: View {
                             render(view, to: "\(base)-panel\(index).png")
                         }
                     }
+                }
+                if ProcessInfo.processInfo.arguments.contains("--version-preview") {
+                    NotificationCenter.default.post(name: .v3ToolbarDebugCommand, object: nil,
+                        userInfo: ["command": "version-preview-close"])
+                    try? await Task.sleep(for: .milliseconds(500))
+                    print("VERSION_SHEET_CLOSED", targetWindow?.attachedSheet == nil)
                 }
                 print("WINDOWS",NSApp.windows.map { "\($0.windowNumber):\($0.title):\($0.frame)" })
                 if ProcessInfo.processInfo.arguments.contains("--keep-open"), ExperienceArguments.surface != "main", let panel = extraWindow ?? targetWindow {

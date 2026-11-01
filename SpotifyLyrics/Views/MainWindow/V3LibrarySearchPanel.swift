@@ -22,7 +22,7 @@ struct V3LibrarySearchPanel: View {
     @Binding var presentation: V3LibrarySearchPresentation
     @V3ContentPlaybackState var state: PlaybackState
     @Environment(\.openWindow) private var openWindow
-    @StateObject private var library = PersonalLyricsLibraryService()
+    @ObservedObject var library: PersonalLyricsLibraryService
     @StateObject private var batch = LyricsBatchCompletion()
     @State private var selectedKey: String?
     @State private var queries: [V3LibrarySearchPresentation.Tab: String] = [:]
@@ -103,7 +103,6 @@ struct V3LibrarySearchPanel: View {
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .onExitCommand { presentation.dismiss() }
-            .modifier(PersonalLibrarySheets(service: library))
             .onAppear {
                 library.refresh()
                 if presentation.tab == .search, query.isEmpty { query = SongSearchQuery(track: state.currentTrack).text }
@@ -190,7 +189,8 @@ struct V3LibrarySearchPanel: View {
                 Divider()
                 ScrollView {
                     if let selectedKey {
-                        PersonalLibraryTrackDetailView(service: library, stableKey: selectedKey, compact: true, showsActions: true)
+                        PersonalLibraryTrackDetailView(service: library, stableKey: selectedKey, compact: true, showsActions: true,
+                            beforePresentSheet: { presentation.dismiss() })
                             .padding(14)
                     } else {
                         Text("没有符合条件的歌曲").foregroundStyle(.secondary).padding(24)

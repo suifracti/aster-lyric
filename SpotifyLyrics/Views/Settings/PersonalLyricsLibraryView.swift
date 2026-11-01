@@ -471,6 +471,7 @@ public struct PersonalLibraryTrackDetailView: View {
     let stableKey: String
     var compact = false
     var showsActions = false
+    var beforePresentSheet: (() -> Void)?
     @State private var selectedSection: VersionSection = .all
     @State private var translationDeletionCandidate: PersonalTranslationVersionItem?
     @State private var showTranslationDeletionConfirmation = false
@@ -699,8 +700,8 @@ public struct PersonalLibraryTrackDetailView: View {
             title: librarySourceName(lv.source), date: lv.updatedAt, lineCount: lv.lineCount,
             isCurrent: compact ? playback.liveLyricsVersionID == lv.id : lv.isCurrent,
             locked: lv.isLocked, busy: service.revisionBusy,
-            preview: { service.previewVersion(lyricsID: lv.id, entry: entry) },
-            edit: { service.beginRevision(versionID: lv.id, entry: entry) },
+            preview: { presentSheet { service.previewVersion(lyricsID: lv.id, entry: entry) } },
+            edit: { presentSheet { service.beginRevision(versionID: lv.id, entry: entry) } },
             adopt: { adoptLyrics(lv, entry: entry) }) {
                 Button(lv.isLocked ? "解锁" : "锁定") {
                     service.toggleLyricsLock(versionID: lv.id, currentLocked: lv.isLocked, trackStableKey: entry.trackStableKey)
@@ -714,8 +715,8 @@ public struct PersonalLibraryTrackDetailView: View {
             date: tv.updatedAt, lineCount: tv.lineCount,
             isCurrent: compact ? playback.selectedTranslation?.record.id == tv.id : tv.isCurrent,
             locked: tv.isLocked, archived: tv.isArchived, busy: service.revisionBusy,
-            preview: { service.previewVersion(lyricsID: tv.lyricsVersionID, entry: entry, translation: tv) },
-            edit: { service.beginTranslationRevision(version: tv, entry: entry) },
+            preview: { presentSheet { service.previewVersion(lyricsID: tv.lyricsVersionID, entry: entry, translation: tv) } },
+            edit: { presentSheet { service.beginTranslationRevision(version: tv, entry: entry) } },
             adopt: { adoptTranslation(tv, entry: entry) }) {
                 Button(tv.isLocked ? "解锁" : "锁定") {
                     service.toggleTranslationLock(versionID: tv.id, currentLocked: tv.isLocked, trackStableKey: entry.trackStableKey)
@@ -737,8 +738,8 @@ public struct PersonalLibraryTrackDetailView: View {
             date: rv.updatedAt, lineCount: rv.lineCount,
             isCurrent: compact ? playback.selectedReadingVersion?.record.id == rv.id : rv.isCurrent,
             locked: rv.isLocked, archived: rv.isArchived, busy: service.revisionBusy,
-            preview: { service.previewVersion(lyricsID: rv.lyricsVersionID, entry: entry, reading: rv) },
-            edit: { service.beginReadingRevision(version: rv, entry: entry) },
+            preview: { presentSheet { service.previewVersion(lyricsID: rv.lyricsVersionID, entry: entry, reading: rv) } },
+            edit: { presentSheet { service.beginReadingRevision(version: rv, entry: entry) } },
             adopt: { adoptReading(rv, entry: entry) }) {
                 Button(rv.isLocked ? "解锁" : "锁定") {
                     service.toggleReadingLock(versionID: rv.id, currentLocked: rv.isLocked, trackStableKey: entry.trackStableKey)
@@ -754,10 +755,17 @@ public struct PersonalLibraryTrackDetailView: View {
             title: librarySourceName(tm.source), date: tm.createdAt,
             lineCount: service.selectedTrackDetail?.lyricsVersions.first(where: { $0.id == tm.lyricsVersionID })?.lineCount ?? 0,
             isCurrent: tm.isCurrent, hasMenu: false, busy: service.revisionBusy,
-            preview: { service.previewVersion(lyricsID: tm.lyricsVersionID, entry: entry, timingID: tm.id) },
-            edit: { service.beginTimingRevision(version: tm, entry: entry) },
+            preview: { presentSheet { service.previewVersion(lyricsID: tm.lyricsVersionID, entry: entry, timingID: tm.id) } },
+            edit: { presentSheet { service.beginTimingRevision(version: tm, entry: entry) } },
             adopt: { adoptTiming(tm, entry: entry) }) { EmptyView() }
             .help(tm.granularity)
+    }
+
+    private func presentSheet(_ action: @escaping () -> Void) {
+        if let beforePresentSheet {
+            beforePresentSheet()
+            DispatchQueue.main.async(execute: action)
+        } else { action() }
     }
 
     private func adoptLyrics(_ version: PersonalLyricsVersionItem, entry: PersonalLyricsLibraryEntry) {

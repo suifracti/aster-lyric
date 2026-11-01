@@ -142,6 +142,7 @@ private final class V3PointerLocationBox {
 /// separate layouts; this view owns only the V3 canvas and its transient tools.
 struct AppleMusicImmersiveV3WindowView: View, Equatable {
     let state: PlaybackState
+    @StateObject private var library = PersonalLyricsLibraryService()
     @State private var contentRevision: UInt64 = 0
     @State private var contentRefreshQueue = V3ContentRefreshQueue()
 
@@ -362,7 +363,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
 
                 if librarySearch.isPresented {
-                    V3LibrarySearchPanel(presentation: $librarySearch, state: state)
+                    V3LibrarySearchPanel(presentation: $librarySearch, state: state, library: library)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
 
@@ -531,6 +532,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         )
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
+        .modifier(PersonalLibrarySheets(service: library))
         .v3NightGentle(enabled: settings.v3NightGentleEnabled)
         .environment(\.v3CoverAccent, coverAccent ?? .white)
         .tint(.primary)
@@ -1766,6 +1768,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         switch info["command"] as? String {
         case "navigation":
             librarySearch.open(V3LibrarySearchPresentation.Tab(rawValue: info["panel"] as? String ?? "") ?? .library)
+        case "version-preview-close": library.versionPreview = nil
+        case "version-preview":
+            dismissPinnedToolbarPanel()
+            DispatchQueue.main.async {
+                library.versionPreview = .init(title: state.currentTrack.title,
+                    text: state.liveLyrics.map(\.originalText).joined(separator: "\n"))
+            }
         case "notice": lyricNotice = "字号 22"
         case "auto-selection": previewAutomaticSelection = LyricsAutomaticSelection(sourceCount: 3, durationDelta: 25)
         case "faint": isPointerInsideCanvas = true
@@ -1912,7 +1921,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     }
 
     private func toolbarPanel(for panel: ToolbarPopover) -> some View {
-        V3ToolbarQuickControls(panel: panel, state: state, search: state.songSearchManager,
+        V3ToolbarQuickControls(panel: panel, state: state, search: state.songSearchManager, library: library,
+            beforePresentSheet: { dismissPinnedToolbarPanel() },
             openLibrary: { clickToolbarPanel(.library) }, openSearch: { clickToolbarPanel(.search) },
             openPlaylists: { clickToolbarPanel(.playlists) }) {
             switch panel {

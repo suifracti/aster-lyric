@@ -5,11 +5,12 @@ struct V3ToolbarQuickControls<Controls: View>: View {
     let panel: V3ToolbarModel.Panel
     @V3ContentPlaybackState var state: PlaybackState
     @ObservedObject var search: SongSearchManager
+    @ObservedObject var library: PersonalLyricsLibraryService
+    let beforePresentSheet: () -> Void
     let openLibrary: () -> Void
     let openSearch: () -> Void
     let openPlaylists: () -> Void
     @ViewBuilder var controls: () -> Controls
-    @StateObject private var library = PersonalLyricsLibraryService()
     @State private var query = ""
     @State private var selectedSearchResultKey: String?
     @State private var contentHeight: CGFloat = 520
@@ -31,7 +32,8 @@ struct V3ToolbarQuickControls<Controls: View>: View {
                     Text("\(state.liveLyricsSource?.displayName ?? "暂无歌词") · \(state.liveLyricsVersionID == nil ? "未采用版本" : "已采用版本") · \(state.liveLyrics.count) 行")
                         .font(.caption).foregroundStyle(.secondary)
                     PersonalLibraryTrackDetailView(service: library,
-                        stableKey: state.liveTrackIdentity?.stableKey ?? "", compact: true)
+                        stableKey: state.liveTrackIdentity?.stableKey ?? "", compact: true,
+                        beforePresentSheet: beforePresentSheet)
                         .environmentObject(state)
 
                 case .playlists:
@@ -68,7 +70,6 @@ struct V3ToolbarQuickControls<Controls: View>: View {
         .onPreferenceChange(V3ToolPanelHeight.self) { height in
             if height > 0 { contentHeight = ceil(height) }
         }
-        .modifier(PersonalLibrarySheets(service: library))
         .font(.system(size: 12))
         .controlSize(.small)
         .toggleStyle(.switch)
