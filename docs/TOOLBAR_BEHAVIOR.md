@@ -595,3 +595,7 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 - Vertical: pill 44 pt wide, elapsed over total, centred. Horizontal: 「0:35 / 3:13」 after the buttons.
 - Time is 10 pt monospaced, elapsed at 90% and total at 55%, never truncated.
 - The pill's short progress track from Round 5 is removed. The rail does this job now.
+
+**Foreground cover position.** A left-aligned cover looks off-balance above the wider player card.
+- The default position for scenes with a foreground cover above the player card is 居中: the cover and the card share one centre line, at every size and with or without the card.
+- 居左 and 居右 stay available. A saved position is not changed.
