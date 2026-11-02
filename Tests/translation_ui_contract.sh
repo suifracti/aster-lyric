@@ -35,8 +35,8 @@ assert 'clearSearchPreview()' in readonly
 assert 'if !state.isShowingSearchPreview {' in body, 'old candidate sheet must not survive preview'
 system = canvas[canvas.index('private var systemStateContent'):canvas.index('private var contentFirstStateContent')]
 assert 'if state.isShowingSearchPreview {' in system and 'LyricsStateContentFirstView(state: state' in system, 'classic renderer must share preview boundary'
-v3 = (root / 'SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift').read_text()
-assert 'if liveOnly || !state.isShowingSearchPreview {' in v3, 'live-only toolbar retained'
-assert 'liveOnly ? state.liveLyricsState : state.lyricsState' in v3
+v3_lyrics = (root / 'SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3Lyrics.swift').read_text()
+assert 'private var isPreview: Bool { !liveOnly && state.isShowingSearchPreview }' in v3_lyrics, 'live-only views must not show a search preview'
+assert 'liveOnly ? state.liveLyricsState : state.lyricsState' in v3_lyrics
 print('PASS static preview noLyrics/noMatch/failed/candidates action scope; classic/contentFirst; live-only source boundary retained')
 PYUI

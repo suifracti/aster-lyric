@@ -1578,22 +1578,24 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 Spacer()
             }
             Divider()
-            HStack {
-                Text("当前译文")
-                Spacer()
-                Menu {
-                    Button("自动（推荐）") { state.restoreRecommendedTranslation() }
-                    ForEach(state.translationVersions, id: \.record.id) { version in
-                        Button(translationVersionTitle(version)) {
-                            state.selectTranslation(versionID: version.record.id)
+            if !displaysAIReadingControls {
+                HStack {
+                    Text("当前译文")
+                    Spacer()
+                    Menu {
+                        Button("自动（推荐）") { state.restoreRecommendedTranslation() }
+                        ForEach(state.translationVersions, id: \.record.id) { version in
+                            Button(translationVersionTitle(version)) {
+                                state.selectTranslation(versionID: version.record.id)
+                            }
                         }
+                        Button("不显示") { state.selectNoTranslationVersion() }
+                    } label: {
+                        Text(state.translationVersions.isEmpty ? "暂无译文" :
+                             state.selectedTranslation.map(translationVersionTitle) ?? "不显示")
                     }
-                    Button("不显示") { state.selectNoTranslationVersion() }
-                } label: {
-                    Text(state.translationVersions.isEmpty ? "暂无译文" :
-                         state.selectedTranslation.map(translationVersionTitle) ?? "不显示")
+                    .disabled(state.translationVersions.isEmpty)
                 }
-                .disabled(state.translationVersions.isEmpty)
             }
             TranslationProviderControls(settings: settings).modelPicker
             TranslationProviderControls(settings: settings).reasoningPicker

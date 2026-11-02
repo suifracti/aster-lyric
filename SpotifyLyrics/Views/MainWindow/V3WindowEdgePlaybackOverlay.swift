@@ -575,10 +575,8 @@ private struct V3NativeProgressRail: NSViewRepresentable {
 }
 
 final class V3EdgeRailView: NSView {
+    let trackLayer = CAShapeLayer()
     let progressLayer = CAShapeLayer()
-    private let trackLayers = (0..<4).map { _ in CAShapeLayer() }
-    private var progressLayers: [CAShapeLayer] = []
-    private let edges: [V3WindowEdgeControlPositioner.Edge] = [.top, .right, .bottom, .left]
     private var nearEdge: V3WindowEdgeControlPositioner.Edge?
     private var clock: LyricsPresentationClock?
     private var draft: Double?
@@ -587,11 +585,9 @@ final class V3EdgeRailView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        progressLayers = [progressLayer] + (0..<3).map { _ in CAShapeLayer() }
-        for shape in trackLayers + progressLayers {
+        for shape in [trackLayer, progressLayer] {
             shape.fillColor = nil
             shape.lineCap = .round
-            shape.mask = CAShapeLayer()
             layer?.addSublayer(shape)
         }
     }
@@ -603,36 +599,26 @@ final class V3EdgeRailView: NSView {
     }
     private func updateGeometry(animated: Bool, reduceMotion: Bool) {
         let path = V3WindowEdgeRoundedRectShape(nearEdge: nearEdge, cornerRadius: 12).path(in: bounds).cgPath
-        let corners = [CGPoint(x: bounds.minX, y: bounds.minY), CGPoint(x: bounds.maxX, y: bounds.minY),
-                       CGPoint(x: bounds.maxX, y: bounds.maxY), CGPoint(x: bounds.minX, y: bounds.maxY)]
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        for index in edges.indices {
-            let maskPath = CGMutablePath()
-            maskPath.move(to: CGPoint(x: bounds.midX, y: bounds.midY))
-            maskPath.addLine(to: corners[index])
-            maskPath.addLine(to: corners[(index + 1) % corners.count])
-            maskPath.closeSubpath()
-            for (shape, normalWidth) in [(trackLayers[index], CGFloat(2.1)), (progressLayers[index], CGFloat(2.2))] {
-                let oldPath = shape.presentation()?.path ?? shape.path
-                let oldWidth = shape.presentation()?.lineWidth ?? shape.lineWidth
-                shape.frame = bounds
-                shape.path = path
-                shape.lineWidth = nearEdge == edges[index] ? 4 : normalWidth
-                if let mask = shape.mask as? CAShapeLayer { mask.frame = bounds; mask.path = maskPath }
-                if animated, let oldPath {
-                    if reduceMotion {
-                        let fade = CABasicAnimation(keyPath: "opacity")
-                        fade.fromValue = 0.3; fade.toValue = 1; fade.duration = 0.16
-                        shape.add(fade, forKey: "railFade")
-                    } else {
-                        let move = CABasicAnimation(keyPath: "path")
-                        move.fromValue = oldPath; move.toValue = path; move.duration = 0.16
-                        move.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                        shape.add(move, forKey: "railPosition")
-                        let width = CABasicAnimation(keyPath: "lineWidth")
-                        width.fromValue = oldWidth; width.toValue = shape.lineWidth; width.duration = 0.16
-                        shape.add(width, forKey: "railWidth")
-                    }
+        for (shape, normalWidth) in [(trackLayer, CGFloat(2.1)), (progressLayer, CGFloat(2.2))] {
+            let oldPath = shape.presentation()?.path ?? shape.path
+            let oldWidth = shape.presentation()?.lineWidth ?? shape.lineWidth
+            shape.frame = bounds
+            shape.path = path
+            shape.lineWidth = nearEdge == nil ? normalWidth : 4
+            if animated, let oldPath {
+                if reduceMotion {
+                    let fade = CABasicAnimation(keyPath: "opacity")
+                    fade.fromValue = 0.3; fade.toValue = 1; fade.duration = 0.16
+                    shape.add(fade, forKey: "railFade")
+                } else {
+                    let move = CABasicAnimation(keyPath: "path")
+                    move.fromValue = oldPath; move.toValue = path; move.duration = 0.16
+                    move.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    shape.add(move, forKey: "railPosition")
+                    let width = CABasicAnimation(keyPath: "lineWidth")
+                    width.fromValue = oldWidth; width.toValue = shape.lineWidth; width.duration = 0.16
+                    shape.add(width, forKey: "railWidth")
                 }
             }
         }
@@ -641,8 +627,8 @@ final class V3EdgeRailView: NSView {
     func configure(clock: LyricsPresentationClock, draft: Double?, active: Bool, color: CGColor, highlighted: Bool,
                    nearEdge: V3WindowEdgeControlPositioner.Edge? = nil, reduceMotion: Bool = false) {
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        for shape in trackLayers { shape.strokeColor = color.copy(alpha: 0.22) }
-        for shape in progressLayers { shape.strokeColor = color }
+        trackLayer.strokeColor = color.copy(alpha: 0.22)
+        progressLayer.strokeColor = color
         CATransaction.commit()
         if self.nearEdge != nearEdge {
             self.nearEdge = nearEdge
@@ -654,16 +640,16 @@ final class V3EdgeRailView: NSView {
         let fraction = draft ?? (duration > 0 ? clock.playbackTime(at: ProcessInfo.processInfo.systemUptime) / duration : 0)
         let start = min(1, max(0, fraction))
         let running = active && clock.isPlaying && draft == nil && duration > 0 && start < 1
-        for shape in progressLayers { shape.removeAnimation(forKey: "playhead") }
+        progressLayer.removeAnimation(forKey: "playhead")
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        for shape in progressLayers { shape.strokeEnd = running ? 1 : start }
+        progressLayer.strokeEnd = running ? 1 : start
         CATransaction.commit()
         if running {
             let animation = CABasicAnimation(keyPath: "strokeEnd")
             animation.fromValue = start; animation.toValue = 1
             animation.duration = duration * (1 - start)
             animation.timingFunction = CAMediaTimingFunction(name: .linear)
-            for shape in progressLayers { shape.add(animation, forKey: "playhead") }
+            progressLayer.add(animation, forKey: "playhead")
         }
     }
 }

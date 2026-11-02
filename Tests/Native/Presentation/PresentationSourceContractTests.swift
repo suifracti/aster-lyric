@@ -65,6 +65,13 @@ final class PresentationSourceContractTests: XCTestCase {
         XCTAssertEqual(bounds.minX, 1.5, accuracy: 0.01)
         XCTAssertEqual(bounds.maxY, 698.5, accuracy: 0.01)
         XCTAssertEqual(view.progressLayer.lineWidth, 4, accuracy: 0.01)
+        XCTAssertEqual(view.trackLayer.lineWidth, 4, accuracy: 0.01)
+        XCTAssertNil(view.progressLayer.mask)
+        XCTAssertNil(view.trackLayer.mask)
+        XCTAssertEqual(view.trackLayer.path?.boundingBoxOfPath, bounds)
+        view.configure(clock: clock, draft: nil, active: true, color: NSColor.white.cgColor, highlighted: false)
+        XCTAssertEqual(view.progressLayer.lineWidth, 2.2, accuracy: 0.01)
+        XCTAssertEqual(view.trackLayer.lineWidth, 2.1, accuracy: 0.01)
     }
 
     @MainActor
