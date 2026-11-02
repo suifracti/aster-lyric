@@ -568,3 +568,30 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 - Order: the song's manual choice, including 「不显示」, comes first. Then locked or hand-edited versions, then AI versions, then the source's translation.
 - Showing a source translation never starts an AI request and never changes existing lyrics or translations. The first play may add the source translation as a new version row.
 
+
+## Round 12: 译文选择、歌词库速度、边缘播放器（2026-11-02）
+
+**Choosing the translation.** Users could not find the choice behind the 「已保存的译文」 menu.
+- The 译文 panel's first row under 功能 is 「当前译文」 with a dropdown that always shows the current choice.
+- Options, in order: 自动（推荐）, each saved version by source name (for example 歌词源译文, AI · GPT-6.1-Sol), then 不显示.
+- Two versions with the same name also show their date. The AI settings sit below this row.
+- With no saved version, the row reads 「暂无译文」 and the dropdown is disabled.
+- This replaces 「已保存的译文」. Its 「无译文」 and 「恢复推荐」 become 不显示 and 自动（推荐）.
+- The choice is per song. The global 译文 switch in the 文字 panel stays.
+
+**Library hover panel speed.** After the first open, the panel shows the current song's versions with no visible spinner, target under 100 ms. The current song's detail is ready before the panel opens.
+
+**Edge player: reaching the rail.** The pill sits about 10 pt from the edge, so only a thin strip of the 6–20 pt hit band is free, right beside macOS's resize zone.
+- The pill keeps 26 pt of clear space from the window edge on every side. Nothing of it sits on the hit band.
+- The hit band becomes 6–26 pt.
+- When the pointer comes within 48 pt of an edge, the rail steps inward with it: that side's line moves to 14 pt from the edge at 4 pt thick, over 160 ms. It returns when the pointer leaves. Reduce Motion uses a fade.
+- The pill stays visible while the pointer crosses the band.
+- Click and drag on the band work as before, with the time label following the pointer.
+
+**Edge player: look.**
+- Same glass as the toolbar (`V3PanelGlass`), keeping the darker backing on bright covers.
+- Three groups with an 8 pt gap between them: 喜欢 · 添加到歌单 | 随机 · 上一首 · 播放 · 下一首 · 循环 | time.
+- Icons 13 pt. Secondary icons at 70% white. Play is a 30 pt accent circle. Hit areas 28 pt, with the same hover circle.
+- Vertical: pill 44 pt wide, elapsed over total, centred. Horizontal: 「0:35 / 3:13」 after the buttons.
+- Time is 10 pt monospaced, elapsed at 90% and total at 55%, never truncated.
+- The pill's short progress track from Round 5 is removed. The rail does this job now.
