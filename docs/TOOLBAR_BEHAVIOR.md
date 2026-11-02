@@ -599,3 +599,8 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 **Foreground cover position.** A left-aligned cover looks off-balance above the wider player card.
 - The default position for scenes with a foreground cover above the player card is 居中: the cover and the card share one centre line, at every size and with or without the card.
 - 居左 and 居右 stay available. A saved position is not changed.
+
+**Segmented controls in tool panels.** The native control's highlight shifts by itself inside the glass panels.
+- All segmented pickers in the tool panels use one shared `V3SegmentedPicker`.
+- The selected capsule fills exactly its own segment. It moves only when the selection changes, with a 160 ms ease, and never follows the pointer.
+- Equal segment widths; no dividers; hover is a faint fill on that segment only. Reduce Motion cuts straight to the new position.
