@@ -10,6 +10,9 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     @Published public var searchQuery: String = ""
 
     @Published public var selectedTrackDetail: PersonalLyricsLibraryTrackDetail?
+    @Published private var currentTrackDetail: PersonalLyricsLibraryTrackDetail?
+    private var currentTrackStableKey: String?
+    private var currentTrackRequestID = UUID()
     private var detailRequestID = UUID()
     private var requestedTrackStableKey: String?
     @Published public var importPreview: PersonalLibraryImportPreview?
@@ -315,9 +318,35 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         }
     }
 
+    func currentDetail(for stableKey: String) -> PersonalLyricsLibraryTrackDetail? {
+        currentTrackStableKey == stableKey ? currentTrackDetail : nil
+    }
+
+    func prefetchCurrentTrack(stableKey: String?, force: Bool = false) {
+        guard force || currentTrackStableKey != stableKey else { return }
+        let changed = currentTrackStableKey != stableKey
+        currentTrackStableKey = stableKey
+        if changed { currentTrackDetail = nil }
+        let requestID = UUID()
+        currentTrackRequestID = requestID
+        guard let stableKey else { return }
+        Task {
+            do {
+                let detail = try await repository.loadPersonalLibraryTrackDetail(stableKey: stableKey)
+                guard currentTrackRequestID == requestID else { return }
+                currentTrackDetail = detail
+            } catch {
+                guard currentTrackRequestID == requestID else { return }
+                statusMessage = "获取歌曲详情失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
     private func refreshTrackDetail(stableKey: String) {
-        guard requestedTrackStableKey == stableKey else { return }
-        selectTrack(stableKey: stableKey)
+        if requestedTrackStableKey == stableKey { selectTrack(stableKey: stableKey) }
+        if currentTrackStableKey == stableKey || currentTrackDetail?.entry.trackStableKey == stableKey {
+            prefetchCurrentTrack(stableKey: currentTrackStableKey, force: true)
+        }
     }
 
     // MARK: - Version Actions

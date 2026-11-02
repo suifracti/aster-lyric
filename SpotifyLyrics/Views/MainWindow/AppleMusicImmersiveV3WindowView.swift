@@ -536,6 +536,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .v3NightGentle(enabled: settings.v3NightGentleEnabled)
         .environment(\.v3CoverAccent, coverAccent ?? .white)
         .tint(.primary)
+        .task(id: state.liveTrackIdentity) {
+            library.prefetchCurrentTrack(stableKey: state.liveTrackIdentity?.stableKey)
+        }
         .task(id: compositionTrack.artworkURL) {
             guard let url = compositionTrack.artworkURL else { coverAccent = nil; coverLuminance = 0; return }
             let palette = await LyricIslandArtworkColors.palette(for: url)
@@ -578,6 +581,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         }
         .onChange(of: state.liveLyricsVersionID) { _, _ in
             isTranslationComparisonPresented = false
+            library.prefetchCurrentTrack(stableKey: state.liveTrackIdentity?.stableKey, force: true)
+        }
+        .onChange(of: state.translationVersions.map { $0.record.id }) { _, _ in
+            library.prefetchCurrentTrack(stableKey: state.liveTrackIdentity?.stableKey, force: true)
         }
     }
 

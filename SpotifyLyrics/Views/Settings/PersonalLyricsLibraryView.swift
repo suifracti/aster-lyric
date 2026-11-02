@@ -471,6 +471,7 @@ public struct PersonalLibraryTrackDetailView: View {
     let stableKey: String
     var compact = false
     var showsActions = false
+    var usesCurrentTrackDetail = false
     var beforePresentSheet: (() -> Void)?
     @State private var selectedSection: VersionSection = .all
 
@@ -481,7 +482,8 @@ public struct PersonalLibraryTrackDetailView: View {
 
     public var body: some View {
         Group {
-            if let detail = service.selectedTrackDetail, detail.entry.trackStableKey == stableKey {
+            if let detail = usesCurrentTrackDetail ? service.currentDetail(for: stableKey) : service.selectedTrackDetail,
+               usesCurrentTrackDetail || detail.entry.trackStableKey == stableKey {
                 let lyricsVersions = detail.lyricsVersions.sorted { lhs, rhs in
                     if lhs.isCurrent != rhs.isCurrent { return lhs.isCurrent }
                     return lhs.updatedAt > rhs.updatedAt
@@ -583,7 +585,7 @@ public struct PersonalLibraryTrackDetailView: View {
             }
         }
         .task(id: stableKey) {
-            service.selectTrack(stableKey: stableKey)
+            if !usesCurrentTrackDetail { service.selectTrack(stableKey: stableKey) }
         }
     }
 
@@ -732,7 +734,8 @@ public struct PersonalLibraryTrackDetailView: View {
     private func timingVersionCard(_ tm: PersonalTimingVersionItem, entry: PersonalLyricsLibraryEntry) -> some View {
         LibraryVersionRow(kind: "timing", id: tm.id,
             title: librarySourceName(tm.source), date: tm.createdAt,
-            lineCount: service.selectedTrackDetail?.lyricsVersions.first(where: { $0.id == tm.lyricsVersionID })?.lineCount ?? 0,
+            lineCount: (usesCurrentTrackDetail ? service.currentDetail(for: stableKey) : service.selectedTrackDetail)?
+                .lyricsVersions.first(where: { $0.id == tm.lyricsVersionID })?.lineCount ?? 0,
             isCurrent: tm.isCurrent, hasMenu: false, busy: service.revisionBusy,
             preview: { presentSheet { service.previewVersion(lyricsID: tm.lyricsVersionID, entry: entry, timingID: tm.id) } },
             edit: { presentSheet { service.beginTimingRevision(version: tm, entry: entry) } },

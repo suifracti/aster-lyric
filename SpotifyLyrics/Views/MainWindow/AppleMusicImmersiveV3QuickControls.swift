@@ -33,6 +33,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
                         .font(.caption).foregroundStyle(.secondary)
                     PersonalLibraryTrackDetailView(service: library,
                         stableKey: state.liveTrackIdentity?.stableKey ?? "", compact: true,
+                        usesCurrentTrackDetail: true,
                         beforePresentSheet: beforePresentSheet)
                         .environmentObject(state)
 
@@ -76,7 +77,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
         .disclosureGroupStyle(V3PanelDisclosureStyle())
         .task(id: state.liveTrackIdentity) {
             if panel == .library, let key = state.liveTrackIdentity?.stableKey {
-                library.selectTrack(stableKey: key)
+                library.prefetchCurrentTrack(stableKey: key)
             }
         }
     }
