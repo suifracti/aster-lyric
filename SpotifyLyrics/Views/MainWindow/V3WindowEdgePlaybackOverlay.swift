@@ -20,6 +20,7 @@ struct V3WindowEdgePlaybackOverlay: View {
     @State private var edgeInteraction = V3WindowEdgeInteractionState()
     private struct RailHover: Equatable { let point: CGPoint; let fraction: Double }
     @State private var railHover: RailHover?
+    @State private var nearEdge: V3WindowEdgeControlPositioner.Edge?
     @State private var scrubbingPill = false
     @State private var pointerOverToolbar = false
     @State private var draftFraction: Double?
@@ -36,6 +37,12 @@ struct V3WindowEdgePlaybackOverlay: View {
         return edgeInteraction.isVisible && edgeInteraction.pointerInside && !suppressControls && !pointerOverToolbar
     }
     private var animatesColor: Bool { colorMode == "flow" && !reduceMotion && state.isPlaying && windowVisible }
+    private var displayedNearEdge: V3WindowEdgeControlPositioner.Edge? {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--edge-rail-inset") { return .top }
+#endif
+        return nearEdge
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -161,6 +168,12 @@ struct V3WindowEdgePlaybackOverlay: View {
         // SwiftUI state, so idle/lyric-region mouse motion does not redraw views.
         let next = edgeInteraction.updating(point: point, size: size, dragging: dragging, toolbarBounds: toolbarBounds)
         if next != edgeInteraction { edgeInteraction = next }
+        let distances: [(V3WindowEdgeControlPositioner.Edge, CGFloat)] = point.map {
+            [(.top, $0.y), (.right, size.width - $0.x), (.bottom, size.height - $0.y), (.left, $0.x)]
+        } ?? []
+        let nearest = distances.min { $0.1 < $1.1 }
+        let newEdge = nearest.flatMap { $0.1 <= 48 ? $0.0 : nil }
+        if nearEdge != newEdge { nearEdge = newEdge }
         let overToolbar = point.map { toolbarExclusion.contains($0) } ?? false
         if pointerOverToolbar != overToolbar { pointerOverToolbar = overToolbar }
         var hover: RailHover?
@@ -174,6 +187,7 @@ struct V3WindowEdgePlaybackOverlay: View {
 
     private func clearPointer() {
         railHover = nil
+        nearEdge = nil
         pointerOverToolbar = false
         let next = edgeInteraction.hiding()
         if next != edgeInteraction { edgeInteraction = next }
@@ -256,7 +270,8 @@ struct V3WindowEdgePlaybackOverlay: View {
         let color = accent(at: date, songHue: songHue)
         return ZStack(alignment: .topLeading) {
             V3NativeProgressRail(clock: state.presentationClock, draft: draftFraction,
-                active: windowVisible, color: color, highlighted: railHover != nil)
+                active: windowVisible, color: color, highlighted: railHover != nil,
+                nearEdge: displayedNearEdge, reduceMotion: reduceMotion)
                 .allowsHitTesting(false).accessibilityHidden(true)
             if let hover = scrubbingPill ? draftFraction.map({ RailHover(point: pillCenter, fraction: $0) }) : railHover {
                 Text(Self.timeText(hover.fraction * state.currentTrack.duration))
@@ -341,10 +356,10 @@ struct V3WindowEdgeHitBand: Shape {
     func path(in rect: CGRect) -> Path {
         let outer = rect.insetBy(dx: 6, dy: 6)
         var path = Path()
-        path.addRect(CGRect(x: outer.minX, y: outer.minY, width: outer.width, height: 14))
-        path.addRect(CGRect(x: outer.minX, y: outer.maxY - 14, width: outer.width, height: 14))
-        path.addRect(CGRect(x: outer.minX, y: outer.minY, width: 14, height: outer.height))
-        path.addRect(CGRect(x: outer.maxX - 14, y: outer.minY, width: 14, height: outer.height))
+        path.addRect(CGRect(x: outer.minX, y: outer.minY, width: outer.width, height: 20))
+        path.addRect(CGRect(x: outer.minX, y: outer.maxY - 20, width: outer.width, height: 20))
+        path.addRect(CGRect(x: outer.minX, y: outer.minY, width: 20, height: outer.height))
+        path.addRect(CGRect(x: outer.maxX - 20, y: outer.minY, width: 20, height: outer.height))
         return path
     }
 }
@@ -572,16 +587,22 @@ private struct V3NativeProgressRail: NSViewRepresentable {
     let active: Bool
     let color: Color
     let highlighted: Bool
+    let nearEdge: V3WindowEdgeControlPositioner.Edge?
+    let reduceMotion: Bool
     func makeNSView(context: Context) -> V3EdgeRailView { V3EdgeRailView() }
     func updateNSView(_ view: V3EdgeRailView, context: Context) {
         view.configure(clock: clock, draft: draft, active: active,
-                       color: NSColor(color).cgColor, highlighted: highlighted)
+                       color: NSColor(color).cgColor, highlighted: highlighted,
+                       nearEdge: nearEdge, reduceMotion: reduceMotion)
     }
 }
 
 final class V3EdgeRailView: NSView {
     let progressLayer = CAShapeLayer()
-    private let trackLayer = CAShapeLayer()
+    private let trackLayers = (0..<4).map { _ in CAShapeLayer() }
+    private var progressLayers: [CAShapeLayer] = []
+    private let edges: [V3WindowEdgeControlPositioner.Edge] = [.top, .right, .bottom, .left]
+    private var nearEdge: V3WindowEdgeControlPositioner.Edge?
     private var clock: LyricsPresentationClock?
     private var draft: Double?
     private var active = false
@@ -589,9 +610,11 @@ final class V3EdgeRailView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        for shape in [trackLayer, progressLayer] {
+        progressLayers = [progressLayer] + (0..<3).map { _ in CAShapeLayer() }
+        for shape in trackLayers + progressLayers {
             shape.fillColor = nil
             shape.lineCap = .round
+            shape.mask = CAShapeLayer()
             layer?.addSublayer(shape)
         }
     }
@@ -599,44 +622,86 @@ final class V3EdgeRailView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override func layout() {
         super.layout()
+        updateGeometry(animated: false, reduceMotion: false)
+    }
+    private func updateGeometry(animated: Bool, reduceMotion: Bool) {
+        let path = V3WindowEdgeRoundedRectShape(nearEdge: nearEdge, cornerRadius: 12).path(in: bounds).cgPath
+        let corners = [CGPoint(x: bounds.minX, y: bounds.minY), CGPoint(x: bounds.maxX, y: bounds.minY),
+                       CGPoint(x: bounds.maxX, y: bounds.maxY), CGPoint(x: bounds.minX, y: bounds.maxY)]
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        let path = V3WindowEdgeRoundedRectShape(inset: 1.5, cornerRadius: 12).path(in: bounds).cgPath
-        for shape in [trackLayer, progressLayer] { shape.frame = bounds; shape.path = path }
+        for index in edges.indices {
+            let maskPath = CGMutablePath()
+            maskPath.move(to: CGPoint(x: bounds.midX, y: bounds.midY))
+            maskPath.addLine(to: corners[index])
+            maskPath.addLine(to: corners[(index + 1) % corners.count])
+            maskPath.closeSubpath()
+            for (shape, normalWidth) in [(trackLayers[index], CGFloat(2.1)), (progressLayers[index], CGFloat(2.2))] {
+                let oldPath = shape.presentation()?.path ?? shape.path
+                let oldWidth = shape.presentation()?.lineWidth ?? shape.lineWidth
+                shape.frame = bounds
+                shape.path = path
+                shape.lineWidth = nearEdge == edges[index] ? 4 : normalWidth
+                if let mask = shape.mask as? CAShapeLayer { mask.frame = bounds; mask.path = maskPath }
+                if animated, let oldPath {
+                    if reduceMotion {
+                        let fade = CABasicAnimation(keyPath: "opacity")
+                        fade.fromValue = 0.3; fade.toValue = 1; fade.duration = 0.16
+                        shape.add(fade, forKey: "railFade")
+                    } else {
+                        let move = CABasicAnimation(keyPath: "path")
+                        move.fromValue = oldPath; move.toValue = path; move.duration = 0.16
+                        move.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                        shape.add(move, forKey: "railPosition")
+                        let width = CABasicAnimation(keyPath: "lineWidth")
+                        width.fromValue = oldWidth; width.toValue = shape.lineWidth; width.duration = 0.16
+                        shape.add(width, forKey: "railWidth")
+                    }
+                }
+            }
+        }
         CATransaction.commit()
     }
-    func configure(clock: LyricsPresentationClock, draft: Double?, active: Bool, color: CGColor, highlighted: Bool) {
+    func configure(clock: LyricsPresentationClock, draft: Double?, active: Bool, color: CGColor, highlighted: Bool,
+                   nearEdge: V3WindowEdgeControlPositioner.Edge? = nil, reduceMotion: Bool = false) {
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        trackLayer.strokeColor = color.copy(alpha: 0.22)
-        progressLayer.strokeColor = color
-        trackLayer.lineWidth = highlighted ? 4 : 2.1
-        progressLayer.lineWidth = highlighted ? 4 : 2.2
+        for shape in trackLayers { shape.strokeColor = color.copy(alpha: 0.22) }
+        for shape in progressLayers { shape.strokeColor = color }
         CATransaction.commit()
+        if self.nearEdge != nearEdge {
+            self.nearEdge = nearEdge
+            updateGeometry(animated: true, reduceMotion: reduceMotion)
+        }
         guard self.clock != clock || self.draft != draft || self.active != active else { return }
         self.clock = clock; self.draft = draft; self.active = active
         let duration = clock.trackDuration
         let fraction = draft ?? (duration > 0 ? clock.playbackTime(at: ProcessInfo.processInfo.systemUptime) / duration : 0)
         let start = min(1, max(0, fraction))
         let running = active && clock.isPlaying && draft == nil && duration > 0 && start < 1
-        progressLayer.removeAnimation(forKey: "playhead")
+        for shape in progressLayers { shape.removeAnimation(forKey: "playhead") }
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        progressLayer.strokeEnd = running ? 1 : start
+        for shape in progressLayers { shape.strokeEnd = running ? 1 : start }
         CATransaction.commit()
         if running {
             let animation = CABasicAnimation(keyPath: "strokeEnd")
             animation.fromValue = start; animation.toValue = 1
             animation.duration = duration * (1 - start)
             animation.timingFunction = CAMediaTimingFunction(name: .linear)
-            progressLayer.add(animation, forKey: "playhead")
+            for shape in progressLayers { shape.add(animation, forKey: "playhead") }
         }
     }
 }
 
 private struct V3WindowEdgeRoundedRectShape: Shape {
-    let inset: CGFloat
+    let nearEdge: V3WindowEdgeControlPositioner.Edge?
     let cornerRadius: CGFloat
 
     func path(in rect: CGRect) -> Path {
-        let bounds = rect.insetBy(dx: inset, dy: inset)
+        let left: CGFloat = nearEdge == .left ? 14 : 1.5
+        let right: CGFloat = nearEdge == .right ? 14 : 1.5
+        let top: CGFloat = nearEdge == .top ? 14 : 1.5
+        let bottom: CGFloat = nearEdge == .bottom ? 14 : 1.5
+        let bounds = CGRect(x: rect.minX + left, y: rect.minY + top,
+                            width: rect.width - left - right, height: rect.height - top - bottom)
         guard bounds.width > 0, bounds.height > 0 else { return Path() }
 
         let radius = min(cornerRadius, min(bounds.width, bounds.height) / 2)
@@ -734,7 +799,7 @@ enum V3WindowEdgeControlPositioner {
         let availableShort = isVertical ? width : height
         let baseLong = isVertical ? baseSize.height : baseSize.width
         let baseShort = isVertical ? baseSize.width : baseSize.height
-        let scale = min(1, min(availableLong / baseLong, availableShort / baseShort))
+        let scale = max(0, min(1, min((availableLong - 52) / baseLong, (availableShort - 52) / baseShort)))
         let halfLength = (isVertical ? baseSize.height : baseSize.width) * scale / 2
         let halfThickness = (isVertical ? baseSize.width : baseSize.height) * scale / 2
 
@@ -742,23 +807,23 @@ enum V3WindowEdgeControlPositioner {
         switch edge {
         case .top:
             center = CGPoint(
-                x: clamped(point.x, lower: 88 + halfLength, upper: width - halfLength, fallback: width / 2),
-                y: clamped(31, lower: halfThickness + 2, upper: height - halfThickness - 2, fallback: height / 2)
+                x: clamped(point.x, lower: 88 + halfLength, upper: width - halfLength - 26, fallback: width / 2),
+                y: 26 + halfThickness
             )
         case .right:
             center = CGPoint(
-                x: clamped(width - 22, lower: halfThickness + 2, upper: width - halfThickness - 2, fallback: width / 2),
-                y: clamped(point.y, lower: halfLength + 2, upper: height - halfLength - 2, fallback: height / 2)
+                x: width - 26 - halfThickness,
+                y: clamped(point.y, lower: halfLength + 26, upper: height - halfLength - 26, fallback: height / 2)
             )
         case .bottom:
             center = CGPoint(
-                x: clamped(point.x, lower: halfLength + 2, upper: width - halfLength - 2, fallback: width / 2),
-                y: clamped(height - 22, lower: halfThickness + 2, upper: height - halfThickness - 2, fallback: height / 2)
+                x: clamped(point.x, lower: halfLength + 26, upper: width - halfLength - 26, fallback: width / 2),
+                y: height - 26 - halfThickness
             )
         case .left:
             center = CGPoint(
-                x: clamped(22, lower: halfThickness + 2, upper: width - halfThickness - 2, fallback: width / 2),
-                y: clamped(point.y, lower: 74 + halfLength, upper: height - halfLength - 2, fallback: height / 2)
+                x: 26 + halfThickness,
+                y: clamped(point.y, lower: 74 + halfLength, upper: height - halfLength - 26, fallback: height / 2)
             )
         }
 
@@ -775,29 +840,29 @@ enum V3WindowEdgeControlPositioner {
             return layout(size: size, exitPoint: CGPoint(x: point.x, y: height), preferredEdge: .bottom)
         }
         var candidates: [Layout] = []
-        let topSpace = blocked.minX - 88 - 2
+        let topSpace = blocked.minX - 88 - 1
         if topSpace > 0 {
             let base = CGSize(width: 378, height: 40)
-            let factor = min(1, topSpace / base.width, height / base.height)
+            let factor = min(1, topSpace / base.width, max(0, height - 52) / base.height)
             let half = base.width * factor / 2
             let x = clamped(point.x, lower: 88 + half, upper: blocked.minX - half - 1, fallback: 88 + half)
-            let candidate = Layout(edge: .top, center: CGPoint(x: x, y: 31), isVertical: false, baseSize: base, scale: factor)
+            let candidate = Layout(edge: .top, center: CGPoint(x: x, y: 26 + base.height * factor / 2), isVertical: false, baseSize: base, scale: factor)
             if !candidate.frame.intersects(blocked) { candidates.append(candidate) }
         }
-        let rightSpace = height - blocked.maxY - 3
+        let rightSpace = height - blocked.maxY - 27
         if rightSpace > 0 {
             let base = CGSize(width: 62, height: 286)
-            let factor = min(1, rightSpace / base.height, width / base.width)
+            let factor = min(1, rightSpace / base.height, max(0, width - 52) / base.width)
             let half = base.height * factor / 2
-            let y = clamped(point.y, lower: blocked.maxY + half + 1, upper: height - half - 2, fallback: height - half - 2)
-            let candidate = Layout(edge: .right, center: CGPoint(x: width - 22, y: y), isVertical: true, baseSize: base, scale: factor)
+            let y = clamped(point.y, lower: blocked.maxY + half + 1, upper: height - half - 26, fallback: height - half - 26)
+            let candidate = Layout(edge: .right, center: CGPoint(x: width - 26 - base.width * factor / 2, y: y), isVertical: true, baseSize: base, scale: factor)
             if !candidate.frame.intersects(blocked) { candidates.append(candidate) }
         }
         return candidates.min { a, b in
             let da = pow(a.center.x - point.x, 2) + pow(a.center.y - point.y, 2)
             let db = pow(b.center.x - point.x, 2) + pow(b.center.y - point.y, 2)
             return da < db
-        } ?? result
+        } ?? layout(size: size, exitPoint: CGPoint(x: point.x, y: height), preferredEdge: .bottom)
     }
 
     private static func clamped(_ value: CGFloat, lower: CGFloat, upper: CGFloat, fallback: CGFloat) -> CGFloat {

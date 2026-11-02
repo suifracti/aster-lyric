@@ -59,8 +59,8 @@ for size in [CGSize(width: 900, height: 700), CGSize(width: 700, height: 900),
              CGSize(width: 1210, height: 820)] {
     let rect = CGRect(origin: CGPoint(x: 11, y: 17), size: size)
     let path = V3WindowEdgeHitBand().path(in: rect)
-    for depth: CGFloat in [3, 5.99, 6.01, 12, 19.99, 20.01] {
-        let expected = depth > 6 && depth < 20
+    for depth: CGFloat in [3, 5.99, 6.01, 12, 19.99, 20.01, 25.99, 26.01] {
+        let expected = depth > 6 && depth < 26
         for point in [CGPoint(x: rect.midX, y: rect.minY + depth),
                       CGPoint(x: rect.midX, y: rect.maxY - depth),
                       CGPoint(x: rect.minX + depth, y: rect.midY),

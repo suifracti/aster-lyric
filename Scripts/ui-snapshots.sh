@@ -118,6 +118,7 @@ declare -a CASES=(
   "r9-classic-playing-dark|--classic v3ArtworkPresentation.classic.v1 --playing true --appearance dark --toolbar full"
   "edge-bright|--artwork white --scene coverPhoto --toolbar faint --edge-player-expanded"
   "edge-dark|--artwork dark --scene coverPhoto --toolbar faint --edge-player-expanded"
+  "r12-edge-rail-inset|--artwork white --scene coverPhoto --toolbar faint --edge-player-expanded --edge-rail-inset"
   "edge-vertical|--artwork white --scene coverPhoto --toolbar faint --edge-player-expanded --edge-player-vertical"
   "toolbar-faint|--toolbar faint"
   "toolbar-full|--toolbar full"

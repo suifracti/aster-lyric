@@ -53,6 +53,21 @@ final class PresentationSourceContractTests: XCTestCase {
     }
 
     @MainActor
+    func testApproachingTopMovesOnlyThatProgressRailInward() {
+        let view = V3EdgeRailView(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
+        view.layoutSubtreeIfNeeded()
+        let clock = LyricsPresentationClock(authoritativePosition: 30, receivedAtMonotonicTime: ProcessInfo.processInfo.systemUptime,
+            isPlaying: true, trackID: "current-song", trackDuration: 150)
+        view.configure(clock: clock, draft: nil, active: true, color: NSColor.white.cgColor,
+                       highlighted: false, nearEdge: .top)
+        let bounds = view.progressLayer.path!.boundingBoxOfPath
+        XCTAssertEqual(bounds.minY, 14, accuracy: 0.01)
+        XCTAssertEqual(bounds.minX, 1.5, accuracy: 0.01)
+        XCTAssertEqual(bounds.maxY, 698.5, accuracy: 0.01)
+        XCTAssertEqual(view.progressLayer.lineWidth, 4, accuracy: 0.01)
+    }
+
+    @MainActor
     func testOpenPanelAppearanceTracksApplicationAppearance() async {
         let previous = NSApp.appearance
         defer { NSApp.appearance = previous }
