@@ -4,6 +4,77 @@ import AppKit
 import Combine
 import os
 
+struct V3SegmentedPicker<Value: Hashable>: View {
+    let title: String
+    @Binding var selection: Value
+    let options: [(title: String, value: Value)]
+    var showsLabel = true
+    var height: CGFloat = 26
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hoveredIndex: Int?
+
+    init(_ title: String, selection: Binding<Value>, options: [(String, Value)],
+         showsLabel: Bool = true, height: CGFloat = 26) {
+        self.title = title
+        self._selection = selection
+        self.options = options
+        self.showsLabel = showsLabel
+        self.height = height
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if showsLabel { Text(title).fixedSize() }
+            GeometryReader { geometry in
+                let segmentWidth = max(0, (geometry.size.width - 4) / CGFloat(max(1, options.count)))
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.08))
+                    if let selected = options.firstIndex(where: { $0.value == selection }) {
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(Color.primary.opacity(0.16))
+                            .frame(width: segmentWidth, height: height - 4)
+                            .offset(x: 2 + CGFloat(selected) * segmentWidth)
+                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: selection)
+                    }
+                    HStack(spacing: 0) {
+                        ForEach(options.indices, id: \.self) { index in
+                            Button { selection = options[index].value } label: {
+                                Text(options[index].title)
+                                    .font(.system(size: 11, weight: selection == options[index].value ? .semibold : .regular))
+                                    .lineLimit(1).minimumScaleFactor(0.75)
+                                    .frame(width: segmentWidth, height: height - 4)
+                                    .background(hoveredIndex == index ? Color.primary.opacity(0.06) : .clear,
+                                                in: RoundedRectangle(cornerRadius: 5))
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .onKeyPress(.leftArrow) {
+                                let current = options.firstIndex { $0.value == selection } ?? index
+                                if current > 0 { selection = options[current - 1].value }
+                                return .handled
+                            }
+                            .onKeyPress(.rightArrow) {
+                                let current = options.firstIndex { $0.value == selection } ?? index
+                                if current + 1 < options.count { selection = options[current + 1].value }
+                                return .handled
+                            }
+                            .onHover { hovering in
+                                if hovering { hoveredIndex = index }
+                                else if hoveredIndex == index { hoveredIndex = nil }
+                            }
+                            .accessibilityAddTraits(selection == options[index].value ? .isSelected : [])
+                        }
+                    }
+                    .padding(.horizontal, 2)
+                }
+            }
+            .frame(height: height)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title)
+    }
+}
+
 private struct V3LyricsTimePopover: View {
     @ObservedObject var settings: AppSettingsStore
 
@@ -198,14 +269,10 @@ struct V3ThemeSelectorView: View {
             .buttonStyle(.plain)
             .onHover { hovering($0, scene: entry.scene, renderer: renderer) }
             if entry.isCoverPair {
-                Picker("背景", selection: Binding(
+                V3SegmentedPicker("背景", selection: Binding(
                     get: { settings.v3ArtworkPresentation == .classicGaussian ? 1 : 0 },
                     set: { chooseCoverMotion($0 == 1 ? .classicGaussian : .ambient) }
-                )) {
-                    Text("静止").tag(1)
-                    Text("流动").tag(0)
-                }
-                .pickerStyle(.segmented).controlSize(.mini).labelsHidden()
+                ), options: [("静止", 1), ("流动", 0)], showsLabel: false, height: 22)
                 .frame(width: 84)
                 .accessibilityIdentifier("v3.cover.motion")
             }
@@ -450,11 +517,8 @@ struct V3VisualControls {
     }
 
     var playbackPresentationControls: some View {
-        Picker("播放呈现", selection: $settings.v3PlaybackPresentation) {
-            ForEach(V3PlaybackPresentation.allCases) { mode in
-                Text(mode.title).tag(mode)
-            }
-        }.pickerStyle(.segmented)
+        V3SegmentedPicker("播放呈现", selection: $settings.v3PlaybackPresentation,
+                          options: V3PlaybackPresentation.allCases.map { ($0.title, $0) })
     }
 
     @ViewBuilder var backgroundMotionControls: some View {
@@ -479,13 +543,10 @@ struct V3VisualControls {
             if scene != .focusedLyrics && scene != .linerNotes {
                 sectionLabel("背景")
                 if !(scene == .flowingField && renderer == .classic) {
-                    Picker("取景方式", selection: Binding(
+                    V3SegmentedPicker("取景方式", selection: Binding(
                         get: { settings.v3BackgroundShowsCompleteArtwork(for: renderer) },
                         set: { settings.setV3BackgroundShowsCompleteArtwork($0, for: renderer) }
-                    )) {
-                        Text("铺满").tag(false)
-                        Text("尽量完整").tag(true)
-                    }.pickerStyle(.segmented)
+                    ), options: [("铺满", false), ("尽量完整", true)])
                     .help("背景取景不改变前景封面；可铺满裁切或保留完整内容。")
                     if showsExplanations {
                         Text(settings.v3BackgroundShowsCompleteArtwork(for: renderer)
@@ -528,11 +589,8 @@ struct V3VisualControls {
                     sizePresetButton("140%", val: 1.4)
                 }
                 if scene != .linerNotes {
-                    Picker("位置", selection: $settings.v3ArtworkPosition) {
-                        Text("居左").tag("left")
-                        Text("居中").tag("center")
-                        Text("居右").tag("right")
-                    }.pickerStyle(.segmented)
+                    V3SegmentedPicker("位置", selection: $settings.v3ArtworkPosition,
+                                      options: [("居左", "left"), ("居中", "center"), ("居右", "right")])
                 }
                 if scene == nil && renderer != .albumPoster && renderer != .stage && renderer != .lyricsOnly {
                     Toggle("隐藏播放信息时舒展封面", isOn: $settings.v3ExpandArtworkWhenDetailsHidden)
@@ -564,11 +622,10 @@ struct V3VisualControls {
             Toggle("大字模式", isOn: $settings.v3BigLineModeEnabled)
             HStack {
                 Text("显示")
-                Picker("显示方式", selection: displayBinding(\.listeningLayerPreset)) {
-                    ForEach(DisplayPreferences.ListeningLayerPreset.allCases.filter {
+                V3SegmentedPicker("显示方式", selection: displayBinding(\.listeningLayerPreset),
+                    options: DisplayPreferences.ListeningLayerPreset.allCases.filter {
                         $0 != .custom || settings.displayPreferences.listeningLayerPreset == .custom
-                    }) { preset in Text(preset.title).tag(preset) }
-                }.labelsHidden().pickerStyle(.segmented)
+                    }.map { ($0.title, $0) }, showsLabel: false)
             }
             HStack {
                 Toggle("原文", isOn: displayBinding(\.showOriginal))
@@ -579,21 +636,16 @@ struct V3VisualControls {
                 Text("原文与译文字号")
                 V3NumericSlider(value: displayDoubleBinding(\.fontSize), in: 14...42, step: 1, unit: "pt")
             }
-            Picker("对齐", selection: $settings.v3LyricsPosition) {
-                Text("跟随场景").tag("automatic")
-                Text("左").tag("left")
-                Text("居中").tag("center")
-                Text("右").tag("right")
-            }.pickerStyle(.segmented)
+            V3SegmentedPicker("对齐", selection: $settings.v3LyricsPosition,
+                              options: [("跟随场景", "automatic"), ("左", "left"), ("居中", "center"), ("右", "right")])
                 .help("跟随场景：当前使用" + (settings.v3ListeningScene == .coverPhoto ? "右侧阅读区" : settings.v3ArtworkPresentation == .stage ? "居中阅读区" : "左对齐"))
             VStack(alignment: .leading, spacing: 7) {
                 HStack {
                     Text("清晰度").font(.system(size: 12, weight: .medium))
                     Image(systemName: "info.circle").help("文字阴影只作用于歌词；柔和光晕随封面明暗调整。")
                 }
-                Picker("清晰度", selection: $settings.v3ReadingProtection) {
-                    ForEach(V3ReadingProtection.allCases) { value in Text(value.title).tag(value) }
-                }.pickerStyle(.segmented).labelsHidden()
+                V3SegmentedPicker("清晰度", selection: $settings.v3ReadingProtection,
+                                  options: V3ReadingProtection.allCases.map { ($0.title, $0) }, showsLabel: false)
                 Toggle("亮封面自动加阴影", isOn: $settings.v3BrightCoverShadowEnabled)
                     .font(.system(size: 12))
                     .help("封面、舞台遇亮封面且清晰度为关闭时自动加文字阴影；关闭后「关闭」保持完全不加。")

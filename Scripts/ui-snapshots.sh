@@ -124,6 +124,7 @@ declare -a CASES=(
   "r12-cover-left|--scene originalAmbient --position left --scale 0.8 --toolbar full"
   "r12-cover-center|--scene originalAmbient --position center --scale 1.4 --toolbar full"
   "r12-cover-right|--scene originalAmbient --position right --scale 1.4 --toolbar full"
+  "r12-picture-position|--scene originalAmbient --panel pin:picture --panel-scroll-bottom --toolbar full"
   "toolbar-faint|--toolbar faint"
   "toolbar-full|--toolbar full"
   "lyric-notice|--toolbar notice"

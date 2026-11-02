@@ -601,6 +601,20 @@ private struct ExperienceFixtureRoot: View {
                         try? await Task.sleep(for: .milliseconds(300))
                     }
                 }
+                if ProcessInfo.processInfo.arguments.contains("--panel-scroll-bottom"),
+                   let owner = targetWindow,
+                   let tool = NSApp.windows.first(where: { $0 !== owner && $0.isVisible && $0.frame.width > 120 && $0.frame.height > 120 }),
+                   let content = tool.contentView {
+                    func scrollViews(_ view: NSView) -> [NSScrollView] {
+                        (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
+                    }
+                    if let scroll = scrollViews(content).first, let document = scroll.documentView {
+                        let y = document.isFlipped ? max(0, document.bounds.height - scroll.contentView.bounds.height) : 0
+                        scroll.contentView.scroll(to: CGPoint(x: 0, y: y))
+                        scroll.reflectScrolledClipView(scroll.contentView)
+                        try? await Task.sleep(for: .milliseconds(300))
+                    }
+                }
                 if ProcessInfo.processInfo.arguments.contains("--version-preview") {
                     NotificationCenter.default.post(name: .v3ToolbarDebugCommand, object: nil,
                         userInfo: ["command": "version-preview"])

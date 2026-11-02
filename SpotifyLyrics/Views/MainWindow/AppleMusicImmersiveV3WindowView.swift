@@ -169,8 +169,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
     @State private var isWindowMenuPresented = false
     @State private var showsAIReadingControls = false
-    @State private var hoveredAIReadingControls: Bool?
-    private var displaysAIReadingControls: Bool { hoveredAIReadingControls ?? showsAIReadingControls }
+    private var displaysAIReadingControls: Bool { showsAIReadingControls }
     @State private var confirmsAIReadingRequest = false
     @State private var isTranslationComparisonPresented = false
     @State private var isVersionPickerPresented = false
@@ -1573,13 +1572,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         VStack(alignment: .leading, spacing: 12) {
             if !compact { Label("AI 与读音", systemImage: "sparkles").font(.headline) }
             HStack(spacing: 8) {
-                Text("功能").font(.subheadline)
-                HStack(spacing: 2) {
-                    aiFeatureTab("翻译", reading: false)
-                    aiFeatureTab("读音", reading: true)
-                }
-                .padding(2)
-                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+                V3SegmentedPicker("功能", selection: $showsAIReadingControls,
+                                  options: [("翻译", false), ("读音", true)])
+                    .frame(width: 140)
                 Spacer()
             }
             Divider()
@@ -1595,11 +1590,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     }
                     Button("不显示") { state.selectNoTranslationVersion() }
                 } label: {
-                    HStack(spacing: 4) {
-                        Text(state.translationVersions.isEmpty ? "暂无译文" :
-                             state.selectedTranslation.map(translationVersionTitle) ?? "不显示")
-                        Image(systemName: "chevron.up.chevron.down")
-                    }
+                    Text(state.translationVersions.isEmpty ? "暂无译文" :
+                         state.selectedTranslation.map(translationVersionTitle) ?? "不显示")
                 }
                 .disabled(state.translationVersions.isEmpty)
             }
@@ -1678,27 +1670,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         let name = version.record.translationSourceTitle
         guard state.translationVersions.filter({ $0.record.translationSourceTitle == name }).count > 1 else { return name }
         return name + " · " + version.record.createdAt.formatted(date: .abbreviated, time: .shortened)
-    }
-
-    private func aiFeatureTab(_ title: String, reading: Bool) -> some View {
-        Button {
-            showsAIReadingControls = reading
-            hoveredAIReadingControls = nil
-        } label: {
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(displaysAIReadingControls == reading ? Color.white : Color.primary)
-                .frame(width: 48, height: 24)
-                .background(displaysAIReadingControls == reading ? Color.accentColor : .clear,
-                            in: RoundedRectangle(cornerRadius: 5))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { inside in
-            if inside { hoveredAIReadingControls = reading }
-            else if hoveredAIReadingControls == reading { hoveredAIReadingControls = nil }
-        }
-        .accessibilityAddTraits(showsAIReadingControls == reading ? .isSelected : [])
     }
 
     private func aiReadingControls(compact: Bool) -> some View {
@@ -1867,7 +1838,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     /// Side effects of any toolbar mode change, kept in one place.
     private func toolbarModeChanged(from old: V3ToolbarModel.Mode, to new: V3ToolbarModel.Mode) {
         hoveredStyle = nil
-        if toolbar.hoverPanel == nil || toolbar.hoverPanel == .more { hoveredAIReadingControls = nil }
         if new != .idle {
             isWindowMenuPresented = false
             librarySearch.dismiss()
