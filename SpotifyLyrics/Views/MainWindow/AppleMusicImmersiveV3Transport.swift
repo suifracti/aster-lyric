@@ -291,7 +291,10 @@ struct AppleMusicImmersiveV3TransportControls: View {
             .frame(maxWidth: progressMaxWidth ?? .infinity)
             .padding(.horizontal, 2)
 
-            V3PlaybackButtons(state: state)
+            ViewThatFits(in: .horizontal) {
+                V3PlaybackButtons(state: state)
+                V3PlaybackButtons(state: state, compact: true)
+            }
                 .frame(maxWidth: progressMaxWidth ?? .infinity, alignment: .center)
                 .padding(.top, 2)
         }
@@ -378,34 +381,35 @@ struct StageHUDView: View {
 
 private struct V3PlaybackButtons: View {
     @V3ContentPlaybackState var state: PlaybackState
+    var compact = false
     @State private var showsPlaylistPicker = false
 
     var body: some View {
-        HStack(spacing: 12) {
-            V3PlayerModeButton(state: state, shuffle: true)
+        HStack(spacing: compact ? 4 : 12) {
+            V3PlayerModeButton(state: state, shuffle: true, size: compact ? .compact : .regular)
             heartButton
             if state.canPickPlaylists {
-                V3TransportIconButton(systemImage: "text.badge.plus", label: "添加到歌单", enabled: true) {
+                V3TransportIconButton(systemImage: "text.badge.plus", label: "添加到歌单", enabled: true, size: compact ? .compact : .regular) {
                     showsPlaylistPicker = true
                 }
                 .v3ToolPopover(isPresented: $showsPlaylistPicker, onAnchorPress: { showsPlaylistPicker.toggle() }, width: 380) {
                     PlaylistPickerPopover(model: state.playlistPicker, onClose: { showsPlaylistPicker = false })
                 }
             }
-            V3TransportIconButton(systemImage: "backward.fill", label: "上一首", enabled: state.canControlSpotify) {
+            V3TransportIconButton(systemImage: "backward.fill", label: "上一首", enabled: state.canControlSpotify, size: compact ? .compact : .regular) {
                 state.previousTrack()
             }
             V3TransportIconButton(
                 systemImage: state.isPlaying ? "pause.fill" : "play.fill",
                 label: state.isPlaying ? "暂停" : "播放",
-                enabled: state.canInteractWithPlayback, prominent: true
+                enabled: state.canInteractWithPlayback, prominent: true, size: compact ? .compact : .regular
             ) {
                 state.togglePlayPause()
             }
-            V3TransportIconButton(systemImage: "forward.fill", label: "下一首", enabled: state.canControlSpotify) {
+            V3TransportIconButton(systemImage: "forward.fill", label: "下一首", enabled: state.canControlSpotify, size: compact ? .compact : .regular) {
                 state.nextTrack()
             }
-            V3PlayerModeButton(state: state, shuffle: false)
+            V3PlayerModeButton(state: state, shuffle: false, size: compact ? .compact : .regular)
         }
         .fixedSize()
     }
@@ -413,7 +417,7 @@ private struct V3PlaybackButtons: View {
     private var heartButton: some View {
         V3TransportIconButton(systemImage: state.isTrackLiked == true ? "heart.fill" : "heart",
                               label: state.isTrackLiked == true ? "取消喜欢 (S)" : "加入喜欢 (S)",
-                              enabled: state.hasLiveTrack) {
+                              enabled: state.hasLiveTrack, size: compact ? .compact : .regular) {
             state.toggleTrackLike()
         }
     }
@@ -454,13 +458,14 @@ private struct V3TransportIconButton: View {
     let label: String
     let enabled: Bool
     var prominent = false
+    var size: IslandTransportButton.Size = .regular
     let action: () -> Void
 
     var body: some View {
         // Same look as the window-edge and menu-bar transport.
         IslandTransportButton(
             systemImage: systemImage, label: label, enabled: enabled,
-            primary: prominent, tint: .white, glyph: .white, action: action
+            primary: prominent, size: size, tint: .white, glyph: .white, action: action
         )
     }
 }

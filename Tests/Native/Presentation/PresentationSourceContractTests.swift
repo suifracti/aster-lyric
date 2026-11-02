@@ -118,6 +118,15 @@ final class PresentationSourceContractTests: XCTestCase {
         XCTAssertTrue(path.contains(CGPoint(x: 450, y: 12)))
     }
 
+    func testForegroundPlayerCardTracksCoverWidthWithMinimum() {
+        let large = V3ResponsiveGeometry.adaptiveSplitMetrics(canvasSize: CGSize(width: 1440, height: 900), artworkScale: 1.4)
+        XCTAssertGreaterThan(large.coverSize, 300)
+        XCTAssertEqual(V3ResponsiveGeometry.foregroundCardWidth(coverSize: large.coverSize), large.coverSize)
+        let small = V3ResponsiveGeometry.adaptiveSplitMetrics(canvasSize: CGSize(width: 1152, height: 720), artworkScale: 0.8)
+        XCTAssertLessThan(small.coverSize, 300)
+        XCTAssertEqual(V3ResponsiveGeometry.foregroundCardWidth(coverSize: small.coverSize), 300)
+    }
+
     func testBigLineShowsTheWholeUnmeiPhraseWithinTwoLinesAndTheColumnHeight() {
         let phrase = "ずっと前から決めてたんだね"
         for width: CGFloat in [280, 600] {

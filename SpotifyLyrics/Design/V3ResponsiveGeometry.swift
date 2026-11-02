@@ -180,6 +180,10 @@ enum V3ResponsiveGeometry {
         return min(upperBound, max(lowerBound, desired))
     }
 
+    static func foregroundCardWidth(coverSize: CGFloat) -> CGFloat {
+        max(300, coverSize)
+    }
+
     static func splitColumns(
         containerWidth: CGFloat,
         requestedArtworkRatio: CGFloat,

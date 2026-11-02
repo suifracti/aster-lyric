@@ -1055,7 +1055,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         )
         let regime = V3ResponsiveGeometry.layoutRegime(canvasSize: geometry.size)
         let position = compositionArtworkPosition.isEmpty ? settings.v3ArtworkPosition : compositionArtworkPosition
-        let trackAlignment: HorizontalAlignment = position == "center" ? .center : .leading
+        let trackAlignment: HorizontalAlignment = position == "center" ? .center : position == "right" ? .trailing : .leading
         let isWide = regime == .wide
         let isCompact = regime == .compact
         let progressDensity: AppleMusicImmersiveV3ProgressDensity = isWide
@@ -1177,7 +1177,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             width: split.artwork,
             availableHeight: availableHeight,
             coverSize: coverSize,
-            alignment: .center,
+            alignment: compositionArtworkPosition == "center" ? .center : compositionArtworkPosition == "right" ? .trailing : .leading,
             compact: false,
             topChromeInset: 44,
             progressDensity: regime == .wide ? .wide : .medium
@@ -1328,6 +1328,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             compact: compact
         )
         let alignmentKey = alignment == .center ? "center" : (alignment == .trailing ? "right" : "left")
+        let cardWidth = showsForegroundArtwork ? V3ResponsiveGeometry.foregroundCardWidth(coverSize: coverSize) : width
+        let textAlignment: HorizontalAlignment = alignment == .center ? .center : .leading
+        let columnAlignment: Alignment = alignment == .center ? .center : alignment == .trailing ? .trailing : .leading
         let centersHiddenCover = expandsHiddenArtwork
         let verticalOffset = centersHiddenCover ? V3ResponsiveGeometry.hiddenCoverVerticalOffset(
             containerHeight: availableHeight,
@@ -1337,7 +1340,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             compact: compact,
             topChromeInset: topChromeInset
         ) : 0
-        return VStack(alignment: alignment, spacing: 0) {
+        return VStack(alignment: .center, spacing: 0) {
             if showsForegroundArtwork {
                 ArtworkView(
                     track: state.currentTrack,
@@ -1348,9 +1351,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 )
                 // Scale the artwork itself, preserving the column's bounds.
                 .scaleEffect(visualScale)
-                .frame(maxWidth: width, alignment: alignment == .center ? .center : .leading)
+                .frame(width: cardWidth, alignment: .center)
                 .offset(x: centersHiddenCover ? V3ResponsiveGeometry.ambientHiddenCoverOffset(
-                    containerWidth: width,
+                    containerWidth: cardWidth,
                     coverSize: coverSize,
                     scale: visualScale,
                     alignment: alignmentKey
@@ -1361,28 +1364,29 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 Spacer().frame(height: compact ? LyricsDesignTokens.Spacing.lg - 2 : LyricsDesignTokens.Spacing.xl)
 
                 trackPlaybackDetails(
-                    width: max(1, width - 28),
+                    width: max(1, cardWidth - (compact ? 28 : 32)),
                     titleSize: min(compact ? 26 : 30, max(compact ? 18 : 22, coverSize * 0.075)),
-                    alignment: alignment, progressDensity: progressDensity
+                    alignment: textAlignment, progressDensity: progressDensity
                 )
                 .padding(.horizontal, compact ? 14 : 16)
                 .padding(.vertical, compact ? 12 : 14)
+                .frame(width: cardWidth)
                 .background(V3PlaybackSurface(cornerRadius: 18))
                 .modifier(playbackVisibility)
             } else {
                 Spacer(minLength: 0)
 
-                VStack(alignment: alignment, spacing: compact ? 10 : 14) {
+                VStack(alignment: textAlignment, spacing: compact ? 10 : 14) {
                     TrackMetadataView(
                         track: state.currentTrack,
                         titleSize: compact ? 22 : 26,
-                        alignment: alignment,
+                        alignment: textAlignment,
                         presentation: .v3Immersive
                     )
 
                     AppleMusicImmersiveV3TransportControls(
                         state: state,
-                        alignment: alignment,
+                        alignment: textAlignment,
                         progressDensity: progressDensity,
                         progressMaxWidth: progressDensity == .small
                             ? min(width, LyricsDesignTokens.Progress.smallMaxWidth)
@@ -1391,7 +1395,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
                 .padding(.horizontal, compact ? 14 : 16)
                 .padding(.vertical, compact ? 12 : 14)
-                .frame(maxWidth: width, alignment: alignment == .center ? .center : .leading)
+                .frame(maxWidth: width, alignment: columnAlignment)
                 .background(V3PlaybackSurface(cornerRadius: 18))
                 .modifier(playbackVisibility)
             }
@@ -1407,7 +1411,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .frame(
             width: width,
             height: max(1, availableHeight),
-            alignment: .center
+            alignment: columnAlignment
         )
     }
 

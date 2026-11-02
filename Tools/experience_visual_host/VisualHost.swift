@@ -294,7 +294,6 @@ struct ExperienceVisualHostApp: App {
             preferences.listeningLayerPreset = preset
             settings.displayPreferences = preferences
         }
-        settings.v3ArtworkPosition=ExperienceArguments.value("--position",fallback:"left")
         let lyricPosition = ExperienceArguments.value("--lyric-position", fallback: "automatic")
         settings.v3LyricsPosition = lyricPosition
         precondition(AppSettingsStore(defaults: defaults).v3LyricsPosition == lyricPosition)
@@ -309,6 +308,7 @@ struct ExperienceVisualHostApp: App {
         } else if let classic = V3ArtworkPresentation(rawValue: ExperienceArguments.value("--classic", fallback: "")) {
             settings.selectLegacyV3Presentation(classic)
         }
+        settings.v3ArtworkPosition=ExperienceArguments.value("--position",fallback:"left")
         if let scale=Double(ExperienceArguments.value("--scale",fallback:"")) { settings.v3ArtworkSizeScale=scale }
         if let blur=Double(ExperienceArguments.value("--blur",fallback:"")) { settings.v3BackdropBlurRadius=blur }
         let provider=ExperiencePlaybackProvider(artwork:ExperienceArtwork.make())
