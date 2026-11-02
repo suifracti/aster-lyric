@@ -596,9 +596,11 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 - Time is 10 pt monospaced, elapsed at 90% and total at 55%, never truncated.
 - The pill's short progress track from Round 5 is removed. The rail does this job now.
 
-**Foreground cover position.** A left-aligned cover looks off-balance above the wider player card.
-- The default position for scenes with a foreground cover above the player card is 居中: the cover and the card share one centre line, at every size and with or without the card.
-- 居左 and 居右 stay available. A saved position is not changed.
+**Foreground cover and player card.** The problem is the width mismatch: the cover is narrower than the card, so no alignment looks settled, and 居右 leaves the cover on the column's left.
+- The player card is always exactly as wide as the cover, so both edges line up. The cover size slider drives both.
+- The card's minimum width is 300 pt. If the cover is smaller than that, the cover is centred over the card.
+- 居左 / 居中 / 居右 move the whole column. Title text is centred in 居中 and left-aligned in the other two.
+- The default stays as it is, and a saved position is not changed.
 
 **Segmented controls in tool panels.** The native control's highlight shifts by itself inside the glass panels.
 - All segmented pickers in the tool panels use one shared `V3SegmentedPicker`.
