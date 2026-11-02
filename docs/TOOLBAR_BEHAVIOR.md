@@ -584,7 +584,7 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 **Edge player: reaching the rail.** The pill sits about 10 pt from the edge, so only a thin strip of the 6–20 pt hit band is free, right beside macOS's resize zone.
 - The pill keeps 26 pt of clear space from the window edge on every side. Nothing of it sits on the hit band.
 - The hit band becomes 6–26 pt.
-- When the pointer comes within 48 pt of an edge, the rail steps inward with it: that side's line moves to 14 pt from the edge at 4 pt thick, over 160 ms. It returns when the pointer leaves. Reduce Motion uses a fade.
+- When the pointer comes within 48 pt of an edge, that side of the rail moves to 14 pt from the edge and the whole rail thickens to 4 pt, over 160 ms. It returns when the pointer leaves. Reduce Motion uses a fade.
 - The pill stays visible while the pointer crosses the band.
 - Click and drag on the band work as before, with the time label following the pointer.
 
