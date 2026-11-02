@@ -375,7 +375,7 @@ struct LyricIslandSceneSettingsPicker: View {
 /// are bare glyphs that gain a soft halo on hover. Hit targets never shrink
 /// below the visible disc.
 struct IslandTransportButton: View {
-    enum Size { case regular, compact }
+    enum Size { case regular, compact, edge }
 
     let systemImage: String
     let label: String
@@ -395,6 +395,7 @@ struct IslandTransportButton: View {
         switch size {
         case .regular: return primary ? 44 : 36
         case .compact: return primary ? 32 : 30
+        case .edge: return primary ? 30 : 28
         }
     }
 
@@ -402,6 +403,7 @@ struct IslandTransportButton: View {
         switch size {
         case .regular: return primary ? 17 : 15
         case .compact: return primary ? 13 : 12
+        case .edge: return 13
         }
     }
 

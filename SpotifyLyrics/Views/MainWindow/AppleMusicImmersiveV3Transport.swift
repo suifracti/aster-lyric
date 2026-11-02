@@ -431,7 +431,7 @@ struct V3PlayerModeButton: View {
     /// treatment, or a connected player with an unreadable state looks off.
     private var glyphColor: Color {
         if active { return accent }
-        return unknown ? .white.opacity(0.68) : .white.opacity(0.45)
+        return unknown ? .white.opacity(0.68) : .white.opacity(size == .edge ? 0.7 : 0.45)
     }
     var body: some View {
         IslandTransportButton(
