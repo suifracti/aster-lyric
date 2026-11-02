@@ -1572,6 +1572,26 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 Spacer()
             }
             Divider()
+            HStack {
+                Text("当前译文")
+                Spacer()
+                Menu {
+                    Button("自动（推荐）") { state.restoreRecommendedTranslation() }
+                    ForEach(state.translationVersions, id: \.record.id) { version in
+                        Button(translationVersionTitle(version)) {
+                            state.selectTranslation(versionID: version.record.id)
+                        }
+                    }
+                    Button("不显示") { state.selectNoTranslationVersion() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(state.translationVersions.isEmpty ? "暂无译文" :
+                             state.selectedTranslation.map(translationVersionTitle) ?? "不显示")
+                        Image(systemName: "chevron.up.chevron.down")
+                    }
+                }
+                .disabled(state.translationVersions.isEmpty)
+            }
             TranslationProviderControls(settings: settings).modelPicker
             TranslationProviderControls(settings: settings).reasoningPicker
             if displaysAIReadingControls {
@@ -1619,17 +1639,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     Button("采用") { state.adoptTranslation(versionID: candidate.record.id) }
                 }
             }
-            Menu("已保存的译文") {
-                Button("无译文") { state.selectNoTranslationVersion() }
-                ForEach(state.translationVersions, id: \.record.id) { version in
-                    Button((version.record.id == state.selectedTranslation?.record.id ? "✓ " : "")
-                           + version.record.translationSourceTitle + " · "
-                           + version.record.createdAt.formatted(date: .numeric, time: .shortened)) {
-                        state.selectTranslation(versionID: version.record.id)
-                    }
-                }
-                Button("恢复推荐") { state.restoreRecommendedTranslation() }
-            }
             Button {
                 isTranslationComparisonPresented = true
             } label: {
@@ -1652,6 +1661,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         }
         .onChange(of: state.liveLyricsVersionID) { _, _ in confirmsAIReadingRequest = false }
         .onChange(of: state.liveTrackIdentity) { _, _ in confirmsAIReadingRequest = false }
+    }
+
+    private func translationVersionTitle(_ version: StoredTranslationVersion) -> String {
+        let name = version.record.translationSourceTitle
+        guard state.translationVersions.filter({ $0.record.translationSourceTitle == name }).count > 1 else { return name }
+        return name + " · " + version.record.createdAt.formatted(date: .abbreviated, time: .shortened)
     }
 
     private func aiFeatureTab(_ title: String, reading: Bool) -> some View {
