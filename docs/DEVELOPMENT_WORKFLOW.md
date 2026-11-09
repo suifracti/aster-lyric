@@ -1,52 +1,33 @@
-# Spotify Lyrics｜轻量开发参考
+# Aster · Lyric｜轻量开发参考
 
-> 这份文件只指导现有原生工程的安全操作，**不是另一份计划或任务清单**。先读 Obsidian Vault `03-项目与工程/Spotify Lyrics/README.md` → `Handoff.md`（唯一当前活动任务）→ 必要时 `Decisions.md`（长期约束）。
+本页只指导现有原生工程操作，不维护任务或另一套协作规则。先读 [AGENTS](../AGENTS.md)、[相关规格](TOOLBAR_BEHAVIOR.md) 与 [项目记忆](PROJECT_MEMORY.md)。Vault 的私人反馈按实际授权读取，不把历史 Handoff 当独立滚动计划。
 
 ## 本机工作树
 
-- 原常用项目根为 `/Users/apple/backup/sptifylyrics`，但实际活动树可能不同，进入用户当前选择的工作树后读 `git status --short`、`git branch --show-current`、`git rev-parse HEAD` 和 `git diff --stat`。
-- 保护已有 dirty/untracked、旧树和正式资产。不要默认新开临时 worktree，不执行清理／重置／覆盖式 checkout/pull。`.local/`、DerivedData、旧 ZIP、历史截图不等于当前源码或 App。
-- 使用既有 `SpotifyLyrics/` Swift/SwiftUI/AppKit、`SpotifyLyrics.xcodeproj/`、`Tests/`、`Scripts/`、`Tools/`。旧 `generate_xcodeproj.py` 不能因普通小改动自动执行。
+沿用户当前指定的活动树，不依据旧登记路径另建工程。先检查 `git status --short`、`git branch --show-current`、`git rev-parse HEAD`、`git diff --stat`，再 fetch 并比较远端。获取失败或基线未包含远端时先核差异，保护 dirty/untracked；不 reset、clean、覆盖式 checkout/pull 或自动 stash。
 
-## 最少的编译和运行
+复用 `SpotifyLyrics/`、`SpotifyLyrics.xcodeproj/`、`Tests/`、`Scripts/`、`Tools/`。普通小改不运行旧 `generate_xcodeproj.py`，不默认另开 worktree。`.local/`、DerivedData、ZIP 和截图不是源码身份。
 
-- 输入不变的已通过测试直接复用；若可用现成对应二进制，优先实机看效果，否则只做必要构建。文档变更不编译 Xcode。
-- 实机运行的 Debug 构建（Keychain ACL 与 TCC 授权依赖稳定的 Apple Development 身份）：
+## 必要构建与签名
+
+文档变更不编译 Xcode。相关输入与条件未变的已有通过证据可以复用；需要构建时只做必要检查。用于实际运行、Keychain ACL/TCC 的 Debug 构建必须核稳定签名：
+
 ```sh
 xcodebuild -project SpotifyLyrics.xcodeproj -scheme SpotifyLyrics \
   -configuration Debug \
   -derivedDataPath build/DerivedData build
 ```
-  Debug 签名只由 `SpotifyLyrics/Config/DebugSigning*.xcconfig` 决定，工程文件不再写死证书或 Team：默认保持无身份（其他 checkout 与 CI 行为不变），需要稳定身份的机器在本机 gitignored 的 `DebugSigning.local.xcconfig` 里设 `CODE_SIGN_STYLE = Manual` + `CODE_SIGN_IDENTITY = Apple Development` 与 `DEVELOPMENT_TEAM`。实机验证钥匙串时不要加 `CODE_SIGNING_ALLOWED=NO`：那会退回 ad-hoc，每次构建换一次 cdhash，钥匙串 ACL 与 TCC 授权都会失效。
-- 只做编译检查时可用 unsigned 构建，但它不能用来验证钥匙串、自动化或截图权限。
-- 只运行受影响的定向检查、真实用户要看的 App 画面；普通编译错误在已授权任务内修复，不把每个失败变成新增 Issue/PR/审计。
-- 翻译请求、业务 Keychain、正式 SQLite、用户播放状态、`/Applications` 安装覆盖、数据迁移不因“轻量测试”自动允许。
 
-## 版本、提交和发布
+Debug 签名只由 `SpotifyLyrics/Config/DebugSigning*.xcconfig` 决定，工程不写死证书或 Team。默认无身份，保持其他 checkout/CI 行为；需要稳定身份的机器在 gitignored `DebugSigning.local.xcconfig` 设置 `CODE_SIGN_STYLE = Manual`、`CODE_SIGN_IDENTITY = Apple Development` 和 `DEVELOPMENT_TEAM`。
 
-- GitHub `origin/main` 是共同代码主源。依用户 2026-10-13 明确决定，修改结束后默认审查、提交并普通推送到 `main`，读回远端确认；当前任务明确禁止提交推送时才例外，并注明 `NOT_SYNCED`。默认不新建分支、PR、Issue；不得 force push。Drive 存附件，Obsidian 存交接；覆盖正式 App/数据库、模型费用和发布仍需对应授权。
-- 同步在本项目已经得到用户的持续明确授权；每轮只提交已审核的本轮成果，普通推送到已有main，网络/并发更新导致非快进拒绝就停止核对，不能force。明确不提交的单轮任务保留dirty并报告未同步。不要因为某次任务的临时限制，重新废止用户的长期同步要求。
-- 在 Obsidian 当前任务页报告实际运行的源码、App/Bundle、数据目录、编译与体验范围；本机打包且需要共享时，附件放到既有 Google Drive，并回写实际链接。
+实机验证钥匙串时不加 `CODE_SIGNING_ALLOWED=NO`：ad-hoc 构建的 cdhash 变化会影响 ACL/TCC。unsigned 构建只能证明相应编译，不能验证钥匙串、自动化或截图权限。本次文档没有修改签名配置，也不证明某台机器已配置。
 
-## 历史与事实
+只运行受影响的定向检查。业务 Keychain、正式 SQLite、模型费用、播放状态、正式安装覆盖与迁移仍需对应授权。原生图与 `Scripts/ui-snapshots.sh` 离屏图明确区分；无法完成的范围写 NOT_RUN。
 
-- GitHub `docs/evidence/`、`docs/archive/`、`docs/superpowers/`、旧 PR/Issue 仅供查证过去发生了什么。`docs/STATUS.md` 是静态仓库参考，不含下一执行命令。
-- 未被重新实测的模式、歌词质量、切行、数据迁移不能因为本轮修了代码或文件就升级为 PASS。
+## 同步与交付
 
-**一个活动任务做完并更新 Handoff，才推进下一项。**
+现有持续授权允许相关成果普通提交/推送到已有 main；单轮明确禁止时例外。不要默认创建 PR/分支、强推或遗漏他人改动；具体核对见 [SUBMISSION_BASELINE](SUBMISSION_BASELINE.md)。
 
-## 每轮开始和结束的最小核对
+任务结果更新所属规格/当前任务，新的有效经验更新原记忆条目，私人体验回 Vault 原项目页；需要共享的附件沿已有私有位置。源码提交、候选构建和正式安装分别识别，不能由一个 SHA 或旧截图拼成完整成功。
 
-开始先运行：
-```sh
-git status --short
-git branch --show-current
-git rev-parse HEAD
-git fetch origin
-git merge-base --is-ancestor origin/main HEAD
-```
-最后一项失败说明当前基线未包含远端更新；网络失败也不能用旧origin缓存冒充最新。先核清差异，保护dirty；安全快进只在不覆盖现有修改时使用，不恢复旧整文件。已有正在进行的授权dirty可以继续同一任务，不能擅自舍弃。
-
-完成并审查/验证后，在现有活动M1工作树用 `git push origin HEAD:main` 普通同步，不另开分支/PR。推送成功后通过GitHub API或 `git ls-remote origin refs/heads/main` 确认远端SHA与本地HEAD一致，并检查状态清洁。明确禁止推送时写清NOT_SYNCED与差异，下一轮不能误认同步已完成。
-
-源码提交、编译候选和正式安装是三件事。安装包需有源码提交/输入清单对应；缺记录就写身份未确认，不凭文件日期、版本号或二进制SHA差异推断先后。UI/模型/正式数据验收未做时保留NOT_RUN。
+旧 PR/Issue、`docs/evidence/`、`docs/archive/`、`docs/superpowers/` 和有日期的报告只作历史证据。用户已授权连续工作时按有意义的小批次推进，不因旧文档的逐步审批阻断，也不自动恢复未授权的历史任务。

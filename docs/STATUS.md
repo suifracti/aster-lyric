@@ -1,37 +1,32 @@
-# Spotify Lyrics｜仓库状态参考（不是当前交接）
+# Aster · Lyric｜仓库历史状态参考
 
-> 自 2026-10-12 起，**当前施工任务与产品路线只在 Obsidian**：`03-项目与工程/Spotify Lyrics/README.md` → `Handoff.md` → 当前唯一活动任务；长期规则在 `Decisions.md`。本页不维护“唯一滚动工程状态”或下一位执行者。原 18 KB 历史状态全文已保留在 [迁移前快照](archive/status-before-obsidian-handoff-20261012.md)，其旧任务不得恢复。
+本页**不是当前交接或滚动任务表**。当前用户任务及产品/UI 规格从 [AGENTS](../AGENTS.md) → [TOOLBAR_BEHAVIOR](TOOLBAR_BEHAVIOR.md) 定位；项目记忆见 [PROJECT_MEMORY](PROJECT_MEMORY.md)。Obsidian 保留私人阶段反馈与长期决定，不再把旧 Handoff 与仓库规格并列维护为当前任务。
 
-## 源码、附件和执行者如何查
+以下只保留过去的证据截点；所有“当时当前”、未完成和运行状态均属于所列日期，不自动升级为今天事实或恢复旧任务。原 18 KB 状态已保留在 [迁移前快照](archive/status-before-obsidian-handoff-20261012.md)。
 
-- 当前源码与未提交差异：实际 Mac 工作树和 `git status` / `git rev-parse HEAD`；`main` SHA 会随文档提交变化，不代表程序功能升级。
-- 实机截图、候选 App/ZIP 与脱敏日志：Obsidian `03-项目与工程/Spotify Lyrics/资料与附件.md` 指向 [已有私有 Google Drive](https://drive.google.com/drive/folders/1cm5KnwoYn82b7R61YrXvYiCfXHE37BEs)；没有上传即没有可用附件。
-- 项目当前唯一状态：Obsidian `Handoff.md`；禁用从本仓库状态、历史报告或已关闭 GitHub Issue/PR 直接选择下一阶段。
+## 源码、附件和执行身份
 
+实际工作树/dirty、远端 main、候选 App 与用户安装版分别核对；main 可能仅因文档改变。原私有附件入口由用户授权的 Vault 项目资料页维护，不在这里复制私人位置或假设可访问。没有实际上传/readback，不能说附件可用。
 
-## 2026-10-13 源码收拢与验证范围
+## 历史：2026-10-13 源码收拢与验证范围
 
-- AI优先推荐、原生译文独立保留、多AI版本切换及用户选择恢复已同步：源码提交 `ab0d6e59a8b6b22267de05df8a0f7b9648e46a41`。ChatGPT两份环境光补丁及多译文比较UI原样保留，Sol A没有自行设计UI。
-- 翻译会话、SQLite持久化/并发回滚、Playback合同和Mac Debug编译有输入SHA一致的通过证据；此次查询身份合同和UI静态入口检查也通过。不重跑未受影响全库，不调用AI或正式数据。
-- 多译文比较的原生显示/逐行对齐/切换/手动采用仍NOT_RUN：现有场景缺少已采用原词与两份同源译文。环境光用户视觉认可也未完成；同步代码不升级这些状态。
-- 正式安装App未经本轮更新，其Git提交绑定尚未从bundle确认；不能把它当最新代码或仅凭不同exe SHA断言它丢失功能。当前无运行中的歌词App。
-- 本轮已核对27个合并PR与20个本地分支头的主线归属；源码没有漏取main已合并内容。具体方法和限制见[源码版本核对](SOURCE_CONVERGENCE_2026-10-13.md)。
+- AI 优先推荐、原生译文独立保留、多 AI 版本切换及用户选择恢复同步于 `ab0d6e59a8b6b22267de05df8a0f7b9648e46a41`；当时两份环境光补丁及比较 UI 原样保留，执行者未自行改设计。
+- 当时记录：翻译会话、SQLite 持久化/并发回滚、Playback 合同和 Mac Debug 编译有输入 SHA 一致的通过证据，查询身份合同和 UI 静态入口检查也通过；没有调用模型或正式数据。这是历史报告，不是 2026-11-10 重跑。
+- 多译文比较的原生显示、逐行对齐、切换、手动采用仍 NOT_RUN；当时缺同源原词与两份译文场景，环境光视觉认可未完成。同步不能自动升级这些状态。
+- 当时正式安装 App 未更新，Git 提交绑定未从 bundle 确认，记录中歌词 App 未运行；这些不代表今天机器状态。
+- 当时核对 27 个合并 PR 与 20 个本地分支头的主线归属，方法及限制见 [源码版本核对](SOURCE_CONVERGENCE_2026-10-13.md)，不推广成所有后续分支已合并。
 
-## 已知的不同证据截点（非本轮新验收）
+## 历史：不同证据截点
 
-- 此次文档修改前，2026-10-12 GitHub `main` 合流源码 SHA 为 `d90c8ee2f57c51670f4e7ac2d66c1c6d02829853`，包含原合并分支成果及 V3 环境光两处微调。
-- Sol A 曾报告某隔离候选下，GIJIKOI 日语原曲 `0ZLWH8kZv299eRlEoMelAD` 的 52 行中文保存、退出重开复用且无新增请求；自动选词/切行、定向合同和 Debug 构建证据另属不同情景。**不能合成一个最新正式 App 的全部 PASS**。
-- 截至该事实截点，三种 V3 与菜单栏、桌面、全屏的最终原生中文体验尚待真实用户确认，安装 App 与数据库身份亦需区分。
-- [Issue #30（关闭）](https://github.com/suifracti/lyricsQ/issues/30) 与 [Issue #33（历史执行证据）](https://github.com/suifracti/lyricsQ/issues/33) 不再担任规划／当前任务主源。
+- 2026-10-12 main 合流源码为 `d90c8ee2f57c51670f4e7ac2d66c1c6d02829853`，包含当时合并成果和 V3 环境光微调。
+- Sol A 曾报告隔离候选下 GIJIKOI 日语原曲 `0ZLWH8kZv299eRlEoMelAD` 的 52 行中文保存、重开复用且无新增请求；自动选词/切行、合同和 Debug 构建来自其他情景，不能合并成一份正式 App 全通过。
+- 当时三种 V3 与菜单栏、桌面、全屏的原生中文体验及安装/数据库身份仍待核验。
+- 原 lyricsQ 的 Issue #30/#33 与旧合并 PR 不再承担当前规划；需要历史证据时按实际仓库迁移关系查找，不因旧链接自动恢复任务。
 
-## 正式发布身份
+## 历史：正式发布身份
 
-- 2026-10-12 核实的最后正式 GitHub Release 为 [v0.1.2](https://github.com/suifracti/lyricsQ/releases/tag/v0.1.2)，发布提交 `6528be3103f75fd4f63757855b9d61cd30f757d8`；签名/公证边界依该 Release 的实际资产记录，不把文档提交当新发行。
-- 原生 SwiftUI/AppKit 工程保留 V3 `ambient/stage/classic`、菜单栏/Popover、桌面/全屏与歌词、翻译、读音、SQLite 能力；旧 V1/V10/Capsule 兼容代码不代表当前新增需求。代码入口存在不等于最终实机已验证。
+2026-10-12 核实的最后正式 GitHub Release 为 v0.1.2，发布提交 `6528be3103f75fd4f63757855b9d61cd30f757d8`；这是当日核查，不宣称今天最新 Release。签名/公证按实际资产记录，文档提交不是新发行。
 
-## 历史保留
+当时原生 SwiftUI/AppKit 工程有 V3 ambient/stage/classic、菜单栏/Popover、桌面/全屏与歌词、翻译、读音、SQLite 入口。旧 V1/V10/Capsule 兼容代码不是新的需求，存在不等最终运行通过。
 
-- [旧 STATUS 全文](archive/status-before-obsidian-handoff-20261012.md)：各历史批次、风险、下一执行合同、源身份均仅供追溯。
-- [仓库 AI 入口](../AGENTS.md) · [必要开发流程](DEVELOPMENT_WORKFLOW.md) · [必要提交核对](SUBMISSION_BASELINE.md)。
-
-**本文件不规定新的开发任务或自动 Git／模型／正式资产操作权限。**
+[开发参考](DEVELOPMENT_WORKFLOW.md) · [提交核对](SUBMISSION_BASELINE.md)。本页不授予 Git 历史改写、付费模型、正式资产或发布操作权限。

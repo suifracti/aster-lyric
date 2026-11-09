@@ -1,8 +1,8 @@
-# Spotify Lyrics｜必要提交与交付核对
+# Aster · Lyric｜必要提交与交付核对
 
-> **用户已授权每次修改后同步GitHub，明确禁止同步的单轮任务除外；交付App的正式安装仍另行核授权。** 本文件不能创建任务、强制开分支/PR、自动 checkpoint 或恢复旧审批流程。先读 Obsidian `03-项目与工程/Spotify Lyrics/README.md` → `Handoff.md` → 当前任务，再按 `Decisions.md` 保留数据与费用边界。
+入口见 [AGENTS](../AGENTS.md)。用户已有每次相关修改后同步 GitHub 的持续授权，明确禁止同步的单轮任务除外；正式安装、费用、迁移和发布仍分别需要对应授权。本页不创建任务、分支/PR、自动 checkpoint 或另一套审批。
 
-## 核对
+## 提交前
 
 ```sh
 git status --short
@@ -11,20 +11,18 @@ git rev-parse HEAD
 git diff --stat
 ```
 
-- 实际源码版本是当前 HEAD（若脏树则为 `base HEAD + 未提交差异`）；实际运行 `.app`、数据目录、正式 Release 需独立识别。
-- 只能包括本轮授权文件，不能覆盖 dirty/untracked，也不能公开凭据、OAuth、正式 SQLite、受限制歌词/音频或私有日志。
-- 代码修改做最少必要编译与受影响检查；仅文档修改验证文字、链接与导航，无须为了文档重跑整个 Mac App。
-- App 视觉只据真实前台窗口和同曲已采用译文判断，不能以截图缩略图或旧 PR 结论代替。没有新验证写 NOT_RUN。
+实际源码是 HEAD 加尚未提交差异；实际 App、数据目录、正式 Release 单独识别。只提交本次相关路径，保护他人 dirty/untracked。检查 diff、敏感内容及 `git diff --check`；不公开凭据、OAuth、正式 SQLite、受限歌词/音频、私人原话或私有日志。
 
-## Git 操作只按授权
+业务代码做最小充分检查，文档只核文字、链接、导航和差异。截图需标真实运行还是离屏；视觉认可、性能、模型调用和正式数据未核实就写 NOT_RUN，不用旧 PR 或缩略图冒充验收。
 
-- GitHub `origin/main` 是共同代码主源。依用户 2026-10-13 明确决定，修改结束后默认审查、提交并普通推送到 `main`，读回远端确认；当前任务明确禁止提交推送时才例外，并注明 `NOT_SYNCED`。默认不新建分支、PR、Issue；不得 force push。Drive 存附件，Obsidian 存交接；覆盖正式 App/数据库、模型费用和发布仍需对应授权。
-- 先审核 diff、目标main和敏感内容，执行 `git diff --check`，只暂存明确路径，再普通commit/push到main；不重写历史、不创建PR。推送前获取远端并确认它是当前HEAD祖先；若失败，保护现场后核对，禁止覆盖式拉取/force。
-- 执行后读回 GitHub 实际 commit SHA、修改文件列表；Git 文档已更新 ≠ Mac App 已同步/安装。
+## 同步
 
-## 文件交接
+先获取并核对目标 main，确认安全快进/整合条件，普通 commit/push；非快进、网络失败或并发修改先核实，不 force、不覆盖拉取、不改共享历史。通过 GitHub 文件 API 写文档时使用新读的 SHA 或预期 ref，发生冲突重新读取，不盲写。
 
-- 任务结果只回写 Obsidian `03-项目与工程/Spotify Lyrics/Handoff.md` 与对应任务页；成果文件交给 [原有私有 Google Drive](https://drive.google.com/drive/folders/1cm5KnwoYn82b7R61YrXvYiCfXHE37BEs)，上传成功才登记链接。
-- 本文件不维护独立下一步或历史执行名单；完整旧状态留 [STATUS 归档](archive/status-before-obsidian-handoff-20261012.md)。
+执行后读回实际提交及文件列表。远端修改成功不证明用户 Mac 工作树或 App 已更新；本机同步完成须核本地 HEAD、读回的远端和遗漏改动，远程工具不可见的部分明确保留未知。
 
-**完成同步的判据**：本地HEAD = 从GitHub实际读回的main SHA；工作树没有遗漏成果；本轮影响的检查有真实结果。仅commit未push、上传Drive源码ZIP或打包App都不等于同步完成。
+## 写回
+
+当前规格与任务结果回 [TOOLBAR_BEHAVIOR](TOOLBAR_BEHAVIOR.md) 中对应范围或用户明确指定的现行任务；经验回 [PROJECT_MEMORY](PROJECT_MEMORY.md)，不要复制提交日志或第二份待办。私人阶段体验/交接回已授权的 Vault 原项目页。附件仅在需要时上传既有私有目录，成功读回后登记，不把源码 ZIP 上传当 Git 同步。
+
+[STATUS](STATUS.md) 及其归档是有日期的历史证据，不自动派发下一阶段。全周期历史复盘的覆盖游标另按 AGENTS 判断，不能把这次提交号当所有历史已读完。
