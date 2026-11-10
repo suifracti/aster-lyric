@@ -143,6 +143,27 @@ final class DesktopPlaybackEventTests: XCTestCase {
         XCTAssertTrue(provider.seeks.isEmpty)
     }
 
+    func testFailedPositionCalibrationKeepsCurrentSongAndSource() async throws {
+        let (state, provider, _, _) = fixture()
+        state.startProvider(connectSpotify: false)
+        try await wait { state.hasLiveTrack && state.isPlaying }
+        let accepted = provider.snapshot
+        let identity = state.currentTrackIdentity
+
+        provider.snapshot = PlaybackSnapshot(status: .unavailable("Apple Events timed out"),
+            track: nil, position: 0, isPlaying: false, sourceIdentity: .spotifyDesktop)
+        await state.calibratePlaybackPositionIfNeeded()
+        XCTAssertEqual(state.playbackSourceIdentity, .spotifyDesktop)
+        XCTAssertEqual(state.currentTrackIdentity, identity)
+        XCTAssertTrue(state.hasLiveTrack && state.isPlaying)
+
+        provider.snapshot = PlaybackSnapshot(status: .ready, track: accepted.track,
+            position: 20, isPlaying: false, sourceIdentity: .spotifyDesktop)
+        await state.calibratePlaybackPositionIfNeeded()
+        XCTAssertFalse(state.isPlaying)
+        XCTAssertEqual(state.currentTime, 20, accuracy: 0.2)
+    }
+
     func testSleepAtTrackEndPausesWhenTheNextSongArrives() async throws {
         let (state, provider, _, center) = fixture()
         state.startProvider(connectSpotify: false)
@@ -416,6 +437,13 @@ final class DesktopPlaybackEventTests: XCTestCase {
             XCTAssertEqual(state.lyricsSession.revision, revision)
             XCTAssertEqual(state.liveLyrics.first?.originalText, "採用済み")
         }
+        provider.snapshot = PlaybackSnapshot(status: .ready,
+            track: ProviderTrack(id: id, title: "Light source", artist: "kyiku refreshed",
+                album: "Even if it was a small prayer", duration: 246.49, artworkURL: artwork),
+            position: 20, isPlaying: true, sourceIdentity: .spotifyDesktop)
+        await state.calibratePlaybackPositionIfNeeded()
+        XCTAssertEqual(state.currentTime, 20, accuracy: 0.2)
+        XCTAssertEqual(state.liveLyricsVersionID, versionID)
         // The observed key must still resolve the adopted asset for editor/offset/version actions.
         let observed = TrackIdentity(title: "Light source", artist: "kyiku", album: "Even if it was a small prayer", duration: 246.49, spotifyTrackID: id)
         let editable = try await reopened.loadEditableVersion(versionID: versionID, track: saved, identity: observed)

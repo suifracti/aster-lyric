@@ -78,6 +78,8 @@
 
 现有 `PlaylistPickerTests`、`testLightSourceAdoptionSurvivesColdStartPauseAndMetadataRefresh`、`testYouAndIdolNewDurationKeyRedirectsToSelectedLyrics` 分别定位大小写、已采用歌词与不同 duration key。`606ecc6`、`08e918b` 已删除 Spotify 专用的 adoptedStableKey/sameRecording 前缀补丁；Apple Music 的持久 ID 路径保留，因删除后既有测试失败。历史冷启动相关实现见 `5e82030`。本轮核源码与既有用例，未读正式库或重做真实账号检查；下次保留旧键格式、人工选择、审计和 Apple Music 独立行为。
 
+2026-11-11 在 `bf9ca8d` 基线上复现了后台校准的两个相关问题。失败快照原先也进入完整歌曲同步，立即把来源设为 unknown，持续失败后会清掉当前歌曲。另一个问题是校准拿完整元数据键与已采用歌词键比较，同 ID 的显示标题/专辑更新后，正常进度也会被拒绝。`PlaybackState.refreshProvider(calibrationOnly:)` 现在只接收 ready、同来源且 desktopRecordingKey 一致的校准，保持歌词的持久身份独立。停止与退出仍由现有桌面事件处理，没有增加重试或定时器。新增超时回归、扩展 Light source 原用例，均先复现失败，随后 Debug 的 18 项桌面播放测试通过。历史 Round 12 采样没有逐次校准状态日志，仍不能据此认定那次失败的唯一原因或把旧样本恢复为有效数据。
+
 ## L-006 匹配信任精确 Spotify ID 的曲库元数据，进度仍用播放时长
 
 Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提示异常时，用精确 track ID 取得的曲库标题、全部歌手和时长做歌词匹配；播放时长只服务进度，不改现有身份键。

@@ -2975,8 +2975,11 @@ public final class PlaybackState: ObservableObject {
             generation == providerRefreshGeneration &&
             !isMockPreviewMode &&
             canRefreshSelectedProvider
-        let calibrationMatches = !calibrationOnly || !snapshot.status.isReady || (snapshot.sourceIdentity == lastObservedDesktopSource
-            && snapshot.track.map { TrackIdentity(track: Track(providerTrack: $0)) } == currentTrackIdentity)
+        // Position calibration can correct the current song, but a failed read
+        // is not evidence that the player stopped or cleared its current song.
+        let calibrationMatches = !calibrationOnly || (snapshot.status.isReady
+            && snapshot.sourceIdentity == lastObservedDesktopSource
+            && snapshot.track?.desktopRecordingKey == desktopSnapshots[lastObservedDesktopSource]?.track?.desktopRecordingKey)
         if shouldApply && calibrationMatches {
             synchronize(with: snapshot, observedAtMonotonic: latencyCompensatedMonotonic)
         } else if let accepted = desktopSnapshots[lastObservedDesktopSource] {
