@@ -53,6 +53,10 @@
 
 2026-11-11 核回云端证据时，`ff823a2` 的 [CI 运行](https://github.com/suifracti/aster-lyric/actions/runs/41479559608) 总结果为 failure，但原生 job 被取消，没有测试步骤日志，不能将其当成某项断言失败。`bca27ed` 的 [完整 CI](https://github.com/suifracti/aster-lyric/actions/runs/42876477987) 已成功，附件 SOURCE_SHA 与该提交一致，五组生产逻辑合同全过，Xcode 16.4 的 Debug `-O` 原生目标执行 129 项，128 项通过、1 项跳过、0 失败。跳过的是 `testAtmospherePresetRespondsInItsPaddedArea`，因为云端宿主没有暴露 SwiftUI 辅助功能子节点，整块按钮点击仍需实机证据。附件明确将真实 Mac GUI 和成对 CPU/RSS 标记为 NOT_RUN。下次区分 job 取消、构建/测试失败和实机未测，复用这份有效结果，不因旧红灯重跑全部检查或改弱断言。
 
+搜索接续修复 `bfc2913` 的 [完整 CI](https://github.com/suifracti/aster-lyric/actions/runs/42892375192) 随后通过，附件源码身份一致，原生仍为 128 通过、1 跳过、0 失败，五组合同通过。另一次本机隔离启动检查使用 `880315e` 与 `bfc2913`、Xcode 26.6 Debug `-Onone` 和同源缓存副本。窗口、场景及指针条件一致，但两版均在 Spotify Apple Events 超时后处于无歌曲状态，因此未采 CPU/RSS。终端中相同生产脚本在普通和私有 home 环境都能约 0.2 秒返回 9 字段，隔离 App 内超时的根因仍未确认。不要把该终端结果升级为独立 App 的播放链路通过。
+
+现场还发现一份旧 Downloads 预览包与 Debug 版同时运行，访问同一正式库并共写全局日志。结束旧实例、后台重启当前 Debug 后，当前版本正确加载缓存的 51 行歌词。隔离 App 随后的单次复核仍超时。以后按实际可执行路径核歌词 App 进程，包名可能带 preview 后缀，不能只匹配 `SpotifyLyrics.app`，也不能将共用日志里的所有错误归给一个 PID。终端只读观察进程后来以超时错误退出，旧 PID 文件不代表仍在等待。
+
 ## L-003 极简是保留能力、折叠入口
 
 适用：减少控件、面板重排、快捷键/设置合并。
