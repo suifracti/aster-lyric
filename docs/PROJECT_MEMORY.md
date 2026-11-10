@@ -51,6 +51,8 @@
 
 历史失败案例（`ff823a2`，2026-11-03）：Round 12 返修的 Debug 构建和 23 项定向原生检查有当轮执行记录，但基线隔离 App 在 30 秒采样中途丢失歌曲并报告暂停，候选没有取得有效播放样本；重采又因歌曲状态未就绪及 Spotify Apple Events 超时终止。现存本机 `.local/round12-repair/perf-baseline-context.log`、`perf-retry.log` 与提交说明相符。`perf-baseline-invalid.json` 是作废数据，不能作为性能通过或回归的依据，也不能拼成与候选的对照。本轮仅复读这些证据，未重新采样。下一次只复用在同曲、同构建、同窗及连续播放条件下有效的样本；不从静态截图推断播放态资源表现。原始日志和图不进入仓库。
 
+2026-11-11 核回云端证据时，`ff823a2` 的 [CI 运行](https://github.com/suifracti/aster-lyric/actions/runs/41479559608) 总结果为 failure，但原生 job 被取消，没有测试步骤日志，不能将其当成某项断言失败。`bca27ed` 的 [完整 CI](https://github.com/suifracti/aster-lyric/actions/runs/42876477987) 已成功，附件 SOURCE_SHA 与该提交一致，五组生产逻辑合同全过，Xcode 16.4 的 Debug `-O` 原生目标执行 129 项，128 项通过、1 项跳过、0 失败。跳过的是 `testAtmospherePresetRespondsInItsPaddedArea`，因为云端宿主没有暴露 SwiftUI 辅助功能子节点，整块按钮点击仍需实机证据。附件明确将真实 Mac GUI 和成对 CPU/RSS 标记为 NOT_RUN。下次区分 job 取消、构建/测试失败和实机未测，复用这份有效结果，不因旧红灯重跑全部检查或改弱断言。
+
 ## L-003 极简是保留能力、折叠入口
 
 适用：减少控件、面板重排、快捷键/设置合并。
