@@ -100,7 +100,9 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 
 预加载的另一处重复请求由 `c7bdf04` 收敛：`LyricsSessionController.attemptedPreloadSpotifyIDs` 只在 isPreload 路径使用运行期内存集合，任何结果（包括 review/无结果）本次运行仅尝试一次；`preloadedRecordingIDs` 另外记录成功项，真正播放仍走正常加载。`PlaybackState.preloadUpcomingLyrics` 只预取歌词，不进 AI 翻译；`SpotifyCatalogService.upcomingTracks` 默认取接下来的两首。
 
-现有 `LibraryIdentitySearchContractTests`、`testReviewedQueueSongIsPreloadedOnceButStillSearchedWhenPlayed`、`testPreloadedQueueTrackPlaysFromStorageWithoutAnotherSearch` 是回归入口。本轮未复测“390 首 0.1 秒”目标，不能由缓存存在断言已达标。下次保留本地先出、单曲失效、正常播放不受尝试集合阻挡和绝不提前 AI 翻译。
+现有 `LibraryIdentitySearchContractTests`、`testReviewedQueueSongIsPreloadedOnceButStillSearchedWhenPlayed`、`testPreloadedQueueTrackPlaysFromStorageWithoutAnotherSearch` 是回归入口。下次保留本地先出、单曲失效、正常播放不受尝试集合阻挡和绝不提前 AI 翻译。
+
+2026-11-11 用 `0c9a4be` 的生产查询函数，在本机缓存的私有 SQLite 副本上测量。Xcode 26.6、Debug `-Onone`，556 首已存歌曲、754 个歌词版本，首次构建搜索缓存耗时 2.171 秒。随后 10 个中日英/罗马音查询平均 4.12 ms，范围 2.09–5.35 ms，规范化计数不再变化。暖缓存的仓库查询达到原“390 首 0.1 秒”目标，首次查询仍有缓存建立成本。实际搜索入口的闭包持续捕获同一个 `resolvedRepository`，没有逐次新建缓存。测量借用隔离归档中的原生测试宿主，临时测量方法和原始 JSON 仅留本机，未加入 CI。未测真实面板绘制、在线等待或并发写入期间的延迟。
 
 ## L-008 队列刷新保留稍后重复项，点击按原始 offset 前进
 
