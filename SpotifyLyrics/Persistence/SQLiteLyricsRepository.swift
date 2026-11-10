@@ -1020,8 +1020,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         return Int(sqlite3_column_int(statement, 0))
     }
 
-    /// Storage-only identity helpers used by migration and black-box
-    /// acceptance tests. They intentionally expose no SQL handles.
+    /// Read-only storage identity resolution shared by library actions,
+    /// migration and acceptance checks, without exposing SQL handles.
     public func resolveStableKey(_ stableKey: String) throws -> String {
         try ensurePrepared()
         return try resolvedCanonicalStableKey(stableKey)

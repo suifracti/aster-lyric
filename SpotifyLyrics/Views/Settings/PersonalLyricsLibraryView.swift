@@ -757,11 +757,12 @@ public struct PersonalLibraryTrackDetailView: View {
     }
 
     private func adoptTranslation(_ version: PersonalTranslationVersionItem, entry: PersonalLyricsLibraryEntry) {
-        guard playback.liveTrackIdentity?.stableKey == entry.trackStableKey else {
-            service.adoptTranslation(versionID: version.id, trackStableKey: entry.trackStableKey)
-            return
-        }
         Task { @MainActor in
+            guard (try? await service.isCurrentTrack(stableKey: entry.trackStableKey,
+                playbackIdentity: playback.liveTrackIdentity)) == true else {
+                service.adoptTranslation(versionID: version.id, trackStableKey: entry.trackStableKey)
+                return
+            }
             if playback.liveLyricsVersionID != version.lyricsVersionID {
                 guard (try? await playback.adoptCurrentLyricsVersion(versionID: version.lyricsVersionID)) == true else { return }
             }
@@ -771,11 +772,12 @@ public struct PersonalLibraryTrackDetailView: View {
     }
 
     private func adoptReading(_ version: PersonalReadingVersionItem, entry: PersonalLyricsLibraryEntry) {
-        guard playback.liveTrackIdentity?.stableKey == entry.trackStableKey else {
-            service.adoptReading(versionID: version.id, trackStableKey: entry.trackStableKey)
-            return
-        }
         Task { @MainActor in
+            guard (try? await service.isCurrentTrack(stableKey: entry.trackStableKey,
+                playbackIdentity: playback.liveTrackIdentity)) == true else {
+                service.adoptReading(versionID: version.id, trackStableKey: entry.trackStableKey)
+                return
+            }
             if playback.liveLyricsVersionID != version.lyricsVersionID {
                 guard (try? await playback.adoptCurrentLyricsVersion(versionID: version.lyricsVersionID)) == true else { return }
             }

@@ -36,6 +36,10 @@ final class LibraryRevisionsContractTests: XCTestCase {
         XCTAssertEqual(sqlite3_column_int(statement, 0), 1)
         let canonical = try await repo.resolveStableKey(newIdentity.stableKey)
         XCTAssertEqual(canonical, identity.stableKey)
+        let library = await PersonalLyricsLibraryService(repository: repo)
+        let isPlayingEntry = try await library.isCurrentTrack(stableKey: identity.stableKey,
+            playbackIdentity: newIdentity)
+        XCTAssertTrue(isPlayingEntry, "Version adoption must recognize the playing song through its redirect")
         let reopened = SQLiteLyricsRepository(databaseURL: repo.databaseURL,
             alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
         try await reopened.prepare()

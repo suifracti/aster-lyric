@@ -351,6 +351,13 @@ public final class PersonalLyricsLibraryService: ObservableObject {
 
     // MARK: - Version Actions
 
+    func isCurrentTrack(stableKey: String, playbackIdentity: TrackIdentity?) async throws -> Bool {
+        guard let playbackIdentity else { return false }
+        let libraryKey = try await repository.resolveStableKey(stableKey)
+        let playbackKey = try await repository.resolveStableKey(playbackIdentity.stableKey)
+        return libraryKey == playbackKey
+    }
+
     public func adoptLyricsVersion(versionID: UUID, trackStableKey: String, applyToPlayback: ((UUID) async throws -> Bool)? = nil) {
         Task {
             do {

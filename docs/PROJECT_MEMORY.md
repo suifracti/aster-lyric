@@ -82,6 +82,8 @@
 
 2026-11-11 在 `bf9ca8d` 基线上复现了后台校准的两个相关问题。失败快照原先也进入完整歌曲同步，立即把来源设为 unknown，持续失败后会清掉当前歌曲。另一个问题是校准拿完整元数据键与已采用歌词键比较，同 ID 的显示标题/专辑更新后，正常进度也会被拒绝。`PlaybackState.refreshProvider(calibrationOnly:)` 现在只接收 ready、同来源且 desktopRecordingKey 一致的校准，保持歌词的持久身份独立。停止与退出仍由现有桌面事件处理，没有增加重试或定时器。新增超时回归、扩展 Light source 原用例，均先复现失败，随后 Debug 的 18 项桌面播放测试通过。历史 Round 12 采样没有逐次校准状态日志，仍不能据此认定那次失败的唯一原因或把旧样本恢复为有效数据。
 
+同日继续核版本操作时，在 `2103d88` 基线上发现译文与读音的“采用”入口仍直接比较 stableKey。YOU & IDOL 的旧 `201` 键与播放时的 `229` 键已重定向到同一记录，界面却因此只写入选择，没有即时更新正在播放的版本。`PersonalLyricsLibraryService.isCurrentTrack` 现在复用 `SQLiteLyricsRepository.resolveStableKey` 比较两边的规范键，两个采用入口共用该判断。它不新增身份规则、不修改键格式或歌词资产，原有非当前歌曲的保存路径继续适用。扩展现有 YOU & IDOL 用例先复现判断错误，随后 Debug 的 3 项 LibraryRevisionsContractTests 通过，真实窗口点击尚未验证。原词“编辑为新版本”自动采用已有保存实现和回归断言，本次沿用。
+
 ## L-006 匹配信任精确 Spotify ID 的曲库元数据，进度仍用播放时长
 
 Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提示异常时，用精确 track ID 取得的曲库标题、全部歌手和时长做歌词匹配；播放时长只服务进度，不改现有身份键。
