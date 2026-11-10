@@ -12,6 +12,14 @@
 | 新包、截图、构建/签名、实际运行是哪份 | L-002；DEVELOPMENT_WORKFLOW.md |
 | 极简、减少按钮、保留旧功能 | L-003；TOOLBAR_BEHAVIOR.md |
 | 找回旧环境光、模糊/缩放参数、样式合并；改 renderer/偏好 | L-004；AppSettingsStore.swift 与 authenticAmbientArtworkLayers |
+| 已采用歌词突然被挡住、同一首重复入库、歌单已存却不打勾；改 Spotify ID | L-005；TrackIdentity、SQLiteLyricsRepository、PlaylistPickerTests |
+| Desktop 时长跳变、合作歌手待确认、错误的时长差提示 | L-006；SpotifyTrackArtistResolver、LyricsSearchManager |
+| 搜索慢、本地结果等网络、预加载同一首重复搜索 | L-007；searchCachedLibrary、TrackSearchManager、LyricsSessionController |
+| 队列不更新、循环列表被裁掉、隐藏后点第三首多跳 | L-008；PlaylistBrowserModel、V3PlaylistQueuePreview |
+| 版本弹窗挂在悬浮窗、关后黑着、大歌词库关闭或丢选择 | L-009；PersonalLyricsLibraryService、PersonalLibrarySheets |
+| 有歌词源译文却不显示、部分行没有译文、重复补存 | L-010；TranslationSessionController.synchronize 与 chooseVersion |
+| 悬停歌词库转圈、版本列表开得慢 | L-011；prefetchCurrentTrack、currentDetail |
+| 边缘线内移/加粗、胶囊热区、封面卡片不同宽、分段选中块乱动 | L-012；V3EdgeRailView、V3ResponsiveGeometry、V3SegmentedPicker |
 
 ## 默认自动执行：不等用户提醒
 
@@ -41,6 +49,8 @@
 
 下次检查：记录实际源码/dirty、构建签名、App 路径及数据环境；性能记录歌曲、窗口和播放状态。复用适用证据，不为了文档打包或调用模型；没有实机条件写 NOT_RUN，不把视觉 fixture 当播放/缓存全链路通过。
 
+历史失败案例（`ff823a2`，2026-11-03）：Round 12 返修的 Debug 构建和 23 项定向原生检查有当轮执行记录，但基线隔离 App 在 30 秒采样中途丢失歌曲并报告暂停，候选没有取得有效播放样本；重采又因歌曲状态未就绪及 Spotify Apple Events 超时终止。现存本机 `.local/round12-repair/perf-baseline-context.log`、`perf-retry.log` 与提交说明相符。`perf-baseline-invalid.json` 是作废数据，不能作为性能通过或回归的依据，也不能拼成与候选的对照。本轮仅复读这些证据，未重新采样。下一次只复用在同曲、同构建、同窗及连续播放条件下有效的样本；不从静态截图推断播放态资源表现。原始日志和图不进入仓库。
+
 ## L-003 极简是保留能力、折叠入口
 
 适用：减少控件、面板重排、快捷键/设置合并。
@@ -60,16 +70,78 @@
 
 下次先定位用户指的版本/效果、实际参数键和已有设置迁移，再改本次部分；检查受影响的旧选择/旧参数能否保留。没找到值先查来源，不另猜默认让用户重调。本次核对源码和历史反馈定位，未运行 Mac App、未验证新画面或正式偏好数据。
 
-## 增量与全周期
+## L-005 Spotify 的存储身份与请求 ID 分开，已采用歌词沿持久重定向读取
 
-方法统一继承总规则“2 项目记录”“5.1 全周期复盘与覆盖”，从下方实际覆盖记录接续。
+歌单明明已保存却不打勾、暂停/元数据刷新后已采用歌词被“身份待确认”挡住，或同一 Spotify 歌曲因时长变化出现多条键时，先分清数据库身份和网络请求 ID。`canonicalSpotifyTrackID` 小写是旧身份键兼容约定；调用 Spotify 和比较返回曲目时用 `spotifyRequestTrackID` 保留 base62 大小写，不能全局改小写规则。
 
-## 本次覆盖
+`8175366` 的歌单误判已定位为请求/成员比较错误使用小写 ID。权威入口是 `SpotifyLyrics/Lyrics/TrackIdentity.swift`、`PlaybackState.playlistRequestTrackID` 与 `PlaylistPickerModel`。同播放 ID 的通知保持 activeIdentity；`LyricsSessionController.hasAdoptedLyrics` 与 `SQLiteLyricsRepository.redirectNewSpotifyKey` 让新键重定向到该 ID 已有记录，优先有用户采用歌词的键，否则最早的键，写入既有 redirects 和 merge audit，不删版本资产。
 
-2026-11-10，读取截点 `main@78d600a14270837dd3fffa3359dee47179a2150b`：全文读取原 AGENTS、DEVELOPMENT_WORKFLOW、SUBMISSION_BASELINE、STATUS；读取 TOOLBAR_BEHAVIOR 前 85 行和 Vault 相关交接/入口。本次修正启动路由与重复规则，不改产品规格和源码。
+现有 `PlaylistPickerTests`、`testLightSourceAdoptionSurvivesColdStartPauseAndMetadataRefresh`、`testYouAndIdolNewDurationKeyRedirectsToSelectedLyrics` 分别定位大小写、已采用歌词与不同 duration key。`606ecc6`、`08e918b` 已删除 Spotify 专用的 adoptedStableKey/sameRecording 前缀补丁；Apple Music 的持久 ID 路径保留，因删除后既有测试失败。历史冷启动相关实现见 `5e82030`。本轮核源码与既有用例，未读正式库或重做真实账号检查；下次保留旧键格式、人工选择、审计和 Apple Music 独立行为。
 
-未完成全提交、全分支和全部源码审计，未访问本机工作树/安装版、未运行 Xcode/测试/模型调用、未取得新用户体验。因此**未建立全历史处理截止点**，上述 SHA 仅是规则读取截点。本次没有部署 Hook/CI 或恢复任何旧任务。
+## L-006 匹配信任精确 Spotify ID 的曲库元数据，进度仍用播放时长
 
-## 2026-11-10 接手与持续维护补充范围
+Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提示异常时，用精确 track ID 取得的曲库标题、全部歌手和时长做歌词匹配；播放时长只服务进度，不改现有身份键。
 
-本次从 `main@fd66ec3a2ebdba6eccb99d45a0022ddcfd1010bd` 读取现行 AGENTS/本页及项目入口，补自然称呼索引、每轮主动写回和上下文恢复/纠错做法。另核当前 Settings、Backdrop、工具栏规格有关段落，以及 L-004 的历史 Backdrop 原件；私人反馈留 Vault。未完成的历史覆盖仍按原记录；这次规则提交不前移全历史处理点，未重跑产品、部署拦截器或建立后台任务。
+`c9f9252` 修正了曲库条目因与 Desktop duration 相差超过 2 秒而被拒绝的判断。`SpotifyLyrics/Lyrics/TrackMetadata.swift` 的 `SpotifyTrackArtistResolver.matchingTrack` / `TrackArtists.matches` 对精确 ID 命中信任曲库信息，`LyricsSearchManager` 用该元数据匹配且保留原 identity；`V3SearchPanel.catalogDuration` 用同一曲库时长计算提示。
+
+现有 `testCatalogDurationOverridesDesktopDurationWithoutChangingIdentity` 覆盖播放报 150.8 秒、曲库为 168 秒时，168 秒来源结果可采用且不显示错误时长差。本轮静态复核，不把它写成今天全部歌词源的网络通过。下次不能为修匹配改 duration 身份键，或反过来用曲库 duration 改播放器进度。
+
+## L-007 本地搜索复用版本内存文本，预加载尝试按运行期去重
+
+本地已存结果应先显示，在线结果到达后补上。规范化文字和罗马音按版本缓存，后续查询做子串匹配；库有变化只重建受影响歌曲/版本，不能每次查询重新生成全库罗马音。
+
+`188ce6f`、`f693196` 对应搜索缓存与变更接线。`SQLiteLyricsRepository.searchCachedLibrary` / `refreshLibrarySearchCache` / `cachedSearchVersions` 用 data_version、total_changes 感知变化，再比较逐歌曲签名，复用未变版本。`SpotifyLyrics/Search/TrackSearchManager.swift` 先发布本地 isLocal 结果再加在线结果。这里是内存缓存，不是数据库迁移或全文索引。
+
+预加载的另一处重复请求由 `c7bdf04` 收敛：`LyricsSessionController.attemptedPreloadSpotifyIDs` 只在 isPreload 路径使用运行期内存集合，任何结果（包括 review/无结果）本次运行仅尝试一次；`preloadedRecordingIDs` 另外记录成功项，真正播放仍走正常加载。`PlaybackState.preloadUpcomingLyrics` 只预取歌词，不进 AI 翻译；`SpotifyCatalogService.upcomingTracks` 默认取接下来的两首。
+
+现有 `LibraryIdentitySearchContractTests`、`testReviewedQueueSongIsPreloadedOnceButStillSearchedWhenPlayed`、`testPreloadedQueueTrackPlaysFromStorageWithoutAnotherSearch` 是回归入口。本轮未复测“390 首 0.1 秒”目标，不能由缓存存在断言已达标。下次保留本地先出、单曲失效、正常播放不受尝试集合阻挡和绝不提前 AI 翻译。
+
+## L-008 队列刷新保留稍后重复项，点击按原始 offset 前进
+
+启动时空队列、开始播放后打开仍为空，或循环歌单/隐藏行使跳转错位时，复用旧列表并刷新；刷新成功只去掉开头连续的当前歌曲，不能删掉稍后再次出现的同一首。`firstIndex` 的前缀裁剪只留在切歌通知路径。
+
+`075d578` 恢复 `V3PlaylistQueuePreview` 打开时的 `loadQueue()`，`24cfa3a` 分开网络刷新与 `currentTrackChanged` 的裁剪，`e91ffca` 删除 queueJump intent 和 X 的当前歌特例。权威是 `SpotifyLyrics/Spotify/PlaylistBrowserModel.swift` 的 rawQueue、queueItems、jumpToQueuedTrack 和 `V3PlaylistPanel.swift`。隐藏行仍保留原始 offset；跳转先用掉跨过的 skip 标记，再发 offset + 1 次 next，X 一律标记。
+
+现有 `testQueueThirdPositionUsesThreeNextCallsIncludingHiddenSong` 覆盖首次空载再刷新、稍后重复曲目和隐藏第二首后点原第三首恰好三次 next。`e91ffca` 当轮报告 Debug 构建和 31 项相关检查通过，本轮只核既有证据，未对真实 Spotify 发写请求。下次保留原始队列位置、旧列表和一次性标记语义，不恢复已删的时序/跳转来源补丁。
+
+## L-009 版本弹窗归主窗口，居中歌词库保留在后面
+
+悬停面板弹预览、编辑、名称备注或删除确认后，只剩遮罩、错挂窗口或大歌词库丢选择时，检查 sheet 的 owner。主窗口的 `PersonalLyricsLibraryService` 持有状态，根视图挂一次 `PersonalLibrarySheets`；悬停入口先关面板再弹出，居中大歌词库保留同一歌曲和选择。
+
+`f0c6eb0` 将短生命周期悬停面板的 sheet 接到主窗，`8e85fe6` 补齐名称/备注与删除译文，并去掉 `V3LibrarySearchPanel` 的 beforePresentSheet。权威在 `SpotifyLyrics/Settings/PersonalLyricsLibraryService.swift`、`PersonalLyricsLibraryView.swift` 的 presentSheet/PersonalLibrarySheets 与主窗根的 modifier。设置窗口保留自己的 service 和 sheets；主窗 equatable 边界不能挡住 service 状态更新。
+
+`8e85fe6` 当轮报告会话合同、24 项原生检查及三张离屏合成图；本轮核实际结构，不把离屏图当真实系统材质或全部点击验收。下次保留大库后景、选中歌曲和独立设置窗口，不能为统一弹窗把所有入口都变成关闭大库。
+
+## L-010 歌词源译文在 synchronize 中补存，默认选择不改变自动 AI 资格
+
+已缓存原词带 translation_text，但没有独立译文版本或用户未主动选择时，沿 `TranslationSessionController.synchronize` 现有加载路径保存并选择歌词源译文。优先级为手动选择（含“不显示”）、锁定/人工、AI，最后歌词源译文；部分行没有译文仍保留原行对应与空白。
+
+`5fd3e0e` 增加 chooseVersion 最后的 embedded 选择，`7e4e676` 曾在 loadBestStored 再补一次；`8e85fe6` 以 34 行/32 行的 synchronize 用例证明原 session 已承担保存，删除这条重复补存。权威在 `SpotifyLyrics/Services/TranslationSessionController.swift` 的 loadExistingOrAutoTranslate、chooseVersion、project，以及 `SQLiteLyricsRepository.preserveEmbeddedTranslation`。显示源译文时仍按原自动 AI 开关、资格和请求去重决定是否发起请求，不能因已有源译文短路原来的自动翻译行为。
+
+`Tests/translation_session_contract.swift` 现有 NetEase/无 AI 默认源译文与 34/32 稀疏译文检查走“缓存加载 → synchronize → 选中源译文”，使用离线 fake。历史曾发现 65 个缺独立译文版本的记录，本轮未读正式库，不能宣称它们已经全部补齐。下次保留人工/锁定版本和手动“不显示”，不恢复 loadBestStored 的重复写入，不为文档验证调用收费模型。
+
+## L-011 悬停版本列表提前准备当前详情，整库选择另走一路
+
+打开歌词库悬停面板长时间转圈时，先查详情是否排在整库列表查询之后。当前歌曲详情在切歌和相关版本变化时独立预取，打开时直接取已准备的详情；大歌词库的选择详情仍独立维护。
+
+`23a378e` 的隔离库记录是详情排在列表后耗时 660 ms，预取后查缓存低于 1 ms；该数值不含 UI 绘制。权威在 `SpotifyLyrics/Settings/PersonalLyricsLibraryService.swift` 的 prefetchCurrentTrack、currentDetail、selectTrack，以及主窗与 `AppleMusicImmersiveV3QuickControls.swift` 的调用。当前曲目详情和大库选中项不是同一个发布状态。
+
+本轮复读提交记录与调用，不把缓存查找耗时写成用户实际“打开面板 → 版本显示”已低于 100 ms。下次检查切歌、采用/修改版本后的预取接线，保留大库选择和当前歌曲详情的独立性，不通过每次打开重新查全库解决。
+
+## L-012 Round 12 轨道、卡片与分段控件沿现有局部实现调整
+
+边缘进度线、胶囊热区、封面列宽或分段选中块异常时，先查 Round 12 返修后的局部实现，不按旧截图恢复四边 mask 或胶囊短进度条。
+
+`5d8dab7`、`be24b9a`、最终 `ff823a2` 的权威是 `V3WindowEdgePlaybackOverlay.swift`。胶囊四边留 26pt，热区 6–26pt；指针距边 48pt 内，只有接近的边移到 14pt，整条线宽 4pt。`V3EdgeRailView` 只有 trackLayer/progressLayer，以 CALayer 在 160ms 内过渡，Reduce Motion 用淡入；胶囊短进度已删除。`7144775` 的 `V3ResponsiveGeometry.foregroundCardWidth` 让卡片随封面宽度，最低 300pt，封面更小时居中其上，位置移动整列。`0c4ae15` 的共用 `V3SegmentedPicker` 仅选择变化时移动选中块，等宽、不跟随指针，Reduce Motion 直接切换。
+
+`ff823a2` 同时让“当前译文”只在翻译页出现，并把译文 UI 合同定位到拆分后的 `AppleMusicImmersiveV3Lyrics.swift`。现有 `testApproachingTopMovesOnlyThatProgressRailInward`、`testForegroundPlayerCardTracksCoverWidthWithMinimum` 和 `V3ToolbarPresentationTests` 是检查入口。当轮报告 Debug 构建、23 项定向原生检查和离屏图；本轮没有运行或拍图，播放态性能未完成，见 L-002。下次保留局部图层动画、正常偏好/位置值和共享控件，不为旧字符串断言退回交互。
+
+## 实际覆盖与接续
+
+方法继承总规则“2 项目记录”“5.1 全周期复盘与覆盖”。以下区分枚举、定向源码阅读和运行证据，**仍未建立全历史处理截止点**。
+
+- 此前2026-11-10 在 `main@78d600a14270837dd3fffa3359dee47179a2150b` 全文读原 AGENTS、DEVELOPMENT_WORKFLOW、SUBMISSION_BASELINE、STATUS，读 TOOLBAR_BEHAVIOR 前 85 行及 Vault 入口/相关交接；后来在 `fd66ec3a2ebdba6eccb99d45a0022ddcfd1010bd` 核 Settings、Backdrop、L-004 历史原件并补自然场景索引。这些是规则/局部资料覆盖，不是全产品审计。
+- 本轮在2026-11-11 固定 `main@3f069781b6c9f2b5bdf2c5e26ccbfc9f1581cb82`。完整枚举本机 refs 与可达提交数：main 794 个，全部 refs 795 个；项目可见根提交 `50045ecccfab88bf88a824ff67acab6295d6bb81`，2026-07-26 21:10:12 +08:00，首次 Spotify Lyrics App 实施。现有 main、origin/main/HEAD、4 个 tag、4 个 Codex snapshot commit ref 和 1 个 checkpoint tree ref；main 之外仅历史 snapshot `5a96753184e763908abb87c71949a4acd47fb904`。这些数字是枚举结果，不代表正文已读。
+- 本轮全文读现行 AGENTS、PROJECT_MEMORY、Vault 项目 README/项目总览；定向读 TOOLBAR_BEHAVIOR 的 Round 11/12、Handoff 开头的 Round 6 历史及有关决定片段。核 L-005～L-012 列出的身份、匹配、缓存/预加载、队列、sheet、译文、详情预取和轨道的当前实现、关键差异与现有用例；查看 `075d578`、`24cfa3a`、`e91ffca`、`8e85fe6`、`23a378e`、`7144775`、`ff823a2` 等提交的相关 diff/说明，以及 L-002 所列本机作废性能日志。源码静态核对、提交中的当轮报告和本轮运行验证分别表述。
+- 本轮没有重跑 Xcode/测试、启动 App、读正式库/Keychain、操作 Spotify 或调用模型；正式安装版和用户实际运行版未核。尚未逐一读从根到截点的全部提交正文/源码，也未完整枚举与阅读 GitHub PR、Issue、Release、远端其他历史 refs/附件及全部用户会话；4 个 tag 和本机 snapshot 仅枚举，不能称全分支审计。
+- 全周期正文从根提交 `50045ecccfab88bf88a824ff67acab6295d6bb81` 开始，先核该阶段来源与后续真实差异；本次已经定向核过的主题/版本可复用去重，不用重新验证一遍。新提交和文档补记不前移产品历史处理点。产品开发仍按用户当轮任务，不由未完成复盘自动恢复。
