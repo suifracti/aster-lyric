@@ -84,6 +84,8 @@
 
 同日继续核版本操作时，在 `2103d88` 基线上发现译文与读音的“采用”入口仍直接比较 stableKey。YOU & IDOL 的旧 `201` 键与播放时的 `229` 键已重定向到同一记录，界面却因此只写入选择，没有即时更新正在播放的版本。`PersonalLyricsLibraryService.isCurrentTrack` 现在复用 `SQLiteLyricsRepository.resolveStableKey` 比较两边的规范键，两个采用入口共用该判断。它不新增身份规则、不修改键格式或歌词资产，原有非当前歌曲的保存路径继续适用。扩展现有 YOU & IDOL 用例先复现判断错误，随后 Debug 的 3 项 LibraryRevisionsContractTests 通过，真实窗口点击尚未验证。原词“编辑为新版本”自动采用已有保存实现和回归断言，本次沿用。
 
+继续在 `82981d9` 基线上核对搜索入口，`PlaybackState.loadSearchResult` 也只用完整元数据身份判断当前歌曲。《Light source》播放元数据与已存旧标题不同时，点击其本地结果会错误进入独立搜索预览。这里复用现有 `TrackIdentity.playbackID` 判断是否选中正在播放的录音，沿原 SQLite-first 实时会话加载。歌词匹配与存储仍使用原完整身份。扩展同一首歌的既有用例先复现错误，随后 Debug 的桌面播放及搜索两组检查共 24 项通过，确认不进入预览、保留已采用歌词且没有 seek。真实界面点击尚未验证。
+
 ## L-006 匹配信任精确 Spotify ID 的曲库元数据，进度仍用播放时长
 
 Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提示异常时，用精确 track ID 取得的曲库标题、全部歌手和时长做歌词匹配；播放时长只服务进度，不改现有身份键。
@@ -95,6 +97,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 ## L-007 本地搜索复用版本内存文本，预加载尝试按运行期去重
 
 本地已存结果应先显示，在线结果到达后补上。规范化文字和罗马音按版本缓存，后续查询做子串匹配；库有变化只重建受影响歌曲/版本，不能每次查询重新生成全库罗马音。
+
+架构来历在 `7905f04`。此前搜歌结果直接携带歌词正文，歌曲目录与歌词来源职责混在一起。该提交拆出 metadata-only `TrackSearchManager`、独立 `LyricsSearchManager` 与共用只读 `LocalLyricsIndex`。当前接线仍是 `PlaybackState` 持有同一个 repository，搜歌只返回元数据，选择后由实时或隔离预览会话加载歌词。旧研究文档列出的待接来源及阶段限制是历史方案，不能自动恢复为今天的任务。
 
 `188ce6f`、`f693196` 对应搜索缓存与变更接线。`SQLiteLyricsRepository.searchCachedLibrary` / `refreshLibrarySearchCache` / `cachedSearchVersions` 用 data_version、total_changes 感知变化，再比较逐歌曲签名，复用未变版本。`SpotifyLyrics/Search/TrackSearchManager.swift` 先发布本地 isLocal 结果再加在线结果。这里是内存缓存，不是数据库迁移或全文索引。
 
@@ -153,3 +157,4 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - 本轮全文读现行 AGENTS、PROJECT_MEMORY、Vault 项目 README/项目总览；定向读 TOOLBAR_BEHAVIOR 的 Round 11/12、Handoff 开头的 Round 6 历史及有关决定片段。核 L-005～L-012 列出的身份、匹配、缓存/预加载、队列、sheet、译文、详情预取和轨道的当前实现、关键差异与现有用例；查看 `075d578`、`24cfa3a`、`e91ffca`、`8e85fe6`、`23a378e`、`7144775`、`ff823a2` 等提交的相关 diff/说明，以及 L-002 所列本机作废性能日志。源码静态核对、提交中的当轮报告和本轮运行验证分别表述。
 - 本轮没有重跑 Xcode/测试、启动 App、读正式库/Keychain、操作 Spotify 或调用模型；正式安装版和用户实际运行版未核。尚未逐一读从根到截点的全部提交正文/源码，也未完整枚举与阅读 GitHub PR、Issue、Release、远端其他历史 refs/附件及全部用户会话；4 个 tag 和本机 snapshot 仅枚举，不能称全分支审计。
 - 全周期正文从根提交 `50045ecccfab88bf88a824ff67acab6295d6bb81` 开始，先核该阶段来源与后续真实差异；本次已经定向核过的主题/版本可复用去重，不用重新验证一遍。新提交和文档补记不前移产品历史处理点。产品开发仍按用户当轮任务，不由未完成复盘自动恢复。
+- 后续自主推进又定向读取了根提交的 Mock 模型/播放状态、`5f20b8d` 的 Desktop provider 与状态实现、`4a0997c` 的明确 Mock Preview/请求代际与歌曲会话分离、`c8283ab` 的恢复/seek 差异，以及 `7905f04` 的搜歌/歌词模型和管理器。最早 14 个提交只枚举了身份与变更目录，早期审计/研究正文仅选读相关部分，UI 图片未复查，因此全历史完成游标仍未前移。当前修复所需的分工原因归入 L-005/L-007，未把旧 Mock 回退或旧来源规划恢复成现行行为。

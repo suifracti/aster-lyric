@@ -457,6 +457,12 @@ final class DesktopPlaybackEventTests: XCTestCase {
         let changedMusic = Track(title: "Changed Music metadata", artist: "Changed artist", album: "Changed album", duration: 247, spotifyId: "applemusic:ABCDEF")
         let loadedMusic = try await repo.loadBestStored(track: changedMusic, identity: TrackIdentity(track: changedMusic))
         XCTAssertEqual(loadedMusic?.versionID, musicVersion.versionID)
+        state.loadSearchResult(SongSearchResult(id: "saved-light-source", source: .local,
+            track: saved, confidence: 1))
+        XCTAssertFalse(state.isShowingSearchPreview,
+            "A saved title for the playing Spotify ID must keep the live lyrics and clock")
+        XCTAssertEqual(state.liveLyricsVersionID, versionID)
+        XCTAssertTrue(provider.seeks.isEmpty)
     }
 
     func testPauseNotificationStopsPollingAndResumeRestartsClock() async throws {

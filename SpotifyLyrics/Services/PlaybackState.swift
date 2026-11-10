@@ -2642,10 +2642,13 @@ public final class PlaybackState: ObservableObject {
             catalogMetadata: result.catalogMetadata
         )
 
-        // Searching for the song that is actually playing should return to the
-        // live session so synchronized scrolling continues to follow Spotify.
+        // Catalog and saved metadata can differ for the same player recording.
+        // Keep that selection on the live session so its lyrics follow playback.
         // It still goes through the same SQLite-first path and never seeks.
-        if hasLiveTrack, let currentIdentity = currentTrackIdentity, identity == currentIdentity {
+        let playbackID = TrackIdentity.playbackID(for: currentTrack)
+        let selectsCurrentRecording = playbackID != nil && playbackID == TrackIdentity.playbackID(for: result.track)
+        if hasLiveTrack, let currentIdentity = currentTrackIdentity,
+           identity == currentIdentity || selectsCurrentRecording {
             clearSearchPreview()
             songSearchSelectionMessage = "已确认当前播放歌曲，正在读取 SQLite 与歌词；播放位置未改变"
             searchPreviewTask = Task { @MainActor [weak self, lyricsRepository] in
