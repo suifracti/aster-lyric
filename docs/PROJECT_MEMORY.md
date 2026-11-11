@@ -20,6 +20,7 @@
 | 有歌词源译文却不显示、部分行没有译文、重复补存 | L-010；TranslationSessionController.synchronize 与 chooseVersion |
 | 悬停歌词库转圈、版本列表开得慢 | L-011；prefetchCurrentTrack、currentDetail |
 | 边缘线内移/加粗、胶囊热区、封面卡片不同宽、分段选中块乱动 | L-012；V3EdgeRailView、V3ResponsiveGeometry、V3SegmentedPicker |
+| 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
 
 ## 默认自动执行：不等用户提醒
@@ -174,6 +175,20 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 同轮把 lyrics.ovh 的超时从 8 秒改为 3 秒，LinkCore 的总超时从 16 秒改为 6 秒。依据是本机统计：lyrics.ovh 267 次查询 11 次有候选、无一采用，未命中常要 5–6 秒；LinkCore 226 次里 60 次失败。LinkCore 的歌手实体验证走目录缓存，不受这个总超时影响。真实听歌下“无结果”的总等待时间变化没有实测。
 
 新增 `testPetitLyricsReturnsPlainTextWithTheSitesOwnTitleAndArtist`，并把 プチリリ 加进 `testLowYieldSourcesWaitAndAreSkippedAfterAutomaticAdoption`；测试只用编造的文本和本地网络桩。完整原生 131 项中 130 通过、1 跳过、0 失败，来源配置合同通过。下次网站改版时先看搜索表格的 `lyrics-list-title`、`lyrics-list-artist` 和令牌脚本，改版会报解析失败而不是返回空歌词。
+
+## L-014 歌手写法不同：括号别名算同一人，只对上一部分的进核对
+
+来源里明明有这首歌，却因歌手名不完全一致被 `primaryArtistConflict` 直接拒绝或搜不到时，先分清是哪一种写法差异。2026-11-11 有三个真实例子：Spotify 侧 `GAN (岩田剛典)` 对来源的 `岩田剛典`；Spotify 侧 `加藤MILIYAH` 对 LRCLIB 的 `Miliyah` 和プチリリ的 `加藤 ミリヤ`。
+
+括号别名按同一位歌手处理。`TrackTextNormalizer.parentheticalArtistNames` 把 `外名 (内名)` 拆成两个完整名字，`LyricsSafeMatcher.artistGroups` 把它们各自加成一组主歌手，于是来源只写其中一个名字也得到 `primaryArtistExact`，沿原有打分自动采用。括号里是 feat、with、CV、vo 开头的署名不算别名；只对上括号内名字的一半不算。只展开播放侧（Spotify 及其别名），不展开来源侧。
+
+只对上一部分的不自动采用。`artistNameParts` 把歌手名按汉字、假名、拉丁字母分段，汉字至少 2 个字、假名至少 3 个、拉丁字母至少 5 个才算一段，少数泛用词不算。歌名完全一致且有一段相同时，记 `primaryArtistPartialName`（+0.10），等级封顶在 `candidates`，进“核对歌词版本”由用户决定；歌名不一致仍然拒绝。它不带 `primaryArtistExact`，所以不会触发多来源一致自动采用。只有另有 Spotify ID 或 ISRC 这类独立身份证据时才不封顶。代价是同姓歌手的同名歌可能出现在核对列表里，这是有意接受的。
+
+プチリリ按“歌名加歌手”搜不到时，再按歌名搜一次，只打开歌手名有一段相同的记录，最多两条。
+
+新增 `testArtistWrittenDifferentlyIsRecognisedOrLeftForReview` 与 `testPetitLyricsSearchesByTitleWhenTheArtistSpellingFindsNothing`，都先复现失败。完整原生 133 项中 132 通过、1 跳过、0 失败，原有匹配用例没有因此改变结论。真实来源实测：《Phone Number》由プチリリ自动采用（43 行纯文本）；《KILL MY LOVE》进入核对，同时列出プチリリ和 LRCLIB 的版本。这两首是用库里记录的歌名、歌手、专辑和时长在测试宿主里跑的，没有经过真实播放和 Spotify 目录别名。
+
+下次有人想把“部分相同”放宽成自动采用时，先看这里的理由；想收紧时，调 `artistNameParts` 的最短长度或泛用词表，不要回到整名必须相等。
 
 ## 实际覆盖与接续
 
