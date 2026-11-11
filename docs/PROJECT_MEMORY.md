@@ -14,7 +14,7 @@
 | 找回旧环境光、模糊/缩放参数、样式合并；改 renderer/偏好 | L-004；AppSettingsStore.swift 与 authenticAmbientArtworkLayers |
 | 已采用歌词突然被挡住、同一首重复入库、歌单已存却不打勾；改 Spotify ID | L-005；TrackIdentity、SQLiteLyricsRepository、PlaylistPickerTests |
 | Desktop 时长跳变、合作歌手待确认、错误的时长差提示 | L-006；SpotifyTrackArtistResolver、LyricsSearchManager |
-| 搜索慢、本地结果等网络、预加载同一首重复搜索 | L-007；searchCachedLibrary、TrackSearchManager、LyricsSessionController |
+| 搜索慢、本地结果等网络、预加载同一首重复搜索；新歌首次找词要十几秒 | L-007；searchCachedLibrary、TrackSearchManager、LyricsSessionController、JapaneseMeCabEngine |
 | 队列不更新、循环列表被裁掉、隐藏后点第三首多跳 | L-008；PlaylistBrowserModel、V3PlaylistQueuePreview |
 | 版本弹窗挂在悬浮窗、关后黑着、大歌词库关闭或丢选择 | L-009；PersonalLyricsLibraryService、PersonalLibrarySheets |
 | 有歌词源译文却不显示、部分行没有译文、重复补存 | L-010；TranslationSessionController.synchronize 与 chooseVersion |
@@ -111,6 +111,12 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 现有 `LibraryIdentitySearchContractTests`、`testReviewedQueueSongIsPreloadedOnceButStillSearchedWhenPlayed`、`testPreloadedQueueTrackPlaysFromStorageWithoutAnotherSearch` 是回归入口。下次保留本地先出、单曲失效、正常播放不受尝试集合阻挡和绝不提前 AI 翻译。
 
 2026-11-11 用 `0c9a4be` 的生产查询函数，在本机缓存的私有 SQLite 副本上测量。Xcode 26.6、Debug `-Onone`，556 首已存歌曲、754 个歌词版本，首次构建搜索缓存耗时 2.171 秒。随后 10 个中日英/罗马音查询平均 4.12 ms，范围 2.09–5.35 ms，规范化计数不再变化。暖缓存的仓库查询达到原“390 首 0.1 秒”目标，首次查询仍有缓存建立成本。实际搜索入口的闭包持续捕获同一个 `resolvedRepository`，没有逐次新建缓存。测量借用隔离归档中的原生测试宿主，临时测量方法和原始 JSON 仅留本机，未加入 CI。未测真实面板绘制、在线等待或并发写入期间的延迟。
+
+2026-11-11 核对本机 `source-stats.jsonl`（10-24 至 11-10，235 条）：10-31 之后正在播放的新歌首次找词 16 次，中位 19 秒，8 次无结果。各来源自身多在 1–2 秒内返回，差额来自读音引擎。`JapaneseMeCabEngine.run` 每次调用都新起一个 MeCab 进程，并以 10 ms 间隔轮询退出；同一句歌词会在预览候选、正式候选、每个查询变体和最终文档里各补全一次，匹配器比较标题和歌手读音时也走同一入口。`2026-10-30` 报告已定位这段重复工作但当轮未修。
+
+现在 `JapaneseMeCabEngine` 在本次运行内按“可执行文件、参数、文本”记住成功输出，失败不记；轮询间隔改为 1 ms。没有改匹配规则、候选流程、来源或数据库，读音结果与原来逐字相同。新增 `testRepeatedLyricLineStartsTheReadingProcessOnce` 先复现同一句启动 3 次进程，修复后为 1 次。同机 Debug 测得 46 行日文补全首次 0.62 秒降到 0.17 秒，重复 0.007 秒；20 次匹配判定首次 0.066 秒，重复 0.016 秒（10-30 报告用另一组数据测得 0.574 秒，条件不同，只作参照）。完整原生 130 项中 129 通过、1 跳过、0 失败。真实新歌的端到端找词耗时要等统计文件积累新样本后再比，本轮没有实测。
+
+同一批无结果歌曲逐首向 LRCLIB 复查：8 首中 7 首确实没有条目，拒绝的是同名的其他歌曲，属于正确拒绝。只有《KILL MY LOVE》存在歌手写作 `Miliyah`、204 秒的带时间轴条目，播放侧是 `加藤MILIYAH`、198 秒，因 `primaryArtistConflict` 被硬拒。这是歌手别名规则的已知边界，本轮未改，其他来源未逐一复查。
 
 ## L-008 队列刷新保留稍后重复项，点击按原始 offset 前进
 
