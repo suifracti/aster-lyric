@@ -16,6 +16,7 @@ public enum DatabaseSourceIdentifier {
         case "linkcore": return "LinkCore / TuneCore（发行方）"
         case "kugouExperimental": return "酷狗音乐"
         case "kuwoExperimental": return "酷我音乐"
+        case "petitLyrics": return "プチリリ"
         case "asrMachineGenerated": return "语音识别草稿"
         case "automaticAlignment": return "自动排轴"
         case "manualImport": return "手动导入"
@@ -57,6 +58,7 @@ public enum DatabaseSourceIdentifier {
         case .linkcore: return "linkcore"
         case .kuwoExperimental: return "kuwoExperimental"
         case .kugouExperimental: return "kugouExperimental"
+        case .petitLyrics: return "petitLyrics"
         case .local: return "localLRC"
         case .amll: return "amll"
         case .lrclib: return "lrclib"
@@ -77,6 +79,7 @@ public enum DatabaseSourceIdentifier {
         case "linkcore": return .linkcore
         case "kuwoExperimental": return .kuwoExperimental
         case "kugouExperimental": return .kugouExperimental
+        case "petitLyrics": return .petitLyrics
         case "localLRC", "localDatabase", "local": return .local
         case "amll": return .amll
         case "lrclib": return .lrclib

@@ -183,6 +183,10 @@ public final class LyricsSearchManager: @unchecked Sendable {
         }
     }
 
+    /// Plain-text or low-yield sources. They are asked only when the other
+    /// online sources have nothing that can be adopted.
+    private static let supplementProviderNames: Set<String> = ["lyrics.ovh", "LinkCore / TuneCore", "プチリリ"]
+
     private enum ProbeEvent: Sendable {
         case result(ProviderProbeResult)
         case graceTick
@@ -502,8 +506,8 @@ public final class LyricsSearchManager: @unchecked Sendable {
                     } else {
                         let enabled = networkProviders.filter { !unavailableProviders.contains($0.index) }
                         // These supplements run only after the other sources fail to identify lyrics.
-                        let supplements = enabled.filter { ["lyrics.ovh", "LinkCore / TuneCore"].contains($0.provider.name) }
-                        let primary = enabled.filter { !["lyrics.ovh", "LinkCore / TuneCore"].contains($0.provider.name) }
+                        let supplements = enabled.filter { Self.supplementProviderNames.contains($0.provider.name) }
+                        let primary = enabled.filter { !Self.supplementProviderNames.contains($0.provider.name) }
                         let publishCandidates: @Sendable ([LyricsCandidate]) async -> Void = { candidates in
                             LyricsE2ELog.log("SEARCH preview id=\(searchID) rank=\(variant.rank) elapsed=\(String(format: "%.3f", Date().timeIntervalSince(started)))s count=\(candidates.count)")
                             await onCandidates?(candidates)

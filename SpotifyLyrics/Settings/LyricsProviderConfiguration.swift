@@ -115,6 +115,7 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
     case kugouExperimental
     case lyricsOVH
     case linkcore
+    case petitLyrics
 
     public var id: String { rawValue }
 
@@ -130,6 +131,7 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
         case .kugouExperimental: return "酷狗音乐实验源"
         case .lyricsOVH: return "lyrics.ovh"
         case .linkcore: return "LinkCore 官方发行"
+        case .petitLyrics: return "プチリリ实验源"
         }
     }
 
@@ -144,6 +146,7 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
         case .kuwoExperimental, .kugouExperimental: return "music.note.list"
         case .lyricsOVH: return "globe"
         case .linkcore: return "person.crop.rectangle.stack"
+        case .petitLyrics: return "character.book.closed"
         }
     }
 
@@ -152,14 +155,14 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
     }
 
     public var isExperimental: Bool {
-        [Self.netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental, .linkcore].contains(self)
+        [Self.netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental, .linkcore, .petitLyrics].contains(self)
     }
 
     public var stabilityLabel: String {
         switch self {
         case .localFiles, .sqliteDatabase: return "稳定"
         case .amll, .lrclib, .lyricsOVH, .linkcore: return "在线"
-        case .netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental: return "实验"
+        case .netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental, .petitLyrics: return "实验"
         }
     }
 
@@ -181,6 +184,8 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
             return "国际歌曲纯文本补充；没有时间轴，需独立证据或手动核对后采用"
         case .linkcore:
             return "按发行方艺人实体及歌曲目录补查公开正文；非同步歌词，保留原站署名与权利限制"
+        case .petitLyrics:
+            return "日文歌词站，独立发行歌曲较全；只有纯文本、没有时间轴；其他来源没有结果时才查询"
         }
     }
 
@@ -219,7 +224,7 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
                 allowedInStandardFree: true,
                 allowedInExperimentalFree: true
             )
-        case .linkcore:
+        case .linkcore, .petitLyrics:
             return LyricsProviderPolicy(capabilityClass: .experimentalFree,
                 allowsAutomaticSearch: true, allowsLyricsBody: true, allowsLocalCache: true,
                 allowsExport: false, outboundOnly: false,
@@ -332,6 +337,7 @@ public struct LyricsProviderConfiguration: Equatable, Sendable {
             .kuwoExperimental,
             .kugouExperimental,
             .linkcore,
+            .petitLyrics,
             .lyricsOVH
         ]
     )
@@ -358,7 +364,7 @@ public struct LyricsProviderConfiguration: Equatable, Sendable {
             }
         }
         // Missing IDs distinguish pre-expansion preferences from explicit disables.
-        for id in [LyricsProviderID.kuwoExperimental, .kugouExperimental, .lyricsOVH, .linkcore]
+        for id in [LyricsProviderID.kuwoExperimental, .kugouExperimental, .lyricsOVH, .linkcore, .petitLyrics]
             where !order.contains(id) && !enabled.contains(id) {
             enabled.insert(id)
             order.append(id)

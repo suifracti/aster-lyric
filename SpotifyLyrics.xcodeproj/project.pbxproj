@@ -76,6 +76,7 @@
 		A60F09060000000000000101 /* LyricsOVHProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60F09060000000000000100 /* LyricsOVHProvider.swift */; };
 		A60F09060000000000000201 /* KuwoExperimentalLyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60F09060000000000000200 /* KuwoExperimentalLyricsProvider.swift */; };
 		A60F09060000000000000301 /* KugouExperimentalLyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60F09060000000000000300 /* KugouExperimentalLyricsProvider.swift */; };
+		A60F090600000000000007A1 /* PetitLyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60F090600000000000007A0 /* PetitLyricsProvider.swift */; };
 		110000452D83400100000001 /* LocalAudioASRService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000452D83400100000000 /* LocalAudioASRService.swift */; };
 		110000462D83400100000001 /* LyricsE2ELog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000462D83400100000000 /* LyricsE2ELog.swift */; };
 		1100007F2D83400100000001 /* LyricsSourceStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1100007F2D83400100000000 /* LyricsSourceStats.swift */; };
@@ -317,6 +318,7 @@
 		A60F09060000000000000100 /* LyricsOVHProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsOVHProvider.swift; sourceTree = "<group>"; };
 		A60F09060000000000000200 /* KuwoExperimentalLyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KuwoExperimentalLyricsProvider.swift; sourceTree = "<group>"; };
 		A60F09060000000000000300 /* KugouExperimentalLyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KugouExperimentalLyricsProvider.swift; sourceTree = "<group>"; };
+		A60F090600000000000007A0 /* PetitLyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetitLyricsProvider.swift; sourceTree = "<group>"; };
 		110000452D83400100000000 /* LocalAudioASRService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAudioASRService.swift; sourceTree = "<group>"; };
 		110000462D83400100000000 /* LyricsE2ELog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsE2ELog.swift; sourceTree = "<group>"; };
 		1100007F2D83400100000000 /* LyricsSourceStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsSourceStats.swift; sourceTree = "<group>"; };
@@ -732,6 +734,7 @@
 				A60F09060000000000000100 /* LyricsOVHProvider.swift */,
 				A60F09060000000000000200 /* KuwoExperimentalLyricsProvider.swift */,
 				A60F09060000000000000300 /* KugouExperimentalLyricsProvider.swift */,
+				A60F090600000000000007A0 /* PetitLyricsProvider.swift */,
 			);
 			path = Providers;
 			sourceTree = "<group>";
@@ -1085,6 +1088,7 @@
 				A60F09060000000000000101 /* LyricsOVHProvider.swift in Sources */,
 				A60F09060000000000000201 /* KuwoExperimentalLyricsProvider.swift in Sources */,
 				A60F09060000000000000301 /* KugouExperimentalLyricsProvider.swift in Sources */,
+				A60F090600000000000007A1 /* PetitLyricsProvider.swift in Sources */,
 				110000302D83400100000001 /* TrackAlias.swift in Sources */,
 				110000312D83400100000001 /* TrackMetadata.swift in Sources */,
 				110000322D83400100000001 /* TrackTextNormalizer.swift in Sources */,

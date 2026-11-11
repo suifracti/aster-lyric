@@ -493,6 +493,9 @@ public final class PlaybackState: ObservableObject {
             case .kugouExperimental:
                 guard ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_KUGOU"] != "1" else { continue }
                 providers.append(KugouExperimentalLyricsProvider())
+            case .petitLyrics:
+                guard ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_PETITLYRICS"] != "1" else { continue }
+                providers.append(PetitLyricsProvider())
             }
         }
         // A corrupted/legacy preference must not remove the read-only local

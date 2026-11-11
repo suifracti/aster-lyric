@@ -221,8 +221,124 @@ private final class ProviderFailureNetEaseFixtureURLProtocol: URLProtocol, @unch
     override func stopLoading() {}
 }
 
+/// Stands in for petitlyrics.com. Records every request so the test can
+/// check the order and the headers the lyric request needs.
+private final class PetitLyricsFixtureURLProtocol: URLProtocol, @unchecked Sendable {
+    static let lock = NSLock()
+    nonisolated(unsafe) static var responses: [String: (Int, Data)] = [:]
+    nonisolated(unsafe) static var requests: [URLRequest] = []
+
+    static func reset(_ responses: [String: (Int, Data)]) {
+        lock.lock(); defer { lock.unlock() }
+        self.responses = responses
+        requests = []
+    }
+
+    static func recorded() -> [URLRequest] {
+        lock.lock(); defer { lock.unlock() }
+        return requests
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "petitlyrics.com" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.lock.lock()
+        Self.requests.append(request)
+        let (status, body) = Self.responses[request.url?.path ?? ""] ?? (404, Data())
+        Self.lock.unlock()
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
 @MainActor
 final class ProviderFailureContractTests: XCTestCase {
+    func testPetitLyricsReturnsPlainTextWithTheSitesOwnTitleAndArtist() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PetitLyricsFixtureURLProtocol.self]
+        let provider = PetitLyricsProvider(session: URLSession(configuration: configuration))
+        let track = Track(title: "夜明けの駅", artist: "Fixture Band, Guest", album: "夜明けの駅", duration: 201)
+        let identity = TrackIdentity(track: track)
+        func row(_ id: Int, _ title: String) -> String {
+            """
+            <tr><td><a href="/lyrics/\(id)"><span class="lyrics-list-title">\(title)</span></a><br>
+            <a href="/lyrics/artist/9"><span class="lyrics-list-artist">Fixture Band </span></a>
+            <a href="/lyrics/album/aa"><span class="lyrics-list-album">&#22812;&#26126;&#12369;&#12398;&#39365;</span></a></td></tr>
+            """
+        }
+        let search = "<table id=\"lyrics_list\">" + row(101, "&#22812;&#26126;&#12369;&#12398;&#39365;")
+            + row(102, "夜明けの駅 (Live)") + row(103, "Third &amp; unused") + "</table>"
+        func body(_ lines: [String]) throws -> Data {
+            try JSONSerialization.data(withJSONObject: lines.map { ["lyrics": Data($0.utf8).base64EncodedString()] })
+        }
+        PetitLyricsFixtureURLProtocol.reset([
+            "/search_lyrics": (200, Data(search.utf8)),
+            "/lyrics/101": (200, Data("<html></html>".utf8)),
+            "/lyrics/102": (200, Data("<html></html>".utf8)),
+            "/lib/pl-lib.js": (200, Data("jqxhr.setRequestHeader('X-CSRF-Token', '0123456789abcdef0123456789abcdef');".utf8)),
+            "/com/get_lyrics.ajax": (200, try body(["始発を待つ fixture line", "", "二行目の fixture line"]))
+        ])
+
+        guard case .candidates(let candidates) = await provider.lookup(track: track, identity: identity) else {
+            return XCTFail("The two listed records must come back as candidates")
+        }
+        XCTAssertEqual(candidates.map(\.providerSourceID), ["petitlyrics:101", "petitlyrics:102"], "two records at most")
+        let first = try XCTUnwrap(candidates.first)
+        XCTAssertEqual(first.title, "夜明けの駅")
+        XCTAssertEqual(first.artist, "Fixture Band")
+        XCTAssertEqual(first.album, "夜明けの駅")
+        XCTAssertEqual(first.source, .petitLyrics)
+        XCTAssertFalse(first.isSynchronized, "the public page has no timeline")
+        XCTAssertEqual(first.lines.map(\.originalText), ["始発を待つ fixture line", "", "二行目の fixture line"])
+        XCTAssertTrue(first.lines.allSatisfy { $0.timestamp == 0 })
+
+        let requests = PetitLyricsFixtureURLProtocol.recorded()
+        XCTAssertEqual(requests.compactMap { $0.url?.path }, ["/search_lyrics", "/lyrics/101", "/lib/pl-lib.js",
+            "/com/get_lyrics.ajax", "/lyrics/102", "/com/get_lyrics.ajax"], "the lyric page is opened before its text is requested")
+        let searchItems = URLComponents(url: try XCTUnwrap(requests.first?.url), resolvingAgainstBaseURL: false)?.queryItems
+        XCTAssertEqual(searchItems?.first { $0.name == "artist" }?.value, "Fixture Band", "search by the primary artist only")
+        let lyricRequest = try XCTUnwrap(requests.first { $0.url?.path == "/com/get_lyrics.ajax" })
+        XCTAssertEqual(lyricRequest.httpMethod, "POST")
+        XCTAssertEqual(lyricRequest.value(forHTTPHeaderField: "X-CSRF-Token"), "0123456789abcdef0123456789abcdef")
+        XCTAssertEqual(lyricRequest.value(forHTTPHeaderField: "X-Requested-With"), "XMLHttpRequest")
+
+        // The site's own title, artist and album are identity evidence, so the
+        // exact record can be adopted; the live record is a different version.
+        // A song with a guest the site does not list stays a choice for review.
+        let withGuest = LyricsSafeMatcher.decide(candidate: first, metadata: TrackMetadata.bootstrap(from: track))
+        XCTAssertEqual(withGuest.tier, .candidates, "\(withGuest.reasons)")
+        let metadata = TrackMetadata.bootstrap(from: Track(title: "夜明けの駅", artist: "Fixture Band", album: "夜明けの駅", duration: 201))
+        let exact = LyricsSafeMatcher.decide(candidate: first, metadata: metadata)
+        XCTAssertTrue(exact.tier == .autoHigh || exact.tier == .autoMedium, "\(exact.tier) \(exact.reasons)")
+        let live = LyricsSafeMatcher.decide(candidate: candidates[1], metadata: metadata)
+        XCTAssertFalse(live.tier == .autoHigh || live.tier == .autoMedium, "\(live.tier) \(live.reasons)")
+
+        PetitLyricsFixtureURLProtocol.reset(["/search_lyrics": (200, Data("<table id=\"lyrics_list\"></table>".utf8))])
+        guard case .noMatch = await provider.lookup(track: track, identity: identity) else { return XCTFail("no rows is no match") }
+        XCTAssertEqual(PetitLyricsFixtureURLProtocol.recorded().count, 1, "nothing else is requested without a row")
+
+        PetitLyricsFixtureURLProtocol.reset(["/search_lyrics": (200, Data(search.utf8)),
+            "/lyrics/101": (200, Data()), "/lyrics/102": (200, Data()), "/lib/pl-lib.js": (200, Data("changed".utf8))])
+        guard case .failed(.parseFailure) = await provider.lookup(track: track, identity: identity) else {
+            return XCTFail("a changed page must fail visibly, not return empty lyrics")
+        }
+
+        XCTAssertEqual(DatabaseSourceIdentifier.source(for: DatabaseSourceIdentifier.identifier(for: .petitLyrics)), .petitLyrics)
+        let saved = LyricsProviderConfiguration(enabled: [.localFiles, .sqliteDatabase, .lrclib, .linkcore],
+            order: [.localFiles, .sqliteDatabase, .amll, .lrclib, .netEaseExperimental, .qqExperimental,
+                    .kuwoExperimental, .kugouExperimental, .linkcore, .lyricsOVH])
+        XCTAssertTrue(saved.enabled.contains(.petitLyrics), "a setting saved before this source existed gains it")
+        XCTAssertFalse(saved.enabled.contains(.qqExperimental), "an earlier explicit disable is kept")
+        var disabled = saved
+        disabled.enabled.remove(.petitLyrics)
+        disabled.normalize()
+        XCTAssertFalse(disabled.enabled.contains(.petitLyrics), "turning it off afterwards is kept")
+    }
     func testPianoRecordingKeepsArrangementAndArtistIdentityRules() {
         let track = Track(title: "アーカイブ - Piano Ver.", artist: "stb", album: "アーカイブ", duration: 240, spotifyId: "5O45JO2bYhtyah2flZ9TI0")
         let identity = TrackIdentity(track: track)
@@ -708,10 +824,12 @@ final class ProviderFailureContractTests: XCTestCase {
             album: track.album, duration: track.duration, lines: [LyricLine(timestamp: 1, originalText: "Fixture")],
             isSynchronized: true, source: .qqExperimental, confidence: 0.95)
         for hasLyrics in [true, false] {
-            let ovh = ProviderFailureCounter(), linkcore = ProviderFailureCounter()
+            let ovh = ProviderFailureCounter(), linkcore = ProviderFailureCounter(), petit = ProviderFailureCounter()
+            defer { XCTAssertEqual(petit.value > 0, !hasLyrics, "プチリリ is asked only when nothing else can be adopted") }
             let manager = LyricsSearchManager(providers: [
                 ProviderFailureCountingLyricsProvider(name: "lyrics.ovh", result: .noMatch, counter: ovh),
                 ProviderFailureCountingLyricsProvider(name: "LinkCore / TuneCore", result: .noMatch, counter: linkcore),
+                ProviderFailureCountingLyricsProvider(name: PetitLyricsProvider().name, result: .noMatch, counter: petit),
                 ProviderFailureDelayedLyricsProvider(name: "QQ Music Experimental", delay: 20_000_000,
                     result: hasLyrics ? .match(document) : .noMatch)
             ])

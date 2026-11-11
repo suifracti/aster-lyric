@@ -4,8 +4,8 @@ import Foundation
     static func main() {
         let legacyOrder: [LyricsProviderID] = [.localFiles, .sqliteDatabase, .amll, .lrclib, .netEaseExperimental, .qqExperimental]
         let legacyEnabled: Set<LyricsProviderID> = [.localFiles, .sqliteDatabase, .lrclib]
-        let added: Set<LyricsProviderID> = [.lyricsOVH, .kuwoExperimental, .kugouExperimental, .linkcore]
-        let experimental: Set<LyricsProviderID> = [.netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental, .linkcore]
+        let added: Set<LyricsProviderID> = [.lyricsOVH, .kuwoExperimental, .kugouExperimental, .linkcore, .petitLyrics]
+        let experimental: Set<LyricsProviderID> = [.netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental, .linkcore, .petitLyrics]
         let migrated = LyricsProviderConfiguration(enabled: legacyEnabled, order: legacyOrder)
         precondition(migrated.enabled == legacyEnabled.union(added), "Migration preserves explicit existing disables")
         precondition(Array(migrated.order.prefix(legacyOrder.count)) == legacyOrder, "Existing provider order must survive")
