@@ -41,7 +41,7 @@ public struct AITranslationConfiguration: Equatable, Sendable {
         timeout: TimeInterval = 60,
         autoTranslateNewLyrics: Bool = false,
         engineID: String = TranslationEngineID.openAICompatible.rawValue,
-        promptPresetID: String = TranslationPromptPresetID.naturalSong.rawValue,
+        promptPresetID: String = TranslationPromptPresetID.personalV2.rawValue,
         profileID: UUID? = nil,
         profileSnapshot: String = "",
         fallbackStrategy: TranslationFallbackStrategy = .none,

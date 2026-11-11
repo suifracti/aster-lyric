@@ -1366,7 +1366,7 @@ private struct AISettingsView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Button("查看当前 Prompt 内容", systemImage: "doc.text.magnifyingglass") {
                                 do {
-                                    let preset = TranslationPromptPresetID(rawValue: settings.aiTranslationConfiguration.promptPresetID) ?? .naturalSong
+                                    let preset = TranslationPromptPresetID(rawValue: settings.aiTranslationConfiguration.promptPresetID) ?? .personalV2
                                     promptPreview = try AITranslationPromptBuilder().preview(
                                         context: promptContext,
                                         configuration: settings.aiTranslationConfiguration,

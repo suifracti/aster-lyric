@@ -31,7 +31,7 @@ public struct AITranslationPromptBuilder: Sendable {
         configuration: AITranslationConfiguration,
         requestID: UUID = UUID()
     ) throws -> AITranslationPrompt {
-        let presetID = TranslationPromptPresetID(rawValue: configuration.promptPresetID) ?? .naturalSong
+        let presetID = TranslationPromptPresetID(rawValue: configuration.promptPresetID) ?? .personalV2
         let profile = Self.decodeProfile(configuration.profileSnapshot)
         return try build(context: context, configuration: configuration, presetID: presetID, profile: profile, requestID: requestID)
     }
@@ -49,6 +49,8 @@ public struct AITranslationPromptBuilder: Sendable {
         }
         let presetGuidance: String
         switch presetID {
+        case .personalV2:
+            presetGuidance = TranslationPromptPresetCatalog.personalV2Guidance
         case .naturalSong:
             presetGuidance = Self.naturalSongGuidance
         case .literalFaithful:
@@ -163,6 +165,7 @@ public struct AITranslationPromptBuilder: Sendable {
         }
         let guidance: String
         switch presetID {
+        case .personalV2: guidance = TranslationPromptPresetCatalog.personalV2Guidance
         case .naturalSong: guidance = Self.naturalSongGuidance
         case .literalFaithful: guidance = "Prefer literal wording while preserving meaning."
         case .poeticFlow: guidance = "Keep poetic flow only when faithful to the source."

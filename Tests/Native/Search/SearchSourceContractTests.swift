@@ -72,6 +72,34 @@ final class SearchSourceContractTests: XCTestCase {
         XCTAssertEqual(runCount(), 5, "a failure is retried, never remembered")
     }
 
+    /// The user's saved preset is 我的风格 (full-audit-v2-r1). It must resolve
+    /// to that guidance, not fall back silently to another style.
+    func testSavedPersonalStyleResolvesToTheAuditedGuidance() throws {
+        let saved = "translationPrompt.personalV2.v2"
+        XCTAssertEqual(TranslationPromptPresetID(rawValue: saved), .personalV2)
+        XCTAssertEqual(TranslationPromptPresetCatalog.defaultPreset.id, .personalV2)
+        XCTAssertEqual(AITranslationConfiguration().promptPresetID, saved, "new installs start from the same style")
+        let context = AITranslationContext(title: "Fixture", artist: "Fixture", album: "", sourceLanguage: "ja",
+            targetLanguage: "zh-Hans", style: "natural_song",
+            lines: [AITranslationSourceLine(index: 0, original: "generated fixture line")])
+        let builder = AITranslationPromptBuilder()
+        var configuration = AITranslationConfiguration()
+        configuration.promptPresetID = saved
+        for engine in [TranslationEngineID.codexChatGPT.rawValue, TranslationEngineID.deepSeekAPI.rawValue] {
+            configuration.engineID = engine
+            let prompt = try builder.build(context: context, configuration: configuration)
+            XCTAssertTrue(prompt.system.contains("full-audit-v2-r1"), engine)
+            XCTAssertTrue(prompt.system.contains("【多语种】"), engine)
+            XCTAssertFalse(prompt.system.contains("Natural song style v2"), engine)
+        }
+        configuration.promptPresetID = TranslationPromptPresetID.naturalSong.rawValue
+        let natural = try builder.build(context: context, configuration: configuration)
+        XCTAssertTrue(natural.system.contains("Natural song style v2"), "the other styles stay selectable")
+        configuration.promptPresetID = "translationPrompt.unknown.v9"
+        XCTAssertTrue(try builder.build(context: context, configuration: configuration).system.contains("full-audit-v2-r1"),
+                      "an unknown saved value falls back to the user's style")
+    }
+
     func testHostUsesPrivateStorageAndNoKeychain() {
         XCTAssertTrue(NativeTestRuntime.isEnabled)
         XCTAssertTrue(UserDefaults.lyricsQ === NativeTestRuntime.defaults)

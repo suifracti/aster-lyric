@@ -1874,7 +1874,7 @@ public final class AppSettingsStore: ObservableObject {
             timeout: defaults.object(forKey: Key.aiTimeout) as? Double ?? 60,
             autoTranslateNewLyrics: defaults.object(forKey: Key.aiAutoTranslateNewLyrics) as? Bool ?? true,
             engineID: defaults.string(forKey: Key.aiEngineID) ?? TranslationEngineID.openAICompatible.rawValue,
-            promptPresetID: defaults.string(forKey: Key.aiPromptPresetID) ?? TranslationPromptPresetID.naturalSong.rawValue,
+            promptPresetID: defaults.string(forKey: Key.aiPromptPresetID) ?? TranslationPromptPresetID.personalV2.rawValue,
             profileID: defaults.string(forKey: Key.aiProfileID).flatMap(UUID.init(uuidString:)),
             profileSnapshot: defaults.string(forKey: Key.aiProfileSnapshot) ?? "",
             fallbackStrategy: TranslationFallbackStrategy(rawValue: defaults.string(forKey: Key.aiFallbackStrategy) ?? "none") ?? .none,

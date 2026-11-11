@@ -30,7 +30,7 @@ struct Phase25AContract {
         precondition(Set(catalog.map(\.stableID)).count == catalog.count)
         precondition(catalog.contains { $0.stableID == TranslationEngineID.appleSystem.rawValue })
         precondition(TranslationPromptPresetCatalog.all.count >= 5)
-        precondition(TranslationPromptPresetCatalog.defaultPreset.id == .naturalSong)
+        precondition(TranslationPromptPresetCatalog.defaultPreset.id == .personalV2)
         print("phase 2.5A contracts passed")
     }
 }
