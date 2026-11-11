@@ -630,3 +630,12 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 - **Leaving:** when the pointer moves away inside the window, the pill waits 0.6 s and then fades over 0.24 s. Leaving the window waits 0.3 s. Coming back to the pill, or to the zone between it and the edge, during the wait keeps it where it is.
 - **Following:** while the pointer is level with the pill, the pill does not move. It follows, with the existing spring, only after the pointer has passed the pill's end by 20 pt along the edge. Changing edges works as before.
 - A drag on the scrubber still locks the pill in place.
+
+**Calling the pill (2026-11-11):** it appears from 44 pt of a window edge instead of 30 pt, so calling it does not mean sliding onto the resize border. The pill is always drawn at the frame the layout computed, which keeps 12 pt clear of the toolbar.
+
+**Progress position: 窗口边缘 / 封面光环 (user idea, 2026-11-11).**
+- A 「进度位置」 choice sits with the edge-progress colour controls in 画面 → 更多画面选项. The default stays 窗口边缘.
+- **封面光环:** the progress line runs around the foreground cover, 6 pt outside it and following its corners, clockwise from the top middle. The played part is 3 pt wide and glows in the progress colour; the rest is a faint ring.
+- **No foreground cover:** when the picture has no foreground cover, or only a thumbnail under 120 pt (专注, 封面 with the cover hidden, lyric-focus layouts), the line is drawn at the window edge as before. Nothing is drawn around the lyrics: a ring around the whole lyric column would be the largest thing on screen.
+- The halo only shows progress. Seeking stays on the pill.
+- The colour modes apply to both positions.
