@@ -639,3 +639,45 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 - **No foreground cover:** when the picture has no foreground cover, or only a thumbnail under 120 pt (专注, 封面 with the cover hidden, lyric-focus layouts), the line is drawn at the window edge as before. Nothing is drawn around the lyrics: a ring around the whole lyric column would be the largest thing on screen.
 - The halo only shows progress. Seeking stays on the pill.
 - The colour modes apply to both positions.
+
+## Round 14: one interface shaped by what the app does (2026-11-11)
+
+The user reviewed real screenshots of 画面, 文字, 歌单, 歌词库 and the library window and asked for one pass over all of them, plus the player bar and Settings, without supervision. Their words: the UI is made to fit our features; features are not bent to fit a template. Too many things are shown at once and they do not look like one app. Nothing is removed; things are folded (see Design principle).
+
+Work in this order. Each batch is built, tested, restarted and pushed on its own.
+
+**A. Progress line: where it is, and seeking on it.**
+- The position is automatic. There is no 「进度位置」 choice. With a foreground cover of at least 120 pt on screen, the line runs around the cover (the halo). Without one, it runs along the window edge.
+- Both can be seeked, as well as the pill's scrubber.
+- **Halo:** a band 12 pt wide centred on the ring takes the pointer. It is well inside the window.
+- **Window edge:** a band from 8 to 24 pt inside the window takes the pointer. The outer 8 pt stay free for resizing. The line itself does not move.
+- **Feedback, the same for both:** in the band the pointer becomes a pointing hand, the line thickens in place to 4 pt, and a small time label follows the pointer on the inner side. Click seeks; drag scrubs and seeks on release.
+- The toolbar's rectangle and the pill are never part of a band.
+- Fix: the toolbar's frame never reached the edge player (it read as zero), so the pill could sit on the toolbar.
+
+**B. Names.** Every visible 「Lyric Island」 becomes 「Aster · Lyric」: window titles, the menu-bar fallback text, messages and the library window's captions. Identifiers and storage keys do not change.
+
+**C. One set of controls in every tool panel (画面, 文字, 译文, 更多).**
+- A panel is a list of rows, 30 pt high, label left, control right. Section titles are 12 pt semibold in the secondary colour; there are no boxes inside boxes.
+- **Switch row:** label, then the switch at the right edge. Two or three related switches may share a row only when they are one group (原文 · 译文 · 读音).
+- **Choice row:** label, then `V3SegmentedPicker` filling the rest.
+- **Value row:** label, slider, then the value in a 52 pt field with its unit, all on one line. No separate range caption, no dotted tick line, no second row of presets; presets that matter are tick marks on the slider.
+- **Folded part:** one 「更多…」 row per panel holds what is changed rarely. It remembers whether it was open.
+- Every panel fits its content up to 520 pt, then scrolls with the bottom fade.
+- 文字 opens with 显示 and 字号, then 对齐 and 清晰度; the reading options (罗马音, 拼音, 注音排版, sizes) fold.
+- 画面 opens with the scene row, the style row and 模糊, then 前景封面, 播放呈现 and 背景动态; the rest folds.
+
+**D. Scenes, folded once more.** The four categories stay. Each shows at most two styles; the others sit behind a 「更多」 button in the same row and take its place when chosen. 环境光 shows 原版环境光 and 柔光羽化, with 柔和光晕 and 独立色场 behind 更多. Renderers, raw IDs, saved values and the three effects the user likes stay one click away.
+
+**E. Player bar.** The standard bar, the hover bar and the edge pill are one control in three placements: the same surface, the same buttons in the same order (喜欢 · 添加到歌单 | 随机 · 上一首 · 播放 · 下一首 · 循环 | time), the same scrubber. Only the title lines and the width differ.
+
+**F. 歌词库 · 搜索 · 歌单 (centred panel and the library window).**
+- The panel uses the same glass as the tool panels and the same neutral tab selection; no black selected tab.
+- Lists use one row height and one cover size; counts and badges sit at the right in the secondary colour.
+- The library window reads dates as 「11月10日 19:56」, like the panel.
+
+**G. Settings.** One sidebar of pages named by what they set up (播放来源, 歌词来源, AI 翻译, 读音, 数据, 窗口). Pages use the same rows as the tool panels. Nothing that the toolbar already controls is repeated (see Toolbar vs Settings).
+
+**H. After the interface: translation style.** Review the default prompt against the user's confirmed translations and improve it; saved translations are not rewritten.
+
+Verification for every batch: the native target and the source contracts pass; layout is checked with `Scripts/ui-snapshots.sh` for clipping and overlap only. The assistant cannot see the real window (the desktop-control tool refuses this app), so real look and feel are the user's to confirm from the running app.
