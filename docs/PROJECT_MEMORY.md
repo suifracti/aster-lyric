@@ -20,6 +20,7 @@
 | 有歌词源译文却不显示、部分行没有译文、重复补存 | L-010；TranslationSessionController.synchronize 与 chooseVersion |
 | 悬停歌词库转圈、版本列表开得慢 | L-011；prefetchCurrentTrack、currentDetail |
 | 边缘线内移/加粗、胶囊热区、封面卡片不同宽、分段选中块乱动 | L-012；V3EdgeRailView、V3ResponsiveGeometry、V3SegmentedPicker |
+| 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
 
 ## 默认自动执行：不等用户提醒
 
@@ -157,6 +158,22 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 `5d8dab7`、`be24b9a`、最终 `ff823a2` 的权威是 `V3WindowEdgePlaybackOverlay.swift`。胶囊四边留 26pt，热区 6–26pt；指针距边 48pt 内，只有接近的边移到 14pt，整条线宽 4pt。`V3EdgeRailView` 只有 trackLayer/progressLayer，以 CALayer 在 160ms 内过渡，Reduce Motion 用淡入；胶囊短进度已删除。`7144775` 的 `V3ResponsiveGeometry.foregroundCardWidth` 让卡片随封面宽度，最低 300pt，封面更小时居中其上，位置移动整列。`0c4ae15` 的共用 `V3SegmentedPicker` 仅选择变化时移动选中块，等宽、不跟随指针，Reduce Motion 直接切换。
 
 `ff823a2` 同时让“当前译文”只在翻译页出现，并把译文 UI 合同定位到拆分后的 `AppleMusicImmersiveV3Lyrics.swift`。现有 `testApproachingTopMovesOnlyThatProgressRailInward`、`testForegroundPlayerCardTracksCoverWidthWithMinimum` 和 `V3ToolbarPresentationTests` 是检查入口。当轮报告 Debug 构建、23 项定向原生检查和离屏图；本轮没有运行或拍图，播放态性能未完成，见 L-002。下次保留局部图层动画、正常偏好/位置值和共享控件，不为旧字符串断言退回交互。
+
+## L-013 加歌词源先测真实缺词歌曲，中国平台已接四家，日文独立歌曲走プチリリ
+
+想加来源、怀疑某家没接、或日文独立发行歌曲找不到词时，先看现有来源的实际贡献，再用真实缺词歌曲去测候选站，不按“别的项目用了什么”直接接。
+
+2026-11-11 的现状：网易云、QQ、酷我、酷狗四家中国平台都已接入并默认查询。正式库的歌词版本数为 LRCLIB 507、网易云 177、QQ 42、AMLL 11、LinkCore 8、酷狗 2、酷我 0。酷我 304 次查询里 145 次有候选，酷狗 265 次里 104 次有候选，但都排在网易云和 QQ 之后，很少成为最终采用的版本。再接咪咕等同类平台，对缺词歌曲帮助不大，因为缺的主要是日文独立发行。
+
+用 11 月无结果的 8 首歌实测候选站：歌ネット返回 Cloudflare 验证页（403），UtaTen 返回空正文，J-Lyric 的搜索域名 TLS 握手失败，Genius 返回 403。这四家拒绝程序访问，没有接，也不绕过。プチリリ（petitlyrics.com）正常响应，8 首里 5 首有歌手相符的条目。Musixmatch 浏览器 token 与 Spotify 私有歌词接口沿用[既有审计](REFERENCE_PROJECTS_LYRICS_AUDIT.md)的结论，不接。
+
+`PetitLyricsProvider` 的取词流程是搜索页（歌名加主歌手）、歌词页、`/lib/pl-lib.js` 里的页面令牌、`/com/get_lyrics.ajax`。令牌与打开歌词页的会话绑定，缺 `X-Requested-With` 或没先开歌词页都会得到 400，所以每次查询用独立的临时会话，不保存 Cookie。页面 `<canvas id="lyrics">` 里的回退文本只有约一半行数，不能当正文用。网站自己的 App 接口能给逐行和逐字时间轴，但需要它的应用密钥，没有采用，因此本来源只有纯文本。最多取前两条记录。
+
+它和 lyrics.ovh、LinkCore 同属 `LyricsSearchManager.supplementProviderNames`，只在其他在线来源没有可采用结果时才查询。匹配规则没有为它改动：歌名、歌手、专辑都相符的会自动采用；专辑不同、站内没列合作歌手、歌手写法不同的进入“核对歌词版本”或被拒。真实网站实测 6 首：3 首取到正文并进入核对（41、57、58 行），1 首因播放侧歌手写作 `GAN (岩田剛典)` 被 `primaryArtistConflict` 拒绝，2 首搜索无结果（其中《KILL MY LOVE》站内歌手是 `加藤 ミリヤ`，按 `加藤MILIYAH` 搜不到）。每次查询 1.4–3.5 秒。旧设置读入时会自动获得这个来源，之后手动关闭会保留。
+
+同轮把 lyrics.ovh 的超时从 8 秒改为 3 秒，LinkCore 的总超时从 16 秒改为 6 秒。依据是本机统计：lyrics.ovh 267 次查询 11 次有候选、无一采用，未命中常要 5–6 秒；LinkCore 226 次里 60 次失败。LinkCore 的歌手实体验证走目录缓存，不受这个总超时影响。真实听歌下“无结果”的总等待时间变化没有实测。
+
+新增 `testPetitLyricsReturnsPlainTextWithTheSitesOwnTitleAndArtist`，并把 プチリリ 加进 `testLowYieldSourcesWaitAndAreSkippedAfterAutomaticAdoption`；测试只用编造的文本和本地网络桩。完整原生 131 项中 130 通过、1 跳过、0 失败，来源配置合同通过。下次网站改版时先看搜索表格的 `lyrics-list-title`、`lyrics-list-artist` 和令牌脚本，改版会报解析失败而不是返回空歌词。
 
 ## 实际覆盖与接续
 
