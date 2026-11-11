@@ -21,6 +21,9 @@ struct V3WindowEdgePlaybackOverlay: View {
     @Environment(\.v3PlaybackInteractionChanged) private var interactionChanged
     @State private var edgeInteraction = V3WindowEdgeInteractionState()
     @State private var pointerOverToolbar = false
+    private struct RailHover: Equatable { let point: CGPoint; let fraction: Double }
+    @State private var railHover: RailHover?
+    @State private var cursorPushed = false
     /// The pill as drawn. It follows the pointer state at once when showing,
     /// and lingers briefly when the pointer moves away, so a small overshoot
     /// on the way to a button or the scrubber does not make it vanish.
@@ -49,11 +52,35 @@ struct V3WindowEdgePlaybackOverlay: View {
             let songHue = V3WindowEdgeSongColor.hue(for: state.currentTrackIdentity?.stableKey ?? "no-track")
             let controlPosition = controlsLayout(size: size)
             let playerVisible = controlsVisible && !controlPosition.frame.intersects(toolbarExclusion)
+            let track = progressTrack(size: size)
 
             ZStack(alignment: .topLeading) {
-                // The rail at the window edge only shows progress. It takes no
-                // pointer events, so it never competes with the resize border;
-                // seeking lives on the pill's own scrubber.
+                // The seek band: a ring around the cover, or 8–24 pt inside the
+                // window edge. The outer 8 pt stay free for resizing; the
+                // toolbar and the pill sit above it and keep their clicks.
+                V3ProgressHitBand(track: track)
+                    .fill(Color.clear, style: FillStyle(eoFill: true))
+                    .contentShape(V3ProgressHitBand(track: track), eoFill: true)
+                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                        .onChanged { value in
+                            guard canSeek, let fraction = track.fraction(at: value.location) else { return }
+                            setDraft(fraction)
+                            setHover(RailHover(point: value.location, fraction: fraction))
+                        }
+                        .onEnded { value in
+                            if let fraction = track.fraction(at: value.location) { finishSeek(fraction: fraction) }
+                            else { cancelDraft() }
+                            updatePointer(value.location, size: size, dragging: false)
+                        })
+                    .accessibilityLabel("播放进度")
+                    .accessibilityValue("\(Int(progressFraction * 100))%")
+                    .accessibilityAdjustableAction { direction in
+                        guard canSeek else { return }
+                        let delta: Double = direction == .increment ? 5 : -5
+                        state.seek(to: min(max(0, Double(progressFraction) * state.currentTrack.duration + delta),
+                                           state.currentTrack.duration), source: "v3-edge-progress-keyboard")
+                    }
+
                 if animatesColor {
                     V3AnimationIsland {
                         TimelineView(.animation(minimumInterval: reduceMotion ? 0.5 : 1.0 / 30.0,
@@ -63,6 +90,15 @@ struct V3WindowEdgePlaybackOverlay: View {
                     }.allowsHitTesting(false)
                 } else {
                     railPresentation(at: .now, songHue: songHue, size: size)
+                }
+                if let hover = railHover {
+                    Text(v3EdgeTimeText(hover.fraction * state.currentTrack.duration))
+                        .font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .modifier(V3ControlBarSurface())
+                        .modifier(V3SystemAppearanceModifier())
+                        .position(track.labelPosition(for: hover.point))
+                        .allowsHitTesting(false).accessibilityHidden(true)
                 }
 
 
@@ -156,6 +192,7 @@ struct V3WindowEdgePlaybackOverlay: View {
         .onDisappear {
             colorStartedAt = nil
             lingerTask?.cancel()
+            setHover(nil)
             cancelDraft()
             clearPointer()
         }
@@ -179,10 +216,38 @@ struct V3WindowEdgePlaybackOverlay: View {
         if next != edgeInteraction { edgeInteraction = next }
         let overToolbar = point.map { toolbarExclusion.contains($0) } ?? false
         if pointerOverToolbar != overToolbar { pointerOverToolbar = overToolbar }
+        var hover: RailHover?
+        if canSeek, let point, !overToolbar {
+            let track = progressTrack(size: size)
+            let pill = controlsVisible ? controlsLayout(size: size).frame : .null
+            if dragging || (track.contains(point) && !pill.contains(point)),
+               let fraction = track.fraction(at: point) {
+                hover = RailHover(point: point, fraction: draftFraction ?? fraction)
+            }
+        }
+        setHover(hover)
+    }
+
+    private func setHover(_ hover: RailHover?) {
+        if railHover != hover { railHover = hover }
+        // A pointing hand says the line can be clicked; balanced push/pop.
+        if (hover != nil) != cursorPushed {
+            if hover != nil { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+            cursorPushed = hover != nil
+        }
+    }
+
+    private var activeHalo: V3ForegroundCoverFrame? {
+        haloTarget.flatMap { $0.isLargeEnough ? $0 : nil }
+    }
+
+    private func progressTrack(size: CGSize) -> V3ProgressTrack {
+        V3ProgressTrack(canvas: size, halo: activeHalo)
     }
 
     private func clearPointer() {
         pointerOverToolbar = false
+        setHover(nil)
         let next = edgeInteraction.hiding()
         if next != edgeInteraction { edgeInteraction = next }
     }
@@ -232,7 +297,8 @@ struct V3WindowEdgePlaybackOverlay: View {
     private func railPresentation(at date: Date, songHue: Double, size: CGSize) -> some View {
         let color = accent(at: date, songHue: songHue)
         return V3NativeProgressRail(clock: state.presentationClock, draft: draftFraction,
-                active: windowVisible, color: color, halo: haloTarget.flatMap { $0.isLargeEnough ? $0 : nil })
+                active: windowVisible, color: color, halo: activeHalo,
+                highlighted: railHover != nil || draftFraction != nil)
             .allowsHitTesting(false).accessibilityHidden(true)
     }
 
@@ -333,6 +399,84 @@ extension View {
     }
 }
 
+/// Where the progress line runs: around the foreground cover when there is
+/// one, otherwise along the window edge. Drawing, seeking and the time label
+/// all read this one description.
+struct V3ProgressTrack: Equatable {
+    /// The rectangle the line follows, and its corner radius.
+    let ring: CGRect
+    let cornerRadius: CGFloat
+    let isHalo: Bool
+    let canvas: CGSize
+
+    /// Distance from the window edge kept free for resizing, and the band's inner edge.
+    static let edgeBand: ClosedRange<CGFloat> = 8...24
+    /// Half the width of the band around the halo.
+    static let haloReach: CGFloat = 6
+
+    init(canvas: CGSize, halo: V3ForegroundCoverFrame?) {
+        self.canvas = canvas
+        if let halo {
+            ring = halo.frame.insetBy(dx: -6, dy: -6)
+            cornerRadius = halo.cornerRadius + 6
+            isHalo = true
+        } else {
+            ring = CGRect(origin: .zero, size: canvas).insetBy(dx: 1.5, dy: 1.5)
+            cornerRadius = 12
+            isHalo = false
+        }
+    }
+
+    var hitPath: Path {
+        var path = Path()
+        if isHalo {
+            let reach = Self.haloReach
+            path.addRoundedRect(in: ring.insetBy(dx: -reach, dy: -reach),
+                                cornerSize: CGSize(width: cornerRadius + reach, height: cornerRadius + reach))
+            path.addRoundedRect(in: ring.insetBy(dx: reach, dy: reach),
+                                cornerSize: CGSize(width: max(0, cornerRadius - reach), height: max(0, cornerRadius - reach)))
+        } else {
+            let bounds = CGRect(origin: .zero, size: canvas)
+            path.addRect(bounds.insetBy(dx: Self.edgeBand.lowerBound, dy: Self.edgeBand.lowerBound))
+            path.addRect(bounds.insetBy(dx: Self.edgeBand.upperBound, dy: Self.edgeBand.upperBound))
+        }
+        return path
+    }
+
+    func contains(_ point: CGPoint) -> Bool { hitPath.contains(point, eoFill: true) }
+
+    /// Position along the line, clockwise from the top middle.
+    func fraction(at point: CGPoint) -> Double? {
+        let origin = CGPoint(x: ring.minX - 1.5, y: ring.minY - 1.5)
+        return V3ResponsiveGeometry.edgeProgressFraction(
+            at: CGPoint(x: point.x - origin.x, y: point.y - origin.y),
+            canvasSize: CGSize(width: ring.width + 3, height: ring.height + 3),
+            inset: 1.5, cornerRadius: cornerRadius)
+    }
+
+    /// The time label sits beside the pointer, away from the line: inward
+    /// from the window edge, outward from the cover.
+    func labelPosition(for point: CGPoint) -> CGPoint {
+        let distances: [(CGFloat, CGVector)] = [
+            (abs(point.y - ring.minY), CGVector(dx: 0, dy: -1)),
+            (abs(ring.maxX - point.x), CGVector(dx: 1, dy: 0)),
+            (abs(ring.maxY - point.y), CGVector(dx: 0, dy: 1)),
+            (abs(point.x - ring.minX), CGVector(dx: -1, dy: 0))
+        ]
+        let outward = distances.min { $0.0 < $1.0 }?.1 ?? CGVector(dx: 0, dy: -1)
+        let away: CGFloat = isHalo ? 24 : -40
+        let x = point.x + outward.dx * away
+        let y = point.y + outward.dy * away
+        return CGPoint(x: min(max(x, 36), max(36, canvas.width - 36)),
+                       y: min(max(y, 16), max(16, canvas.height - 16)))
+    }
+}
+
+struct V3ProgressHitBand: Shape {
+    let track: V3ProgressTrack
+    func path(in rect: CGRect) -> Path { track.hitPath }
+}
+
 func v3EdgeTimeText(_ seconds: TimeInterval) -> String {
     let value = Int(max(0, seconds.isFinite ? seconds : 0))
     return String(format: "%d:%02d", value / 60, value % 60)
@@ -417,17 +561,12 @@ struct V3WindowEdgeProgressSettings: View {
     @Binding var enabled: Bool
     @Binding var colorHex: String
     @Binding var colorMode: String
-    @Binding var placement: String
     var showsModeToggle = true
     var showsExplanation = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if showsModeToggle { Toggle("窗口边缘播放进度", isOn: $enabled) }
-            V3SegmentedPicker("进度位置", selection: $placement,
-                              options: [("窗口边缘", "windowEdge"), ("封面光环", "coverHalo")])
-                .disabled(!enabled)
-                .help("封面光环：进度绕着前景封面发光。画面里没有前景封面时，仍显示在窗口边缘。")
             Picker("颜色模式", selection: $colorMode) {
                 Text("固定颜色").tag("manual")
                 Text("自动流转").tag("flow")
@@ -443,11 +582,11 @@ struct V3WindowEdgeProgressSettings: View {
                 .disabled(!enabled)
             }
             if showsExplanation {
-                Text("进度常驻显示；靠近边缘时显示播放按钮，在按钮旁的进度条上点击或拖动可跳转。")
+                Text("有前景封面时进度绕着封面发光，没有时沿窗口边缘；两处和播放按钮旁的进度条都可点击或拖动跳转。")
                 .font(.caption).foregroundStyle(.secondary)
             }
         }
-        .help("进度常驻显示；靠近边缘时显示播放按钮，在按钮旁的进度条上点击或拖动可跳转。")
+        .help("有前景封面时进度绕着封面发光，没有时沿窗口边缘；两处和播放按钮旁的进度条都可点击或拖动跳转。")
     }
 }
 
@@ -642,9 +781,11 @@ private struct V3NativeProgressRail: NSViewRepresentable {
     let active: Bool
     let color: Color
     var halo: V3ForegroundCoverFrame?
+    var highlighted = false
     func makeNSView(context: Context) -> V3EdgeRailView { V3EdgeRailView() }
     func updateNSView(_ view: V3EdgeRailView, context: Context) {
-        view.configure(clock: clock, draft: draft, active: active, color: NSColor(color).cgColor, halo: halo)
+        view.configure(clock: clock, draft: draft, active: active, color: NSColor(color).cgColor,
+                       halo: halo, highlighted: highlighted)
     }
 }
 
@@ -654,6 +795,7 @@ final class V3EdgeRailView: NSView {
     private var clock: LyricsPresentationClock?
     /// When set, the line runs around this cover instead of the window.
     private(set) var halo: V3ForegroundCoverFrame?
+    private(set) var highlighted = false
     private var draft: Double?
     private var active = false
     override var isFlipped: Bool { true }
@@ -682,7 +824,8 @@ final class V3EdgeRailView: NSView {
         for (shape, width) in [(trackLayer, CGFloat(2.1)), (progressLayer, CGFloat(2.2))] {
             shape.frame = bounds
             shape.path = path
-            shape.lineWidth = halo == nil ? width : 3
+            // Under the pointer the line thickens in place; it never moves.
+            shape.lineWidth = highlighted ? 4 : (halo == nil ? width : 3)
         }
         // The played part glows in its own colour; the window-edge line does not.
         progressLayer.shadowOffset = .zero
@@ -691,14 +834,15 @@ final class V3EdgeRailView: NSView {
         CATransaction.commit()
     }
     func configure(clock: LyricsPresentationClock, draft: Double?, active: Bool, color: CGColor,
-                   halo: V3ForegroundCoverFrame? = nil) {
+                   halo: V3ForegroundCoverFrame? = nil, highlighted: Bool = false) {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         trackLayer.strokeColor = color.copy(alpha: halo == nil ? 0.22 : 0.16)
         progressLayer.strokeColor = color
         progressLayer.shadowColor = color
         CATransaction.commit()
-        if self.halo != halo {
+        if self.halo != halo || self.highlighted != highlighted {
             self.halo = halo
+            self.highlighted = highlighted
             updateGeometry()
         }
         guard self.clock != clock || self.draft != draft || self.active != active else { return }

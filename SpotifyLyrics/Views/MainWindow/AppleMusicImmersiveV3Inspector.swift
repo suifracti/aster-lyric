@@ -594,8 +594,7 @@ struct V3VisualControls {
             if settings.v3EdgeProgressEnabled {
                 V3WindowEdgeProgressSettings(enabled: $settings.v3EdgeProgressEnabled,
                     colorHex: $settings.v3EdgeProgressColorHex,
-                    colorMode: $settings.v3EdgeProgressColorMode,
-                    placement: $settings.v3EdgeProgressPlacement, showsModeToggle: false,
+                    colorMode: $settings.v3EdgeProgressColorMode, showsModeToggle: false,
                     showsExplanation: showsExplanations)
             }
             Toggle("确认纯音乐时使用简洁画面", isOn: $settings.v3InstrumentalPureImmersion)

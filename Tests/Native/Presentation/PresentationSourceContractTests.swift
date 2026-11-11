@@ -114,8 +114,8 @@ final class PresentationSourceContractTests: XCTestCase {
             track: anotherRecording, confidence: 1)], current: playing).count, 1)
     }
 
-    /// 封面光环: the line runs around the foreground cover and glows; without
-    /// a cover large enough it is the plain window-edge line again.
+    /// With a foreground cover the line runs around it and glows; without a
+    /// cover large enough it is the plain window-edge line again.
     @MainActor
     func testProgressHaloRunsAroundTheCoverAndFallsBackToTheWindowEdge() {
         let view = V3EdgeRailView(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
@@ -130,7 +130,7 @@ final class PresentationSourceContractTests: XCTestCase {
         XCTAssertEqual(view.progressLayer.shadowOpacity, 0.9, accuracy: 0.001)
         XCTAssertEqual(view.progressLayer.lineWidth, 3, accuracy: 0.01)
         XCTAssertNotNil(view.progressLayer.animation(forKey: "playhead"), "the halo advances like the edge line")
-        XCTAssertNil(view.hitTest(CGPoint(x: 54, y: 300)), "the halo takes no clicks either")
+        XCTAssertNil(view.hitTest(CGPoint(x: 54, y: 300)), "the drawn line never takes clicks; the band does")
 
         view.configure(clock: clock, draft: nil, active: true, color: NSColor.systemPink.cgColor, halo: nil)
         XCTAssertEqual(view.progressLayer.path!.boundingBoxOfPath, CGRect(x: 1.5, y: 1.5, width: 897, height: 697))
@@ -140,12 +140,33 @@ final class PresentationSourceContractTests: XCTestCase {
         XCTAssertTrue(cover.isLargeEnough)
         XCTAssertFalse(V3ForegroundCoverFrame(frame: CGRect(x: 0, y: 0, width: 52, height: 52), cornerRadius: 6).isLargeEnough,
                        "a thumbnail is not a place for the halo")
-        let defaults = UserDefaults(suiteName: "halo-\(UUID().uuidString)")!
-        XCTAssertEqual(AppSettingsStore(defaults: defaults).v3EdgeProgressPlacement, "windowEdge", "existing users keep the window edge")
-        defaults.set("coverHalo", forKey: AppSettingsStore.Key.v3EdgeProgressPlacement)
-        XCTAssertEqual(AppSettingsStore(defaults: defaults).v3EdgeProgressPlacement, "coverHalo")
-        defaults.set("something-else", forKey: AppSettingsStore.Key.v3EdgeProgressPlacement)
-        XCTAssertEqual(AppSettingsStore(defaults: defaults).v3EdgeProgressPlacement, "windowEdge")
+    }
+
+    /// Both lines can be seeked from a band beside them. The window edge keeps
+    /// its outer 8 pt for resizing; the halo's band is centred on the ring.
+    func testProgressBandsSeekWithoutTouchingTheResizeBorder() {
+        let canvas = CGSize(width: 900, height: 700)
+        let edge = V3ProgressTrack(canvas: canvas, halo: nil)
+        for depth: CGFloat in [2, 7.9] { XCTAssertFalse(edge.contains(CGPoint(x: 450, y: depth)), "resize border at \(depth)") }
+        for depth: CGFloat in [8.1, 16, 23.9] {
+            XCTAssertTrue(edge.contains(CGPoint(x: 450, y: depth)), "top band at \(depth)")
+            XCTAssertTrue(edge.contains(CGPoint(x: 900 - depth, y: 350)), "right band at \(depth)")
+        }
+        XCTAssertFalse(edge.contains(CGPoint(x: 450, y: 30)), "lyrics below the band keep their clicks")
+        XCTAssertEqual(edge.fraction(at: CGPoint(x: 450, y: 12))!, 0, accuracy: 0.01, "top middle is the start")
+        XCTAssertEqual(edge.fraction(at: CGPoint(x: 450, y: 688))!, 0.5, accuracy: 0.01, "bottom middle is halfway")
+        XCTAssertGreaterThan(edge.labelPosition(for: CGPoint(x: 450, y: 12)).y, 40, "the label sits inward from the edge")
+
+        let cover = V3ForegroundCoverFrame(frame: CGRect(x: 60, y: 180, width: 320, height: 320), cornerRadius: 8)
+        let halo = V3ProgressTrack(canvas: canvas, halo: cover)
+        XCTAssertEqual(halo.ring, cover.frame.insetBy(dx: -6, dy: -6))
+        XCTAssertTrue(halo.contains(CGPoint(x: 220, y: 174)), "on the ring above the cover")
+        XCTAssertTrue(halo.contains(CGPoint(x: 220, y: 178)), "just outside the cover edge")
+        XCTAssertFalse(halo.contains(CGPoint(x: 220, y: 300)), "the cover itself is not the band")
+        XCTAssertFalse(halo.contains(CGPoint(x: 450, y: 12)), "with a halo the window edge is free")
+        XCTAssertEqual(halo.fraction(at: CGPoint(x: 220, y: 174))!, 0, accuracy: 0.01)
+        XCTAssertEqual(halo.fraction(at: CGPoint(x: 386, y: 340))!, 0.25, accuracy: 0.01, "right middle is a quarter")
+        XCTAssertLessThan(halo.labelPosition(for: CGPoint(x: 220, y: 174)).y, 174, "the label sits outward from the cover")
     }
 
     /// Seeking lives on the pill, well inside the window.

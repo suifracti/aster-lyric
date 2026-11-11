@@ -34,7 +34,13 @@ private struct V3PlaybackInteractionKey: EnvironmentKey {
 
 private struct V3ToolbarFramePreferenceKey: PreferenceKey {
     static let defaultValue = CGRect.zero
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+    /// Siblings that do not report still pass the default to reduce; letting
+    /// them overwrite the toolbar's frame left the edge player seeing an
+    /// empty toolbar, so it could sit on top of it.
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if !next.isEmpty { value = next }
+    }
 }
 
 private struct V3PlaybackRegionPreferenceKey: PreferenceKey {
@@ -358,7 +364,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         // Priority: an open panel, then the toolbar, then the edge.
                         suppressControls: toolbar.suppressesEdgeControls(nearTop: false, otherPanelOpen: toolbarPanelIsPresented),
                         toolbarBounds: toolbarBounds,
-                        haloTarget: settings.v3EdgeProgressPlacement == "coverHalo" ? foregroundCover : nil
+                        haloTarget: foregroundCover
                     )
                     .frame(width: geometry.size.width, height: geometry.size.height)
                 }

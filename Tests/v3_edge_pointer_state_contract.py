@@ -24,9 +24,10 @@ assert 'edgeInteraction.layout(size: size, fallbackExitPoint: exitPoint, toolbar
 assert 'updatePointer(point, size: size, dragging: draftFraction != nil)' in text
 assert '.activeAlways' in text
 assert 'override func hitTest(_ point: NSPoint) -> NSView? { nil }' in text
-# Seeking moved from the window edge to the pill (2026-11-11): nothing at the
-# edge takes pointer events, so a click there can only resize the window.
-assert 'V3WindowEdgeHitBand' not in text
+# Seeking (2026-11-12): the band sits 8-24 pt inside the window, or around the
+# cover; the outer 8 pt are left to window resizing.
+assert 'static let edgeBand: ClosedRange<CGFloat> = 8...24' in text
+assert '.contentShape(V3ProgressHitBand(track: track), eoFill: true)' in text
 assert 'V3EdgePillScrubber(isVertical: isVertical' in text
 assert 'onScrubEnd: { finishSeek(fraction: $0) }' in text
 assert 'dragTrackKey == state.currentTrackIdentity?.stableKey' in text

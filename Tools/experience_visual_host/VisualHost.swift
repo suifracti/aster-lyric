@@ -271,7 +271,6 @@ struct ExperienceVisualHostApp: App {
         settings.v3StageReadabilityEnabled = ProcessInfo.processInfo.arguments.contains("--stage-readability")
         precondition(AppSettingsStore(defaults: defaults).v3StageReadabilityEnabled == settings.v3StageReadabilityEnabled)
         if ProcessInfo.processInfo.arguments.contains("--edge-player-expanded") { settings.v3EdgeProgressEnabled = true }
-        settings.v3EdgeProgressPlacement = ProcessInfo.processInfo.arguments.contains("--edge-halo") ? "coverHalo" : "windowEdge"
         settings.v3PlaybackDetailsOnHover = ProcessInfo.processInfo.arguments.contains("--hover-details")
         precondition(AppSettingsStore(defaults: defaults).v3PlaybackDetailsOnHover == settings.v3PlaybackDetailsOnHover)
         if ProcessInfo.processInfo.arguments.contains("--desktop-custom") {
