@@ -5,7 +5,9 @@ import Foundation
 public final class LinkCoreLyricsProvider: LyricsProvider, @unchecked Sendable {
     public let name = "LinkCore / TuneCore"
     public let executionLane: LyricsProviderExecutionLane = .network
-    public let timeoutInterval: TimeInterval = 16
+    /// Directory, artist, release and lyric page are separate requests. In
+    /// 226 real lookups the slowest useful answer took about 4 s.
+    public let timeoutInterval: TimeInterval = 6
     private let catalog: LinkCoreCatalog
 
     public init(session: URLSession? = nil) {

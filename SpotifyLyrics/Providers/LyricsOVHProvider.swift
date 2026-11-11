@@ -9,8 +9,10 @@ public final class LyricsOVHProvider: LyricsProvider, @unchecked Sendable {
     private let session: URLSession
     private let maximumBodyBytes = 1_048_576
 
-    public init(session: URLSession? = nil, timeout: TimeInterval = 8) {
-        let boundedTimeout = timeout.isFinite ? min(15, max(0.1, timeout)) : 8
+    /// 267 real lookups (2026-10-24…11-10) gave 11 candidates and no adoption,
+    /// while a miss usually took 5–6 s. Three seconds keeps the fast answers.
+    public init(session: URLSession? = nil, timeout: TimeInterval = 3) {
+        let boundedTimeout = timeout.isFinite ? min(15, max(0.1, timeout)) : 3
         timeoutInterval = boundedTimeout
         if let session {
             self.session = session
