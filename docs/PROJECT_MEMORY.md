@@ -20,6 +20,7 @@
 | 有歌词源译文却不显示、部分行没有译文、重复补存 | L-010；TranslationSessionController.synchronize 与 chooseVersion |
 | 悬停歌词库转圈、版本列表开得慢 | L-011；prefetchCurrentTrack、currentDetail |
 | 边缘线内移/加粗、胶囊热区、封面卡片不同宽、分段选中块乱动 | L-012；V3EdgeRailView、V3ResponsiveGeometry、V3SegmentedPicker |
+| 在窗口边缘拖进度会变成缩放窗口、进度线靠近时下移不好看、胶囊和工具栏像两套控件、画面面板底部被截断 | L-015；V3EdgePillScrubber、V3ControlBarSurface、V3ThemeSelectorView |
 | 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
 
@@ -154,6 +155,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 
 ## L-012 Round 12 轨道、卡片与分段控件沿现有局部实现调整
 
+**2026-11-11 起，本条里的轨道内移、加粗、6–26pt 热区和胶囊 26pt 留白已被 L-015 取代**；封面卡片同宽和共用分段控件仍然有效。
+
 边缘进度线、胶囊热区、封面列宽或分段选中块异常时，先查 Round 12 返修后的局部实现，不按旧截图恢复四边 mask 或胶囊短进度条。
 
 `5d8dab7`、`be24b9a`、最终 `ff823a2` 的权威是 `V3WindowEdgePlaybackOverlay.swift`。胶囊四边留 26pt，热区 6–26pt；指针距边 48pt 内，只有接近的边移到 14pt，整条线宽 4pt。`V3EdgeRailView` 只有 trackLayer/progressLayer，以 CALayer 在 160ms 内过渡，Reduce Motion 用淡入；胶囊短进度已删除。`7144775` 的 `V3ResponsiveGeometry.foregroundCardWidth` 让卡片随封面宽度，最低 300pt，封面更小时居中其上，位置移动整列。`0c4ae15` 的共用 `V3SegmentedPicker` 仅选择变化时移动选中块，等宽、不跟随指针，Reduce Motion 直接切换。
@@ -191,6 +194,18 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 新增 `testArtistWrittenDifferentlyIsRecognisedOrLeftForReview`、`testPetitLyricsSearchesByTitleWhenTheArtistSpellingFindsNothing` 与 `testPartlyMatchingArtistIsAdoptedWhenTwoSourcesGiveTheSameWords`。完整原生 134 项中 133 通过、1 跳过、0 失败，原有匹配用例没有因此改变结论。真实来源实测：《Phone Number》由プチリリ自动采用（43 行纯文本）；《KILL MY LOVE》由 LRCLIB 与プチリリ歌词一致而自动采用 LRCLIB 的带时间轴版本（79 行，来源标注时长 204 秒，播放侧 198 秒），整次找词 10.9 秒。时间轴与实际播放是否对齐没有听过。这两首是用库里记录的歌名、歌手、专辑和时长在测试宿主里跑的，没有经过真实播放和 Spotify 目录别名。
 
 下次有人想把“部分相同”放宽成自动采用时，先看这里的理由；想收紧时，调 `artistNameParts` 的最短长度或泛用词表，不要回到整名必须相等。
+
+## L-015 拖动进度在胶囊上，边缘线只显示；浮在画面上的条共用一种外观
+
+用户反馈在窗口边缘拖进度容易变成缩放窗口，Round 12 让进度线靠近时内移又不好看。根源是进度线贴着系统的缩放热区，在那里做点击怎么调都别扭。2026-11-11 改为把拖动搬到胶囊上：`V3EdgeRailView` 只画进度，不移动、不加粗、不接收指针事件；`V3EdgePillScrubber` 是胶囊内侧的一条细线，顶边时在按钮下方，底边时在上方，竖排时在朝画面的一侧，热区 10pt。悬停或拖动时胶囊里的已播时间显示指针处的时间，不再有浮动时间标签（旧标签曾被胶囊遮住一半）。胶囊为 304×50，竖排 54×248。`V3WindowEdgeHitBand`、`nearEdge` 和 `--edge-rail-inset` 已删除。拖动中切歌不会跳到新歌，沿用原来的 `dragTrackKey`。
+
+工具栏与胶囊共用 `V3ControlBarSurface`（材质、细边、阴影相同，随系统浅深色）。胶囊里的图标和时间用 `Color.primary`，播放圆钮保留封面强调色；亮封面不再把胶囊压成黑色。胶囊距窗口边 18pt，与工具栏的内缩一致。胶囊在 `V3AnimationIsland` 里会被裁切，所以给阴影留了 `shadowRoom`。
+
+画面面板原来两行大卡加四行风格，背景模糊的数值框被截在面板底部。现在四个分类是一行小卡，缩略图按设计尺寸 150×72 绘制后整体缩小；所选分类的风格是一行等宽按钮，说明进提示；封面的静止/流动开关在“风格”标题右侧。入口、渲染器、rawID、已存参数和悬停预览没有变，辅助功能标识 `v3.family.*`、`v3.style.*`、`v3.scene.*`、`v3.cover.motion` 保留。
+
+规格在 TOOLBAR_BEHAVIOR 的 Round 13。`Tests/v3_edge_pointer_state_contract.py` 改为断言边缘不再有热区并检查胶囊尺寸，原生用例换成 `testEdgeRailStaysAtTheWindowEdgeAndTakesNoPointerEvents` 与 `testPillScrubberMapsThePointerAndKeepsClearOfTheResizeBorder`。完整原生 134 项中 133 通过、1 跳过、0 失败。离屏图只用来查布局有没有错位；真实窗口里的手感、亮暗封面上的可读性和播放时的资源占用没有验证，以用户实机反馈为准。桌面控制工具按策略不能访问本 App，真实画面只能靠用户截图。
+
+用户另提过把进度做成围绕前景封面的光环，没有封面时围绕歌词。当时约定先看胶囊方案，不满意再做；这个想法还没有实现。
 
 ## 实际覆盖与接续
 

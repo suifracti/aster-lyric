@@ -606,3 +606,20 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 - All segmented pickers in the tool panels use one shared `V3SegmentedPicker`.
 - The selected capsule fills exactly its own segment. It moves only when the selection changes, with a 160 ms ease, and never follows the pointer.
 - Equal segment widths; no dividers; hover is a faint fill on that segment only. Reduce Motion cuts straight to the new position.
+
+## Round 13: seeking on the pill, one bar surface, one-screen 画面 panel (2026-11-11)
+
+**Seeking moves from the window edge to the edge player.** The user found both earlier forms awkward: a seek band at the edge sits on macOS's resize border, and a rail that slides inward on approach does not look calm.
+- The rail at the window edge only shows progress. It never moves, never thickens and takes no pointer events. A click at the edge can only resize the window.
+- The edge player carries a thin scrubber line on its inner side: under the buttons at the top edge, above them at the bottom edge, and on the canvas side of the vertical pill. Its pointer target is 10 pt thick; the line is 2.5 pt and grows to 4 pt under the pointer.
+- Click seeks. Dragging scrubs and seeks on release; the lyrics do not jump while dragging. While the pointer is on the scrubber, the elapsed time in the pill shows the time under the pointer. There is no separate floating time label.
+- The pill is 304 × 50 pt, or 54 × 248 pt when vertical.
+- This replaces the hit band, the inward-moving rail and the rail time label of the 2026-10-21 section and Round 12. Clicking a lyric line to seek is unchanged.
+
+**One surface for the bars over the canvas.** The toolbar and the edge player use the same `V3ControlBarSurface`: the same material, hairline and shadow, following the macOS light or dark setting. Glyphs and times in the pill use the primary colour, like the toolbar's labels; the play disc keeps the cover accent. The pill no longer turns black on bright covers. The pill sits 18 pt from the window edge, the toolbar's own inset, so the two line up along the top.
+
+**画面 panel fits on one screen.**
+- The four categories sit in one row of small cards: a scaled thumbnail with the name beneath. The selected card has the accent outline.
+- The selected category's styles sit in one row of equal buttons. A style's description is its tooltip.
+- 封面's 静止 / 流动 switch sits at the right of the 风格 heading while 封面 is the selected style.
+- Entries, renderers, raw IDs, saved values and hover preview are unchanged.
