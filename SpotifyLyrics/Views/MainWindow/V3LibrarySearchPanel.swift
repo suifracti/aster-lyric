@@ -59,13 +59,14 @@ struct V3LibrarySearchPanel: View {
                     .onTapGesture { presentation.dismiss() }
                 VStack(spacing: 0) {
                     HStack(spacing: 8) {
-                        Picker("歌词库与搜索", selection: Binding(
+                        // The tool panels' segmented control: a neutral selection,
+                        // not the system's black filled tab.
+                        V3SegmentedPicker("歌词库与搜索", selection: Binding(
                             get: { presentation.tab ?? .library },
                             set: { presentation.open($0) }
-                        )) {
-                            ForEach(V3LibrarySearchPresentation.Tab.allCases) { Text($0.title).tag($0) }
-                        }
-                        .pickerStyle(.segmented).labelsHidden().frame(width: 210)
+                        ), options: V3LibrarySearchPresentation.Tab.allCases.map { ($0.title, $0) },
+                           showsLabel: false, height: 28)
+                        .frame(width: 216)
                         TextField(presentation.tab == .search ? "搜索歌曲或艺人" : presentation.tab == .playlists ? "搜索歌单或歌曲" : "搜索歌词库", text: Binding(get: { query }, set: { query = $0 }))
                             .textFieldStyle(.roundedBorder)
                             .onSubmit { updateSearch() }

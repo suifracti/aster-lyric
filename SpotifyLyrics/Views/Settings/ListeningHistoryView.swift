@@ -7,15 +7,12 @@ public struct ListeningHistoryView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("最近播放")
-                    .font(.system(size: 25, weight: .semibold))
-                Text("这里只记录 Aster · Lyric 运行期间观察到的播放，不代表 Spotify 的完整播放历史。")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.bottom, 16)
+            // The page tab already names it; the scope note is one quiet line.
+            Text("只记录 Aster · Lyric 运行期间观察到的播放")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .help("不代表 Spotify 的完整播放历史。")
+                .padding(.bottom, 10)
 
             if let error = playback.listeningHistoryError {
                 HStack {
@@ -68,10 +65,8 @@ public struct ListeningHistoryView: View {
                                 Spacer(minLength: 12)
 
                                 VStack(alignment: .trailing, spacing: 4) {
-                                    Text(entry.startedAt, format: .dateTime
-                                        .year().month(.twoDigits).day(.twoDigits)
-                                        .hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
-                                        .font(.system(size: 11, design: .monospaced))
+                                    Text(v3ShortDateText(entry.startedAt))
+                                        .font(.system(size: 11))
                                     Text("本次聆听 · \(formattedDuration(entry.observedPlaybackDuration))")
                                         .font(.system(size: 11))
                                 }

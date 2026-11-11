@@ -10,14 +10,10 @@ public struct ListeningStatisticsView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("听歌统计")
-                        .font(.system(size: 25, weight: .semibold))
-                    Text("仅统计应用运行期间观察到的播放；新版会分别记录单曲循环，旧记录中合并的循环次数无法还原。")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text("只统计 Aster · Lyric 运行期间观察到的播放")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .help("新版会分别记录单曲循环，旧记录中合并的循环次数无法还原。")
 
                 Picker("时间范围", selection: $selectedTimeRange) {
                     ForEach(ListeningStatisticsTimeRange.allCases) { timeRange in

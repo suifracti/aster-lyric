@@ -813,13 +813,7 @@ private struct LibraryVersionRow<Actions: View>: View {
     @ViewBuilder var actions: () -> Actions
     @State private var hovered = false
 
-    private var dateText: String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = Calendar.current.component(.year, from: date) == Calendar.current.component(.year, from: .now)
-            ? "M月d日 HH:mm" : "yyyy年M月d日 HH:mm"
-        return formatter.string(from: date)
-    }
+    private var dateText: String { v3ShortDateText(date) }
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: isCurrent ? "checkmark.circle.fill" : "circle")
@@ -1075,23 +1069,16 @@ public struct UnifiedLibraryHistoryWindowView: View {
     }
 
     private var topBar: some View {
-        ZStack {
-            HStack {
-                Text("歌词库与收听记录")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-
-            Picker("视图", selection: $playback.selectedLibraryToolTab) {
-                ForEach(LibraryToolTab.allCases) { tab in
-                    Text(tab.rawValue).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 320)
-            .accessibilityIdentifier("segmented_library_tool_tabs")
+        // The window title already names it; the bar only switches pages,
+        // with the same neutral control as the main window's panels.
+        HStack {
+            Spacer()
+            V3SegmentedPicker("视图", selection: $playback.selectedLibraryToolTab,
+                              options: LibraryToolTab.allCases.map { ($0.rawValue, $0) },
+                              showsLabel: false, height: 28)
+                .frame(width: 330)
+                .accessibilityIdentifier("segmented_library_tool_tabs")
+            Spacer()
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
@@ -1613,4 +1600,14 @@ struct PersonalLibrarySheets: ViewModifier {
             }
         }
     }
+}
+
+/// 「11月10日 19:56」, with the year only when it is not this year. One format
+/// for every list of versions and plays.
+func v3ShortDateText(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "zh_CN")
+    formatter.dateFormat = Calendar.current.component(.year, from: date) == Calendar.current.component(.year, from: .now)
+        ? "M月d日 HH:mm" : "yyyy年M月d日 HH:mm"
+    return formatter.string(from: date)
 }
