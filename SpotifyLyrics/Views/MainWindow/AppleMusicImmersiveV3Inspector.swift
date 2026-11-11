@@ -182,8 +182,21 @@ struct V3ThemeSelectorView: View {
                 }
                 .frame(minHeight: 22)
                 HStack(spacing: 4) {
-                    ForEach(shownFamily.entries) { entry in
+                    ForEach(visibleEntries(of: shownFamily)) { entry in
                         entryRow(entry, in: shownFamily)
+                    }
+                    let folded = foldedEntries(of: shownFamily)
+                    if !folded.isEmpty {
+                        Menu {
+                            ForEach(folded) { entry in
+                                Button(entry.title) { adopt(entry, in: shownFamily) }
+                            }
+                        } label: {
+                            Text("更多").font(.system(size: 11.5)).foregroundStyle(Color.secondary)
+                        }
+                        .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()
+                        .help(folded.map { $0.title + "：" + ($0.detail ?? "") }.joined(separator: "\n"))
+                        .accessibilityLabel("更多风格")
                     }
                 }
             }
@@ -282,6 +295,20 @@ struct V3ThemeSelectorView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
+    /// Styles the user names and returns to stay in the row; the rest wait
+    /// behind 更多 and step into the row while chosen.
+    private func visibleEntries(of family: V3SceneFamily) -> [V3SceneFamily.Entry] {
+        family.entries.enumerated().filter { index, entry in
+            !family.foldedEntryIndices.contains(index) || family.isSelected(entry, settings: settings)
+        }.map(\.element)
+    }
+
+    private func foldedEntries(of family: V3SceneFamily) -> [V3SceneFamily.Entry] {
+        family.entries.enumerated().filter { index, entry in
+            family.foldedEntryIndices.contains(index) && !family.isSelected(entry, settings: settings)
+        }.map(\.element)
+    }
+
     private func adopt(_ entry: V3SceneFamily.Entry, in family: V3SceneFamily) {
         clearPreview()
         if let scene = entry.scene {
@@ -365,6 +392,12 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
 
     /// 4 categories, 9 styles. 经典·柔和光晕 and 经典·封面海报 survive as the
     /// 柔和光晕 and 唱片卡 rows.
+    /// 环境光 keeps 原版环境光 and 柔光羽化 in view (user's liked effects);
+    /// 柔和光晕 and 独立色场 fold. Nothing is removed or remapped.
+    var foldedEntryIndices: Set<Int> {
+        self == .ambient ? [1, 2] : []
+    }
+
     var entries: [Entry] {
         switch self {
         case .ambient:
