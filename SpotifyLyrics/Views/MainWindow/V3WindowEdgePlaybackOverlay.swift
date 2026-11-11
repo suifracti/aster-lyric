@@ -19,6 +19,11 @@ struct V3WindowEdgePlaybackOverlay: View {
     @Environment(\.v3PlaybackInteractionChanged) private var interactionChanged
     @State private var edgeInteraction = V3WindowEdgeInteractionState()
     @State private var pointerOverToolbar = false
+    /// The pill as drawn. It follows the pointer state at once when showing,
+    /// and lingers briefly when the pointer moves away, so a small overshoot
+    /// on the way to a button or the scrubber does not make it vanish.
+    @State private var playerShown = false
+    @State private var lingerTask: Task<Void, Never>?
     @State private var draftFraction: Double?
     @State private var dragTrackKey: String?
     @State private var windowVisible = false
@@ -30,8 +35,9 @@ struct V3WindowEdgePlaybackOverlay: View {
 #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--edge-player-expanded") { return true }
 #endif
-        return edgeInteraction.isVisible && edgeInteraction.pointerInside && !suppressControls && !pointerOverToolbar
+        return playerShown && !suppressControls && !pointerOverToolbar
     }
+    private var pointerWantsPlayer: Bool { edgeInteraction.isVisible && edgeInteraction.pointerInside }
     private var animatesColor: Bool { colorMode == "flow" && !reduceMotion && state.isPlaying && windowVisible }
 
     var body: some View {
@@ -82,7 +88,7 @@ struct V3WindowEdgePlaybackOverlay: View {
                 .allowsHitTesting(playerVisible)
                 .accessibilityHidden(!playerVisible)
                 .position(controlPosition.center)
-                .animation(.easeOut(duration: playerVisible ? 0.18 : 0.14), value: playerVisible)
+                .animation(.easeOut(duration: playerVisible ? 0.18 : 0.24), value: playerVisible)
                 .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 1), value: controlPosition.center)
                 .id(controlPosition.edge)
                 .transition(.opacity)
@@ -102,6 +108,17 @@ struct V3WindowEdgePlaybackOverlay: View {
             // The local activeAlways tracker is authoritative for non-key windows.
             if !inside && !edgeInteraction.pointerInside {
                 clearPointer()
+            }
+        }
+        .onChange(of: pointerWantsPlayer) { _, wants in
+            lingerTask?.cancel()
+            if wants { playerShown = true; return }
+            // Leaving the window is a clear exit; drifting away inside it may
+            // be an overshoot, so wait a little longer there.
+            let delay = edgeInteraction.pointerInside ? 600 : 300
+            lingerTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(delay))
+                if !Task.isCancelled { playerShown = false }
             }
         }
         .onChange(of: state.currentTrackIdentity) { _, _ in
@@ -125,6 +142,7 @@ struct V3WindowEdgePlaybackOverlay: View {
         .onChange(of: windowVisible) { _, visible in if !visible { clearPointer() } }
         .onDisappear {
             colorStartedAt = nil
+            lingerTask?.cancel()
             cancelDraft()
             clearPointer()
         }
@@ -142,7 +160,8 @@ struct V3WindowEdgePlaybackOverlay: View {
     private func updatePointer(_ point: CGPoint?, size: CGSize, dragging: Bool) {
         // Keep per-pixel input local. Only a visibility/anchor transition writes
         // SwiftUI state, so idle/lyric-region mouse motion does not redraw views.
-        let next = edgeInteraction.updating(point: point, size: size, dragging: dragging, toolbarBounds: toolbarBounds)
+        let next = edgeInteraction.updating(point: point, size: size, dragging: dragging, toolbarBounds: toolbarBounds,
+                                            lingering: playerShown)
         if next != edgeInteraction { edgeInteraction = next }
         let overToolbar = point.map { toolbarExclusion.contains($0) } ?? false
         if pointerOverToolbar != overToolbar { pointerOverToolbar = overToolbar }
@@ -844,9 +863,13 @@ private struct V3WindowEdgeInteractionState: Equatable {
 
     // Design starting values in points, not claims of native hand-feel validation.
     static let revealDistance: CGFloat = 30
-    static let keepDistance: CGFloat = 46
+    /// The pill reaches 68 pt into the window (18 pt inset + 50 pt). The keep
+    /// zone goes a little deeper, so the pointer can reach every part of the
+    /// pill, and pass slightly beyond it, without the pill hiding.
+    static let keepDistance: CGFloat = 84
     static let controlCorridor: CGFloat = 12
-    static let reanchorDistance: CGFloat = 96
+    /// Extra travel past the pill's end before it follows the pointer.
+    static let followMargin: CGFloat = 20
     static let cornerHysteresis: CGFloat = 6
 
     private(set) var pointerInside = false
@@ -871,7 +894,11 @@ private struct V3WindowEdgeInteractionState: Equatable {
         return result
     }
 
-    func updating(point: CGPoint?, size: CGSize, dragging: Bool, toolbarBounds: CGRect = .zero) -> Self {
+    /// `lingering`: the view still shows the pill after this state hid it.
+    /// Coming back to the pill, or to its edge zone, during that time keeps
+    /// it where it is instead of waiting for a fresh approach to the edge.
+    func updating(point: CGPoint?, size: CGSize, dragging: Bool, toolbarBounds: CGRect = .zero,
+                  lingering: Bool = false) -> Self {
         guard size.width.isFinite, size.height.isFinite,
               size.width > 0, size.height > 0,
               let point, point.x.isFinite, point.y.isFinite,
@@ -908,11 +935,12 @@ private struct V3WindowEdgeInteractionState: Equatable {
             let chosen = currentDistance <= nearestDistance + Self.cornerHysteresis ? anchor.edge : nearest
 
             if chosen == anchor.edge && currentDistance <= Self.keepDistance {
-                let oldPoint = anchor.point(in: size)
-                let displacement = anchor.edge.isVertical ? abs(point.y - oldPoint.y) : abs(point.x - oldPoint.x)
-                // Reposition only after the pointer has clearly left this control
-                // cluster, never for the small movements required to click it.
-                if currentDistance <= Self.revealDistance && displacement > Self.reanchorDistance {
+                let displacement = anchor.edge.isVertical ? abs(point.y - positioned.center.y) : abs(point.x - positioned.center.x)
+                // Follow only once the pointer has passed the end of the pill.
+                // While it is level with the pill, the pill stays put, so the
+                // movements needed to reach a button never make it jump.
+                let halfLength = (anchor.edge.isVertical ? height : width) / 2
+                if currentDistance <= Self.revealDistance && displacement > halfLength + Self.followMargin {
                     result.anchor = Self.makeAnchor(edge: chosen, point: point, size: size)
                 }
                 return result
@@ -923,6 +951,18 @@ private struct V3WindowEdgeInteractionState: Equatable {
             }
             result.isVisible = false
             return result
+        }
+
+        if lingering, let anchor {
+            let positioned = layout(size: size, fallbackExitPoint: nil, toolbarBounds: toolbarBounds)
+            let pill = positioned.frame.insetBy(dx: -Self.controlCorridor, dy: -Self.controlCorridor)
+            let alongEdge = anchor.edge.isVertical
+                ? pill.minY...pill.maxY ~= point.y : pill.minX...pill.maxX ~= point.x
+            if pill.contains(point)
+                || (alongEdge && Self.distance(to: anchor.edge, point: point, size: size) <= Self.keepDistance) {
+                result.isVisible = true
+                return result
+            }
         }
 
         let nearest = Self.nearestEdge(point: point, size: size)

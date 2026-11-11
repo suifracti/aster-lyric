@@ -81,11 +81,22 @@ private let atReveal = next(beforeReveal, 1180, 400) // 30pt inclusive
 expect(atReveal.isVisible, "30pt failed")
 private let controls = atReveal.layout(size: canvas, fallbackExitPoint: nil)
 private let outsideButtonsY = controls.center.y + controls.baseSize.height * controls.scale / 2 + State.controlCorridor + 1
-private let held = next(atReveal, 1164, outsideButtonsY) // 46pt, outside the current button cluster
-expect(held.isVisible && held.anchor == atReveal.anchor, "46pt failed to hold")
-private let hidden = next(held, 1163, outsideButtonsY) // 47pt and outside corridor
+private let held = next(atReveal, 1126, outsideButtonsY) // 84pt, outside the current button cluster
+expect(held.isVisible && held.anchor == atReveal.anchor, "84pt failed to hold")
+private let hidden = next(held, 1125, outsideButtonsY) // 85pt and outside corridor
 expect(!hidden.isVisible, "centre-side player remained visible")
 expect(!next(hidden, 1179, 400).isVisible, "hold band revealed a hidden player")
+// While the view still shows the pill, coming back to it keeps it in place;
+// elsewhere, or once the view has let go, a fresh approach is needed.
+private let returned = hidden.updating(point: CGPoint(x: controls.center.x, y: controls.center.y), size: canvas, dragging: false, lingering: true)
+expect(returned.isVisible && returned.anchor == atReveal.anchor, "return during linger lost the pill")
+expect(!hidden.updating(point: CGPoint(x: controls.center.x, y: controls.center.y), size: canvas, dragging: false).isVisible, "pill returned without linger")
+expect(!hidden.updating(point: CGPoint(x: 600, y: 400), size: canvas, dragging: false, lingering: true).isVisible, "linger revived the pill from the lyric centre")
+// The pill stays put while the pointer is level with it, then follows.
+private let levelWithPill = next(atReveal, 1190, 400 + controls.baseSize.height / 2 + 10)
+expect(levelWithPill.anchor == atReveal.anchor, "pill jumped while the pointer was beside it")
+private let pastItsEnd = next(atReveal, 1190, 400 + controls.baseSize.height / 2 + 30)
+expect(pastItsEnd.anchor != atReveal.anchor && pastItsEnd.isVisible, "pill did not follow past its end")
 expect(!next(atReveal, nil).isVisible, "outside window did not hide")
 
 // Same anchor while entering the actual controls; no chasing on small motion.
