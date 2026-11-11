@@ -30,6 +30,48 @@ final class SearchSourceContractTests: XCTestCase {
         XCTAssertTrue(try source("SpotifyLyrics/Search/LocalLyricsIndex.swift").contains("#if DEBUG"))
     }
 
+    /// The same lyric line reaches the reading engine once per candidate,
+    /// query variant and final document. Only the first may start MeCab.
+    func testRepeatedLyricLineStartsTheReadingProcessOnce() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mecab-reuse-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let runs = directory.appendingPathComponent("runs")
+        let script = directory.appendingPathComponent("mecab")
+        try """
+        #!/bin/sh
+        cat >/dev/null
+        echo run >> '\(runs.path)'
+        printf '君\\tキミ\\t君\\t名詞-代名詞-一般\\t\\t\\nEOS\\n'
+        """.write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        func runCount() -> Int {
+            ((try? String(contentsOf: runs, encoding: .utf8)) ?? "").split(separator: "\n").count
+        }
+
+        let engine = JapaneseMeCabEngine(executableURL: script)
+        let first = try engine.tokenize("君")
+        XCTAssertEqual(first.first?.readingKatakana, "キミ")
+        XCTAssertEqual(try engine.tokenize("君"), first)
+        XCTAssertEqual(try JapaneseMeCabEngine(executableURL: script).tokenize("君"), first)
+        XCTAssertEqual(runCount(), 1, "a repeated line must reuse the first result")
+
+        _ = try engine.tokenize("僕")
+        XCTAssertEqual(runCount(), 2, "a different line still runs the engine")
+        _ = try engine.tokenizations("君", maximumCount: 2)
+        XCTAssertEqual(runCount(), 3, "N-best output is a different request")
+
+        let broken = directory.appendingPathComponent("broken")
+        try "#!/bin/sh\ncat >/dev/null\necho run >> '\(runs.path)'\nexit 1\n"
+            .write(to: broken, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: broken.path)
+        let failing = JapaneseMeCabEngine(executableURL: broken)
+        XCTAssertThrowsError(try failing.tokenize("君"))
+        XCTAssertThrowsError(try failing.tokenize("君"))
+        XCTAssertEqual(runCount(), 5, "a failure is retried, never remembered")
+    }
+
     func testHostUsesPrivateStorageAndNoKeychain() {
         XCTAssertTrue(NativeTestRuntime.isEnabled)
         XCTAssertTrue(UserDefaults.lyricsQ === NativeTestRuntime.defaults)

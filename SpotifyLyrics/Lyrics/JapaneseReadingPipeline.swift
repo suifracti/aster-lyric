@@ -112,11 +112,41 @@ public struct JapaneseMeCabEngine: JapaneseNBestMorphologyEngine, Sendable {
         return candidates
     }
 
+    /// Output of earlier successful runs, for this app run only. MeCab's
+    /// answer depends only on the executable, its arguments and the text, and
+    /// the same lyric line arrives once per candidate, query and document.
+    /// Failures are not kept, so a missing or slow MeCab is tried again.
+    private final class OutputCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [String: String] = [:]
+
+        func value(for key: String) -> String? {
+            lock.lock(); defer { lock.unlock() }
+            return values[key]
+        }
+
+        func store(_ value: String, for key: String) {
+            lock.lock(); defer { lock.unlock() }
+            // Lyric lines are short; dropping everything is enough of a bound.
+            if values.count >= 20_000 { values.removeAll(keepingCapacity: true) }
+            values[key] = value
+        }
+    }
+
+    private static let outputCache = OutputCache()
+
     private func run(text: String, arguments: [String]) throws -> String {
         guard let executableURL = executableURL ?? Self.resolveExecutable() else {
             throw JapaneseMorphologyError.executableUnavailable
         }
+        let cacheKey = ([executableURL.path] + arguments + [text]).joined(separator: "\u{1F}")
+        if let cached = Self.outputCache.value(for: cacheKey) { return cached }
+        let output = try launch(executableURL, text: text, arguments: arguments)
+        Self.outputCache.store(output, for: cacheKey)
+        return output
+    }
 
+    private func launch(_ executableURL: URL, text: String, arguments: [String]) throws -> String {
         let process = Process()
         process.executableURL = executableURL
         process.arguments = arguments
@@ -147,7 +177,7 @@ public struct JapaneseMeCabEngine: JapaneseNBestMorphologyEngine, Sendable {
                 process.terminate()
                 throw JapaneseMorphologyError.timedOut
             }
-            Thread.sleep(forTimeInterval: 0.01)
+            Thread.sleep(forTimeInterval: 0.001)
         }
 
         let outputData = output.fileHandleForReading.readDataToEndOfFile()
