@@ -301,11 +301,7 @@ struct AppleMusicImmersiveV3TransportControls: View {
         .frame(maxWidth: .infinity, alignment: alignment == .center ? .center : .leading)
     }
 
-    private func formatTime(_ seconds: TimeInterval) -> String {
-        let minutes = Int(seconds) / 60
-        let remainder = Int(seconds) % 60
-        return String(format: "%02d:%02d", minutes, remainder)
-    }
+    private func formatTime(_ seconds: TimeInterval) -> String { v3EdgeTimeText(seconds) }
 }
 
 private struct V3TransportClockLabel: View {
@@ -321,11 +317,7 @@ private struct V3TransportClockLabel: View {
         .frame(width: 34, height: 14, alignment: .leading)
     }
 
-    private static func formatTime(_ seconds: TimeInterval) -> String {
-        let minutes = Int(seconds) / 60
-        let remainder = Int(seconds) % 60
-        return String(format: "%02d:%02d", minutes, remainder)
-    }
+    private static func formatTime(_ seconds: TimeInterval) -> String { v3EdgeTimeText(seconds) }
 }
 
 /// One shared surface keeps the player legible over detailed artwork without
@@ -372,21 +364,18 @@ struct StageHUDView: View {
         .background(V3PlaybackSurface())
     }
 
-    private func formatTime(_ seconds: TimeInterval) -> String {
-        let minutes = Int(seconds) / 60
-        let remainder = Int(seconds) % 60
-        return String(format: "%02d:%02d", minutes, remainder)
-    }
+    private func formatTime(_ seconds: TimeInterval) -> String { v3EdgeTimeText(seconds) }
 }
 
-private struct V3PlaybackButtons: View {
+struct V3PlaybackButtons: View {
     @V3ContentPlaybackState var state: PlaybackState
     var compact = false
     @State private var showsPlaylistPicker = false
 
     var body: some View {
+        // The same buttons in the same order as the edge pill:
+        // 喜欢 · 添加到歌单 | 随机 · 上一首 · 播放 · 下一首 · 循环.
         HStack(spacing: compact ? 4 : 12) {
-            V3PlayerModeButton(state: state, shuffle: true, size: compact ? .compact : .regular)
             heartButton
             if state.canPickPlaylists {
                 V3TransportIconButton(systemImage: "text.badge.plus", label: "添加到歌单", enabled: true, size: compact ? .compact : .regular) {
@@ -396,6 +385,8 @@ private struct V3PlaybackButtons: View {
                     PlaylistPickerPopover(model: state.playlistPicker, onClose: { showsPlaylistPicker = false })
                 }
             }
+            Color.clear.frame(width: compact ? 2 : 6, height: 1)
+            V3PlayerModeButton(state: state, shuffle: true, size: compact ? .compact : .regular)
             V3TransportIconButton(systemImage: "backward.fill", label: "上一首", enabled: state.canControlSpotify, size: compact ? .compact : .regular) {
                 state.previousTrack()
             }
@@ -492,34 +483,10 @@ struct V3BounceButtonStyle: ButtonStyle {
 struct AppleMusicImmersiveV3FocusTransportControls: View {
     @V3ContentPlaybackState var state: PlaybackState
     let reduceMotion: Bool
-    @State private var showsPlaylistPicker = false
 
     var body: some View {
         HStack(spacing: LyricsDesignTokens.Spacing.sm) {
-            V3PlayerModeButton(state: state, shuffle: true)
-            V3TransportIconButton(systemImage: state.isTrackLiked == true ? "heart.fill" : "heart",
-                                 label: state.isTrackLiked == true ? "取消喜欢 (S)" : "喜欢 (S)",
-                                 enabled: state.hasLiveTrack) {
-                state.toggleTrackLike()
-            }
-            if state.canPickPlaylists {
-                V3TransportIconButton(systemImage: "text.badge.plus", label: "添加到歌单", enabled: true) {
-                    showsPlaylistPicker = true
-                }
-                .v3ToolPopover(isPresented: $showsPlaylistPicker, onAnchorPress: { showsPlaylistPicker.toggle() }, width: 380) {
-                    PlaylistPickerPopover(model: state.playlistPicker, onClose: { showsPlaylistPicker = false })
-                }
-            }
-            IslandTransportButton(
-                systemImage: state.isPlaying ? "pause.fill" : "play.fill",
-                label: state.isPlaying ? "暂停" : "播放",
-                enabled: state.canInteractWithPlayback, primary: true, size: .compact,
-                tint: .white, glyph: .white
-            ) {
-                state.togglePlayPause()
-            }
-
-            V3PlayerModeButton(state: state, shuffle: false)
+            V3PlaybackButtons(state: state, compact: true)
 
             // No 「正在播放 / 已暂停」 caption: the play/pause glyph already
             // tells the state, and on a 460pt 内页 footer the caption was
@@ -530,9 +497,10 @@ struct AppleMusicImmersiveV3FocusTransportControls: View {
                 maxWidth: nil
             )
 
-            HStack(spacing: 4) {
+            HStack(spacing: 3) {
                 V3TransportClockLabel(state: state)
-                Text("/ \(formatTime(state.currentTrack.duration))")
+                Text("/").foregroundStyle(.white.opacity(0.3))
+                Text(formatTime(state.currentTrack.duration))
             }
                 .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
                 .foregroundStyle(.white.opacity(0.46))
@@ -545,7 +513,8 @@ struct AppleMusicImmersiveV3FocusTransportControls: View {
         }
         .padding(.horizontal, LyricsDesignTokens.Spacing.sm)
         .padding(.vertical, LyricsDesignTokens.Spacing.xs)
-        .background(Color.black.opacity(0.16), in: Capsule())
+        .frame(minHeight: 50)
+        .background(Color.black.opacity(0.24), in: Capsule())
         .animation(
             LyricsDesignTokens.Motion.animation(reduceMotion: reduceMotion, duration: 0.16),
             value: state.isPlaying
@@ -553,11 +522,7 @@ struct AppleMusicImmersiveV3FocusTransportControls: View {
         .accessibilityElement(children: .contain)
     }
 
-    private func formatTime(_ seconds: TimeInterval) -> String {
-        let minutes = Int(seconds) / 60
-        let remainder = Int(seconds) % 60
-        return String(format: "%02d:%02d", minutes, remainder)
-    }
+    private func formatTime(_ seconds: TimeInterval) -> String { v3EdgeTimeText(seconds) }
 }
 
 private struct AppleMusicImmersiveV3LyricProgressStatus: View {
