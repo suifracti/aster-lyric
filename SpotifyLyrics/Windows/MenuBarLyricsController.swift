@@ -165,7 +165,7 @@ public enum MenuBarTextFormatter {
                      snapshot.currentKanaText, snapshot.currentRomajiText]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        return (parts.isEmpty ? ["Lyric Island"] : parts).joined(separator: "\n")
+        return (parts.isEmpty ? ["Aster · Lyric"] : parts).joined(separator: "\n")
     }
 
     public static let maxVisualWidth: CGFloat = 240.0
@@ -269,7 +269,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         self.settings = settings
         self.currentSnapshot = MenuBarLyricsSnapshot(
             state: .idle,
-            statusText: "Lyric Island",
+            statusText: "Aster · Lyric",
             trackTitle: nil,
             artistName: nil,
             currentLineText: nil,
@@ -366,7 +366,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
 
         NSApp.activate(ignoringOtherApps: true)
         for window in NSApp.windows {
-            if window.identifier?.rawValue == "main-window" || window.title == "Lyric Island" {
+            if window.identifier?.rawValue == "main-window" || window.title == "Aster · Lyric" || window.title == "Lyric Island" {
                 if !window.isKind(of: NSPanel.self) {
                     window.makeKeyAndOrderFront(nil)
                     break
@@ -472,8 +472,8 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             button.action = #selector(statusItemClicked(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.imagePosition = settings.menuBarLyricsEnabled ? .imageLeft : .imageOnly
-            button.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: "Lyric Island")
-            button.title = settings.menuBarLyricsEnabled ? "Lyric Island" : ""
+            button.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: "Aster · Lyric")
+            button.title = settings.menuBarLyricsEnabled ? "Aster · Lyric" : ""
         }
         self.statusItem = item
         updateStatusItemButton(lyricsEnabled: settings.menuBarLyricsEnabled)
@@ -561,7 +561,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         guard let button = statusItem?.button else { return }
         let help = MenuBarTextFormatter.statusItemHelp(snapshot: currentSnapshot)
         button.toolTip = help
-        button.setAccessibilityLabel("Lyric Island，歌词与播放")
+        button.setAccessibilityLabel("Aster · Lyric，歌词与播放")
         button.setAccessibilityValue(help)
         guard lyricsEnabled else {
             marqueeView?.removeFromSuperview(); marqueeView = nil
@@ -569,7 +569,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             statusItem?.length = NSStatusItem.squareLength
             button.title = ""; button.imagePosition = .imageOnly
             button.image = NSImage(systemSymbolName: MenuBarTextFormatter.statusItemSymbol(snapshot: currentSnapshot),
-                                   accessibilityDescription: "Lyric Island")
+                                   accessibilityDescription: "Aster · Lyric")
             return
         }
         let scrollRequested = appearance.overflow == "scroll"
@@ -644,7 +644,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         guard state.hasLiveTrack, !state.isMockPreviewMode else {
             return MenuBarLyricsSnapshot(
                 state: .idle,
-                statusText: "Lyric Island",
+                statusText: "Aster · Lyric",
                 trackTitle: nil,
                 artistName: nil,
                 currentLineText: nil,
@@ -662,7 +662,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         let artworkURL = track.artworkURL
 
         guard state.liveLyricsDocumentMatchesCurrentTrack else {
-            let displayTitle = title.isEmpty ? "Lyric Island" : title
+            let displayTitle = title.isEmpty ? "Aster · Lyric" : title
             return MenuBarLyricsSnapshot(
                 state: .loading(title: displayTitle),
                 statusText: "♪ \(displayTitle)",
@@ -679,7 +679,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         let lyricsLoadState = state.liveLyricsState
         switch lyricsLoadState {
         case .loading:
-            let displayTitle = title.isEmpty ? "Lyric Island" : title
+            let displayTitle = title.isEmpty ? "Aster · Lyric" : title
             return MenuBarLyricsSnapshot(
                 state: .loading(title: displayTitle),
                 statusText: "♪ \(displayTitle)",
@@ -703,7 +703,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                                        artist: artist, isPlaying: isPlaying, artworkURL: artworkURL)
 
         case .noLyrics, .noMatch:
-            let displayTitle = title.isEmpty ? "Lyric Island" : title
+            let displayTitle = title.isEmpty ? "Aster · Lyric" : title
             return MenuBarLyricsSnapshot(
                 state: .noLyrics(title: displayTitle),
                 statusText: "♪ \(displayTitle)",
@@ -717,7 +717,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             )
 
         case .failed:
-            let displayTitle = title.isEmpty ? "Lyric Island" : title
+            let displayTitle = title.isEmpty ? "Aster · Lyric" : title
             return MenuBarLyricsSnapshot(
                 state: .failed(title: displayTitle),
                 statusText: "♪ \(displayTitle)",
@@ -762,7 +762,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 snapshot.currentRomajiText = lines[currentIndex].romajiText
                 return snapshot
             } else if !isSync {
-                let displayTitle = title.isEmpty ? "Lyric Island" : title
+                let displayTitle = title.isEmpty ? "Aster · Lyric" : title
                 let firstLine = lines.first { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                 var snapshot = MenuBarLyricsSnapshot(
                     state: .unsynchronized(title: displayTitle),
@@ -782,7 +782,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 snapshot.currentRomajiText = firstLine?.romajiText
                 return snapshot
             } else {
-                let displayTitle = title.isEmpty ? "Lyric Island" : title
+                let displayTitle = title.isEmpty ? "Aster · Lyric" : title
                 let nextLine: String? = lines.first?.originalText.trimmingCharacters(in: .whitespacesAndNewlines)
                 return MenuBarLyricsSnapshot(
                     state: .synchronized(current: "", next: nextLine),
@@ -798,7 +798,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             }
 
         case .idle, .mockPreview:
-            let displayTitle = title.isEmpty ? "Lyric Island" : title
+            let displayTitle = title.isEmpty ? "Aster · Lyric" : title
             return MenuBarLyricsSnapshot(
                 state: .notSearched(title: displayTitle),
                 statusText: "♪ \(displayTitle)",
@@ -815,7 +815,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
 
     private static func emptyLyricsSnapshot(state: MenuBarLyricsState, title: String,
                                             artist: String, isPlaying: Bool, artworkURL: URL?) -> MenuBarLyricsSnapshot {
-        let displayTitle = title.isEmpty ? "Lyric Island" : title
+        let displayTitle = title.isEmpty ? "Aster · Lyric" : title
         return MenuBarLyricsSnapshot(
             state: state, statusText: "♪ \(displayTitle)", trackTitle: displayTitle,
             artistName: artist, currentLineText: nil, nextLineText: nil,

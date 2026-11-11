@@ -9,7 +9,7 @@ if rg -n '^[[:space:]]*WindowGroup[[:space:]]*\{' "$MAIN_FILE"; then
   exit 1
 fi
 
-if ! rg -n '^[[:space:]]*Window\("Lyric Island", id: "main-window"\)[[:space:]]*\{' "$MAIN_FILE"; then
+if ! rg -n '^[[:space:]]*Window\("Aster · Lyric", id: "main-window"\)[[:space:]]*\{' "$MAIN_FILE"; then
   echo "missing single main-window scene" >&2
   exit 1
 fi

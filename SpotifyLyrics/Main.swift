@@ -65,7 +65,7 @@ struct SpotifyLyricsApp: App {
         // The player is a single stateful surface. A WindowGroup can create
         // duplicate main windows, which makes shared playback/layout state
         // race while the user is resizing one of them.
-        Window("Lyric Island", id: "main-window") {
+        Window("Aster · Lyric", id: "main-window") {
             MainLyricsWindowView()
                 .environmentObject(playbackState)
                 .environmentObject(appSettings)
@@ -136,7 +136,7 @@ struct SpotifyLyricsApp: App {
         // Real Direction D main-window entry.  The root view is the formal
         // DirectionDMainWindowView, not the Phase 3.3 product-state host or
         // Preview Matrix.  It is debug-reachable and remains experimental.
-        Window("Lyric Island", id: "direction-d-main-window") {
+        Window("Aster · Lyric", id: "direction-d-main-window") {
             DirectionDDebugMainWindowSceneHost(
                 playback: playbackState,
                 adapter: directionDMainWindowAdapter
@@ -378,7 +378,7 @@ private struct DirectionDMainWindowWindowIdentifier: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
             guard let window = nsView.window else { return }
-            window.title = "Lyric Island"
+            window.title = "Aster · Lyric"
             window.identifier = NSUserInterfaceItemIdentifier("direction-d-main-window")
         }
     }
@@ -470,7 +470,7 @@ private final class DirectionDMainWindowDebugDelegate: NSObject, NSApplicationDe
             backing: .buffered,
             defer: false
         )
-        window.title = "Lyric Island"
+        window.title = "Aster · Lyric"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true

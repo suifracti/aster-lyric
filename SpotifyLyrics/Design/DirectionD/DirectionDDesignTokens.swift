@@ -144,7 +144,7 @@ public enum DirectionDDesignTokens {
         public static let syncCompleteMessage = "同步完成"
         public static let cannotCompleteReliablyMessage = "本次无法可靠完成"
         public static let syncNotReadyMessage = "同步功能尚未准备好"
-        public static let permissionRequiredMessage = "需要允许 Lyric Island 读取 Spotify 播放状态"
+        public static let permissionRequiredMessage = "需要允许 Aster · Lyric 读取 Spotify 播放状态"
         public static let networkWithCacheMessage = "网络连接失败，正在显示已保存的歌词"
         public static let manualSyncAction = "校准时间"
     }

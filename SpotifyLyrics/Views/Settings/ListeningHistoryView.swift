@@ -10,7 +10,7 @@ public struct ListeningHistoryView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("最近播放")
                     .font(.system(size: 25, weight: .semibold))
-                Text("这里只记录 Lyric Island 运行期间观察到的播放，不代表 Spotify 的完整播放历史。")
+                Text("这里只记录 Aster · Lyric 运行期间观察到的播放，不代表 Spotify 的完整播放历史。")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -38,7 +38,7 @@ public struct ListeningHistoryView: View {
                         Image(systemName: "clock.arrow.circlepath")
                             .font(.system(size: 34))
                             .foregroundStyle(.tertiary)
-                        Text("暂无 Lyric Island 观察记录")
+                        Text("暂无 Aster · Lyric 观察记录")
                             .font(.headline)
                             .foregroundStyle(.secondary)
                         Text("播放歌曲后，这里会显示本次运行期间观察到的记录。")

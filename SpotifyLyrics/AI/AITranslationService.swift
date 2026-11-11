@@ -988,7 +988,7 @@ final class CodexAppServerClient: @unchecked Sendable {
         }
         if persistent {
             if reuseConversation { conversationStore?.remember(threadID, for: provider) }
-            _ = try? request(method: "thread/name/set", params: ["threadId": threadID, "name": "Lyric Island · 翻译与读音"])
+            _ = try? request(method: "thread/name/set", params: ["threadId": threadID, "name": "Aster · Lyric · 翻译与读音"])
         }
         defer {
             if persistent, conversationStore?.visible(for: provider) == false {

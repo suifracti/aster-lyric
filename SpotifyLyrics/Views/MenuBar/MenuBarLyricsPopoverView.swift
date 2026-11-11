@@ -141,7 +141,7 @@ public struct MenuBarLyricsPopoverView: View {
                 .help("关闭后保留播放状态图标，点击图标仍可打开此菜单")
                 Spacer(minLength: 0)
                 Menu {
-                    Button("退出 Lyric Island") { controller.quit() }
+                    Button("退出 Aster · Lyric") { controller.quit() }
                 } label: {
                     Image(systemName: "ellipsis")
                         .frame(width: 24, height: 24)
@@ -209,7 +209,7 @@ public struct MenuBarLyricsPopoverView: View {
                     showsTranslation: settings.menuBarLyricsShowsTranslation,
                     showsKana: settings.menuBarLyricsShowsKana, showsRomaji: settings.menuBarLyricsShowsRomaji,
                     fontSize: settings.menuBarLyricsFontSize, readingsAbove: settings.menuBarLyricsReadingsAbove))
-            Text(preview.isEmpty ? "♪ Lyric Island" : preview)
+            Text(preview.isEmpty ? "♪ Aster · Lyric" : preview)
                 .font(.system(size: CGFloat(settings.menuBarLyricsFontSize)))
                 .lineLimit(2).padding(10).frame(maxWidth: .infinity, alignment: .leading)
                 .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))

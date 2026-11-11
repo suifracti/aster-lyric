@@ -128,7 +128,7 @@ grep -q "public var liveTrackIdentity" "$SWIFT_DIR/Services/PlaybackState.swift"
 assert_test "Contract 20: Live Playback Binding" $? "Main Window consumes the identity-guarded PlaybackState live projection"
 
 # 21. Real Direction D Window Entry Contract
-grep -q 'Window("Lyric Island"' "SpotifyLyrics/Main.swift" && \
+grep -q 'Window("Aster · Lyric"' "SpotifyLyrics/Main.swift" && \
 grep -q -- "--debug-direction-d-main-window" "SpotifyLyrics/Main.swift" && \
 grep -q "DirectionDMainWindowPresentationFactory" "SpotifyLyrics/Main.swift"
 assert_test "Contract 21: Experimental Window Entry" $? "Debug argument opens the real Lyric Island product window"
@@ -174,7 +174,7 @@ grep -q 'case directionDV4 = "directionD"' "SpotifyLyrics/Design/MainWindowLayou
 assert_test "Contract 27: V3 Default and Direction D V4 Boundary" $? "V3 remains default while V4 is separately selectable and Release-capable"
 
 # 28. Window Identity Contract
-grep -q "Lyric Island" "SpotifyLyrics/Main.swift" && \
+grep -q "Aster · Lyric" "SpotifyLyrics/Main.swift" && \
 grep -q "direction-d-main-window" "SpotifyLyrics/Main.swift"
 assert_test "Contract 28: Window Identity" $? "Product title and debug identifier are distinct from Host/Matrix"
 

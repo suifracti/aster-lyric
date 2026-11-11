@@ -910,7 +910,7 @@ struct LyricsStateContentFirstView: View {
             case .connecting:
                 return "连接成功后会自动搜索歌词。"
             case .permissionDenied:
-                return "请允许 Lyric Island 读取 Spotify Desktop 的当前播放。"
+                return "请允许 Aster · Lyric 读取 Spotify Desktop 的当前播放。"
             case .notInstalled:
                 return "安装 Spotify Desktop 后即可同步当前歌曲。"
             case .notRunning:

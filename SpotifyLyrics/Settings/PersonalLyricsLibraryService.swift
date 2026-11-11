@@ -597,7 +597,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = false
         panel.title = "选择私人同步文件夹"
-        panel.message = "Lyric Island 将在此文件夹中保存一个个人数据包文件"
+        panel.message = "Aster · Lyric 将在此文件夹中保存一个个人数据包文件"
 
         if panel.runModal() == .OK, let url = panel.url {
             do {

@@ -85,7 +85,7 @@ public struct ListeningStatisticsView: View {
             Text("暂无统计记录")
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            Text("播放歌曲后，这里会显示 Lyric Island 观察到的听歌时长和排序。")
+            Text("播放歌曲后，这里会显示 Aster · Lyric 观察到的听歌时长和排序。")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }

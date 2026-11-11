@@ -41,7 +41,7 @@ else
 fi
 
 # Required user strings
-grep -q 'permissionRequiredMessage = "需要允许 Lyric Island 读取 Spotify 播放状态"' "$TOKENS" && pass "copy_permission" || fail "copy_permission" "missing"
+grep -q 'permissionRequiredMessage = "需要允许 Aster · Lyric 读取 Spotify 播放状态"' "$TOKENS" && pass "copy_permission" || fail "copy_permission" "missing"
 grep -q 'networkWithCacheMessage = "网络连接失败，正在显示已保存的歌词"' "$TOKENS" && pass "copy_cache" || fail "copy_cache" "missing"
 grep -q '手动搜索歌词' "$HOST" && pass "no_lyrics_search_btn" || fail "no_lyrics_search_btn" "missing"
 grep -q '导入本地歌词' "$HOST" && pass "no_lyrics_import_btn" || fail "no_lyrics_import_btn" "missing"

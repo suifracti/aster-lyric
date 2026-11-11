@@ -17,7 +17,7 @@ final class MenuBarPresentationTests: XCTestCase {
         XCTAssertEqual(controller.statusItemTitle, "")
         controller.menuBarLyricsEnabled = true
         XCTAssertTrue(settings.menuBarLyricsEnabled)
-        XCTAssertEqual(controller.statusItemTitle, "Lyric Island")
+        XCTAssertEqual(controller.statusItemTitle, "Aster · Lyric")
 
         settings.menuBarLyricsShowsFullLine = true
         settings.menuBarLyricsShowsOriginal = false
