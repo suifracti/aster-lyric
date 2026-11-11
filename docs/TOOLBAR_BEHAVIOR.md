@@ -669,10 +669,11 @@ Work in this order. Each batch is built, tested, restarted and pushed on its own
 
 **D. Scenes, folded once more.** The four categories stay. Each shows at most two styles; the others sit behind a 「更多」 button in the same row and take its place when chosen. 环境光 shows 原版环境光 and 柔光羽化, with 柔和光晕 and 独立色场 behind 更多. Renderers, raw IDs, saved values and the three effects the user likes stay one click away.
 
-**E. Player bar.** The standard bar, the hover bar and the edge pill are one control in three placements: the same surface, the same buttons in the same order (喜欢 · 添加到歌单 | 随机 · 上一首 · 播放 · 下一首 · 循环 | time), the same scrubber. Only the title lines and the width differ.
+**E. Player bar.** The card, the compact bar and the edge pill show the same buttons in the same order (喜欢 · 添加到歌单 | 随机 · 上一首 · 播放 · 下一首 · 循环) and the same time format (0:22). The card and compact bar sit on the always-dark listening canvas and keep its dark tint; the pill floats over the canvas edge and uses the toolbar's surface. Only the title lines and the width differ.
 
 **F. 歌词库 · 搜索 · 歌单 (centred panel and the library window).**
-- The panel uses the same glass as the tool panels and the same neutral tab selection; no black selected tab.
+- The panel keeps its solid background (Round 10) and uses the tool panels' neutral tab selection; no black or blue filled tab, in the panel or in the library window.
+- The library window's bar only switches pages; the window title names it. Page headers are one quiet line, with the details in a tooltip.
 - Lists use one row height and one cover size; counts and badges sit at the right in the secondary colour.
 - The library window reads dates as 「11月10日 19:56」, like the panel.
 

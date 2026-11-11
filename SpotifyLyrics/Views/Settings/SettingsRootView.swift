@@ -372,15 +372,16 @@ struct SettingsPageHeader: View {
     let detail: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        // A page heading, not a banner: the sidebar already names the page.
+        VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(.system(size: 24, weight: .bold))
+                .font(.system(size: 20, weight: .semibold))
             Text(detail)
-                .font(.system(size: 12))
+                .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(2)
         }
-        .padding(.bottom, 10)
+        .padding(.bottom, 4)
     }
 }
 
