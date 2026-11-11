@@ -45,6 +45,8 @@ struct V3ToolbarQuickControls<Controls: View>: View {
                 default: controls()
                 }
             }
+            // Every plain switch in a panel is a row: label left, switch right.
+            .toggleStyle(V3RowToggleStyle())
             .padding(14)
             .padding(.bottom, panel == .picture ? 16 : 0)
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -133,10 +133,13 @@ struct LyricsPresentationOffsetControl: View {
     let target: LyricsPresentationOffsetTarget
     let showsLegacyNotice: Bool
     let showsExplanations: Bool
+    /// Tool-panel form: one row, label left, steppers right.
+    var rowStyle = false
     @State private var input = ""
 
     init(settings: AppSettingsStore, target: LyricsPresentationOffsetTarget = .active, showsLegacyNotice: Bool = true,
-         showsExplanations: Bool = true) {
+         showsExplanations: Bool = true, rowStyle: Bool = false) {
+        self.rowStyle = rowStyle
         self.settings = settings
         self.target = target
         self.showsLegacyNotice = showsLegacyNotice
@@ -185,7 +188,34 @@ struct LyricsPresentationOffsetControl: View {
         }
     }
 
-    var body: some View {
+    @ViewBuilder var body: some View {
+        if rowStyle { panelRow } else { fullBody }
+    }
+
+    private var panelRow: some View {
+        V3PanelRow(title: "歌词偏移", help: (disabledReason ?? controlTitle) + "。Z / C 每次 ±0.1s，X 归零") {
+            HStack(spacing: 4) {
+                Button { adjust(-0.1) } label: { Image(systemName: "minus") }.help("歌词延后 0.1 秒")
+                TextField("秒", text: $input)
+                    .textFieldStyle(.roundedBorder).controlSize(.small)
+                    .font(.system(size: 11).monospacedDigit())
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 46)
+                    .onSubmit { commitInput() }
+                Button { adjust(0.1) } label: { Image(systemName: "plus") }.help("歌词提前 0.1 秒")
+                Text("s").font(.system(size: 10)).foregroundStyle(.secondary)
+                Button { reset() } label: { Image(systemName: "arrow.uturn.backward") }
+                    .help("归零")
+                    .disabled(!isWritable || abs(offset) < 0.0001)
+            }
+            .buttonStyle(.borderless)
+            .disabled(!isWritable)
+        }
+        .onAppear { syncInput() }
+        .onChange(of: offset) { _, _ in syncInput() }
+    }
+
+    private var fullBody: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label(controlTitle, systemImage: "clock.arrow.2.circlepath")

@@ -72,18 +72,16 @@ struct SleepTimerControls: View {
     @ObservedObject var timer: SleepTimerController
     let select: (SleepTimerOption) -> Void
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text("睡眠定时")
-                Spacer()
+        V3PanelRow(title: "睡眠定时") {
+            HStack(spacing: 6) {
                 if timer.option != .off {
                     Text(String(format: "%d:%02d", timer.remainingSeconds / 60, timer.remainingSeconds % 60))
                         .font(.caption).monospacedDigit().foregroundStyle(.secondary)
                 }
+                Picker("睡眠定时", selection: Binding(get: { timer.option }, set: select)) {
+                    ForEach(SleepTimerOption.allCases) { Text($0.title).tag($0) }
+                }.pickerStyle(.menu).labelsHidden().fixedSize()
             }
-            Picker("睡眠定时", selection: Binding(get: { timer.option }, set: select)) {
-                ForEach(SleepTimerOption.allCases) { Text($0.title).tag($0) }
-            }.labelsHidden()
         }
     }
 }

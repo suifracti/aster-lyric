@@ -942,6 +942,50 @@ struct TranslationProviderControls: View {
         }
     }
 
+    /// Tool-panel form: one row, the menu at the right, refresh as an icon.
+    var modelRow: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            V3PanelRow(title: "AI 模型") {
+                HStack(spacing: 4) {
+                    Picker("AI 模型", selection: modelBinding) {
+                        if !settings.aiCachedModels.contains(where: { $0.id == settings.aiTranslationConfiguration.model }) {
+                            Text(settings.aiTranslationConfiguration.model.isEmpty ? "选择模型" : settings.aiTranslationConfiguration.model)
+                                .tag(settings.aiTranslationConfiguration.model)
+                        }
+                        ForEach(settings.aiCachedModels, id: \.id) { model in
+                            Text(model.displayName).tag(model.id)
+                        }
+                    }
+                    .pickerStyle(.menu).labelsHidden().fixedSize()
+                    .disabled(provider == TranslationEngineID.appleSystem.rawValue)
+                    .onAppear { _ = settings.translationModelSettings }
+                    .accessibilityIdentifier("ai.model")
+                    Button { settings.refreshAIModelDirectory() } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .rotationEffect(.degrees(settings.aiModelDirectoryStatus == .loading ? 180 : 0))
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(settings.aiModelDirectoryStatus == .loading || provider == TranslationEngineID.appleSystem.rawValue)
+                    .help(settings.aiModelDirectoryStatus == .loading ? "刷新中…" : "刷新模型列表")
+                    .accessibilityLabel("刷新 AI 模型")
+                }
+            }
+            switch settings.aiModelDirectoryStatus {
+            case .unauthorized, .endpointUnsupported, .empty:
+                Text(settings.aiModelDirectoryStatus.userFacingTitle).font(.caption).foregroundStyle(.orange)
+            case .unavailable(let error):
+                Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+            default: EmptyView()
+            }
+        }
+    }
+
+    var reasoningRow: some View {
+        V3PanelRow(title: "思考强度") {
+            reasoningPicker.pickerStyle(.menu).labelsHidden().fixedSize()
+        }
+    }
+
     var reasoningPicker: some View {
         Picker("思考强度", selection: reasoningBinding) {
             if !(advertisedReasoningOptions ?? []).contains(reasoningBinding.wrappedValue) {

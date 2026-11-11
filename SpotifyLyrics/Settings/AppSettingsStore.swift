@@ -332,6 +332,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let v3BigLineModeEnabled = "v3.bigLineMode.enabled.v1"
         public static let v3NightGentleEnabled = "v3.nightGentle.enabled.v1"
         public static let v3PictureAdvancedExpanded = "v3.picture.advancedExpanded.v1"
+        public static let v3TextAdvancedExpanded = "v3.text.advancedExpanded.v1"
         public static let v3ReadingProtection = "v3.readingProtection.v2"
         public static let v3CurrentLineGlow = "v3.currentLineGlow.v1"
         public static let v3BrightCoverShadowEnabled = "v3.brightCoverShadow.enabled.v1"
@@ -494,6 +495,9 @@ public final class AppSettingsStore: ObservableObject {
     }
     @Published public var v3PictureAdvancedExpanded = true {
         didSet { defaults.set(v3PictureAdvancedExpanded, forKey: Key.v3PictureAdvancedExpanded) }
+    }
+    @Published public var v3TextAdvancedExpanded = false {
+        didSet { defaults.set(v3TextAdvancedExpanded, forKey: Key.v3TextAdvancedExpanded) }
     }
     @Published public var v3ReadingProtection: V3ReadingProtection = .off {
         didSet { defaults.set(v3ReadingProtection.rawValue, forKey: Key.v3ReadingProtection) }
@@ -1432,6 +1436,7 @@ public final class AppSettingsStore: ObservableObject {
         self.v3BigLineModeEnabled = defaults.bool(forKey: Key.v3BigLineModeEnabled)
         self.v3NightGentleEnabled = defaults.bool(forKey: Key.v3NightGentleEnabled)
         self.v3PictureAdvancedExpanded = defaults.object(forKey: Key.v3PictureAdvancedExpanded) as? Bool ?? true
+        self.v3TextAdvancedExpanded = defaults.object(forKey: Key.v3TextAdvancedExpanded) as? Bool ?? false
         self.v3ReadingProtection = V3ReadingProtection.restored(defaults.string(forKey: Key.v3ReadingProtection))
         defaults.set(v3ReadingProtection.rawValue, forKey: Key.v3ReadingProtection)
         self.v3CurrentLineGlow = min(1, max(0, defaults.double(forKey: Key.v3CurrentLineGlow)))

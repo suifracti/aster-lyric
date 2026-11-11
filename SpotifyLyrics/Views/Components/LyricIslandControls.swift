@@ -4,6 +4,8 @@ import SwiftUI
 /// One interaction for numbers throughout the app. Playback seek bars do not use this.
 /// Text editing commits once, clamps to a finite range, and never writes a partial string.
 struct V3NumericSlider: View {
+    /// When set, the label sits at the left of the same line.
+    var title: String? = nil
     @Binding var value: Double
     let range: ClosedRange<Double>
     var step: Double = 0.01
@@ -13,25 +15,33 @@ struct V3NumericSlider: View {
     @State private var draft = ""
     @FocusState private var editing: Bool
 
-    init(value: Binding<Double>, in range: ClosedRange<Double>, step: Double = 0.01,
+    init(_ title: String? = nil, value: Binding<Double>, in range: ClosedRange<Double>, step: Double = 0.01,
          unit: String = "", displayScale: Double = 1,
          onEditingChanged: @escaping (Bool) -> Void = { _ in }) {
+        self.title = title
         _value = value; self.range = range; self.step = step; self.unit = unit
         self.displayScale = displayScale; self.onEditingChanged = onEditingChanged
     }
 
+    /// One line: label, slider, exact value. Snapping happens in the binding,
+    /// so the slider does not draw a row of step ticks under its track.
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Slider(value: $value, in: range, step: step, onEditingChanged: onEditingChanged)
-            HStack(spacing: 6) {
-                Text(formatted(range.lowerBound) + " — " + formatted(range.upperBound))
-                    .font(.system(size: 10).monospacedDigit()).foregroundStyle(.secondary)
-                Spacer(minLength: 8)
+        HStack(spacing: 8) {
+            if let title {
+                Text(title).font(.system(size: 12.5)).lineLimit(1)
+                    .frame(width: V3PanelMetrics.labelWidth, alignment: .leading)
+            }
+            Slider(value: Binding(get: { value }, set: { value = snapped($0) }),
+                   in: range, onEditingChanged: onEditingChanged)
+                .controlSize(.small)
+                .help(formatted(range.lowerBound) + " — " + formatted(range.upperBound) + (unit.isEmpty ? "" : " " + unit))
+            HStack(spacing: 3) {
                 TextField("数值", text: $draft)
                     .font(.system(size: 11).monospacedDigit())
                     .multilineTextAlignment(.trailing)
                     .textFieldStyle(.roundedBorder)
-                    .frame(width: 66)
+                    .controlSize(.small)
+                    .frame(width: 46)
                     .focused($editing)
                     .onSubmit { commit(); editing = false }
                     .onChange(of: editing) { _, active in
@@ -39,9 +49,12 @@ struct V3NumericSlider: View {
                         onEditingChanged(active)
                     }
                     .accessibilityLabel(unit.isEmpty ? "精确数值" : "精确数值（\(unit)）")
-                if !unit.isEmpty { Text(unit).font(.system(size: 10)).foregroundStyle(.secondary) }
+                Text(unit).font(.system(size: 10)).foregroundStyle(.secondary)
+                    .frame(width: 18, alignment: .leading)
             }
         }
+        .frame(minHeight: V3PanelMetrics.rowHeight)
+        .accessibilityElement(children: .contain)
         .onAppear { draft = formatted(value) }
         .onChange(of: value) { _, next in if !editing { draft = formatted(next) } }
     }
@@ -52,6 +65,11 @@ struct V3NumericSlider: View {
         let digits = step * displayScale >= 1 ? 0 : 2
         return (number * displayScale).formatted(.number.grouping(.never)
             .precision(.fractionLength(0...digits)))
+    }
+    private func snapped(_ candidate: Double) -> Double {
+        guard step.isFinite, step > 0 else { return candidate }
+        let next = range.lowerBound + ((candidate - range.lowerBound) / step).rounded() * step
+        return min(range.upperBound, max(range.lowerBound, next))
     }
     private func commit() {
         let separator = Locale.current.decimalSeparator ?? "."
@@ -69,6 +87,109 @@ struct V3NumericSlider: View {
         let next = min(range.upperBound, max(range.lowerBound, snapped))
         if next != value { value = next }
         draft = formatted(next)
+    }
+}
+
+/// Shared measures of the tool-panel rows.
+enum V3PanelMetrics {
+    static let rowHeight: CGFloat = 30
+    static let labelWidth: CGFloat = 64
+}
+
+/// A tool-panel row: label at the left, its control at the right edge.
+struct V3PanelRow<Control: View>: View {
+    let title: String
+    var help: String? = nil
+    @ViewBuilder var control: () -> Control
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title).font(.system(size: 12.5)).lineLimit(1).fixedSize()
+            if let help {
+                Image(systemName: "info.circle").font(.system(size: 10)).foregroundStyle(.secondary).help(help)
+            }
+            Spacer(minLength: 8)
+            control()
+        }
+        .frame(minHeight: V3PanelMetrics.rowHeight)
+    }
+}
+
+/// Every plain switch in a tool panel reads as a row: label left, switch right.
+struct V3RowToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 8) {
+            configuration.label.font(.system(size: 12.5)).lineLimit(1)
+            Spacer(minLength: 8)
+            Toggle("", isOn: configuration.$isOn).labelsHidden().toggleStyle(.switch).controlSize(.mini)
+        }
+        .frame(minHeight: V3PanelMetrics.rowHeight)
+        .contentShape(Rectangle())
+    }
+}
+
+/// A small switch with its label, for a few related switches on one row.
+struct V3InlineSwitch: View {
+    let title: String
+    @Binding var isOn: Bool
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(title).font(.system(size: 12))
+            Toggle("", isOn: $isOn).labelsHidden().toggleStyle(.switch).controlSize(.mini)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Panel switches use the row style; the same controls elsewhere stay plain switches.
+struct V3ToggleStyleUnlessPanel: ViewModifier {
+    let inPanel: Bool
+    @ViewBuilder func body(content: Content) -> some View {
+        if inPanel { content } else { content.toggleStyle(.switch) }
+    }
+}
+
+struct V3PanelSection: View {
+    let title: String
+    var body: some View {
+        Text(title).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 8).padding(.bottom, 1)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// The one folded part of a panel. Remembers whether it was open.
+struct V3DisclosureRow<Content: View>: View {
+    let title: String
+    @Binding var isExpanded: Bool
+    @ViewBuilder var content: () -> Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Button {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(title).font(.system(size: 12.5, weight: .medium))
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .frame(minHeight: V3PanelMetrics.rowHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(isExpanded ? "已展开" : "已收起")
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 2) { content() }
+                    .transition(.opacity)
+            }
+        }
+        .padding(.top, 4)
+        .overlay(alignment: .top) { Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 0.5) }
     }
 }
 

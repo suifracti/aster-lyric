@@ -1584,19 +1584,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     }
 
     private func translationControls(compact: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 2) {
             if !compact { Label("AI 与读音", systemImage: "sparkles").font(.headline) }
-            HStack(spacing: 8) {
-                V3SegmentedPicker("功能", selection: $showsAIReadingControls,
-                                  options: [("翻译", false), ("读音", true)])
-                    .frame(width: 140)
-                Spacer()
-            }
-            Divider()
+            V3SegmentedPicker("内容", selection: $showsAIReadingControls,
+                              options: [("翻译", false), ("读音", true)])
             if !displaysAIReadingControls {
-                HStack {
-                    Text("当前译文")
-                    Spacer()
+                V3PanelRow(title: "当前译文") {
                     Menu {
                         Button("自动（推荐）") { state.restoreRecommendedTranslation() }
                         ForEach(state.translationVersions, id: \.record.id) { version in
@@ -1609,11 +1602,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         Text(state.translationVersions.isEmpty ? "暂无译文" :
                              state.selectedTranslation.map(translationVersionTitle) ?? "不显示")
                     }
+                    .menuStyle(.borderlessButton).fixedSize()
                     .disabled(state.translationVersions.isEmpty)
                 }
             }
-            TranslationProviderControls(settings: settings).modelPicker
-            TranslationProviderControls(settings: settings).reasoningPicker
+            V3PanelSection(title: "服务")
+            TranslationProviderControls(settings: settings).modelRow
+            TranslationProviderControls(settings: settings).reasoningRow
             if displaysAIReadingControls {
                 aiReadingControls(compact: compact)
             } else {
@@ -1626,16 +1621,23 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
             ))
             .disabled(!allowsAutomaticTranslation || !settings.aiTranslationConfiguration.isConfigured)
+            V3PanelSection(title: "这首歌")
             if case .loading = state.translationState {
-                HStack {
-                    ProgressView("翻译中…").controlSize(.small)
-                    Button("取消") { state.cancelTranslation() }
+                V3PanelRow(title: "翻译中…") {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Button("取消") { state.cancelTranslation() }.controlSize(.small)
+                    }
                 }
             } else {
-                HStack {
+                HStack(spacing: 6) {
                     Button("翻译整首") { state.translateCurrentLyrics() }
                     Button("重新翻译") { state.retranslateCurrentLyrics() }
+                    Spacer()
+                    compareTranslationsButton
                 }
+                .controlSize(.small)
+                .frame(minHeight: V3PanelMetrics.rowHeight)
                 .disabled(!allowsTranslationRequests || !settings.aiTranslationConfiguration.isConfigured || state.liveLyrics.isEmpty)
             }
             if case .failed = state.translationState {
@@ -1659,16 +1661,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     Button("采用") { state.adoptTranslation(versionID: candidate.record.id) }
                 }
             }
-            Button {
-                isTranslationComparisonPresented = true
-            } label: {
-                Label("并排对比已保存译文", systemImage: "rectangle.split.3x1")
-            }
-            .disabled(state.translationVersions.count < 2 || state.originalLiveLyrics.isEmpty)
-            .help("仅查看当前歌词的不同译文；采用时才改变当前显示，不调用翻译 AI")
             }
         }
-        .toggleStyle(.switch)
+        .modifier(V3ToggleStyleUnlessPanel(inPanel: compact))
         .frame(maxWidth: .infinity, alignment: .leading)
         .confirmationDialog("优化当前歌曲读音？", isPresented: $confirmsAIReadingRequest, titleVisibility: .visible) {
             Button("生成候选（可能收费）") {
@@ -1683,6 +1678,18 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .onChange(of: state.liveTrackIdentity) { _, _ in confirmsAIReadingRequest = false }
     }
 
+    private var compareTranslationsButton: some View {
+        Button {
+            isTranslationComparisonPresented = true
+        } label: {
+            Image(systemName: "rectangle.split.2x1")
+        }
+        .buttonStyle(.borderless)
+        .disabled(state.translationVersions.count < 2 || state.originalLiveLyrics.isEmpty)
+        .help("并排对比已保存译文；采用时才改变当前显示，不调用翻译 AI")
+        .accessibilityLabel("并排对比已保存译文")
+    }
+
     private func translationVersionTitle(_ version: StoredTranslationVersion) -> String {
         let name = version.record.translationSourceTitle
         guard state.translationVersions.filter({ $0.record.translationSourceTitle == name }).count > 1 else { return name }
@@ -1690,7 +1697,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     }
 
     private func aiReadingControls(compact: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 2) {
             Toggle("本地自动生成读音", isOn: Binding(
                 get: { settings.readingPreferences.automaticGeneration },
                 set: { enabled in
@@ -1718,12 +1725,15 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 if !compact { Text("新歌词就绪后自动优化并使用；优先复用已保存的 AI 读音，保留人工修改和锁定读音。仅处理不确定读音，可能产生模型费用。")
                     .font(.caption).foregroundStyle(.secondary) }
             }
-            HStack {
+            HStack(spacing: 6) {
                 Button("本地生成") { state.generateCurrentReading() }
                     .disabled(!canGenerateReadingHere || state.isReadingGenerating)
-                Button("AI 优化当前歌词…", systemImage: "sparkles") { confirmsAIReadingRequest = true }
+                Button("AI 优化…", systemImage: "sparkles") { confirmsAIReadingRequest = true }
                     .disabled(aiReadingRequestDisabledReason != nil)
+                    .help(aiReadingRequestDisabledReason ?? "用所选模型优化当前歌词的不确定读音")
             }
+            .controlSize(.small)
+            .frame(minHeight: V3PanelMetrics.rowHeight)
             if !compact, let reason = aiReadingRequestDisabledReason {
                 Text(reason).font(.caption).foregroundStyle(.secondary)
             }
@@ -1732,7 +1742,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             } else if !state.readingMessage.isEmpty {
                 Text(state.readingMessage).font(.caption).foregroundStyle(.secondary)
             }
-            Menu("已保存的读音") {
+            V3PanelRow(title: "已保存的读音") {
+            Menu(state.selectedReadingVersion.map { ReadingRepresentationID(rawValue: $0.record.representationID)?.displayName ?? "读音" } ?? "选择") {
                 ForEach(state.readingVersions.filter { !$0.record.isArchived }, id: \.record.id) { version in
                     let name = ReadingRepresentationID(rawValue: version.record.representationID)?.displayName ?? "读音"
                     let isAI = version.record.warningMetadata.contains(.aiCandidateOnly)
@@ -1743,7 +1754,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     .disabled(isAI && !settings.readingPreferences.aiAssistedCandidate)
                 }
             }
+            .menuStyle(.borderlessButton).fixedSize()
             .disabled(state.readingVersions.isEmpty)
+            }
         }
     }
 
@@ -1956,18 +1969,16 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                        ? "显示歌曲缩略图" : "显示前景封面", isOn: $settings.v3ShowForegroundArtwork)
                 visualControls.playbackPresentationControls
                 visualControls.backgroundMotionControls
-                DisclosureGroup("更多画面选项", isExpanded: $settings.v3PictureAdvancedExpanded) {
+                V3DisclosureRow(title: "更多画面选项", isExpanded: $settings.v3PictureAdvancedExpanded) {
                     visualControls.pictureAdvancedControls(showsExplanations: false)
                 }
             case .more:
+                // 恢复歌词时间 was the same action as 归零 on the offset row, which stays.
+                LyricsPresentationOffsetControl(settings: settings, showsLegacyNotice: false,
+                                                showsExplanations: false, rowStyle: true)
                 SleepTimerControls(timer: state.sleepTimer, select: state.configureSleepTimer)
-                Divider()
-                LyricsPresentationOffsetControl(settings: settings, showsLegacyNotice: false, showsExplanations: false)
-                Divider()
                 windowModePanel
-                Divider()
                 desktopInteractionPanel
-                Button("恢复歌词时间") { settings.lyricsOffsetStore.resetActiveValue() }
             case .library, .search, .playlists: EmptyView()
             }
         }
@@ -2007,12 +2018,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     }
 
     private var windowModePanel: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("窗口模式")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+        VStack(alignment: .leading, spacing: 2) {
+            V3PanelSection(title: "窗口")
             if !liveOnly {
                 Toggle("桌面歌词", isOn: Binding(get: { state.showFloatingWindow }, set: { _ in
                     WindowManager.shared.toggleFloatingLyrics(state: state)
@@ -2020,43 +2027,28 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 Toggle("顶部胶囊", isOn: Binding(get: { state.showCapsulePlayer }, set: { _ in
                     WindowManager.shared.toggleCapsule(state: state)
                 }))
-                Toggle(isOn: $settings.menuBarLyricsEnabled) {
-                    Label("菜单栏歌词", systemImage: "menubar.rectangle")
-                        .font(.system(size: 13, weight: .medium))
+                Toggle("菜单栏歌词", isOn: $settings.menuBarLyricsEnabled)
+                    .accessibilityIdentifier("menubar.lyrics.toggle")
+                    .help("直接开启或关闭菜单栏歌词；播放面板仍可从菜单栏图标打开。")
+            }
+            V3PanelRow(title: liveOnly ? "全屏歌词" : "全屏歌词") {
+                Button(liveOnly ? "退出" : "打开") {
+                    WindowManager.shared.toggleFullScreen(state: state, settings: settings)
+                    isWindowMenuPresented = false
                 }
-                .toggleStyle(.switch)
                 .controlSize(.small)
-                .padding(10)
-                .accessibilityIdentifier("menubar.lyrics.toggle")
-                .help("直接开启或关闭菜单栏歌词；播放面板仍可从菜单栏图标打开。")
             }
-            Divider()
-            toolbarAction(liveOnly ? "退出全屏" : "全屏歌词", symbol: "arrow.up.left.and.arrow.down.right") {
-                WindowManager.shared.toggleFullScreen(state: state, settings: settings)
-                isWindowMenuPresented = false
-            }
-
         }
-        .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder private var desktopInteractionPanel: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if !liveOnly {
-                Text("桌面歌词交互")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                ForEach(FloatingLyricsInteractionMode.allCases, id: \.rawValue) { mode in
-                    toolbarAction(mode.title, symbol: settings.floatingWindowInteractionMode == mode ? "checkmark.circle.fill" : "circle") {
-                        WindowManager.shared.setFloatingInteractionMode(mode, state: state)
-                    }
-                    .help(mode.detail)
-                    .accessibilityAddTraits(settings.floatingWindowInteractionMode == mode ? .isSelected : [])
-                }
-            }
+        if !liveOnly {
+            V3SegmentedPicker("桌面交互", selection: Binding(
+                get: { settings.floatingWindowInteractionMode },
+                set: { WindowManager.shared.setFloatingInteractionMode($0, state: state) }
+            ), options: FloatingLyricsInteractionMode.allCases.map { ($0.title, $0) })
+            .help(FloatingLyricsInteractionMode.allCases.map { $0.title + "：" + $0.detail }.joined(separator: "\n"))
         }
     }
 

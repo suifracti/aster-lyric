@@ -24,7 +24,10 @@ struct V3SegmentedPicker<Value: Hashable>: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if showsLabel { Text(title).fixedSize() }
+            if showsLabel {
+                Text(title).font(.system(size: 12.5)).lineLimit(1)
+                    .frame(width: V3PanelMetrics.labelWidth, alignment: .leading)
+            }
             GeometryReader { geometry in
                 let segmentWidth = max(0, (geometry.size.width - 4) / CGFloat(max(1, options.count)))
                 ZStack(alignment: .leading) {
@@ -70,6 +73,7 @@ struct V3SegmentedPicker<Value: Hashable>: View {
             }
             .frame(height: height)
         }
+        .frame(minHeight: showsLabel ? V3PanelMetrics.rowHeight : nil)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title)
     }
@@ -470,38 +474,20 @@ struct V3VisualControls {
 
     @ViewBuilder var blurControls: some View {
         if settings.v3ArtworkPresentation != .stage || settings.v3BackgroundShowsCompleteArtwork(for: .stage) {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("背景封面模糊")
-                .font(.system(size: 12, weight: .medium))
-            V3NumericSlider(value: $settings.v3BackdropBlurRadius, in: 0...100, step: 1, unit: "%")
-                .accessibilityLabel(settings.v3ArtworkPresentation.blurControlTitle)
-            HStack {
-                blurPresetButton("0%", val: 0); Spacer()
-                blurPresetButton("25%", val: 25); Spacer()
-                blurPresetButton("50%", val: 50); Spacer()
-                blurPresetButton("75%", val: 75); Spacer()
-                blurPresetButton("100%", val: 100)
-            }
-        }
+        // The / key steps through 0 · 25 · 50 · 75 · 100; the slider covers the rest.
+        V3NumericSlider("背景模糊", value: $settings.v3BackdropBlurRadius, in: 0...100, step: 1, unit: "%")
+            .accessibilityLabel(settings.v3ArtworkPresentation.blurControlTitle)
+            .help("按 / 在 0 · 25 · 50 · 75 · 100 之间切换，, 和 . 每次 ±5")
         }
     }
 
     private var backdropScaleControls: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("背景缩放").font(.system(size: 12, weight: .medium))
-            V3NumericSlider(value: Binding(
-                get: { settings.v3BackdropScale(for: settings.v3ArtworkPresentation) },
-                set: { settings.setV3BackdropScale($0, for: settings.v3ArtworkPresentation) }
-            ), in: 0.8...1.4, step: 0.05, unit: "%", displayScale: 100)
-                .accessibilityLabel("背景缩放")
-                .accessibilityIdentifier("v3.classic.backgroundScale")
-            HStack {
-                backdropScalePresetButton("80%", val: 0.8); Spacer()
-                backdropScalePresetButton("100%", val: 1); Spacer()
-                backdropScalePresetButton("120%", val: 1.2); Spacer()
-                backdropScalePresetButton("140%", val: 1.4)
-            }
-        }
+        V3NumericSlider("背景缩放", value: Binding(
+            get: { settings.v3BackdropScale(for: settings.v3ArtworkPresentation) },
+            set: { settings.setV3BackdropScale($0, for: settings.v3ArtworkPresentation) }
+        ), in: 0.8...1.4, step: 0.05, unit: "%", displayScale: 100)
+            .accessibilityLabel("背景缩放")
+            .accessibilityIdentifier("v3.classic.backgroundScale")
     }
 
     var pictureAdvancedControls: some View {
@@ -515,71 +501,46 @@ struct V3VisualControls {
 
     @ViewBuilder var backgroundMotionControls: some View {
         if !usesQuietBackground && settings.v3ArtworkPresentation != .classicGaussian {
-            HStack {
-                Text("背景动态")
-                Spacer()
-                atmosphereButton("关闭", level: 0)
-                atmosphereButton("轻柔", level: 1)
-                atmosphereButton("鲜明", level: 2)
-            }
+            V3SegmentedPicker("背景动态", selection: Binding(
+                get: { settings.v3AtmosphereLevel(for: settings.v3ArtworkPresentation) },
+                set: { settings.setV3AtmosphereLevel($0, for: settings.v3ArtworkPresentation) }
+            ), options: [("关闭", 0), ("轻柔", 1), ("鲜明", 2)])
             .help("暂停、窗口隐藏或系统减少动态效果时停止装饰运动。")
         }
     }
 
     func pictureAdvancedControls(showsExplanations: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 2) {
             Toggle("夜间柔和", isOn: $settings.v3NightGentleEnabled)
                 .help("20:00–07:00 降低亮度15%，背景动态最高为轻柔。")
             let renderer = settings.v3ArtworkPresentation
             let scene = settings.v3ListeningScene
             if scene != .focusedLyrics && scene != .linerNotes {
-                sectionLabel("背景")
+                V3PanelSection(title: "背景")
                 if !(scene == .flowingField && renderer == .classic) {
-                    V3SegmentedPicker("取景方式", selection: Binding(
+                    V3SegmentedPicker("取景", selection: Binding(
                         get: { settings.v3BackgroundShowsCompleteArtwork(for: renderer) },
                         set: { settings.setV3BackgroundShowsCompleteArtwork($0, for: renderer) }
                     ), options: [("铺满", false), ("尽量完整", true)])
                     .help("背景取景不改变前景封面；可铺满裁切或保留完整内容。")
-                    if showsExplanations {
-                        Text(settings.v3BackgroundShowsCompleteArtwork(for: renderer)
-                             ? "优先保留封面内容并补边；前景封面单独调整。"
-                             : "允许裁切以铺满背景；前景封面单独调整。")
-                            .font(.system(size: 11)).foregroundStyle(Color.secondary)
-                    }
                     backdropScaleControls
                 }
                 if scene == .originalAmbient && renderer == .authenticAmbient {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("背景明暗").font(.system(size: 12, weight: .medium))
-                        V3NumericSlider(value: Binding(
-                            get: { settings.v3BackgroundBrightness(for: renderer, scene: scene) },
-                            set: { settings.setV3BackgroundBrightness($0, for: renderer) }
-                        ), in: 0.6...1.4, step: 0.05, unit: "%", displayScale: 100)
-                            .accessibilityLabel("背景明暗")
-                            .accessibilityIdentifier("v3.backgroundBrightness")
-                    }
-                    .help("100% 保持现有观感；调高让偏暗的封面更接近旧的轻盈版。")
+                    V3NumericSlider("背景明暗", value: Binding(
+                        get: { settings.v3BackgroundBrightness(for: renderer, scene: scene) },
+                        set: { settings.setV3BackgroundBrightness($0, for: renderer) }
+                    ), in: 0.6...1.4, step: 0.05, unit: "%", displayScale: 100)
+                        .accessibilityLabel("背景明暗")
+                        .accessibilityIdentifier("v3.backgroundBrightness")
+                        .help("100% 保持现有观感；调高让偏暗的封面更接近旧的轻盈版。")
                 }
-                if showsExplanations {
-                    backgroundMotionControls
-                    if renderer != .classicGaussian {
-                        Text("暂停、窗口隐藏或系统减少动态效果时停止装饰运动。")
-                            .font(.system(size: 11)).foregroundStyle(Color.secondary)
-                    }
-                }
-                Divider()
+                if showsExplanations { backgroundMotionControls }
             }
             if scene != .focusedLyrics && scene != .coverPhoto && settings.v3ShowForegroundArtwork {
-                sectionLabel("前景封面")
-                V3NumericSlider(value: $settings.v3ArtworkSizeScale, in: 0.8...1.4, step: 0.05,
+                V3PanelSection(title: "前景封面")
+                V3NumericSlider("尺寸", value: $settings.v3ArtworkSizeScale, in: 0.8...1.4, step: 0.05,
                                 unit: "%", displayScale: 100)
                     .accessibilityLabel("前景封面尺寸")
-                HStack {
-                    sizePresetButton("80%", val: 0.8); Spacer()
-                    sizePresetButton("100%", val: 1); Spacer()
-                    sizePresetButton("120%", val: 1.2); Spacer()
-                    sizePresetButton("140%", val: 1.4)
-                }
                 if scene != .linerNotes {
                     V3SegmentedPicker("位置", selection: $settings.v3ArtworkPosition,
                                       options: [("居左", "left"), ("居中", "center"), ("居右", "right")])
@@ -588,9 +549,8 @@ struct V3VisualControls {
                     Toggle("隐藏播放信息时舒展封面", isOn: $settings.v3ExpandArtworkWhenDetailsHidden)
                         .accessibilityIdentifier("v3.artwork.expandWhenDetailsHidden")
                 }
-                Divider()
             }
-            sectionLabel("播放")
+            V3PanelSection(title: "播放")
             if settings.v3EdgeProgressEnabled {
                 V3WindowEdgeProgressSettings(enabled: $settings.v3EdgeProgressEnabled,
                     colorHex: $settings.v3EdgeProgressColorHex,
@@ -599,102 +559,86 @@ struct V3VisualControls {
             }
             Toggle("确认纯音乐时使用简洁画面", isOn: $settings.v3InstrumentalPureImmersion)
                 .help("仅对已确认纯音乐生效；找不到歌词不代表纯音乐。")
-            DisclosureGroup("旧版布局兼容") {
+            V3PanelRow(title: "旧版布局", help: "早期主窗口布局，仅为兼容保留") {
                 Picker("主窗口布局", selection: $settings.mainWindowLayoutStyleRawValue) {
                     ForEach(MainWindowLayoutStyle.userSelectableCases) { style in Text(style.title).tag(style.rawValue) }
-                }.pickerStyle(.menu)
-            }.font(.system(size: 12))
-        }.font(.system(size: 12))
+                }.pickerStyle(.menu).labelsHidden().fixedSize()
+            }
+        }
     }
 
+    /// 文字: what is shown and how big first; reading details fold.
     var textPage: some View {
-        VStack(alignment: .leading, spacing: 13) {
+        VStack(alignment: .leading, spacing: 2) {
             Text("当前：\((settings.activeReadingLanguage ?? .other).title)设置")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .help("读音与显示开关按歌词语言分别记住")
+            V3SegmentedPicker("显示", selection: displayBinding(\.listeningLayerPreset),
+                options: DisplayPreferences.ListeningLayerPreset.allCases.filter {
+                    $0 != .custom || settings.displayPreferences.listeningLayerPreset == .custom
+                }.map { ($0.title, $0) })
+            // Under the 显示 choice, aligned with it: the three switches it sets.
+            HStack(spacing: 14) {
+                Color.clear.frame(width: V3PanelMetrics.labelWidth, height: 1)
+                V3InlineSwitch(title: "原文", isOn: displayBinding(\.showOriginal))
+                V3InlineSwitch(title: "译文", isOn: displayBinding(\.showTranslation))
+                V3InlineSwitch(title: "读音", isOn: displayBinding(\.showKana))
+                Spacer(minLength: 0)
+            }
+            .frame(minHeight: V3PanelMetrics.rowHeight)
+            V3NumericSlider("字号", value: displayDoubleBinding(\.fontSize), in: 14...42, step: 1, unit: "pt")
+                .help("原文与译文字号；在歌词上双指捏合也可调整")
             Toggle("大字模式", isOn: $settings.v3BigLineModeEnabled)
-            HStack {
-                Text("显示")
-                V3SegmentedPicker("显示方式", selection: displayBinding(\.listeningLayerPreset),
-                    options: DisplayPreferences.ListeningLayerPreset.allCases.filter {
-                        $0 != .custom || settings.displayPreferences.listeningLayerPreset == .custom
-                    }.map { ($0.title, $0) }, showsLabel: false)
-            }
-            HStack {
-                Toggle("原文", isOn: displayBinding(\.showOriginal))
-                Toggle("译文", isOn: displayBinding(\.showTranslation))
-                Toggle("读音", isOn: displayBinding(\.showKana))
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                Text("原文与译文字号")
-                V3NumericSlider(value: displayDoubleBinding(\.fontSize), in: 14...42, step: 1, unit: "pt")
-            }
+                .help("当前句约两倍大，其他行缩小变淡，适合远处跟唱")
             V3SegmentedPicker("对齐", selection: $settings.v3LyricsPosition,
                               options: [("跟随场景", "automatic"), ("左", "left"), ("居中", "center"), ("右", "right")])
                 .help("跟随场景：当前使用" + (settings.v3ListeningScene == .coverPhoto ? "右侧阅读区" : settings.v3ArtworkPresentation == .stage ? "居中阅读区" : "左对齐"))
-            VStack(alignment: .leading, spacing: 7) {
-                HStack {
-                    Text("清晰度").font(.system(size: 12, weight: .medium))
-                    Image(systemName: "info.circle").help("文字阴影只作用于歌词；柔和光晕随封面明暗调整。")
+            V3SegmentedPicker("清晰度", selection: $settings.v3ReadingProtection,
+                              options: V3ReadingProtection.allCases.map { ($0.title, $0) })
+                .help("文字阴影只作用于歌词；柔和光晕随封面明暗调整。")
+            Toggle("亮封面自动加阴影", isOn: $settings.v3BrightCoverShadowEnabled)
+                .help("封面、舞台遇亮封面且清晰度为关闭时自动加文字阴影；关闭后「关闭」保持完全不加。")
+            V3DisclosureRow(title: "读音与更多", isExpanded: $settings.v3TextAdvancedExpanded) {
+                V3PanelRow(title: "辅助读音") {
+                    HStack(spacing: 14) {
+                        V3InlineSwitch(title: "罗马音", isOn: displayBinding(\.showRomaji))
+                        V3InlineSwitch(title: "拼音", isOn: displayBinding(\.showPinyin))
+                    }
                 }
-                V3SegmentedPicker("清晰度", selection: $settings.v3ReadingProtection,
-                                  options: V3ReadingProtection.allCases.map { ($0.title, $0) }, showsLabel: false)
-                Toggle("亮封面自动加阴影", isOn: $settings.v3BrightCoverShadowEnabled)
-                    .font(.system(size: 12))
-                    .help("封面、舞台遇亮封面且清晰度为关闭时自动加文字阴影；关闭后「关闭」保持完全不加。")
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                Text("当前句发光")
-                V3NumericSlider(value: $settings.v3CurrentLineGlow, in: 0...1, step: 0.01, unit: "%", displayScale: 100)
-            }
-            HStack(spacing: 10) {
-                Toggle("罗马音", isOn: displayBinding(\.showRomaji))
-                Toggle("拼音", isOn: displayBinding(\.showPinyin))
-            }
-            Picker("注音排版", selection: displayBinding(\.kanaDisplayMode)) {
-                Text("汉字上方").tag(KanaDisplayMode.inlineRuby)
-                Text("独立一行").tag(KanaDisplayMode.independentLine)
-                Text("替换汉字").tag(KanaDisplayMode.kanaReplacement)
-                Text("隐藏").tag(KanaDisplayMode.hidden)
-            }
-            .accessibilityIdentifier("v3.display.kanaMode")
-
-            Divider()
-            sectionLabel("字号")
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("读音与辅助字")
-                    Spacer()
-                    Text("\(Int(settings.displayPreferences.assistantFontSize.rounded())) pt").monospacedDigit()
+                V3PanelRow(title: "注音排版") {
+                    Picker("注音排版", selection: displayBinding(\.kanaDisplayMode)) {
+                        Text("汉字上方").tag(KanaDisplayMode.inlineRuby)
+                        Text("独立一行").tag(KanaDisplayMode.independentLine)
+                        Text("替换汉字").tag(KanaDisplayMode.kanaReplacement)
+                        Text("隐藏").tag(KanaDisplayMode.hidden)
+                    }
+                    .pickerStyle(.menu).labelsHidden().fixedSize()
+                    .accessibilityIdentifier("v3.display.kanaMode")
                 }
-                V3NumericSlider(value: displayDoubleBinding(\.assistantFontSize), in: 10...24, step: 1, unit: "pt")
+                V3NumericSlider("读音字号", value: displayDoubleBinding(\.assistantFontSize), in: 10...24, step: 1, unit: "pt")
+                    .help("读音、罗马音与辅助字")
+                V3NumericSlider("假名字号", value: displayDoubleBinding(\.rubyFontSize), in: 8...18, step: 1, unit: "pt")
+                V3NumericSlider("当前句光", value: $settings.v3CurrentLineGlow, in: 0...1, step: 0.01, unit: "%", displayScale: 100)
+                    .help("当前句发光强度")
+                textAdvancedControls
             }
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("假名字号")
-                    Spacer()
-                    Text("\(Int(settings.displayPreferences.rubyFontSize.rounded())) pt").monospacedDigit()
-                }
-                V3NumericSlider(value: displayDoubleBinding(\.rubyFontSize), in: 8...18, step: 1, unit: "pt")
-            }
-            DisclosureGroup("更多文字选项") { textAdvancedControls }
         }
     }
 
     var textAdvancedControls: some View {
-                VStack(alignment: .leading, spacing: 10) {
-                    Picker("繁简转换", selection: readingBinding(\.scriptConversionID)) {
-                        Text("不转换").tag(ScriptConversionID.none.rawValue)
-                        Text("繁体转简体").tag(ScriptConversionID.traditionalToSimplified.rawValue)
-                        Text("简体转繁体").tag(ScriptConversionID.simplifiedToTraditional.rawValue)
-                    }
-                    Toggle("远处歌词隐藏辅助读音", isOn: displayBinding(\.hideDistantAuxiliary))
-                    HStack {
-                        Text("非当前歌词透明度")
-                        Spacer()
-                        Text("\(Int(settings.displayPreferences.opacity * 100))%").monospacedDigit()
-                    }
-                    V3NumericSlider(value: displayBinding(\.opacity), in: 0.15...1, step: 0.05, unit: "%", displayScale: 100)
+        VStack(alignment: .leading, spacing: 2) {
+            V3PanelRow(title: "繁简转换") {
+                Picker("繁简转换", selection: readingBinding(\.scriptConversionID)) {
+                    Text("不转换").tag(ScriptConversionID.none.rawValue)
+                    Text("繁体转简体").tag(ScriptConversionID.traditionalToSimplified.rawValue)
+                    Text("简体转繁体").tag(ScriptConversionID.simplifiedToTraditional.rawValue)
                 }
+                .pickerStyle(.menu).labelsHidden().fixedSize()
+            }
+            Toggle("远处歌词隐藏辅助读音", isOn: displayBinding(\.hideDistantAuxiliary))
+            V3NumericSlider("其他行", value: displayBinding(\.opacity), in: 0.15...1, step: 0.05, unit: "%", displayScale: 100)
+                .help("非当前歌词的透明度")
+        }
     }
 
     private func sectionLabel(_ title: String) -> some View {
