@@ -20,6 +20,8 @@
 | 有歌词源译文却不显示、部分行没有译文、重复补存 | L-010；TranslationSessionController.synchronize 与 chooseVersion |
 | 悬停歌词库转圈、版本列表开得慢 | L-011；prefetchCurrentTrack、currentDetail |
 | 边缘线内移/加粗、胶囊热区、封面卡片不同宽、分段选中块乱动 | L-012；V3EdgeRailView、V3ResponsiveGeometry、V3SegmentedPicker |
+| 面板控件不统一、选项太多太杂、画面风格太多、播放栏按钮不一致、歌词库页签变黑 | L-016；V3PanelRow、V3RowToggleStyle、V3DisclosureRow、foldedEntryIndices、V3PlaybackButtons |
+| 译文风格不对、「我的风格」不见了、设置里的预设和实际不符 | L-017；TranslationPromptPresetID.personalV2、personalV2Guidance |
 | 在窗口边缘拖进度会变成缩放窗口、进度线靠近时下移不好看、胶囊和工具栏像两套控件、画面面板底部被截断 | L-015；V3EdgePillScrubber、V3ControlBarSurface、V3ThemeSelectorView |
 | 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
@@ -210,6 +212,26 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 随后用户截图显示胶囊压在工具栏上。纯逻辑核心按真实窗口尺寸计算出的位置与工具栏保持 12pt，不重叠，所以问题在绘制：我把外观和阴影用内边距塞进了 `V3AnimationIsland`，并调换了工具栏位置探针与背景的顺序，绘制出的胶囊不再等于布局算出的那个矩形。现在外观画在隔离容器外面，容器尺寸恢复为胶囊自身尺寸，探针回到原来的位置。我没能在真实窗口里复现并确认是这两处中的哪一处，所以每次胶囊出现时会写一行 `EDGE pill show frame=… toolbar=…` 到 e2e 日志，下次再重叠先看这行。呼出距离从 30pt 放宽到 44pt，用户的原话是太窄容易滑到窗口边缘、但也不要太宽。
 
 用户提的“进度围绕封面发光”已做成可选项：`v3.edgeProgress.placement.v1` 取 `windowEdge`（默认）或 `coverHalo`，入口在画面 → 更多画面选项的“进度位置”。前景封面用 `v3ReportsForegroundCover` 上报自己在画布里的位置和圆角（四处大封面都接了），`V3EdgeRailView` 在有光环目标时把同一条进度线画在封面外 6pt，已播部分 3pt 并带同色光晕。没有前景封面或只有 120pt 以下的缩略图时回到窗口边缘。用户问过无封面时是否围绕歌词，我没有做：歌词区是画面里最大的一块，绕一圈会最抢眼。光环只显示进度，拖动仍在胶囊上。真实窗口里的观感待用户确认。
+
+## L-016 一套界面贴合功能：行式面板、折叠、统一播放栏（Round 14）
+
+2026-11-11 用户看过真实截图后要求整体合并优化，原话是要做“适配我们功能的 ui，而不是套模板让功能去适配 ui”，并表示不监督、让我一直做下去。规格写在 TOOLBAR_BEHAVIOR 的 Round 14，按批次各自提交：
+
+- A `f689fc2`：进度线自动定位，前景封面不小于 120pt 时绕封面（`V3ProgressTrack`），否则沿窗口边缘；两处都能拖，窗口边缘的热区在 8–24pt，外侧 8pt 留给缩放。指针进入热区变手形、线原地加粗、时间标签跟随。“进度位置”选项删除。顺带修了工具栏位置从未传到边缘播放器的问题：`V3ToolbarFramePreferenceKey.reduce` 被不上报的兄弟视图用空矩形覆盖，胶囊因此会压在工具栏上（之前 L-015 的诊断日志里 toolbar 一直是 0）。
+- B `ff427c4`：界面上的 Lyric Island 改为 Aster · Lyric；主窗口仍兼容旧标题匹配，标识和存储键不变。
+- C `67d03a5`：工具面板统一为 30pt 行。`V3PanelRow`、`V3RowToggleStyle`（面板根部统一套用）、`V3InlineSwitch`、`V3PanelSection`、`V3DisclosureRow`；`V3NumericSlider` 改单行并去掉范围说明、刻度和预设按钮（预设仍由 / , . 键提供）；`V3SegmentedPicker` 标签宽 64pt。文字面板的读音类选项折进“读音与更多”（`v3.text.advancedExpanded.v1`）。“恢复歌词时间”与偏移行的归零是同一操作，收进偏移行。
+- D `abeca69`：环境光风格行只露原版环境光和柔光羽化，柔和光晕、独立色场在“更多”菜单里，被选中时回到行内（`foldedEntryIndices`）。
+- E `78f9669`：卡片、紧凑栏、边缘胶囊共用 `V3PlaybackButtons` 的按钮与顺序；紧凑栏以前没有上一首/下一首。时间统一为 0:22。
+- F `11b5776`：居中面板与歌词库窗口改用中性的 `V3SegmentedPicker`，不再是系统黑色或蓝色页签；收听记录页去掉大标题和说明段；日期统一 `v3ShortDateText`。
+- G `72b2d02`：设置页首收小；模型与思考强度有行式版本供译文面板使用。离屏图里设置侧栏选中项是黑底看不见字，但加强调色后离屏图不变，判断为离屏渲染器的问题，没有改。
+
+验证范围：每批完整原生测试和 CI 五组合同通过，离屏图只用来查错位和截断。真实窗口的观感、手感都没有经过用户确认；桌面控制工具按策略拒绝访问本 App。
+
+## L-017 「我的风格」译风曾只存在于未合并的快照分支
+
+用户设置里保存的是 `translationPrompt.personalV2.v2`（full-audit-v2-r1，2026-10-09 按用户全部确认译稿审计出的规则），正式库里 22 份 AI 译文都用它生成。但这个预设只在 Codex 快照提交 `5a96753`（不在 main）里存在，main 的枚举里没有它，`TranslationPromptPresetID(rawValue:) ?? .naturalSong` 静默退回较短的“自然歌曲 v2”。2026-11-12 按同一 raw value 恢复为第一项和新安装默认值，指令原文取自 `5a96753`，并附上 10-15 复核得出的多语种说明（`personalV2Guidance`）。自然歌曲等其他预设保留可选；已保存的译文不重写，只有新的请求使用。
+
+当时正式库里没有人工改过的译文（`is_manually_edited` 为 0），所以没有新的用户修订可以对照；22 份 AI 译文按现有规则抽查，没有发现擅加“永远/一定”、无据补性别代词或拆并行。用户的确认译稿在 Vault 的翻译目录，不在本项目文件夹内，这次没有读取。下次改译风前先查 `defaults read com.spotifylyrics.app ai.promptPresetID` 看用户实际选的是哪个，并确认枚举里有它。
 
 ## 实际覆盖与接续
 

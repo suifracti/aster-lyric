@@ -682,3 +682,5 @@ Work in this order. Each batch is built, tested, restarted and pushed on its own
 **H. After the interface: translation style.** Review the default prompt against the user's confirmed translations and improve it; saved translations are not rewritten.
 
 Verification for every batch: the native target and the source contracts pass; layout is checked with `Scripts/ui-snapshots.sh` for clipping and overlap only. The assistant cannot see the real window (the desktop-control tool refuses this app), so real look and feel are the user's to confirm from the running app.
+
+**Status (2026-11-12):** batches A–H are done and each was tested and pushed on its own. G went no further than headings and row forms for the translation controls; a full settings re-layout was not attempted. Look and feel in the real window await the user's review.
