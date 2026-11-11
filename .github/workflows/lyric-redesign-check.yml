@@ -1,4 +1,4 @@
-name: Lyric Island native source check
+name: Aster · Lyric native source check
 on:
   workflow_dispatch:
   pull_request:
@@ -14,7 +14,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: lyric-island-native-${{ github.ref }}
+  group: aster-lyric-native-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   source:
@@ -32,7 +32,7 @@ jobs:
           git archive --format=zip HEAD > /tmp/lyric-source/source.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: lyric-island-committed-source
+          name: aster-lyric-committed-source
           path: /tmp/lyric-source/
           retention-days: 7
   native:
@@ -99,7 +99,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: lyric-island-native-build
+          name: aster-lyric-native-build
           path: /tmp/lyric-native-result/
           retention-days: 7
       - name: Require the complete native test target and source contracts before release
