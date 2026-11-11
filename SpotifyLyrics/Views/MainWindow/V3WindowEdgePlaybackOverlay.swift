@@ -24,6 +24,7 @@ struct V3WindowEdgePlaybackOverlay: View {
     /// on the way to a button or the scrubber does not make it vanish.
     @State private var playerShown = false
     @State private var lingerTask: Task<Void, Never>?
+    @State private var lastCanvasSize = CGSize.zero
     @State private var draftFraction: Double?
     @State private var dragTrackKey: String?
     @State private var windowVisible = false
@@ -81,8 +82,12 @@ struct V3WindowEdgePlaybackOverlay: View {
                             onScrubEnd: { finishSeek(fraction: $0) })
                     }
                 }
-                .frame(width: controlPosition.baseSize.width + V3WindowEdgeControlPositioner.shadowRoom * 2,
-                       height: controlPosition.baseSize.height + V3WindowEdgeControlPositioner.shadowRoom * 2)
+                .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
+                // Drawn around the island, not inside it: the island clips to
+                // its bounds, and its size must stay the pill's own size so
+                // the drawn pill is exactly the frame the layout computed.
+                .modifier(V3ControlBarSurface())
+                .modifier(V3SystemAppearanceModifier())
                 .scaleEffect(controlPosition.scale * (playerVisible || reduceMotion ? 1 : 0.92))
                 .opacity(playerVisible ? 1 : 0)
                 .allowsHitTesting(playerVisible)
@@ -112,7 +117,13 @@ struct V3WindowEdgePlaybackOverlay: View {
         }
         .onChange(of: pointerWantsPlayer) { _, wants in
             lingerTask?.cancel()
-            if wants { playerShown = true; return }
+            if wants {
+                playerShown = true
+                // One line per appearance, to compare the drawn pill with the toolbar.
+                let frame = edgeInteraction.layout(size: lastCanvasSize, fallbackExitPoint: exitPoint, toolbarBounds: toolbarBounds).frame
+                LyricsE2ELog.log("EDGE pill show frame=\(frame.integral) toolbar=\(toolbarBounds.integral) canvas=\(lastCanvasSize)")
+                return
+            }
             // Leaving the window is a clear exit; drifting away inside it may
             // be an overshoot, so wait a little longer there.
             let delay = edgeInteraction.pointerInside ? 600 : 300
@@ -160,6 +171,7 @@ struct V3WindowEdgePlaybackOverlay: View {
     private func updatePointer(_ point: CGPoint?, size: CGSize, dragging: Bool) {
         // Keep per-pixel input local. Only a visibility/anchor transition writes
         // SwiftUI state, so idle/lyric-region mouse motion does not redraw views.
+        if lastCanvasSize != size { lastCanvasSize = size }
         let next = edgeInteraction.updating(point: point, size: size, dragging: dragging, toolbarBounds: toolbarBounds,
                                             lingering: playerShown)
         if next != edgeInteraction { edgeInteraction = next }
@@ -444,10 +456,6 @@ private struct V3WindowEdgeTransportButtons: View {
             }
         }
         .frame(width: pill.width, height: pill.height)
-        .modifier(V3ControlBarSurface())
-        .modifier(V3SystemAppearanceModifier())
-        // Room for the shadow inside the animation island, which clips.
-        .padding(V3WindowEdgeControlPositioner.shadowRoom)
         .accessibilityLabel("已播 \(elapsed)，总长 \(total)")
     }
 
@@ -717,7 +725,6 @@ enum V3WindowEdgeControlPositioner {
 
     /// Distance between the pill and the window edge: the toolbar's own inset.
     static let edgeInset: CGFloat = 18
-    static let shadowRoom: CGFloat = 18
 
     /// Buttons plus the scrubber line on the pill's inner side.
     static func pillSize(vertical: Bool) -> CGSize {
@@ -862,7 +869,9 @@ private struct V3WindowEdgeInteractionState: Equatable {
     }
 
     // Design starting values in points, not claims of native hand-feel validation.
-    static let revealDistance: CGFloat = 30
+    /// Wide enough to call the pill without sliding onto the resize border,
+    /// narrow enough that passing near an edge does not call it.
+    static let revealDistance: CGFloat = 44
     /// The pill reaches 68 pt into the window (18 pt inset + 50 pt). The keep
     /// zone goes a little deeper, so the pointer can reach every part of the
     /// pill, and pass slightly beyond it, without the pill hiding.

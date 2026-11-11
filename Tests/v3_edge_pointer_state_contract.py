@@ -75,17 +75,17 @@ state = next(state, 1190, 340)
 expect(state.anchor?.edge == .right, "right pointer was left/bottom after re-entry")
 expect(abs(state.layout(size: canvas, fallbackExitPoint: nil).center.y - 340) < 0.01, "wrong right position")
 
-private let beforeReveal = next(State(), 1179, 400) // 31pt
+private let beforeReveal = next(State(), 1165, 400) // 45pt
 expect(!beforeReveal.isVisible, "overbroad reveal")
-private let atReveal = next(beforeReveal, 1180, 400) // 30pt inclusive
-expect(atReveal.isVisible, "30pt failed")
+private let atReveal = next(beforeReveal, 1166, 400) // 44pt inclusive
+expect(atReveal.isVisible, "44pt failed")
 private let controls = atReveal.layout(size: canvas, fallbackExitPoint: nil)
 private let outsideButtonsY = controls.center.y + controls.baseSize.height * controls.scale / 2 + State.controlCorridor + 1
 private let held = next(atReveal, 1126, outsideButtonsY) // 84pt, outside the current button cluster
 expect(held.isVisible && held.anchor == atReveal.anchor, "84pt failed to hold")
 private let hidden = next(held, 1125, outsideButtonsY) // 85pt and outside corridor
 expect(!hidden.isVisible, "centre-side player remained visible")
-expect(!next(hidden, 1179, 400).isVisible, "hold band revealed a hidden player")
+expect(!next(hidden, 1165, 400).isVisible, "hold band revealed a hidden player")
 // While the view still shows the pill, coming back to it keeps it in place;
 // elsewhere, or once the view has let go, a fresh approach is needed.
 private let returned = hidden.updating(point: CGPoint(x: controls.center.x, y: controls.center.y), size: canvas, dragging: false, lingering: true)
