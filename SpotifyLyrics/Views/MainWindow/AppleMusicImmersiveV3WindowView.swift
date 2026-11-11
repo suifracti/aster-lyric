@@ -181,6 +181,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var isFocusMode = false
     @State private var librarySearch = V3LibrarySearchPresentation()
     @State private var toolbarBounds = CGRect.zero
+    @State private var foregroundCover: V3ForegroundCoverFrame?
     @State private var lyricNotice: String?
     @State private var lyricNoticeTask: Task<Void, Never>?
     /// Visual-host preview only; real playback fills this from the session.
@@ -356,7 +357,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         pointerInsideWindow: isPointerInsideCanvas,
                         // Priority: an open panel, then the toolbar, then the edge.
                         suppressControls: toolbar.suppressesEdgeControls(nearTop: false, otherPanelOpen: toolbarPanelIsPresented),
-                        toolbarBounds: toolbarBounds
+                        toolbarBounds: toolbarBounds,
+                        haloTarget: settings.v3EdgeProgressPlacement == "coverHalo" ? foregroundCover : nil
                     )
                     .frame(width: geometry.size.width, height: geometry.size.height)
                 }
@@ -403,6 +405,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             .coordinateSpace(name: "v3-window-canvas")
             .onPreferenceChange(V3ToolbarFramePreferenceKey.self) { frame in
                 if toolbarBounds != frame { toolbarBounds = frame }
+            }
+            .onPreferenceChange(V3ForegroundCoverPreferenceKey.self) { cover in
+                if foregroundCover != cover { foregroundCover = cover }
             }
             .clipped()
             .contentShape(Rectangle())
@@ -933,6 +938,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 ArtworkView(track: compositionTrack, size: coverSize,
                             showsAlbumLabel: false, cornerRadiusRatio: 0.025,
                             preservesCompleteArtwork: true)
+                    .v3ReportsForegroundCover(cornerRadiusRatio: 0.025)
                     .shadow(color: .black.opacity(0.24), radius: 14, y: 8)
             }
             .frame(maxWidth: .infinity)
@@ -984,6 +990,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             showsAlbumLabel: false, cornerRadiusRatio: foregroundArtworkCornerRadiusRatio,
             preservesCompleteArtwork: true
         )
+        .v3ReportsForegroundCover(cornerRadiusRatio: foregroundArtworkCornerRadiusRatio)
         .scaleEffect(
             immersiveCoverScale(
                 size: metrics.coverSize,
@@ -1249,6 +1256,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     cornerRadiusRatio: foregroundArtworkCornerRadiusRatio,
                     preservesCompleteArtwork: true
                 )
+                .v3ReportsForegroundCover(cornerRadiusRatio: foregroundArtworkCornerRadiusRatio)
                 .shadow(color: Color.black.opacity(0.32), radius: 20, x: 0, y: 8)
 
                 VStack(spacing: 4) {
@@ -1348,6 +1356,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     cornerRadiusRatio: 0.06,
                     preservesCompleteArtwork: true
                 )
+                .v3ReportsForegroundCover(cornerRadiusRatio: 0.06)
                 // Scale the artwork itself, preserving the column's bounds.
                 .scaleEffect(visualScale)
                 .frame(width: cardWidth, alignment: .center)

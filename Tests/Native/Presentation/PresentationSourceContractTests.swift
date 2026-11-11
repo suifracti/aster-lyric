@@ -114,6 +114,40 @@ final class PresentationSourceContractTests: XCTestCase {
             track: anotherRecording, confidence: 1)], current: playing).count, 1)
     }
 
+    /// 封面光环: the line runs around the foreground cover and glows; without
+    /// a cover large enough it is the plain window-edge line again.
+    @MainActor
+    func testProgressHaloRunsAroundTheCoverAndFallsBackToTheWindowEdge() {
+        let view = V3EdgeRailView(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
+        view.layoutSubtreeIfNeeded()
+        let clock = LyricsPresentationClock(authoritativePosition: 30, receivedAtMonotonicTime: ProcessInfo.processInfo.systemUptime,
+            isPlaying: true, trackID: "current-song", trackDuration: 150)
+        let cover = V3ForegroundCoverFrame(frame: CGRect(x: 60, y: 180, width: 320, height: 320), cornerRadius: 8)
+        view.configure(clock: clock, draft: nil, active: true, color: NSColor.systemPink.cgColor, halo: cover)
+        // 6 pt outside the cover on every side.
+        XCTAssertEqual(view.progressLayer.path!.boundingBoxOfPath, cover.frame.insetBy(dx: -6, dy: -6))
+        XCTAssertEqual(view.trackLayer.path?.boundingBoxOfPath, view.progressLayer.path?.boundingBoxOfPath)
+        XCTAssertEqual(view.progressLayer.shadowOpacity, 0.9, accuracy: 0.001)
+        XCTAssertEqual(view.progressLayer.lineWidth, 3, accuracy: 0.01)
+        XCTAssertNotNil(view.progressLayer.animation(forKey: "playhead"), "the halo advances like the edge line")
+        XCTAssertNil(view.hitTest(CGPoint(x: 54, y: 300)), "the halo takes no clicks either")
+
+        view.configure(clock: clock, draft: nil, active: true, color: NSColor.systemPink.cgColor, halo: nil)
+        XCTAssertEqual(view.progressLayer.path!.boundingBoxOfPath, CGRect(x: 1.5, y: 1.5, width: 897, height: 697))
+        XCTAssertEqual(view.progressLayer.shadowOpacity, 0)
+        XCTAssertEqual(view.progressLayer.lineWidth, 2.2, accuracy: 0.01)
+
+        XCTAssertTrue(cover.isLargeEnough)
+        XCTAssertFalse(V3ForegroundCoverFrame(frame: CGRect(x: 0, y: 0, width: 52, height: 52), cornerRadius: 6).isLargeEnough,
+                       "a thumbnail is not a place for the halo")
+        let defaults = UserDefaults(suiteName: "halo-\(UUID().uuidString)")!
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).v3EdgeProgressPlacement, "windowEdge", "existing users keep the window edge")
+        defaults.set("coverHalo", forKey: AppSettingsStore.Key.v3EdgeProgressPlacement)
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).v3EdgeProgressPlacement, "coverHalo")
+        defaults.set("something-else", forKey: AppSettingsStore.Key.v3EdgeProgressPlacement)
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).v3EdgeProgressPlacement, "windowEdge")
+    }
+
     /// Seeking lives on the pill, well inside the window.
     func testPillScrubberMapsThePointerAndKeepsClearOfTheResizeBorder() {
         XCTAssertEqual(V3EdgePillScrubber.fraction(at: 64, length: 256), 0.25, accuracy: 0.0001)

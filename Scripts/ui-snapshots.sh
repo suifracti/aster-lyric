@@ -119,6 +119,8 @@ declare -a CASES=(
   "edge-bright|--artwork white --scene coverPhoto --toolbar faint --edge-player-expanded"
   "edge-dark|--artwork dark --scene coverPhoto --toolbar faint --edge-player-expanded"
   "edge-vertical|--artwork white --scene coverPhoto --toolbar faint --edge-player-expanded --edge-player-vertical"
+  "r13-cover-halo|--scene originalAmbient --toolbar faint --edge-player-expanded --edge-halo"
+  "r13-cover-halo-focus|--scene focusedLyrics --toolbar faint --edge-player-expanded --edge-halo"
   "r12-edge-vertical-dark|--artwork dark --scene coverPhoto --toolbar faint --edge-player-expanded --edge-player-vertical"
   "r12-cover-left|--scene originalAmbient --position left --scale 0.8 --toolbar full"
   "r12-cover-center|--scene originalAmbient --position center --scale 1.4 --toolbar full"

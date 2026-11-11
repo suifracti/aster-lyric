@@ -14,6 +14,8 @@ struct V3WindowEdgePlaybackOverlay: View {
     /// The toolbar or an open panel owns the pointer; only the rail stays.
     var suppressControls = false
     var toolbarBounds = CGRect.zero
+    /// The foreground cover, when progress is drawn as a halo around it.
+    var haloTarget: V3ForegroundCoverFrame?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.v3PlaybackInteractionChanged) private var interactionChanged
@@ -230,7 +232,7 @@ struct V3WindowEdgePlaybackOverlay: View {
     private func railPresentation(at date: Date, songHue: Double, size: CGSize) -> some View {
         let color = accent(at: date, songHue: songHue)
         return V3NativeProgressRail(clock: state.presentationClock, draft: draftFraction,
-                active: windowVisible, color: color)
+                active: windowVisible, color: color, halo: haloTarget.flatMap { $0.isLargeEnough ? $0 : nil })
             .allowsHitTesting(false).accessibilityHidden(true)
     }
 
@@ -298,6 +300,36 @@ private struct V3WindowEdgePointerTracker: NSViewRepresentable {
             let local = convert(windowPoint, from: nil)
             onMove(bounds.contains(local) ? local : nil)
         }
+    }
+}
+
+/// Where the foreground cover is drawn, in the window canvas.
+struct V3ForegroundCoverFrame: Equatable {
+    var frame: CGRect
+    var cornerRadius: CGFloat
+    /// Thumbnails are not a place for the progress halo.
+    var isLargeEnough: Bool { min(frame.width, frame.height) >= 120 }
+}
+
+struct V3ForegroundCoverPreferenceKey: PreferenceKey {
+    static let defaultValue: V3ForegroundCoverFrame? = nil
+    static func reduce(value: inout V3ForegroundCoverFrame?, nextValue: () -> V3ForegroundCoverFrame?) {
+        value = value ?? nextValue()
+    }
+}
+
+extension View {
+    /// Reports this cover's drawn frame, including any scale applied outside.
+    func v3ReportsForegroundCover(cornerRadiusRatio: CGFloat) -> some View {
+        background(GeometryReader { geometry in
+            let frame = geometry.frame(in: .named("v3-window-canvas"))
+            // Whole points: a resize or scale animation should not publish
+            // a new value for every sub-point step.
+            let rounded = CGRect(x: frame.minX.rounded(), y: frame.minY.rounded(),
+                                 width: frame.width.rounded(), height: frame.height.rounded())
+            Color.clear.preference(key: V3ForegroundCoverPreferenceKey.self,
+                value: V3ForegroundCoverFrame(frame: rounded, cornerRadius: (rounded.width * cornerRadiusRatio).rounded()))
+        })
     }
 }
 
@@ -385,12 +417,17 @@ struct V3WindowEdgeProgressSettings: View {
     @Binding var enabled: Bool
     @Binding var colorHex: String
     @Binding var colorMode: String
+    @Binding var placement: String
     var showsModeToggle = true
     var showsExplanation = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if showsModeToggle { Toggle("窗口边缘播放进度", isOn: $enabled) }
+            V3SegmentedPicker("进度位置", selection: $placement,
+                              options: [("窗口边缘", "windowEdge"), ("封面光环", "coverHalo")])
+                .disabled(!enabled)
+                .help("封面光环：进度绕着前景封面发光。画面里没有前景封面时，仍显示在窗口边缘。")
             Picker("颜色模式", selection: $colorMode) {
                 Text("固定颜色").tag("manual")
                 Text("自动流转").tag("flow")
@@ -604,9 +641,10 @@ private struct V3NativeProgressRail: NSViewRepresentable {
     let draft: Double?
     let active: Bool
     let color: Color
+    var halo: V3ForegroundCoverFrame?
     func makeNSView(context: Context) -> V3EdgeRailView { V3EdgeRailView() }
     func updateNSView(_ view: V3EdgeRailView, context: Context) {
-        view.configure(clock: clock, draft: draft, active: active, color: NSColor(color).cgColor)
+        view.configure(clock: clock, draft: draft, active: active, color: NSColor(color).cgColor, halo: halo)
     }
 }
 
@@ -614,6 +652,8 @@ final class V3EdgeRailView: NSView {
     let trackLayer = CAShapeLayer()
     let progressLayer = CAShapeLayer()
     private var clock: LyricsPresentationClock?
+    /// When set, the line runs around this cover instead of the window.
+    private(set) var halo: V3ForegroundCoverFrame?
     private var draft: Double?
     private var active = false
     override var isFlipped: Bool { true }
@@ -633,20 +673,34 @@ final class V3EdgeRailView: NSView {
         updateGeometry()
     }
     private func updateGeometry() {
-        let path = V3WindowEdgeRoundedRectShape(cornerRadius: 12).path(in: bounds).cgPath
+        // The shape insets its rectangle by 1.5 pt, so the halo sits 6 pt
+        // outside the cover and follows its corners.
+        let rect = halo.map { $0.frame.insetBy(dx: -7.5, dy: -7.5) } ?? bounds
+        let radius = halo.map { $0.cornerRadius + 6 } ?? 12
+        let path = V3WindowEdgeRoundedRectShape(cornerRadius: radius).path(in: rect).cgPath
         CATransaction.begin(); CATransaction.setDisableActions(true)
         for (shape, width) in [(trackLayer, CGFloat(2.1)), (progressLayer, CGFloat(2.2))] {
             shape.frame = bounds
             shape.path = path
-            shape.lineWidth = width
+            shape.lineWidth = halo == nil ? width : 3
         }
+        // The played part glows in its own colour; the window-edge line does not.
+        progressLayer.shadowOffset = .zero
+        progressLayer.shadowRadius = 9
+        progressLayer.shadowOpacity = halo == nil ? 0 : 0.9
         CATransaction.commit()
     }
-    func configure(clock: LyricsPresentationClock, draft: Double?, active: Bool, color: CGColor) {
+    func configure(clock: LyricsPresentationClock, draft: Double?, active: Bool, color: CGColor,
+                   halo: V3ForegroundCoverFrame? = nil) {
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        trackLayer.strokeColor = color.copy(alpha: 0.22)
+        trackLayer.strokeColor = color.copy(alpha: halo == nil ? 0.22 : 0.16)
         progressLayer.strokeColor = color
+        progressLayer.shadowColor = color
         CATransaction.commit()
+        if self.halo != halo {
+            self.halo = halo
+            updateGeometry()
+        }
         guard self.clock != clock || self.draft != draft || self.active != active else { return }
         self.clock = clock; self.draft = draft; self.active = active
         let duration = clock.trackDuration

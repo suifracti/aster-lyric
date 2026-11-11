@@ -420,6 +420,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let v3EdgeProgressEnabled = "v3.edgeProgress.enabled.v1"
         public static let v3EdgeProgressColorHex = "v3.edgeProgress.colorHex.v1"
         public static let v3EdgeProgressColorMode = "v3.edgeProgress.colorMode.v1"
+        public static let v3EdgeProgressPlacement = "v3.edgeProgress.placement.v1"
         public static let v3AmbientBackgroundShowsCompleteArtwork = "v3.ambientBackgroundShowsCompleteArtwork.v1"
         /// Preserved historical global offset. New runtime reads/writes use
         /// `lyricsOffsetStore`; this key is never migrated or overwritten.
@@ -908,6 +909,12 @@ public final class AppSettingsStore: ObservableObject {
         didSet { defaults.set(v3EdgeProgressColorMode, forKey: Key.v3EdgeProgressColorMode) }
     }
 
+    /// Where the progress line is drawn: "windowEdge", or "coverHalo" around
+    /// the foreground cover. Without a foreground cover it is the window edge.
+    @Published public var v3EdgeProgressPlacement: String {
+        didSet { defaults.set(v3EdgeProgressPlacement, forKey: Key.v3EdgeProgressPlacement) }
+    }
+
     /// Ambient background framing is independent of foreground cover size.
     @Published public var v3AmbientBackgroundShowsCompleteArtwork: Bool {
         didSet { defaults.set(v3AmbientBackgroundShowsCompleteArtwork, forKey: Key.v3AmbientBackgroundShowsCompleteArtwork) }
@@ -1271,6 +1278,7 @@ public final class AppSettingsStore: ObservableObject {
         self.v3EdgeProgressColorHex = defaults.string(forKey: Key.v3EdgeProgressColorHex) ?? "FFFFFF"
         let edgeColorMode = defaults.string(forKey: Key.v3EdgeProgressColorMode) ?? "randomSong"
         self.v3EdgeProgressColorMode = ["manual", "flow", "randomSong", "artwork"].contains(edgeColorMode) ? edgeColorMode : "randomSong"
+        self.v3EdgeProgressPlacement = defaults.string(forKey: Key.v3EdgeProgressPlacement) == "coverHalo" ? "coverHalo" : "windowEdge"
         self.v3AmbientBackgroundShowsCompleteArtwork = defaults.bool(forKey: Key.v3AmbientBackgroundShowsCompleteArtwork)
         self.v3BackgroundFraming = defaults.dictionary(forKey: "v3.backgroundFramingByPresentation.v1") as? [String: Bool] ?? [:]
         var backgroundScales = defaults.dictionary(forKey: "v3.additionalBackdropScales.v1") as? [String: Double] ?? [:]
