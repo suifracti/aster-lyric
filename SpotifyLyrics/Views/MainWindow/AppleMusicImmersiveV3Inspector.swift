@@ -149,27 +149,41 @@ struct V3ThemeSelectorView: View {
                     .font(.system(size: 11))
                     .help("停留后临时预览，移开恢复，点击才采用；预览不会保存设置或调用 AI")
             }
-            // Four families as large cards; the chosen family's styles sit
-            // underneath. Entries only — every style is an existing
-            // scene + renderer pair and keeps its saved values.
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+            // Four families in one row; the chosen family's styles sit in one
+            // row underneath, so the sliders below stay on screen. Entries
+            // only — every style is an existing scene + renderer pair and
+            // keeps its saved values.
+            HStack(alignment: .top, spacing: 6) {
                 ForEach(V3SceneFamily.allCases) { family in
                     familyCard(family)
                 }
             }
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .center) {
                     Text(shownFamily.title + " · 风格").font(.system(size: 12, weight: .semibold))
                     Spacer()
-                    if !compact { Text(shownFamily.detail).font(.system(size: 11)).foregroundStyle(Color.secondary)
-                        .lineLimit(1) }
+                    if shownFamily == .cover, shownFamily == currentFamily,
+                       shownFamily.entries.contains(where: { $0.isCoverPair && shownFamily.isSelected($0, settings: settings) }) {
+                        // Outside the style buttons: inside a plain button's
+                        // label the segmented control never receives the click.
+                        V3SegmentedPicker("背景", selection: Binding(
+                            get: { settings.v3ArtworkPresentation == .classicGaussian ? 1 : 0 },
+                            set: { chooseCoverMotion($0 == 1 ? .classicGaussian : .ambient) }
+                        ), options: [("静止", 1), ("流动", 0)], showsLabel: false, height: 22)
+                        .frame(width: 84)
+                        .accessibilityIdentifier("v3.cover.motion")
+                    } else if !compact {
+                        Text(shownFamily.detail).font(.system(size: 11)).foregroundStyle(Color.secondary).lineLimit(1)
+                    }
                 }
-                .padding(.bottom, 4)
-                ForEach(shownFamily.entries) { entry in
-                    entryRow(entry, in: shownFamily)
+                .frame(minHeight: 22)
+                HStack(spacing: 4) {
+                    ForEach(shownFamily.entries) { entry in
+                        entryRow(entry, in: shownFamily)
+                    }
                 }
             }
-            .padding(10)
+            .padding(8)
             .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
             if !compact, settings.v3ListeningScene != nil {
                 Button("恢复此风格的默认值", role: .destructive) {
@@ -199,27 +213,31 @@ struct V3ThemeSelectorView: View {
             browsedFamily = nil
             adopt(target.0, renderer: target.1)
         } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                LyricIslandSceneThumbnail(scene: family.primaryScene, image: thumbnail, accent: tint)
-                HStack(spacing: 4) {
-                    Image(systemName: family.symbolName).font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(selected ? tint : Color.secondary)
-                    Text(family.title).font(.system(size: 13, weight: .semibold))
-                    Spacer(minLength: 0)
-                    if selected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .symbolRenderingMode(.palette).foregroundStyle(.white, tint)
+            VStack(spacing: 4) {
+                // The thumbnail is drawn at its design size and scaled down,
+                // so its inner proportions stay as designed.
+                Color.clear.aspectRatio(150.0 / 72.0, contentMode: .fit)
+                    .overlay(alignment: .topLeading) {
+                        GeometryReader { geometry in
+                            LyricIslandSceneThumbnail(scene: family.primaryScene, image: thumbnail, accent: tint)
+                                .frame(width: 150, height: 72)
+                                .scaleEffect(geometry.size.width / 150, anchor: .topLeading)
+                        }
                     }
-                    else if previewing { Text("预览").font(.system(size: 11)).foregroundStyle(tint) }
-                }
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                Text(family.title)
+                    .font(.system(size: 11.5, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(selected || previewing ? Color.primary : Color.secondary)
+                    .lineLimit(1)
             }
-            .padding(6)
+            .padding(4)
+            .frame(maxWidth: .infinity)
             .background(selected ? tint.opacity(0.14) : Color.primary.opacity(0.035),
-                        in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12)
+                        in: RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9)
                 .strokeBorder(selected ? tint.opacity(0.75) : previewing ? tint.opacity(0.45) : .clear,
                               style: StrokeStyle(lineWidth: 1, dash: previewing ? [3, 3] : [])))
-            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .contentShape(RoundedRectangle(cornerRadius: 9))
         }
         .buttonStyle(.plain)
         .onHover { inside in
@@ -238,49 +256,23 @@ struct V3ThemeSelectorView: View {
         let selected = family.isSelected(entry, settings: settings)
         let renderer = family.adoptRenderer(for: entry, settings: settings)
         let previewing = !selected && preview == renderer && previewScene == entry.scene
-        // The switch must stay outside the button: inside a plain button's label
-        // the segmented control never receives the click.
-        return HStack(spacing: 8) {
-            Button { adopt(entry, in: family) } label: {
-                HStack(spacing: 8) {
-                    Group {
-                        if selected {
-                            Image(systemName: "checkmark.circle.fill")
-                                .symbolRenderingMode(.palette).foregroundStyle(.white, tint)
-                        } else {
-                            Image(systemName: "circle")
-                                .foregroundStyle(Color.secondary.opacity(0.6))
-                        }
-                    }
-                    .font(.system(size: 13))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(entry.title).font(.system(size: 12.5, weight: selected ? .semibold : .regular))
-                        if !compact, let detail = entry.detail {
-                            Text(detail).font(.system(size: 11)).foregroundStyle(Color.secondary).lineLimit(1)
-                        }
-                    }
-                    Spacer(minLength: 0)
-                    if previewing && !entry.isCoverPair {
-                        Text("预览").font(.system(size: 11)).foregroundStyle(tint)
-                    }
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .onHover { hovering($0, scene: entry.scene, renderer: renderer) }
-            if entry.isCoverPair {
-                V3SegmentedPicker("背景", selection: Binding(
-                    get: { settings.v3ArtworkPresentation == .classicGaussian ? 1 : 0 },
-                    set: { chooseCoverMotion($0 == 1 ? .classicGaussian : .ambient) }
-                ), options: [("静止", 1), ("流动", 0)], showsLabel: false, height: 22)
-                .frame(width: 84)
-                .accessibilityIdentifier("v3.cover.motion")
-            }
+        return Button { adopt(entry, in: family) } label: {
+            Text(entry.title)
+                .font(.system(size: 11.5, weight: selected ? .semibold : .regular))
+                .foregroundStyle(selected || previewing ? Color.primary : Color.secondary)
+                .lineLimit(1).minimumScaleFactor(0.85)
+                .frame(maxWidth: .infinity, minHeight: 26)
+                .background(selected ? tint.opacity(0.16) : Color.primary.opacity(0.04),
+                            in: RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7)
+                    .strokeBorder(selected ? tint.opacity(0.7) : previewing ? tint.opacity(0.45) : .clear,
+                                  style: StrokeStyle(lineWidth: 1, dash: previewing ? [3, 3] : [])))
+                .contentShape(RoundedRectangle(cornerRadius: 7))
         }
-        .padding(.horizontal, 6).padding(.vertical, 5)
-        .background(selected ? tint.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8)
-            .strokeBorder(previewing ? tint.opacity(0.45) : .clear, style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
+        .buttonStyle(.plain)
+        .onHover { hovering($0, scene: entry.scene, renderer: renderer) }
+        .help(entry.detail ?? entry.title)
+        .accessibilityLabel(entry.title)
         .accessibilityIdentifier(entry.scene == nil ? "v3.style." + renderer.rawValue
                                  : "v3.scene." + entry.scene!.rawValue + "." + renderer.rawValue)
         .accessibilityAddTraits(selected ? .isSelected : [])
