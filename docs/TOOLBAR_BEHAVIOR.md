@@ -623,3 +623,10 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 - The selected category's styles sit in one row of equal buttons. A style's description is its tooltip.
 - 封面's 静止 / 流动 switch sits at the right of the 风格 heading while 封面 is the selected style.
 - Entries, renderers, raw IDs, saved values and hover preview are unchanged.
+
+**Edge player: showing, staying and following (user feedback 2026-11-11: it vanished too fast and too abruptly; keep the following).**
+- **Appearing** is unchanged: the pointer comes within 30 pt of a window edge.
+- **Staying:** the pill stays while the pointer is within 84 pt of that edge, which is a little deeper than the pill itself, or on the pill.
+- **Leaving:** when the pointer moves away inside the window, the pill waits 0.6 s and then fades over 0.24 s. Leaving the window waits 0.3 s. Coming back to the pill, or to the zone between it and the edge, during the wait keeps it where it is.
+- **Following:** while the pointer is level with the pill, the pill does not move. It follows, with the existing spring, only after the pointer has passed the pill's end by 20 pt along the edge. Changing edges works as before.
+- A drag on the scrubber still locks the pill in place.
