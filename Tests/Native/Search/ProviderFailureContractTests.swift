@@ -284,13 +284,17 @@ final class ProviderFailureContractTests: XCTestCase {
         // Only part of the name agrees: worth showing, never adopted unattended.
         let partial = Track(title: "KILL MY LOVE", artist: "加藤MILIYAH", album: "KILL MY LOVE", duration: 198.028)
         let partialMetadata = TrackMetadata.bootstrap(from: partial)
-        for (name, duration) in [("Miliyah", 204.0), ("加藤 ミリヤ", 0.0), ("加藤 ミリヤ", 198.0)] {
+        for (name, duration) in [("Miliyah", 204.0), ("加藤 ミリヤ", 0.0)] {
             let decision = LyricsSafeMatcher.decide(candidate: candidate(name, title: "KILL MY LOVE", duration: duration, for: partial),
                                                     metadata: partialMetadata)
             XCTAssertEqual(decision.tier, .candidates, "\(name) \(duration): \(decision.reasons)")
             XCTAssertTrue(decision.reasons.contains("primaryArtistPartialName"), "\(decision.reasons)")
             XCTAssertFalse(decision.hardReject)
         }
+        // The same length as well as the same title: adopted, at the lower automatic tier.
+        let sameLength = LyricsSafeMatcher.decide(candidate: candidate("加藤 ミリヤ", title: "KILL MY LOVE", duration: 198, for: partial),
+                                                  metadata: partialMetadata)
+        XCTAssertEqual(sameLength.tier, .autoMedium, "\(sameLength.reasons)")
         for (name, title) in [("佐藤 ミリヤ", "KILL MY LOVE"), ("Mili", "KILL MY LOVE"), ("加藤 ミリヤ", "KILL MY LOVE (Live)"),
                               ("加藤 ミリヤ", "Another Song")] {
             let decision = LyricsSafeMatcher.decide(candidate: candidate(name, title: title, duration: 198, for: partial), metadata: partialMetadata)
@@ -307,6 +311,50 @@ final class ProviderFailureContractTests: XCTestCase {
         // Two sources that only partly agree on the artist never adopt each other.
         XCTAssertFalse(LyricsSafeMatcher.decide(candidate: candidate("Miliyah", title: "KILL MY LOVE", duration: 198, for: partial),
             metadata: partialMetadata).reasons.contains("primaryArtistExact"))
+    }
+
+    /// The user must not have to choose while listening: two sources that give
+    /// the same words under partly matching names settle it between them.
+    func testPartlyMatchingArtistIsAdoptedWhenTwoSourcesGiveTheSameWords() async {
+        let track = Track(title: "KILL MY LOVE", artist: "加藤MILIYAH", album: "KILL MY LOVE", duration: 198.028)
+        let identity = TrackIdentity(track: track)
+        let words = (1...12).map { "generated fixture sentence number \($0) for the agreement check" }
+        func candidate(_ id: String, _ artist: String, _ lines: [LyricLine], duration: Double, timed: Bool, source: LyricsSource) -> LyricsCandidate {
+            LyricsCandidate(id: id, identity: identity, title: "KILL MY LOVE", artist: artist, album: "", duration: duration,
+                lines: lines, isSynchronized: timed, source: source, confidence: 0.9, providerSourceID: id)
+        }
+        let timed = candidate("timed", "Miliyah", words.enumerated().map { LyricLine(timestamp: Double($0.offset * 10 + 5), originalText: $0.element) },
+            duration: 204, timed: true, source: .lrclib)
+        // Same words, broken into different lines, as the plain-text site does.
+        let plainLines = words.flatMap { line -> [String] in
+            let parts = line.split(separator: " ")
+            return [parts.prefix(3).joined(separator: " "), parts.dropFirst(3).joined(separator: " ")]
+        }
+        let plain = candidate("plain", "加藤 ミリヤ", plainLines.map { LyricLine(timestamp: 0, originalText: $0) },
+            duration: 0, timed: false, source: .petitLyrics)
+        let otherSong = candidate("other", "加藤 ミリヤ", (1...12).map { LyricLine(timestamp: 0, originalText: "an unrelated text line \($0) about something else") },
+            duration: 0, timed: false, source: .petitLyrics)
+
+        func search(_ first: LyricsCandidate, _ second: LyricsCandidate?) async -> SearchOutcome {
+            var providers: [any LyricsProvider] = [ProviderFailureCountingLyricsProvider(name: "LRCLIB", result: .candidates([first]), counter: ProviderFailureCounter())]
+            if let second {
+                providers.append(ProviderFailureCountingLyricsProvider(name: "プチリリ", result: .candidates([second]), counter: ProviderFailureCounter()))
+            }
+            return await LyricsSearchManager(providers: providers).search(track: track, identity: identity)
+        }
+
+        let agreed = await search(timed, plain)
+        guard case .match(let document) = agreed.result else { return XCTFail("the same words from two sources must be adopted: \(agreed.result)") }
+        XCTAssertTrue(document.isSynchronized, "the timed version is preferred")
+        XCTAssertEqual(document.source, .lrclib)
+        XCTAssertEqual(agreed.automaticDecision?.tier, .autoMedium)
+        XCTAssertTrue(agreed.automaticDecision?.reasons.contains("partialArtistLyricsAgreement") == true)
+
+        let different = await search(timed, otherSong)
+        guard case .candidates(let shown) = different.result else { return XCTFail("different words stay a choice: \(different.result)") }
+        XCTAssertEqual(shown.count, 2)
+        let alone = await search(timed, nil)
+        guard case .candidates = alone.result else { return XCTFail("one source alone stays a choice: \(alone.result)") }
     }
 
     func testPetitLyricsSearchesByTitleWhenTheArtistSpellingFindsNothing() async throws {

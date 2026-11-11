@@ -764,6 +764,10 @@ public final class LyricsSearchManager: @unchecked Sendable {
                let agreed = Self.agreementAdoption(in: evaluatedCandidates, metadata: meta) {
                 automaticAdoptions.append(agreed)
             }
+            if !collectCandidatesOnly, automaticAdoptions.isEmpty,
+               let agreed = Self.partialArtistLyricsAgreement(in: evaluatedCandidates, metadata: meta) {
+                automaticAdoptions.append(agreed)
+            }
 
             if !collectCandidatesOnly, let selected = Self.bestAutomaticAdoption(in: automaticAdoptions) {
                 var selectedDocument = selected.document
@@ -1159,6 +1163,69 @@ public final class LyricsSearchManager: @unchecked Sendable {
             cameFromCandidates: best.cameFromCandidates,
             agreement: selection
         )
+    }
+
+    /// The artist name agrees only in part (加藤MILIYAH / Miliyah / 加藤 ミリヤ),
+    /// so one source alone stays a candidate. When two different sources give
+    /// the same words under the same exact title, they describe one song by
+    /// one artist, and listening should not wait for the user to choose.
+    private static func partialArtistLyricsAgreement(
+        in evaluated: [EvaluatedCandidate],
+        metadata: TrackMetadata
+    ) -> AutomaticAdoption? {
+        let eligible = evaluated.filter { item in
+            item.candidate.identity == metadata.identity
+                && item.decision.tier == .candidates
+                && !item.decision.hardReject && !item.decision.versionConflict
+                && item.decision.reasons.contains("primaryArtistPartialName")
+                && !item.candidate.requiresTextOnlyPreview
+                && !declaresExcludedVersion(item.candidate)
+        }
+        guard Set(eligible.map(\.providerName)).count >= 2 else { return nil }
+        let texts = eligible.map { lyricShingles($0.candidate) }
+        var agreeing = Set<Int>()
+        for first in eligible.indices {
+            for second in eligible.indices where second > first
+                && eligible[first].providerName != eligible[second].providerName
+                && sameWords(texts[first], texts[second]) {
+                agreeing.formUnion([first, second])
+            }
+        }
+        guard let best = agreeing.map({ eligible[$0] }).max(by: { agreementPrefers($1, over: $0) }) else { return nil }
+        let base = best.decision
+        let decision = LyricsMatchDecision(
+            tier: .autoMedium,
+            score: base.score,
+            versionConflict: false,
+            queryKind: base.queryKind,
+            reasons: base.reasons + ["partialArtistLyricsAgreement"],
+            evidence: base.evidence + [LyricsMatchEvidence(code: "partialArtistLyricsAgreement", delta: 0)],
+            hardReject: false
+        )
+        return AutomaticAdoption(document: best.document, decision: decision,
+            timingPriority: timingPriority(of: best.candidate), providerIndex: best.providerIndex,
+            candidateIndex: best.candidateIndex, providerName: best.providerName,
+            cameFromCandidates: best.cameFromCandidates, agreement: nil)
+    }
+
+    /// Overlapping eight-character pieces of the words alone, so different
+    /// line breaks, spacing and punctuation do not matter.
+    private static func lyricShingles(_ candidate: LyricsCandidate) -> Set<String> {
+        let text = candidate.lines.map(\.originalText).joined()
+            .folding(options: [.caseInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+        let characters = Array(text.unicodeScalars.filter {
+            CharacterSet.alphanumerics.contains($0) || (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value)
+        }.map(Character.init))
+        guard characters.count >= 8 else { return [] }
+        return Set((0...(characters.count - 8)).map { String(characters[$0..<($0 + 8)]) })
+    }
+
+    /// Most of the shorter text appears in the other. A few dozen shared
+    /// pieces is the floor, so two short or mostly empty texts never agree.
+    private static func sameWords(_ lhs: Set<String>, _ rhs: Set<String>) -> Bool {
+        let smaller = min(lhs.count, rhs.count)
+        guard smaller >= 40 else { return false }
+        return Double(lhs.intersection(rhs).count) / Double(smaller) >= 0.6
     }
 
     private static func agreesOnExactTitleAndArtist(_ decision: LyricsMatchDecision) -> Bool {

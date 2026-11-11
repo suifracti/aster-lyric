@@ -258,11 +258,11 @@ public enum LyricsSafeMatcher {
                   }) {
             // The same title under a name that agrees only in part
             // (加藤MILIYAH / Miliyah / 加藤 ミリヤ). It may be the same artist
-            // written differently or a namesake, so it is shown for the user
-            // to decide and is never adopted unattended.
+            // written differently or a namesake. With the same length as
+            // well it is adopted at the lower automatic tier; otherwise it
+            // is a candidate, which two agreeing sources can still settle.
             partialArtistName = true
-            incompleteArtistSet = true
-            add("primaryArtistPartialName", 0.10)
+            add("primaryArtistPartialName", 0.18)
         } else if candidatePrimary.isEmpty {
             let isManual = queryVariant?.queryKind == .manualOverride
             add("primaryArtistMissing", -0.30, hard: !isManual)
@@ -467,7 +467,9 @@ public enum LyricsSafeMatcher {
             tier = minTier(tier, ceiling)
             if reasons.contains("titleProviderAliasConfirmed") || metadataPrimaryReadingMatches || reasons.contains("titleReadingExact") || reasons.contains("titleTypographyExact") { tier = minTier(tier, .autoMedium) }
             tier = constrainSpotifyCreditedArtistReading(tier)
-            if partialArtistName && !hasStrongIndependentIdentity { tier = Self.minTier(tier, .candidates) }
+            if partialArtistName && !hasStrongIndependentIdentity {
+                tier = Self.minTier(tier, reasons.contains("durationClose") && !versionConflict ? .autoMedium : .candidates)
+            }
             return LyricsMatchDecision(
                 tier: tier,
                 score: clamp(score),
@@ -534,7 +536,9 @@ public enum LyricsSafeMatcher {
             tier = minTier(tier, metadataPrimaryMatches && reasons.contains("durationClose") ? .autoMedium : .candidates)
         }
         tier = constrainSpotifyCreditedArtistReading(tier)
-        if partialArtistName && !hasStrongIndependentIdentity { tier = minTier(tier, .candidates) }
+        if partialArtistName && !hasStrongIndependentIdentity {
+            tier = minTier(tier, reasons.contains("durationClose") && !versionConflict ? .autoMedium : .candidates)
+        }
         return LyricsMatchDecision(
             tier: tier,
             score: clamp(score),
