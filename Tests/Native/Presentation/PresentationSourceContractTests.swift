@@ -43,35 +43,32 @@ final class PresentationSourceContractTests: XCTestCase {
         let view = V3EdgeRailView(frame: NSRect(x: 0, y: 0, width: 1116, height: 779))
         let clock = LyricsPresentationClock(authoritativePosition: 30, receivedAtMonotonicTime: ProcessInfo.processInfo.systemUptime,
             isPlaying: true, trackID: "current-song", trackDuration: 150)
-        view.configure(clock: clock, draft: nil, active: true, color: NSColor.white.cgColor, highlighted: false)
+        view.configure(clock: clock, draft: nil, active: true, color: NSColor.white.cgColor)
         XCTAssertNotNil(view.progressLayer.animation(forKey: "playhead"))
-        view.configure(clock: clock, draft: 0.4, active: true, color: NSColor.white.cgColor, highlighted: true)
+        view.configure(clock: clock, draft: 0.4, active: true, color: NSColor.white.cgColor)
         XCTAssertNil(view.progressLayer.animation(forKey: "playhead"))
         XCTAssertEqual(view.progressLayer.strokeEnd, 0.4, accuracy: 0.001)
-        view.configure(clock: clock, draft: nil, active: false, color: NSColor.white.cgColor, highlighted: false)
+        view.configure(clock: clock, draft: nil, active: false, color: NSColor.white.cgColor)
         XCTAssertNil(view.progressLayer.animation(forKey: "playhead"))
     }
 
+    /// The rail at the window edge only shows progress: it never moves,
+    /// thickens or takes a click, so it cannot compete with resizing.
     @MainActor
-    func testApproachingTopMovesOnlyThatProgressRailInward() {
+    func testEdgeRailStaysAtTheWindowEdgeAndTakesNoPointerEvents() {
         let view = V3EdgeRailView(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
         view.layoutSubtreeIfNeeded()
         let clock = LyricsPresentationClock(authoritativePosition: 30, receivedAtMonotonicTime: ProcessInfo.processInfo.systemUptime,
             isPlaying: true, trackID: "current-song", trackDuration: 150)
-        view.configure(clock: clock, draft: nil, active: true, color: NSColor.white.cgColor,
-                       highlighted: false, nearEdge: .top)
+        view.configure(clock: clock, draft: nil, active: true, color: NSColor.white.cgColor)
         let bounds = view.progressLayer.path!.boundingBoxOfPath
-        XCTAssertEqual(bounds.minY, 14, accuracy: 0.01)
-        XCTAssertEqual(bounds.minX, 1.5, accuracy: 0.01)
-        XCTAssertEqual(bounds.maxY, 698.5, accuracy: 0.01)
-        XCTAssertEqual(view.progressLayer.lineWidth, 4, accuracy: 0.01)
-        XCTAssertEqual(view.trackLayer.lineWidth, 4, accuracy: 0.01)
-        XCTAssertNil(view.progressLayer.mask)
-        XCTAssertNil(view.trackLayer.mask)
+        XCTAssertEqual(bounds, CGRect(x: 1.5, y: 1.5, width: 897, height: 697))
         XCTAssertEqual(view.trackLayer.path?.boundingBoxOfPath, bounds)
-        view.configure(clock: clock, draft: nil, active: true, color: NSColor.white.cgColor, highlighted: false)
         XCTAssertEqual(view.progressLayer.lineWidth, 2.2, accuracy: 0.01)
         XCTAssertEqual(view.trackLayer.lineWidth, 2.1, accuracy: 0.01)
+        for point in [CGPoint(x: 450, y: 2), CGPoint(x: 450, y: 12), CGPoint(x: 2, y: 350), CGPoint(x: 888, y: 350)] {
+            XCTAssertNil(view.hitTest(point))
+        }
     }
 
     @MainActor
@@ -117,12 +114,21 @@ final class PresentationSourceContractTests: XCTestCase {
             track: anotherRecording, confidence: 1)], current: playing).count, 1)
     }
 
-    func testResizeEdgeAtThreePointsCannotStartAProgressSeek() {
-        let path = V3WindowEdgeHitBand().path(in: CGRect(x: 0, y: 0, width: 900, height: 700))
-        for point in [CGPoint(x: 450, y: 3), CGPoint(x: 3, y: 350), CGPoint(x: 897, y: 350), CGPoint(x: 450, y: 697)] {
-            XCTAssertFalse(path.contains(point))
+    /// Seeking lives on the pill, well inside the window.
+    func testPillScrubberMapsThePointerAndKeepsClearOfTheResizeBorder() {
+        XCTAssertEqual(V3EdgePillScrubber.fraction(at: 64, length: 256), 0.25, accuracy: 0.0001)
+        XCTAssertEqual(V3EdgePillScrubber.fraction(at: -20, length: 256), 0)
+        XCTAssertEqual(V3EdgePillScrubber.fraction(at: 400, length: 256), 1)
+        XCTAssertEqual(V3EdgePillScrubber.fraction(at: 10, length: 0), 0)
+        XCTAssertEqual(V3EdgePillScrubber.fraction(at: .nan, length: 256), 0)
+        let canvas = CGSize(width: 900, height: 700)
+        for (edge, exit) in [(V3WindowEdgeControlPositioner.Edge.top, CGPoint(x: 450, y: 0)), (.right, CGPoint(x: 900, y: 350)),
+                             (.bottom, CGPoint(x: 450, y: 700)), (.left, CGPoint(x: 0, y: 350))] {
+            let frame = V3WindowEdgeControlPositioner.layout(size: canvas, exitPoint: exit, preferredEdge: edge).frame
+            // The whole pill, scrubber included, starts at the toolbar's inset.
+            XCTAssertEqual(min(frame.minX, frame.minY, canvas.width - frame.maxX, canvas.height - frame.maxY),
+                           V3WindowEdgeControlPositioner.edgeInset, accuracy: 0.01, "\(edge)")
         }
-        XCTAssertTrue(path.contains(CGPoint(x: 450, y: 12)))
     }
 
     func testForegroundPlayerCardTracksCoverWidthWithMinimum() {

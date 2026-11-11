@@ -12,6 +12,18 @@ struct V3PanelGlass: View {
     }
 }
 
+/// One surface for the bars that float over the canvas: the toolbar and the
+/// edge player. Same material, hairline and shadow, following the system
+/// light or dark setting.
+struct V3ControlBarSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(.regularMaterial.opacity(0.78), in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.16), lineWidth: 0.7))
+            .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 4)
+    }
+}
+
 private struct V3PanelBlur: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
 #if compiler(>=6.2)

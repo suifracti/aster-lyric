@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile and exercise the exact production reducer and SwiftUI hit-band geometry in the production file.
+"""Compile and exercise the exact production reducer and pill geometry in the production file.
 
 This is NOT a macOS GUI, frame-time, CPU, memory or WindowServer benchmark.
 Run from any directory: python3 Tests/v3_edge_pointer_state_contract.py
@@ -22,14 +22,13 @@ for banned in ('@Published', 'Timer.', 'TimelineView', 'DispatchQueue', 'Task {'
 assert 'if next != edgeInteraction { edgeInteraction = next }' in text
 assert 'edgeInteraction.layout(size: size, fallbackExitPoint: exitPoint, toolbarBounds: toolbarBounds)' in text
 assert 'updatePointer(point, size: size, dragging: draftFraction != nil)' in text
-assert 'updatePointer(point, size: size, dragging: false)' in text
 assert '.activeAlways' in text
 assert 'override func hitTest(_ point: NSPoint) -> NSView? { nil }' in text
-# Compile the production Shape itself; do not mirror its rectangle arithmetic here.
-hit_start = text.index('struct V3WindowEdgeHitBand: Shape {')
-hit_band = text[hit_start:text.index('\n@MainActor', hit_start)]
-assert '.contentShape(V3WindowEdgeHitBand())' in text
-assert 'V3WindowEdgeHitBand().path(in: CGRect(origin: .zero, size: size)).contains(point)' in text
+# Seeking moved from the window edge to the pill (2026-11-11): nothing at the
+# edge takes pointer events, so a click there can only resize the window.
+assert 'V3WindowEdgeHitBand' not in text
+assert 'V3EdgePillScrubber(isVertical: isVertical' in text
+assert 'onScrubEnd: { finishSeek(fraction: $0) }' in text
 assert 'dragTrackKey == state.currentTrackIdentity?.stableKey' in text
 assert '.spring(response: 0.3, dampingFraction: 1)' in text
 
@@ -54,21 +53,10 @@ private func at(_ edge: Edge, depth: CGFloat = 25, tangent: CGFloat = 400) -> CG
     case .left: return CGPoint(x: depth, y: tangent)
     }
 }
-// Resize border stays free; the entire inset seeking band survives resize/orientation.
-for size in [CGSize(width: 900, height: 700), CGSize(width: 700, height: 900),
-             CGSize(width: 1210, height: 820)] {
-    let rect = CGRect(origin: CGPoint(x: 11, y: 17), size: size)
-    let path = V3WindowEdgeHitBand().path(in: rect)
-    for depth: CGFloat in [3, 5.99, 6.01, 12, 19.99, 20.01, 25.99, 26.01] {
-        let expected = depth > 6 && depth < 26
-        for point in [CGPoint(x: rect.midX, y: rect.minY + depth),
-                      CGPoint(x: rect.midX, y: rect.maxY - depth),
-                      CGPoint(x: rect.minX + depth, y: rect.midY),
-                      CGPoint(x: rect.maxX - depth, y: rect.midY)] {
-            expect(path.contains(point) == expected, "wrong seek band at depth \(depth), canvas \(size)")
-        }
-    }
-}
+// The pill sits at the toolbar's inset and holds its scrubber line.
+expect(V3WindowEdgeControlPositioner.edgeInset == 18, "pill inset differs from the toolbar's")
+expect(V3WindowEdgeControlPositioner.pillSize(vertical: false) == CGSize(width: 304, height: 50), "horizontal pill size")
+expect(V3WindowEdgeControlPositioner.pillSize(vertical: true) == CGSize(width: 54, height: 248), "vertical pill size")
 private var state = State()
 for edge in [Edge.top, .right, .bottom, .left] {
     let p = at(edge)
@@ -186,7 +174,7 @@ if not compiler:
 with tempfile.TemporaryDirectory(prefix='lyric-edge-contract-') as temp:
     temp = Path(temp)
     main = temp / 'main.swift'
-    main.write_text('import Foundation\nimport SwiftUI\n' + hit_band + core + '\n' + TESTS, encoding='utf-8')
+    main.write_text('import Foundation\nimport SwiftUI\n' + core + '\n' + TESTS, encoding='utf-8')
     for flags in (['-Onone'], ['-O']):
         exe = temp / ('test' + flags[0])
         subprocess.run([compiler, '-swift-version', '5', *flags, str(main), '-o', str(exe)], check=True, timeout=60)

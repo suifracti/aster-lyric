@@ -18,9 +18,6 @@ struct V3WindowEdgePlaybackOverlay: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.v3PlaybackInteractionChanged) private var interactionChanged
     @State private var edgeInteraction = V3WindowEdgeInteractionState()
-    private struct RailHover: Equatable { let point: CGPoint; let fraction: Double }
-    @State private var railHover: RailHover?
-    @State private var nearEdge: V3WindowEdgeControlPositioner.Edge?
     @State private var pointerOverToolbar = false
     @State private var draftFraction: Double?
     @State private var dragTrackKey: String?
@@ -36,12 +33,6 @@ struct V3WindowEdgePlaybackOverlay: View {
         return edgeInteraction.isVisible && edgeInteraction.pointerInside && !suppressControls && !pointerOverToolbar
     }
     private var animatesColor: Bool { colorMode == "flow" && !reduceMotion && state.isPlaying && windowVisible }
-    private var displayedNearEdge: V3WindowEdgeControlPositioner.Edge? {
-#if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--edge-rail-inset") { return .top }
-#endif
-        return nearEdge
-    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -51,24 +42,9 @@ struct V3WindowEdgePlaybackOverlay: View {
             let playerVisible = controlsVisible && !controlPosition.frame.intersects(toolbarExclusion)
 
             ZStack(alignment: .topLeading) {
-                // Only the thin edge band takes pointer events; the lyric canvas stays interactive.
-                V3WindowEdgeHitBand()
-                    .fill(Color.clear)
-                    .contentShape(V3WindowEdgeHitBand())
-                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                        .onChanged { value in updateDraft(at: value.location, size: size) }
-                        .onEnded { value in finishSeek(at: value.location, size: size) })
-                    .accessibilityLabel("窗口边缘播放进度")
-                    .accessibilityValue("\(Int(progressFraction * 100))%")
-                    .accessibilityAdjustableAction { direction in
-                        guard canSeek else { return }
-                        let delta: Double = direction == .increment ? 5 : -5
-                        state.seek(to: min(max(0, Double(progressFraction) * state.currentTrack.duration + delta),
-                                           state.currentTrack.duration), source: "v3-edge-progress-keyboard")
-                    }
-
-                // Keep the rail animated independently of the transport controls.
-                // The transparent hit band remains separate and narrow.
+                // The rail at the window edge only shows progress. It takes no
+                // pointer events, so it never competes with the resize border;
+                // seeking lives on the pill's own scrubber.
                 if animatesColor {
                     V3AnimationIsland {
                         TimelineView(.animation(minimumInterval: reduceMotion ? 0.5 : 1.0 / 30.0,
@@ -89,13 +65,18 @@ struct V3WindowEdgePlaybackOverlay: View {
                     )) { context in
                         V3WindowEdgeTransportButtons(state: state,
                             accent: accent(at: context.date, songHue: songHue),
-                            isVertical: controlPosition.isVertical,
-                            brightCover: coverLuminance > 0.6,
-                            elapsed: Self.timeText(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime)),
-                            total: Self.timeText(state.currentTrack.duration))
+                            edge: controlPosition.edge,
+                            elapsed: v3EdgeTimeText(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime)),
+                            total: v3EdgeTimeText(state.currentTrack.duration),
+                            progress: Double(progressFraction),
+                            duration: state.currentTrack.duration,
+                            canSeek: canSeek,
+                            onScrub: { setDraft($0) },
+                            onScrubEnd: { finishSeek(fraction: $0) })
                     }
                 }
-                .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
+                .frame(width: controlPosition.baseSize.width + V3WindowEdgeControlPositioner.shadowRoom * 2,
+                       height: controlPosition.baseSize.height + V3WindowEdgeControlPositioner.shadowRoom * 2)
                 .scaleEffect(controlPosition.scale * (playerVisible || reduceMotion ? 1 : 0.92))
                 .opacity(playerVisible ? 1 : 0)
                 .allowsHitTesting(playerVisible)
@@ -124,7 +105,6 @@ struct V3WindowEdgePlaybackOverlay: View {
             }
         }
         .onChange(of: state.currentTrackIdentity) { _, _ in
-            railHover = nil
             if dragTrackKey != nil {
                 // Keep the original gesture identity until release so a track
                 // change cannot redirect an unfinished drag onto the new song.
@@ -164,26 +144,11 @@ struct V3WindowEdgePlaybackOverlay: View {
         // SwiftUI state, so idle/lyric-region mouse motion does not redraw views.
         let next = edgeInteraction.updating(point: point, size: size, dragging: dragging, toolbarBounds: toolbarBounds)
         if next != edgeInteraction { edgeInteraction = next }
-        let distances: [(V3WindowEdgeControlPositioner.Edge, CGFloat)] = point.map {
-            [(.top, $0.y), (.right, size.width - $0.x), (.bottom, size.height - $0.y), (.left, $0.x)]
-        } ?? []
-        let nearest = distances.min { $0.1 < $1.1 }
-        let newEdge = nearest.flatMap { $0.1 <= 48 ? $0.0 : nil }
-        if nearEdge != newEdge { nearEdge = newEdge }
         let overToolbar = point.map { toolbarExclusion.contains($0) } ?? false
         if pointerOverToolbar != overToolbar { pointerOverToolbar = overToolbar }
-        var hover: RailHover?
-        if canSeek, let point,
-           dragging || V3WindowEdgeHitBand().path(in: CGRect(origin: .zero, size: size)).contains(point),
-           let fraction = V3ResponsiveGeometry.edgeProgressFraction(at: point, canvasSize: size) {
-            hover = RailHover(point: point, fraction: fraction)
-        }
-        if railHover != hover { railHover = hover }
     }
 
     private func clearPointer() {
-        railHover = nil
-        nearEdge = nil
         pointerOverToolbar = false
         let next = edgeInteraction.hiding()
         if next != edgeInteraction { edgeInteraction = next }
@@ -191,24 +156,6 @@ struct V3WindowEdgePlaybackOverlay: View {
 
     private var toolbarExclusion: CGRect {
         toolbarBounds.isEmpty ? .null : toolbarBounds.insetBy(dx: -8, dy: -8)
-    }
-
-    private static func timeText(_ seconds: TimeInterval) -> String {
-        let value = Int(max(0, seconds.isFinite ? seconds : 0))
-        return String(format: "%d:%02d", value / 60, value % 60)
-    }
-
-    private func railLabelPosition(_ point: CGPoint, size: CGSize) -> CGPoint {
-        let distances = [point.y, size.width - point.x, size.height - point.y, point.x]
-        let edge = distances.enumerated().min(by: { $0.element < $1.element })?.offset ?? 0
-        let x = min(max(point.x, 48), max(48, size.width - 48))
-        let y = min(max(point.y, 24), max(24, size.height - 24))
-        switch edge {
-        case 0: return CGPoint(x: x, y: min(70, size.height / 2))
-        case 1: return CGPoint(x: max(size.width - 70, size.width / 2), y: y)
-        case 2: return CGPoint(x: x, y: max(size.height - 64, size.height / 2))
-        default: return CGPoint(x: min(70, size.width / 2), y: y)
-        }
     }
 
     private var canSeek: Bool {
@@ -234,20 +181,13 @@ struct V3WindowEdgePlaybackOverlay: View {
         guard dragTrackKey == state.currentTrackIdentity?.stableKey else { return }
         draftFraction = min(1, max(0, fraction))
     }
-    private func updateDraft(at point: CGPoint, size: CGSize) {
-        guard let fraction = V3ResponsiveGeometry.edgeProgressFraction(at: point, canvasSize: size) else { return }
-        setDraft(fraction)
-        updatePointer(point, size: size, dragging: true)
-    }
 
-    private func finishSeek(at point: CGPoint, size: CGSize) {
-        defer {
-            cancelDraft()
-            updatePointer(point, size: size, dragging: false)
-        }
-        guard canSeek, dragTrackKey == state.currentTrackIdentity?.stableKey,
-              let fraction = V3ResponsiveGeometry.edgeProgressFraction(at: point, canvasSize: size) else { return }
-        state.seek(to: fraction * state.currentTrack.duration, source: "v3-edge-progress")
+    /// Release on the pill's scrubber. A song change during the drag leaves
+    /// `dragTrackKey` on the old song, so the new song is never seeked.
+    private func finishSeek(fraction: Double) {
+        defer { cancelDraft() }
+        guard canSeek, dragTrackKey == state.currentTrackIdentity?.stableKey else { return }
+        state.seek(to: min(1, max(0, fraction)) * state.currentTrack.duration, source: "v3-edge-progress")
     }
 
     private func cancelDraft() {
@@ -258,21 +198,9 @@ struct V3WindowEdgePlaybackOverlay: View {
 
     private func railPresentation(at date: Date, songHue: Double, size: CGSize) -> some View {
         let color = accent(at: date, songHue: songHue)
-        return ZStack(alignment: .topLeading) {
-            V3NativeProgressRail(clock: state.presentationClock, draft: draftFraction,
-                active: windowVisible, color: color, highlighted: railHover != nil,
-                nearEdge: displayedNearEdge, reduceMotion: reduceMotion)
-                .allowsHitTesting(false).accessibilityHidden(true)
-            if let hover = railHover {
-                Text(Self.timeText(hover.fraction * state.currentTrack.duration))
-                    .font(.system(size: 11, weight: .medium)).monospacedDigit()
-                    .padding(.horizontal, 7).padding(.vertical, 4)
-                    .foregroundStyle(V3WindowEdgeColor.foreground(on: color))
-                    .background(color, in: Capsule())
-                    .position(railLabelPosition(hover.point, size: size))
-                    .allowsHitTesting(false).accessibilityHidden(true)
-            }
-        }
+        return V3NativeProgressRail(clock: state.presentationClock, draft: draftFraction,
+                active: windowVisible, color: color)
+            .allowsHitTesting(false).accessibilityHidden(true)
     }
 
     private func accent(at date: Date, songHue: Double) -> Color {
@@ -342,15 +270,69 @@ private struct V3WindowEdgePointerTracker: NSViewRepresentable {
     }
 }
 
-struct V3WindowEdgeHitBand: Shape {
-    func path(in rect: CGRect) -> Path {
-        let outer = rect.insetBy(dx: 6, dy: 6)
-        var path = Path()
-        path.addRect(CGRect(x: outer.minX, y: outer.minY, width: outer.width, height: 20))
-        path.addRect(CGRect(x: outer.minX, y: outer.maxY - 20, width: outer.width, height: 20))
-        path.addRect(CGRect(x: outer.minX, y: outer.minY, width: 20, height: outer.height))
-        path.addRect(CGRect(x: outer.maxX - 20, y: outer.minY, width: 20, height: outer.height))
-        return path
+func v3EdgeTimeText(_ seconds: TimeInterval) -> String {
+    let value = Int(max(0, seconds.isFinite ? seconds : 0))
+    return String(format: "%d:%02d", value / 60, value % 60)
+}
+
+/// The seek control of the edge pill: a thin line on the pill's inner side.
+/// It sits well inside the window, so a click here can never start a resize.
+struct V3EdgePillScrubber: View {
+    let isVertical: Bool
+    let progress: Double
+    let accent: Color
+    let enabled: Bool
+    let onHover: (Double?) -> Void
+    let onDrag: (Double) -> Void
+    let onRelease: (Double) -> Void
+    @State private var hovering = false
+
+    /// Thickness of the pointer target; the visible line is thinner.
+    static let hitThickness: CGFloat = 10
+
+    static func fraction(at position: CGFloat, length: CGFloat) -> Double {
+        guard length.isFinite, length > 0, position.isFinite else { return 0 }
+        return Double(min(max(position / length, 0), 1))
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let length = isVertical ? geometry.size.height : geometry.size.width
+            let filled = length * CGFloat(min(max(progress, 0), 1))
+            let line: CGFloat = hovering && enabled ? 4 : 2.5
+            let fraction: (CGPoint) -> Double = { Self.fraction(at: isVertical ? $0.y : $0.x, length: length) }
+            ZStack(alignment: isVertical ? .top : .leading) {
+                Capsule().fill(Color.primary.opacity(0.2))
+                Capsule().fill(accent)
+                    .frame(width: isVertical ? nil : filled, height: isVertical ? filled : nil)
+            }
+            .frame(width: isVertical ? line : nil, height: isVertical ? nil : line)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                .onChanged { value in
+                    guard enabled else { return }
+                    onDrag(fraction(value.location)); onHover(fraction(value.location))
+                }
+                .onEnded { value in
+                    guard enabled else { return }
+                    onRelease(fraction(value.location)); onHover(nil)
+                })
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let point): hovering = true; if enabled { onHover(fraction(point)) }
+                case .ended: hovering = false; onHover(nil)
+                }
+            }
+            .animation(.easeOut(duration: 0.12), value: hovering)
+        }
+        .accessibilityElement()
+        .accessibilityLabel("播放进度")
+        .accessibilityValue("\(Int(progress * 100))%")
+        .accessibilityAdjustableAction { direction in
+            guard enabled else { return }
+            onRelease(min(1, max(0, progress + (direction == .increment ? 0.03 : -0.03))))
+        }
     }
 }
 
@@ -393,25 +375,65 @@ struct V3WindowEdgeProgressSettings: View {
                 .disabled(!enabled)
             }
             if showsExplanation {
-                Text("进度常驻显示；靠近边缘时显示播放按钮，点击或拖动边缘可跳转。")
+                Text("进度常驻显示；靠近边缘时显示播放按钮，在按钮旁的进度条上点击或拖动可跳转。")
                 .font(.caption).foregroundStyle(.secondary)
             }
         }
-        .help("进度常驻显示；靠近边缘时显示播放按钮，点击或拖动边缘可跳转。")
+        .help("进度常驻显示；靠近边缘时显示播放按钮，在按钮旁的进度条上点击或拖动可跳转。")
     }
 }
 
 private struct V3WindowEdgeTransportButtons: View {
     @V3ContentPlaybackState var state: PlaybackState
     let accent: Color
-    let isVertical: Bool
-    let brightCover: Bool
+    let edge: V3WindowEdgeControlPositioner.Edge
     let elapsed: String
     let total: String
+    let progress: Double
+    let duration: TimeInterval
+    let canSeek: Bool
+    let onScrub: (Double) -> Void
+    let onScrubEnd: (Double) -> Void
     @State private var showsPlaylistPicker = false
+    /// Where a click on the scrubber would land; replaces the elapsed time.
+    @State private var scrubFraction: Double?
+    private var isVertical: Bool { edge.isVertical }
+
+    private var scrubber: some View {
+        V3EdgePillScrubber(isVertical: isVertical, progress: progress, accent: accent, enabled: canSeek,
+            onHover: { scrubFraction = $0 }, onDrag: onScrub, onRelease: onScrubEnd)
+    }
+
+    var body: some View {
+        let pill = V3WindowEdgeControlPositioner.pillSize(vertical: isVertical)
+        return Group {
+            if isVertical {
+                // The scrubber is on the side facing the canvas.
+                HStack(spacing: 0) {
+                    if edge == .right { scrubber.frame(width: V3EdgePillScrubber.hitThickness, height: pill.height - 56) }
+                    controls.frame(width: 40)
+                    if edge != .right { scrubber.frame(width: V3EdgePillScrubber.hitThickness, height: pill.height - 56) }
+                }
+                .padding(.horizontal, 2)
+            } else {
+                VStack(spacing: 0) {
+                    if edge == .bottom { scrubber.frame(width: pill.width - 48, height: V3EdgePillScrubber.hitThickness) }
+                    controls.frame(height: 36)
+                    if edge != .bottom { scrubber.frame(width: pill.width - 48, height: V3EdgePillScrubber.hitThickness) }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+        .frame(width: pill.width, height: pill.height)
+        .modifier(V3ControlBarSurface())
+        .modifier(V3SystemAppearanceModifier())
+        // Room for the shadow inside the animation island, which clips.
+        .padding(V3WindowEdgeControlPositioner.shadowRoom)
+        .accessibilityLabel("已播 \(elapsed)，总长 \(total)")
+    }
 
     @ViewBuilder
-    var body: some View {
+    private var controls: some View {
         Group {
             if isVertical {
                 VStack(spacing: 8) {
@@ -443,31 +465,23 @@ private struct V3WindowEdgeTransportButtons: View {
                     }
                     HStack(spacing: 3) {
                         elapsedLabel
-                        Text("/").foregroundStyle(.white.opacity(0.55))
+                        Text("/").font(.system(size: 10)).foregroundStyle(Color.primary.opacity(0.55))
                         totalLabel
                     }
                     .fixedSize()
                 }
             }
         }
-        .padding(4)
-        .frame(width: isVertical ? 44 : 304, height: isVertical ? 248 : 40)
-        .background {
-            V3PanelGlass()
-                .overlay(Capsule().fill(Color.black.opacity(brightCover ? 0.58 : 0)))
-                .clipShape(Capsule())
-        }
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.22), lineWidth: 0.8))
-        .accessibilityLabel("已播 \(elapsed)，总长 \(total)")
     }
 
     private var elapsedLabel: some View {
-        Text(elapsed).font(.system(size: 10).monospacedDigit())
-            .foregroundStyle(.white.opacity(0.9)).fixedSize()
+        Text(scrubFraction.map { v3EdgeTimeText($0 * duration) } ?? elapsed)
+            .font(.system(size: 10, weight: scrubFraction == nil ? .regular : .semibold).monospacedDigit())
+            .foregroundStyle(Color.primary.opacity(scrubFraction == nil ? 0.9 : 1)).fixedSize()
     }
     private var totalLabel: some View {
         Text(total).font(.system(size: 10).monospacedDigit())
-            .foregroundStyle(.white.opacity(0.55)).fixedSize()
+            .foregroundStyle(Color.primary.opacity(0.55)).fixedSize()
     }
 
     private var likeButton: some View {
@@ -552,7 +566,7 @@ private struct V3WindowEdgeTransportButton: View {
         // edge progress colour so the controls read as part of the rail.
         IslandTransportButton(
             systemImage: image, label: label, enabled: enabled,
-            primary: primary, size: .edge, tint: accent, glyph: .white.opacity(0.7), action: action
+            primary: primary, size: .edge, tint: accent, glyph: Color.primary.opacity(0.72), action: action
         )
     }
 }
@@ -563,21 +577,15 @@ private struct V3NativeProgressRail: NSViewRepresentable {
     let draft: Double?
     let active: Bool
     let color: Color
-    let highlighted: Bool
-    let nearEdge: V3WindowEdgeControlPositioner.Edge?
-    let reduceMotion: Bool
     func makeNSView(context: Context) -> V3EdgeRailView { V3EdgeRailView() }
     func updateNSView(_ view: V3EdgeRailView, context: Context) {
-        view.configure(clock: clock, draft: draft, active: active,
-                       color: NSColor(color).cgColor, highlighted: highlighted,
-                       nearEdge: nearEdge, reduceMotion: reduceMotion)
+        view.configure(clock: clock, draft: draft, active: active, color: NSColor(color).cgColor)
     }
 }
 
 final class V3EdgeRailView: NSView {
     let trackLayer = CAShapeLayer()
     let progressLayer = CAShapeLayer()
-    private var nearEdge: V3WindowEdgeControlPositioner.Edge?
     private var clock: LyricsPresentationClock?
     private var draft: Double?
     private var active = false
@@ -595,45 +603,23 @@ final class V3EdgeRailView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override func layout() {
         super.layout()
-        updateGeometry(animated: false, reduceMotion: false)
+        updateGeometry()
     }
-    private func updateGeometry(animated: Bool, reduceMotion: Bool) {
-        let path = V3WindowEdgeRoundedRectShape(nearEdge: nearEdge, cornerRadius: 12).path(in: bounds).cgPath
+    private func updateGeometry() {
+        let path = V3WindowEdgeRoundedRectShape(cornerRadius: 12).path(in: bounds).cgPath
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        for (shape, normalWidth) in [(trackLayer, CGFloat(2.1)), (progressLayer, CGFloat(2.2))] {
-            let oldPath = shape.presentation()?.path ?? shape.path
-            let oldWidth = shape.presentation()?.lineWidth ?? shape.lineWidth
+        for (shape, width) in [(trackLayer, CGFloat(2.1)), (progressLayer, CGFloat(2.2))] {
             shape.frame = bounds
             shape.path = path
-            shape.lineWidth = nearEdge == nil ? normalWidth : 4
-            if animated, let oldPath {
-                if reduceMotion {
-                    let fade = CABasicAnimation(keyPath: "opacity")
-                    fade.fromValue = 0.3; fade.toValue = 1; fade.duration = 0.16
-                    shape.add(fade, forKey: "railFade")
-                } else {
-                    let move = CABasicAnimation(keyPath: "path")
-                    move.fromValue = oldPath; move.toValue = path; move.duration = 0.16
-                    move.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                    shape.add(move, forKey: "railPosition")
-                    let width = CABasicAnimation(keyPath: "lineWidth")
-                    width.fromValue = oldWidth; width.toValue = shape.lineWidth; width.duration = 0.16
-                    shape.add(width, forKey: "railWidth")
-                }
-            }
+            shape.lineWidth = width
         }
         CATransaction.commit()
     }
-    func configure(clock: LyricsPresentationClock, draft: Double?, active: Bool, color: CGColor, highlighted: Bool,
-                   nearEdge: V3WindowEdgeControlPositioner.Edge? = nil, reduceMotion: Bool = false) {
+    func configure(clock: LyricsPresentationClock, draft: Double?, active: Bool, color: CGColor) {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         trackLayer.strokeColor = color.copy(alpha: 0.22)
         progressLayer.strokeColor = color
         CATransaction.commit()
-        if self.nearEdge != nearEdge {
-            self.nearEdge = nearEdge
-            updateGeometry(animated: true, reduceMotion: reduceMotion)
-        }
         guard self.clock != clock || self.draft != draft || self.active != active else { return }
         self.clock = clock; self.draft = draft; self.active = active
         let duration = clock.trackDuration
@@ -655,16 +641,10 @@ final class V3EdgeRailView: NSView {
 }
 
 private struct V3WindowEdgeRoundedRectShape: Shape {
-    let nearEdge: V3WindowEdgeControlPositioner.Edge?
     let cornerRadius: CGFloat
 
     func path(in rect: CGRect) -> Path {
-        let left: CGFloat = nearEdge == .left ? 14 : 1.5
-        let right: CGFloat = nearEdge == .right ? 14 : 1.5
-        let top: CGFloat = nearEdge == .top ? 14 : 1.5
-        let bottom: CGFloat = nearEdge == .bottom ? 14 : 1.5
-        let bounds = CGRect(x: rect.minX + left, y: rect.minY + top,
-                            width: rect.width - left - right, height: rect.height - top - bottom)
+        let bounds = rect.insetBy(dx: 1.5, dy: 1.5)
         guard bounds.width > 0, bounds.height > 0 else { return Path() }
 
         let radius = min(cornerRadius, min(bounds.width, bounds.height) / 2)
@@ -716,6 +696,15 @@ enum V3WindowEdgeControlPositioner {
         var isVertical: Bool { self == .left || self == .right }
     }
 
+    /// Distance between the pill and the window edge: the toolbar's own inset.
+    static let edgeInset: CGFloat = 18
+    static let shadowRoom: CGFloat = 18
+
+    /// Buttons plus the scrubber line on the pill's inner side.
+    static func pillSize(vertical: Bool) -> CGSize {
+        vertical ? CGSize(width: 54, height: 248) : CGSize(width: 304, height: 50)
+    }
+
     struct Layout {
         let edge: Edge
         let center: CGPoint
@@ -757,7 +746,7 @@ enum V3WindowEdgeControlPositioner {
         }
 
         let isVertical = edge.isVertical
-        let baseSize = CGSize(width: isVertical ? 44 : 304, height: isVertical ? 248 : 40)
+        let baseSize = pillSize(vertical: isVertical)
         let availableLong = isVertical ? height : width
         let availableShort = isVertical ? width : height
         let baseLong = isVertical ? baseSize.height : baseSize.width
@@ -771,21 +760,21 @@ enum V3WindowEdgeControlPositioner {
         case .top:
             center = CGPoint(
                 x: clamped(point.x, lower: 88 + halfLength, upper: width - halfLength - 26, fallback: width / 2),
-                y: 26 + halfThickness
+                y: edgeInset + halfThickness
             )
         case .right:
             center = CGPoint(
-                x: width - 26 - halfThickness,
+                x: width - edgeInset - halfThickness,
                 y: clamped(point.y, lower: halfLength + 26, upper: height - halfLength - 26, fallback: height / 2)
             )
         case .bottom:
             center = CGPoint(
                 x: clamped(point.x, lower: halfLength + 26, upper: width - halfLength - 26, fallback: width / 2),
-                y: height - 26 - halfThickness
+                y: height - edgeInset - halfThickness
             )
         case .left:
             center = CGPoint(
-                x: 26 + halfThickness,
+                x: edgeInset + halfThickness,
                 y: clamped(point.y, lower: 74 + halfLength, upper: height - halfLength - 26, fallback: height / 2)
             )
         }
@@ -805,20 +794,20 @@ enum V3WindowEdgeControlPositioner {
         var candidates: [Layout] = []
         let topSpace = blocked.minX - 88 - 1
         if topSpace > 0 {
-            let base = CGSize(width: 304, height: 40)
+            let base = pillSize(vertical: false)
             let factor = min(1, topSpace / base.width, max(0, height - 52) / base.height)
             let half = base.width * factor / 2
             let x = clamped(point.x, lower: 88 + half, upper: blocked.minX - half - 1, fallback: 88 + half)
-            let candidate = Layout(edge: .top, center: CGPoint(x: x, y: 26 + base.height * factor / 2), isVertical: false, baseSize: base, scale: factor)
+            let candidate = Layout(edge: .top, center: CGPoint(x: x, y: edgeInset + base.height * factor / 2), isVertical: false, baseSize: base, scale: factor)
             if !candidate.frame.intersects(blocked) { candidates.append(candidate) }
         }
         let rightSpace = height - blocked.maxY - 27
         if rightSpace > 0 {
-            let base = CGSize(width: 44, height: 248)
+            let base = pillSize(vertical: true)
             let factor = min(1, rightSpace / base.height, max(0, width - 52) / base.width)
             let half = base.height * factor / 2
             let y = clamped(point.y, lower: blocked.maxY + half + 1, upper: height - half - 26, fallback: height - half - 26)
-            let candidate = Layout(edge: .right, center: CGPoint(x: width - 26 - base.width * factor / 2, y: y), isVertical: true, baseSize: base, scale: factor)
+            let candidate = Layout(edge: .right, center: CGPoint(x: width - edgeInset - base.width * factor / 2, y: y), isVertical: true, baseSize: base, scale: factor)
             if !candidate.frame.intersects(blocked) { candidates.append(candidate) }
         }
         return candidates.min { a, b in

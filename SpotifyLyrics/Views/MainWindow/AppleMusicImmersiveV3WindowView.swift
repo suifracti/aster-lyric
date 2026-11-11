@@ -1889,13 +1889,11 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .focusEffectDisabled()
         .environment(\.lyricIslandCompactTools, size.width < 720)
         .padding(5)
-        .background(.regularMaterial.opacity(0.78), in: Capsule())
         .background(GeometryReader { geometry in
             Color.clear.preference(key: V3ToolbarFramePreferenceKey.self,
                 value: geometry.frame(in: .named("v3-window-canvas")))
         })
-        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.16), lineWidth: 0.7))
-        .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 4)
+        .modifier(V3ControlBarSurface())
         .modifier(V3SystemAppearanceModifier())
         .onChange(of: toolbar.mode) { old, new in toolbarModeChanged(from: old, to: new) }
         .onDisappear { toolbarDismissTask?.cancel(); hoveredStyle = nil }
