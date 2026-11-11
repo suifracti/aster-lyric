@@ -182,11 +182,13 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 
 括号别名按同一位歌手处理。`TrackTextNormalizer.parentheticalArtistNames` 把 `外名 (内名)` 拆成两个完整名字，`LyricsSafeMatcher.artistGroups` 把它们各自加成一组主歌手，于是来源只写其中一个名字也得到 `primaryArtistExact`，沿原有打分自动采用。括号里是 feat、with、CV、vo 开头的署名不算别名；只对上括号内名字的一半不算。只展开播放侧（Spotify 及其别名），不展开来源侧。
 
-只对上一部分的不自动采用。`artistNameParts` 把歌手名按汉字、假名、拉丁字母分段，汉字至少 2 个字、假名至少 3 个、拉丁字母至少 5 个才算一段，少数泛用词不算。歌名完全一致且有一段相同时，记 `primaryArtistPartialName`（+0.10），等级封顶在 `candidates`，进“核对歌词版本”由用户决定；歌名不一致仍然拒绝。它不带 `primaryArtistExact`，所以不会触发多来源一致自动采用。只有另有 Spotify ID 或 ISRC 这类独立身份证据时才不封顶。代价是同姓歌手的同名歌可能出现在核对列表里，这是有意接受的。
+只对上一部分的，单独一个来源不够，需要旁证才自动采用（见下一段的两条）。`artistNameParts` 把歌手名按汉字、假名、拉丁字母分段，汉字至少 2 个字、假名至少 3 个、拉丁字母至少 5 个才算一段，少数泛用词不算。歌名完全一致且有一段相同时，记 `primaryArtistPartialName`（+0.18）；歌名不一致仍然拒绝。它不带 `primaryArtistExact`，所以不会触发原有的多来源一致采用。
+
+用户同日明确要求听歌时不能还要自己选，所以这类候选有两条自动采用的路。第一条在匹配器里：时长与播放侧相差 2 秒以内（`durationClose`）且没有版本冲突时，升到 `autoMedium`。第二条在 `LyricsSearchManager.partialArtistLyricsAgreement`：两个不同来源各有一个这样的候选，且歌词文字相同，就采用其中更好的一个（有时间轴的优先），记 `partialArtistLyricsAgreement`。文字是否相同用去掉空白和标点后的 8 字片段比较，较短一方至少 40 个片段、六成以上出现在另一方，所以换行不同不影响，短文本不会误判。两条都不满足时仍进“核对歌词版本”，例如只有一个来源且没有时长。另有 Spotify ID 或 ISRC 这类独立身份证据时不受这些限制。代价是同姓歌手的同名歌可能出现在核对列表里，这是有意接受的。
 
 プチリリ按“歌名加歌手”搜不到时，再按歌名搜一次，只打开歌手名有一段相同的记录，最多两条。
 
-新增 `testArtistWrittenDifferentlyIsRecognisedOrLeftForReview` 与 `testPetitLyricsSearchesByTitleWhenTheArtistSpellingFindsNothing`，都先复现失败。完整原生 133 项中 132 通过、1 跳过、0 失败，原有匹配用例没有因此改变结论。真实来源实测：《Phone Number》由プチリリ自动采用（43 行纯文本）；《KILL MY LOVE》进入核对，同时列出プチリリ和 LRCLIB 的版本。这两首是用库里记录的歌名、歌手、专辑和时长在测试宿主里跑的，没有经过真实播放和 Spotify 目录别名。
+新增 `testArtistWrittenDifferentlyIsRecognisedOrLeftForReview`、`testPetitLyricsSearchesByTitleWhenTheArtistSpellingFindsNothing` 与 `testPartlyMatchingArtistIsAdoptedWhenTwoSourcesGiveTheSameWords`。完整原生 134 项中 133 通过、1 跳过、0 失败，原有匹配用例没有因此改变结论。真实来源实测：《Phone Number》由プチリリ自动采用（43 行纯文本）；《KILL MY LOVE》由 LRCLIB 与プチリリ歌词一致而自动采用 LRCLIB 的带时间轴版本（79 行，来源标注时长 204 秒，播放侧 198 秒），整次找词 10.9 秒。时间轴与实际播放是否对齐没有听过。这两首是用库里记录的歌名、歌手、专辑和时长在测试宿主里跑的，没有经过真实播放和 Spotify 目录别名。
 
 下次有人想把“部分相同”放宽成自动采用时，先看这里的理由；想收紧时，调 `artistNameParts` 的最短长度或泛用词表，不要回到整名必须相等。
 
