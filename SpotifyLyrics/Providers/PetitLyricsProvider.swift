@@ -50,7 +50,17 @@ public final class PetitLyricsProvider: LyricsProvider, @unchecked Sendable {
             var query = [URLQueryItem(name: "title", value: title)]
             if !artist.isEmpty { query.append(URLQueryItem(name: "artist", value: artist)) }
             let search = try await text(session, path: "/search_lyrics", query: query)
-            let rows = Self.parseSearch(search)
+            var rows = Self.parseSearch(search)
+            if rows.isEmpty, !artist.isEmpty {
+                // The site may write the artist differently (加藤MILIYAH /
+                // 加藤 ミリヤ). Search by title alone and open only records
+                // whose artist shares a name with ours; matching still decides.
+                let names = [artist] + TrackTextNormalizer.parentheticalArtistNames(artist)
+                rows = Self.parseSearch(try await text(session, path: "/search_lyrics",
+                    query: [URLQueryItem(name: "title", value: title)])).filter { row in
+                    names.contains { TrackTextNormalizer.artistsShareNamePart($0, row.artist) }
+                }
+            }
             guard !rows.isEmpty else { return .noMatch }
 
             var candidates: [LyricsCandidate] = []

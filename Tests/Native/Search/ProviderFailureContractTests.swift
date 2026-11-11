@@ -245,7 +245,9 @@ private final class PetitLyricsFixtureURLProtocol: URLProtocol, @unchecked Senda
     override func startLoading() {
         Self.lock.lock()
         Self.requests.append(request)
-        let (status, body) = Self.responses[request.url?.path ?? ""] ?? (404, Data())
+        var key = request.url?.path ?? ""
+        if key == "/search_lyrics", request.url?.query?.contains("artist=") != true { key += "#title-only" }
+        let (status, body) = Self.responses[key] ?? (404, Data())
         Self.lock.unlock()
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -258,6 +260,91 @@ private final class PetitLyricsFixtureURLProtocol: URLProtocol, @unchecked Senda
 
 @MainActor
 final class ProviderFailureContractTests: XCTestCase {
+    /// Real cases, 2026-11: lyrics existed but the artist was written differently.
+    func testArtistWrittenDifferentlyIsRecognisedOrLeftForReview() {
+        func candidate(_ artist: String, title: String = "Phone Number", duration: Double = 169, for track: Track) -> LyricsCandidate {
+            LyricsCandidate(id: "fixture-\(artist)", identity: TrackIdentity(track: track), title: title, artist: artist,
+                album: track.album, duration: duration, lines: [LyricLine(timestamp: 0, originalText: "Generated test line")],
+                source: .lrclib, confidence: 0.9)
+        }
+        func isAutomatic(_ decision: LyricsMatchDecision) -> Bool { decision.tier == .autoHigh || decision.tier == .autoMedium }
+
+        // Spotify shows a stage name with the artist's other name in brackets.
+        let bracketed = Track(title: "Phone Number", artist: "GAN (岩田剛典)", album: "Phone Number", duration: 169.11)
+        let bracketedMetadata = TrackMetadata.bootstrap(from: bracketed)
+        for name in ["岩田剛典", "GAN", "GAN (岩田剛典)", "GAN（岩田剛典）"] {
+            let decision = LyricsSafeMatcher.decide(candidate: candidate(name, for: bracketed), metadata: bracketedMetadata)
+            XCTAssertTrue(isAutomatic(decision), "\(name): \(decision.tier) \(decision.reasons)")
+            XCTAssertTrue(decision.reasons.contains("primaryArtistExact"), "\(name): \(decision.reasons)")
+        }
+        XCTAssertEqual(LyricsSafeMatcher.decide(candidate: candidate("山田太郎", for: bracketed), metadata: bracketedMetadata).tier, .reject)
+        XCTAssertEqual(LyricsSafeMatcher.decide(candidate: candidate("岩田", for: bracketed), metadata: bracketedMetadata).tier, .reject,
+            "half of a bracketed name is not that name")
+
+        // Only part of the name agrees: worth showing, never adopted unattended.
+        let partial = Track(title: "KILL MY LOVE", artist: "加藤MILIYAH", album: "KILL MY LOVE", duration: 198.028)
+        let partialMetadata = TrackMetadata.bootstrap(from: partial)
+        for (name, duration) in [("Miliyah", 204.0), ("加藤 ミリヤ", 0.0), ("加藤 ミリヤ", 198.0)] {
+            let decision = LyricsSafeMatcher.decide(candidate: candidate(name, title: "KILL MY LOVE", duration: duration, for: partial),
+                                                    metadata: partialMetadata)
+            XCTAssertEqual(decision.tier, .candidates, "\(name) \(duration): \(decision.reasons)")
+            XCTAssertTrue(decision.reasons.contains("primaryArtistPartialName"), "\(decision.reasons)")
+            XCTAssertFalse(decision.hardReject)
+        }
+        for (name, title) in [("佐藤 ミリヤ", "KILL MY LOVE"), ("Mili", "KILL MY LOVE"), ("加藤 ミリヤ", "KILL MY LOVE (Live)"),
+                              ("加藤 ミリヤ", "Another Song")] {
+            let decision = LyricsSafeMatcher.decide(candidate: candidate(name, title: title, duration: 198, for: partial), metadata: partialMetadata)
+            XCTAssertFalse(isAutomatic(decision), "\(name) / \(title): \(decision.reasons)")
+            if title != "KILL MY LOVE (Live)" { XCTAssertEqual(decision.tier, .reject, "\(name) / \(title): \(decision.reasons)") }
+        }
+        // A shared generic word or a short fragment is not a shared name.
+        let band = Track(title: "Night Drive", artist: "Blue Harbor Band", album: "Night Drive", duration: 200)
+        for name in ["Red River Band", "The Blue", "Harb"] {
+            let decision = LyricsSafeMatcher.decide(candidate: candidate(name, title: "Night Drive", duration: 200, for: band),
+                                                    metadata: TrackMetadata.bootstrap(from: band))
+            XCTAssertEqual(decision.tier, .reject, "\(name): \(decision.reasons)")
+        }
+        // Two sources that only partly agree on the artist never adopt each other.
+        XCTAssertFalse(LyricsSafeMatcher.decide(candidate: candidate("Miliyah", title: "KILL MY LOVE", duration: 198, for: partial),
+            metadata: partialMetadata).reasons.contains("primaryArtistExact"))
+    }
+
+    func testPetitLyricsSearchesByTitleWhenTheArtistSpellingFindsNothing() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PetitLyricsFixtureURLProtocol.self]
+        let provider = PetitLyricsProvider(session: URLSession(configuration: configuration))
+        let track = Track(title: "KILL MY LOVE", artist: "加藤MILIYAH", album: "KILL MY LOVE", duration: 198)
+        func row(_ id: Int, _ artist: String) -> String {
+            "<tr><td><a href=\"/lyrics/\(id)\"><span class=\"lyrics-list-title\">KILL MY LOVE</span></a>"
+                + "<span class=\"lyrics-list-artist\">\(artist)</span></td></tr>"
+        }
+        let line = try JSONSerialization.data(withJSONObject: [["lyrics": Data("fixture line".utf8).base64EncodedString()]])
+        PetitLyricsFixtureURLProtocol.reset([
+            "/search_lyrics": (200, Data("<table id=\"lyrics_list\"></table>".utf8)),
+            "/search_lyrics#title-only": (200, Data((row(201, "Someone Else") + row(202, "加藤 ミリヤ") + row(203, "Other Band")).utf8)),
+            "/lyrics/202": (200, Data()),
+            "/lib/pl-lib.js": (200, Data("setRequestHeader('X-CSRF-Token', '0123456789abcdef0123456789abcdef');".utf8)),
+            "/com/get_lyrics.ajax": (200, line)
+        ])
+        guard case .candidates(let candidates) = await provider.lookup(track: track, identity: TrackIdentity(track: track)) else {
+            return XCTFail("the record under another spelling must be offered")
+        }
+        XCTAssertEqual(candidates.map(\.providerSourceID), ["petitlyrics:202"], "only the record sharing part of the name is opened")
+        XCTAssertEqual(PetitLyricsFixtureURLProtocol.recorded().compactMap { $0.url?.path },
+            ["/search_lyrics", "/search_lyrics", "/lyrics/202", "/lib/pl-lib.js", "/com/get_lyrics.ajax"])
+        let decision = LyricsSafeMatcher.decide(candidate: candidates[0], metadata: TrackMetadata.bootstrap(from: track))
+        XCTAssertEqual(decision.tier, .candidates, "\(decision.reasons)")
+
+        PetitLyricsFixtureURLProtocol.reset([
+            "/search_lyrics": (200, Data("<table id=\"lyrics_list\"></table>".utf8)),
+            "/search_lyrics#title-only": (200, Data((row(201, "Someone Else") + row(203, "Other Band")).utf8))
+        ])
+        guard case .noMatch = await provider.lookup(track: track, identity: TrackIdentity(track: track)) else {
+            return XCTFail("unrelated artists under the same title are not opened")
+        }
+        XCTAssertEqual(PetitLyricsFixtureURLProtocol.recorded().count, 2)
+    }
+
     func testPetitLyricsReturnsPlainTextWithTheSitesOwnTitleAndArtist() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [PetitLyricsFixtureURLProtocol.self]
@@ -318,9 +405,11 @@ final class ProviderFailureContractTests: XCTestCase {
         let live = LyricsSafeMatcher.decide(candidate: candidates[1], metadata: metadata)
         XCTAssertFalse(live.tier == .autoHigh || live.tier == .autoMedium, "\(live.tier) \(live.reasons)")
 
-        PetitLyricsFixtureURLProtocol.reset(["/search_lyrics": (200, Data("<table id=\"lyrics_list\"></table>".utf8))])
+        let noRows = Data("<table id=\"lyrics_list\"></table>".utf8)
+        PetitLyricsFixtureURLProtocol.reset(["/search_lyrics": (200, noRows), "/search_lyrics#title-only": (200, noRows)])
         guard case .noMatch = await provider.lookup(track: track, identity: identity) else { return XCTFail("no rows is no match") }
-        XCTAssertEqual(PetitLyricsFixtureURLProtocol.recorded().count, 1, "nothing else is requested without a row")
+        XCTAssertEqual(PetitLyricsFixtureURLProtocol.recorded().compactMap { $0.url?.path }, ["/search_lyrics", "/search_lyrics"],
+            "without a row only the title-only search follows")
 
         PetitLyricsFixtureURLProtocol.reset(["/search_lyrics": (200, Data(search.utf8)),
             "/lyrics/101": (200, Data()), "/lyrics/102": (200, Data()), "/lib/pl-lib.js": (200, Data("changed".utf8))])

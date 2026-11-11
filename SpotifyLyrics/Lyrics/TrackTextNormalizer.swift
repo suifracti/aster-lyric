@@ -130,6 +130,55 @@ public enum TrackTextNormalizer {
         return String(String.UnicodeScalarView(scalars)).lowercased()
     }
 
+    /// `GAN (岩田剛典)` is one artist written under two names. Returns both,
+    /// or nothing when the brackets hold a guest or voice credit instead.
+    public static func parentheticalArtistNames(_ raw: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: #"^\s*([^()（）]+?)\s*[(（]\s*([^()（）]+?)\s*[)）]\s*$"#),
+              let match = regex.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
+              let outer = Range(match.range(at: 1), in: raw), let inner = Range(match.range(at: 2), in: raw) else { return [] }
+        let names = [String(raw[outer]), String(raw[inner])]
+        let credit = #"^(?:feat\.?|ft\.?|featuring|with|cv|vo)(?![A-Za-z])"#
+        guard names[1].range(of: credit, options: [.regularExpression, .caseInsensitive]) == nil,
+              names.allSatisfy({ !normalizeArtistToken($0).isEmpty }) else { return [] }
+        return names
+    }
+
+    /// The separate names inside one artist credit: runs of kanji, of kana or
+    /// of Latin letters. `加藤MILIYAH` gives 加藤 and miliyah. Short runs and
+    /// generic words are left out, so they can never count as a shared name.
+    public static func artistNameParts(_ raw: String) -> Set<String> {
+        enum Script { case han, kana, latin, other }
+        func script(_ scalar: Unicode.Scalar) -> Script {
+            switch scalar.value {
+            case 0x4E00...0x9FFF, 0x3400...0x4DBF: return .han
+            case 0x3040...0x30FF: return .kana
+            default: return scalar.isASCII && CharacterSet.alphanumerics.contains(scalar) ? .latin : .other
+            }
+        }
+        let folded = raw.folding(options: [.caseInsensitive, .widthInsensitive, .diacriticInsensitive],
+                                 locale: Locale(identifier: "en_US_POSIX"))
+        let generic: Set<String> = ["project", "orchestra", "ensemble", "records", "music", "official", "various", "artists"]
+        var parts = Set<String>()
+        var run = String.UnicodeScalarView(), runScript = Script.other
+        func flush() {
+            let text = String(run)
+            let minimum = runScript == .han ? 2 : runScript == .kana ? 3 : 5
+            if runScript != .other, text.count >= minimum, !generic.contains(text) { parts.insert(text) }
+            run = String.UnicodeScalarView()
+        }
+        for scalar in folded.unicodeScalars {
+            let current = script(scalar)
+            if current != runScript { flush(); runScript = current }
+            if current != .other { run.append(scalar) }
+        }
+        flush()
+        return parts
+    }
+
+    public static func artistsShareNamePart(_ lhs: String, _ rhs: String) -> Bool {
+        !artistNameParts(lhs).isDisjoint(with: artistNameParts(rhs))
+    }
+
     public static func artistTokenSet(_ raw: String) -> Set<String> {
         Set(artistTokens(raw).all.map(normalizeArtistToken).filter { !$0.isEmpty })
     }

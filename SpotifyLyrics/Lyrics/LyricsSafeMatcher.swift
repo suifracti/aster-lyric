@@ -99,6 +99,7 @@ public enum LyricsSafeMatcher {
         var hardReject = false
         var versionConflict = false
         var incompleteArtistSet = false
+        var partialArtistName = false
         var hasStrongIndependentIdentity = false
 
         func add(_ code: String, _ delta: Double, hard: Bool = false) {
@@ -251,6 +252,17 @@ public enum LyricsSafeMatcher {
             featuredArtistOnly = true
             incompleteArtistSet = true
             add("featuredArtistOnly", -0.18)
+        } else if reasons.contains("titleExact") || reasons.contains("titleTypographyExact"),
+                  metadataArtists.contains(where: {
+                      TrackTextNormalizer.artistsShareNamePart($0.primary, candidateArtists.primary)
+                  }) {
+            // The same title under a name that agrees only in part
+            // (加藤MILIYAH / Miliyah / 加藤 ミリヤ). It may be the same artist
+            // written differently or a namesake, so it is shown for the user
+            // to decide and is never adopted unattended.
+            partialArtistName = true
+            incompleteArtistSet = true
+            add("primaryArtistPartialName", 0.10)
         } else if candidatePrimary.isEmpty {
             let isManual = queryVariant?.queryKind == .manualOverride
             add("primaryArtistMissing", -0.30, hard: !isManual)
@@ -414,7 +426,7 @@ public enum LyricsSafeMatcher {
             }
 
             let tierPrimaryMatch = metadataPrimaryMatches || metadataPrimaryReadingMatches || spotifyCreditedArtistReadingMatches
-                || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity)
+                || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity) || partialArtistName
             var tier = tierFor(score: score, primaryArtistMatches: tierPrimaryMatch, hardReject: hardReject)
             if hardReject {
                 tier = .reject
@@ -455,6 +467,7 @@ public enum LyricsSafeMatcher {
             tier = minTier(tier, ceiling)
             if reasons.contains("titleProviderAliasConfirmed") || metadataPrimaryReadingMatches || reasons.contains("titleReadingExact") || reasons.contains("titleTypographyExact") { tier = minTier(tier, .autoMedium) }
             tier = constrainSpotifyCreditedArtistReading(tier)
+            if partialArtistName && !hasStrongIndependentIdentity { tier = Self.minTier(tier, .candidates) }
             return LyricsMatchDecision(
                 tier: tier,
                 score: clamp(score),
@@ -468,7 +481,7 @@ public enum LyricsSafeMatcher {
 
         var tier: LyricsMatchTier
         let tierPrimaryMatch = metadataPrimaryMatches || metadataPrimaryReadingMatches || spotifyCreditedArtistReadingMatches
-            || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity)
+            || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity) || partialArtistName
         if hardReject {
             tier = .reject
         } else if reasons.contains("titleMismatch") && !hasStrongIndependentIdentity && queryVariant?.queryKind != .manualOverride {
@@ -521,6 +534,7 @@ public enum LyricsSafeMatcher {
             tier = minTier(tier, metadataPrimaryMatches && reasons.contains("durationClose") ? .autoMedium : .candidates)
         }
         tier = constrainSpotifyCreditedArtistReading(tier)
+        if partialArtistName && !hasStrongIndependentIdentity { tier = minTier(tier, .candidates) }
         return LyricsMatchDecision(
             tier: tier,
             score: clamp(score),
@@ -742,6 +756,12 @@ public enum LyricsSafeMatcher {
         groups.append(contentsOf: metadata.aliases
             .filter { $0.field == .artist }
             .map { TrackTextNormalizer.artistTokens($0.value) })
+        // `GAN (岩田剛典)`: either name alone is the same primary artist.
+        groups.append(contentsOf: groups.flatMap { group in
+            TrackTextNormalizer.parentheticalArtistNames(group.primary).map {
+                TrackTextNormalizer.ArtistTokens(primary: $0, featured: group.featured)
+            }
+        })
         return groups
     }
 
