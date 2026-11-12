@@ -17,12 +17,23 @@ struct TrackMetadataView: View {
             : track.artistLinks
     }
 
-    var body: some View {
-        VStack(alignment: alignment, spacing: 5) {
+    @Environment(\.v3TitleMarquee) private var marquee
+
+    @ViewBuilder
+    private var titleText: some View {
+        if marquee && presentation == .v3Immersive {
+            V3MarqueeTitle(text: track.title, font: .system(size: titleSize, weight: .bold, design: .rounded))
+        } else {
             Text(track.title)
                 .font(.system(size: titleSize, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
                 .lineLimit(2)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: alignment, spacing: 5) {
+            titleText
+                .foregroundStyle(.white)
                 .multilineTextAlignment(alignment == .center ? .center : .leading)
                 .help("\(track.title)\n右键复制歌曲信息")
                 .contextMenu {

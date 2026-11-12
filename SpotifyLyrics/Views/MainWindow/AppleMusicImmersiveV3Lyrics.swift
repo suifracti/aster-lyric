@@ -630,6 +630,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
         )
         .equatable()
         .environmentObject(settings)
+        .environment(\.v3LyricStyle, settings.v3LyricStyle)
         .environment(\.rubyCorrectionAction, onRuby == nil ? nil : rubyActionRelay)
         .overlay(alignment: .trailing) {
             if loopedLineID == line.id {
@@ -1170,6 +1171,7 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
                        increasedContrast: contrast == .increased) == .shadow
     }
     @Environment(\.lyricAgentPresentationMap) private var agentPresentationMap
+    @Environment(\.v3CoverAccent) private var coverAccent
 
     static func == (lhs: AppleMusicImmersiveV3LyricRow, rhs: AppleMusicImmersiveV3LyricRow) -> Bool {
         lhs.line == rhs.line
@@ -1217,9 +1219,13 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
         )
     }
 
+    private var lyricStyle: V3LyricStyle { settings.v3LyricStyle }
+
     private var rowOpacity: Double {
         guard isSynchronized else { return 1 }
         if settings.v3BigLineModeEnabled { return isActive ? 1 : 0.3 }
+        // 单行: the current line alone, its neighbours as quiet small type.
+        if lyricStyle == .single { return isActive ? 1 : (clampedDistance == 1 ? 0.34 : 0) }
         let factor = max(0.15, min(1, preferences.opacity / 0.85))
         if isActive { return 1 }
 
@@ -1252,6 +1258,10 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
     }
 
     private var rowBlur: CGFloat {
+        // 景深: sharp at the current line, softer with every line away.
+        if lyricStyle == .depth, isSynchronized, !isActive {
+            return min(5.5, 1.1 * CGFloat(clampedDistance) + 0.4)
+        }
         guard isSynchronized, clampedDistance > 1 else { return 0 }
         switch clampedDistance {
         case 2: return 0.2
@@ -1275,11 +1285,19 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
             presentationClock: presentationClock,
             scriptConversion: settings.readingPreferences.scriptConversion,
             dictionaryRevision: ReadingUserDictionaryStore.currentRevision,
-            presentationScale: presentationScale * (settings.v3BigLineModeEnabled && isSynchronized ? (isActive ? 2 : 0.6) : 1),
+            presentationScale: presentationScale * (settings.v3BigLineModeEnabled && isSynchronized ? (isActive ? 2 : 0.6)
+                : lyricStyle == .single && isSynchronized ? (isActive ? 1.55 : 0.7) : 1),
             textAlignment: textAlignment,
             bigLineAvailableHeight: bigLineAvailableHeight
         )
         .equatable()
+        // 光色: the current line is white light with the cover's colour around it.
+        .environment(\.v3CoverAccent, lyricStyle == .lightColor && isActive ? Color.white : coverAccent)
+        .shadow(color: lyricStyle == .lightColor && isActive ? coverAccent.opacity(0.95) : .clear, radius: 14)
+        .shadow(color: lyricStyle == .lightColor && isActive ? coverAccent.opacity(0.6) : .clear, radius: 30)
+        .modifier(V3TypewriterReveal(active: lyricStyle == .typewriter && isActive && isSynchronized
+                                         && line.timedSpans?.isEmpty != false,
+                                     start: line.timestamp, end: line.endTime, clock: presentationClock))
         // Only the current line emits light; readability protection stays independent.
         .shadow(color: isActive ? .white.opacity(0.6 * settings.v3CurrentLineGlow) : .clear,
                 radius: 8, x: 0, y: 0)
@@ -1569,7 +1587,42 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
             && (effectiveOriginalText.contains("纯音乐") || effectiveOriginalText.contains("没有填词"))
     }
 
+    private var inlineTranslation: String? {
+        guard settings.v3LyricStyle == .inlineTranslation, preferences.showTranslation,
+              let text = line.translationText, !text.isEmpty, !isInstrumentalLine else { return nil }
+        return text
+    }
+
+    private func translationText(_ translation: String) -> some View {
+        Text(translation)
+            .font(.system(size: translationSize, weight: .medium, design: .rounded))
+            .foregroundStyle(.white.opacity(isActive ? 0.86 : ((previewPresentation ?? settings.v3ArtworkPresentation) == .ambientFeathered ? 0.76 : 0.54)))
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)
+            .transition(.opacity)
+    }
+
     var body: some View {
+        if let inline = inlineTranslation {
+            // 译文同行: the translation follows the original on the same line
+            // when both fit; otherwise the usual stacked layout.
+            ViewThatFits(in: .horizontal) {
+                // Measured at their natural widths, so the pair is used only
+                // when it really fits the reading column.
+                HStack(alignment: .lastTextBaseline, spacing: 14) {
+                    stackedBody(showsTranslation: false, fillsWidth: false).fixedSize()
+                    translationText(inline).fixedSize()
+                }
+                stackedBody(showsTranslation: true)
+            }
+            .frame(width: readableLineWidth, alignment: textAlignment.lyricFrameAlignment)
+        } else {
+            stackedBody(showsTranslation: true)
+        }
+    }
+
+    @ViewBuilder
+    private func stackedBody(showsTranslation: Bool, fillsWidth: Bool = true) -> some View {
         VStack(alignment: textAlignment.lyricHorizontalAlignment, spacing: 8) {
             if isInstrumentalLine {
                 HStack(spacing: 8) {
@@ -1698,18 +1751,13 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                     .transition(.opacity)
             }
 
-            if preferences.showTranslation, let translation = line.translationText, !translation.isEmpty {
-                Text(translation)
-                    .font(.system(size: translationSize, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(isActive ? 0.86 : ((previewPresentation ?? settings.v3ArtworkPresentation) == .ambientFeathered ? 0.76 : 0.54)))
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .transition(.opacity)
+            if showsTranslation, preferences.showTranslation, let translation = line.translationText, !translation.isEmpty {
+                translationText(translation)
             }
         }
         .lineLimit(nil)
         .multilineTextAlignment(textAlignment)
-        .frame(width: readableLineWidth, alignment: textAlignment.lyricFrameAlignment)
+        .frame(width: fillsWidth ? readableLineWidth : nil, alignment: textAlignment.lyricFrameAlignment)
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -1861,6 +1909,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
 
 private struct AppleMusicImmersiveV3TimedRowView: View {
     @Environment(\.v3CoverAccent) private var coverAccent
+    @Environment(\.v3LyricStyle) private var lyricStyle
     @Environment(\.lyricTextAlignment) private var textAlignment
     let layout: TimedMultilineLayout
     let currentTime: TimeInterval
@@ -1892,12 +1941,15 @@ private struct AppleMusicImmersiveV3TimedRowView: View {
         if showsFill {
             Text(text)
                 .font(font)
-                .foregroundColor(.white.opacity(0.42))
+                .foregroundColor(.white.opacity(lyricStyle == .karaoke ? 0.26 : 0.42))
                 .overlay(
                     GeometryReader { geo in
                         if let clock {
                             TimedLyricHighlight(clock: clock, fragments: visualLine.fragments, totalWidth: visualLine.totalWidth) {
-                                Text(text).font(font).foregroundColor(coverAccent)
+                                // 卡拉OK: what has been sung is lit, not only coloured.
+                                Text(text).font(font).foregroundColor(lyricStyle == .karaoke ? .white : coverAccent)
+                                    .shadow(color: lyricStyle == .karaoke ? coverAccent : .clear, radius: 6)
+                                    .shadow(color: lyricStyle == .karaoke ? coverAccent.opacity(0.7) : .clear, radius: 14)
                                     .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
                             }
                         } else {
@@ -1943,5 +1995,47 @@ private extension Font.Weight {
         case .medium: return 0.23
         default: return 0.0
         }
+    }
+}
+
+
+/// 打字机: the current line appears from left to right over the time it is
+/// sung (its end time, else three seconds). Lines with word timing already
+/// fill word by word and are left alone.
+private struct V3TypewriterReveal: ViewModifier {
+    let active: Bool
+    let start: TimeInterval
+    let end: TimeInterval?
+    let clock: LyricsPresentationClock
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        if active && !reduceMotion {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !clock.isPlaying)) { _ in
+                let now = clock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+                let length = max(0.6, min(6, (end ?? start + 3) - start) * 0.85)
+                let fraction = min(1, max(0, (now - start) / length))
+                content.mask(alignment: .leading) {
+                    LinearGradient(stops: [
+                        .init(color: .white, location: 0),
+                        .init(color: .white, location: fraction),
+                        .init(color: .clear, location: min(1, fraction + 0.06))
+                    ], startPoint: .leading, endPoint: .trailing)
+                    .opacity(fraction >= 1 ? 0 : 1)
+                    .background(fraction >= 1 ? Color.white : Color.clear)
+                }
+            }
+        } else {
+            content
+        }
+    }
+}
+
+private struct V3LyricStyleKey: EnvironmentKey { static let defaultValue = V3LyricStyle.standard }
+extension EnvironmentValues {
+    /// Read by views that cannot see the settings store.
+    var v3LyricStyle: V3LyricStyle {
+        get { self[V3LyricStyleKey.self] }
+        set { self[V3LyricStyleKey.self] = newValue }
     }
 }

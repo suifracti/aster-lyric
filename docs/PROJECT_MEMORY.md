@@ -24,6 +24,7 @@
 | 译文风格不对、「我的风格」不见了、设置里的预设和实际不符 | L-017；TranslationPromptPresetID.personalV2、personalV2Guidance |
 | 模糊变化不均匀、找旧环境光的圆形、歌词库面板切换卡顿 | L-018；V3BlurCurve、featheredAmbientArtworkLayers、V3LibraryOwner |
 | 加光效、加播放呈现、新呈现不显示或挡住歌词 | L-019；V3AmbientTreatment、v3ScenePlayerHidden、V3PlaybackStyles.swift |
+| 工具栏/歌词/播放栏样式、核对只在指针附近显示的界面 | L-020；V3ToolbarStyle、V3LyricStyle、v3PlayerBarOptions |
 | 在窗口边缘拖进度会变成缩放窗口、进度线靠近时下移不好看、胶囊和工具栏像两套控件、画面面板底部被截断 | L-015；V3EdgePillScrubber、V3ControlBarSurface、V3ThemeSelectorView |
 | 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
@@ -251,6 +252,17 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **隐藏播放卡和封面的判断。** 布局里原来用“边缘模式开”来隐藏播放卡，现统一改为 `settings.v3ScenePlayerHidden`。侧脊、唱片架、角落、幕间还通过 `compositionShowsCover` 关掉场景自己的封面；各布局本来就按这个属性给出无封面版式。
 - **封面相关的呈现。** 封面进度和黑胶直接用已上报的前景封面位置（`V3ForegroundCoverFrame`）。黑胶的唱片画在布局下层，封面才能挡在它前面。
 - **验证方法。** 在真实窗口截图，对比同一区域的亮度：窗光前两版在浅色封面上完全看不出来，测量后才确认是光带汇聚在窗外，加上亮度不够。
+
+## L-020 工具栏、歌词、播放栏样式做成选项；只在指针附近显示的界面怎么核对
+
+- **默认不变。** 用户要求把方案都做成可选项预览。工具栏、歌词呈现、进度条各存一个键（`v3.toolbarStyle.v1`、`v3.lyricStyle.v1`、`v3.playerBar.progress.v1`），另有三个播放栏开关，默认值都是原样。
+- **接入位置。**
+  - 歌词样式在 `AppleMusicImmersiveV3LyricRow` 里按 `settings.v3LyricStyle` 调整透明度、模糊、放大和光晕。
+  - 逐字歌词的 `AppleMusicImmersiveV3TimedRowView` 看不到设置，用环境值 `v3LyricStyle` 传入。
+  - 播放栏选项用 `v3PlayerBarOptions` 环境值传入。
+- **只在指针附近显示的界面。** 工具栏只在指针靠近时显示，`screencapture` 拍不到。用离屏主机的 `--toolbar full --toolbar-style …` 核对，仅用于排版。
+- **译文同行的坑。** 用 ViewThatFits 判断“放不放得下”时，候选视图不能带固定宽度，否则永远判为放得下。
+- **截图前先看用户的现选值。** 截图脚本只改要看的那一项，结束后恢复用户自己的选择（这次用户正在用封面进度和环形工具栏）。
 
 ## 实际覆盖与接续
 

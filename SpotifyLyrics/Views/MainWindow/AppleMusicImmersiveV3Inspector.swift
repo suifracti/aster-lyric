@@ -573,7 +573,38 @@ struct V3VisualControls {
             V3SegmentedPicker("新呈现", selection: $settings.v3PlaybackPresentation,
                               options: V3PlaybackPresentation.additions.map { ($0.title, $0) })
                 .help(V3PlaybackPresentation.additions.map { $0.title + "：" + $0.detail }.joined(separator: "\n"))
+            // The player card's own options, while the scene shows its card.
+            if !settings.v3ScenePlayerHidden {
+                V3SegmentedPicker("进度条", selection: $settings.v3ProgressStyle,
+                                  options: V3ProgressStyle.allCases.map { ($0.title, $0) })
+                    .help("歌词刻度：每句歌词的位置，悬停看那句。波形：按歌词疏密画出的起伏，Spotify 不提供音频数据。")
+                HStack(spacing: 12) {
+                    Color.clear.frame(width: V3PanelMetrics.labelWidth, height: 1)
+                    V3InlineSwitch(title: "悬停出按钮", isOn: $settings.v3PlayerButtonsOnHover)
+                    V3InlineSwitch(title: "歌名滚动", isOn: $settings.v3PlayerTitleMarquee)
+                    V3InlineSwitch(title: "进度贴封面", isOn: $settings.v3PlayerProgressOnCover)
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: V3PanelMetrics.rowHeight)
+            }
         }
+    }
+
+    /// 歌词呈现: seven looks in two rows, all one click away.
+    var lyricStyleControls: some View {
+        let first = Array(V3LyricStyle.allCases.prefix(4)), second = Array(V3LyricStyle.allCases.dropFirst(4))
+        return VStack(spacing: 2) {
+            V3SegmentedPicker("歌词呈现", selection: $settings.v3LyricStyle, options: first.map { ($0.title, $0) })
+            V3SegmentedPicker("", selection: $settings.v3LyricStyle, options: second.map { ($0.title, $0) })
+        }
+        .help(V3LyricStyle.allCases.map { $0.title + "：" + $0.detail }.joined(separator: "\n"))
+    }
+
+    /// 工具栏: six ways to show the same tools.
+    var toolbarStyleControls: some View {
+        V3SegmentedPicker("工具栏", selection: $settings.v3ToolbarStyle,
+                          options: V3ToolbarStyle.allCases.map { ($0.title, $0) })
+            .help(V3ToolbarStyle.allCases.map { $0.title + "：" + $0.detail }.joined(separator: "\n"))
     }
 
     /// 封面 has two renderers behind one card: 纯高斯 is the still picture
@@ -681,6 +712,7 @@ struct V3VisualControls {
                 Spacer(minLength: 0)
             }
             .frame(minHeight: V3PanelMetrics.rowHeight)
+            lyricStyleControls
             V3NumericSlider("字号", value: displayDoubleBinding(\.fontSize), in: 14...42, step: 1, unit: "pt")
                 .help("原文与译文字号；在歌词上双指捏合也可调整")
             Toggle("大字模式", isOn: $settings.v3BigLineModeEnabled)

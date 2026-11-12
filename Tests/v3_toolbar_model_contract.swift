@@ -410,6 +410,32 @@ final class V3ToolbarPresentationTests: XCTestCase {
         XCTAssertFalse(V3PlaybackPresentation.coverProgress.replacesSceneCover)
     }
 
+    /// Toolbar, lyric and player-bar looks are stored apart and default to
+    /// the established ones.
+    @MainActor
+    func testToolbarLyricAndPlayerBarLooksAreKept() {
+        let suite = "lyricsq-looks-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        XCTAssertEqual(settings.v3ToolbarStyle, .standard)
+        XCTAssertEqual(settings.v3LyricStyle, .standard)
+        XCTAssertEqual(settings.v3ProgressStyle, .standard)
+        XCTAssertEqual(V3ToolbarStyle.allCases.map(\.title), ["标准", "图标", "分组", "下拉", "标题栏", "环形"])
+        XCTAssertEqual(V3LyricStyle.allCases.map(\.title), ["标准", "景深", "卡拉OK", "单行", "打字机", "光色", "译文同行"])
+        XCTAssertEqual(V3ProgressStyle.allCases.map(\.title), ["普通", "歌词刻度", "波形"])
+        settings.v3ToolbarStyle = .radial
+        settings.v3LyricStyle = .depth
+        settings.v3ProgressStyle = .waveform
+        settings.v3PlayerTitleMarquee = true
+        let reopened = AppSettingsStore(defaults: defaults)
+        XCTAssertEqual(reopened.v3ToolbarStyle, .radial)
+        XCTAssertEqual(reopened.v3LyricStyle, .depth)
+        XCTAssertEqual(reopened.v3ProgressStyle, .waveform)
+        XCTAssertTrue(reopened.v3PlayerTitleMarquee)
+        XCTAssertFalse(reopened.v3PlayerButtonsOnHover)
+    }
+
     /// 双色 and 窗光 are 原版环境光 with a light drawn over it; picking 原版
     /// again takes the light away.
     @MainActor

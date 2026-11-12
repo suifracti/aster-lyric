@@ -707,6 +707,37 @@ Work in this order. Each batch is built, tested, restarted and pushed on its own
   - only the tint is visible: 随曲推移, whose two colours are close on that cover;
   - not checked: 幕间's cards (the song was mid-way and seeking was not used, so as not to change playback), 侧脊 open, dragging 角落, and 换行呼吸.
 
+**D5. Toolbar, lyric and player-bar looks as options (2026-11-12; the user asked for every proposal as a choice to try).** Each defaults to the established look; nothing existing was replaced.
+- **工具栏 (更多 panel): 标准 / 图标 / 分组 / 下拉 / 标题栏 / 环形** (`v3.toolbarStyle.v1`).
+  - 图标: icons only; each name is its tooltip.
+  - 分组: 歌词库 · 搜索 · 歌单 and 译文 · 文字 · 画面 · 更多 · 设置 in two capsules.
+  - 下拉: fully hidden until the pointer reaches the top edge, then slides down 64 pt.
+  - 标题栏: icons in a slimmer bar beside the window buttons.
+  - 环形: one round button at the top right. Coming near it fans the eight tools out along a quarter circle; the fan stays open while a panel is open and closes 0.5 s after the pointer leaves.
+- **歌词呈现 (文字 panel), in two rows: 标准 / 景深 / 卡拉OK / 单行 / 打字机 / 光色 / 译文同行** (`v3.lyricStyle.v1`).
+  - 景深: lines blur with distance (about 1 pt per line, up to 5.5 pt).
+  - 卡拉OK: in word-timed lines the sung part is white with the cover-colour glow, and the unsung part is dimmer.
+  - 单行: the current line at 1.55×, its two neighbours small and faint, all others hidden.
+  - 打字机: a line without word timing appears left to right over the time it is sung.
+  - 光色: the current line is white with a two-layer glow in the cover's colour.
+  - 译文同行: the translation follows the original on the same line only when both fit at their natural widths; otherwise the usual stacked layout.
+- **播放栏 (画面 panel, under 播放呈现 while the scene shows its card).**
+  - 进度条: 普通 / 歌词刻度 / 波形 (`v3.playerBar.progress.v1`).
+    - 歌词刻度: a tick at each line's start; hovering within 8 pt of a tick shows that line.
+    - 波形: 56 bars whose heights follow how much is sung in each part of the song (Spotify gives no audio), coloured up to the playhead.
+  - Switches:
+    - 悬停出按钮: the card is title and progress until the pointer is on it.
+    - 歌名滚动: a title wider than its room scrolls back and forth after 1.5 s.
+    - 进度贴封面: a thin glowing progress line along the cover's bottom edge; the card shows no progress of its own.
+- **Checked in the real window**:
+  - 景深, 单行, 光色, 歌词刻度, 波形, 进度贴封面 and 歌名 on one line.
+  - 环形: the user had already turned it on themselves.
+  - 悬停出按钮: the first version reserved empty room for the buttons and looked like an empty box; the room is no longer reserved.
+- **Checked offscreen only**:
+  - 图标, 分组 and 标题栏: the toolbar shows only near the pointer, so the real window cannot capture it.
+  - 译文同行: the first version pushed translations out of the window, now fixed. Every line of the test song is long, so it fell back to stacked and the same-line case has not been seen.
+- **Not seen yet**: 卡拉OK, 打字机, 下拉, and the 歌名滚动 animation.
+
 **D2. What the scenes show (2026-11-12, from real screenshots).**
 - **内页:** with the cover in view, the song's name, artist and album sit under the cover in the left column, and the lyrics start at the top of the page. The heading band and its rule remain only without a cover or in a small window. The fixed caption 「原文 · 译文 · 读音」 is removed: it did not follow the layers in use.
 - **唱片卡:** the card holds the cover, the name and the controls. The masthead (「ASTER · LYRIC · LISTENING EDITION」, 「SIDE A」) and the footer (「ORIGINAL · TRANSLATION · READING」) are removed.

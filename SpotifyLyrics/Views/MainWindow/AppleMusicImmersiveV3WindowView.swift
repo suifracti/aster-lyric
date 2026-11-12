@@ -238,6 +238,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     // Keep listening unobstructed. Tools reveal at the top edge and stay
     // available while their popover is open.
     @State private var toolsVisible = false
+    @State private var radialToolbarOpen = false
+    @State private var radialToolbarCloseTask: Task<Void, Never>?
     @State private var isPointerInToolbarRegion = false
     @State private var interactionToken = 0
     @State private var isAlignmentDetailsPresented = false
@@ -390,6 +392,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
 
+                if settings.v3PlayerProgressOnCover, !settings.v3ScenePlayerHidden, !isFocusMode,
+                   let cover = foregroundCover, cover.isLargeEnough {
+                    V3CoverEdgeProgress(state: state, cover: cover, accent: coverAccent ?? .white)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .blur(radius: librarySearch.isPresented ? 5 : 0)
+                }
+
                 if settings.v3EdgeProgressEnabled && !isFocusMode && !librarySearch.isPresented {
                     V3WindowEdgePlaybackOverlay(
                         state: state,
@@ -411,19 +420,24 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
 
+                let toolbarStyle = settings.v3ToolbarStyle
                 HStack(spacing: 16) {
-                    Spacer(minLength: 0)
+                    if toolbarStyle != .titleBar { Spacer(minLength: 0) }
                     toolBar(for: geometry.size)
                         .opacity(toolbarOpacity)
+                        .offset(y: toolbarStyle == .pullDown && toolbarOpacity < 1 ? -64 : 0)
                         .allowsHitTesting(toolbarOpacity > 0)
                         .accessibilityHidden(toolbarOpacity == 0)
                         .animation(
                             LyricsDesignTokens.Motion.animation(reduceMotion: reduceMotion),
                             value: toolbarOpacity
                         )
+                    if toolbarStyle == .titleBar { Spacer(minLength: 0) }
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 18)
+                // 标题栏 sits beside the window buttons; the others at the top right.
+                .padding(.leading, toolbarStyle == .titleBar ? 76 : 24)
+                .padding(.trailing, toolbarStyle == .radial ? 12 : 24)
+                .padding(.top, toolbarStyle == .titleBar ? 3 : toolbarStyle == .radial ? 10 : 18)
 
                 // Hover shows the temporary panel inside the app; a click pins
                 // it as a separate tool window to the right of the main window.
@@ -608,6 +622,11 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: liveOnly ? state.liveLyrics : state.lyrics))
         .environment(\.v3PlaybackInteractionChanged, playbackInteractionRelay)
         .environment(\.lyricIslandScene, compositionScene)
+        .environment(\.v3PlayerBarOptions, V3PlayerBarOptions(
+            progress: settings.v3ProgressStyle, buttonsOnHover: settings.v3PlayerButtonsOnHover,
+            titleMarquee: settings.v3PlayerTitleMarquee,
+            progressOnCover: settings.v3PlayerProgressOnCover && foregroundCover?.isLargeEnough == true))
+        .environment(\.v3TitleMarquee, settings.v3PlayerTitleMarquee)
         .onReceive(state.objectWillChange) { _ in refreshForContentChange() }
         .sheet(isPresented: $isAlignmentDetailsPresented) {
             if let report = state.liveLyricsState.alignmentReport {
@@ -1832,8 +1851,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     /// without covering the lyrics), and full contrast near the top edge or
     /// while a panel is open. Positions never change between levels.
     private var toolbarOpacity: Double {
-        isFocusMode ? 0 : toolbar.opacity(pointerInside: isPointerInsideCanvas && !liveOnly, nearTop: toolsVisible,
+        let value = isFocusMode ? 0 : toolbar.opacity(pointerInside: isPointerInsideCanvas && !liveOnly, nearTop: toolsVisible,
                         otherPanelOpen: toolbarPanelIsPresented)
+        // 下拉: nothing at all until the pointer reaches the top edge.
+        return settings.v3ToolbarStyle == .pullDown && value < 1 ? 0 : value
     }
 
 #if DEBUG
@@ -1943,28 +1964,26 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     }
 
     private func toolBar(for size: CGSize) -> some View {
-        HStack(spacing: 3) {
-            ForEach(ToolbarPopover.allCases, id: \.rawValue) { panel in
-                toolbarPanelButton(panel)
+        let style = settings.v3ToolbarStyle
+        return Group {
+            switch style {
+            case .grouped:
+                HStack(spacing: 10) {
+                    toolbarGroup([.library, .search, .playlists], showsSettings: false)
+                    toolbarGroup([.translation, .text, .picture, .more], showsSettings: true)
+                }
+            case .radial:
+                radialToolbar
+            default:
+                toolbarGroup(ToolbarPopover.allCases, showsSettings: true)
             }
-
-            // Global, low-frequency settings sit at the trailing end, apart
-            // from the listening tools.
-            Rectangle().fill(Color.primary.opacity(0.18)).frame(width: 1, height: 18)
-                .padding(.horizontal, 2)
-            Button(action: openAppSettings) {
-                toolbarEntry("设置", symbol: "gearshape")
-            }
-            .v3FirstClick(openAppSettings)
-            .help("应用设置与 AI 服务")
         }
         .buttonStyle(QuietToolbarButtonStyle())
         // The window's first focusable control otherwise wears a focus ring
         // whenever the window becomes key, which reads as a stuck selection.
         .focusEffectDisabled()
-        .environment(\.lyricIslandCompactTools, size.width < 720)
-        .padding(5)
-        .modifier(V3ControlBarSurface())
+        .environment(\.lyricIslandCompactTools,
+                     size.width < 720 || style == .iconOnly || style == .titleBar || style == .radial)
         .background(GeometryReader { geometry in
             Color.clear.preference(key: V3ToolbarFramePreferenceKey.self,
                 value: geometry.frame(in: .named("v3-window-canvas")))
@@ -1972,6 +1991,91 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .modifier(V3SystemAppearanceModifier())
         .onChange(of: toolbar.mode) { old, new in toolbarModeChanged(from: old, to: new) }
         .onDisappear { toolbarDismissTask?.cancel(); hoveredStyle = nil }
+    }
+
+    private func toolbarGroup(_ panels: [ToolbarPopover], showsSettings: Bool) -> some View {
+        HStack(spacing: 3) {
+            ForEach(panels, id: \.rawValue) { panel in
+                toolbarPanelButton(panel)
+            }
+            if showsSettings {
+                // Global, low-frequency settings sit at the trailing end, apart
+                // from the listening tools.
+                Rectangle().fill(Color.primary.opacity(0.18)).frame(width: 1, height: 18)
+                    .padding(.horizontal, 2)
+                settingsToolbarButton
+            }
+        }
+        .padding(settings.v3ToolbarStyle == .titleBar ? 2 : 5)
+        .modifier(V3ControlBarSurface())
+    }
+
+    private var settingsToolbarButton: some View {
+        Button(action: openAppSettings) {
+            toolbarEntry("设置", symbol: "gearshape")
+        }
+        .v3FirstClick(openAppSettings)
+        .help("应用设置与 AI 服务")
+    }
+
+    /// 环形: one round button at the top right. Coming near it fans the
+    /// tools out along a quarter circle; they stay out while a panel is open.
+    private var radialToolbar: some View {
+        let panels = ToolbarPopover.allCases
+        let count = panels.count + 1
+        let side: CGFloat = 236, radius: CGFloat = 186
+        let hub = CGPoint(x: side - 22, y: 22)
+        let open = radialToolbarOpen || toolbar.isPresented || toolbarPanelIsPresented
+        func point(_ index: Int) -> CGPoint {
+            guard open else { return hub }
+            let angle = Double.pi / 2 * Double(index) / Double(count - 1)
+            return CGPoint(x: hub.x - radius * CGFloat(cos(angle)), y: hub.y + radius * CGFloat(sin(angle)))
+        }
+        return ZStack(alignment: .topLeading) {
+            if open {
+                // Keeps the fan open while the pointer travels between tools.
+                Path { path in
+                    path.move(to: hub)
+                    path.addArc(center: hub, radius: radius + 26, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
+                    path.closeSubpath()
+                }
+                .fill(Color.white.opacity(0.001))
+            }
+            ForEach(Array(panels.enumerated()), id: \.element.rawValue) { index, panel in
+                toolbarPanelButton(panel)
+                    .modifier(V3ControlBarSurface())
+                    .scaleEffect(open ? 1 : 0.4)
+                    .opacity(open ? 1 : 0)
+                    .allowsHitTesting(open)
+                    .position(point(index))
+            }
+            settingsToolbarButton
+                .modifier(V3ControlBarSurface())
+                .scaleEffect(open ? 1 : 0.4)
+                .opacity(open ? 1 : 0)
+                .allowsHitTesting(open)
+                .position(point(count - 1))
+            Image(systemName: open ? "xmark" : "circle.grid.cross")
+                .font(.system(size: 14, weight: .semibold))
+                .frame(width: 38, height: 38)
+                .modifier(V3ControlBarSurface())
+                .contentShape(Circle())
+                .position(hub)
+                .help("工具")
+        }
+        .frame(width: side, height: side, alignment: .topLeading)
+        .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82), value: open)
+        .onHover { inside in
+            radialToolbarCloseTask?.cancel()
+            if inside { radialToolbarOpen = true }
+            else {
+                radialToolbarCloseTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(500))
+                    guard !Task.isCancelled else { return }
+                    radialToolbarOpen = false
+                }
+            }
+        }
     }
 
     private func openAppSettings() {
@@ -2020,6 +2124,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     visualControls.pictureAdvancedControls(showsExplanations: false)
                 }
             case .more:
+                visualControls.toolbarStyleControls
                 // 恢复歌词时间 was the same action as 归零 on the offset row, which stays.
                 LyricsPresentationOffsetControl(settings: settings, showsLegacyNotice: false,
                                                 showsExplanations: false, rowStyle: true)
@@ -2039,7 +2144,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(Color.primary.opacity(0.94))
             .padding(.horizontal, 10)
-            .frame(height: 36)
+            .frame(height: settings.v3ToolbarStyle == .titleBar ? 26 : 36)
             .background(selected ? Color.primary.opacity(0.14) : .clear, in: Capsule())
             .contentShape(Capsule())
     }

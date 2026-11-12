@@ -67,6 +67,61 @@ public enum V3PlaybackPresentation: String, CaseIterable, Identifiable, Sendable
     public var replacesSceneCover: Bool { [.spine, .shelf, .corner, .interlude].contains(self) }
 }
 
+/// How the toolbar is shown. 标准 is the established bar.
+public enum V3ToolbarStyle: String, CaseIterable, Identifiable, Sendable {
+    case standard = "", iconOnly, grouped, pullDown, titleBar, radial
+    public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .standard: return "标准"; case .iconOnly: return "图标"; case .grouped: return "分组"
+        case .pullDown: return "下拉"; case .titleBar: return "标题栏"; case .radial: return "环形"
+        }
+    }
+    public var detail: String {
+        switch self {
+        case .standard: return "图标加文字的工具栏"
+        case .iconOnly: return "只留图标，悬停显示名字"
+        case .grouped: return "歌词库·搜索·歌单 与 译文·文字·画面·更多 分成两组"
+        case .pullDown: return "平时隐藏，指针碰到窗口上缘时滑下"
+        case .titleBar: return "放进标题栏，紧挨左上角的窗口按钮"
+        case .radial: return "右上角一个圆钮，靠近时工具沿弧线展开"
+        }
+    }
+}
+
+/// How the lyrics are drawn. 标准 is the established look.
+public enum V3LyricStyle: String, CaseIterable, Identifiable, Sendable {
+    case standard = "", depth, karaoke, single, typewriter, lightColor, inlineTranslation
+    public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .standard: return "标准"; case .depth: return "景深"; case .karaoke: return "卡拉OK"
+        case .single: return "单行"; case .typewriter: return "打字机"; case .lightColor: return "光色"
+        case .inlineTranslation: return "译文同行"
+        }
+    }
+    public var detail: String {
+        switch self {
+        case .standard: return "当前行变色，其他行按距离变淡"
+        case .depth: return "离当前行越远越模糊，有前后层次"
+        case .karaoke: return "逐字歌词唱到的字发光，未唱的更暗"
+        case .single: return "只留当前行并放大，前后一行小字"
+        case .typewriter: return "当前行按演唱时间逐字出现"
+        case .lightColor: return "当前行是白光，外圈带封面颜色的光晕"
+        case .inlineTranslation: return "放得下时译文跟在原文后面同一行"
+        }
+    }
+}
+
+/// 播放栏 · 进度条.
+public enum V3ProgressStyle: String, CaseIterable, Identifiable, Sendable {
+    case standard = "", lyricTicks, waveform
+    public var id: String { rawValue }
+    public var title: String {
+        switch self { case .standard: return "普通"; case .lyricTicks: return "歌词刻度"; case .waveform: return "波形" }
+    }
+}
+
 /// 环境光's extra looks, drawn over 原版环境光.
 public enum V3AmbientTreatment: String, CaseIterable, Sendable {
     case none = "", duotone, windowLight
@@ -999,6 +1054,27 @@ public final class AppSettingsStore: ObservableObject {
     @Published public var v3AmbientTreatment: V3AmbientTreatment = .none {
         didSet { defaults.set(v3AmbientTreatment.rawValue, forKey: "v3.ambient.treatment.v1") }
     }
+    @Published public var v3ToolbarStyle: V3ToolbarStyle = .standard {
+        didSet { defaults.set(v3ToolbarStyle.rawValue, forKey: "v3.toolbarStyle.v1") }
+    }
+    @Published public var v3LyricStyle: V3LyricStyle = .standard {
+        didSet { defaults.set(v3LyricStyle.rawValue, forKey: "v3.lyricStyle.v1") }
+    }
+    @Published public var v3ProgressStyle: V3ProgressStyle = .standard {
+        didSet { defaults.set(v3ProgressStyle.rawValue, forKey: "v3.playerBar.progress.v1") }
+    }
+    /// 播放栏: the time row and buttons appear only while the pointer is on the card.
+    @Published public var v3PlayerButtonsOnHover = false {
+        didSet { defaults.set(v3PlayerButtonsOnHover, forKey: "v3.playerBar.buttonsOnHover.v1") }
+    }
+    /// 播放栏: a long title scrolls slowly instead of being cut off.
+    @Published public var v3PlayerTitleMarquee = false {
+        didSet { defaults.set(v3PlayerTitleMarquee, forKey: "v3.playerBar.marquee.v1") }
+    }
+    /// 播放栏: the progress line runs along the cover's bottom edge.
+    @Published public var v3PlayerProgressOnCover = false {
+        didSet { defaults.set(v3PlayerProgressOnCover, forKey: "v3.playerBar.onCover.v1") }
+    }
     @Published public var v3AmbientLyricMotion: V3AmbientLyricMotion = .off {
         didSet { defaults.set(v3AmbientLyricMotion.rawValue, forKey: "v3.ambient.lyricMotion.v1") }
     }
@@ -1394,6 +1470,12 @@ public final class AppSettingsStore: ObservableObject {
         self.v3PlaybackStyleRawValue = defaults.string(forKey: "v3.playbackStyle.v1") ?? ""
         self.v3CornerCardCorner = defaults.string(forKey: "v3.cornerCard.corner.v1") ?? "bottomTrailing"
         self.v3AmbientTreatment = V3AmbientTreatment(rawValue: defaults.string(forKey: "v3.ambient.treatment.v1") ?? "") ?? .none
+        self.v3ToolbarStyle = V3ToolbarStyle(rawValue: defaults.string(forKey: "v3.toolbarStyle.v1") ?? "") ?? .standard
+        self.v3LyricStyle = V3LyricStyle(rawValue: defaults.string(forKey: "v3.lyricStyle.v1") ?? "") ?? .standard
+        self.v3ProgressStyle = V3ProgressStyle(rawValue: defaults.string(forKey: "v3.playerBar.progress.v1") ?? "") ?? .standard
+        self.v3PlayerButtonsOnHover = defaults.bool(forKey: "v3.playerBar.buttonsOnHover.v1")
+        self.v3PlayerTitleMarquee = defaults.bool(forKey: "v3.playerBar.marquee.v1")
+        self.v3PlayerProgressOnCover = defaults.bool(forKey: "v3.playerBar.onCover.v1")
         self.v3AmbientLyricMotion = V3AmbientLyricMotion(rawValue: defaults.string(forKey: "v3.ambient.lyricMotion.v1") ?? "") ?? .off
         self.v3ExpandArtworkWhenDetailsHidden = defaults.object(forKey: Key.v3ExpandArtworkWhenDetailsHidden) as? Bool ?? true
         self.v3ShowForegroundArtwork = defaults.object(forKey: Key.v3ShowForegroundArtwork) as? Bool ?? true

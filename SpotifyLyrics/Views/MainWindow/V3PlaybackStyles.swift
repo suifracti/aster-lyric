@@ -551,3 +551,134 @@ private struct V3CrescentShape: Shape {
         return path
     }
 }
+
+
+// MARK: - 播放栏 options
+
+struct V3PlayerBarOptions: Equatable {
+    var progress: V3ProgressStyle = .standard
+    var buttonsOnHover = false
+    var titleMarquee = false
+    var progressOnCover = false
+}
+
+private struct V3PlayerBarOptionsKey: EnvironmentKey { static let defaultValue = V3PlayerBarOptions() }
+extension EnvironmentValues {
+    var v3PlayerBarOptions: V3PlayerBarOptions {
+        get { self[V3PlayerBarOptionsKey.self] }
+        set { self[V3PlayerBarOptionsKey.self] = newValue }
+    }
+}
+
+/// 波形: bars whose height follows how much is sung in that part of the
+/// song. Spotify gives no audio, so lyric density stands in for loudness;
+/// a song without timed lyrics shows an even, gentle shape.
+struct V3LyricWaveform: View {
+    let lines: [LyricLine]
+    let duration: Double
+    let fraction: Double
+    let accent: Color
+    let height: CGFloat
+
+    private static let count = 56
+
+    private var levels: [Double] {
+        var buckets = Array(repeating: 0.0, count: Self.count)
+        guard duration > 0 else { return buckets.map { _ in 0.4 } }
+        for line in lines where line.timestamp >= 0 && line.timestamp < duration {
+            let index = min(Self.count - 1, Int(line.timestamp / duration * Double(Self.count)))
+            buckets[index] += Double(line.originalText.count)
+        }
+        // Smooth over neighbours so single lines do not spike.
+        let smooth = buckets.indices.map { i in
+            (buckets[max(0, i - 1)] + buckets[i] * 2 + buckets[min(Self.count - 1, i + 1)]) / 4
+        }
+        let peak = max(1, smooth.max() ?? 1)
+        return smooth.enumerated().map { index, value in
+            value == 0 ? 0.22 + 0.06 * sin(Double(index)) : 0.28 + 0.72 * value / peak
+        }
+    }
+
+    var body: some View {
+        let values = levels
+        GeometryReader { geometry in
+            let step = geometry.size.width / CGFloat(Self.count)
+            HStack(alignment: .center, spacing: max(1, step * 0.35)) {
+                ForEach(values.indices, id: \.self) { index in
+                    Capsule()
+                        .fill(Double(index) / Double(Self.count) < fraction ? accent.opacity(0.92) : Color.white.opacity(0.26))
+                        .frame(height: max(3, height * values[index]))
+                }
+            }
+            .frame(width: geometry.size.width, height: height)
+        }
+        .frame(height: height)
+        .allowsHitTesting(false)
+    }
+}
+
+/// 进度贴封面: the progress is a thin glowing line along the cover's
+/// bottom edge; the card under the cover keeps the buttons.
+struct V3CoverEdgeProgress: View {
+    let state: PlaybackState
+    let cover: V3ForegroundCoverFrame
+    let accent: Color
+
+    var body: some View {
+        let rect = cover.frame
+        V3PlaybackFractionReader(state: state, interval: 0.5) { fraction in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.22))
+                Capsule().fill(accent)
+                    .frame(width: max(3, (rect.width - 24) * fraction))
+                    .shadow(color: accent.opacity(0.8), radius: 6)
+            }
+            .frame(width: rect.width - 24, height: 3)
+            .animation(.linear(duration: 0.5), value: fraction)
+        }
+        .position(x: rect.midX, y: rect.maxY - 12)
+        .allowsHitTesting(false)
+    }
+}
+
+/// 长歌名滚动: a title wider than its room scrolls slowly back and forth.
+struct V3MarqueeTitle: View {
+    let text: String
+    let font: Font
+    @State private var textWidth: CGFloat = 0
+    @State private var boxWidth: CGFloat = 0
+    @State private var shifted = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let overflow = max(0, textWidth - boxWidth)
+        Text(text).font(font).lineLimit(1).fixedSize()
+            .background(GeometryReader { proxy in Color.clear.onAppear { textWidth = proxy.size.width }
+                .onChange(of: proxy.size.width) { _, width in textWidth = width } })
+            .offset(x: shifted ? -overflow : 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(GeometryReader { proxy in Color.clear.onAppear { boxWidth = proxy.size.width }
+                .onChange(of: proxy.size.width) { _, width in boxWidth = width } })
+            .clipped()
+            .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: overflow > 0 ? 0.92 : 1),
+                                         .init(color: .clear, location: 1)], startPoint: .leading, endPoint: .trailing))
+            .onChange(of: overflow > 0) { _, scrolls in start(scrolls, overflow: overflow) }
+            .onChange(of: text) { _, _ in shifted = false }
+            .onAppear { start(overflow > 0, overflow: overflow) }
+    }
+
+    private func start(_ scrolls: Bool, overflow: CGFloat) {
+        guard scrolls, !reduceMotion else { shifted = false; return }
+        withAnimation(.linear(duration: Double(overflow) / 28).delay(1.5).repeatForever(autoreverses: true)) {
+            shifted = true
+        }
+    }
+}
+
+private struct V3MarqueeEnabledKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var v3TitleMarquee: Bool {
+        get { self[V3MarqueeEnabledKey.self] }
+        set { self[V3MarqueeEnabledKey.self] = newValue }
+    }
+}

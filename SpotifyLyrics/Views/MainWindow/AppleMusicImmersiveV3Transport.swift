@@ -46,8 +46,10 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Environment(\.v3PlaybackInteractionChanged) private var interactionChanged
+    @Environment(\.v3PlayerBarOptions) private var options
 
     @State private var isHovered = false
+    @State private var tickHover: (x: CGFloat, text: String)?
     @State private var isEditing = false
     @State private var draftPosition: Double?
 
@@ -81,7 +83,12 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
 
     var body: some View {
         Group {
-            if isEmphasized {
+            if options.progress == .waveform {
+                // The bars change colour as the song plays; a few times a second is enough.
+                TimelineView(.animation(minimumInterval: 0.25, paused: !state.isPlaying || isEditing)) { _ in
+                    progressRail
+                }
+            } else if isEmphasized {
                 V3AnimationIsland {
                     TimelineView(.animation(minimumInterval: 1.0 / 30.0,
                         paused: !playbackVisible || !state.isPlaying || isEditing || reduceMotion)) { _ in
@@ -103,6 +110,10 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
             let activeWidth = max(0, width * progressFraction)
 
             ZStack(alignment: .leading) {
+                if options.progress == .waveform {
+                    V3LyricWaveform(lines: state.liveLyrics, duration: duration, fraction: progressFraction,
+                                    accent: coverAccent, height: density.interactionHeight)
+                } else {
                 Capsule()
                     .fill(Color.white.opacity(
                         isEmphasized
@@ -123,7 +134,30 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
                     .frame(height: trackHeight)
                 }
 
-                if isEmphasized {
+                }
+
+                if options.progress == .lyricTicks {
+                    // Where each lyric line starts; hover a tick to read its line.
+                    ForEach(Array(state.liveLyrics.enumerated()), id: \.offset) { _, line in
+                        if line.timestamp > 0, line.timestamp < duration {
+                            Capsule().fill(Color.white.opacity(0.55))
+                                .frame(width: 1.5, height: trackHeight + 6)
+                                .offset(x: width * line.timestamp / duration - 0.75)
+                        }
+                    }
+                    .allowsHitTesting(false)
+                    if let tickHover {
+                        Text(tickHover.text)
+                            .font(.system(size: 11, weight: .medium)).lineLimit(1)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .modifier(V3ControlBarSurface())
+                            .fixedSize()
+                            .offset(x: max(0, min(width - 160, tickHover.x - 40)), y: -26)
+                            .allowsHitTesting(false)
+                    }
+                }
+
+                if isEmphasized && options.progress != .waveform {
                     Circle()
                         .fill(.white)
                         .frame(
@@ -153,6 +187,19 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
             .onHover { hovering in
                 withAnimation(LyricsDesignTokens.Motion.animation(reduceMotion: reduceMotion, duration: 0.14)) {
                     isHovered = hovering
+                }
+            }
+            .onContinuousHover { phase in
+                guard options.progress == .lyricTicks else { return }
+                switch phase {
+                case .active(let point):
+                    let nearest = state.liveLyrics
+                        .filter { !$0.originalText.isEmpty && $0.timestamp > 0 }
+                        .map { (x: width * CGFloat($0.timestamp / duration), text: $0.originalText) }
+                        .min { abs($0.x - point.x) < abs($1.x - point.x) }
+                    tickHover = nearest.flatMap { abs($0.x - point.x) <= 8 ? $0 : nil }
+                case .ended:
+                    tickHover = nil
                 }
             }
         }
@@ -273,14 +320,21 @@ struct AppleMusicImmersiveV3TransportControls: View {
     let progressDensity: AppleMusicImmersiveV3ProgressDensity
     let progressMaxWidth: CGFloat?
 
-    var body: some View {
-        VStack(alignment: alignment, spacing: 5) {
-            AppleMusicImmersiveV3PlaybackProgress(
-                state: state,
-                density: progressDensity,
-                maxWidth: progressMaxWidth
-            )
+    @Environment(\.v3PlayerBarOptions) private var options
+    @State private var hovering = false
 
+    var body: some View {
+        let showsControls = !options.buttonsOnHover || hovering
+        VStack(alignment: alignment, spacing: 5) {
+            if !options.progressOnCover {
+                AppleMusicImmersiveV3PlaybackProgress(
+                    state: state,
+                    density: progressDensity,
+                    maxWidth: progressMaxWidth
+                )
+            }
+
+            if showsControls {
             HStack {
                 V3TransportClockLabel(state: state)
                 Spacer()
@@ -297,8 +351,15 @@ struct AppleMusicImmersiveV3TransportControls: View {
             }
                 .frame(maxWidth: progressMaxWidth ?? .infinity, alignment: .center)
                 .padding(.top, 2)
+            }
         }
         .frame(maxWidth: .infinity, alignment: alignment == .center ? .center : .leading)
+        // 按钮悬停出现: the card is only title and progress until the pointer
+        // is on it; the buttons then open below.
+        .contentShape(Rectangle())
+        .onHover { inside in
+            withAnimation(.easeOut(duration: 0.2)) { hovering = inside }
+        }
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String { v3EdgeTimeText(seconds) }

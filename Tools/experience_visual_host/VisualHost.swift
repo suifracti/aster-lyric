@@ -308,6 +308,8 @@ struct ExperienceVisualHostApp: App {
         } else if let classic = V3ArtworkPresentation(rawValue: ExperienceArguments.value("--classic", fallback: "")) {
             settings.selectLegacyV3Presentation(classic)
         }
+        if let style = V3ToolbarStyle(rawValue: ExperienceArguments.value("--toolbar-style", fallback: "-")) { settings.v3ToolbarStyle = style }
+        if let style = V3LyricStyle(rawValue: ExperienceArguments.value("--lyric-style", fallback: "-")) { settings.v3LyricStyle = style }
         settings.v3ArtworkPosition=ExperienceArguments.value("--position",fallback:"left")
         if let scale=Double(ExperienceArguments.value("--scale",fallback:"")) { settings.v3ArtworkSizeScale=scale }
         if let blur=Double(ExperienceArguments.value("--blur",fallback:"")) { settings.v3BackdropBlurRadius=blur }
