@@ -16,8 +16,9 @@ enum AppleMusicImmersiveV3BackdropKey {
 enum V3BackdropArtworkGeometry {
     /// Shared framing baseline; individual themes retain their own lighting passes.
     static func imageScale(requested: Double, complete: Bool) -> Double {
-        let scale = requested.isFinite ? min(1.4, max(0.8, requested)) : 1
-        return scale * (complete ? 1 : 1.12)
+        // 铺满 at 100% just fills the window. It used to add 1.12× on top,
+        // which made 原版 look far more zoomed than 羽化 (user, 2026-11-12).
+        requested.isFinite ? min(1.4, max(0.8, requested)) : 1
     }
 
     static func horizontalOffset(width: CGFloat, scale: CGFloat, effectiveScale: CGFloat, position: String) -> CGFloat {
@@ -38,7 +39,11 @@ enum V3BackdropArtworkGeometry {
         let aspect = max(0.01, artwork.width / max(1, artwork.height))
         let fitHeight = min(canvas.height, canvas.width / aspect)
         let fillHeight = max(canvas.height, canvas.width / aspect)
-        let height = (complete ? min(fillHeight, fitHeight * 1.15) : fillHeight) * scale
+        // 尽量完整 shows the whole cover (the sides are filled with a blurred
+        // copy); 铺满 fills the window and crops. The earlier 1.15× "complete"
+        // still cut a square cover's top and bottom in a wide window, so the
+        // two choices looked the same.
+        let height = (complete ? fitHeight : fillHeight) * scale
         let width = height * aspect
         return CGRect(x: (canvas.width - width) / 2, y: (canvas.height - height) / 2, width: width, height: height)
     }
@@ -67,9 +72,6 @@ struct AppleMusicImmersiveV3BackdropView: View {
     @State private var outgoingAmbientArtworkImage: NSImage?
     @State private var noiseImage: NSImage?
     @State private var palette = BackdropPalette.neutral
-    /// Centre of the cover's subject (face first, else the most salient
-    /// region), normalized top-left. 羽化 puts its clear circle on it.
-    @State private var subjectCenter: CGPoint?
     @State private var accessibilityDisplayRevision = 0
     @State private var isWindowVisible = false
     /// The picture the backdrop is made from: the cover, or the artist's photo.
@@ -145,13 +147,6 @@ struct AppleMusicImmersiveV3BackdropView: View {
             V3MusicPulse.shared.setTrack(spotifyTrackID, enabled: settings.v3MusicMotionEnabled)
         }
         .onDisappear { if presentationOverride == nil { V3MusicPulse.shared.setWanted(false) } }
-        .task(id: backdropImageURL ?? track.artworkURL) {
-            subjectCenter = nil
-            guard let analysis = await V3ArtworkSubject.analysis(for: backdropImageURL ?? track.artworkURL),
-                  let region = analysis.regions.max(by: { $0.width * $0.height < $1.width * $1.height }) else { return }
-            guard !Task.isCancelled else { return }
-            subjectCenter = CGPoint(x: region.midX, y: region.midY)
-        }
         .task(id: requestKey) {
             await loadSnapshot(for: requestKey)
         }
@@ -807,25 +802,24 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
         // Show the complete cover as a softly feathered source of ambient light.
         GeometryReader { canvas in
-            // The circle is as tall as the window; 背景缩放 resizes it.
-            let side = min(canvas.size.height * 1.02, canvas.size.width * 0.86) * artworkSizeScale
+            // Same sizes as every other picture: 尽量完整 the whole cover fits
+            // the window, 铺满 it fills the window's width; 背景缩放 on top.
+            let fitted = V3BackdropArtworkGeometry.rect(canvas: canvas.size, artwork: CGSize(width: 1, height: 1),
+                                                        scale: artworkSizeScale, complete: showsCompleteArtwork)
+            let side = fitted.width
             let sourceWidth = side
             let sourceHeight = side
-            let imageX: CGFloat = artworkPosition == "right" ? 0.56
-                : (artworkPosition == "center" ? 0.50 : 0.44)
-
-            // 聚焦主体: enlarge slightly and slide the subject towards the
-            // circle's centre, never past the cover's own edge.
-            let zoom: CGFloat = subjectCenter == nil ? 1 : 1.3
-            let room = side * (zoom - 1) / 2
-            let shift = subjectCenter.map { CGSize(width: min(room, max(-room, (0.5 - $0.x) * side * zoom)),
-                                                   height: min(room, max(-room, (0.5 - $0.y) * side * zoom))) } ?? .zero
+            // Centred like every other backdrop (left and right margins equal,
+            // as settled for 经典 in 2026-10), and not enlarged: the earlier
+            // shift toward the foreground cover and the 1.3× subject zoom made
+            // 羽化's backdrop sit and size differently from the others.
+            let imageX: CGFloat = 0.50
+            let zoom: CGFloat = 1
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fill)
                 .frame(width: sourceWidth * zoom, height: sourceHeight * zoom)
-                .offset(shift)
                 .frame(width: sourceWidth, height: sourceHeight)
                 .clipped()
                 .blur(radius: diffusionRadius)
@@ -989,12 +983,15 @@ struct AppleMusicImmersiveV3BackdropView: View {
             let offset = min(overscan, max(-overscan, horizontalOffset))
             ZStack {
                 if fillsEdges && featherEdges {
+                    // Only a soft colour around the whole cover: always heavily
+                    // blurred and dimmed. Following the blur slider, it was
+                    // nearly sharp at low blur and read as a second, cropped cover.
                     Image(nsImage: image)
                         .resizable().scaledToFill()
                         .frame(width: canvas.size.width, height: canvas.size.height)
                         .clipped()
-                        .blur(radius: blur * 1.25)
-                        .opacity(showsCompleteArtwork ? 0.70 * min(1, 0.35 + perceptualBlur * 0.65) : 0.70)
+                        .blur(radius: max(48, blur * 1.25))
+                        .opacity(showsCompleteArtwork ? 0.42 : 0.70)
                 }
                 Image(nsImage: image)
                     .resizable().interpolation(.high)

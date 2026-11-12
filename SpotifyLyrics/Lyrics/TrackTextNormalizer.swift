@@ -22,8 +22,15 @@ public enum TrackTextNormalizer {
         }
     }
 
-    public static func normalize(_ raw: String) -> String {
+    /// Matching key. Traditional Chinese is folded to Simplified so a Spotify
+    /// title in one script meets a source in the other (曾經你說 / 曾经你说,
+    /// 趙乃吉 / 赵乃吉). Track identity keys use their own normalizer and
+    /// are not affected.
+    public static func normalize(_ raw: String, foldsChineseScript: Bool = true) -> String {
         var s = raw
+        if foldsChineseScript, s.unicodeScalars.contains(where: { (0x4E00...0x9FFF).contains($0.value) }) {
+            s = ReadingScriptConverter.convert(s, using: .traditionalToSimplified)
+        }
         // Unicode compatibility + canonical composition
         s = s.decomposedStringWithCompatibilityMapping
         s = s.precomposedStringWithCanonicalMapping

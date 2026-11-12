@@ -1097,6 +1097,14 @@ public final class AppSettingsStore: ObservableObject {
     @Published public var v3AmbientLyricMotion: V3AmbientLyricMotion = .off {
         didSet { defaults.set(v3AmbientLyricMotion.rawValue, forKey: "v3.ambient.lyricMotion.v1") }
     }
+    /// 取景 and 背景缩放 shared by every scene, so the backdrop is the same
+    /// size whichever picture is chosen. Seeded once from the scene in use.
+    @Published public private(set) var v3SharedBackdropComplete: Bool? {
+        didSet { defaults.set(v3SharedBackdropComplete, forKey: "v3.backdrop.sharedComplete.v1") }
+    }
+    @Published public private(set) var v3SharedBackdropScale: Double? {
+        didSet { defaults.set(v3SharedBackdropScale, forKey: "v3.backdrop.sharedScale.v1") }
+    }
     /// 背景素材: the backdrop is made from the cover or from the artist's photo.
     @Published public var v3BackdropSource: V3BackdropSource = .video {
         didSet { defaults.set(v3BackdropSource.rawValue, forKey: "v3.backdrop.source.v2") }
@@ -1159,12 +1167,16 @@ public final class AppSettingsStore: ObservableObject {
         v3BackgroundShowsCompleteArtwork(for: style, scene: v3ListeningScene)
     }
     public func v3BackgroundShowsCompleteArtwork(for style: V3ArtworkPresentation, scene: V3ListeningScene?) -> Bool {
+        // One 取景 for every picture, 羽化 included (user, 2026-11-12: the
+        // backdrop must be the same size in every scene).
+        if let shared = v3SharedBackdropComplete { return shared }
         if let scene { return v3Preset(for: scene, renderer: style).completeArtwork }
         if style == .ambient { return v3AmbientBackgroundShowsCompleteArtwork }
         return v3BackgroundFraming[style.rawValue] ?? (style == .stage || style == .ambientFeathered)
     }
 
     public func setV3BackgroundShowsCompleteArtwork(_ value: Bool, for style: V3ArtworkPresentation) {
+        v3SharedBackdropComplete = value
         if v3ListeningScene != nil { updateScenePreset { $0.completeArtwork = value }; return }
         if style == .ambient { v3AmbientBackgroundShowsCompleteArtwork = value }
         else { v3BackgroundFraming[style.rawValue] = value }
@@ -1291,6 +1303,7 @@ public final class AppSettingsStore: ObservableObject {
         v3PreviewBackdropScale(for: style, scene: v3ListeningScene)
     }
     public func v3PreviewBackdropScale(for style: V3ArtworkPresentation, scene: V3ListeningScene?) -> Double {
+        if let shared = v3SharedBackdropScale { return shared }
         if let scene { return v3Preset(for: scene, renderer: style).backdropScale }
         switch style {
         case .authenticAmbient:
@@ -1312,6 +1325,7 @@ public final class AppSettingsStore: ObservableObject {
 
     public func setV3BackdropScale(_ value: Double, for presentation: V3ArtworkPresentation) {
         let value = value.isFinite ? min(1.4, max(0.8, value)) : 1
+        v3SharedBackdropScale = value
         if v3ListeningScene != nil { updateScenePreset { $0.backdropScale = value }; return }
         switch presentation {
         case .authenticAmbient: v3AuthenticAmbientBackdropSizeScale = value
@@ -1705,6 +1719,15 @@ public final class AppSettingsStore: ObservableObject {
             applySceneProjection(scene, renderer: v3Renderer(for: scene))
         }
         migrateMergedSceneEntriesIfNeeded()
+        // Before 2026-11-12 every scene kept its own 取景 and 背景缩放, so
+        // switching pictures changed the backdrop's size. Start the shared
+        // values from the picture in use.
+        let current = v3ArtworkPresentation
+        self.v3SharedBackdropComplete = defaults.object(forKey: "v3.backdrop.sharedComplete.v1") as? Bool
+            ?? (v3ListeningScene.map { v3Preset(for: $0, renderer: current).completeArtwork }
+                ?? (v3BackgroundFraming[current.rawValue] ?? false))
+        self.v3SharedBackdropScale = defaults.object(forKey: "v3.backdrop.sharedScale.v1") as? Double
+            ?? v3ListeningScene.map { v3Preset(for: $0, renderer: current).backdropScale } ?? 1
     }
 
     /// The R3 entry merge removes six 经典版 entries. Anyone sitting on one of

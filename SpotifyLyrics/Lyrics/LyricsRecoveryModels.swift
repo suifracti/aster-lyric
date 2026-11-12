@@ -73,7 +73,8 @@ public enum LyricsRecoveryPlanner {
         // de-dupe by normalize
         var seen = Set<String>()
         queries = queries.filter {
-            let k = TrackTextNormalizer.normalize($0)
+            // Both scripts are worth asking for; only exact repeats are dropped.
+            let k = TrackTextNormalizer.normalize($0, foldsChineseScript: false)
             if k.isEmpty || seen.contains(k) { return false }
             seen.insert(k)
             return true

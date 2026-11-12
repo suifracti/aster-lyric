@@ -7,8 +7,10 @@ root = Path(__file__).resolve().parent.parent
 source = (root / "SpotifyLyrics/Views/Components/AppleMusicImmersiveV3BackdropView.swift").read_text()
 geometry = source[source.index("enum V3BackdropArtworkGeometry {"):source.index("/// The V3 backdrop is deliberately")]
 program = "import Foundation\nimport CoreGraphics\n" + geometry + r"""
-precondition(abs(V3BackdropArtworkGeometry.imageScale(requested: 0.8, complete: false) - 0.896) < 0.0001,
-             "80% must shrink every fill composition against the original ambient baseline")
+// Since 2026-11-12 铺满 at 100% only fills the window (no extra 1.12×), so
+// every scene that uses this geometry has the same backdrop size.
+precondition(V3BackdropArtworkGeometry.imageScale(requested: 0.8, complete: false) == 0.8,
+             "背景缩放 is the same number in every scene")
 precondition(V3BackdropArtworkGeometry.imageScale(requested: 0.8, complete: true) == 0.8)
 for canvas in [CGSize(width: 1579, height: 1027), CGSize(width: 700, height: 1100)] {
     for artwork in [CGSize(width: 1000, height: 1000), CGSize(width: 1600, height: 900)] {

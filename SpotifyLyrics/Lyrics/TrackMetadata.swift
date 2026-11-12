@@ -93,8 +93,8 @@ public struct TrackMetadata: Equatable, Sendable {
     /// link is merely a search URL: it is NOT an independent source-ID/ISRC map.
     /// This adds title evidence only; artist, recording and version barriers stay intact.
     private static func verifiedLocalizedTitleAliases(for track: Track, identity: TrackIdentity) -> [TrackAlias] {
-        let declaredTitles = ["The day i became a star", "星になった日"].map(TrackTextNormalizer.normalize)
-        let declaredArtists = ["HIBANA", "ヒバナ"].map(TrackTextNormalizer.normalize)
+        let declaredTitles = ["The day i became a star", "星になった日"].map { TrackTextNormalizer.normalize($0) }
+        let declaredArtists = ["HIBANA", "ヒバナ"].map { TrackTextNormalizer.normalize($0) }
         guard identity.spotifyTrackID == "2flmegp9ci94sx8u7gpseo",
               declaredTitles.contains(TrackTextNormalizer.normalize(track.title)),
               declaredArtists.contains(TrackTextNormalizer.normalize(track.artist)),

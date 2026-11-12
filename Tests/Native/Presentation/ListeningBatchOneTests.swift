@@ -187,6 +187,13 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertNil(LyricsSafeMatcher.lyricsEndFit(lines: lines, synchronized: false, songDuration: 210))
     }
 
+    func testTraditionalAndSimplifiedTitlesMatch() {
+        XCTAssertEqual(TrackTextNormalizer.normalize("曾經你說（說唱版）"), TrackTextNormalizer.normalize("曾经你说 (说唱版)"))
+        XCTAssertEqual(TrackTextNormalizer.normalizeArtistToken("趙乃吉"), TrackTextNormalizer.normalizeArtistToken("赵乃吉"))
+        XCTAssertNotEqual(TrackTextNormalizer.normalize("曾經", foldsChineseScript: false),
+                          TrackTextNormalizer.normalize("曾经", foldsChineseScript: false))
+    }
+
     // MARK: Seeking
 
     func testDragLandsOnTheNearestLineStart() {
