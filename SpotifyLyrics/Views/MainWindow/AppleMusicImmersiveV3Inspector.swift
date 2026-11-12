@@ -666,6 +666,11 @@ struct V3VisualControls {
             V3MusicMotionRow(settings: settings)
             Toggle("暂停时褪色", isOn: $settings.v3PauseFadesColor)
                 .help("暂停一会儿后，背景慢慢褪成接近黑白；继续播放时颜色很快回来。")
+            V3SegmentedPicker("窗上天气", selection: $settings.v3GlassWeather,
+                              options: V3GlassWeather.allCases.map { ($0.title, $0) })
+                .help("像隔着一扇窗：雨丝和挂在玻璃上的水珠、慢慢飘的雪、缓缓流动的雾。暂停时停下，减少动态效果时不显示。")
+            Toggle("歌词意象", isOn: $settings.v3LyricImagery)
+                .help("唱到雨、雪、星、花（中日韩英关键词）时，那一句飘一阵对应的粒子。")
             if scene != .focusedLyrics && scene != .coverPhoto && settings.v3ShowForegroundArtwork {
                 V3PanelSection(title: "前景封面")
                 V3NumericSlider("尺寸", value: $settings.v3ArtworkSizeScale, in: 0.8...1.4, step: 0.05,

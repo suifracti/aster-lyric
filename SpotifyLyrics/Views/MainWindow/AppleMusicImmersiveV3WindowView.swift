@@ -374,6 +374,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                                          artworkURL: compositionTrack.artworkURL)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
+                if (settings.v3GlassWeather != .off || settings.v3LyricImagery), hoveredStyle == nil {
+                    V3GlassWeatherLayer(weather: settings.v3GlassWeather,
+                                        imagery: settings.v3LyricImagery ? currentLyricImagery : nil,
+                                        playing: state.isPlaying)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .blur(radius: librarySearch.isPresented ? 5 : 0)
+                }
                 if settings.v3PlaybackPresentation == .vinyl, !isFocusMode, let cover = foregroundCover, cover.isLargeEnough {
                     V3VinylDiscLayer(state: state, cover: cover.frame, accent: coverAccent ?? .white)
                         .frame(width: geometry.size.width, height: geometry.size.height)
@@ -1882,6 +1889,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     /// faint resting toolbar while it is inside (so tools are discoverable
     /// without covering the lyrics), and full contrast near the top edge or
     /// while a panel is open. Positions never change between levels.
+    /// 歌词意象 for the line being sung (original and translation).
+    private var currentLyricImagery: V3LyricImagery? {
+        guard state.lyricsAreSynchronized, let index = state.currentLineIndex, state.lyrics.indices.contains(index) else { return nil }
+        let line = state.lyrics[index]
+        return V3LyricImagery.detect([line.originalText, line.translationText])
+    }
+
     private var toolbarOpacity: Double {
         let value = isFocusMode ? 0 : toolbar.opacity(pointerInside: isPointerInsideCanvas && !liveOnly, nearTop: toolsVisible,
                         otherPanelOpen: toolbarPanelIsPresented)

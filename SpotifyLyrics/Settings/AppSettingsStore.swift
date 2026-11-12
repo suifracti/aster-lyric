@@ -1117,6 +1117,14 @@ public final class AppSettingsStore: ObservableObject {
     }
     /// 副歌加强: chorus marked on the progress bar, the picture a step
     /// brighter and the sung line glowing while the chorus plays.
+    /// 窗上天气: rain, snow or fog on the glass between picture and lyrics.
+    @Published public var v3GlassWeather: V3GlassWeather = .off {
+        didSet { defaults.set(v3GlassWeather.rawValue, forKey: "v3.glassWeather.v1") }
+    }
+    /// 歌词意象: particles while a line sings of rain, snow, stars or flowers.
+    @Published public var v3LyricImagery = false {
+        didSet { defaults.set(v3LyricImagery, forKey: "v3.lyricImagery.v1") }
+    }
     /// 暂停褪色: the backdrop slowly loses its colour while paused.
     @Published public var v3PauseFadesColor = true {
         didSet { defaults.set(v3PauseFadesColor, forKey: "v3.pauseFadesColor.v1") }
@@ -1552,6 +1560,8 @@ public final class AppSettingsStore: ObservableObject {
         self.lyricsRestoreCensoredWords = defaults.object(forKey: "lyrics.restoreCensored.v1") as? Bool ?? true
         self.v3ChorusEmphasis = defaults.object(forKey: "v3.chorusEmphasis.v1") as? Bool ?? true
         self.v3PauseFadesColor = defaults.object(forKey: "v3.pauseFadesColor.v1") as? Bool ?? true
+        self.v3GlassWeather = V3GlassWeather(rawValue: defaults.string(forKey: "v3.glassWeather.v1") ?? "") ?? .off
+        self.v3LyricImagery = defaults.object(forKey: "v3.lyricImagery.v1") as? Bool ?? false
         self.floatingHiddenFromCapture = defaults.bool(forKey: "floating.hiddenFromCapture.v1")
         self.floatingHidesWhenPaused = defaults.bool(forKey: "floating.hideWhenPaused.v1")
         self.floatingHidesOverFullScreen = defaults.bool(forKey: "floating.hideOverFullScreen.v1")

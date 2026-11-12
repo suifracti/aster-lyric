@@ -298,4 +298,15 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertNil(PlaybackState.heldPosition(reported: 100.4, isPlaying: true, pending: pending, now: 50.5), "Spotify caught up")
         XCTAssertNil(PlaybackState.heldPosition(reported: 30, isPlaying: true, pending: pending, now: 53), "held at most 2.2 s")
     }
+
+    func testLyricImageryFindsPlainKeywordsOnly() {
+        XCTAssertEqual(V3LyricImagery.detect(["窗外下着雨"]), .rain)
+        XCTAssertEqual(V3LyricImagery.detect(["粉雪舞う季節"]), .snow)
+        XCTAssertEqual(V3LyricImagery.detect(["Under the stars tonight"]), .stars)
+        XCTAssertEqual(V3LyricImagery.detect(["桜の下で", nil]), .petals)
+        XCTAssertEqual(V3LyricImagery.detect(["我想你", "Dancing in the rain"]), .rain, "translation counts too")
+        XCTAssertNil(V3LyricImagery.detect(["Take the train to Spain"]), "rain inside a word is not rain")
+        XCTAssertNil(V3LyricImagery.detect(["Brainstorm"]))
+        XCTAssertNil(V3LyricImagery.detect([nil, ""]))
+    }
 }

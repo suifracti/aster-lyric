@@ -251,6 +251,7 @@
 		1894F58964647B39701CD0A2 /* KRCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 036201EF5830E1ABA1560F06 /* KRCParser.swift */; };
 		B8100D70E36CBFB92D34A8D4 /* QRCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40DF9B0900A715F2A4D5ABB9 /* QRCParser.swift */; };
 		7AC0299AB1122ECA99C2BF8F /* LyricsChorus.swift in Sources */ = {isa = PBXBuildFile; fileRef = B56E1FC19D3B55F23DC5DB66 /* LyricsChorus.swift */; };
+		53A2E3726FF64255E8D79047 /* V3GlassWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61DA7987B78B10D893654A30 /* V3GlassWeather.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -504,6 +505,7 @@
 		036201EF5830E1ABA1560F06 /* KRCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KRCParser.swift; sourceTree = "<group>"; };
 		40DF9B0900A715F2A4D5ABB9 /* QRCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCParser.swift; sourceTree = "<group>"; };
 		B56E1FC19D3B55F23DC5DB66 /* LyricsChorus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsChorus.swift; sourceTree = "<group>"; };
+		61DA7987B78B10D893654A30 /* V3GlassWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3GlassWeather.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -710,6 +712,7 @@
 				110000222D83400100000000 /* ArtworkBackgroundView.swift */,
 				110000512D83400100000000 /* AppleMusicImmersiveV3BackdropView.swift */,
 				FA56EE83873FAB67D1E6F5D6 /* V3BackdropMedia.swift */,
+				61DA7987B78B10D893654A30 /* V3GlassWeather.swift */,
 				6DD84F91FEAE16E4F5C026CE /* V3AlwaysHover.swift */,
 				110000292D83400100000000 /* SongSearchPopover.swift */,
 				110000722D83400100000000 /* ManualLyricsActionsView.swift */,
@@ -1114,6 +1117,7 @@
 				B31702F52C144DEE90000001 /* V3WindowEdgePlaybackOverlay.swift in Sources */,
 				110000512D83400100000001 /* AppleMusicImmersiveV3BackdropView.swift in Sources */,
 				1F3AAA6A26CAB37EE98F5312 /* V3BackdropMedia.swift in Sources */,
+				53A2E3726FF64255E8D79047 /* V3GlassWeather.swift in Sources */,
 				F44CE541129D043DBFCD53E2 /* V3AlwaysHover.swift in Sources */,
 				110001302D83400100000001 /* V3ResponsiveGeometry.swift in Sources */,
 				110000432D83400100000001 /* NetEaseExperimentalLyricsProvider.swift in Sources */,
