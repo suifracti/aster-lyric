@@ -360,8 +360,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     presentationOverride: hoveredStyle,
                     sceneOverride: compositionScene,
                     clock: state.presentationClock,
-                    inChorus: settings.v3ChorusEmphasis && state.lyricsAreSynchronized
-                        && LyricsChorus.contains(state.currentLineIndex, lines: state.lyrics, duration: state.currentTrack.duration)
+                    inChorus: settings.v3ChorusEmphasis && chorusNow,
+                    chorusSwapsMaterial: settings.v3ChorusSwapsMaterial && chorusNow
                 )
                 // An aspect-fill album image can report the square image's
                 // width in a tall window. Keep that drawing overflow inside
@@ -1897,6 +1897,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     /// faint resting toolbar while it is inside (so tools are discoverable
     /// without covering the lyrics), and full contrast near the top edge or
     /// while a panel is open. Positions never change between levels.
+    /// The line being sung is in a chorus (repeated lyrics).
+    private var chorusNow: Bool {
+        state.lyricsAreSynchronized
+            && LyricsChorus.contains(state.currentLineIndex, lines: state.lyrics, duration: state.currentTrack.duration)
+    }
+
     /// 歌词意象 for the line being sung (original and translation).
     private var currentLyricImagery: V3LyricImagery? {
         guard state.lyricsAreSynchronized, let index = state.currentLineIndex, state.lyrics.indices.contains(index) else { return nil }

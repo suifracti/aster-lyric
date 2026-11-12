@@ -65,6 +65,9 @@ struct AppleMusicImmersiveV3BackdropView: View {
     var clock: LyricsPresentationClock? = nil
     /// 副歌加强: the chorus is playing.
     var inChorus: Bool = false
+    /// 副歌时换素材: the chorus is playing and the switch is on. A temporary
+    /// override of the clip layer only; the saved material never changes.
+    var chorusSwapsMaterial: Bool = false
     private var listeningScene: V3ListeningScene? { presentationOverride == nil ? settings.v3ListeningScene : sceneOverride }
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
@@ -118,10 +121,10 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 }
                 if showsCanvas, let canvasFile {
                     // The clip covers the picture; the darker veil keeps lyrics readable over motion.
-                    V3CanvasVideoView(file: canvasFile, playing: isPlaying && isWindowVisible,
+                    V3CanvasVideoView(file: canvasFile, playing: isPlaying && isWindowVisible && canvasShownNow,
                                       blurRadius: perceptualBlur * 10) { canvasReady = true }
-                        .opacity(canvasReady ? 1 : 0)
-                    Color.black.opacity(canvasReady ? 0.26 : 0)
+                        .opacity(canvasReady && canvasShownNow ? 1 : 0)
+                    Color.black.opacity(canvasReady && canvasShownNow ? 0.26 : 0)
                 }
                 // Legacy exposure and the accepted original look stay unchanged.
                 // The common *local* reading protection is applied by the text host.
@@ -150,6 +153,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 .frame(width: 0, height: 0)
         }
         .animation(.easeInOut(duration: 0.8), value: canvasReady)
+        .animation(accessibilityReduceMotion ? .easeInOut(duration: 0.2) : .easeInOut(duration: 1.2), value: canvasShownNow)
         .animation(accessibilityReduceMotion ? .easeInOut(duration: 0.2)
                    : pausedFade ? .easeInOut(duration: 2.4) : .easeOut(duration: 0.5), value: pausedFade)
         .task(id: "\(isPlaying)|\(settings.v3PauseFadesColor)|\(presentationOverride == nil)") {
@@ -188,7 +192,13 @@ struct AppleMusicImmersiveV3BackdropView: View {
     /// Scene cards and hover previews draw this view too; only the real
     /// backdrop plays a clip.
     private var showsCanvas: Bool {
-        settings.v3BackdropSource == .video && presentationOverride == nil
+        presentationOverride == nil && (settings.v3BackdropSource == .video || settings.v3ChorusSwapsMaterial)
+    }
+
+    /// The clip is on screen: the saved material is video, flipped while
+    /// 副歌时换素材 is in a chorus (video ↔ the still picture).
+    private var canvasShownNow: Bool {
+        (settings.v3BackdropSource == .video) != chorusSwapsMaterial
     }
 
     private var spotifyTrackID: String? {

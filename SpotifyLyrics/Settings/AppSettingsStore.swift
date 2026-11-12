@@ -1127,6 +1127,11 @@ public final class AppSettingsStore: ObservableObject {
     @Published public var v3GlassWeather: V3GlassWeather = .off {
         didSet { defaults.set(v3GlassWeather.rawValue, forKey: "v3.glassWeather.v1") }
     }
+    /// 副歌时换素材: during a chorus the backdrop shows the other material
+    /// (the Canvas clip over a still picture, or the still picture over a clip).
+    @Published public var v3ChorusSwapsMaterial = false {
+        didSet { defaults.set(v3ChorusSwapsMaterial, forKey: "v3.chorusSwapsMaterial.v1") }
+    }
     /// 频谱: bottom strip or a fan around the cover, from 随音乐律动.
     @Published public var v3SpectrumStyle: V3SpectrumStyle = .off {
         didSet { defaults.set(v3SpectrumStyle.rawValue, forKey: "v3.spectrumStyle.v1") }
@@ -1572,6 +1577,7 @@ public final class AppSettingsStore: ObservableObject {
         self.v3PauseFadesColor = defaults.object(forKey: "v3.pauseFadesColor.v1") as? Bool ?? true
         self.v3GlassWeather = V3GlassWeather(rawValue: defaults.string(forKey: "v3.glassWeather.v1") ?? "") ?? .off
         self.v3LyricImagery = defaults.object(forKey: "v3.lyricImagery.v1") as? Bool ?? false
+        self.v3ChorusSwapsMaterial = defaults.object(forKey: "v3.chorusSwapsMaterial.v1") as? Bool ?? false
         self.v3SpectrumStyle = V3SpectrumStyle(rawValue: defaults.string(forKey: "v3.spectrumStyle.v1") ?? "") ?? .off
         self.floatingHiddenFromCapture = defaults.bool(forKey: "floating.hiddenFromCapture.v1")
         self.floatingHidesWhenPaused = defaults.bool(forKey: "floating.hideWhenPaused.v1")

@@ -657,6 +657,8 @@ struct V3VisualControls {
                                       options: V3BackdropSource.allCases.map { ($0.title, $0) })
                         .accessibilityIdentifier("v3.backdrop.source")
                         .help("视频：歌曲有 Spotify Canvas 短片时循环播放它，没有就用封面；只读本机 Spotify 已缓存的地址，可能在歌曲开始几秒后才出现，暂停、窗口隐藏或系统减少动态效果时停住。\n歌手照片：像 Spotify 电视版那样用主唱歌手的照片，取不到时用封面。\n前景封面不变。")
+                    Toggle("副歌时换素材", isOn: $settings.v3ChorusSwapsMaterial)
+                        .help("唱到副歌（歌词里重复的段落）时，背景临时换成另一种：平时是封面或歌手照片的，副歌放 Canvas 短片；平时是视频的，副歌换回静止画面。副歌结束就换回来，不改保存的设置。")
                 }
                 if scene == .originalAmbient && renderer == .authenticAmbient {
                     V3NumericSlider("背景明暗", value: Binding(
