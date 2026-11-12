@@ -497,6 +497,10 @@ public final class PlaybackState: ObservableObject {
             case .petitLyrics:
                 guard ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_PETITLYRICS"] != "1" else { continue }
                 providers.append(PetitLyricsProvider())
+            case .appleMusic:
+                guard ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_APPLEMUSIC"] != "1" else { continue }
+                // Asks nothing until the user has saved their own token.
+                providers.append(AppleMusicLyricsProvider())
             }
         }
         // A corrupted/legacy preference must not remove the read-only local

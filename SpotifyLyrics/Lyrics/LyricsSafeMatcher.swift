@@ -555,6 +555,16 @@ public enum LyricsSafeMatcher {
         if partialArtistName && !hasStrongIndependentIdentity {
             tier = minTier(tier, reasons.contains("durationClose") && !versionConflict ? .autoMedium : .candidates)
         }
+        // 听悲伤的情歌 - 女版 against 听悲伤的情歌 by the same singer at the
+        // same length: the extra words only name the version. Same singer,
+        // length within a second and no version conflict make it the same
+        // recording. Words that change the content (伴奏, Live, DJ…) do not.
+        if tier == .candidates, !hardReject, !versionConflict, reasons.contains("primaryArtistExact"),
+           metadataDuration > 0, candidateDuration > 0, abs(metadataDuration - candidateDuration) <= 1,
+           Self.titleOnlyAddsVersionName(track: metadata.track.title, candidate: candidate.title) {
+            tier = .autoMedium
+            add("versionNameSameRecording", 0.04)
+        }
         // Lines after the song ends are never adopted on their own.
         if reasons.contains("lyricsEndOvershoot") {
             tier = minTier(tier, .candidates)
@@ -612,6 +622,22 @@ public enum LyricsSafeMatcher {
         return (left ?? [lhs]).allSatisfy { a in (right ?? [rhs]).allSatisfy { same(a, $0) } }
     }
 
+    static func titleOnlyAddsVersionName(track: String, candidate: String) -> Bool {
+        func compact(_ title: String) -> String {
+            String(TrackTextNormalizer.normalize(title).unicodeScalars.filter { scalar in
+                !CharacterSet.whitespaces.contains(scalar) && !"-–—_()[]{}（）【】「」『』·・/,，.。:：".unicodeScalars.contains(scalar)
+            }.map(Character.init))
+        }
+        let full = compact(track), base = compact(candidate)
+        guard base.count >= 2, full.count > base.count, full.hasPrefix(base) else { return false }
+        let extra = String(full.dropFirst(base.count))
+        guard extra.count <= 8 else { return false }
+        let changesContent = ["伴奏", "纯音乐", "inst", "karaoke", "live", "现场", "remix", "dj", "混音", "加速", "降速",
+                              "慢速", "spedup", "slowed", "reverb", "钢琴", "piano", "acoustic", "cover", "翻唱", "demo",
+                              "片段", "剪辑", "edit", "mix"]
+        return !changesContent.contains { extra.contains($0) }
+    }
+
     private static func titlesHaveSameTypography(_ lhs: String, _ rhs: String) -> Bool {
         func key(_ title: String) -> String {
             TrackTextNormalizer.normalize(title)
@@ -620,7 +646,16 @@ public enum LyricsSafeMatcher {
                 .joined(separator: " ")
         }
         let left = key(lhs)
-        return !left.isEmpty && left == key(rhs)
+        if !left.isEmpty && left == key(rhs) { return true }
+        // Same characters, other punctuation: 如果真爱 - ２０２４ 说唱版 and
+        // 如果真爱（2024说唱版） differ only in spaces, dashes and brackets.
+        func compact(_ title: String) -> String {
+            String(TrackTextNormalizer.normalize(title).unicodeScalars.filter { scalar in
+                !CharacterSet.whitespaces.contains(scalar) && !"-–—_()[]{}（）【】「」『』·・/,，.。:：".unicodeScalars.contains(scalar)
+            }.map(Character.init))
+        }
+        let compactLeft = compact(lhs)
+        return compactLeft.count >= 2 && compactLeft == compact(rhs)
     }
 
     private struct VersionTraitResult {

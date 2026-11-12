@@ -693,6 +693,10 @@ private struct ServicesAndSourcesSettingsView: View {
                     }
                 }
 
+                Section("Apple Music 逐字歌词") {
+                    AppleMusicTokenField()
+                }
+
                 Section {
                     DisclosureGroup("外部发现（仅浏览器）", isExpanded: $isExternalDiscoveryExpanded) {
                         VStack(alignment: .leading, spacing: 10) {
@@ -1855,5 +1859,41 @@ private struct AdvancedAndDataSettingsView: View {
             get: { settings.settingsCenterPresentationRawValue },
             set: { settings.settingsCenterPresentationRawValue = $0 }
         )
+    }
+}
+
+
+/// The user pastes their own Apple Music `media-user-token`; it goes to the
+/// Keychain and is never shown again or written anywhere else.
+private struct AppleMusicTokenField: View {
+    @State private var draft = ""
+    @State private var isSet = AppleMusicLyricsCredential.isSet
+    @State private var message = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(isSet ? "已保存令牌：Apple Music 的逐字歌词和对唱标记会参与匹配。" : "未填写：不会向 Apple Music 查询。")
+                .font(.callout)
+            HStack {
+                SecureField("粘贴 media-user-token", text: $draft)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("appleMusic.token.field")
+                Button("保存") {
+                    if AppleMusicLyricsCredential.save(draft) {
+                        draft = ""; isSet = true; message = "已保存到钥匙串。"
+                    } else { message = "保存失败，请检查内容。" }
+                }
+                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if isSet {
+                    Button("清除", role: .destructive) {
+                        AppleMusicLyricsCredential.delete(); isSet = false; message = "已清除。"
+                    }
+                }
+            }
+            Text("需要 Apple Music 订阅。获取方法：在浏览器登录 music.apple.com，打开开发者工具 › 存储 › Cookie，复制名为 media-user-token 的值。令牌只存在本机钥匙串，只发给 Apple 的歌词接口。")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
+        }
     }
 }

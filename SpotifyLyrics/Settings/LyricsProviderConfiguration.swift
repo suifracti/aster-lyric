@@ -116,6 +116,7 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
     case lyricsOVH
     case linkcore
     case petitLyrics
+    case appleMusic
 
     public var id: String { rawValue }
 
@@ -132,6 +133,7 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
         case .lyricsOVH: return "lyrics.ovh"
         case .linkcore: return "LinkCore 官方发行"
         case .petitLyrics: return "プチリリ实验源"
+        case .appleMusic: return "Apple Music 逐字"
         }
     }
 
@@ -147,6 +149,7 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
         case .lyricsOVH: return "globe"
         case .linkcore: return "person.crop.rectangle.stack"
         case .petitLyrics: return "character.book.closed"
+        case .appleMusic: return "music.quarternote.3"
         }
     }
 
@@ -155,14 +158,14 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
     }
 
     public var isExperimental: Bool {
-        [Self.netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental, .linkcore, .petitLyrics].contains(self)
+        [Self.netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental, .linkcore, .petitLyrics, .appleMusic].contains(self)
     }
 
     public var stabilityLabel: String {
         switch self {
         case .localFiles, .sqliteDatabase: return "稳定"
         case .amll, .lrclib, .lyricsOVH, .linkcore: return "在线"
-        case .netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental, .petitLyrics: return "实验"
+        case .netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental, .petitLyrics, .appleMusic: return "实验"
         }
     }
 
@@ -186,6 +189,8 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
             return "按发行方艺人实体及歌曲目录补查公开正文；非同步歌词，保留原站署名与权利限制"
         case .petitLyrics:
             return "日文歌词站，独立发行歌曲较全；只有纯文本、没有时间轴；其他来源没有结果时才查询"
+        case .appleMusic:
+            return "Apple Music 的逐字歌词，标出对唱的每位演唱者；需要在设置里填入你自己的 Apple Music 订阅令牌，未填时不查询"
         }
     }
 
@@ -229,7 +234,7 @@ public enum LyricsProviderID: String, CaseIterable, Codable, Hashable, Identifia
                 allowsAutomaticSearch: true, allowsLyricsBody: true, allowsLocalCache: true,
                 allowsExport: false, outboundOnly: false,
                 allowedInStandardFree: false, allowedInExperimentalFree: true)
-        case .netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental:
+        case .netEaseExperimental, .qqExperimental, .kuwoExperimental, .kugouExperimental, .appleMusic:
             return LyricsProviderPolicy(
                 capabilityClass: .experimentalFree,
                 allowsAutomaticSearch: true,
@@ -331,6 +336,7 @@ public struct LyricsProviderConfiguration: Equatable, Sendable {
             .localFiles,
             .sqliteDatabase,
             .amll,
+            .appleMusic,
             .lrclib,
             .netEaseExperimental,
             .qqExperimental,
@@ -364,7 +370,9 @@ public struct LyricsProviderConfiguration: Equatable, Sendable {
             }
         }
         // Missing IDs distinguish pre-expansion preferences from explicit disables.
-        for id in [LyricsProviderID.kuwoExperimental, .kugouExperimental, .lyricsOVH, .linkcore, .petitLyrics]
+        // Apple Music (2026-11-12) joins at the end of a saved order; a new
+        // install has it after AMLL. Word timing wins regardless of order.
+        for id in [LyricsProviderID.kuwoExperimental, .kugouExperimental, .lyricsOVH, .linkcore, .petitLyrics, .appleMusic]
             where !order.contains(id) && !enabled.contains(id) {
             enabled.insert(id)
             order.append(id)

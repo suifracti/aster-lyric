@@ -59,6 +59,7 @@ public enum DatabaseSourceIdentifier {
         case .kuwoExperimental: return "kuwoExperimental"
         case .kugouExperimental: return "kugouExperimental"
         case .petitLyrics: return "petitLyrics"
+        case .appleMusicCatalog: return "appleMusicCatalog"
         case .local: return "localLRC"
         case .amll: return "amll"
         case .lrclib: return "lrclib"
@@ -78,6 +79,7 @@ public enum DatabaseSourceIdentifier {
         case "lyricsOVH": return .lyricsOVH
         case "linkcore": return .linkcore
         case "kuwoExperimental": return .kuwoExperimental
+        case "appleMusicCatalog": return .appleMusicCatalog
         case "kugouExperimental": return .kugouExperimental
         case "petitLyrics": return .petitLyrics
         case "localLRC", "localDatabase", "local": return .local

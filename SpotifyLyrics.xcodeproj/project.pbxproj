@@ -250,6 +250,7 @@
 		F44CE541129D043DBFCD53E2 /* V3AlwaysHover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DD84F91FEAE16E4F5C026CE /* V3AlwaysHover.swift */; };
 		1894F58964647B39701CD0A2 /* KRCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 036201EF5830E1ABA1560F06 /* KRCParser.swift */; };
 		B8100D70E36CBFB92D34A8D4 /* QRCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40DF9B0900A715F2A4D5ABB9 /* QRCParser.swift */; };
+		940F436E0D0C80A764BDA70F /* AppleMusicLyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFF05225004153B15F78F6C1 /* AppleMusicLyricsProvider.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -502,6 +503,7 @@
 		6DD84F91FEAE16E4F5C026CE /* V3AlwaysHover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3AlwaysHover.swift; sourceTree = "<group>"; };
 		036201EF5830E1ABA1560F06 /* KRCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KRCParser.swift; sourceTree = "<group>"; };
 		40DF9B0900A715F2A4D5ABB9 /* QRCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCParser.swift; sourceTree = "<group>"; };
+		EFF05225004153B15F78F6C1 /* AppleMusicLyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicLyricsProvider.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -754,6 +756,7 @@
 				A60F09060000000000000100 /* LyricsOVHProvider.swift */,
 				A60F09060000000000000200 /* KuwoExperimentalLyricsProvider.swift */,
 				A60F09060000000000000300 /* KugouExperimentalLyricsProvider.swift */,
+				EFF05225004153B15F78F6C1 /* AppleMusicLyricsProvider.swift */,
 				A60F090600000000000007A0 /* PetitLyricsProvider.swift */,
 			);
 			path = Providers;
@@ -1118,6 +1121,7 @@
 				A60F09060000000000000101 /* LyricsOVHProvider.swift in Sources */,
 				A60F09060000000000000201 /* KuwoExperimentalLyricsProvider.swift in Sources */,
 				A60F09060000000000000301 /* KugouExperimentalLyricsProvider.swift in Sources */,
+				940F436E0D0C80A764BDA70F /* AppleMusicLyricsProvider.swift in Sources */,
 				A60F090600000000000007A1 /* PetitLyricsProvider.swift in Sources */,
 				110000302D83400100000001 /* TrackAlias.swift in Sources */,
 				110000312D83400100000001 /* TrackMetadata.swift in Sources */,

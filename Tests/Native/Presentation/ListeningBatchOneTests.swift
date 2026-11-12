@@ -260,6 +260,13 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(QRCParser.lyricContent(fromXML: "<Lyric_1 LyricType=\"1\" LyricContent=\"[0,1]a(0,1)&amp;\"/>"), "[0,1]a(0,1)&")
     }
 
+    func testTitlesDifferingOnlyInPunctuationOrVersionName() {
+        XCTAssertTrue(LyricsSafeMatcher.titleOnlyAddsVersionName(track: "听悲伤的情歌 - 女版", candidate: "听悲伤的情歌"))
+        XCTAssertFalse(LyricsSafeMatcher.titleOnlyAddsVersionName(track: "听悲伤的情歌 (伴奏)", candidate: "听悲伤的情歌"))
+        XCTAssertFalse(LyricsSafeMatcher.titleOnlyAddsVersionName(track: "听悲伤的情歌 (DJ版)", candidate: "听悲伤的情歌"))
+        XCTAssertFalse(LyricsSafeMatcher.titleOnlyAddsVersionName(track: "听悲伤的情歌", candidate: "听悲伤的情歌"))
+    }
+
     // MARK: Seeking
 
     func testDragLandsOnTheNearestLineStart() {
