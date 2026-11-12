@@ -333,6 +333,8 @@ struct LyricIslandSceneThumbnail: View {
     let scene: V3ListeningScene
     let image: NSImage?
     let accent: Color
+    /// 舞台: the whole cover in the middle, over its own blurred copy.
+    var stage = false
     private var lines: some View {
         VStack(alignment: .leading, spacing: 5) {
             Capsule().fill(.white.opacity(0.88)).frame(height: 3)
@@ -362,6 +364,13 @@ struct LyricIslandSceneThumbnail: View {
                         artwork.frame(width: w * 0.30, height: 38).clipShape(RoundedRectangle(cornerRadius: 8))
                         lines
                     }.padding(12)
+                case .coverPhoto where stage:
+                    artwork.frame(width: w, height: 72).clipped().blur(radius: 8).opacity(0.55)
+                    Color.black.opacity(0.24)
+                    VStack(spacing: 5) {
+                        artwork.frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 3))
+                        lines.frame(width: w * 0.36)
+                    }
                 case .coverPhoto:
                     artwork.frame(width: w, height: 72).clipped().opacity(0.70)
                     Color.black.opacity(0.24)

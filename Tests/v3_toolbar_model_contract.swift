@@ -324,6 +324,10 @@ final class V3ToolbarPresentationTests: XCTestCase {
         XCTAssertEqual(V3SceneFamily.focus.entries.map(\.title), ["专注"])
         // 封面 keeps both existing renderers behind one row: 静止 / 流动.
         XCTAssertEqual(V3SceneFamily.cover.entries[0].renderers, [.ambient, .classicGaussian])
+        // The panel shows them on one level: six cards, three behind 更多.
+        let looks = V3SceneFamily.looks
+        XCTAssertEqual(looks.shown.map(\.title), ["原版环境光", "柔光羽化", "封面", "舞台", "内页", "专注"])
+        XCTAssertEqual(looks.folded.map(\.title), ["柔和光晕", "独立色场", "唱片卡"])
     }
 
     /// Someone sitting on 经典·纯高斯 moves to 柔和光晕 and keeps their blur.

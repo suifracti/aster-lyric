@@ -667,7 +667,12 @@ Work in this order. Each batch is built, tested, restarted and pushed on its own
 - 文字 opens with 显示 and 字号, then 对齐 and 清晰度; the reading options (罗马音, 拼音, 注音排版, sizes) fold.
 - 画面 opens with the scene row, the style row and 模糊, then 前景封面, 播放呈现 and 背景动态; the rest folds.
 
-**D. Scenes, folded once more.** The four categories stay. Each shows at most two styles; the others sit behind a 「更多」 button in the same row and take its place when chosen. 环境光 shows 原版环境光 and 柔光羽化, with 柔和光晕 and 独立色场 behind 更多. Renderers, raw IDs, saved values and the three effects the user likes stay one click away.
+**D. Scenes on one level (revised 2026-11-12; the user asked why four modes each kept its own row of small modes).**
+- The 画面 panel no longer has a category row with a style row under it. Every look is one card with a thumbnail, chosen with one click: 原版环境光, 柔光羽化, 封面, 舞台, 内页, 专注, in two rows of three.
+- 柔和光晕, 独立色场 and 唱片卡 sit in a 「更多」 menu on the 场景 heading. While one of them is in use, its name replaces 「更多」 and no card is outlined.
+- 封面's 静止 / 流动 is an ordinary row (「封面背景」) under the cards while 封面 is in use.
+- The four categories remain only for cycling scenes by gesture. Renderers, raw IDs, saved values and hover preview are unchanged.
+- This replaces the 2026-11-11 version of this item (four categories, at most two styles each) and the category and style rows of Round 13.
 
 **E. Player bar.** The card, the compact bar and the edge pill show the same buttons in the same order (喜欢 · 添加到歌单 | 随机 · 上一首 · 播放 · 下一首 · 循环) and the same time format (0:22). The card and compact bar sit on the always-dark listening canvas and keep its dark tint; the pill floats over the canvas edge and uses the toolbar's surface. Only the title lines and the width differ.
 

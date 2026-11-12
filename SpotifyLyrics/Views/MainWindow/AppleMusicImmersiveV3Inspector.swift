@@ -112,8 +112,6 @@ struct V3ThemeSelectorView: View {
     @State private var thumbnail: NSImage?
     @State private var tint = Color.accentColor
     @State private var previewTask: Task<Void, Never>?
-    /// Hovering another family shows its styles without adopting anything.
-    @State private var browsedFamily: V3SceneFamily?
 
     private func clearPreview() {
         previewTask?.cancel(); previewTask = nil
@@ -135,78 +133,72 @@ struct V3ThemeSelectorView: View {
         else { settings.selectLegacyV3Presentation(renderer) }
     }
 
-    /// The family that owns the current selection, new scene or classic preset.
-    private var currentFamily: V3SceneFamily {
-        if let scene = settings.v3ListeningScene { return V3SceneFamily.family(of: scene) }
-        return V3SceneFamily.family(ofLegacy: settings.v3ArtworkPresentation)
+    private func isCurrent(_ entry: V3SceneFamily.Entry) -> Bool {
+        settings.v3ListeningScene == entry.scene && entry.renderers.contains(settings.v3ArtworkPresentation)
     }
 
-    private var shownFamily: V3SceneFamily { browsedFamily ?? currentFamily }
+    /// The renderer a click adopts. 封面 keeps the side of 静止 / 流动 last used.
+    private func renderer(for entry: V3SceneFamily.Entry) -> V3ArtworkPresentation {
+        if isCurrent(entry) { return settings.v3ArtworkPresentation }
+        if let scene = entry.scene, entry.isCoverPair {
+            let stored = settings.v3Renderer(for: scene)
+            if entry.renderers.contains(stored) { return stored }
+        }
+        return entry.renderer
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
+        let looks = V3SceneFamily.looks
+        let foldedCurrent = looks.folded.first(where: isCurrent)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
                 Text("场景").font(.system(size: 13, weight: .semibold))
                 Spacer()
+                // Rarely used looks. The name of the one in use replaces 更多.
+                Menu {
+                    ForEach(looks.folded) { entry in
+                        Button { adopt(entry) } label: {
+                            if isCurrent(entry) { Label(entry.title, systemImage: "checkmark") }
+                            else { Text(entry.title) }
+                        }
+                    }
+                } label: {
+                    Text(foldedCurrent?.title ?? "更多")
+                        .font(.system(size: 11.5, weight: foldedCurrent == nil ? .regular : .semibold))
+                        .foregroundStyle(foldedCurrent == nil ? Color.secondary : Color.primary)
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()
+                .help(looks.folded.map { $0.title + "：" + ($0.detail ?? "") }.joined(separator: "\n"))
+                .accessibilityLabel("更多场景")
+                .accessibilityIdentifier("v3.looks.more")
                 Toggle("悬停预览", isOn: $settings.v3SceneHoverPreviewEnabled)
                     .toggleStyle(.switch).controlSize(.mini)
                     .font(.system(size: 11))
                     .help("停留后临时预览，移开恢复，点击才采用；预览不会保存设置或调用 AI")
             }
-            // Four families in one row; the chosen family's styles sit in one
-            // row underneath, so the sliders below stay on screen. Entries
-            // only — every style is an existing scene + renderer pair and
-            // keeps its saved values.
-            HStack(alignment: .top, spacing: 6) {
-                ForEach(V3SceneFamily.allCases) { family in
-                    familyCard(family)
-                }
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .center) {
-                    Text(shownFamily.title + " · 风格").font(.system(size: 12, weight: .semibold))
-                    Spacer()
-                    if shownFamily == .cover, shownFamily == currentFamily,
-                       shownFamily.entries.contains(where: { $0.isCoverPair && shownFamily.isSelected($0, settings: settings) }) {
-                        // Outside the style buttons: inside a plain button's
-                        // label the segmented control never receives the click.
-                        V3SegmentedPicker("背景", selection: Binding(
-                            get: { settings.v3ArtworkPresentation == .classicGaussian ? 1 : 0 },
-                            set: { chooseCoverMotion($0 == 1 ? .classicGaussian : .ambient) }
-                        ), options: [("静止", 1), ("流动", 0)], showsLabel: false, height: 22)
-                        .frame(width: 84)
-                        .accessibilityIdentifier("v3.cover.motion")
-                    } else if !compact {
-                        Text(shownFamily.detail).font(.system(size: 11)).foregroundStyle(Color.secondary).lineLimit(1)
-                    }
-                }
-                .frame(minHeight: 22)
-                HStack(spacing: 4) {
-                    ForEach(visibleEntries(of: shownFamily)) { entry in
-                        entryRow(entry, in: shownFamily)
-                    }
-                    let folded = foldedEntries(of: shownFamily)
-                    if !folded.isEmpty {
-                        Menu {
-                            ForEach(folded) { entry in
-                                Button(entry.title) { adopt(entry, in: shownFamily) }
-                            }
-                        } label: {
-                            Text("更多").font(.system(size: 11.5)).foregroundStyle(Color.secondary)
+            // One level: every look is a card, chosen with one click. Each is
+            // an existing scene + renderer pair and keeps its saved values.
+            VStack(spacing: 6) {
+                ForEach(Array(stride(from: 0, to: looks.shown.count, by: 3)), id: \.self) { start in
+                    HStack(alignment: .top, spacing: 6) {
+                        ForEach(looks.shown[start..<min(start + 3, looks.shown.count)]) { entry in
+                            lookCard(entry)
                         }
-                        .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()
-                        .help(folded.map { $0.title + "：" + ($0.detail ?? "") }.joined(separator: "\n"))
-                        .accessibilityLabel("更多风格")
                     }
                 }
             }
-            .padding(8)
-            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+            if let pair = looks.shown.first(where: { $0.isCoverPair }), isCurrent(pair) {
+                V3SegmentedPicker("封面背景", selection: Binding(
+                    get: { settings.v3ArtworkPresentation == .classicGaussian ? 1 : 0 },
+                    set: { chooseCoverMotion($0 == 1 ? .classicGaussian : .ambient) }
+                ), options: [("静止", 1), ("流动", 0)])
+                .accessibilityIdentifier("v3.cover.motion")
+            }
             if !compact, settings.v3ListeningScene != nil {
-                Button("恢复此风格的默认值", role: .destructive) {
+                Button("恢复此场景的默认值", role: .destructive) {
                     clearPreview(); settings.resetCurrentV3Scene()
                 }.font(.system(size: 12)).buttonStyle(.borderless)
-                .help("只重置当前场景风格的画面数值；经典版与其他风格不受影响")
+                .help("只重置当前场景的画面数值；其他场景不受影响")
             }
         }
         .task(id: artworkURL) {
@@ -217,35 +209,33 @@ struct V3ThemeSelectorView: View {
             tint = LyricIslandArtworkColors.listeningAccent(colors) ?? .accentColor
         }
         .onChange(of: settings.v3SceneHoverPreviewEnabled) { _, _ in clearPreview() }
-        .onChange(of: settings.v3ListeningSceneRawValue) { _, _ in browsedFamily = nil }
-        .onHover { inside in if !inside { browsedFamily = nil } }
         .onDisappear { clearPreview() }
     }
 
-    private func familyCard(_ family: V3SceneFamily) -> some View {
-        let selected = family == currentFamily
-        let target = family.target(settings: settings)
-        let previewing = preview != nil && family.contains(scene: previewScene, renderer: preview!) && !selected
-        return Button {
-            browsedFamily = nil
-            adopt(target.0, renderer: target.1)
-        } label: {
+    /// Selection always matches scene + renderer: the same renderer draws
+    /// differently inside a scene and as a legacy preset.
+    private func lookCard(_ entry: V3SceneFamily.Entry) -> some View {
+        let selected = isCurrent(entry)
+        let target = renderer(for: entry)
+        let previewing = !selected && preview == target && previewScene == entry.scene
+        return Button { adopt(entry) } label: {
             VStack(spacing: 4) {
                 // The thumbnail is drawn at its design size and scaled down,
                 // so its inner proportions stay as designed.
                 Color.clear.aspectRatio(150.0 / 72.0, contentMode: .fit)
                     .overlay(alignment: .topLeading) {
                         GeometryReader { geometry in
-                            LyricIslandSceneThumbnail(scene: family.primaryScene, image: thumbnail, accent: tint)
+                            LyricIslandSceneThumbnail(scene: entry.scene ?? .originalAmbient, image: thumbnail,
+                                                      accent: tint, stage: entry.renderer == .stage)
                                 .frame(width: 150, height: 72)
                                 .scaleEffect(geometry.size.width / 150, anchor: .topLeading)
                         }
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 6))
-                Text(family.title)
+                Text(entry.title)
                     .font(.system(size: 11.5, weight: selected ? .semibold : .regular))
                     .foregroundStyle(selected || previewing ? Color.primary : Color.secondary)
-                    .lineLimit(1)
+                    .lineLimit(1).minimumScaleFactor(0.85)
             }
             .padding(4)
             .frame(maxWidth: .infinity)
@@ -257,65 +247,18 @@ struct V3ThemeSelectorView: View {
             .contentShape(RoundedRectangle(cornerRadius: 9))
         }
         .buttonStyle(.plain)
-        .onHover { inside in
-            if inside && !compact && family != currentFamily { browsedFamily = family }
-            hovering(inside, scene: target.0, renderer: target.1)
-        }
-        .help(family.detail)
-        .accessibilityLabel(family.title)
-        .accessibilityIdentifier("v3.family." + family.rawValue)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    /// Selection always matches scene + renderer: the same renderer draws
-    /// differently inside a scene and as a legacy preset.
-    private func entryRow(_ entry: V3SceneFamily.Entry, in family: V3SceneFamily) -> some View {
-        let selected = family.isSelected(entry, settings: settings)
-        let renderer = family.adoptRenderer(for: entry, settings: settings)
-        let previewing = !selected && preview == renderer && previewScene == entry.scene
-        return Button { adopt(entry, in: family) } label: {
-            Text(entry.title)
-                .font(.system(size: 11.5, weight: selected ? .semibold : .regular))
-                .foregroundStyle(selected || previewing ? Color.primary : Color.secondary)
-                .lineLimit(1).minimumScaleFactor(0.85)
-                .frame(maxWidth: .infinity, minHeight: 26)
-                .background(selected ? tint.opacity(0.16) : Color.primary.opacity(0.04),
-                            in: RoundedRectangle(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7)
-                    .strokeBorder(selected ? tint.opacity(0.7) : previewing ? tint.opacity(0.45) : .clear,
-                                  style: StrokeStyle(lineWidth: 1, dash: previewing ? [3, 3] : [])))
-                .contentShape(RoundedRectangle(cornerRadius: 7))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering($0, scene: entry.scene, renderer: renderer) }
+        .onHover { hovering($0, scene: entry.scene, renderer: target) }
         .help(entry.detail ?? entry.title)
         .accessibilityLabel(entry.title)
-        .accessibilityIdentifier(entry.scene == nil ? "v3.style." + renderer.rawValue
-                                 : "v3.scene." + entry.scene!.rawValue + "." + renderer.rawValue)
+        .accessibilityIdentifier("v3.scene." + (entry.scene?.rawValue ?? "legacy") + "." + target.rawValue)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    /// Styles the user names and returns to stay in the row; the rest wait
-    /// behind 更多 and step into the row while chosen.
-    private func visibleEntries(of family: V3SceneFamily) -> [V3SceneFamily.Entry] {
-        family.entries.enumerated().filter { index, entry in
-            !family.foldedEntryIndices.contains(index) || family.isSelected(entry, settings: settings)
-        }.map(\.element)
-    }
-
-    private func foldedEntries(of family: V3SceneFamily) -> [V3SceneFamily.Entry] {
-        family.entries.enumerated().filter { index, entry in
-            family.foldedEntryIndices.contains(index) && !family.isSelected(entry, settings: settings)
-        }.map(\.element)
-    }
-
-    private func adopt(_ entry: V3SceneFamily.Entry, in family: V3SceneFamily) {
+    private func adopt(_ entry: V3SceneFamily.Entry) {
+        let target = renderer(for: entry)
         clearPreview()
-        if let scene = entry.scene {
-            settings.selectV3Scene(scene, renderer: family.adoptRenderer(for: entry, settings: settings))
-        } else {
-            settings.selectLegacyV3Presentation(entry.renderer)
-        }
+        if let scene = entry.scene { settings.selectV3Scene(scene, renderer: target) }
+        else { settings.selectLegacyV3Presentation(target) }
     }
 
     /// 静止 = 纯高斯, 流动 = 封面柔焦. Picking 流动 turns its background motion
@@ -390,13 +333,17 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
 
     var primaryScene: V3ListeningScene { scenes[0] }
 
-    /// 4 categories, 9 styles. 经典·柔和光晕 and 经典·封面海报 survive as the
-    /// 柔和光晕 and 唱片卡 rows.
-    /// 环境光 keeps 原版环境光 and 柔光羽化 in view (user's liked effects);
-    /// 柔和光晕 and 独立色场 fold. Nothing is removed or remapped.
-    var foldedEntryIndices: Set<Int> {
-        self == .ambient ? [1, 2] : []
+    /// The 画面 panel lists every look on one level: six cards, and three
+    /// rarely used ones (柔和光晕, 独立色场, 唱片卡) behind 更多. The families
+    /// remain for scene cycling. Nothing is removed or remapped.
+    static var looks: (shown: [Entry], folded: [Entry]) {
+        let all = allCases.flatMap(\.entries)
+        let folded = all.filter { $0.isLegacy || ($0.scene == .flowingField && $0.renderer == .classic) }
+        return (all.filter { !folded.contains($0) }, folded)
     }
+
+    /// 4 categories, 9 styles. 经典·柔和光晕 and 经典·封面海报 survive as the
+    /// 柔和光晕 and 唱片卡 entries.
 
     var entries: [Entry] {
         switch self {
