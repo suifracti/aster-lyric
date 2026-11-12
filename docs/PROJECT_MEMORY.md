@@ -29,7 +29,7 @@
 | 视频背景（Canvas）、歌手照片背景、按封面配色、随音乐律动、拖进度吸附、跳转回弹、脏词显示 | L-022；SpotifyLocalCache、V3BackdropMedia、CoverColorRoute、V3MusicPulse、LyricCensorRestorer |
 | 不同画面背景大小不一样、取景切了没效果、繁体歌名对不上简体来源、别人有逐字/对唱我们没有 | L-023；V3BackdropArtworkGeometry、v3SharedBackdropComplete、TrackTextNormalizer.normalize、KRCParser、QRCParser |
 | 逐字上浮/长音发光动画跳回开头、状态栏弹窗改版、换歌封面闪占位图、暂停褪色、桌面歌词情境隐藏 | L-024；LyricLineView animateLift、MenuBarLyricsPopoverView、ArtworkView、v3PauseFadesColor、FloatingLyricsWindowController.observeContext |
-| 粒子（雨雪雾、歌词意象）不显示、VU 表指针手感、新呈现一行放不下、分享卡排版跑偏、封面墙离屏图空白、声纹圈 | L-025；V3GlassWeather、V3ParticleHostView、V3VUMeter、V3LyricShareCard、ListeningCoverWall、V3Soundprint |
+| 粒子（雨雪雾、歌词意象）不显示、VU 表指针手感、新呈现一行放不下、分享卡排版跑偏、封面墙离屏图空白、声纹圈、频谱 | L-025；V3GlassWeather、V3ParticleHostView、V3VUMeter、V3LyricShareCard、ListeningCoverWall、V3Soundprint、V3SpectrumOverlay |
 | 在窗口边缘拖进度会变成缩放窗口、进度线靠近时下移不好看、胶囊和工具栏像两套控件、画面面板底部被截断 | L-015；V3EdgePillScrubber、V3ControlBarSurface、V3ThemeSelectorView |
 | 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
@@ -392,3 +392,6 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **`ImageRenderer` 不画 ScrollView 里的 Lazy 网格**（出空白图），单测宿主里 `screencapture -l` 也拍不到（没有录屏权限，静默失败）。核对封面墙这类视图，用临时可执行文件单独编译该视图，给 `ArtworkImageLoader` 补桩，开窗后用 `screencapture -l` 拍。
 - `SearchSourceContractTests.testRepeatedLyricLineStartsTheReadingProcessOnce` 偶尔超时，重跑即过，与本轮改动无关。
 - **声纹圈画在封面外的矩形环上**，起点和方向沿用窗口边缘进度：顶部正中、顺时针。按对角线画圆环会超出窗口，还会压到下方播放卡。录音存在 Caches/Soundprints，每首一个 JSON，180 格，每格用滑动混合（0.7/0.3）记录。
+- **频谱 24 段**：从 50 Hz 到 12 kHz 按音高均分，每段至少一个 FFT 格，相邻段首尾相接；每段对自己的长期均值归一。环绕封面和声纹圈共用 `V3SpectrumOverlay.loopPoint` 的矩形环，起点顶部正中、顺时针。
+- `FloatingLyricsPresentationTests.testFloatingPresentationBehavior`（A-B-A 宽度键复用）偶尔失败，连续重跑两次都过，判断为偶发，与频谱无关。注意：命令链里不要把提交排在测试之后又不看测试结果，这次就因此带着失败提交了一次（重跑全过）。
+

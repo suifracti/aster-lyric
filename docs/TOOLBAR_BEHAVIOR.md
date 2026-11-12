@@ -932,6 +932,22 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 - The scene's player card stays.
 - 新呈现 is now two rows of four.
 
+**频谱** (`260e0b3`, 画面 › 更多画面选项, off by default; B9 and a simplified B11).
+- 随音乐律动's analyser now also publishes 24 bands, spaced evenly in pitch from 50 Hz to 12 kHz. Each band is measured against its own long-term average.
+- Two styles, both in the cover colour:
+  - 底部细条: a thin strip of bars along the bottom of the window.
+  - 环绕封面: bars standing out from a loop just outside the cover, lows at top centre, mirrored left and right.
+- Bars rise at once and fall at 1.4 per second.
+- It draws at 30 fps only while playing and visible, and is absent under 减少动态效果.
+- A full MilkDrop or 3D visualizer is still a separate scene for later.
+
+**Not done from the "later" list, and why:**
+- **C12 writing on a fogged window:** needs stroke-order data for Chinese and Japanese.
+- **D3 emphasis by meaning:** the meaning judgement is not reliable enough.
+- **D4 emphasis by singing:** held notes are covered by 长音 glow; sizing by loudness barely showed.
+- **B13 changing the look by section:** the only way to change the look temporarily is the hover preview, and borrowing it would break previews. A separate temporary override is needed first. It may also disturb listening.
+- **A13 rain-night room:** a scene of its own, still to be designed.
+
 **Checked:**
 - The particles were rendered in a scratch window, one per weather, because Spotify was paused.
 - The fog veil was checked in the real main window; the setting was restored afterwards.
