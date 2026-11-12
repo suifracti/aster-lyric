@@ -31,6 +31,9 @@ final class V3MusicPulse: NSObject, ObservableObject {
         var bassAverage = 1.0
         var bpm: Double?
         var updatedAt: TimeInterval = 0
+        /// 24 log-spaced bands, 50 Hz–12 kHz, each against its own long-term
+        /// average and mapped to 0…1 (0.5 = that band's usual level).
+        var spectrum: [Float] = []
     }
 
     private static let shared_ = OSAllocatedUnfairLock(initialState: Levels())
@@ -184,6 +187,23 @@ struct PulseAnalyzer {
     private var tempoCandidates: [Double] = []
     private var bpm: Double?
     private var loudestBass = 0.0
+    private var spectrumLong = [Double](repeating: 0, count: spectrumBands.count)
+
+    /// 频谱: 24 bands spaced evenly in pitch from 50 Hz to 12 kHz, each at
+    /// least one FFT bin wide.
+    static let spectrumBands: [(Int, Int)] = {
+        let hz = sampleRate / Double(frameSize)
+        let count = 24, low = 50.0, high = 12_000.0
+        var result: [(Int, Int)] = []
+        var start = max(1, Int((low / hz).rounded()))
+        for i in 1...count {
+            let edge = low * pow(high / low, Double(i) / Double(count))
+            let end = max(start + 1, min(frameSize / 2, Int((edge / hz).rounded())))
+            result.append((start, end))
+            start = end
+        }
+        return result
+    }()
 
     /// Band edges as FFT bins (46.875 Hz each).
     private static let bands: [(Int, Int)] = {
@@ -281,10 +301,19 @@ struct PulseAnalyzer {
             LyricsE2ELog.log("PULSE levels bassPeak=\(String(format: "%.2f", loudestBass)) bpm=\(bpm.map { String(format: "%.0f", $0) } ?? "-")")
             loudestBass = 0
         }
+        var spectrum = [Float](repeating: 0, count: Self.spectrumBands.count)
+        let longRate = perFrame(frameCount < 50 ? 0.9 : 0.995)
+        for (index, range) in Self.spectrumBands.enumerated() {
+            let lo = min(range.0, half - 1), hi = min(max(lo + 1, range.1), half)
+            let value = Double(magnitude[lo..<hi].reduce(0, +)) / Double(hi - lo)
+            spectrumLong[index] = spectrumLong[index] == 0 ? value : spectrumLong[index] * longRate + value * (1 - longRate)
+            let r = spectrumLong[index] < 1e-6 ? 0 : value / spectrumLong[index]
+            spectrum[index] = Float(min(1, max(0, 0.5 + 0.25 * log2(max(0.01, r)))))
+        }
         V3MusicPulse.publish(V3MusicPulse.Levels(
             bass: ratio(0, now[0]), mid: ratio(1, now[1]), treble: ratio(2, now[2]),
             bassAverage: ratio(0, average[0]), bpm: bpm,
-            updatedAt: ProcessInfo.processInfo.systemUptime))
+            updatedAt: ProcessInfo.processInfo.systemUptime, spectrum: spectrum))
     }
 
     /// Autocorrelation of the onset curve over 60–190 BPM. A lag whose half

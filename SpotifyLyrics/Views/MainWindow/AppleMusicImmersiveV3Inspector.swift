@@ -675,6 +675,9 @@ struct V3VisualControls {
             V3SegmentedPicker("窗上天气", selection: $settings.v3GlassWeather,
                               options: V3GlassWeather.allCases.map { ($0.title, $0) })
                 .help("像隔着一扇窗：雨丝和挂在玻璃上的水珠、慢慢飘的雪、缓缓流动的雾。暂停时停下，减少动态效果时不显示。")
+            V3SegmentedPicker("频谱", selection: $settings.v3SpectrumStyle,
+                              options: V3SpectrumStyle.allCases.map { ($0.title, $0) })
+                .help("把正在播放的声音按 24 个频段画出来，用封面颜色：沿窗口底部一条，或环绕前景封面。需要打开随音乐律动。")
             Toggle("歌词意象", isOn: $settings.v3LyricImagery)
                 .help("唱到雨、雪、星、花（中日韩英关键词）时，那一句飘一阵对应的粒子。")
             if scene != .focusedLyrics && scene != .coverPhoto && settings.v3ShowForegroundArtwork {

@@ -411,4 +411,24 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(V3SoundprintRing.loopPoint(0.25, around: rect).normal, CGVector(dx: 1, dy: 0), "down the right side")
         XCTAssertEqual(V3SoundprintRing.loopPoint(0.5, around: rect).point, CGPoint(x: 50, y: 100), "bottom centre")
     }
+
+    func testSpectrumBandsCoverFiftyHertzToTwelveKilohertzInOrder() {
+        let bands = PulseAnalyzer.spectrumBands
+        XCTAssertEqual(bands.count, 24)
+        XCTAssertGreaterThanOrEqual(bands.first?.0 ?? 0, 1, "no DC bin")
+        for (index, band) in bands.enumerated() {
+            XCTAssertGreaterThan(band.1, band.0, "every band at least one bin")
+            if index > 0 { XCTAssertEqual(band.0, bands[index - 1].1, "bands touch, no gaps or overlaps") }
+        }
+        XCTAssertLessThanOrEqual(bands.last?.1 ?? 0, PulseAnalyzer.frameSize / 2)
+        XCTAssertEqual(Double(bands.last?.1 ?? 0) * 48_000 / 1024, 12_000, accuracy: 50)
+    }
+
+    func testSpectrumBarsRiseAtOnceAndFallSlowly() {
+        let smoother = V3SpectrumSmoother()
+        XCTAssertEqual(smoother.step([1, 0], now: 0), [1, 0])
+        let after = smoother.step([0, 0], now: 0.1)
+        XCTAssertEqual(Double(after[0]), 0.86, accuracy: 0.001, "falls 1.4 per second")
+        XCTAssertEqual(smoother.step([0.9, 0], now: 0.2)[0], 0.9, "rises at once")
+    }
 }

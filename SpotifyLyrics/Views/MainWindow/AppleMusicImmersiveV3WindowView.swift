@@ -381,6 +381,14 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .blur(radius: librarySearch.isPresented ? 5 : 0)
                 }
+                if settings.v3SpectrumStyle != .off, hoveredStyle == nil, !isFocusMode {
+                    V3SpectrumOverlay(style: settings.v3SpectrumStyle,
+                                      running: state.isPlaying && settings.v3MusicMotionEnabled,
+                                      accent: coverAccent ?? .white,
+                                      cover: foregroundCover.flatMap { $0.isLargeEnough ? $0.frame : nil })
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .blur(radius: librarySearch.isPresented ? 5 : 0)
+                }
                 if settings.v3PlaybackPresentation == .vinyl, !isFocusMode, let cover = foregroundCover, cover.isLargeEnough {
                     V3VinylDiscLayer(state: state, cover: cover.frame, accent: coverAccent ?? .white)
                         .frame(width: geometry.size.width, height: geometry.size.height)

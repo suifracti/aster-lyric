@@ -91,17 +91,7 @@ struct V3SoundprintRing: View {
     /// direction there. A rectangle, not a circle, so it hugs the cover and
     /// stays clear of the player card below it.
     static func loopPoint(_ t: Double, around rect: CGRect) -> (point: CGPoint, normal: CGVector) {
-        let w = Double(rect.width), h = Double(rect.height)
-        var d = (t - floor(t)) * 2 * (w + h)
-        if d < w / 2 { return (CGPoint(x: rect.midX + d, y: rect.minY), CGVector(dx: 0, dy: -1)) }
-        d -= w / 2
-        if d < h { return (CGPoint(x: rect.maxX, y: rect.minY + d), CGVector(dx: 1, dy: 0)) }
-        d -= h
-        if d < w { return (CGPoint(x: rect.maxX - d, y: rect.maxY), CGVector(dx: 0, dy: 1)) }
-        d -= w
-        if d < h { return (CGPoint(x: rect.minX, y: rect.maxY - d), CGVector(dx: -1, dy: 0)) }
-        d -= h
-        return (CGPoint(x: rect.minX + d, y: rect.minY), CGVector(dx: 0, dy: -1))
+        V3SpectrumOverlay.loopPoint(t, around: rect)
     }
 
     private func draw(_ ctx: inout GraphicsContext, values: [Float], fraction: Double) {
