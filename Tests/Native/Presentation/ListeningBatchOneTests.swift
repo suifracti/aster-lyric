@@ -1,4 +1,5 @@
 import AppKit
+import Compression
 import XCTest
 @testable import SpotifyLyrics
 
@@ -192,6 +193,42 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(TrackTextNormalizer.normalizeArtistToken("趙乃吉"), TrackTextNormalizer.normalizeArtistToken("赵乃吉"))
         XCTAssertNotEqual(TrackTextNormalizer.normalize("曾經", foldsChineseScript: false),
                           TrackTextNormalizer.normalize("曾经", foldsChineseScript: false))
+    }
+
+    // MARK: Kugou KRC
+
+    private let krcSample = """
+    [ti:]
+    [0,272]<0,17,0>曾<17,17,0>经<34,17,0>你<51,17,0>说
+    [5580,3390]<0,330,0>不<330,420,0>如<750,660,0>看
+    [14010,1740]<0,990,0>刘<990,630,0>兆<1620,60,0>宇<1680,60,0>：
+    [17910,1050]<0,180,0>一<180,120,0>个<300,90,0>人
+    [20000,1000]<0,500,0>赵<500,300,0>乃<800,200,0>吉<1000,0,0>：
+    [21000,1000]<0,500,0>(时<500,500,0>光)
+    """
+
+    func testKRCWordTimingAndSingers() throws {
+        let identity = TrackIdentity(title: "曾经你说", artist: "赵乃吉", album: "", duration: 201)
+        let document = try XCTUnwrap(KRCParser.parse(krcSample, identity: identity, source: .kugouExperimental))
+        XCTAssertEqual(document.lines.map(\.originalText), ["曾经你说", "不如看", "一个人", "(时光)"],
+                       "singer lines are not shown")
+        let second = document.lines[1]
+        XCTAssertEqual(second.timedSpans?.map(\.text), ["不", "如", "看"])
+        XCTAssertEqual(second.timedSpans?[1].startTime ?? 0, 5.91, accuracy: 0.001, "offsets are relative to the line")
+        XCTAssertEqual(document.lines.map(\.performerID), [nil, nil, "刘兆宇", "赵乃吉"])
+        XCTAssertEqual(LyricAgentPresentationMap(lines: document.lines).voiceIndex(for: "赵乃吉"), 1)
+        XCTAssertNil(LyricAgentPresentationMap.displayName("v2"))
+    }
+
+    func testKRCDecryptRoundTrip() throws {
+        let text = "[0,100]<0,100,0>好"
+        let source = Array(text.utf8)
+        var deflated = [UInt8](repeating: 0, count: 256)
+        let size = compression_encode_buffer(&deflated, deflated.count, source, source.count, nil, COMPRESSION_ZLIB)
+        var payload: [UInt8] = [0x78, 0x9C] + deflated[0..<size] + [0, 0, 0, 0]
+        for index in payload.indices { payload[index] ^= KRCParser.key[index % KRCParser.key.count] }
+        let encoded = (Data("krc1".utf8) + Data(payload)).base64EncodedString()
+        XCTAssertEqual(KRCParser.decrypt(base64: encoded), text)
     }
 
     // MARK: Seeking

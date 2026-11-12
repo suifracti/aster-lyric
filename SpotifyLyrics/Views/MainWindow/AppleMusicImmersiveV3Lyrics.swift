@@ -506,6 +506,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
 }
 
 private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
+    @Environment(\.lyricAgentPresentationMap) private var voices
     @Environment(\.lyricIslandScene) private var readingScene
     @State private var rubyActionRelay = RubyCorrectionAction()
     @Environment(\.lyricTextAlignment) private var textAlignment
@@ -589,6 +590,16 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
                     V3VocalCountdown(window: window, clock: presentationClock)
                         .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
                 }
+                // Duets: the singer's name where the voice changes.
+                if let name = singerChange(at: index) {
+                    Text(name)
+                        .font(.system(size: compact ? 10 : 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .padding(.leading, voiceIndent(for: line))
+                        .padding(.bottom, -rowSpacing * 0.6)
+                        .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
+                        .accessibilityLabel("演唱：\(name)")
+                }
                 row(for: line, index: index)
                     .padding(.top, readingScene == .linerNotes && isParagraphStart(index) ? 14 : 0)
                     .id(line.id)
@@ -601,6 +612,20 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
         .padding(.trailing, textAlignment == .trailing ? 0 : (compact ? 10 : 18) * (textAlignment == .center ? 0.5 : 1))
     }
 
+    /// The second voice of a duet is set in by 12% of the column (Lyrimuse
+    /// sets duets apart the same way), only for left-aligned lyrics.
+    private func voiceIndent(for line: LyricLine) -> CGFloat {
+        guard textAlignment == .leading, let voice = voices.voiceIndex(for: line.performerID), voice > 0 else { return 0 }
+        return availableWidth * 0.12
+    }
+
+    private func singerChange(at index: Int) -> String? {
+        guard lines.indices.contains(index), voices.voiceIndex(for: lines[index].performerID) != nil,
+              let name = LyricAgentPresentationMap.displayName(lines[index].performerID) else { return nil }
+        if index > 0, lines[index - 1].performerID == lines[index].performerID { return nil }
+        return name
+    }
+
     private func isParagraphStart(_ index: Int) -> Bool {
         guard index > 0, lines.indices.contains(index) else { return false }
         if lines[index - 1].originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
@@ -611,6 +636,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     @ViewBuilder
     private func row(for line: LyricLine, index: Int) -> some View {
         let isActive = synchronized && currentIndex == index
+        let indent = voiceIndent(for: line)
         let distance = synchronized && currentIndex != nil
             ? abs(index - (currentIndex ?? index))
             : 0
@@ -619,7 +645,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             isActive: isActive,
             distance: readingScene == .linerNotes ? 0 : (readingScene == .focusedLyrics ? min(1, distance) : distance),
             isSynchronized: synchronized,
-            availableWidth: bigLineAvailableHeight == nil ? availableWidth : max(1, availableWidth - 20),
+            availableWidth: max(1, (bigLineAvailableHeight == nil ? availableWidth : availableWidth - 20) - indent),
             compact: compact,
             preferences: preferences,
             language: language,
@@ -629,6 +655,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             bigLineAvailableHeight: isActive ? bigLineAvailableHeight : nil
         )
         .equatable()
+        .padding(.leading, indent)
         .environmentObject(settings)
         .environment(\.v3LyricStyle, settings.v3LyricStyle)
         .environment(\.rubyCorrectionAction, onRuby == nil ? nil : rubyActionRelay)
@@ -1304,7 +1331,6 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
         // A tight glyph outline keeps bright covers readable without a wide dark halo.
         .shadow(color: showsReadingShadow ? .black.opacity(0.95) : .clear,
                 radius: 2.5, x: 0, y: 1)
-        .offset(x: CGFloat(agentPresentationMap.horizontalOffset(for: line.performerID)))
         .opacity(presentedOpacity)
         .blur(radius: reduceMotion ? 0 : rowBlur)
         .animation(nil, value: isActive)

@@ -1432,14 +1432,30 @@ public struct LyricAgentPresentationMap: Equatable, Sendable {
         agentIDs.count >= 2
     }
 
+    /// Singers in the order they first sing, so the first voice stays at
+    /// the margin and the second is the one set in.
     public init(lines: [LyricLine]) {
-        agentIDs = Set(
-            lines.compactMap { line in
-                guard let performerID = line.performerID else { return nil }
-                let trimmed = performerID.trimmingCharacters(in: .whitespacesAndNewlines)
-                return trimmed.isEmpty ? nil : trimmed
-            }
-        ).sorted()
+        var seen: [String] = []
+        for line in lines {
+            guard let performerID = line.performerID else { continue }
+            let trimmed = performerID.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty, !seen.contains(trimmed) { seen.append(trimmed) }
+        }
+        agentIDs = seen
+    }
+
+    /// 0 for the first voice, 1 for the second; nil when not a duet.
+    public func voiceIndex(for performerID: String?) -> Int? {
+        guard isActive, let performerID, let id = normalizedID(performerID) else { return nil }
+        return agentIDs.firstIndex(of: id).map { min($0, 2) }
+    }
+
+    /// A singer's name worth printing above their lines; agent codes such as
+    /// `v1` from TTML are not names.
+    public static func displayName(_ performerID: String?) -> String? {
+        guard let value = performerID?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty,
+              value.range(of: #"^v\d+$"#, options: [.regularExpression, .caseInsensitive]) == nil else { return nil }
+        return value
     }
 
     /// Returns a small visual offset while keeping every line's layout and

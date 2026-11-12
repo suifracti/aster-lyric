@@ -72,23 +72,39 @@ public final class KugouExperimentalLyricsProvider: LyricsProvider, @unchecked S
         guard let id = Self.identifier(first["id"]), let key = Self.identifier(first["accesskey"]) else {
             throw LyricsFailure.parseFailure
         }
-        guard let downloaded = try await requestJSON(
+        // Word timing first (KRC); the plain LRC when KRC is missing or unreadable.
+        var lines: [LyricLine]?
+        if let krc = try? await requestJSON(
             "https://lyrics.kugou.com/download",
-            query: [("ver", "1"), ("client", "pc"), ("id", id), ("fmt", "lrc"), ("charset", "utf8"), ("accesskey", key)],
+            query: [("ver", "1"), ("client", "pc"), ("id", id), ("fmt", "krc"), ("charset", "utf8"), ("accesskey", key)],
             deadline: deadline
-        ) else { return nil }
-        guard let content = downloaded["content"] as? String else { throw LyricsFailure.parseFailure }
-        if content.isEmpty { return nil }
-        guard let bytes = Data(base64Encoded: content), let lrc = String(data: bytes, encoding: .utf8),
-              let document = LRCParser.parse(lrc, identity: identity, source: .kugouExperimental),
-              document.lines.allSatisfy({ $0.timestamp.isFinite && $0.timestamp >= 0 }) else {
-            throw LyricsFailure.parseFailure
+        ), let content = krc["content"] as? String, !content.isEmpty,
+           let text = KRCParser.decrypt(base64: content),
+           let document = KRCParser.parse(text, identity: identity, source: .kugouExperimental),
+           document.lines.contains(where: { $0.timedSpans?.isEmpty == false }) {
+            lines = document.lines
         }
+        if lines == nil {
+            guard let downloaded = try await requestJSON(
+                "https://lyrics.kugou.com/download",
+                query: [("ver", "1"), ("client", "pc"), ("id", id), ("fmt", "lrc"), ("charset", "utf8"), ("accesskey", key)],
+                deadline: deadline
+            ) else { return nil }
+            guard let content = downloaded["content"] as? String else { throw LyricsFailure.parseFailure }
+            if content.isEmpty { return nil }
+            guard let bytes = Data(base64Encoded: content), let lrc = String(data: bytes, encoding: .utf8),
+                  let document = LRCParser.parse(lrc, identity: identity, source: .kugouExperimental),
+                  document.lines.allSatisfy({ $0.timestamp.isFinite && $0.timestamp >= 0 }) else {
+                throw LyricsFailure.parseFailure
+            }
+            lines = document.lines
+        }
+        guard let lines else { return nil }
         // Access keys are short-lived download parameters, never provenance.
         let recordID = "kugou:\(song.hash):\(id)"
         return LyricsCandidate(
             id: recordID, identity: identity, title: song.title, artist: song.artist,
-            album: song.album, duration: song.duration, lines: document.lines,
+            album: song.album, duration: song.duration, lines: lines,
             isSynchronized: true, source: .kugouExperimental, confidence: 0.5,
             providerSourceID: recordID, providerName: name
         )
