@@ -374,5 +374,7 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **换歌时封面闪一下占位图**：`ArtworkView` 原来先把图置空再加载。现在保留旧图，新图载入后从轻微模糊中显出，再移除旧图；新歌没有封面时照旧不保留旧图。任务键只用封面地址，同一张专辑换歌不再重播。
 - **暂停褪色**用一层灰色 `.blendMode(.saturation)`，只在暂停 1.5 秒后才插入。播放时不存在这层，不多一次全窗合成。跳转造成的短暂停顿不会触发。
 - **桌面歌词情境隐藏**：全屏判断用 CGWindowList 找别的进程在第 0 层、盖满主屏的窗口；隐藏期间 `ignoresMouseEvents` 必须同时尊重原来的鼠标穿透（枚举名是 `.passThrough`）。
+- **侧拉工具栏**：右缘 76 pt 内触发，竖列居中，从窗外滑入；悬停面板改为 `preferredEdge: .minX`，即向左打开（`V3ToolPopoverAnchor` 里按样式判断）。`v3_toolbar_model_contract` 断言了样式清单，加样式要一并更新。
+- **面板里多个独立开关排成一行时用 `V3ChipToggles`**，与分段控件同一底槽；不要再用三个 `V3InlineSwitch` 挤一行，会把标签折成两行。
 - **胶囊开合（G5）暂缓**：用户计划把胶囊做成灵动岛，单独设计。
 - **写偏好前先读 Bundle ID**：本 App 是 `com.spotifylyrics.app`，不是仓库名。猜错域会在 ~/Library/Preferences 留下空文件。

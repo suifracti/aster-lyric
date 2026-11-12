@@ -860,6 +860,18 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 - **暂停时褪色** (画面, on by default): 1.5 s after pausing, the backdrop fades over 2.4 s to near black-and-white (a grey saturation-blend layer at 78%). Colour returns in 0.5 s on play. The foreground cover keeps its colour.
 - **Song change:** the previous cover stays until the new one has loaded. The new one then comes up out of a soft blur (0.75 s), so the placeholder no longer flashes between songs.
 
+**侧拉 toolbar** (`ac5ae29`, 更多 › 工具栏, user request from 2026-11-12).
+- A new toolbar style beside 下拉. It is hidden until the pointer comes within 76 pt of the right edge, then a centred column of icons slides in from outside the window.
+- Hover panels open to the left of the column.
+- Offscreen cases: `toolbar-side`, `toolbar-side-panel`.
+
+**One look for multi-option rows** (`9089b92`, the unification pass after batch two).
+- Rows of independent switches become chips on the same rounded track as the segmented controls (`V3ChipToggles`); on shows ✓ and bold.
+  - 进度条's 悬停出按钮 / 歌名滚动 / 进度贴封面: their labels used to wrap into two lines.
+  - 原文 / 译文 / 读音.
+  - 辅助读音's 罗马音 / 拼音.
+- Single on/off settings stay ordinary switches.
+
 **Checked in the real window:** 暂停时褪色, on a paused song.
 
 **Not checked in the real window:**
