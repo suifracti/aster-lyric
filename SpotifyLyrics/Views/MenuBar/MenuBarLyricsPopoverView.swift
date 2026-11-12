@@ -9,6 +9,9 @@ public struct MenuBarLyricsPopoverView: View {
     @State private var isAppearanceExpanded = false
     @State private var readingHeight: CGFloat = 72
     @State private var cachedArtwork: NSImage?
+    @State private var washArtwork: NSImage?
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(controller: MenuBarLyricsController) {
         self.controller = controller
@@ -41,6 +44,7 @@ public struct MenuBarLyricsPopoverView: View {
             let image = await ArtworkImageLoader.shared.image(for: controller.currentSnapshot.artworkURL)
             guard !Task.isCancelled else { return }
             cachedArtwork = image
+            washArtwork = image.flatMap { Self.thumbnail($0, side: 12) }
         }
         .lyricIslandSongTint(artworkURL: controller.currentSnapshot.artworkURL, accent: $islandAccent)
     }
@@ -70,16 +74,24 @@ public struct MenuBarLyricsPopoverView: View {
             }
 
             HStack(alignment: .top, spacing: 10) {
-                Capsule()
-                    .fill(islandAccent.opacity(0.9))
-                    .frame(width: 2, height: 30)
-                    .padding(.top, 4)
                 ScrollView {
                     lyricsContent(snapshot)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .id(snapshot.currentLineIndex ?? -1)
+                        .transition(reduceMotion ? .opacity : .asymmetric(
+                            insertion: .move(edge: .bottom).combined(with: .opacity),
+                            removal: .move(edge: .top).combined(with: .opacity)))
                 }
                 .frame(height: readingHeight)
+                .clipped()
+                .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.88),
+                           value: snapshot.currentLineIndex)
                 .accessibilityElement(children: .contain)
+            }
+
+            if snapshot.hasLiveTrack, let state = controller.livePlaybackState, state.currentTrack.duration > 0 {
+                MenuBarProgressRail(state: state, accent: islandAccent,
+                                    synchronized: { if case .synchronized = snapshot.state { return true } else { return false } }())
             }
 
             // Keep the complete-song action reachable even when one lyric
@@ -140,6 +152,12 @@ public struct MenuBarLyricsPopoverView: View {
                 .font(.system(size: 11))
                 .help("关闭后保留播放状态图标，点击图标仍可打开此菜单")
                 Spacer(minLength: 0)
+                Button { isAppearanceExpanded = true } label: {
+                    Image(systemName: "textformat.size").frame(width: 24, height: 24).contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .help("状态栏文字外观")
+                .accessibilityLabel("状态栏文字外观")
                 Menu {
                     Button("退出 Aster · Lyric") { controller.quit() }
                 } label: {
@@ -152,19 +170,47 @@ public struct MenuBarLyricsPopoverView: View {
                 .accessibilityLabel("更多操作")
             }
 
-            Button {
-                isAppearanceExpanded = true
-            } label: {
-                HStack {
-                    Label("状态栏文字外观", systemImage: "textformat.size")
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.caption)
-                }.font(.system(size: 12)).contentShape(Rectangle())
-            }.buttonStyle(.plain).padding(.top, 4)
-
         }
         .padding(14)
         .frame(width: 340)
+        .background(alignment: .top) { coverWash }
+    }
+
+    /// The song's cover, blurred into the top of the popover and fading out
+    /// before the controls, so each song tints its own panel.
+    private var coverWash: some View {
+        ZStack {
+            // A 12-pixel thumbnail stretched up is already a soft colour
+            // field: no blur pass, and the cover's text can never show through.
+            if let image = washArtwork {
+                Image(nsImage: image).resizable().interpolation(.high).scaledToFill()
+                    .opacity(colorScheme == .dark ? 0.34 : 0.4)
+            }
+            LinearGradient(colors: [islandAccent.opacity(0.16), islandAccent.opacity(0)],
+                           startPoint: .top, endPoint: .bottom)
+        }
+        .frame(height: 230)
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black.opacity(0.6), location: 0.45),
+                                      .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .animation(.easeInOut(duration: 0.6), value: washArtwork)
+    }
+
+    private static func thumbnail(_ image: NSImage, side: Int) -> NSImage? {
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side,
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(in: NSRect(x: 0, y: 0, width: side, height: side))
+        NSGraphicsContext.restoreGraphicsState()
+        let result = NSImage(size: NSSize(width: side, height: side))
+        result.addRepresentation(rep)
+        return result
     }
 
     private var contentPhase: String {
@@ -181,14 +227,15 @@ public struct MenuBarLyricsPopoverView: View {
         func height(_ text: String?, font: CGFloat) -> CGFloat {
             guard let text, !text.isEmpty else { return 0 }
             return ceil((text as NSString).boundingRect(
-                with: NSSize(width: 284, height: 1000),
+                with: NSSize(width: 300, height: 1000),
                 options: [.usesLineFragmentOrigin, .usesFontLeading],
                 attributes: [.font: NSFont.systemFont(ofSize: font)]).height)
         }
         let natural = height(snapshot.currentLineText, font: 17)
             + height(snapshot.currentTranslationText, font: 14)
-            + height(snapshot.nextLineText, font: 11) + 24
-        let next = contentPhase == "status" ? 112 : contentPhase == "loading" ? 58 : min(210, max(54, natural))
+            + height(snapshot.nextLineText, font: 12)
+            + (snapshot.previousLineText == nil ? 0 : 23) + 24
+        let next = contentPhase == "status" ? 112 : contentPhase == "loading" ? 58 : min(230, max(54, natural))
         if abs(readingHeight - next) > 1 { readingHeight = next }
         // New song, page or status family only. Never resize at every clock tick
         // or every synchronized line; overflow stays inside this song's budget.
@@ -281,7 +328,14 @@ public struct MenuBarLyricsPopoverView: View {
                     .foregroundStyle(.secondary)
             }
         case .synchronized(let current, let next):
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
+                if let previous = snapshot.previousLineText, !current.isEmpty {
+                    Text(previous)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .accessibilityLabel("上一句：\(previous)")
+                }
                 if current.isEmpty {
                     Label("前奏 / 间奏", systemImage: "music.note")
                         .font(.system(size: 13, weight: .medium))
@@ -290,16 +344,12 @@ public struct MenuBarLyricsPopoverView: View {
                     lyricText(current, translation: snapshot.currentTranslationText)
                 }
                 if let next, !next.isEmpty {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("下一句")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(islandAccent)
-                        Text(next)
-                            .font(.system(size: 11))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-                    }
-                    .foregroundStyle(.secondary)
+                    Text(next)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .accessibilityLabel("下一句：\(next)")
                 }
             }
         case .unsynchronized:
@@ -489,5 +539,68 @@ private struct HoverRowButtonStyle: ButtonStyle {
                     .fill(configuration.isPressed ? Color.primary.opacity(0.12) : isHovered ? Color.primary.opacity(0.08) : Color.clear)
             )
             .onHover { isHovered = $0 }
+    }
+}
+
+/// A thin progress line for the popover: the played part in the song's colour,
+/// the chorus as lighter stretches, elapsed and remaining time underneath.
+/// Click or drag to jump; the target snaps to a nearby line start.
+private struct MenuBarProgressRail: View {
+    let state: PlaybackState
+    let accent: Color
+    let synchronized: Bool
+    @State private var draft: Double?
+    @State private var hovering = false
+
+    private var duration: Double { max(0.1, state.currentTrack.duration) }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 0.25, paused: !state.isPlaying || draft != nil)) { _ in
+            let position = draft ?? min(max(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime), 0), duration)
+            VStack(spacing: 3) {
+                GeometryReader { geometry in
+                    let width = max(1, geometry.size.width)
+                    let height: CGFloat = hovering || draft != nil ? 6 : 4
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.primary.opacity(0.12))
+                        if synchronized, AppSettingsStore.shared.v3ChorusEmphasis {
+                            ForEach(LyricsChorus.spans(lines: state.liveLyrics, duration: duration), id: \.start) { span in
+                                Capsule().fill(accent.opacity(0.3))
+                                    .frame(width: max(2, width * CGFloat((min(span.end, duration) - span.start) / duration)))
+                                    .offset(x: width * CGFloat(span.start / duration))
+                            }
+                        }
+                        Capsule().fill(accent.opacity(0.92))
+                            .frame(width: width * CGFloat(position / duration))
+                    }
+                    .frame(height: height)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .gesture(DragGesture(minimumDistance: 0)
+                        .onChanged { value in draft = min(max(value.location.x / width, 0), 1) * duration }
+                        .onEnded { _ in
+                            if let draft { state.seek(to: state.lyricSnappedSeekTarget(draft), source: "menu-bar-progress") }
+                            draft = nil
+                        })
+                    .onHover { inside in withAnimation(.easeOut(duration: 0.14)) { hovering = inside } }
+                    .animation(.easeOut(duration: 0.14), value: height)
+                }
+                .frame(height: 12)
+                HStack {
+                    Text(v3EdgeTimeText(position))
+                    Spacer()
+                    Text("-" + v3EdgeTimeText(max(0, duration - position)))
+                }
+                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                .foregroundStyle(.secondary)
+            }
+            .accessibilityElement()
+            .accessibilityLabel("播放进度")
+            .accessibilityValue("\(v3EdgeTimeText(position)) / \(v3EdgeTimeText(duration))")
+            .accessibilityAdjustableAction { direction in
+                let step: Double = direction == .increment ? 10 : -10
+                state.seek(to: min(max(position + step, 0), duration), source: "menu-bar-progress")
+            }
+        }
     }
 }

@@ -32,6 +32,10 @@ public struct MenuBarLyricsSnapshot: Equatable, Sendable {
     public var currentRubyTokens: [LyricRubyToken]? = nil
     /// Playback controls follow the current provider capability, not just retained metadata.
     public var canControlPlayback: Bool = false
+    /// The line before the current one and the current line's index, so the
+    /// popover can scroll its three lines instead of swapping text.
+    public var previousLineText: String? = nil
+    public var currentLineIndex: Int? = nil
 }
 
 /// Captured on the explicit read action, so selecting/copying text is stable
@@ -259,6 +263,8 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     var isLyricsPopoverShown: Bool { popover?.isShown == true }
     private var applicationBeforePopover: NSRunningApplication?
     private weak var playbackState: PlaybackState?
+    /// Read by the popover's progress rail on its own timeline, never observed.
+    var livePlaybackState: PlaybackState? { playbackState }
     private var cancellables = Set<AnyCancellable>()
     private var openMainWindowHandler: (@MainActor () -> Void)?
     private var openLibraryHandler: (@MainActor () -> Void)?
@@ -760,6 +766,11 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 snapshot.currentRubyTokens = lines[currentIndex].rubyTokens
                 snapshot.currentKanaText = lines[currentIndex].kanaText
                 snapshot.currentRomajiText = lines[currentIndex].romajiText
+                snapshot.currentLineIndex = currentIndex
+                if currentIndex > 0 {
+                    let previous = lines[currentIndex - 1].originalText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    snapshot.previousLineText = previous.isEmpty ? nil : previous
+                }
                 return snapshot
             } else if !isSync {
                 let displayTitle = title.isEmpty ? "Aster · Lyric" : title
