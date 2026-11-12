@@ -667,17 +667,17 @@ Work in this order. Each batch is built, tested, restarted and pushed on its own
 - 文字 opens with 显示 and 字号, then 对齐 and 清晰度; the reading options (罗马音, 拼音, 注音排版, sizes) fold.
 - 画面 opens with the scene row, the style row and 模糊, then 前景封面, 播放呈现 and 背景动态; the rest folds.
 
-**D. Five scene cards, look-alikes merged (2026-11-12, third revision, from the user's review of the real window).** No scene may sit behind a 「更多」 menu: it cannot be switched from there.
-- The 画面 panel shows five cards in one row: 环境光, 内页, 封面, 舞台, 专注. There is no category row and no menu.
-- **环境光 is one card with three lights.** A plain row under the cards, 「环境光: 原版 / 光晕 / 羽化」, appears while 环境光 is in use. Which light suits depends on the song, so all three stay one click away. The card returns to the light used last (`v3.ambient.lastLook.v1`). 光晕 is 柔和光晕, the round glow; it was dropped for a few hours on 2026-11-12 and the user asked for it back.
-- **内页 also stands for 独立色场 and 唱片卡.** The user judged the three to be one type: the cover's colour, the cover on the left, the lyrics on the right. 内页 now draws the colour field as its background, and 背景动态 applies to it. 独立色场 and 唱片卡 have no card. A saved choice of either keeps drawing until a card is picked.
+**D. Four scene cards (2026-11-12, fourth revision, from the user's review of the real window).** No scene may sit behind a 「更多」 menu: it cannot be switched from there.
+- The 画面 panel shows four cards in one row: 环境光, 封面, 舞台, 阅读. A card that holds several looks shows them in a plain row under the cards while it is in use, and returns to the look used last.
+- **环境光: 「光: 自动 / 原版 / 羽化」.** The user found that each song suits a different light and asked the app to choose. 自动 is the default: when the cover changes, a cover with luminance of 0.42 or more gets 原版 (dark and even, lyrics stay readable) and a darker one gets 羽化 (the cover as a round source of light). The boundary is a first setting from two real songs. 自动 acts only while 环境光 is in use and the cover's colours are known; picking 原版 or 羽化 turns it off (`v3.ambient.automatic.v1`).
+- **柔和光晕 has no entry.** It differs from 原版 in cover size and darkness, and both have their own controls (user, 2026-11-12).
+- **阅读: 「版式: 内页 / 唱片 / 专注」.** The user grouped the pages on a quiet background and asked to keep 唱片卡. 内页 draws the colour field as its background, and 背景动态 applies to it; 独立色场 therefore has no entry.
 - **封面's 静止 / 流动 is merged into 背景动态.** 关闭 is the still picture (纯高斯); 轻柔 and 鲜明 are the moving one (封面柔焦).
-- The four categories remain only for cycling scenes by gesture. Renderers, raw IDs, saved values and hover preview are unchanged.
-- Open: the user asked whether the three lights can be combined into one better 环境光. Not designed yet.
+- A saved 柔和光晕 or 独立色场 choice keeps drawing until a card is picked. The four old categories remain only for cycling scenes by gesture. Renderers, raw IDs, saved values and hover preview are unchanged.
 
 **D2. What the scenes show (2026-11-12, from real screenshots).**
 - **内页:** with the cover in view, the song's name, artist and album sit under the cover in the left column, and the lyrics start at the top of the page. The heading band and its rule remain only without a cover or in a small window. The fixed caption 「原文 · 译文 · 读音」 is removed: it did not follow the layers in use.
-- **唱片卡 (no card in the panel now; drawn only for a saved choice):** the card holds the cover, the name and the controls. The masthead (「ASTER · LYRIC · LISTENING EDITION」, 「SIDE A」) and the footer (「ORIGINAL · TRANSLATION · READING」) are removed.
+- **唱片卡:** the card holds the cover, the name and the controls. The masthead (「ASTER · LYRIC · LISTENING EDITION」, 「SIDE A」) and the footer (「ORIGINAL · TRANSLATION · READING」) are removed.
 - **舞台:** the space beside the whole cover blurs in three steps from the seam to the window edge and darkens slightly outwards. Before, almost half of each side was a sharp mirror image. One thick blur from the seam was tried and rejected by the user as odd.
 - **封面 and 舞台:** a soft shade sits under the lyrics, deeper the brighter the cover, while 清晰度 is 关闭 and the bright-cover help is on. An explicit 清晰度 choice is drawn as chosen. The song's name on the picture carries a shadow.
 - The bright-cover help now starts at a cover luminance of 0.45 instead of 0.6. With the help switched off nothing is added: the lyrics are drawn as they are.

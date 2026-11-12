@@ -555,6 +555,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             guard !Task.isCancelled else { return }
             coverAccent = LyricIslandArtworkColors.listeningAccent(palette)
             coverLuminance = palette.luminance
+            if !isCompositionPreview {
+                V3SceneFamily.applyAutomaticAmbient(settings: settings, palette: palette)
+            }
         }
         .task(id: "\(usesArtworkSubjectPlacement)|\(compositionTrack.artworkURL?.absoluteString ?? "none")") {
             coverSubject = nil

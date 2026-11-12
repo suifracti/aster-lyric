@@ -324,11 +324,36 @@ final class V3ToolbarPresentationTests: XCTestCase {
         XCTAssertEqual(V3SceneFamily.focus.entries.map(\.title), ["专注"])
         // 封面 keeps both existing renderers behind one row: 静止 / 流动.
         XCTAssertEqual(V3SceneFamily.cover.entries[0].renderers, [.ambient, .classicGaussian])
-        // The panel shows five cards in one row, none behind a menu. 环境光
-        // holds its three lights; 独立色场 and 唱片卡 are 内页's type.
-        XCTAssertEqual(V3SceneFamily.cards.map(\.title), ["环境光", "内页", "封面", "舞台", "专注"])
-        XCTAssertEqual(V3SceneFamily.cards[0].entries.map(\.title), ["原版环境光", "柔和光晕", "柔光羽化"])
-        XCTAssertEqual(V3SceneFamily.cards[0].entries.map(V3SceneFamily.shortTitle), ["原版", "光晕", "羽化"])
+        // The panel shows four cards in one row, none behind a menu. 环境光
+        // holds its two lights and 阅读 the three quiet pages.
+        XCTAssertEqual(V3SceneFamily.cards.map(\.title), ["环境光", "封面", "舞台", "阅读"])
+        XCTAssertEqual(V3SceneFamily.cards[0].entries.map(\.title), ["原版环境光", "柔光羽化"])
+        XCTAssertEqual(V3SceneFamily.cards[0].entries.map(V3SceneFamily.shortTitle), ["原版", "羽化"])
+        XCTAssertEqual(V3SceneFamily.cards[3].entries.map(V3SceneFamily.shortTitle), ["内页", "唱片", "专注"])
+        XCTAssertEqual(V3SceneFamily.cards.filter(\.automatic).map(\.title), ["环境光"])
+        // Left to the app, a bright cover gets 原版 and a dark one 羽化; a
+        // scene outside 环境光 and an explicit choice are never changed.
+        XCTAssertEqual(V3SceneFamily.automaticAmbient(luminance: 0.7).title, "原版环境光")
+        XCTAssertEqual(V3SceneFamily.automaticAmbient(luminance: 0.2).title, "柔光羽化")
+        let suite = "lyricsq-ambient-auto-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        let dark = BackdropPalette(primary: .init(red: 0.1, green: 0.1, blue: 0.2), secondary: .init(red: 0.1, green: 0.1, blue: 0.2),
+                                   glow: .init(red: 0.2, green: 0.2, blue: 0.4), luminance: 0.2, saturation: 0.5,
+                                   readabilityVeilOpacity: 0.3, textureOpacity: 0.2)
+        settings.selectV3Scene(.originalAmbient, renderer: .authenticAmbient)
+        V3SceneFamily.applyAutomaticAmbient(settings: settings, palette: dark, defaults: defaults)
+        XCTAssertEqual(settings.v3ArtworkPresentation, .ambientFeathered)
+        XCTAssertEqual(settings.v3ListeningScene, .flowingField)
+        defaults.set(false, forKey: V3SceneFamily.ambientAutomaticKey)
+        settings.selectV3Scene(.originalAmbient, renderer: .authenticAmbient)
+        V3SceneFamily.applyAutomaticAmbient(settings: settings, palette: dark, defaults: defaults)
+        XCTAssertEqual(settings.v3ArtworkPresentation, .authenticAmbient, "an explicit choice stays")
+        defaults.removeObject(forKey: V3SceneFamily.ambientAutomaticKey)
+        settings.selectV3Scene(.focusedLyrics, renderer: .lyricsOnly)
+        V3SceneFamily.applyAutomaticAmbient(settings: settings, palette: dark, defaults: defaults)
+        XCTAssertEqual(settings.v3ListeningScene, .focusedLyrics, "other scenes are left alone")
     }
 
     /// Someone sitting on 经典·纯高斯 moves to 柔和光晕 and keeps their blur.
