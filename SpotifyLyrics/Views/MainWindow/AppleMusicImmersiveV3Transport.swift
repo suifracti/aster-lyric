@@ -112,7 +112,9 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
             ZStack(alignment: .leading) {
                 if options.progress == .waveform {
                     V3LyricWaveform(lines: state.liveLyrics, duration: duration, fraction: progressFraction,
-                                    accent: coverAccent, height: density.interactionHeight)
+                                    accent: coverAccent, height: density.interactionHeight,
+                                    chorus: AppSettingsStore.shared.v3ChorusEmphasis && state.liveLyricsAreSynchronized
+                                        ? LyricsChorus.spans(lines: state.liveLyrics, duration: duration).map { $0.start...$0.end } : [])
                 } else {
                 Capsule()
                     .fill(Color.white.opacity(
@@ -121,6 +123,17 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
                             : LyricsDesignTokens.Progress.inactiveOpacity
                     ))
                     .frame(height: trackHeight)
+
+                // 副歌: the chorus as lighter stretches of the track.
+                if AppSettingsStore.shared.v3ChorusEmphasis, state.liveLyricsAreSynchronized, duration > 0 {
+                    ForEach(LyricsChorus.spans(lines: state.liveLyrics, duration: duration), id: \.start) { span in
+                        Capsule().fill(Color.white.opacity(0.22))
+                            .frame(width: max(2, width * CGFloat((min(span.end, duration) - span.start) / duration)),
+                                   height: trackHeight)
+                            .offset(x: width * CGFloat(span.start / duration))
+                    }
+                    .allowsHitTesting(false)
+                }
 
                 if isEmphasized {
                     Capsule().fill(progressActiveGradient)

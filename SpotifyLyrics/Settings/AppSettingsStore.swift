@@ -1114,6 +1114,11 @@ public final class AppSettingsStore: ObservableObject {
     @Published public var v3MusicMotionEnabled = false {
         didSet { defaults.set(v3MusicMotionEnabled, forKey: "v3.musicMotion.v1") }
     }
+    /// 副歌加强: chorus marked on the progress bar, the picture a step
+    /// brighter and the sung line glowing while the chorus plays.
+    @Published public var v3ChorusEmphasis = true {
+        didSet { defaults.set(v3ChorusEmphasis, forKey: "v3.chorusEmphasis.v1") }
+    }
     /// Words a source printed as f**k are shown whole. Display only.
     @Published public var lyricsRestoreCensoredWords = true {
         didSet { defaults.set(lyricsRestoreCensoredWords, forKey: "lyrics.restoreCensored.v1") }
@@ -1532,6 +1537,7 @@ public final class AppSettingsStore: ObservableObject {
                                          usesVideo: defaults.object(forKey: "v3.backdrop.video.v1") as? Bool)
         self.v3MusicMotionEnabled = defaults.bool(forKey: "v3.musicMotion.v1")
         self.lyricsRestoreCensoredWords = defaults.object(forKey: "lyrics.restoreCensored.v1") as? Bool ?? true
+        self.v3ChorusEmphasis = defaults.object(forKey: "v3.chorusEmphasis.v1") as? Bool ?? true
         self.floatingHiddenFromCapture = defaults.bool(forKey: "floating.hiddenFromCapture.v1")
         self.v3ExpandArtworkWhenDetailsHidden = defaults.object(forKey: Key.v3ExpandArtworkWhenDetailsHidden) as? Bool ?? true
         self.v3ShowForegroundArtwork = defaults.object(forKey: Key.v3ShowForegroundArtwork) as? Bool ?? true

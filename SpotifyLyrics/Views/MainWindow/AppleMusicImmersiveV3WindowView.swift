@@ -357,7 +357,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     settings: settings,
                     presentationOverride: hoveredStyle,
                     sceneOverride: compositionScene,
-                    clock: state.presentationClock
+                    clock: state.presentationClock,
+                    inChorus: settings.v3ChorusEmphasis && state.lyricsAreSynchronized
+                        && LyricsChorus.contains(state.currentLineIndex, lines: state.lyrics, duration: state.currentTrack.duration)
                 )
                 // An aspect-fill album image can report the square image's
                 // width in a tall window. Keep that drawing overflow inside

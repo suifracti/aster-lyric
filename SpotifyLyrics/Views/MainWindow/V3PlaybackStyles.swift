@@ -622,6 +622,8 @@ struct V3LyricWaveform: View {
     let fraction: Double
     let accent: Color
     let height: CGFloat
+    /// Chorus stretches (seconds): those bars are brighter and a little taller.
+    var chorus: [ClosedRange<Double>] = []
 
     private static let count = 56
 
@@ -661,12 +663,15 @@ struct V3LyricWaveform: View {
             let barWidth = max(1, step * 0.65)
             let played = GraphicsContext.Shading.color(accent.opacity(0.92))
             let ahead = GraphicsContext.Shading.color(.white.opacity(0.26))
+            let aheadChorus = GraphicsContext.Shading.color(.white.opacity(0.5))
             for (index, value) in values.enumerated() {
-                let barHeight = max(3, size.height * value)
+                let time = (Double(index) + 0.5) / Double(Self.count) * duration
+                let inChorus = chorus.contains { $0.contains(time) }
+                let barHeight = max(3, size.height * min(1, value * (inChorus ? 1.15 : 1)))
                 let rect = CGRect(x: CGFloat(index) * step, y: (size.height - barHeight) / 2,
                                   width: barWidth, height: barHeight)
                 context.fill(Path(roundedRect: rect, cornerRadius: barWidth / 2),
-                             with: Double(index) / Double(Self.count) < fraction ? played : ahead)
+                             with: Double(index) / Double(Self.count) < fraction ? played : (inChorus ? aheadChorus : ahead))
             }
         }
         .frame(height: height)

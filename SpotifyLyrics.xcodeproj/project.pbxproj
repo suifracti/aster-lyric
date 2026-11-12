@@ -250,6 +250,7 @@
 		F44CE541129D043DBFCD53E2 /* V3AlwaysHover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DD84F91FEAE16E4F5C026CE /* V3AlwaysHover.swift */; };
 		1894F58964647B39701CD0A2 /* KRCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 036201EF5830E1ABA1560F06 /* KRCParser.swift */; };
 		B8100D70E36CBFB92D34A8D4 /* QRCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40DF9B0900A715F2A4D5ABB9 /* QRCParser.swift */; };
+		7AC0299AB1122ECA99C2BF8F /* LyricsChorus.swift in Sources */ = {isa = PBXBuildFile; fileRef = B56E1FC19D3B55F23DC5DB66 /* LyricsChorus.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -502,6 +503,7 @@
 		6DD84F91FEAE16E4F5C026CE /* V3AlwaysHover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3AlwaysHover.swift; sourceTree = "<group>"; };
 		036201EF5830E1ABA1560F06 /* KRCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KRCParser.swift; sourceTree = "<group>"; };
 		40DF9B0900A715F2A4D5ABB9 /* QRCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCParser.swift; sourceTree = "<group>"; };
+		B56E1FC19D3B55F23DC5DB66 /* LyricsChorus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsChorus.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -768,6 +770,7 @@
 				120000022D83400100000000 /* TTMLParser.swift */,
 				120000022D83409900000000 /* YRCParser.swift */,
 				036201EF5830E1ABA1560F06 /* KRCParser.swift */,
+				B56E1FC19D3B55F23DC5DB66 /* LyricsChorus.swift */,
 				40DF9B0900A715F2A4D5ABB9 /* QRCParser.swift */,
 				110000152D83400100000000 /* LyricsMatcher.swift */,
 				110000162D83400100000000 /* LocalLyricsProvider.swift */,
@@ -1029,6 +1032,7 @@
 				120000022D83400100000001 /* TTMLParser.swift in Sources */,
 				120000022D83409900000001 /* YRCParser.swift in Sources */,
 				1894F58964647B39701CD0A2 /* KRCParser.swift in Sources */,
+				7AC0299AB1122ECA99C2BF8F /* LyricsChorus.swift in Sources */,
 				B8100D70E36CBFB92D34A8D4 /* QRCParser.swift in Sources */,
 				110000152D83400100000001 /* LyricsMatcher.swift in Sources */,
 				110000162D83400100000001 /* LocalLyricsProvider.swift in Sources */,

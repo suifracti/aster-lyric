@@ -267,6 +267,20 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertFalse(LyricsSafeMatcher.titleOnlyAddsVersionName(track: "听悲伤的情歌", candidate: "听悲伤的情歌"))
     }
 
+    // MARK: Chorus
+
+    func testChorusIsTheRepeatedRun() {
+        let texts = ["开头一句话", "第二句不一样", "我们一起唱副歌", "副歌第二句很长", "主歌第二段", "又换了词",
+                     "我们一起唱副歌", "副歌第二句很长", "结尾"]
+        let lines = texts.enumerated().map { LyricLine(timestamp: Double($0.offset * 5 + 1), originalText: $0.element) }
+        let spans = LyricsChorus.compute(lines: lines, duration: 60)
+        XCTAssertEqual(spans.map(\.lines), [2...3, 6...7])
+        XCTAssertEqual(spans.first?.start, 11)
+        XCTAssertEqual(spans.first?.end, 21, "ends where the next line starts")
+        let single = ["一", "啊啊", "啊啊", "噢噢"].enumerated().map { LyricLine(timestamp: Double($0.offset), originalText: $0.element) }
+        XCTAssertTrue(LyricsChorus.compute(lines: single, duration: 10).isEmpty, "one short repeated line is not a chorus")
+    }
+
     // MARK: Seeking
 
     func testDragLandsOnTheNearestLineStart() {

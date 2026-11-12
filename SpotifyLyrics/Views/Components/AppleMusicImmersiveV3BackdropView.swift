@@ -63,6 +63,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
     var sceneOverride: V3ListeningScene? = nil
     /// Playback time, for lights that follow Spotify's beat grid.
     var clock: LyricsPresentationClock? = nil
+    /// 副歌加强: the chorus is playing.
+    var inChorus: Bool = false
     private var listeningScene: V3ListeningScene? { presentationOverride == nil ? settings.v3ListeningScene : sceneOverride }
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
@@ -123,6 +125,10 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 // The common *local* reading protection is applied by the text host.
                 if artworkPresentation != .stage { Color.black.opacity(readabilityVeilOpacity) }
             }
+            // 副歌: the picture a step brighter while the chorus plays.
+            Color.white.opacity(inChorus && presentationOverride == nil ? 0.07 : 0)
+                .blendMode(.screen)
+                .animation(accessibilityReduceMotion ? nil : .easeInOut(duration: 0.9), value: inChorus)
             if settings.v3MusicMotionEnabled && presentationOverride == nil {
                 V3MusicPulseLight(color: (palette.identity ?? palette.glow).nsColor, center: coverLightCenter,
                                   active: pulseWanted, clock: clock)

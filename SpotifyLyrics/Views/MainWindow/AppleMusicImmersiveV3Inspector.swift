@@ -724,6 +724,8 @@ struct V3VisualControls {
                 .help("原文与译文字号；在歌词上双指捏合也可调整")
             Toggle("大字模式", isOn: $settings.v3BigLineModeEnabled)
                 .help("当前句约两倍大，其他行缩小变淡，适合远处跟唱")
+            Toggle("副歌加强", isOn: $settings.v3ChorusEmphasis)
+                .help("从歌词里找出重复的段落当作副歌：进度条上标成浅色段，唱到副歌时画面亮一档、当前句带封面色的光。")
             V3SegmentedPicker("对齐", selection: $settings.v3LyricsPosition,
                               options: [("跟随场景", "automatic"), ("左", "left"), ("居中", "center"), ("右", "right")])
                 .help("跟随场景：当前使用" + (settings.v3ListeningScene == .coverPhoto ? "右侧阅读区" : settings.v3ArtworkPresentation == .stage ? "居中阅读区" : "左对齐"))

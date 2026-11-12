@@ -506,6 +506,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
 }
 
 private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
+    @Environment(\.v3CoverAccent) private var coverAccent
     @Environment(\.lyricAgentPresentationMap) private var voices
     @Environment(\.lyricIslandScene) private var readingScene
     @State private var rubyActionRelay = RubyCorrectionAction()
@@ -637,6 +638,8 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     private func row(for line: LyricLine, index: Int) -> some View {
         let isActive = synchronized && currentIndex == index
         let indent = voiceIndent(for: line)
+        let chorusGlow = isActive && settings.v3ChorusEmphasis
+            && LyricsChorus.contains(index, lines: lines, duration: duration)
         let distance = synchronized && currentIndex != nil
             ? abs(index - (currentIndex ?? index))
             : 0
@@ -655,6 +658,8 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             bigLineAvailableHeight: isActive ? bigLineAvailableHeight : nil
         )
         .equatable()
+        // 副歌: the sung line in the chorus carries the cover's colour as light.
+        .shadow(color: chorusGlow ? coverAccent.opacity(0.55) : .clear, radius: 16)
         .padding(.leading, indent)
         // 换句波浪: the rows below the new line trail and settle one after another.
         .modifier(V3WaveLag(trigger: currentIndex ?? -1, steps: index - (currentIndex ?? index),
