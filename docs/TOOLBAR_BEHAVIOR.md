@@ -916,6 +916,14 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 - Records carry no Spotify link, so a cover does not start playback.
 - The 列表 / 封面墙 choice is remembered (`listening.history.coverWall.v1`).
 
+**生成回顾卡** (`统计` page, F6).
+- Turns the chosen time range into a 1080 × 1350 picture:
+  - time listened;
+  - number of songs and plays;
+  - the most played singer;
+  - the top five songs with their covers, on the top song's colours.
+- The picture is copied and saved like the lyric share card. Nothing is uploaded.
+
 **Checked:**
 - The particles were rendered in a scratch window, one per weather, because Spotify was paused.
 - The fog veil was checked in the real main window; the setting was restored afterwards.
