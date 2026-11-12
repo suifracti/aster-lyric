@@ -25,6 +25,7 @@
 | 模糊变化不均匀、找旧环境光的圆形、歌词库面板切换卡顿 | L-018；V3BlurCurve、featheredAmbientArtworkLayers、V3LibraryOwner |
 | 加光效、加播放呈现、新呈现不显示或挡住歌词 | L-019；V3AmbientTreatment、v3ScenePlayerHidden、V3PlaybackStyles.swift |
 | 工具栏/歌词/播放栏样式、核对只在指针附近显示的界面 | L-020；V3ToolbarStyle、V3LyricStyle、v3PlayerBarOptions |
+| 已采用的歌突然“歌词暂不可用”、合作歌手写法不同（假名/罗马字）进了核对 | L-021；redirectNewSpotifyKey、retryingStore、nameReadingKey |
 | 在窗口边缘拖进度会变成缩放窗口、进度线靠近时下移不好看、胶囊和工具栏像两套控件、画面面板底部被截断 | L-015；V3EdgePillScrubber、V3ControlBarSurface、V3ThemeSelectorView |
 | 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
@@ -263,6 +264,31 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **只在指针附近显示的界面。** 工具栏只在指针靠近时显示，`screencapture` 拍不到。用离屏主机的 `--toolbar full --toolbar-style …` 核对，仅用于排版。
 - **译文同行的坑。** 用 ViewThatFits 判断“放不放得下”时，候选视图不能带固定宽度，否则永远判为放得下。
 - **截图前先看用户的现选值。** 截图脚本只改要看的那一项，结束后恢复用户自己的选择（这次用户正在用封面进度和环形工具栏）。
+
+## L-021 已存歌词读不出来：两个数据库对象各自缓存重定向；合作歌手写成假名
+
+**症状**：已采用过歌词的歌，突然显示“歌词暂不可用”。2026-11-12 用户连续截到三次：《Romeo and Cinderella - Remix》、一首 nyamura 的歌、《君とコーヒー (feat. Sando Aoi)》。
+
+**原因**：
+- Spotify Desktop 时而报全部歌手、时而只报主歌手，同一首歌因此得到新的身份键，读取时要写一条重定向（新键 → 旧键）。
+- 播放器和歌词库各有一个 `SQLiteLyricsRepository`，各自在内存里缓存重定向表。
+- 一个对象写过的重定向，另一个的缓存不知道。它再写一次时撞上 `track_identity_redirects.source_stable_key` 唯一约束。
+- `isLyricsSelectionRevoked` 抛错后，会话为了保护已采用的版本而停止，显示失败。
+
+**修复与验证**：
+- `redirectNewSpotifyKey` 写之前先查数据库；已有就刷新缓存并跳过。
+- 测试 `testSecondRepositoryReadsARedirectTheFirstAlreadyWrote` 在旧代码上复现了同一个错误。
+
+**顺带的改动**：
+- 读库失败会自动重试三次。
+- 提示改为“暂时读不到本机歌词库，已保存的歌词还在”。
+- 启动时把上一次日志留在 `/tmp/spotifylyrics-e2e.log.1`。这次就是因为反复重启把现场日志清掉了，第一次没查到原因。
+
+**合作歌手写成假名**：《Imagination (feat. Raguma)》的网易云记录写作「らぐま」。主歌手、专辑、时长（151.29 秒）都一致，却因合作歌手名不同进了核对，前后搜了 25 秒。
+- `TrackTextNormalizer.nameReadingKey` 只把纯假名的名字转写成罗马字再比较；含汉字或谚文的名字保留原样，以免中文读音被当成日文名。
+- 测试 `testGuestWrittenInKanaIsTheSameGuest`。
+
+以后再遇到“别人有歌词、我们没有”，先看日志里是否有 `PERSISTENCE` / `SESSION failed`，再看 `MATCH` 的扣分项。
 
 ## 实际覆盖与接续
 

@@ -3,6 +3,23 @@ import Foundation
 
 @MainActor
 public final class LyricsSessionController: ObservableObject {
+    /// A read of the local store can fail for a moment (another process
+    /// still closing the database, a busy write). Such a failure must not
+    /// leave the song without its saved lyrics, so the read is tried three
+    /// times over about five seconds before it counts as a failure.
+    nonisolated static func retryingStore<T>(_ label: String, _ operation: () async throws -> T) async throws -> T {
+        var delay: UInt64 = 400_000_000
+        for attempt in 1...3 {
+            do { return try await operation() } catch {
+                if attempt == 3 || Task.isCancelled { throw error }
+                LyricsE2ELog.log("PERSISTENCE retry op=\(label) attempt=\(attempt) error=\(error.localizedDescription)")
+                try? await Task.sleep(nanoseconds: delay)
+                delay *= 3
+            }
+        }
+        throw CancellationError()
+    }
+
     @Published public private(set) var state: LyricsLoadState = .idle
     @Published public private(set) var availableCandidates: [LyricsCandidate] = []
     @Published public private(set) var lyrics: [LyricLine] = []
@@ -203,10 +220,12 @@ public final class LyricsSessionController: ObservableObject {
 
             if let repository {
                 do {
-                    try await repository.prepare()
+                    try await Self.retryingStore("prepare") { try await repository.prepare() }
                     repositoryReady = true
                     do {
-                        reviewOnly = try await repository.isLyricsSelectionRevoked(identity: identity)
+                        reviewOnly = try await Self.retryingStore("revocation") {
+                            try await repository.isLyricsSelectionRevoked(identity: identity)
+                        }
                     } catch {
                         await MainActor.run { [weak self] in
                             guard let self, self.activeIdentity == identity, self.revision == requestRevision else { return }
@@ -224,7 +243,9 @@ public final class LyricsSessionController: ObservableObject {
                         return
                     }
                     storedAliases = (try? await repository.loadAliases(stableKey: identity.stableKey)) ?? []
-                    if let cached = try await repository.loadBestStored(track: track, identity: identity),
+                    if let cached = try await Self.retryingStore("loadBestStored", {
+                        try await repository.loadBestStored(track: track, identity: identity)
+                    }),
                        !forceRefresh || (!reviewOnly && cached.isUserProtected) {
                         cachedReference = cached
                         LyricsE2ELog.log(

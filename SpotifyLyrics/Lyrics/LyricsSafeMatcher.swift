@@ -118,8 +118,10 @@ public enum LyricsSafeMatcher {
             && metadataTitle != candidateTitle
             && featuredBaseTitle(metadata.track.title) == featuredBaseTitle(candidate.title)
             && !featuredBaseTitle(candidate.title).isEmpty
+        // The same guest written in kana on one side and in Latin letters on
+        // the other (らぐま / Raguma) is the same guest.
         let declaredFeaturedMatches = !metadataFeaturedInTitle.isEmpty
-            && Set(metadataFeaturedInTitle.map(TrackTextNormalizer.normalizeArtistToken)) == Set(candidateFeaturedInTitle.map(TrackTextNormalizer.normalizeArtistToken))
+            && Set(metadataFeaturedInTitle.map(TrackTextNormalizer.nameReadingKey)) == Set(candidateFeaturedInTitle.map(TrackTextNormalizer.nameReadingKey))
         let metadataBaseTitle = TrackTextNormalizer.normalize(TrackTextNormalizer.stripVersionMarkers(fromTitle: metadata.track.title))
         let candidateBaseTitle = TrackTextNormalizer.normalize(TrackTextNormalizer.stripVersionMarkers(fromTitle: candidate.title))
         let manualQueryTitle = queryVariant?.queryKind == .manualOverride
@@ -282,10 +284,10 @@ public enum LyricsSafeMatcher {
             // Similarly, providers may declare guests in candidate.title or candidate.artist.
             let titleGuests = declaredFeaturedArtists(in: metadata.track.title)
             let expectedFeatured = Set(((metadataGroup?.featured ?? []) + titleGuests)
-                .map(TrackTextNormalizer.normalizeArtistToken).filter { !$0.isEmpty })
+                .map(TrackTextNormalizer.nameReadingKey).filter { !$0.isEmpty })
             let candidateTitleGuests = declaredFeaturedArtists(in: candidate.title)
             let actualFeatured = Set(((candidateArtists.featured) + candidateTitleGuests)
-                .map(TrackTextNormalizer.normalizeArtistToken).filter { !$0.isEmpty })
+                .map(TrackTextNormalizer.nameReadingKey).filter { !$0.isEmpty })
             let missing = expectedFeatured.subtracting(actualFeatured)
             let extra = actualFeatured.subtracting(expectedFeatured)
 

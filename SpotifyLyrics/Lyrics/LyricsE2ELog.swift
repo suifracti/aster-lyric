@@ -18,7 +18,11 @@ enum LyricsE2ELog {
     static func reset() {
         lock.lock()
         defer { lock.unlock() }
-        try? FileManager.default.removeItem(atPath: path)
+        // Keep the previous run beside the new one: a problem the user saw
+        // before a relaunch must still be readable afterwards.
+        let previous = path + ".1"
+        try? FileManager.default.removeItem(atPath: previous)
+        try? FileManager.default.moveItem(atPath: path, toPath: previous)
         writeUnlocked("LOG_RESET")
     }
 

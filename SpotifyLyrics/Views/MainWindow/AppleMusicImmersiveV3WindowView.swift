@@ -421,6 +421,15 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
 
                 let toolbarStyle = settings.v3ToolbarStyle
+                if toolbarStyle == .outside {
+                    // 窗外: the bar lives in its own small window above this
+                    // one; nothing of it is drawn over the listening view.
+                    V3OutsideToolbarHost(
+                        keepVisible: toolbarPanelIsPresented || pinnedToolbarPanel != nil,
+                        content: toolBar(for: geometry.size))
+                        .frame(width: 0, height: 0)
+                }
+                if toolbarStyle != .outside {
                 HStack(spacing: 16) {
                     if toolbarStyle != .titleBar { Spacer(minLength: 0) }
                     toolBar(for: geometry.size)
@@ -438,6 +447,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 .padding(.leading, toolbarStyle == .titleBar ? 76 : 24)
                 .padding(.trailing, toolbarStyle == .radial ? 12 : 24)
                 .padding(.top, toolbarStyle == .titleBar ? 3 : toolbarStyle == .radial ? 10 : 18)
+                }
 
                 // Hover shows the temporary panel inside the app; a click pins
                 // it as a separate tool window to the right of the main window.
@@ -1915,7 +1925,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     }
 
     private func toolbarTriggerHover(_ panel: ToolbarPopover, inside: Bool) {
-        guard !librarySearch.isPresented else { return }
+        // 窗外 opens panels on a click, pinned beside the window, so nothing
+        // hovers over the listening view.
+        guard !librarySearch.isPresented, settings.v3ToolbarStyle != .outside else { return }
         apply(toolbar.pointerOnTrigger(panel, inside: inside))
     }
 
@@ -1983,7 +1995,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         // whenever the window becomes key, which reads as a stuck selection.
         .focusEffectDisabled()
         .environment(\.lyricIslandCompactTools,
-                     size.width < 720 || style == .iconOnly || style == .titleBar || style == .radial)
+                     (size.width < 720 && style != .outside) || style == .iconOnly || style == .titleBar || style == .radial)
         .background(GeometryReader { geometry in
             Color.clear.preference(key: V3ToolbarFramePreferenceKey.self,
                 value: geometry.frame(in: .named("v3-window-canvas")))

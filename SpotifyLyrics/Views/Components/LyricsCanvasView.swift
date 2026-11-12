@@ -772,6 +772,8 @@ struct LyricsStateContentFirstView: View {
             return "找到了发行记录，但这项来源还没有可用正文。可继续播放并查找其他来源；这不表示歌曲是纯音乐。"
         case .serverError, .timedOut, .networkUnavailable, .rateLimited:
             return "部分歌词来源暂时不可用。可以继续听歌，稍后重试；失败请求不会被当作歌曲没有歌词。"
+        case .unknown(let reason) where reason.hasPrefix("无法读取"):
+            return "暂时读不到本机歌词库，已保存的歌词还在。点“重试查找”再读一次；为了不覆盖已采用的版本，这时不会自动换成网上的歌词。"
         default:
             return "当前结果还不足以安全显示正确歌词。查看来源详情或搜索其他版本；已保存的版本不会被删除。"
         }

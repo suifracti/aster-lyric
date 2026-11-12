@@ -407,12 +407,12 @@ enum LyricIslandPanelPlacement {
         let margin: CGFloat = 8
         let width = min(max(280, requested.width), max(1, visible.width - margin * 2))
         let height = min(max(320, requested.height), max(1, visible.height - margin * 2))
-        // Keep this as a separate panel on the right. When it cannot fit beside
-        // the owner, place it at the screen's right edge rather than docking it
-        // back inside the main window or jumping to the left.
+        // Outside the window first: the right side, else the left side.
+        // Only when neither fits does it overlap, at the screen's edge.
         let right = owner.maxX + gap
-        let x = right + width <= visible.maxX - margin
-            ? right
+        let left = owner.minX - gap - width
+        let x = right + width <= visible.maxX - margin ? right
+            : left >= visible.minX + margin ? left
             : max(visible.minX + margin, visible.maxX - width - margin)
         let y = min(visible.maxY - height - margin, max(visible.minY + margin, owner.maxY - height))
         return CGRect(x: x, y: y, width: width, height: height)

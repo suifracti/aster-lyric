@@ -3024,6 +3024,20 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
               let prefix = stableKey.components(separatedBy: "|metadata:").first,
               let id = TrackIdentity.canonicalSpotifyTrackID(String(prefix.dropFirst("spotify-id:".count))),
               let database else { return }
+        // Another repository object on the same database (the player and the
+        // lyrics library each hold one) may already have written this
+        // redirect. Its cached list here would not know, and a second insert
+        // fails on the unique key, which used to stop the song's saved
+        // lyrics from loading at all. Read the database, not only the cache.
+        let existing = try prepare("SELECT 1 FROM track_identity_redirects WHERE source_stable_key = ? LIMIT 1;")
+        defer { sqlite3_finalize(existing) }
+        try bindText(stableKey, at: 1, to: existing)
+        let existingResult = sqlite3_step(existing)
+        guard existingResult == SQLITE_ROW || existingResult == SQLITE_DONE else { throw lastError() }
+        if existingResult == SQLITE_ROW {
+            try reloadRedirectResolver()
+            return
+        }
         let query = try prepare("""
             SELECT t.stable_key FROM tracks t
             WHERE (lower(t.spotify_id) IN (?, ?) OR lower(t.spotify_uri) = ?)

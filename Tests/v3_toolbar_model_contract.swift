@@ -421,7 +421,7 @@ final class V3ToolbarPresentationTests: XCTestCase {
         XCTAssertEqual(settings.v3ToolbarStyle, .standard)
         XCTAssertEqual(settings.v3LyricStyle, .standard)
         XCTAssertEqual(settings.v3ProgressStyle, .standard)
-        XCTAssertEqual(V3ToolbarStyle.allCases.map(\.title), ["标准", "图标", "分组", "下拉", "标题栏", "环形"])
+        XCTAssertEqual(V3ToolbarStyle.allCases.map(\.title), ["标准", "图标", "分组", "下拉", "标题栏", "环形", "窗外"])
         XCTAssertEqual(V3LyricStyle.allCases.map(\.title), ["标准", "景深", "卡拉OK", "单行", "打字机", "光色", "译文同行"])
         XCTAssertEqual(V3ProgressStyle.allCases.map(\.title), ["普通", "歌词刻度", "波形"])
         settings.v3ToolbarStyle = .radial

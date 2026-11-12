@@ -69,12 +69,13 @@ public enum V3PlaybackPresentation: String, CaseIterable, Identifiable, Sendable
 
 /// How the toolbar is shown. 标准 is the established bar.
 public enum V3ToolbarStyle: String, CaseIterable, Identifiable, Sendable {
-    case standard = "", iconOnly, grouped, pullDown, titleBar, radial
+    case standard = "", iconOnly, grouped, pullDown, titleBar, radial, outside
     public var id: String { rawValue }
     public var title: String {
         switch self {
         case .standard: return "标准"; case .iconOnly: return "图标"; case .grouped: return "分组"
         case .pullDown: return "下拉"; case .titleBar: return "标题栏"; case .radial: return "环形"
+        case .outside: return "窗外"
         }
     }
     public var detail: String {
@@ -85,6 +86,7 @@ public enum V3ToolbarStyle: String, CaseIterable, Identifiable, Sendable {
         case .pullDown: return "平时隐藏，指针碰到窗口上缘时滑下"
         case .titleBar: return "放进标题栏，紧挨左上角的窗口按钮"
         case .radial: return "右上角一个圆钮，靠近时工具沿弧线展开"
+        case .outside: return "工具栏在窗口外的上方，指针移出窗口靠近时出现；窗口里只有歌词，面板钉在窗口右侧外面"
         }
     }
 }

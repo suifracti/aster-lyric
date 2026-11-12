@@ -47,6 +47,39 @@ final class LibraryRevisionsContractTests: XCTestCase {
         XCTAssertEqual(again?.versionID, version)
     }
 
+    /// 君とコーヒー: Spotify first gave "Islet, Sando Aoi", later "Islet"
+    /// alone. The player's and the library's repositories share one
+    /// database; once one had written the redirect for the new key, the
+    /// other tried again, hit the unique key and the song showed no lyrics.
+    func testSecondRepositoryReadsARedirectTheFirstAlreadyWrote() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let url = root.appendingPathComponent("two.sqlite3")
+        let provenance = root.appendingPathComponent("provenance")
+        let player = SQLiteLyricsRepository(databaseURL: url, alignmentProvenanceDirectory: provenance)
+        let library = SQLiteLyricsRepository(databaseURL: url, alignmentProvenanceDirectory: provenance)
+        try await player.prepare()
+        try await library.prepare()
+        let first = Track(title: "君とコーヒー (feat. Sando Aoi)", artist: "Islet, Sando Aoi", album: "CYANIDE",
+                          duration: 241.5, spotifyId: "3nk3dJRFygCzyo6YZwIGul")
+        let identity = TrackIdentity(track: first)
+        let document = LyricsDocument(identity: identity, title: first.title, artist: first.artist, album: first.album,
+            duration: 241.5, lines: [LyricLine(timestamp: 1, originalText: "已选歌词")],
+            isSynchronized: true, source: .lrclib, confidence: 1)
+        let saved = try await player.save(track: first, identity: identity, document: document)
+        let version = try XCTUnwrap(saved.versionID)
+        try await player.adoptLyricsVersion(trackStableKey: identity.stableKey, lyricsVersionID: version)
+        let later = Track(title: first.title, artist: "Islet", album: first.album, duration: 241.5, spotifyId: first.spotifyId)
+        let laterIdentity = TrackIdentity(track: later)
+        XCTAssertNotEqual(laterIdentity.stableKey, identity.stableKey)
+        // The library writes the redirect first; the player's cache has not seen it.
+        _ = try await library.loadBestStored(track: later, identity: laterIdentity)
+        let revoked = try await player.isLyricsSelectionRevoked(identity: laterIdentity)
+        XCTAssertFalse(revoked)
+        let loaded = try await player.loadBestStored(track: later, identity: laterIdentity)
+        XCTAssertEqual(loaded?.versionID, version)
+        XCTAssertEqual(loaded?.document.lines.first?.originalText, "已选歌词")
+    }
+
     func testReceivedTranslationSurvivesRecordingMetadataChange() async throws {
         let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
         let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("translation.sqlite3"),

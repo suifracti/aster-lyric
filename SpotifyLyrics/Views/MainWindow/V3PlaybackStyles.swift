@@ -68,6 +68,19 @@ private struct V3ThinProgress: View {
     }
 }
 
+/// The playback buttons in a small bar, for presentations that otherwise
+/// show no controls.
+struct V3HoverControlBar: View {
+    let state: PlaybackState
+    var body: some View {
+        V3PlaybackButtons(state: state, compact: true)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .modifier(V3ControlBarSurface())
+            .modifier(V3SystemAppearanceModifier())
+            .fixedSize()
+    }
+}
+
 // MARK: - 光随歌曲
 
 /// 换行呼吸 brightens the light a little at each new lyric line; 随曲推移
@@ -379,6 +392,7 @@ private struct V3InterludePresentation: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .padding(.bottom, 34)
         }
+        .overlay(alignment: .bottom) { V3InterludeHandle(state: state) }
         .onAppear { if !browser.hasLoadedQueue { browser.loadQueue() } }
         .onChange(of: state.currentTrack.id) { _, _ in browser.loadQueue() }
     }
@@ -407,9 +421,24 @@ private struct V3CoverProgressPresentation: View {
     let cover: V3ForegroundCoverFrame
     @State private var draft: Double?
     @State private var hover: Double?
+    @State private var showsControls = false
 
     var body: some View {
         let rect = cover.frame
+        ZStack(alignment: .bottom) {
+            progressLayer(rect)
+            if showsControls {
+                V3HoverControlBar(state: state)
+                    .padding(.bottom, 12)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+        }
+        .frame(width: rect.width, height: rect.height)
+        .onHover { inside in withAnimation(.easeOut(duration: 0.2)) { showsControls = inside } }
+        .position(x: rect.midX, y: rect.midY)
+    }
+
+    private func progressLayer(_ rect: CGRect) -> some View {
         V3PlaybackFractionReader(state: state, interval: 0.5) { live in
             let fraction = draft ?? live
             ZStack(alignment: .leading) {
@@ -463,7 +492,6 @@ private struct V3CoverProgressPresentation: View {
             .accessibilityValue("\(Int(fraction * 100))%")
         }
         .frame(width: rect.width, height: rect.height)
-        .position(x: rect.midX, y: rect.midY)
     }
 }
 
@@ -527,17 +555,32 @@ struct V3VinylDiscLayer: View {
 private struct V3VinylControl: View {
     let state: PlaybackState
     let cover: CGRect
+    @State private var showsControls = false
 
     var body: some View {
         let disc = V3VinylDiscLayer.discFrame(for: cover)
         let shape = V3CrescentShape(disc: disc, cover: cover)
-        shape
-            .fill(Color.clear, style: FillStyle(eoFill: true))
-            .contentShape(shape, eoFill: true)
-            .onTapGesture { state.togglePlayPause() }
-            .help(state.isPlaying ? "暂停" : "播放")
-            .accessibilityLabel(state.isPlaying ? "暂停" : "播放")
-            .accessibilityAddTraits(.isButton)
+        ZStack(alignment: .topLeading) {
+            shape
+                .fill(Color.clear, style: FillStyle(eoFill: true))
+                .contentShape(shape, eoFill: true)
+                .onTapGesture { state.togglePlayPause() }
+                .help(state.isPlaying ? "暂停" : "播放")
+                .accessibilityLabel(state.isPlaying ? "暂停" : "播放")
+                .accessibilityAddTraits(.isButton)
+            // The cover itself: pointing at it shows the buttons at its foot.
+            Color.clear
+                .frame(width: cover.width, height: cover.height)
+                .contentShape(Rectangle())
+                .onHover { inside in withAnimation(.easeOut(duration: 0.2)) { showsControls = inside } }
+                .overlay(alignment: .bottom) {
+                    if showsControls {
+                        V3HoverControlBar(state: state).padding(.bottom, 12)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
+                }
+                .position(x: cover.midX, y: cover.midY)
+        }
     }
 }
 
@@ -680,5 +723,40 @@ extension EnvironmentValues {
     var v3TitleMarquee: Bool {
         get { self[V3MarqueeEnabledKey.self] }
         set { self[V3MarqueeEnabledKey.self] = newValue }
+    }
+}
+
+
+/// 幕间's only resting mark: a short line at the bottom. Pointing at it
+/// opens the playback buttons.
+private struct V3InterludeHandle: View {
+    let state: PlaybackState
+    @State private var open = false
+    @State private var closeTask: Task<Void, Never>?
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            if open {
+                V3HoverControlBar(state: state).transition(.opacity.combined(with: .move(edge: .bottom)))
+            } else {
+                Capsule().fill(Color.white.opacity(0.35)).frame(width: 44, height: 4)
+                    .padding(.bottom, 4)
+            }
+        }
+        .frame(width: open ? nil : 160, height: 44)
+        .contentShape(Rectangle())
+        .onHover { inside in
+            closeTask?.cancel()
+            if inside { withAnimation(.easeOut(duration: 0.2)) { open = true } }
+            else {
+                closeTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(700))
+                    guard !Task.isCancelled else { return }
+                    withAnimation(.easeOut(duration: 0.2)) { open = false }
+                }
+            }
+        }
+        .padding(.bottom, 12)
+        .help("播放控制")
     }
 }

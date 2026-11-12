@@ -261,6 +261,26 @@ private final class PetitLyricsFixtureURLProtocol: URLProtocol, @unchecked Senda
 @MainActor
 final class ProviderFailureContractTests: XCTestCase {
     /// Real cases, 2026-11: lyrics existed but the artist was written differently.
+    /// Imagination (feat. Raguma) by Kage.Jp: NetEase writes the guest in
+    /// kana. Same lead artist, album and length: adopted without review.
+    /// A different guest stays out of automatic adoption.
+    func testGuestWrittenInKanaIsTheSameGuest() {
+        let track = Track(title: "Imagination (feat. Raguma)", artist: "Kage.Jp", album: "In my heart", duration: 151.291)
+        let metadata = TrackMetadata.bootstrap(from: track)
+        func candidate(_ title: String, _ artist: String) -> LyricsCandidate {
+            LyricsCandidate(id: "fixture-\(title)", identity: TrackIdentity(track: track), title: title, artist: artist,
+                album: "In my heart", duration: 151.29, lines: [LyricLine(timestamp: 0, originalText: "Generated test line")],
+                source: .neteaseExperimental, confidence: 0.9)
+        }
+        XCTAssertEqual(TrackTextNormalizer.nameReadingKey("らぐま"), TrackTextNormalizer.nameReadingKey("Raguma"))
+        XCTAssertNotEqual(TrackTextNormalizer.nameReadingKey("初音ミク"), TrackTextNormalizer.nameReadingKey("hatsunemiku"),
+                          "names with kanji keep their own key")
+        let same = LyricsSafeMatcher.decide(candidate: candidate("Imagination (feat. らぐま)", "Kage.Jp, らぐま"), metadata: metadata)
+        XCTAssertTrue(same.tier == .autoMedium || same.tier == .autoHigh, "\(same.tier) \(same.reasons)")
+        let other = LyricsSafeMatcher.decide(candidate: candidate("Imagination (feat. かがみ)", "Kage.Jp, かがみ"), metadata: metadata)
+        XCTAssertFalse(other.tier == .autoMedium || other.tier == .autoHigh, "\(other.tier) \(other.reasons)")
+    }
+
     func testArtistWrittenDifferentlyIsRecognisedOrLeftForReview() {
         func candidate(_ artist: String, title: String = "Phone Number", duration: Double = 169, for track: Track) -> LyricsCandidate {
             LyricsCandidate(id: "fixture-\(artist)", identity: TrackIdentity(track: track), title: title, artist: artist,

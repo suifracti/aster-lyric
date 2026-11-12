@@ -120,6 +120,23 @@ public enum TrackTextNormalizer {
     /// A punctuation-insensitive artist key. It intentionally removes spaces
     /// and dots so `MOSAIC.TUNE` and `MOSAIC TUNE` can be compared, while the
     /// original display string remains untouched in TrackMetadata.
+    /// One spelling for a name written in kana on one side and in Latin
+    /// letters on the other (らぐま / Raguma). Only kana are transliterated;
+    /// kanji and Hangul keep their own key, so a Chinese reading is never
+    /// taken for a Japanese name.
+    public static func nameReadingKey(_ raw: String) -> String {
+        let source = normalizeArtistToken(raw)
+        let hasKana = source.unicodeScalars.contains { (0x3040...0x30FF).contains($0.value) }
+        let hasHanOrHangul = source.unicodeScalars.contains {
+            (0x4E00...0x9FFF).contains($0.value) || (0xAC00...0xD7AF).contains($0.value)
+        }
+        guard hasKana, !hasHanOrHangul else { return source }
+        let latin = source.applyingTransform(.hiraganaToKatakana, reverse: true)?
+            .applyingTransform(.toLatin, reverse: false) ?? source
+        let folded = latin.folding(options: [.diacriticInsensitive, .caseInsensitive, .widthInsensitive], locale: nil)
+        return String(folded.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(Character.init))
+    }
+
     public static func normalizeArtistToken(_ raw: String) -> String {
         let normalized = normalize(raw)
         let scalars = normalized.unicodeScalars.filter { scalar in

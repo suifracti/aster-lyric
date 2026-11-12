@@ -543,3 +543,118 @@ struct QuietToolbarButtonStyle: ButtonStyle {
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hovering)
     }
 }
+
+
+/// 窗外: the toolbar in a small borderless window of its own, just above the
+/// main window. It shows while the pointer is outside the main window but
+/// near it, or over the bar, or while one of its panels is open; inside the
+/// main window there is only the listening view.
+struct V3OutsideToolbarHost<Content: View>: NSViewRepresentable {
+    let keepVisible: Bool
+    let content: Content
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeNSView(context: Context) -> V3ToolAnchorView { V3ToolAnchorView() }
+    func updateNSView(_ anchor: V3ToolAnchorView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.anchor = anchor
+        coordinator.keepVisible = keepVisible
+        coordinator.update(AnyView(content))
+        anchor.onWindowAttachment = { [weak coordinator] in coordinator?.attach() }
+    }
+    static func dismantleNSView(_ nsView: V3ToolAnchorView, coordinator: Coordinator) {
+        nsView.onWindowAttachment = nil
+        coordinator.close()
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        weak var anchor: NSView?
+        var keepVisible = false
+        private var panel: NSPanel?
+        private var hosting: NSHostingController<AnyView>?
+        private var timer: Timer?
+        private var shown = false
+        private weak var owner: NSWindow?
+
+        func update(_ view: AnyView) {
+            let root = AnyView(view.padding(6).fixedSize())
+            if let hosting { hosting.rootView = root } else {
+                let controller = NSHostingController(rootView: root)
+                controller.sizingOptions = [.preferredContentSize]
+                hosting = controller
+            }
+            attach()
+        }
+
+        func attach() {
+            guard let owner = anchor?.window, let hosting else { return }
+            if panel == nil {
+                let candidate = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 56),
+                                        styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+                candidate.isOpaque = false
+                candidate.backgroundColor = .clear
+                candidate.hasShadow = false
+                candidate.isReleasedWhenClosed = false
+                candidate.hidesOnDeactivate = false
+                candidate.becomesKeyOnlyIfNeeded = true
+                candidate.collectionBehavior = [.fullScreenAuxiliary]
+                candidate.contentViewController = hosting
+                candidate.alphaValue = 0
+                panel = candidate
+            }
+            if self.owner !== owner, let panel {
+                self.owner?.removeChildWindow(panel)
+                owner.addChildWindow(panel, ordered: .above)
+                self.owner = owner
+            }
+            place()
+            startWatching()
+        }
+
+        /// Above the window's top edge, right-aligned. With no room above
+        /// (a window at the top of the screen) it sits just inside the top
+        /// edge, which is still outside the lyrics.
+        private func place() {
+            guard let panel, let owner, let hosting else { return }
+            let size = hosting.view.fittingSize
+            let screen = owner.screen?.visibleFrame ?? .infinite
+            var origin = CGPoint(x: owner.frame.maxX - size.width - 8, y: owner.frame.maxY + 4)
+            if origin.y + size.height > screen.maxY { origin.y = owner.frame.maxY - size.height - 4 }
+            origin.x = max(screen.minX + 4, min(origin.x, screen.maxX - size.width - 4))
+            let frame = CGRect(origin: origin, size: size)
+            if panel.frame != frame { panel.setFrame(frame, display: true) }
+            if !panel.isVisible { panel.orderFront(nil) }
+        }
+
+        private func startWatching() {
+            guard timer == nil else { return }
+            timer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.tick() }
+            }
+        }
+
+        private func tick() {
+            guard let panel, let owner, owner.isVisible else { return }
+            place()
+            let point = NSEvent.mouseLocation
+            let inside = owner.frame.contains(point)
+            let near = owner.frame.insetBy(dx: -150, dy: -150).contains(point)
+            let overBar = panel.frame.insetBy(dx: -12, dy: -12).contains(point)
+            let wanted = keepVisible || overBar || (near && !inside)
+            guard wanted != shown else { return }
+            shown = wanted
+            panel.ignoresMouseEvents = !wanted
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = wanted ? 0.18 : 0.32
+                panel.animator().alphaValue = wanted ? 1 : 0
+            }
+        }
+
+        func close() {
+            timer?.invalidate(); timer = nil
+            if let panel { owner?.removeChildWindow(panel); panel.orderOut(nil) }
+            panel = nil; hosting = nil; owner = nil
+        }
+    }
+}

@@ -738,6 +738,19 @@ Work in this order. Each batch is built, tested, restarted and pushed on its own
   - 译文同行: the first version pushed translations out of the window, now fixed. Every line of the test song is long, so it fell back to stacked and the same-line case has not been seen.
 - **Not seen yet**: 卡拉OK, 打字机, 下拉, and the 歌名滚动 animation.
 
+**D6. Toolbar outside the window, controls in every presentation (2026-11-12).** The user wants the playing view to be only listening: tools outside the window, appearing when the pointer goes out.
+- **工具栏 · 窗外** (now the user's choice):
+  - The bar is a small borderless window, a child of the main window, right-aligned 4 pt above its top edge. It moves with the window.
+  - It fades in while the pointer is outside the main window and within 150 pt of it, or over the bar, or while one of its panels is open. Inside the main window it is not shown at all.
+  - In this style the buttons do not open hover panels over the playing view; a click opens the panel pinned beside the window.
+  - With no room above (window at the top of the screen), the bar sits just inside the top edge.
+- **Pinned panels**: to the right of the window when there is room, else to the left, and only when neither side fits at the screen's right edge. This replaces the 2026-10 rule "never jump to the left"; the user now asks that panels not cover the playing view.
+- **Controls in the 新呈现**:
+  - 封面进度 and 黑胶: pointing at the cover shows a small bar of the playback buttons at its foot.
+  - 幕间: a short line at the bottom centre opens into that bar.
+  - 侧脊, 角落 and 唱片架 already had their controls.
+- Later (user, 2026-11-12): a side pull-out like 下拉.
+
 **D2. What the scenes show (2026-11-12, from real screenshots).**
 - **内页:** with the cover in view, the song's name, artist and album sit under the cover in the left column, and the lyrics start at the top of the page. The heading band and its rule remain only without a cover or in a small window. The fixed caption 「原文 · 译文 · 读音」 is removed: it did not follow the layers in use.
 - **唱片卡:** the card holds the cover, the name and the controls. The masthead (「ASTER · LYRIC · LISTENING EDITION」, 「SIDE A」) and the footer (「ORIGINAL · TRANSLATION · READING」) are removed.
