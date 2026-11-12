@@ -254,6 +254,7 @@
 		53A2E3726FF64255E8D79047 /* V3GlassWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61DA7987B78B10D893654A30 /* V3GlassWeather.swift */; };
 		B1E8DDB9AA8A6D3EA696CAAA /* V3VUMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67A7CF6CB7618D621BDD647B /* V3VUMeter.swift */; };
 		CB5378C490C25028178B464B /* V3LyricShareCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = F517BF6CE987A087DD4BA095 /* V3LyricShareCard.swift */; };
+		45D81E49ED2AA16E1B7760C4 /* ListeningCoverWall.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0719C6699D3AB7FF8D4F84FA /* ListeningCoverWall.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -510,6 +511,7 @@
 		61DA7987B78B10D893654A30 /* V3GlassWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3GlassWeather.swift; sourceTree = "<group>"; };
 		67A7CF6CB7618D621BDD647B /* V3VUMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3VUMeter.swift; sourceTree = "<group>"; };
 		F517BF6CE987A087DD4BA095 /* V3LyricShareCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3LyricShareCard.swift; sourceTree = "<group>"; };
+		0719C6699D3AB7FF8D4F84FA /* ListeningCoverWall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningCoverWall.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -670,6 +672,7 @@
 				110000F82D83400100000000 /* ExperienceLibrarySettingsView.swift */,
 				110000A82D83400100000000 /* ReadingSettingsView.swift */,
 				110006042D83400100000000 /* ListeningHistoryView.swift */,
+				0719C6699D3AB7FF8D4F84FA /* ListeningCoverWall.swift */,
 				110006062D83400100000000 /* ListeningStatisticsView.swift */,
 			);
 			path = Settings;
@@ -1221,6 +1224,7 @@
 				110006022D83400100000001 /* PersonalLyricsLibraryView.swift in Sources */,
 				110006032D83400100000001 /* ListeningHistoryModels.swift in Sources */,
 				110006042D83400100000001 /* ListeningHistoryView.swift in Sources */,
+				45D81E49ED2AA16E1B7760C4 /* ListeningCoverWall.swift in Sources */,
 				110006052D83400100000001 /* ListeningStatisticsModels.swift in Sources */,
 				110006062D83400100000001 /* ListeningStatisticsView.swift in Sources */,
 				110006072D83400100000001 /* PersonalDataSync.swift in Sources */,

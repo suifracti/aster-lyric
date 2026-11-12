@@ -2,17 +2,30 @@ import SwiftUI
 
 public struct ListeningHistoryView: View {
     @EnvironmentObject private var playback: PlaybackState
+    /// 列表 or 封面墙; remembered.
+    @AppStorage("listening.history.coverWall.v1") private var showsWall = false
 
     public init() {}
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // The page tab already names it; the scope note is one quiet line.
-            Text("只记录 Aster · Lyric 运行期间观察到的播放")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .help("不代表 Spotify 的完整播放历史。")
-                .padding(.bottom, 10)
+            HStack {
+                Text("只记录 Aster · Lyric 运行期间观察到的播放")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .help("不代表 Spotify 的完整播放历史。")
+                Spacer(minLength: 12)
+                Picker("显示方式", selection: $showsWall) {
+                    Text("列表").tag(false)
+                    Text("封面墙").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .help("封面墙：每首一张，最近听的在前；指向一张会把同一歌手以外的变暗")
+            }
+            .padding(.bottom, 10)
 
             if let error = playback.listeningHistoryError {
                 HStack {
@@ -45,6 +58,9 @@ public struct ListeningHistoryView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+            } else if showsWall {
+                ListeningCoverWall(entries: playback.listeningHistory)
+                    .padding(.horizontal, -28).padding(.bottom, -28)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {

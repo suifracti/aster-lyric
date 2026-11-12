@@ -350,4 +350,22 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(V3LyricShareCard.fileSafe("A/B: C?"), "A B  C")
         XCTAssertEqual(V3LyricShareCard.fileSafe("   "), "歌词")
     }
+
+    private func historyEntry(_ key: String, _ title: String, _ artist: String) -> ListeningHistoryEntry {
+        ListeningHistoryEntry(sessionID: UUID(), stableKey: key, title: title, artist: artist, album: "",
+                              startedAt: Date(), lastObservedAt: Date(), observedPlaybackDuration: 60,
+                              trackDuration: 200, completionRatio: 0.3)
+    }
+
+    @MainActor
+    func testCoverWallShowsEachSongOnceAndLinksTheSameSinger() throws {
+        let entries = [historyEntry("a", "如果你還愛著他", "張若凡"), historyEntry("b", "夜に駆ける", "YOASOBI"),
+                       historyEntry("a", "如果你還愛著他", "張若凡"), historyEntry("c", "群青", "YOASOBI, 别人")]
+        let tiles = ListeningCoverWall.tiles(entries)
+        XCTAssertEqual(tiles.map(\.id), ["a", "b", "c"], "each song once, most recent first")
+        XCTAssertEqual(tiles.first?.plays, 2)
+        XCTAssertEqual(tiles[1].artistKey, tiles[2].artistKey, "a feature does not split the singer")
+        XCTAssertEqual(ListeningCoverWall.primaryArtist("Aimer feat. someone"), "aimer feat. someone".replacingOccurrences(of: " feat.", with: ""))
+
+    }
 }
