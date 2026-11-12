@@ -1043,7 +1043,14 @@ struct V3MusicMotionRow: View {
         case .off: return "播放时开始听"
         case .starting: return "正在连接 Spotify 的声音…"
         case .running:
-            if let bpm = V3MusicPulse.currentBPM { return "正在听，约 \(Int(bpm.rounded())) BPM" }
+            let _ = pulse.analysisRevision
+            let analysis = V3MusicPulse.analysis
+            if let bpm = analysis.bpm {
+                let key = analysis.key.map { " · \($0) 调" + (analysis.camelot.map { "（\($0)）" } ?? "") } ?? ""
+                let beats = analysis.beats.isEmpty ? "" : " · 按 Spotify 的节拍"
+                return "正在听，\(Int(bpm.rounded())) BPM\(key)\(beats)，来自 Spotify"
+            }
+            if let bpm = V3MusicPulse.currentBPM { return "正在听，约 \(Int(bpm.rounded())) BPM（估算）" }
             return "正在听"
         case .failed(let message): return message
         }

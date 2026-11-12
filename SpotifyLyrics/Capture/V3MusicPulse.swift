@@ -36,11 +36,47 @@ final class V3MusicPulse: NSObject, ObservableObject {
     private static let shared_ = OSAllocatedUnfairLock(initialState: Levels())
     /// Read from any thread, at frame rate, without observing the object.
     nonisolated static var levels: Levels { shared_.withLock { $0 } }
-    /// Tempo for motion that should keep time; nil when not listening or unsure.
+    /// Tempo for motion that should keep time. Spotify's own figure for the
+    /// song when its cache has one (exact, the number Spotify shows); else the
+    /// estimate from listening; nil when neither.
     nonisolated static var currentBPM: Double? {
+        if let bpm = analysis.bpm { return bpm }
         let value = levels
         guard value.bpm != nil, ProcessInfo.processInfo.systemUptime - value.updatedAt < 3 else { return nil }
         return value.bpm
+    }
+
+    private static let analysisState = OSAllocatedUnfairLock(initialState: SpotifyTrackAnalysis())
+    /// The current song's tempo, key and beats from the Spotify cache, while 随音乐律动 is on.
+    nonisolated static var analysis: SpotifyTrackAnalysis { analysisState.withLock { $0 } }
+    @Published private(set) var analysisRevision = 0
+    private var analysisTrackID: String?
+    private var analysisTask: Task<Void, Never>?
+
+    /// Reads Spotify's analysis for the song. Beats are prepared by Spotify
+    /// a little after a song starts, so a song without them is read again once.
+    func setTrack(_ trackID: String?, enabled: Bool) {
+        let wanted = enabled ? trackID : nil
+        guard wanted != analysisTrackID else { return }
+        analysisTrackID = wanted
+        analysisTask?.cancel()
+        Self.analysisState.withLock { $0 = SpotifyTrackAnalysis() }
+        analysisRevision &+= 1
+        guard let id = wanted else { return }
+        analysisTask = Task { [weak self] in
+            // Spotify keeps tempo and beats only for songs it has shown in a
+            // list with the BPM column; it may fetch them mid-song. Look again
+            // every 30 s for three minutes.
+            for attempt in 0..<7 {
+                let found = await Task.detached(priority: .utility) { SpotifyTrackAnalysis.load(trackID: id) }.value
+                guard !Task.isCancelled, let self, self.analysisTrackID == id else { return }
+                Self.analysisState.withLock { $0 = found }
+                self.analysisRevision &+= 1
+                LyricsE2ELog.log("PULSE analysis id=\(id) bpm=\(found.bpm.map { String($0) } ?? "-") key=\(found.key ?? "-") beats=\(found.beats.count)")
+                if found.bpm != nil && !found.beats.isEmpty { return }
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+            }
+        }
     }
 
     private var stream: SCStream?
@@ -228,11 +264,15 @@ struct PulseAnalyzer {
             previousLog[index] = value
         }
         flux.append(rise)
-        if flux.count > Int(fps * 8) { flux.removeFirst(flux.count - Int(fps * 8)) }
-        if frameCount % Int(fps * 2) == 0, flux.count >= Int(fps * 6), let estimate = Self.tempo(flux, fps: fps) {
+        if flux.count > Int(fps * 10) { flux.removeFirst(flux.count - Int(fps * 10)) }
+        // From 4 s of sound on, once a second. A new tempo replaces the shown
+        // one only when two estimates in a row agree, so it does not flicker.
+        if frameCount % Int(fps) == 0, flux.count >= Int(fps * 4), let estimate = Self.tempo(flux, fps: fps) {
+            if let last = tempoCandidates.last, abs(last - estimate) / estimate < 0.03 {
+                bpm = bpm.map { abs($0 - estimate) / estimate < 0.03 ? $0 * 0.6 + estimate * 0.4 : estimate } ?? estimate
+            }
             tempoCandidates.append(estimate)
             if tempoCandidates.count > 3 { tempoCandidates.removeFirst() }
-            bpm = tempoCandidates.sorted()[tempoCandidates.count / 2]
         }
 
         func ratio(_ band: Int, _ value: Double) -> Double { longAverage[band] < 0.001 ? 1 : value / longAverage[band] }
@@ -247,24 +287,42 @@ struct PulseAnalyzer {
             updatedAt: ProcessInfo.processInfo.systemUptime))
     }
 
-    /// Autocorrelation of the onset curve over 60–180 BPM, leaning gently
-    /// toward 120 so a half or double tempo does not win on a tie.
+    /// Autocorrelation of the onset curve over 60–190 BPM. A lag whose half
+    /// also repeats strongly is a subdivision's multiple, and is marked down.
+    /// A gentle lean toward 120 settles what sound alone cannot (a steady
+    /// pulse is as much 75 as 150 BPM).
     static func tempo(_ flux: [Double], fps: Double) -> Double? {
-        let mean = flux.reduce(0, +) / Double(flux.count)
-        let centred = flux.map { $0 - mean }
+        // A beat rarely falls on a whole frame (150 BPM is 37.5 frames), so the
+        // curve is smoothed first; otherwise lags 37 and 38 each catch half
+        // the beats and 75 (two beats, a whole number) wins.
+        var smooth = flux
+        for _ in 0..<2 {
+            smooth = smooth.indices.map { i in
+                0.25 * smooth[max(0, i - 1)] + 0.5 * smooth[i] + 0.25 * smooth[min(smooth.count - 1, i + 1)]
+            }
+        }
+        let mean = smooth.reduce(0, +) / Double(smooth.count)
+        let centred = smooth.map { $0 - mean }
         let energy = centred.reduce(0) { $0 + $1 * $1 }
         guard energy > 0 else { return nil }
-        let shortest = Int((60 / 180 * fps).rounded(.down)), longest = Int((60 / 60 * fps).rounded(.up))
+        let shortest = Int((60 / 190 * fps).rounded(.down)), longest = Int((60 / 60 * fps).rounded(.up))
+        func autocorrelation(_ lag: Int) -> Double {
+            guard lag > 0, lag < centred.count else { return 0 }
+            var sum = 0.0
+            for index in lag..<centred.count { sum += centred[index] * centred[index - lag] }
+            return sum / energy
+        }
         var best: (lag: Int, score: Double, raw: Double)?
         var scores: [Int: Double] = [:]
         for lag in shortest...longest where lag < centred.count {
-            var sum = 0.0
-            for index in lag..<centred.count { sum += centred[index] * centred[index - lag] }
-            let raw = sum / energy
+            let raw = autocorrelation(lag)
             scores[lag] = raw
             let bpm = 60 * fps / Double(lag)
             let octaves = log2(bpm / 120)
-            let score = raw * exp(-0.5 * (octaves / 0.9) * (octaves / 0.9))
+            // Off-beat eighths make half the lag look like a beat; a real
+            // beat has little energy halfway between beats.
+            let half = lag % 2 == 0 ? max(0, autocorrelation(lag / 2)) : 0
+            let score = (raw - 0.35 * half) * exp(-0.5 * (octaves / 0.9) * (octaves / 0.9))
             if best == nil || score > best!.score { best = (lag, score, raw) }
         }
         guard let best, best.raw > 0.08 else { return nil }
@@ -286,9 +344,11 @@ struct V3MusicPulseLight: NSViewRepresentable {
     let color: NSColor
     let center: UnitPoint
     let active: Bool
+    var clock: LyricsPresentationClock?
 
     func makeNSView(context: Context) -> V3MusicPulseLightView { V3MusicPulseLightView() }
     func updateNSView(_ view: V3MusicPulseLightView, context: Context) {
+        view.clock = clock
         view.configure(color: color, center: center,
                        active: active && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
     }
@@ -303,6 +363,8 @@ final class V3MusicPulseLightView: NSView {
     private var steady = 0.0
     private var lastTime: CFTimeInterval = 0
     private var center = UnitPoint.center
+    var clock: LyricsPresentationClock?
+    private var lastBeat = -1
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -325,7 +387,8 @@ final class V3MusicPulseLightView: NSView {
 
     func configure(color: NSColor, center: UnitPoint, active: Bool) {
         self.center = center
-        let light = (color.usingColorSpace(.sRGB) ?? color).blended(withFraction: 0.35, of: .white) ?? color
+        // Kept light: on a bright video a darker colour would read as a dark ring.
+        let light = (color.usingColorSpace(.sRGB) ?? color).blended(withFraction: 0.7, of: .white) ?? color
         // Clear where the cover sits, brightest just outside it, then fading.
         halo.colors = [NSColor.clear.cgColor, NSColor.clear.cgColor, light.withAlphaComponent(0.75).cgColor,
                        light.withAlphaComponent(0.28).cgColor, light.withAlphaComponent(0.08).cgColor, NSColor.clear.cgColor]
@@ -338,7 +401,7 @@ final class V3MusicPulseLightView: NSView {
             link = next
         } else if !active, let current = link {
             current.invalidate(); link = nil
-            envelope = 0; steady = 0
+            envelope = 0; steady = 0; lastBeat = -1
             halo.opacity = 0; wash.opacity = 0
         }
     }
@@ -360,18 +423,33 @@ final class V3MusicPulseLightView: NSView {
         lastTime = now
         let levels = V3MusicPulse.levels
         let fresh = ProcessInfo.processInfo.systemUptime - levels.updatedAt < 0.5
-        // A beat: the bass right now above its usual level. Quiet songs sit
-        // near 1.0, so the trigger starts just above it.
-        let hit = fresh ? min(1, max(0, (levels.bass - 1.0) / 0.55)) : 0
-        envelope = max(hit, envelope * exp(-elapsed / 0.22))
-        // The song's overall energy, slow: the halo never goes fully dark mid-song.
-        let energy = fresh ? min(1, max(0, (levels.bassAverage - 0.6) / 0.8)) : 0
-        steady += (energy - steady) * min(1, elapsed / 0.8)
+        let beats = V3MusicPulse.analysis.beats
+        var hit = 0.0
+        var timed = false
+        if !beats.isEmpty, let clock, clock.isPlaying {
+            // Spotify's own beat grid: light on each beat, the bar's first beat brightest.
+            timed = true
+            let time = clock.playbackTime(at: ProcessInfo.processInfo.systemUptime)
+            var low = 0, high = beats.count
+            while low < high { let mid = (low + high) / 2; if beats[mid].time <= time { low = mid + 1 } else { high = mid } }
+            let index = low - 1
+            if index >= 0, index != lastBeat, time - beats[index].time < 0.12 {
+                let loudness = fresh ? min(1.2, max(0.6, levels.bassAverage)) : 1
+                hit = (beats[index].positionInBar == 1 ? 1.0 : 0.55) * loudness
+            }
+            lastBeat = index
+        } else if fresh {
+            // No beat grid: the bass right now above its usual level.
+            hit = min(1, max(0, (levels.bass - 1.0) / 0.55))
+        }
+        envelope = min(1, max(hit, envelope * exp(-elapsed / 0.22)))
+        let live = fresh || timed
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        halo.opacity = fresh ? Float(0.12 + 0.18 * steady + 0.55 * envelope) : 0
+        // Nothing between beats: the light appears only on them.
+        halo.opacity = live ? Float(0.65 * envelope) : 0
         let scale = 1 + 0.10 * envelope
         halo.transform = CATransform3DMakeScale(scale, scale, 1)
-        wash.opacity = fresh ? Float(0.07 * envelope) : 0
+        wash.opacity = live ? Float(0.06 * envelope) : 0
         CATransaction.commit()
     }
 }

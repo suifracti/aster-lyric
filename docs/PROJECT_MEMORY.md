@@ -299,6 +299,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **已定外观不动。** `BackdropPalette` 的主色、副色、光色保持原算法；新增 `route / identity / partner / edge` 只用于自动选择、双色、窗光和强调色（`CoverColorRoute`，参照 Tauon）。
 - **律动单独采集。** `V3MusicPulse` 不复用排轴的采集（那边有身份守卫和排轴状态），自己开一路只含 Spotify 的 ScreenCaptureKit 音频流；画面每帧用锁读数值，SwiftUI 不随帧重绘。默认关闭：持续采集会让菜单栏一直显示录制标志。
 - **律动第一版完全没有数据。** Spotify 的声音是两个分开的声道，`CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer` 需要先问大小再分配；只给一个 `AudioBufferList` 的空间会直接失败，分析器一帧都没收到（用户反馈“看不出区别”）。改成先问大小后，日志 `PULSE levels` 每 5 秒报低音峰值和 BPM（实测峰值 3–16 倍、120 BPM）。光也从封面正后方（被封面挡住）改成封面外的一圈光环加整体轻微提亮，连拍真窗口能看出节拍起伏。
+- **Spotify 缓存里还有速度、调性、节拍、人声和段落。** 键 `!xmeta#cache#` + 3 字节类型 + `#` + 长度 + uri + `#`：`02 E0 DE` 是 AudioAttributes（1 速度 double；2 {1 调名, 2 大小调, 3 {1 Camelot, 2 颜色}}），`02 E0 D9` 是 Beats（2 重复 {1 秒 float, 3 小节第几拍, 4 置信度, 5 强拍}），`02 E0 DA` 是 VocalActivity（22050 Hz、每 315 采样一格），`01 3C` 是 automix Cuepoints（段落点，毫秒）。这些只给在列表里显示过 BPM 列的歌（本机约 1 万首有速度，几百首有节拍）；新歌通常没有，播放中也不一定补上。
+- **自己估速度的坑**：150 BPM 一拍是 37.5 帧，不是整数，37、38 两个间隔各只对上一半的拍，两拍（75 帧）反而最齐，于是估成一半；先把起音曲线平滑两次即可。80–160 BPM 之外的“差一倍”是固有歧义，不再硬调。
 - **背景素材合并成一个选择。** 第一版“背景素材”和“有视频时用视频”分开，选了歌手照片还得关视频才看得到；现为 视频 / 封面 / 歌手照片 一个选择（`v3.backdrop.source.v2`，从两个旧键迁移）。
 - **Spotify 有时给不出封面地址**（`ARTWORK desktop … found=false`），前景封面变成占位图；现在改从公开 oEmbed 取同一首歌的 640 px 封面。
 - **跳转保持与单句循环冲突。** 循环靠 Spotify 报告的位置判断句尾，保持会把它挡住（`testLyricLineRepeatsUntilCancelledAndStopsOnTrackChange` 抓到）；来源 `lyric-line-loop` 不保持。

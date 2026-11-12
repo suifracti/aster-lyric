@@ -356,7 +356,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     isPlaying: state.isPlaying,
                     settings: settings,
                     presentationOverride: hoveredStyle,
-                    sceneOverride: compositionScene
+                    sceneOverride: compositionScene,
+                    clock: state.presentationClock
                 )
                 // An aspect-fill album image can report the square image's
                 // width in a tall window. Keep that drawing overflow inside

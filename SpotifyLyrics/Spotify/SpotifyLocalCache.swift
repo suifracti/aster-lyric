@@ -88,7 +88,7 @@ enum SpotifyCanvasLocator {
 }
 
 enum ProtobufBytes {
-    enum Payload { case varint(UInt64), bytes([UInt8]), other }
+    enum Payload { case varint(UInt64), bytes([UInt8]), fixed32(UInt32), fixed64(UInt64) }
     struct Field { let number: Int; let payload: Payload }
 
     static func varint(_ bytes: [UInt8], at start: Int) -> (UInt64, Int)? {
@@ -112,12 +112,20 @@ enum ProtobufBytes {
             case 0:
                 guard let (value, after) = varint(bytes, at: index) else { return result }
                 result.append(Field(number: number, payload: .varint(value))); index = after
-            case 1: index += 8; result.append(Field(number: number, payload: .other))
+            case 1:
+                guard index + 8 <= bytes.count else { return result }
+                var value: UInt64 = 0
+                for shift in 0..<8 { value |= UInt64(bytes[index + shift]) << (8 * UInt64(shift)) }
+                result.append(Field(number: number, payload: .fixed64(value))); index += 8
             case 2:
                 guard let (length, after) = varint(bytes, at: index), after + Int(length) <= bytes.count else { return result }
                 result.append(Field(number: number, payload: .bytes(Array(bytes[after..<(after + Int(length))]))))
                 index = after + Int(length)
-            case 5: index += 4; result.append(Field(number: number, payload: .other))
+            case 5:
+                guard index + 4 <= bytes.count else { return result }
+                var value: UInt32 = 0
+                for shift in 0..<4 { value |= UInt32(bytes[index + shift]) << (8 * UInt32(shift)) }
+                result.append(Field(number: number, payload: .fixed32(value))); index += 4
             default: return result
             }
         }
@@ -354,5 +362,98 @@ enum Snappy {
         let start = output.count - offset
         for position in 0..<count { output.append(output[start + position]) }
         return true
+    }
+}
+
+// MARK: - Track analysis (tempo, key, beats)
+
+/// What the Spotify app itself worked out for a song, read from the same
+/// cache: tempo and key (`playlistmixing…AudioAttributes`, the BPM and key
+/// columns Spotify shows) and, for songs it has prepared for mixing, every
+/// beat with its place in the bar (`playlistmixing…mixbeats.Beats`).
+struct SpotifyTrackAnalysis: Equatable, Sendable {
+    struct Beat: Equatable, Sendable { let time: Double; let positionInBar: Int }
+    var bpm: Double?
+    var key: String?
+    var camelot: String?
+    var beats: [Beat] = []
+
+    var isEmpty: Bool { bpm == nil && beats.isEmpty }
+
+    static func key(kind: [UInt8], trackURI: String) -> [UInt8] {
+        let uri = Array(trackURI.utf8)
+        return Array("!xmeta#cache#".utf8) + kind + [UInt8(ascii: "#"), UInt8(uri.count)] + uri + [UInt8(ascii: "#")]
+    }
+
+    static func load(trackID: String, databases: [URL] = SpotifyLocalCache.accountDatabases()) -> SpotifyTrackAnalysis {
+        let uri = "spotify:track:" + trackID
+        var result = SpotifyTrackAnalysis()
+        for database in databases {
+            let reader = LevelDBFileReader(directory: database)
+            if result.bpm == nil, let value = reader.value(forKey: key(kind: [0x02, 0xE0, 0xDE], trackURI: uri)) {
+                result.apply(attributes: message(in: value, type: "audio_attributes.v2.AudioAttributes"))
+            }
+            if result.beats.isEmpty, let value = reader.value(forKey: key(kind: [0x02, 0xE0, 0xD9], trackURI: uri)) {
+                result.beats = beats(message(in: value, type: "mixbeats.Beats"))
+            }
+            if !result.isEmpty && !result.beats.isEmpty { break }
+        }
+        return result
+    }
+
+    /// The payload of the protobuf `Any` whose type url ends with `type`.
+    static func message(in value: [UInt8], type: String) -> [UInt8]? {
+        for field in ProtobufBytes.fields(value) {
+            guard case .bytes(let wrapper) = field.payload else { continue }
+            let parts = ProtobufBytes.fields(wrapper)
+            let typeURL = parts.first { if case .bytes = $0.payload, $0.number == 1 { return true }; return false }
+            guard case .bytes(let name)? = typeURL?.payload, String(decoding: name, as: UTF8.self).hasSuffix(type),
+                  let body = parts.first(where: { $0.number == 2 }), case .bytes(let bytes) = body.payload else { continue }
+            return bytes
+        }
+        return nil
+    }
+
+    /// 1 tempo (double); 2 { 1 key name, 2 mode, 3 { 1 Camelot code, 2 colour } }.
+    mutating func apply(attributes: [UInt8]?) {
+        guard let attributes else { return }
+        for field in ProtobufBytes.fields(attributes) {
+            switch (field.number, field.payload) {
+            case (1, .fixed64(let raw)):
+                let tempo = Double(bitPattern: raw)
+                if tempo.isFinite, (30...300).contains(tempo) { bpm = tempo }
+            case (2, .bytes(let keyBytes)):
+                for part in ProtobufBytes.fields(keyBytes) {
+                    switch (part.number, part.payload) {
+                    case (1, .bytes(let name)): key = String(decoding: name, as: UTF8.self)
+                    case (3, .bytes(let camelotBytes)):
+                        for inner in ProtobufBytes.fields(camelotBytes) {
+                            if inner.number == 1, case .bytes(let code) = inner.payload { camelot = String(decoding: code, as: UTF8.self) }
+                        }
+                    default: break
+                    }
+                }
+            default: break
+            }
+        }
+    }
+
+    /// 2 (repeated) { 1 time in seconds (float), 3 beat in bar, 4 confidence, 5 downbeat }.
+    static func beats(_ message: [UInt8]?) -> [Beat] {
+        guard let message else { return [] }
+        var result: [Beat] = []
+        for field in ProtobufBytes.fields(message) where field.number == 2 {
+            guard case .bytes(let beatBytes) = field.payload else { continue }
+            var time: Double?, position = 0
+            for part in ProtobufBytes.fields(beatBytes) {
+                switch (part.number, part.payload) {
+                case (1, .fixed32(let raw)): time = Double(Float(bitPattern: raw))
+                case (3, .varint(let value)): position = Int(value)
+                default: break
+                }
+            }
+            if let time, time.isFinite, time >= 0 { result.append(Beat(time: time, positionInBar: position)) }
+        }
+        return result.sorted { $0.time < $1.time }
     }
 }

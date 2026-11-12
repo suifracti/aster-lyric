@@ -56,6 +56,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
     @ObservedObject var settings: AppSettingsStore
     var presentationOverride: V3ArtworkPresentation? = nil
     var sceneOverride: V3ListeningScene? = nil
+    /// Playback time, for lights that follow Spotify's beat grid.
+    var clock: LyricsPresentationClock? = nil
     private var listeningScene: V3ListeningScene? { presentationOverride == nil ? settings.v3ListeningScene : sceneOverride }
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
@@ -121,7 +123,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             }
             if settings.v3MusicMotionEnabled && presentationOverride == nil {
                 V3MusicPulseLight(color: (palette.identity ?? palette.glow).nsColor, center: coverLightCenter,
-                                  active: pulseWanted)
+                                  active: pulseWanted, clock: clock)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -137,6 +139,10 @@ struct AppleMusicImmersiveV3BackdropView: View {
         .onChange(of: pulseWanted, initial: true) { _, wanted in
             guard presentationOverride == nil else { return }
             V3MusicPulse.shared.setWanted(wanted)
+        }
+        .onChange(of: "\(spotifyTrackID ?? "-")|\(settings.v3MusicMotionEnabled)", initial: true) { _, _ in
+            guard presentationOverride == nil else { return }
+            V3MusicPulse.shared.setTrack(spotifyTrackID, enabled: settings.v3MusicMotionEnabled)
         }
         .onDisappear { if presentationOverride == nil { V3MusicPulse.shared.setWanted(false) } }
         .task(id: backdropImageURL ?? track.artworkURL) {

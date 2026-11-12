@@ -109,14 +109,50 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(V3LyricMotionPolicy.followDuration(bpm: 200), 0.32, accuracy: 0.001)
     }
 
+    /// A drum-like onset curve: strong beats, weaker off-beat eighth notes.
+    private func onsets(bpm: Double, seconds: Double = 8, eighths: Double = 0.45) -> [Double] {
+        let fps = PulseAnalyzer.framesPerSecond
+        let period = 60.0 / bpm * fps
+        return (0..<Int(fps * seconds)).map { index -> Double in
+            let phase = fmod(Double(index), period)
+            if phase < 1 { return 1 }
+            if abs(phase - period / 2) < 0.5 { return eighths }
+            return 0.02 * Double((index * 7) % 5)
+        }
+    }
+
     func testTempoFromARegularBeat() {
         let fps = PulseAnalyzer.framesPerSecond
-        let period = 60.0 / 120 * fps   // 120 BPM
-        let flux = (0..<Int(fps * 8)).map { index -> Double in
-            fmod(Double(index), period) < 1 ? 1 : 0
+        // 80–160 BPM. Outside it a steady pulse is as much half or double
+        // (174 reads as 87, 70 as 140); Spotify's own tempo covers those songs.
+        for bpm in [150.0, 128.0, 92.0, 110.0, 84.0] {
+            let estimate = PulseAnalyzer.tempo(onsets(bpm: bpm), fps: fps) ?? 0
+            XCTAssertEqual(estimate, bpm, accuracy: bpm * 0.03, "\(bpm) BPM")
         }
-        let bpm = try? XCTUnwrap(PulseAnalyzer.tempo(flux, fps: fps))
-        XCTAssertEqual(bpm ?? 0, 120, accuracy: 3)
+        XCTAssertEqual(PulseAnalyzer.tempo(onsets(bpm: 150, seconds: 4), fps: fps) ?? 0, 150, accuracy: 4.5,
+                       "four seconds are enough")
+    }
+
+    func testSpotifyAnalysisFields() {
+        // AudioAttributes: 1 tempo (double), 2 { 1 "B", 2 mode, 3 { 1 "1B" } }.
+        var tempo = Data(count: 8); tempo.withUnsafeMutableBytes { $0.storeBytes(of: (150.0).bitPattern.littleEndian, as: UInt64.self) }
+        let camelot: [UInt8] = [0x0A, 2] + Array("1B".utf8)
+        let keyPart: [UInt8] = [0x0A, 1] + Array("B".utf8) + [0x10, 2] + [0x1A, UInt8(camelot.count)] + camelot
+        let attributes: [UInt8] = [0x09] + [UInt8](tempo) + [0x12, UInt8(keyPart.count)] + keyPart
+        var analysis = SpotifyTrackAnalysis()
+        analysis.apply(attributes: attributes)
+        XCTAssertEqual(analysis.bpm, 150)
+        XCTAssertEqual(analysis.key, "B")
+        XCTAssertEqual(analysis.camelot, "1B")
+        // Beats: 2 { 1 time (float), 3 beat in bar }.
+        func beat(_ time: Float, _ position: UInt8) -> [UInt8] {
+            var raw = Data(count: 4); raw.withUnsafeMutableBytes { $0.storeBytes(of: time.bitPattern.littleEndian, as: UInt32.self) }
+            let body: [UInt8] = [0x0D] + [UInt8](raw) + [0x18, position]
+            return [0x12, UInt8(body.count)] + body
+        }
+        let beats = SpotifyTrackAnalysis.beats([0x08, 4] + beat(0.81, 4) + beat(0.41, 3) + beat(1.21, 1))
+        XCTAssertEqual(beats.map(\.positionInBar), [3, 4, 1])
+        XCTAssertEqual(beats.first?.time ?? 0, 0.41, accuracy: 0.001)
     }
 
     // MARK: Censored words
