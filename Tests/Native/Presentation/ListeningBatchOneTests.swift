@@ -231,6 +231,35 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(KRCParser.decrypt(base64: encoded), text)
     }
 
+    // MARK: QQ QRC
+
+    func testQQDESDecryptsARealBlock() {
+        // First block of a real QRC download; it opens a zlib stream (78 9C).
+        let cipher: [UInt8] = [0x28, 0xBE, 0xE4, 0xBD, 0xFC, 0x7B, 0xEB, 0x3B]
+        let key = QRCParser.key
+        var block = QQDES.crypt(cipher, QQDES.subkeys(Array(key[16..<24]), decrypt: true))
+        block = QQDES.crypt(block, QQDES.subkeys(Array(key[8..<16]), decrypt: false))
+        block = QQDES.crypt(block, QQDES.subkeys(Array(key[0..<8]), decrypt: true))
+        XCTAssertEqual(block, [0x78, 0x9C, 0x4D, 0x5B, 0x5B, 0x8F, 0x55, 0x47])
+    }
+
+    func testQRCLinesWordsAndSingers() {
+        let content = """
+        [0,272]曾(0,17)经(17,17)
+        [5580,1000]((5580,100)时(5680,400)光(6080,500))(6580,0)
+        [9000,500]刘(9000,100)兆(9100,100)宇(9200,100)：(9300,100)
+        [10000,800]一(10000,400)个(10400,400)
+        [11000,500]赵(11000,100)乃(11100,100)吉(11200,100)：(11300,100)
+        [12000,800]人(12000,800)
+        """
+        let lines = QRCParser.parseLines(content)
+        XCTAssertEqual(lines.map(\.originalText), ["曾经", "(时光)", "一个", "人"])
+        XCTAssertEqual(lines[1].timedSpans?.map(\.text), ["(", "时", "光", ")"], "brackets are words, not timing")
+        XCTAssertEqual(lines[1].timedSpans?[1].startTime ?? 0, 5.68, accuracy: 0.001, "QRC times are absolute")
+        XCTAssertEqual(lines.map(\.performerID), [nil, nil, "刘兆宇", "赵乃吉"])
+        XCTAssertEqual(QRCParser.lyricContent(fromXML: "<Lyric_1 LyricType=\"1\" LyricContent=\"[0,1]a(0,1)&amp;\"/>"), "[0,1]a(0,1)&")
+    }
+
     // MARK: Seeking
 
     func testDragLandsOnTheNearestLineStart() {

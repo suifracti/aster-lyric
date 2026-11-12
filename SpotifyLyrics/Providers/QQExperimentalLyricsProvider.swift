@@ -77,6 +77,18 @@ public final class QQExperimentalLyricsProvider: LyricsProvider, @unchecked Send
                     synced = false
                 }
                 guard !lines.isEmpty else { continue }
+                // Word timing (QRC) for a likely match; translation and romaji
+                // from the plain lyric are laid over it. Line timing otherwise.
+                var resolvedLines = lines
+                var resolvedSynced = synced
+                if conf >= 0.6, let songID = song.songID, !Task.isCancelled,
+                   let qrc = try? await fetchQRCLines(songID: songID),
+                   qrc.contains(where: { $0.timedSpans?.isEmpty == false }) {
+                    let translated = TimedLyricsCompanionMerger.merge(lyric.translation, into: qrc, layer: .translation)
+                    resolvedLines = TimedLyricsCompanionMerger.merge(lyric.romaji, into: translated, layer: .romaji)
+                    resolvedSynced = true
+                    LyricsE2ELog.log("QQ QRC words lines=\(qrc.count) title=\(song.name)")
+                }
                 candidates.append(
                     LyricsCandidate(
                         id: "qq:\(song.songmid)",
@@ -85,8 +97,8 @@ public final class QQExperimentalLyricsProvider: LyricsProvider, @unchecked Send
                         artist: song.artists.joined(separator: ", "),
                         album: song.album,
                         duration: song.duration,
-                        lines: lines,
-                        isSynchronized: synced,
+                        lines: resolvedLines,
+                        isSynchronized: resolvedSynced,
                         source: .qqExperimental,
                         confidence: conf,
                         providerSourceID: "qq:\(song.songmid)"
@@ -187,6 +199,34 @@ public final class QQExperimentalLyricsProvider: LyricsProvider, @unchecked Send
         )
     }
 
+    /// The word-timed lyric (QRC), decrypted. nil when QQ has none.
+    private func fetchQRCLines(songID: Int) async throws -> [LyricLine]? {
+        let body: [String: Any] = [
+            "comm": ["ct": "19", "cv": "1859", "uin": "0"],
+            "req": ["method": "GetPlayLyricInfo", "module": "music.musichallSong.PlayLyricInfo",
+                    "param": ["format": "json", "crypt": 1, "ct": 19, "cv": 1873, "interval": 0, "lrc_t": 0,
+                              "qrc": 1, "qrc_t": 0, "roma": 0, "roma_t": 0, "songID": songID, "trans": 0,
+                              "trans_t": 0, "type": -1]]
+        ]
+        var request = URLRequest(url: URL(string: "https://u.y.qq.com/cgi-bin/musicu.fcg")!)
+        request.httpMethod = "POST"
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("https://y.qq.com/", forHTTPHeaderField: "Referer")
+        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = timeout
+        let (data, response) = try await session.data(for: request)
+        guard (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) == true,
+              let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let req = root["req"] as? [String: Any], (req["code"] as? Int) == 0,
+              let payload = req["data"] as? [String: Any],
+              let hex = payload["lyric"] as? String, !hex.isEmpty,
+              let xml = QRCParser.decrypt(hex: hex),
+              let content = QRCParser.lyricContent(fromXML: xml) else { return nil }
+        let lines = QRCParser.parseLines(content)
+        return lines.isEmpty ? nil : lines
+    }
+
     private func decodedLyricsField(_ raw: String?) -> String? {
         guard let raw else { return nil }
         let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -233,6 +273,7 @@ public final class QQExperimentalLyricsProvider: LyricsProvider, @unchecked Send
 
 private struct QQSong {
     let songmid: String
+    var songID: Int? = nil
     let name: String
     let artists: [String]
     let album: String
@@ -259,6 +300,7 @@ private struct QQSongList: Decodable {
 
 private struct QQSongDTO: Decodable {
     let songmid: String?
+    let songid: Int?
     let songname: String?
     let singer: [QQSingerDTO]?
     let albumname: String?
@@ -268,6 +310,7 @@ private struct QQSongDTO: Decodable {
         guard let songmid, let songname else { return nil }
         return QQSong(
             songmid: songmid,
+            songID: songid,
             name: songname,
             artists: (singer ?? []).map(\.name),
             album: albumname ?? "",
