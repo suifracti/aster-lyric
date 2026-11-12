@@ -877,3 +877,32 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 **Not checked in the real window:**
 - The menu-bar popover. Computer use is blocked by policy for this app, so the popover could not be opened. It was checked with the offscreen host (`Scripts/ui-snapshots.sh … menubar-light`); that host's dark popover background is white before this change too.
 - Word lift and long-note glow while playing, and the cover transition. Spotify was paused and was not started.
+
+## Round 17: the "later" batch begins — weather on the glass, lyric imagery, VU meter (2026-11-13)
+
+**窗上天气** (`ef9ada3`, 画面 › 更多画面选项, off by default).
+- A Core Animation particle layer between the picture and the lyrics, as if the window were a pane of glass.
+  - 雨: streaks, plus drops that land on the glass and slide.
+  - 雪: slow drifting flakes.
+  - 雾: drifting soft patches with a condensation veil that is heavier toward the bottom.
+- Stops while paused or hidden; absent under 减少动态效果. No per-frame SwiftUI work.
+
+**歌词意象** (`ef9ada3`, off by default).
+- While the sung line or its translation mentions rain, snow, stars or flowers, a matching set of particles plays.
+  - Plain keywords in Chinese, Japanese, Korean and English.
+  - English needs a whole word (train / brain are not rain).
+- No model and no network.
+
+**VU 表** (`69af770`, a new 新呈现).
+- A card at the bottom left with two dials, plus the song and its controls.
+- The needles follow the low and high bands of 随音乐律动. They are labelled 低 / 高, not L / R, because the sound is not split by channel.
+- Each needle is a damped spring (ζ 0.8): about 0.3 s to a new reading and about 1.5% overshoot. This is unit-tested.
+- Without 随音乐律动 the needles rest and the card says so.
+- 新呈现 is now two rows (4 + 3), so no name has to shrink.
+
+**Checked:**
+- The particles were rendered in a scratch window, one per weather, because Spotify was paused.
+- The fog veil was checked in the real main window; the setting was restored afterwards.
+- The VU card and the 画面 panel were checked with the offscreen host.
+
+**Not seen playing:** the weather and imagery over a playing song, and the needles moving.

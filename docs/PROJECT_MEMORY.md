@@ -29,6 +29,7 @@
 | 视频背景（Canvas）、歌手照片背景、按封面配色、随音乐律动、拖进度吸附、跳转回弹、脏词显示 | L-022；SpotifyLocalCache、V3BackdropMedia、CoverColorRoute、V3MusicPulse、LyricCensorRestorer |
 | 不同画面背景大小不一样、取景切了没效果、繁体歌名对不上简体来源、别人有逐字/对唱我们没有 | L-023；V3BackdropArtworkGeometry、v3SharedBackdropComplete、TrackTextNormalizer.normalize、KRCParser、QRCParser |
 | 逐字上浮/长音发光动画跳回开头、状态栏弹窗改版、换歌封面闪占位图、暂停褪色、桌面歌词情境隐藏 | L-024；LyricLineView animateLift、MenuBarLyricsPopoverView、ArtworkView、v3PauseFadesColor、FloatingLyricsWindowController.observeContext |
+| 粒子（雨雪雾、歌词意象）不显示、VU 表指针手感、新呈现一行放不下 | L-025；V3GlassWeather、V3ParticleHostView、V3VUMeter |
 | 在窗口边缘拖进度会变成缩放窗口、进度线靠近时下移不好看、胶囊和工具栏像两套控件、画面面板底部被截断 | L-015；V3EdgePillScrubber、V3ControlBarSurface、V3ThemeSelectorView |
 | 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
@@ -378,3 +379,12 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **面板里多个独立开关排成一行时用 `V3ChipToggles`**，与分段控件同一底槽；不要再用三个 `V3InlineSwitch` 挤一行，会把标签折成两行。
 - **胶囊开合（G5）暂缓**：用户计划把胶囊做成灵动岛，单独设计。
 - **写偏好前先读 Bundle ID**：本 App 是 `com.spotifylyrics.app`，不是仓库名。猜错域会在 ~/Library/Preferences 留下空文件。
+
+## L-025 窗上天气、歌词意象、VU 表（2026-11-13）
+
+- **`CAEmitterCell` 没有加速度时在屏幕上一个都不出现。** 雨丝第一版速度设得再高再低都看不到，按参数逐项对照雪（能显示）才定位到这一点，原因未查明。凡是下落的粒子都给重力（`yAcceleration`），雨用 −1700 加 200 初速。
+- **核对粒子不必等播放。** 用临时可执行文件开一个自己的窗口，放 `V3ParticleHostView`，再用 `screencapture -l` 拍。只需把 `V3WindowVisibilityProbe` 补个桩。`CGWindowListCreateImage` 在新 SDK 里已不可用。
+- **歌词意象只认关键词。** 英文按整词匹配，避免 train / brain 被当成 rain；中日韩按子串匹配。原文和译文都看。默认关，防止效果过多。
+- **VU 指针**用阻尼弹簧，ζ 0.8、ω 16.7，每帧两次半隐式欧拉，约 0.3 秒到位、过冲约 1.5%，有单测。读数 = 0.6 + 0.24·log2(电平比)，歌曲平均电平落在 0 VU 以下。没有真实左右声道，只标“低 / 高”。
+- **`V3ControlBarSurface` 是胶囊形**，套在高卡片上会变成大圆团。卡片用 `V3PlaybackSurface(cornerRadius:)`。
+- **新呈现超过 6 个就分两行**（同歌词呈现）。`v3_toolbar_model_contract` 断言了呈现清单，加呈现要一并更新。离屏宿主新增 `--playback-presentation`。
