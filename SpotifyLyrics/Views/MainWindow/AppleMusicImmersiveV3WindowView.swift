@@ -206,7 +206,14 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var hoveredStyle: V3ArtworkPresentation?
     @State private var hoveredScene: V3ListeningScene?
     private var compositionScene: V3ListeningScene? { hoveredStyle == nil ? settings.v3ListeningScene : hoveredScene }
-    private var compositionShowsCover: Bool { settings.v3ShowsForegroundArtwork(scene: compositionScene, renderer: compositionStyle) }
+    /// 环境光's two scenes, where 光随歌曲 applies.
+    private var usesAmbientLight: Bool {
+        compositionScene == .originalAmbient || (compositionScene == .flowingField && compositionStyle == .ambientFeathered)
+    }
+    private var compositionShowsCover: Bool {
+        !settings.v3PlaybackPresentation.replacesSceneCover
+            && settings.v3ShowsForegroundArtwork(scene: compositionScene, renderer: compositionStyle)
+    }
     private var compositionStyle: V3ArtworkPresentation { hoveredStyle ?? settings.v3ArtworkPresentation }
     private var compositionArtworkPosition: String { settings.v3PreviewPosition(for: compositionStyle, scene: compositionScene) }
     private var compositionLyricsPosition: String { settings.v3PreviewLyricsPosition(for: compositionStyle, scene: compositionScene) }
@@ -243,7 +250,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var lastWindowExitPoint: CGPoint?
 
     private var playbackDetailsVisible: Bool {
-        guard !settings.v3EdgeProgressEnabled else { return false }
+        guard !settings.v3ScenePlayerHidden else { return false }
         return V3ResponsiveGeometry.playbackDetailsVisible(
             hoverOnly: settings.v3PlaybackDetailsOnHover,
             pointerInRegion: pointerRevealsPlayback,
@@ -355,6 +362,17 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 .frame(width: geometry.size.width, height: geometry.size.height)
                 .blur(radius: librarySearch.isPresented ? 5 : 0)
 
+                if settings.v3AmbientLyricMotion != .off, usesAmbientLight, !isFocusMode {
+                    V3AmbientMotionLayer(state: state, motion: settings.v3AmbientLyricMotion,
+                                         artworkURL: compositionTrack.artworkURL)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                }
+                if settings.v3PlaybackPresentation == .vinyl, !isFocusMode, let cover = foregroundCover, cover.isLargeEnough {
+                    V3VinylDiscLayer(state: state, cover: cover.frame, accent: coverAccent ?? .white)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .blur(radius: librarySearch.isPresented ? 5 : 0)
+                }
+
                 GeometryReader { canvasGeometry in
                     layout(for: canvasGeometry)
                         .frame(width: canvasGeometry.size.width, height: canvasGeometry.size.height)
@@ -363,6 +381,14 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .blur(radius: librarySearch.isPresented ? 5 : 0)
                 .allowsHitTesting(!librarySearch.isPresented)
+
+                if V3PlaybackPresentation.additions.contains(settings.v3PlaybackPresentation),
+                   !isFocusMode, !librarySearch.isPresented, !isCompositionPreview {
+                    V3PlaybackStyleOverlay(state: state, settings: settings,
+                                           presentation: settings.v3PlaybackPresentation,
+                                           cover: foregroundCover, accent: coverAccent)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                }
 
                 if settings.v3EdgeProgressEnabled && !isFocusMode && !librarySearch.isPresented {
                     V3WindowEdgePlaybackOverlay(
@@ -567,7 +593,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             coverAccent = LyricIslandArtworkColors.listeningAccent(palette)
             coverLuminance = palette.luminance
             if !isCompositionPreview {
-                V3SceneFamily.applyAutomaticAmbient(settings: settings, palette: palette)
+                let detail = await V3CoverDetail.detail(for: url) ?? 0
+                guard !Task.isCancelled else { return }
+                V3SceneFamily.applyAutomaticAmbient(settings: settings, palette: palette, detail: detail)
             }
         }
         .task(id: "\(usesArtworkSubjectPlacement)|\(compositionTrack.artworkURL?.absoluteString ?? "none")") {
@@ -655,7 +683,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     // Only the selected branch is constructed: there are no five hidden lyric trees.
     private func fieldReadingLayout(in geometry: GeometryProxy) -> some View {
         let width = min(820, max(1, geometry.size.width - (geometry.size.width < 760 ? 48 : 80)))
-        let footerHeight: CGFloat = isCompositionPreview || !settings.v3EdgeProgressEnabled ? 44 : 0
+        let footerHeight: CGFloat = isCompositionPreview || !settings.v3ScenePlayerHidden ? 44 : 0
         let height = LyricIslandSceneBudget.fieldReadingHeight(canvasHeight: geometry.size.height,
                                                                footerHeight: footerHeight)
         return VStack(alignment: .leading, spacing: 16) {
@@ -702,7 +730,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         let compact = geometry.size.width < 760
         let placement = photographicReadingPlacement(canvas: geometry.size)
         let readingWidth = min(760, max(1, geometry.size.width * (compact ? 0.90 : placement.widthFraction)))
-        let playerHeight: CGFloat = settings.v3EdgeProgressEnabled ? 0 : 44
+        let playerHeight: CGFloat = settings.v3ScenePlayerHidden ? 0 : 44
         let readingHeight = max(1, min(geometry.size.height * 0.66 - 56,
             geometry.size.height - 76 - 32 - playerHeight - 12))
         let alignment: Alignment = placement.position == "left" ? .bottomLeading
@@ -767,7 +795,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         // cover, or in a small window, the name is a heading above a rule.
         let headingInColumn = !compact && compositionShowsCover
         let headerHeight: CGFloat = headingInColumn ? 0 : compact ? 104 : 80
-        let footerHeight: CGFloat = isCompositionPreview || !settings.v3EdgeProgressEnabled ? 44 : 0
+        let footerHeight: CGFloat = isCompositionPreview || !settings.v3ScenePlayerHidden ? 44 : 0
         let readingHeight = LyricIslandSceneBudget.linerReadingHeight(
             canvasHeight: geometry.size.height, headerHeight: headerHeight, footerHeight: footerHeight)
         let heading = VStack(alignment: .leading, spacing: 6) {
@@ -820,12 +848,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private func sceneTransport(width: CGFloat) -> some View {
         Group {
             if isCompositionPreview { compositionPreviewLabel }
-            else if !settings.v3EdgeProgressEnabled {
+            else if !settings.v3ScenePlayerHidden {
                 AppleMusicImmersiveV3FocusTransportControls(state: state, reduceMotion: reduceMotion)
                     .reportsV3PlaybackRegion()
                     .modifier(playbackVisibility)
             }
-        }.frame(width: max(1, width), height: isCompositionPreview || !settings.v3EdgeProgressEnabled ? 44 : 0)
+        }.frame(width: max(1, width), height: isCompositionPreview || !settings.v3ScenePlayerHidden ? 44 : 0)
     }
 
     @ViewBuilder
@@ -920,7 +948,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         let compact = isCompact(for: geometry.size)
         let readingWidth = min(compositionScene == .focusedLyrics ? 760 : 940, max(1, geometry.size.width - (compact ? 56 : 112)))
         let headerHeight: CGFloat = hidesArtwork ? (compact ? 48 : 56) : (compact ? 64 : 76)
-        let footerHeight: CGFloat = settings.v3EdgeProgressEnabled && !isCompositionPreview ? 0 : 68
+        let footerHeight: CGFloat = settings.v3ScenePlayerHidden && !isCompositionPreview ? 0 : 68
         let lyricHeight = max(1, geometry.size.height - 100 - headerHeight - footerHeight - 28)
 
         return VStack(spacing: 14) {

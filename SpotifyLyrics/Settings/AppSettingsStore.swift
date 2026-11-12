@@ -29,13 +29,55 @@ public enum FloatingLyricsInteractionMode: String, CaseIterable, Codable, Sendab
 
 public enum V3PlaybackPresentation: String, CaseIterable, Identifiable, Sendable {
     case standard, onHover, windowEdge
+    /// 2026-11-12 additions. Stored under their own key; the two switches
+    /// behind the first three are unchanged.
+    case spine, coverProgress, shelf, vinyl, corner, interlude
     public var id: String { rawValue }
     public var title: String {
         switch self {
         case .standard: return "标准播放栏"
         case .onHover: return "悬停时显示"
         case .windowEdge: return "窗口边缘"
+        case .spine: return "侧脊"
+        case .coverProgress: return "封面进度"
+        case .shelf: return "唱片架"
+        case .vinyl: return "黑胶"
+        case .corner: return "角落"
+        case .interlude: return "幕间"
         }
+    }
+    public var detail: String {
+        switch self {
+        case .standard: return "封面下方的播放卡"
+        case .onHover: return "指针移到封面附近时显示播放卡"
+        case .windowEdge: return "进度沿窗口边缘或封面光环，靠近边缘出现胶囊"
+        case .spine: return "窗口左边一条唱片书脊，指针靠近展开成唱片卡"
+        case .coverProgress: return "封面从左到右上色表示进度，点按封面跳转"
+        case .shelf: return "底部上一首、当前、下一首三张封面"
+        case .vinyl: return "封面后露出黑胶，播放时转动，外圈是进度"
+        case .corner: return "角落一张小唱片卡，可拖到四个角"
+        case .interlude: return "只在歌曲开头和结尾出现歌名卡与下一首"
+        }
+    }
+    public static var established: [Self] { [.standard, .onHover, .windowEdge] }
+    public static var additions: [Self] { [.spine, .coverProgress, .shelf, .vinyl, .corner, .interlude] }
+    /// The scene's own player card is not drawn.
+    public var hidesScenePlayer: Bool { self != .standard && self != .onHover }
+    /// The scene draws no cover either; the style shows the song itself.
+    public var replacesSceneCover: Bool { [.spine, .shelf, .corner, .interlude].contains(self) }
+}
+
+/// 环境光's extra looks, drawn over 原版环境光.
+public enum V3AmbientTreatment: String, CaseIterable, Sendable {
+    case none = "", duotone, windowLight
+}
+
+/// 光随歌曲: the light answers the lyrics or the song's progress.
+public enum V3AmbientLyricMotion: String, CaseIterable, Identifiable, Sendable {
+    case off = "", pulse, drift
+    public var id: String { rawValue }
+    public var title: String {
+        switch self { case .off: return "关闭"; case .pulse: return "换行呼吸"; case .drift: return "随曲推移" }
     }
 }
 
@@ -932,13 +974,33 @@ public final class AppSettingsStore: ObservableObject {
     // Project the existing flags rather than creating another persisted preference.
     public var v3PlaybackPresentation: V3PlaybackPresentation {
         get {
+            if let style = V3PlaybackPresentation(rawValue: v3PlaybackStyleRawValue),
+               V3PlaybackPresentation.additions.contains(style) { return style }
             if v3EdgeProgressEnabled { return .windowEdge }
             return v3PlaybackDetailsOnHover ? .onHover : .standard
         }
         set {
+            v3PlaybackStyleRawValue = V3PlaybackPresentation.additions.contains(newValue) ? newValue.rawValue : ""
             v3EdgeProgressEnabled = newValue == .windowEdge
             v3PlaybackDetailsOnHover = newValue == .onHover
         }
+    }
+
+    /// The scene's player card is replaced by another presentation.
+    public var v3ScenePlayerHidden: Bool { v3PlaybackPresentation.hidesScenePlayer }
+
+    @Published public var v3PlaybackStyleRawValue: String = "" {
+        didSet { defaults.set(v3PlaybackStyleRawValue, forKey: "v3.playbackStyle.v1") }
+    }
+    /// 角落: which corner the small card sits in (topLeading, topTrailing, bottomLeading, bottomTrailing).
+    @Published public var v3CornerCardCorner: String = "bottomTrailing" {
+        didSet { defaults.set(v3CornerCardCorner, forKey: "v3.cornerCard.corner.v1") }
+    }
+    @Published public var v3AmbientTreatment: V3AmbientTreatment = .none {
+        didSet { defaults.set(v3AmbientTreatment.rawValue, forKey: "v3.ambient.treatment.v1") }
+    }
+    @Published public var v3AmbientLyricMotion: V3AmbientLyricMotion = .off {
+        didSet { defaults.set(v3AmbientLyricMotion.rawValue, forKey: "v3.ambient.lyricMotion.v1") }
     }
 
     @Published public var v3PlaybackDetailsOnHover: Bool {
@@ -1329,6 +1391,10 @@ public final class AppSettingsStore: ObservableObject {
                 ?? (presentation == selectedPresentation && hasLegacyBlur ? legacyBlur : blurDefaults[presentation] ?? legacyBlur)
         }
         self.v3PlaybackDetailsOnHover = defaults.bool(forKey: Key.v3PlaybackDetailsOnHover)
+        self.v3PlaybackStyleRawValue = defaults.string(forKey: "v3.playbackStyle.v1") ?? ""
+        self.v3CornerCardCorner = defaults.string(forKey: "v3.cornerCard.corner.v1") ?? "bottomTrailing"
+        self.v3AmbientTreatment = V3AmbientTreatment(rawValue: defaults.string(forKey: "v3.ambient.treatment.v1") ?? "") ?? .none
+        self.v3AmbientLyricMotion = V3AmbientLyricMotion(rawValue: defaults.string(forKey: "v3.ambient.lyricMotion.v1") ?? "") ?? .off
         self.v3ExpandArtworkWhenDetailsHidden = defaults.object(forKey: Key.v3ExpandArtworkWhenDetailsHidden) as? Bool ?? true
         self.v3ShowForegroundArtwork = defaults.object(forKey: Key.v3ShowForegroundArtwork) as? Bool ?? true
         self.v3EdgeProgressEnabled = defaults.object(forKey: Key.v3EdgeProgressEnabled) as? Bool ?? false

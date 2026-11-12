@@ -138,7 +138,7 @@ struct V3ThemeSelectorView: View {
     }
 
     private func isCurrent(_ entry: V3SceneFamily.Entry) -> Bool {
-        settings.v3ListeningScene == entry.scene && entry.renderers.contains(settings.v3ArtworkPresentation)
+        V3SceneFamily.inUse(entry, settings: settings)
     }
 
     /// The renderer a click adopts. 封面 keeps the side of 静止 / 流动 last used.
@@ -169,6 +169,11 @@ struct V3ThemeSelectorView: View {
             }
             if let card = cards.first(where: { $0.entries.count > 1 && $0.entries.contains(where: isCurrent) }) {
                 styleRow(card)
+                if card.automatic {
+                    V3SegmentedPicker("光随歌曲", selection: $settings.v3AmbientLyricMotion,
+                                      options: V3AmbientLyricMotion.allCases.map { ($0.title, $0) })
+                    .help("换行呼吸：每换一句歌词，光轻轻亮一下。随曲推移：背景颜色随播放进度从封面主色走到副色。系统减少动态效果时不动。")
+                }
             }
             if !compact, settings.v3ListeningScene != nil {
                 Button("恢复此场景的默认值", role: .destructive) {
@@ -217,13 +222,14 @@ struct V3ThemeSelectorView: View {
         let details = card.entries.map { $0.title + "：" + ($0.detail ?? "") }.joined(separator: "\n")
         return V3SegmentedPicker(card.rowTitle, selection: selection, options: options)
             .accessibilityIdentifier("v3.card.style." + card.id)
-            .help(card.automatic ? "自动：按每首歌的封面明暗选择。亮封面用原版，暗封面用羽化。\n" + details : details)
+            .help(card.automatic ? "自动：按每首歌的封面选择。细节很多的用双色，亮的用原版，暗的用羽化。\n" + details : details)
     }
 
     private func applyAutomaticAmbient() {
         Task { @MainActor in
             let palette = await LyricIslandArtworkColors.palette(for: artworkURL)
-            V3SceneFamily.applyAutomaticAmbient(settings: settings, palette: palette)
+            let detail = await V3CoverDetail.detail(for: artworkURL) ?? 0
+            V3SceneFamily.applyAutomaticAmbient(settings: settings, palette: palette, detail: detail)
         }
     }
 
@@ -278,6 +284,7 @@ struct V3ThemeSelectorView: View {
         if let card = V3SceneFamily.cards.first(where: { $0.entries.count > 1 && $0.entries.contains(entry) }) {
             if card.automatic { lastAmbientLook = entry.id } else { lastReadingLook = entry.id }
         }
+        if entry.scene == .originalAmbient { settings.v3AmbientTreatment = entry.treatment }
         if let scene = entry.scene { settings.selectV3Scene(scene, renderer: target) }
         else { settings.selectLegacyV3Presentation(target) }
     }
@@ -298,8 +305,11 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
         let renderers: [V3ArtworkPresentation]
         let title: String
         let detail: String?
+        /// 双色 and 窗光 are drawn over 原版环境光's scene and renderer.
+        var treatment: V3AmbientTreatment = .none
         var id: String {
             (scene?.rawValue ?? "legacy") + "/" + renderers.map(\.rawValue).joined(separator: "+")
+                + (treatment == .none ? "" : "#" + treatment.rawValue)
         }
         var renderer: V3ArtworkPresentation { renderers[0] }
         var isCoverPair: Bool { renderers.count > 1 }
@@ -366,7 +376,12 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
     static var cards: [Card] {
         let all = allCases.flatMap(\.entries)
         func entries(_ titles: [String]) -> [Entry] { titles.compactMap { title in all.first { $0.title == title } } }
-        return [Card(title: "环境光", rowTitle: "光", entries: entries(["原版环境光", "柔光羽化"]), automatic: true),
+        let duotone = Entry(scene: .originalAmbient, renderers: [.authenticAmbient], title: "双色",
+                            detail: "封面用自己的两种颜色重印，没有细节干扰歌词", treatment: .duotone)
+        let window = Entry(scene: .originalAmbient, renderers: [.authenticAmbient], title: "窗光",
+                           detail: "封面像一扇窗，几道光斜斜照过歌词", treatment: .windowLight)
+        return [Card(title: "环境光", rowTitle: "光", entries: entries(["原版环境光", "柔光羽化"]) + [duotone, window],
+                     automatic: true),
                 Card(title: "封面", rowTitle: "封面", entries: entries(["封面"])),
                 Card(title: "舞台", rowTitle: "舞台", entries: entries(["舞台"])),
                 Card(title: "阅读", rowTitle: "版式", entries: entries(["内页", "唱片卡", "专注"]))]
@@ -376,24 +391,39 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
 
     /// 原版 keeps lyrics readable over a bright cover; 羽化 lets a dark cover
     /// give off light. The boundary is a first setting from two real songs.
-    static func automaticAmbient(luminance: Double) -> Entry {
+    /// A busy cover (much fine detail) gets 双色, which keeps no detail
+    /// behind the lyrics; a bright one 原版; a dark one 羽化. 窗光 is a
+    /// matter of taste and is never chosen by the app. The boundaries are
+    /// first settings from the user's own covers.
+    static func automaticAmbient(luminance: Double, detail: Double = 0) -> Entry {
         let lights = cards[0].entries
+        if detail >= busyCoverDetail { return lights[2] }
         return luminance >= 0.42 ? lights[0] : lights[1]
+    }
+    static let busyCoverDetail = 0.072
+
+    /// The entry is the look on screen: scene, renderer and, for 原版环境光,
+    /// the light drawn over it.
+    @MainActor
+    static func inUse(_ entry: Entry, settings: AppSettingsStore) -> Bool {
+        guard settings.v3ListeningScene == entry.scene,
+              entry.renderers.contains(settings.v3ArtworkPresentation) else { return false }
+        if entry.scene == .originalAmbient { return settings.v3AmbientTreatment == entry.treatment }
+        return true
     }
 
     /// Moves between 环境光's lights for a new cover. It acts only while 环境光
     /// is the scene in use, the choice is left to the app, and the cover's
     /// colours are known.
     @MainActor
-    static func applyAutomaticAmbient(settings: AppSettingsStore, palette: BackdropPalette,
+    static func applyAutomaticAmbient(settings: AppSettingsStore, palette: BackdropPalette, detail: Double = 0,
                                       defaults: UserDefaults = .lyricsQ) {
         guard defaults.object(forKey: ambientAutomaticKey) as? Bool ?? true, palette != .neutral else { return }
-        func inUse(_ entry: Entry) -> Bool {
-            settings.v3ListeningScene == entry.scene && entry.renderers.contains(settings.v3ArtworkPresentation)
-        }
-        guard cards[0].entries.contains(where: inUse) else { return }
-        let target = automaticAmbient(luminance: palette.luminance)
-        if !inUse(target), let scene = target.scene { settings.selectV3Scene(scene, renderer: target.renderer) }
+        guard cards[0].entries.contains(where: { inUse($0, settings: settings) }) else { return }
+        let target = automaticAmbient(luminance: palette.luminance, detail: detail)
+        guard !inUse(target, settings: settings), let scene = target.scene else { return }
+        if scene == .originalAmbient { settings.v3AmbientTreatment = target.treatment }
+        settings.selectV3Scene(scene, renderer: target.renderer)
     }
 
     static func shortTitle(_ entry: Entry) -> String {
@@ -536,8 +566,14 @@ struct V3VisualControls {
     }
 
     var playbackPresentationControls: some View {
-        V3SegmentedPicker("播放呈现", selection: $settings.v3PlaybackPresentation,
-                          options: V3PlaybackPresentation.allCases.map { ($0.title, $0) })
+        VStack(spacing: 2) {
+            V3SegmentedPicker("播放呈现", selection: $settings.v3PlaybackPresentation,
+                              options: V3PlaybackPresentation.established.map { ($0.title, $0) })
+            // The six newer presentations, one click away like the first three.
+            V3SegmentedPicker("新呈现", selection: $settings.v3PlaybackPresentation,
+                              options: V3PlaybackPresentation.additions.map { ($0.title, $0) })
+                .help(V3PlaybackPresentation.additions.map { $0.title + "：" + $0.detail }.joined(separator: "\n"))
+        }
     }
 
     /// 封面 has two renderers behind one card: 纯高斯 is the still picture

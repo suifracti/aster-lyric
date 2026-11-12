@@ -23,6 +23,7 @@
 | 面板控件不统一、选项太多太杂、画面风格太多、播放栏按钮不一致、歌词库页签变黑 | L-016；V3PanelRow、V3RowToggleStyle、V3DisclosureRow、foldedEntryIndices、V3PlaybackButtons |
 | 译文风格不对、「我的风格」不见了、设置里的预设和实际不符 | L-017；TranslationPromptPresetID.personalV2、personalV2Guidance |
 | 模糊变化不均匀、找旧环境光的圆形、歌词库面板切换卡顿 | L-018；V3BlurCurve、featheredAmbientArtworkLayers、V3LibraryOwner |
+| 加光效、加播放呈现、新呈现不显示或挡住歌词 | L-019；V3AmbientTreatment、v3ScenePlayerHidden、V3PlaybackStyles.swift |
 | 在窗口边缘拖进度会变成缩放窗口、进度线靠近时下移不好看、胶囊和工具栏像两套控件、画面面板底部被截断 | L-015；V3EdgePillScrubber、V3ControlBarSurface、V3ThemeSelectorView |
 | 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
@@ -242,6 +243,14 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 **羽化的圆形。** 用户记得的“四周特别模糊、中间一个清晰圆形”的环境光，就是 `2c7c083`（2026-10-16）之前的柔光羽化。四周铺满一层恒定重模糊（36pt 加滑块），中间是与窗口等高的圆形封面。那次提交把四周的模糊也绑到滑块上，于是低模糊时圆和四周分不出来。该提交在 README、发布说明和旧截图里都没有出现，是从项目笔记“移除羽化模式固定 36pt 背景模糊”一句找到的。
 
 **主窗口订阅歌词库。** `AppleMusicImmersiveV3WindowView` 用 `@StateObject` 持有 `PersonalLyricsLibraryService`，但 body 不读它的任何属性。它的每次 `@Published` 变化（加载提示、列表、选中详情）都会让整个主窗口连同歌词重算，用户感到歌词库面板里切换卡顿。现在由不发布变化的 `V3LibraryOwner` 持有；显示歌词库数据的面板仍各自 `@ObservedObject`。改善是按代码路径判断的，没有在真实窗口计时。
+
+## L-019 新光效与新播放呈现的接入方式
+
+- **新光效不加渲染器。** 双色、窗光是“原版环境光 + 光效”（`v3.ambient.treatment.v1`），由 `V3SceneFamily.inUse` 统一判断当前画面，旧的场景、渲染器 rawID 和数值都不动。
+- **新播放呈现不改旧开关。** 六种新呈现存在 `v3.playbackStyle.v1`，标准 / 悬停 / 边缘背后的两个开关不变。
+- **隐藏播放卡和封面的判断。** 布局里原来用“边缘模式开”来隐藏播放卡，现统一改为 `settings.v3ScenePlayerHidden`。侧脊、唱片架、角落、幕间还通过 `compositionShowsCover` 关掉场景自己的封面；各布局本来就按这个属性给出无封面版式。
+- **封面相关的呈现。** 封面进度和黑胶直接用已上报的前景封面位置（`V3ForegroundCoverFrame`）。黑胶的唱片画在布局下层，封面才能挡在它前面。
+- **验证方法。** 在真实窗口截图，对比同一区域的亮度：窗光前两版在浅色封面上完全看不出来，测量后才确认是光带汇聚在窗外，加上亮度不够。
 
 ## 实际覆盖与接续
 

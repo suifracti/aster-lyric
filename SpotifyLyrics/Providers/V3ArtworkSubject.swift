@@ -53,6 +53,42 @@ enum V3ArtworkSubject {
     }
 }
 
+/// How busy a cover is: the mean luminance step between neighbouring
+/// pixels of a 64×64 grey copy, 0...1. Once per artwork URL.
+@MainActor
+enum V3CoverDetail {
+    private static var values: [URL: Double] = [:]
+
+    static func detail(for url: URL?) async -> Double? {
+        guard let url else { return nil }
+        if let value = values[url] { return value }
+        guard let image = await ArtworkImageLoader.shared.image(for: url),
+              let data = image.tiffRepresentation else { return nil }
+        let value = await Task.detached(priority: .utility) { measure(data) }.value
+        if let value { values[url] = value }
+        return value
+    }
+
+    nonisolated static func measure(_ data: Data) -> Double? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let side = 64
+        var pixels = [UInt8](repeating: 0, count: side * side)
+        guard let context = CGContext(data: &pixels, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side,
+                                      space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return nil }
+        context.interpolationQuality = .medium
+        context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+        var sum = 0.0
+        for y in 0..<(side - 1) {
+            for x in 0..<(side - 1) {
+                let here = Double(pixels[y * side + x])
+                sum += abs(Double(pixels[y * side + x + 1]) - here) + abs(Double(pixels[(y + 1) * side + x]) - here)
+            }
+        }
+        return sum / Double((side - 1) * (side - 1) * 2) / 255
+    }
+}
+
 enum V3ArtworkSubjectLayout {
     struct Placement {
         let position: String

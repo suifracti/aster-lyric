@@ -681,6 +681,32 @@ Work in this order. Each batch is built, tested, restarted and pushed on its own
 - **The library panel lists 歌词库 · 最近播放 · 统计 · 搜索 · 歌单.** 最近播放 and 统计 had been reachable only in the separate library window. On these two pages the search field becomes a refresh button.
 - **Switching inside the library panel no longer redraws the main window.** The main window owned the library service as an observed object, so every list, status or selection change re-evaluated the whole window, lyrics included. It now owns the service without observing it; the panels that show library data observe it themselves. Not measured: the improvement is judged from the code path, not timed in the real window.
 
+**D4. New lights and six new playback presentations (2026-11-12; the user asked for more versions and said 「都做我看看」).**
+- **环境光's row: 光: 自动 / 原版 / 羽化 / 双色 / 窗光.**
+  - **双色** prints the cover again in two of its own colours, so no fine detail sits behind the lyrics.
+  - **窗光** darkens the room a little and lets four slanted bands of the cover's light fall from the top edge.
+  - Both are 原版环境光's scene and renderer with a light over it (`v3.ambient.treatment.v1`); no new renderer ID.
+  - **羽化** now centres its clear circle on the cover's subject (face first, else the largest salient region), never past the cover's edge.
+- **自动 looks at detail as well as brightness.** A busy cover gets 双色, a bright one 原版, a dark one 羽化; 窗光 is never automatic.
+  - The detail score is the mean neighbouring-pixel step of a 64×64 grey copy.
+  - The boundary is 0.072, set from 60 covers in the user's own cache: the busiest about 8% (lots of text, group art). Their median was 0.046.
+- **光随歌曲: 关闭 / 换行呼吸 / 随曲推移**, shown while 环境光 is in use.
+  - 换行呼吸 brightens the light briefly at each new lyric line.
+  - 随曲推移 moves a tint from the cover's main colour to its second colour over the song.
+  - Neither moves while the system asks for less motion.
+- **播放呈现 has a second row, 新呈现: 侧脊 / 封面进度 / 唱片架 / 黑胶 / 角落 / 幕间.** It is stored in `v3.playbackStyle.v1`; the switches behind 标准 / 悬停 / 边缘 are unchanged. Every new presentation hides the scene's player card.
+  - **侧脊:** a 44 pt spine at the left edge with a small cover, the title running down it and a short progress line. Coming near opens it into the full card; it closes 0.6 s after the pointer leaves.
+  - **封面进度:** the unplayed part of the cover is grey and colour fills in from the left. Click or drag on the cover to seek; the time follows the pointer.
+  - **唱片架:** a bar at the bottom with the previous cover, the current cover (click to pause or play), title and progress, the next cover and a faint one after it. The previous song is remembered for this session only.
+  - **黑胶:** a record behind the cover, sticking out to the right. It turns while playing and stops on pause, its outer ring is the progress, and clicking the visible part pauses or plays.
+  - **角落:** a small card with cover, title, the full button row and progress, in the bottom-right by default. Drag it to any corner (`v3.cornerCard.corner.v1`).
+  - **幕间:** nothing while the song plays; a title card for the first 8 s and a 「下一首」 card for the last 15 s.
+  - 侧脊, 唱片架, 角落 and 幕间 also hide the scene's own cover.
+- **Checked in the real window** (Totemo Sutekina Rokugatsu Deshita, 1116×779, paused):
+  - drawn as described: 双色, 窗光 (after three rounds of strengthening; the first two were invisible on a light cover), 侧脊 closed, 角落, 唱片架, 封面进度, 黑胶;
+  - only the tint is visible: 随曲推移, whose two colours are close on that cover;
+  - not checked: 幕间's cards (the song was mid-way and seeking was not used, so as not to change playback), 侧脊 open, dragging 角落, and 换行呼吸.
+
 **D2. What the scenes show (2026-11-12, from real screenshots).**
 - **内页:** with the cover in view, the song's name, artist and album sit under the cover in the left column, and the lyrics start at the top of the page. The heading band and its rule remain only without a cover or in a small window. The fixed caption 「原文 · 译文 · 读音」 is removed: it did not follow the layers in use.
 - **唱片卡:** the card holds the cover, the name and the controls. The masthead (「ASTER · LYRIC · LISTENING EDITION」, 「SIDE A」) and the footer (「ORIGINAL · TRANSLATION · READING」) are removed.

@@ -65,6 +65,9 @@ struct AppleMusicImmersiveV3BackdropView: View {
     @State private var outgoingAmbientArtworkImage: NSImage?
     @State private var noiseImage: NSImage?
     @State private var palette = BackdropPalette.neutral
+    /// Centre of the cover's subject (face first, else the most salient
+    /// region), normalized top-left. 羽化 puts its clear circle on it.
+    @State private var subjectCenter: CGPoint?
     @State private var accessibilityDisplayRevision = 0
     @State private var isWindowVisible = false
 
@@ -112,6 +115,13 @@ struct AppleMusicImmersiveV3BackdropView: View {
         .background(alignment: .topLeading) {
             V3WindowVisibilityProbe(isVisible: $isWindowVisible)
                 .frame(width: 0, height: 0)
+        }
+        .task(id: track.artworkURL) {
+            subjectCenter = nil
+            guard let analysis = await V3ArtworkSubject.analysis(for: track.artworkURL),
+                  let region = analysis.regions.max(by: { $0.width * $0.height < $1.width * $1.height }) else { return }
+            guard !Task.isCancelled else { return }
+            subjectCenter = CGPoint(x: region.midX, y: region.midY)
         }
         .task(id: requestKey) {
             await loadSnapshot(for: requestKey)
@@ -276,6 +286,13 @@ struct AppleMusicImmersiveV3BackdropView: View {
     @ViewBuilder
     private func artworkLayers(image: NSImage, ambientImage: NSImage?) -> some View {
         switch artworkPresentation {
+        case .authenticAmbient where listeningScene == .originalAmbient && presentationOverride == nil
+                && settings.v3AmbientTreatment == .duotone:
+            duotoneArtworkLayers(image: image)
+        case .authenticAmbient where listeningScene == .originalAmbient && presentationOverride == nil
+                && settings.v3AmbientTreatment == .windowLight:
+            authenticAmbientArtworkLayers(image: image, ambientImage: ambientImage)
+            windowLightShafts
         case .authenticAmbient:
             authenticAmbientArtworkLayers(image: image, ambientImage: ambientImage)
         case .ambient:
@@ -471,6 +488,71 @@ struct AppleMusicImmersiveV3BackdropView: View {
         )
     }
 
+    /// 双色: the cover printed again in two of its own colours, like a
+    /// screen print. No fine detail or busy texture is left behind the
+    /// lyrics. 背景模糊 softens the print; 背景明暗 lifts it.
+    @ViewBuilder
+    private func duotoneArtworkLayers(image: NSImage) -> some View {
+        let brightness = settings.v3BackgroundBrightness(for: .authenticAmbient, scene: listeningScene)
+        let ink = ambientColor(palette.secondary, saturation: 1.1, maximumLuminance: 0.16 * brightness)
+        let paper = ambientColor(palette.glow, saturation: 1.15, maximumLuminance: min(0.85, 0.62 * brightness))
+        ZStack {
+            ink
+            GeometryReader { canvas in
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: canvas.size.width, height: canvas.size.height)
+                    .clipped()
+                    .grayscale(1)
+                    .contrast(1.35)
+                    .colorMultiply(paper)
+                    .blur(radius: perceptualBlur * 40)
+                    .blendMode(BlendMode.lighten)
+            }
+        }
+        .compositingGroup()
+        ambientReadingVeil
+        RadialGradient(colors: [.clear, Color.black.opacity(0.30)], center: coverLightCenter,
+                       startRadius: 200, endRadius: 1000)
+    }
+
+    /// 窗光: the cover as a window; a few soft shafts of its light fall
+    /// across the lyrics from above the cover.
+    private var windowLightShafts: some View {
+        let light = ambientColor(palette.glow, saturation: 0.7, maximumLuminance: 0.95)
+        return GeometryReader { canvas in
+            let w = canvas.size.width, h = canvas.size.height
+            // The room is a little darker than 原版 so the light reads as light.
+            Color.black.opacity(0.34)
+            // Slanted bands that start wide at the top edge, as light through
+            // a tall window does, and fade before the bottom.
+            let origin = w * max(0.12, coverLightCenter.x - 0.08)
+            ZStack {
+                ForEach(0..<4, id: \.self) { index in
+                    let top = origin + w * (0.04 + Double(index) * 0.13)
+                    let width = w * (0.07 + Double(index % 2) * 0.045)
+                    let drift = w * 0.30
+                    Path { path in
+                        path.move(to: CGPoint(x: top, y: 0))
+                        path.addLine(to: CGPoint(x: top + width, y: 0))
+                        path.addLine(to: CGPoint(x: top + width * 1.9 + drift, y: h))
+                        path.addLine(to: CGPoint(x: top + drift, y: h))
+                        path.closeSubpath()
+                    }
+                    .fill(LinearGradient(stops: [
+                        .init(color: light.opacity(0.46 - Double(index) * 0.06), location: 0),
+                        .init(color: light.opacity(0.14), location: 0.55),
+                        .init(color: light.opacity(0), location: 0.95)
+                    ], startPoint: .top, endPoint: .bottom))
+                }
+            }
+            .blur(radius: 7)
+            .blendMode(.plusLighter)
+        }
+        .allowsHitTesting(false)
+    }
+
     // Original ambient light composition with the shared percentage response and framing.
     @ViewBuilder
     private func authenticAmbientArtworkLayers(image: NSImage, ambientImage: NSImage?) -> some View {
@@ -657,10 +739,18 @@ struct AppleMusicImmersiveV3BackdropView: View {
             let imageX: CGFloat = artworkPosition == "right" ? 0.56
                 : (artworkPosition == "center" ? 0.50 : 0.44)
 
+            // 聚焦主体: enlarge slightly and slide the subject towards the
+            // circle's centre, never past the cover's own edge.
+            let zoom: CGFloat = subjectCenter == nil ? 1 : 1.3
+            let room = side * (zoom - 1) / 2
+            let shift = subjectCenter.map { CGSize(width: min(room, max(-room, (0.5 - $0.x) * side * zoom)),
+                                                   height: min(room, max(-room, (0.5 - $0.y) * side * zoom))) } ?? .zero
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fill)
+                .frame(width: sourceWidth * zoom, height: sourceHeight * zoom)
+                .offset(shift)
                 .frame(width: sourceWidth, height: sourceHeight)
                 .clipped()
                 .blur(radius: diffusionRadius)

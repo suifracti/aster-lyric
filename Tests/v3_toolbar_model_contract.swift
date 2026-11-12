@@ -327,8 +327,11 @@ final class V3ToolbarPresentationTests: XCTestCase {
         // The panel shows four cards in one row, none behind a menu. 环境光
         // holds its two lights and 阅读 the three quiet pages.
         XCTAssertEqual(V3SceneFamily.cards.map(\.title), ["环境光", "封面", "舞台", "阅读"])
-        XCTAssertEqual(V3SceneFamily.cards[0].entries.map(\.title), ["原版环境光", "柔光羽化"])
-        XCTAssertEqual(V3SceneFamily.cards[0].entries.map(V3SceneFamily.shortTitle), ["原版", "羽化"])
+        XCTAssertEqual(V3SceneFamily.cards[0].entries.map(\.title), ["原版环境光", "柔光羽化", "双色", "窗光"])
+        XCTAssertEqual(V3SceneFamily.cards[0].entries.map(V3SceneFamily.shortTitle), ["原版", "羽化", "双色", "窗光"])
+        // A busy cover gets 双色 whatever its brightness; 窗光 is never automatic.
+        XCTAssertEqual(V3SceneFamily.automaticAmbient(luminance: 0.7, detail: 0.09).title, "双色")
+        XCTAssertEqual(V3SceneFamily.automaticAmbient(luminance: 0.2, detail: 0.03).title, "柔光羽化")
         XCTAssertEqual(V3SceneFamily.cards[3].entries.map(V3SceneFamily.shortTitle), ["内页", "唱片", "专注"])
         XCTAssertEqual(V3SceneFamily.cards.filter(\.automatic).map(\.title), ["环境光"])
         // Left to the app, a bright cover gets 原版 and a dark one 羽化; a
@@ -382,6 +385,47 @@ final class V3ToolbarPresentationTests: XCTestCase {
         XCTAssertEqual(moved["scene.originalAmbient.v1/v3ArtworkPresentation.authenticAmbient.v1"]?["blur"] as? Double, 48, "moved once")
         XCTAssertEqual(moved["scene.linerNotes.v1/v3ArtworkPresentation.albumPoster.v1"]?["blur"] as? Double, 22, "colour fields keep their value")
         XCTAssertEqual(defaults.double(forKey: "v3.backdropBlurRadius"), 60)
+    }
+
+    /// The six newer playback presentations sit beside the first three and
+    /// never touch the two switches behind those.
+    @MainActor
+    func testNewPlaybackPresentationsKeepTheEstablishedSwitches() {
+        let suite = "lyricsq-presentations-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        XCTAssertEqual(V3PlaybackPresentation.additions.map(\.title), ["侧脊", "封面进度", "唱片架", "黑胶", "角落", "幕间"])
+        settings.v3PlaybackPresentation = .vinyl
+        XCTAssertEqual(settings.v3PlaybackPresentation, .vinyl)
+        XCTAssertFalse(settings.v3EdgeProgressEnabled)
+        XCTAssertTrue(settings.v3ScenePlayerHidden)
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).v3PlaybackPresentation, .vinyl, "kept across launches")
+        settings.v3PlaybackPresentation = .windowEdge
+        XCTAssertEqual(settings.v3PlaybackPresentation, .windowEdge)
+        XCTAssertTrue(settings.v3EdgeProgressEnabled)
+        settings.v3PlaybackPresentation = .onHover
+        XCTAssertFalse(settings.v3ScenePlayerHidden)
+        XCTAssertTrue(V3PlaybackPresentation.spine.replacesSceneCover)
+        XCTAssertFalse(V3PlaybackPresentation.coverProgress.replacesSceneCover)
+    }
+
+    /// 双色 and 窗光 are 原版环境光 with a light drawn over it; picking 原版
+    /// again takes the light away.
+    @MainActor
+    func testAmbientLightsAreOneSceneWithATreatment() {
+        let suite = "lyricsq-ambient-light-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        let lights = V3SceneFamily.cards[0].entries
+        settings.selectV3Scene(.originalAmbient, renderer: .authenticAmbient)
+        settings.v3AmbientTreatment = .duotone
+        XCTAssertTrue(V3SceneFamily.inUse(lights[2], settings: settings))
+        XCTAssertFalse(V3SceneFamily.inUse(lights[0], settings: settings))
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).v3AmbientTreatment, .duotone)
+        settings.v3AmbientTreatment = .none
+        XCTAssertTrue(V3SceneFamily.inUse(lights[0], settings: settings))
     }
 
     /// Someone sitting on 经典·纯高斯 moves to 柔和光晕 and keeps their blur.
