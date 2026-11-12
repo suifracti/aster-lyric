@@ -829,3 +829,39 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 - The catalog is read with the public token in Apple's web player script. Syllable TTML gives word timing and each line's singer.
 - **Spotify's own lyrics are not offered.** Its web token endpoint refuses third parties and wants a rotating one-time code; our own OAuth token is denied (403 RBAC). Getting round that would mean defeating its access control.
 
+
+## Round 16: listening batch two — word feel, chorus, window details, menu bar, visuals (2026-11-13)
+
+**Word feel** (`bf55571`).
+- Each word of a word-timed line rises about 5% of the line height as it is sung (Core Animation spring, ω 3.65, ζ 0.9). Dim and lit copies rise together.
+- On a line change the lines below follow one after another: 50 ms later per line, at most 0.4 s.
+- Scrolling to the current line is a spring whose speed follows the song's BPM (0.56 s at 60 BPM, 0.32 s at 150).
+- The gap dots breathe.
+
+**副歌加强** (`dec800b`, on by default, 画面 › 文字).
+- A run of at least two lines (ten characters or more) that comes back later counts as chorus every time it occurs. This uses the lyrics alone.
+- The chorus shows as lighter stretches on the progress line. While it plays, the picture is a step brighter and the current line glows in the cover colour.
+
+**Desktop lyrics** (`68872ef`, 设置 › 桌面歌词, both off by default).
+- 暂停时隐藏 fades the window out 3 s after a pause, so seeks don't flicker.
+- 有全屏应用时隐藏 fades it out while another app's window covers the screen.
+- While hidden the window ignores the mouse.
+
+**Top capsule open/close (G5) is not done.** The capsule will become a Dynamic Island–style piece of its own.
+
+**Menu-bar popover** (`ba97826`).
+- The lyrics show three lines: previous (faint), current (with translation) and next. On each line change they slide up; with 减少动态效果 they fade instead.
+- A thin progress line sits in the song colour, with chorus stretches and elapsed / remaining time. Click or drag it to jump; the target snaps to a line start, and VoiceOver can adjust it in 10 s steps.
+- The top of the panel is tinted with the cover, drawn as a 12-pixel thumbnail stretched up. It needs no blur pass, so the cover's lettering can never show through.
+- 状态栏文字外观 is now the AA icon beside the 菜单栏显示歌词 switch.
+
+**Visuals** (`eab37cc`, `1c5ad38`).
+- **长音:** a word held for 1 s or more glows while sung and lets go 0.7 s after it ends.
+- **暂停时褪色** (画面, on by default): 1.5 s after pausing, the backdrop fades over 2.4 s to near black-and-white (a grey saturation-blend layer at 78%). Colour returns in 0.5 s on play. The foreground cover keeps its colour.
+- **Song change:** the previous cover stays until the new one has loaded. The new one then comes up out of a soft blur (0.75 s), so the placeholder no longer flashes between songs.
+
+**Checked in the real window:** 暂停时褪色, on a paused song.
+
+**Not checked in the real window:**
+- The menu-bar popover. Computer use is blocked by policy for this app, so the popover could not be opened. It was checked with the offscreen host (`Scripts/ui-snapshots.sh … menubar-light`); that host's dark popover background is white before this change too.
+- Word lift and long-note glow while playing, and the cover transition. Spotify was paused and was not started.

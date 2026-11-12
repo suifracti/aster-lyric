@@ -28,6 +28,7 @@
 | 已采用的歌突然“歌词暂不可用”、合作歌手写法不同（假名/罗马字）进了核对 | L-021；redirectNewSpotifyKey、retryingStore、nameReadingKey |
 | 视频背景（Canvas）、歌手照片背景、按封面配色、随音乐律动、拖进度吸附、跳转回弹、脏词显示 | L-022；SpotifyLocalCache、V3BackdropMedia、CoverColorRoute、V3MusicPulse、LyricCensorRestorer |
 | 不同画面背景大小不一样、取景切了没效果、繁体歌名对不上简体来源、别人有逐字/对唱我们没有 | L-023；V3BackdropArtworkGeometry、v3SharedBackdropComplete、TrackTextNormalizer.normalize、KRCParser、QRCParser |
+| 逐字上浮/长音发光动画跳回开头、状态栏弹窗改版、换歌封面闪占位图、暂停褪色、桌面歌词情境隐藏 | L-024；LyricLineView animateLift、MenuBarLyricsPopoverView、ArtworkView、v3PauseFadesColor、FloatingLyricsWindowController.observeContext |
 | 在窗口边缘拖进度会变成缩放窗口、进度线靠近时下移不好看、胶囊和工具栏像两套控件、画面面板底部被截断 | L-015；V3EdgePillScrubber、V3ControlBarSurface、V3ThemeSelectorView |
 | 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
@@ -364,3 +365,14 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - 本轮没有重跑 Xcode/测试、启动 App、读正式库/Keychain、操作 Spotify 或调用模型；正式安装版和用户实际运行版未核。尚未逐一读从根到截点的全部提交正文/源码，也未完整枚举与阅读 GitHub PR、Issue、Release、远端其他历史 refs/附件及全部用户会话；4 个 tag 和本机 snapshot 仅枚举，不能称全分支审计。
 - 全周期正文从根提交 `50045ecccfab88bf88a824ff67acab6295d6bb81` 开始，先核该阶段来源与后续真实差异；本次已经定向核过的主题/版本可复用去重，不用重新验证一遍。新提交和文档补记不前移产品历史处理点。产品开发仍按用户当轮任务，不由未完成复盘自动恢复。
 - 后续自主推进又定向读取了根提交的 Mock 模型/播放状态、`5f20b8d` 的 Desktop provider 与状态实现、`4a0997c` 的明确 Mock Preview/请求代际与歌曲会话分离、`c8283ab` 的恢复/seek 差异，以及 `7905f04` 的搜歌/歌词模型和管理器。最早 14 个提交只枚举了身份与变更目录，早期审计/研究正文仅选读相关部分，UI 图片未复查，因此全历史完成游标仍未前移。当前修复所需的分工原因归入 L-005/L-007，未把旧 Mock 回退或旧来源规划恢复成现行行为。
+
+## L-024 第二批：逐字手感、副歌、状态栏弹窗、视觉细节（2026-11-13）
+
+- **Core Animation 不要用 `timeOffset` 表示“已经开始了多久”。** 动画走到结尾后会从头再播一遍，逐字上浮会在句中重新弹一次。改成把 `beginTime` 设在过去：`layer.convertTime(CACurrentMediaTime(), from: nil) - elapsed`，配合 `fillMode = .both`、`isRemovedOnCompletion = false`。上浮和长音发光都按这个写。
+- **离屏截图宿主里 SwiftUI `.blur` 不生效。** 状态栏弹窗顶部第一版用模糊封面，离屏图里封面上的字清清楚楚。改成把封面缩到 12 像素再放大当色场：不依赖渲染器，也没有模糊开销。离屏宿主的深色弹窗本来就是白底（改动前也一样），深色效果要看真实 App。
+- **本 App 的电脑操作被策略禁止**（`request_access` 返回 policyDenied），状态栏弹窗打不开做真窗口核对；只能用 `Scripts/ui-snapshots.sh <dir> menubar-light menubar-dark`。主窗口仍可用 `screencapture -l` 拍。
+- **换歌时封面闪一下占位图**：`ArtworkView` 原来先把图置空再加载。现在保留旧图，新图载入后从轻微模糊中显出，再移除旧图；新歌没有封面时照旧不保留旧图。任务键只用封面地址，同一张专辑换歌不再重播。
+- **暂停褪色**用一层灰色 `.blendMode(.saturation)`，只在暂停 1.5 秒后才插入。播放时不存在这层，不多一次全窗合成。跳转造成的短暂停顿不会触发。
+- **桌面歌词情境隐藏**：全屏判断用 CGWindowList 找别的进程在第 0 层、盖满主屏的窗口；隐藏期间 `ignoresMouseEvents` 必须同时尊重原来的鼠标穿透（枚举名是 `.passThrough`）。
+- **胶囊开合（G5）暂缓**：用户计划把胶囊做成灵动岛，单独设计。
+- **写偏好前先读 Bundle ID**：本 App 是 `com.spotifylyrics.app`，不是仓库名。猜错域会在 ~/Library/Preferences 留下空文件。
