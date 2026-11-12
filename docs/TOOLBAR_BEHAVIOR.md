@@ -679,7 +679,8 @@ Work in this order. Each batch is built, tested, restarted and pushed on its own
 - **唱片卡:** the card holds the cover, the name and the controls. The masthead (「ASTER · LYRIC · LISTENING EDITION」, 「SIDE A」) and the footer (「ORIGINAL · TRANSLATION · READING」) are removed.
 - **舞台:** the space beside the whole cover is blurred across its width and darkens towards the window edge. Only a narrow strip at the seam stays sharp. Before, almost half of each side was a sharp mirror image.
 - **封面 and 舞台:** a soft shade sits under the lyrics, deeper the brighter the cover, while 清晰度 is 关闭 and the bright-cover help is on. An explicit 清晰度 choice is drawn as chosen. The song's name on the picture carries a shadow.
-- Not verified in the real window: the offscreen renderer does not draw blur.
+- The bright-cover help now starts at a cover luminance of 0.45 instead of 0.6. With the help switched off nothing is added: the lyrics are drawn as they are.
+- Checked in the real window on a real song (空っぽ, 1116×779, paused) by capturing the app window: 舞台's sides are blurred with no mirror image; 内页 and 唱片卡 draw as described; with the help on, the lyrics on 舞台 are readable over a bright cover.
 
 **E. Player bar.** The card, the compact bar and the edge pill show the same buttons in the same order (喜欢 · 添加到歌单 | 随机 · 上一首 · 播放 · 下一首 · 循环) and the same time format (0:22). The card and compact bar sit on the always-dark listening canvas and keep its dark tint; the pill floats over the canvas edge and uses the toolbar's surface. Only the title lines and the width differ.
 

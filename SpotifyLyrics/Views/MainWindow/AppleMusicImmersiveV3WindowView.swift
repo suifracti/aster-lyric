@@ -726,7 +726,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     /// the cover. It follows 清晰度: only while that is left on 关闭 with the
     /// bright-cover help on; an explicit choice is drawn as chosen.
     @ViewBuilder private var photographicReadingShade: some View {
-        let depth = min(0.34, max(0, (coverLuminance - 0.30) * 0.62))
+        let depth = min(0.44, max(0, (coverLuminance - 0.18) * 0.85))
         if settings.v3ReadingProtection == .off, settings.v3BrightCoverShadowEnabled, depth > 0.02 {
             EllipticalGradient(stops: [
                 .init(color: .black.opacity(depth), location: 0),

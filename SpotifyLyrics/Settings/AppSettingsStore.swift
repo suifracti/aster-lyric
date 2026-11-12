@@ -596,7 +596,7 @@ public final class AppSettingsStore: ObservableObject {
               v3ReadingProtection == .off,
               scene == .coverPhoto,
               renderer == .ambient || renderer == .classicGaussian || renderer == .stage,
-              coverLuminance > 0.6 else { return v3ReadingProtection }
+              coverLuminance > 0.45 else { return v3ReadingProtection }
         return .shadow
     }
 
