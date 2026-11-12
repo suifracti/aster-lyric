@@ -667,12 +667,19 @@ Work in this order. Each batch is built, tested, restarted and pushed on its own
 - 文字 opens with 显示 and 字号, then 对齐 and 清晰度; the reading options (罗马音, 拼音, 注音排版, sizes) fold.
 - 画面 opens with the scene row, the style row and 模糊, then 前景封面, 播放呈现 and 背景动态; the rest folds.
 
-**D. Scenes on one level (revised 2026-11-12; the user asked why four modes each kept its own row of small modes).**
-- The 画面 panel no longer has a category row with a style row under it. Every look is one card with a thumbnail, chosen with one click: 原版环境光, 柔光羽化, 封面, 舞台, 内页, 专注, in two rows of three.
-- 柔和光晕, 独立色场 and 唱片卡 sit in a 「更多」 menu on the 场景 heading. While one of them is in use, its name replaces 「更多」 and no card is outlined.
-- 封面's 静止 / 流动 is an ordinary row (「封面背景」) under the cards while 封面 is in use.
+**D. Scenes on one level, similar ones merged (revised twice on 2026-11-12).** The user asked why four modes each kept a row of small modes, then said no scene may sit behind a 「更多」 menu (it cannot be switched from there) and asked for look-alike scenes to be merged.
+- The 画面 panel shows eight cards with thumbnails, all in view, chosen with one click. Row one keeps the cover beside the lyrics: 原版环境光, 柔光羽化, 独立色场, 唱片卡. Row two: 封面, 舞台, 内页, 专注. There is no category row, no style row and no menu.
+- **柔和光晕 is merged into 原版环境光.** The two share one layout and differ in background darkness, which 背景明暗 sets. It has no card. A saved 柔和光晕 choice keeps drawing until another card is picked.
+- **封面's 静止 / 流动 is merged into 背景动态.** 关闭 is the still picture (纯高斯); 轻柔 and 鲜明 are the moving one (封面柔焦). The separate switch is gone.
 - The four categories remain only for cycling scenes by gesture. Renderers, raw IDs, saved values and hover preview are unchanged.
-- This replaces the 2026-11-11 version of this item (four categories, at most two styles each) and the category and style rows of Round 13.
+- This replaces the 2026-11-11 version of this item and the category and style rows of Round 13.
+
+**D2. What the scenes show (2026-11-12, from real screenshots).**
+- **内页:** with the cover in view, the song's name, artist and album sit under the cover in the left column, and the lyrics start at the top of the page. The heading band and its rule remain only without a cover or in a small window. The fixed caption 「原文 · 译文 · 读音」 is removed: it did not follow the layers in use.
+- **唱片卡:** the card holds the cover, the name and the controls. The masthead (「ASTER · LYRIC · LISTENING EDITION」, 「SIDE A」) and the footer (「ORIGINAL · TRANSLATION · READING」) are removed.
+- **舞台:** the space beside the whole cover is blurred across its width and darkens towards the window edge. Only a narrow strip at the seam stays sharp. Before, almost half of each side was a sharp mirror image.
+- **封面 and 舞台:** a soft shade sits under the lyrics, deeper the brighter the cover, while 清晰度 is 关闭 and the bright-cover help is on. An explicit 清晰度 choice is drawn as chosen. The song's name on the picture carries a shadow.
+- Not verified in the real window: the offscreen renderer does not draw blur.
 
 **E. Player bar.** The card, the compact bar and the edge pill show the same buttons in the same order (喜欢 · 添加到歌单 | 随机 · 上一首 · 播放 · 下一首 · 循环) and the same time format (0:22). The card and compact bar sit on the always-dark listening canvas and keep its dark tint; the pill floats over the canvas edge and uses the toolbar's surface. Only the title lines and the width differ.
 

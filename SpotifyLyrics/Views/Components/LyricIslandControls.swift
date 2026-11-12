@@ -333,8 +333,11 @@ struct LyricIslandSceneThumbnail: View {
     let scene: V3ListeningScene
     let image: NSImage?
     let accent: Color
-    /// 舞台: the whole cover in the middle, over its own blurred copy.
-    var stage = false
+    /// The looks that share a scene: 舞台 (whole cover over its blurred
+    /// copy), 独立色场 (colour only, no picture) and 唱片卡 (cover and song
+    /// in one card).
+    enum Variant { case standard, stage, field, poster }
+    var variant = Variant.standard
     private var lines: some View {
         VStack(alignment: .leading, spacing: 5) {
             Capsule().fill(.white.opacity(0.88)).frame(height: 3)
@@ -357,6 +360,22 @@ struct LyricIslandSceneThumbnail: View {
                         artwork.frame(width: w * 0.36, height: 44).clipShape(RoundedRectangle(cornerRadius: 4))
                         lines
                     }.padding(10)
+                case .originalAmbient where variant == .poster:
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            artwork.frame(width: 34, height: 34).clipShape(RoundedRectangle(cornerRadius: 3))
+                            Capsule().fill(.white.opacity(0.7)).frame(width: 26, height: 2)
+                        }
+                        .padding(6)
+                        .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 6))
+                        lines
+                    }.padding(10)
+                case .flowingField where variant != .field:
+                    artwork.frame(width: w, height: 72).clipped().blur(radius: 9).opacity(0.55)
+                    HStack(spacing: 12) {
+                        artwork.frame(width: w * 0.30, height: 38).clipShape(RoundedRectangle(cornerRadius: 8))
+                        lines
+                    }.padding(12)
                 case .flowingField:
                     Circle().fill(accent.opacity(0.55)).frame(width: 72, height: 72).blur(radius: 14).offset(x: -24, y: 7)
                     Circle().fill(.white.opacity(0.10)).frame(width: 48, height: 48).blur(radius: 12).offset(x: 28, y: -12)
@@ -364,7 +383,7 @@ struct LyricIslandSceneThumbnail: View {
                         artwork.frame(width: w * 0.30, height: 38).clipShape(RoundedRectangle(cornerRadius: 8))
                         lines
                     }.padding(12)
-                case .coverPhoto where stage:
+                case .coverPhoto where variant == .stage:
                     artwork.frame(width: w, height: 72).clipped().blur(radius: 8).opacity(0.55)
                     Color.black.opacity(0.24)
                     VStack(spacing: 5) {

@@ -429,8 +429,10 @@ struct AppleMusicImmersiveV3BackdropView: View {
                        startPoint: .top, endPoint: .bottom)
     }
 
-    /// Matching reflected edge pixels join the original without a separate tonal band.
-    /// Only the extension stretches; blur rises towards the outside of the window.
+    /// The space beside the whole cover is a blurred, receding continuation
+    /// of it. Reflected edge pixels meet the cover without a tonal band, but
+    /// only a narrow strip at the seam stays sharp: a wide sharp reflection
+    /// reads as a second, mirrored picture.
     private func stageEdgeExtension(image: NSImage, horizontal: Bool, leading: Bool) -> some View {
         let outer: UnitPoint = horizontal ? (leading ? .leading : .trailing) : (leading ? .top : .bottom)
         let inner: UnitPoint = horizontal ? (leading ? .trailing : .leading) : (leading ? .bottom : .top)
@@ -442,13 +444,15 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 .scaleEffect(x: horizontal ? -1 : 1, y: horizontal ? 1 : -1)
             ZStack {
                 reflected
+                    .blur(radius: 26 + perceptualBlur * 42)
                 reflected
-                    .blur(radius: 18 + perceptualBlur * 42)
                     .mask(LinearGradient(stops: [
-                        .init(color: .white, location: 0),
-                        .init(color: .white, location: 0.55),
-                        .init(color: .clear, location: 1)
+                        .init(color: .clear, location: 0),
+                        .init(color: .clear, location: 0.86),
+                        .init(color: .white, location: 1)
                     ], startPoint: outer, endPoint: inner))
+                LinearGradient(colors: [.black.opacity(0.34), .black.opacity(0.06)],
+                               startPoint: outer, endPoint: inner)
             }
             .clipped()
         }

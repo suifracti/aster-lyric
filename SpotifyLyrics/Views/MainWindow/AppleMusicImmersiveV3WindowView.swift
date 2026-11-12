@@ -701,8 +701,11 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(compositionTrack.title).font(.system(size: 20, weight: .semibold)).lineLimit(1)
-                    Text(compositionTrack.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(compositionTrack.artist).font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.82)).lineLimit(1)
                 }
+                // The name sits on the picture itself, so it carries its own shadow.
+                .shadow(color: .black.opacity(0.45), radius: 6, y: 1)
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: min(600, geometry.size.width - 48), alignment: .leading)
@@ -711,10 +714,27 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 lyricsColumn(width: readingWidth, compact: compact, stage: true)
                     .frame(width: readingWidth, height: readingHeight)
                     .clipped()
+                    .background { photographicReadingShade }
                 sceneTransport(width: min(440, readingWidth))
             }
             .padding(.horizontal, compact ? 20 : 40).padding(.bottom, 32)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+        }
+    }
+
+    /// A soft shade under the lyrics on 封面 and 舞台, deeper the brighter
+    /// the cover. It follows 清晰度: only while that is left on 关闭 with the
+    /// bright-cover help on; an explicit choice is drawn as chosen.
+    @ViewBuilder private var photographicReadingShade: some View {
+        let depth = min(0.34, max(0, (coverLuminance - 0.30) * 0.62))
+        if settings.v3ReadingProtection == .off, settings.v3BrightCoverShadowEnabled, depth > 0.02 {
+            EllipticalGradient(stops: [
+                .init(color: .black.opacity(depth), location: 0),
+                .init(color: .black.opacity(depth * 0.6), location: 0.55),
+                .init(color: .clear, location: 1)
+            ])
+            .scaleEffect(x: 1.25, y: 1.2)
+            .allowsHitTesting(false)
         }
     }
 
@@ -728,13 +748,17 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         // Reserving the maximum size avoids a slider dead zone or clipped artwork.
         let coverScale = min(1.4, max(0.8, CGFloat(compositionArtworkScale)))
         let coverSize = compact ? 64 * coverScale : coverColumnWidth / 1.4 * coverScale
-        let headerHeight: CGFloat = compact ? 104 : 80
+        // With the cover in view the song's name sits under it, in the same
+        // column, and the lyrics start at the top of the page. Without the
+        // cover, or in a small window, the name is a heading above a rule.
+        let headingInColumn = !compact && compositionShowsCover
+        let headerHeight: CGFloat = headingInColumn ? 0 : compact ? 104 : 80
         let footerHeight: CGFloat = isCompositionPreview || !settings.v3EdgeProgressEnabled ? 44 : 0
         let readingHeight = LyricIslandSceneBudget.linerReadingHeight(
             canvasHeight: geometry.size.height, headerHeight: headerHeight, footerHeight: footerHeight)
         let heading = VStack(alignment: .leading, spacing: 6) {
             Text(compositionTrack.title)
-                .font(.system(size: compact ? 24 : 32, weight: .medium, design: .serif))
+                .font(.system(size: compact ? 24 : headingInColumn ? 26 : 32, weight: .medium, design: .serif))
                 .lineLimit(2).minimumScaleFactor(0.8)
             Text(compositionTrack.artist)
                 .font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
@@ -742,24 +766,25 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 .font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1)
         }
         return VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 18) {
-                if compact && compositionShowsCover {
-                    ArtworkView(track: compositionTrack, size: coverSize, showsAlbumLabel: false,
-                                cornerRadiusRatio: 0.025, preservesCompleteArtwork: true)
-                        .frame(width: 90, height: 90)
+            if !headingInColumn {
+                HStack(spacing: 18) {
+                    if compact && compositionShowsCover {
+                        ArtworkView(track: compositionTrack, size: coverSize, showsAlbumLabel: false,
+                                    cornerRadiusRatio: 0.025, preservesCompleteArtwork: true)
+                            .frame(width: 90, height: 90)
+                    }
+                    heading
+                    Spacer(minLength: 0)
                 }
-                heading
-                Spacer(minLength: 0)
+                .frame(height: headerHeight, alignment: .leading)
+                Divider().frame(height: 1).overlay(Color.white.opacity(0.16))
             }
-            .frame(height: headerHeight, alignment: .leading)
-            Divider().frame(height: 1).overlay(Color.white.opacity(0.16))
             HStack(alignment: .top, spacing: 36) {
                 if !compact && compositionShowsCover {
                     VStack(alignment: .leading, spacing: 16) {
                         ArtworkView(track: compositionTrack, size: coverSize,
                                     showsAlbumLabel: false, cornerRadiusRatio: 0.025, preservesCompleteArtwork: true)
-                        Text("原文 · 译文 · 读音")
-                            .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                        heading
                     }.frame(width: coverColumnWidth, alignment: .leading)
                 }
                 lyricsColumn(width: compositionShowsCover ? textWidth : min(840, contentWidth),
@@ -928,18 +953,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         let cardInset: CGFloat = compact ? 18 : 26
         let coverSize = min(metrics.coverSize, max(1, metrics.artworkWidth - cardInset * 2))
         let card = VStack(alignment: .leading, spacing: compact ? 18 : 24) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("ASTER · LYRIC · LISTENING EDITION")
-                    .font(.system(size: 9, weight: .medium, design: .serif))
-                    .tracking(1.1)
-                    .foregroundStyle(.white.opacity(0.72))
-                Spacer(minLength: 8)
-                Text("SIDE A")
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.58))
-            }
-            Rectangle().fill(.white.opacity(0.28)).frame(height: 1)
-
+            // The card holds what the song has: its cover, its name and
+            // the controls. No masthead or footer text that says nothing.
             HStack {
                 ArtworkView(track: compositionTrack, size: coverSize,
                             showsAlbumLabel: false, cornerRadiusRatio: 0.025,
@@ -953,16 +968,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                                  titleSize: compact ? 22 : 28, alignment: .leading,
                                  progressDensity: compact ? .small : .medium, usesDisplayedTrack: true)
                 .modifier(V3PlaybackVisibility(visible: isCompositionPreview || playbackDetailsVisible, reduceMotion: reduceMotion))
-
-            Rectangle().fill(.white.opacity(0.18)).frame(height: 1)
-            HStack(spacing: 6) {
-                Capsule().fill(Color.accentColor.opacity(0.9)).frame(width: 18, height: 2)
-                Capsule().fill(Color.accentColor.opacity(0.45)).frame(width: 10, height: 2)
-                Text("ORIGINAL · TRANSLATION · READING")
-                    .font(.system(size: 8, weight: .medium, design: .monospaced))
-                    .tracking(0.4)
-                    .foregroundStyle(.white.opacity(0.52))
-            }
         }
         .padding(cardInset)
         .frame(width: metrics.artworkWidth)

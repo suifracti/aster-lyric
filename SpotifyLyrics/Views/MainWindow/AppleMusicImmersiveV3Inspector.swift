@@ -149,50 +149,26 @@ struct V3ThemeSelectorView: View {
 
     var body: some View {
         let looks = V3SceneFamily.looks
-        let foldedCurrent = looks.folded.first(where: isCurrent)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Text("场景").font(.system(size: 13, weight: .semibold))
                 Spacer()
-                // Rarely used looks. The name of the one in use replaces 更多.
-                Menu {
-                    ForEach(looks.folded) { entry in
-                        Button { adopt(entry) } label: {
-                            if isCurrent(entry) { Label(entry.title, systemImage: "checkmark") }
-                            else { Text(entry.title) }
-                        }
-                    }
-                } label: {
-                    Text(foldedCurrent?.title ?? "更多")
-                        .font(.system(size: 11.5, weight: foldedCurrent == nil ? .regular : .semibold))
-                        .foregroundStyle(foldedCurrent == nil ? Color.secondary : Color.primary)
-                }
-                .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()
-                .help(looks.folded.map { $0.title + "：" + ($0.detail ?? "") }.joined(separator: "\n"))
-                .accessibilityLabel("更多场景")
-                .accessibilityIdentifier("v3.looks.more")
                 Toggle("悬停预览", isOn: $settings.v3SceneHoverPreviewEnabled)
                     .toggleStyle(.switch).controlSize(.mini)
                     .font(.system(size: 11))
                     .help("停留后临时预览，移开恢复，点击才采用；预览不会保存设置或调用 AI")
             }
-            // One level: every look is a card, chosen with one click. Each is
-            // an existing scene + renderer pair and keeps its saved values.
+            // One level, nothing behind a menu: every look is a card chosen
+            // with one click. Each is an existing scene + renderer pair and
+            // keeps its saved values.
             VStack(spacing: 6) {
-                ForEach(Array(stride(from: 0, to: looks.shown.count, by: 3)), id: \.self) { start in
+                ForEach(Array(stride(from: 0, to: looks.count, by: 4)), id: \.self) { start in
                     HStack(alignment: .top, spacing: 6) {
-                        ForEach(looks.shown[start..<min(start + 3, looks.shown.count)]) { entry in
+                        ForEach(looks[start..<min(start + 4, looks.count)]) { entry in
                             lookCard(entry)
                         }
                     }
                 }
-            }
-            if let pair = looks.shown.first(where: { $0.isCoverPair }), isCurrent(pair) {
-                V3SegmentedPicker("封面背景", selection: Binding(
-                    get: { settings.v3ArtworkPresentation == .classicGaussian ? 1 : 0 },
-                    set: { chooseCoverMotion($0 == 1 ? .classicGaussian : .ambient) }
-                ), options: [("静止", 1), ("流动", 0)])
-                .accessibilityIdentifier("v3.cover.motion")
             }
             if !compact, settings.v3ListeningScene != nil {
                 Button("恢复此场景的默认值", role: .destructive) {
@@ -226,7 +202,9 @@ struct V3ThemeSelectorView: View {
                     .overlay(alignment: .topLeading) {
                         GeometryReader { geometry in
                             LyricIslandSceneThumbnail(scene: entry.scene ?? .originalAmbient, image: thumbnail,
-                                                      accent: tint, stage: entry.renderer == .stage)
+                                accent: tint,
+                                variant: entry.renderer == .stage ? .stage : entry.isLegacy ? .poster
+                                    : entry.renderer == .classic ? .field : .standard)
                                 .frame(width: 150, height: 72)
                                 .scaleEffect(geometry.size.width / 150, anchor: .topLeading)
                         }
@@ -261,16 +239,6 @@ struct V3ThemeSelectorView: View {
         else { settings.selectLegacyV3Presentation(target) }
     }
 
-    /// 静止 = 纯高斯, 流动 = 封面柔焦. Picking 流动 turns its background motion
-    /// on when it was still; an existing 轻柔/鲜明 choice is kept.
-    private func chooseCoverMotion(_ renderer: V3ArtworkPresentation) {
-        clearPreview()
-        settings.selectV3Scene(.coverPhoto, renderer: renderer)
-        if renderer == .ambient,
-           settings.v3AtmosphereLevel(for: .ambient, scene: .coverPhoto) == 0 {
-            settings.setV3AtmosphereLevel(1, for: .ambient)
-        }
-    }
 }
 
 /// Entry grouping only. Families map onto existing scene + renderer pairs and
@@ -333,13 +301,15 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
 
     var primaryScene: V3ListeningScene { scenes[0] }
 
-    /// The 画面 panel lists every look on one level: six cards, and three
-    /// rarely used ones (柔和光晕, 独立色场, 唱片卡) behind 更多. The families
-    /// remain for scene cycling. Nothing is removed or remapped.
-    static var looks: (shown: [Entry], folded: [Entry]) {
+    /// The 画面 panel lists every look on one level, all in view: two rows
+    /// of four. Row one keeps the cover beside the lyrics; row two is the
+    /// full picture and the reading pages. 柔和光晕 is not listed: it draws
+    /// like 原版环境光 with a darker background, which 背景明暗 covers. A saved
+    /// 柔和光晕 choice keeps drawing until another look is picked.
+    static var looks: [Entry] {
         let all = allCases.flatMap(\.entries)
-        let folded = all.filter { $0.isLegacy || ($0.scene == .flowingField && $0.renderer == .classic) }
-        return (all.filter { !folded.contains($0) }, folded)
+        return ["原版环境光", "柔光羽化", "独立色场", "唱片卡", "封面", "舞台", "内页", "专注"]
+            .compactMap { title in all.first { $0.title == title } }
     }
 
     /// 4 categories, 9 styles. 经典·柔和光晕 and 经典·封面海报 survive as the
@@ -479,8 +449,26 @@ struct V3VisualControls {
                           options: V3PlaybackPresentation.allCases.map { ($0.title, $0) })
     }
 
+    /// 封面 has two renderers behind one card: 纯高斯 is the still picture
+    /// and 封面柔焦 the moving one. 背景动态 chooses between them, so there is
+    /// no separate 静止 / 流动 switch.
     @ViewBuilder var backgroundMotionControls: some View {
-        if !usesQuietBackground && settings.v3ArtworkPresentation != .classicGaussian {
+        let renderer = settings.v3ArtworkPresentation
+        if settings.v3ListeningScene == .coverPhoto, renderer == .ambient || renderer == .classicGaussian {
+            V3SegmentedPicker("背景动态", selection: Binding(
+                get: { renderer == .classicGaussian ? 0 : settings.v3AtmosphereLevel(for: .ambient) },
+                set: { level in
+                    if level == 0 {
+                        settings.selectV3Scene(.coverPhoto, renderer: .classicGaussian)
+                    } else {
+                        settings.selectV3Scene(.coverPhoto, renderer: .ambient)
+                        settings.setV3AtmosphereLevel(level, for: .ambient)
+                    }
+                }
+            ), options: [("关闭", 0), ("轻柔", 1), ("鲜明", 2)])
+            .accessibilityIdentifier("v3.cover.motion")
+            .help("关闭为静止的封面；轻柔和鲜明让背景缓慢流动。暂停、窗口隐藏或系统减少动态效果时停止。")
+        } else if !usesQuietBackground && renderer != .classicGaussian {
             V3SegmentedPicker("背景动态", selection: Binding(
                 get: { settings.v3AtmosphereLevel(for: settings.v3ArtworkPresentation) },
                 set: { settings.setV3AtmosphereLevel($0, for: settings.v3ArtworkPresentation) }
