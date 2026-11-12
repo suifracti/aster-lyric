@@ -84,12 +84,13 @@ struct AppleMusicImmersiveV3BackdropView: View {
             if listeningScene == .flowingField && artworkPresentation == .classic {
                 // This scene is a color field, not another enlarged/blurred portrait.
                 flowingArtworkColors
-            } else if listeningScene == .focusedLyrics || listeningScene == .linerNotes {
+            } else if listeningScene == .linerNotes {
+                // 内页 is the one page for "the cover's colour, the cover and
+                // the lyrics": it takes the colour field that 独立色场 had.
+                flowingArtworkColors
+                Color.black.opacity(0.12)
+            } else if listeningScene == .focusedLyrics {
                 quietArtworkColors
-                if listeningScene == .linerNotes {
-                    LinearGradient(colors: [.white.opacity(0.045), .clear, .black.opacity(0.10)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                }
             } else {
                 if let outgoingArtworkImage {
                     artworkLayers(image: outgoingArtworkImage, ambientImage: outgoingAmbientArtworkImage)
@@ -429,13 +430,19 @@ struct AppleMusicImmersiveV3BackdropView: View {
                        startPoint: .top, endPoint: .bottom)
     }
 
-    /// The space beside the whole cover is a blurred, receding continuation
-    /// of it. Reflected edge pixels meet the cover without a tonal band, but
-    /// only a narrow strip at the seam stays sharp: a wide sharp reflection
-    /// reads as a second, mirrored picture.
+    /// The space beside the whole cover continues it. Reflected edge pixels
+    /// meet the cover without a tonal band, and the blur grows in three
+    /// steps from the seam to the window edge: a sharp reflection across
+    /// the whole side reads as a second picture, and one thick blur from
+    /// the seam reads as a panel stuck beside the cover.
     private func stageEdgeExtension(image: NSImage, horizontal: Bool, leading: Bool) -> some View {
         let outer: UnitPoint = horizontal ? (leading ? .leading : .trailing) : (leading ? .top : .bottom)
         let inner: UnitPoint = horizontal ? (leading ? .trailing : .leading) : (leading ? .bottom : .top)
+        func fading(from start: Double, to end: Double) -> LinearGradient {
+            LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .clear, location: start),
+                                   .init(color: .white, location: end), .init(color: .white, location: 1)],
+                           startPoint: outer, endPoint: inner)
+        }
         return GeometryReader { geometry in
             let reflected = Image(nsImage: image)
                 .resizable()
@@ -443,16 +450,11 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 .frame(width: geometry.size.width, height: geometry.size.height)
                 .scaleEffect(x: horizontal ? -1 : 1, y: horizontal ? 1 : -1)
             ZStack {
-                reflected
-                    .blur(radius: 26 + perceptualBlur * 42)
-                reflected
-                    .mask(LinearGradient(stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: .clear, location: 0.86),
-                        .init(color: .white, location: 1)
-                    ], startPoint: outer, endPoint: inner))
-                LinearGradient(colors: [.black.opacity(0.34), .black.opacity(0.06)],
-                               startPoint: outer, endPoint: inner)
+                reflected.blur(radius: 22 + perceptualBlur * 42)
+                reflected.blur(radius: 9 + perceptualBlur * 20).mask(fading(from: 0.25, to: 0.70))
+                reflected.blur(radius: 3 + perceptualBlur * 8).mask(fading(from: 0.62, to: 0.92))
+                reflected.mask(fading(from: 0.88, to: 1))
+                LinearGradient(colors: [.black.opacity(0.22), .clear], startPoint: outer, endPoint: inner)
             }
             .clipped()
         }

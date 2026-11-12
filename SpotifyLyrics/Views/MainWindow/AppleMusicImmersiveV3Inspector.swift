@@ -162,9 +162,9 @@ struct V3ThemeSelectorView: View {
             // with one click. Each is an existing scene + renderer pair and
             // keeps its saved values.
             VStack(spacing: 6) {
-                ForEach(Array(stride(from: 0, to: looks.count, by: 4)), id: \.self) { start in
+                ForEach(Array(stride(from: 0, to: looks.count, by: 3)), id: \.self) { start in
                     HStack(alignment: .top, spacing: 6) {
-                        ForEach(looks[start..<min(start + 4, looks.count)]) { entry in
+                        ForEach(looks[start..<min(start + 3, looks.count)]) { entry in
                             lookCard(entry)
                         }
                     }
@@ -203,8 +203,7 @@ struct V3ThemeSelectorView: View {
                         GeometryReader { geometry in
                             LyricIslandSceneThumbnail(scene: entry.scene ?? .originalAmbient, image: thumbnail,
                                 accent: tint,
-                                variant: entry.renderer == .stage ? .stage : entry.isLegacy ? .poster
-                                    : entry.renderer == .classic ? .field : .standard)
+                                variant: entry.renderer == .stage ? .stage : .standard)
                                 .frame(width: 150, height: 72)
                                 .scaleEffect(geometry.size.width / 150, anchor: .topLeading)
                         }
@@ -301,14 +300,16 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
 
     var primaryScene: V3ListeningScene { scenes[0] }
 
-    /// The 画面 panel lists every look on one level, all in view: two rows
-    /// of four. Row one keeps the cover beside the lyrics; row two is the
-    /// full picture and the reading pages. 柔和光晕 is not listed: it draws
-    /// like 原版环境光 with a darker background, which 背景明暗 covers. A saved
-    /// 柔和光晕 choice keeps drawing until another look is picked.
+    /// The 画面 panel lists every look on one level, all in view: six
+    /// cards. Three look-alikes have no card of their own:
+    /// - 柔和光晕 draws like 原版环境光 with a darker background (背景明暗).
+    /// - 独立色场 and 唱片卡 were, like 内页, "the cover's colour, the cover
+    ///   on the left, the lyrics on the right". 内页 now has the colour
+    ///   field as its background and stands for all three.
+    /// A saved choice of one of them keeps drawing until a card is picked.
     static var looks: [Entry] {
         let all = allCases.flatMap(\.entries)
-        return ["原版环境光", "柔光羽化", "独立色场", "唱片卡", "封面", "舞台", "内页", "专注"]
+        return ["原版环境光", "柔光羽化", "内页", "封面", "舞台", "专注"]
             .compactMap { title in all.first { $0.title == title } }
     }
 
@@ -418,9 +419,6 @@ struct V3VisualControls {
         return "自定"
     }
 
-    private var usesQuietBackground: Bool {
-        settings.v3ListeningScene == .focusedLyrics || settings.v3ListeningScene == .linerNotes
-    }
 
     @ViewBuilder var blurControls: some View {
         if settings.v3ArtworkPresentation != .stage || settings.v3BackgroundShowsCompleteArtwork(for: .stage) {
@@ -468,7 +466,7 @@ struct V3VisualControls {
             ), options: [("关闭", 0), ("轻柔", 1), ("鲜明", 2)])
             .accessibilityIdentifier("v3.cover.motion")
             .help("关闭为静止的封面；轻柔和鲜明让背景缓慢流动。暂停、窗口隐藏或系统减少动态效果时停止。")
-        } else if !usesQuietBackground && renderer != .classicGaussian {
+        } else if settings.v3ListeningScene != .focusedLyrics && renderer != .classicGaussian {
             V3SegmentedPicker("背景动态", selection: Binding(
                 get: { settings.v3AtmosphereLevel(for: settings.v3ArtworkPresentation) },
                 set: { settings.setV3AtmosphereLevel($0, for: settings.v3ArtworkPresentation) }
