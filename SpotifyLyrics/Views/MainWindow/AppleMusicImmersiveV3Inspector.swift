@@ -655,10 +655,7 @@ struct V3VisualControls {
                     V3SegmentedPicker("背景素材", selection: $settings.v3BackdropSource,
                                       options: V3BackdropSource.allCases.map { ($0.title, $0) })
                         .accessibilityIdentifier("v3.backdrop.source")
-                        .help("歌手照片：像 Spotify 电视版那样用主唱歌手的照片做背景；取不到时仍用封面。前景封面不变。")
-                    Toggle("有视频时用视频", isOn: $settings.v3BackdropUsesVideo)
-                        .accessibilityIdentifier("v3.backdrop.video")
-                        .help("歌曲有 Spotify Canvas 短片时，背景改为循环播放它。只读本机 Spotify 已缓存的地址；Spotify 往往在歌曲开始后才取到，所以可能晚几秒出现。暂停、窗口隐藏或系统减少动态效果时停住。")
+                        .help("视频：歌曲有 Spotify Canvas 短片时循环播放它，没有就用封面；只读本机 Spotify 已缓存的地址，可能在歌曲开始几秒后才出现，暂停、窗口隐藏或系统减少动态效果时停住。\n歌手照片：像 Spotify 电视版那样用主唱歌手的照片，取不到时用封面。\n前景封面不变。")
                 }
                 if scene == .originalAmbient && renderer == .authenticAmbient {
                     V3NumericSlider("背景明暗", value: Binding(

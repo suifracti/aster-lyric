@@ -166,7 +166,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
     /// Scene cards and hover previews draw this view too; only the real
     /// backdrop plays a clip.
     private var showsCanvas: Bool {
-        settings.v3BackdropUsesVideo && presentationOverride == nil
+        settings.v3BackdropSource == .video && presentationOverride == nil
     }
 
     private var spotifyTrackID: String? {

@@ -298,6 +298,9 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **歌手照片不需要登录。** 公开嵌入页 `open.spotify.com/embed/track/<id>` 里有歌手 uri（`SpotifyTrackArtistResolver` 本来就请求这一页，现在顺带留下 ID）；官方 oEmbed 给 320 px 头像，图片 ID 的尺寸码 `00005174` 换成 `0000e5eb` 即 640 px。
 - **已定外观不动。** `BackdropPalette` 的主色、副色、光色保持原算法；新增 `route / identity / partner / edge` 只用于自动选择、双色、窗光和强调色（`CoverColorRoute`，参照 Tauon）。
 - **律动单独采集。** `V3MusicPulse` 不复用排轴的采集（那边有身份守卫和排轴状态），自己开一路只含 Spotify 的 ScreenCaptureKit 音频流；画面每帧用锁读数值，SwiftUI 不随帧重绘。默认关闭：持续采集会让菜单栏一直显示录制标志。
+- **律动第一版完全没有数据。** Spotify 的声音是两个分开的声道，`CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer` 需要先问大小再分配；只给一个 `AudioBufferList` 的空间会直接失败，分析器一帧都没收到（用户反馈“看不出区别”）。改成先问大小后，日志 `PULSE levels` 每 5 秒报低音峰值和 BPM（实测峰值 3–16 倍、120 BPM）。光也从封面正后方（被封面挡住）改成封面外的一圈光环加整体轻微提亮，连拍真窗口能看出节拍起伏。
+- **背景素材合并成一个选择。** 第一版“背景素材”和“有视频时用视频”分开，选了歌手照片还得关视频才看得到；现为 视频 / 封面 / 歌手照片 一个选择（`v3.backdrop.source.v2`，从两个旧键迁移）。
+- **Spotify 有时给不出封面地址**（`ARTWORK desktop … found=false`），前景封面变成占位图；现在改从公开 oEmbed 取同一首歌的 640 px 封面。
 - **跳转保持与单句循环冲突。** 循环靠 Spotify 报告的位置判断句尾，保持会把它挡住（`testLyricLineRepeatsUntilCancelledAndStopsOnTrackChange` 抓到）；来源 `lyric-line-loop` 不保持。
 - **脏词还原只做等长替换。** 走 `ReadingProjection` 的显示投影（和繁简转换同一处），逐字片段按原 UTF-16 范围重取文字；投影缓存键加上这个开关。
 - **顺带修正**：`testPinnedPlacement` 还在要求“永远不放左侧”，与 Round 14 的“右侧放不下就放左侧”冲突，已按现行为更新。

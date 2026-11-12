@@ -63,6 +63,13 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertNil(SpotifyPublicArtwork.trackID(from: "spotify:local:abc"))
     }
 
+    func testBackdropSourceIsOneChoice() {
+        XCTAssertEqual(V3BackdropSource.migrated(source: nil, usesVideo: nil), .video)
+        XCTAssertEqual(V3BackdropSource.migrated(source: "", usesVideo: false), .cover)
+        XCTAssertEqual(V3BackdropSource.migrated(source: "artist", usesVideo: true), .artist,
+                       "a chosen photo is no longer hidden by the video")
+    }
+
     // MARK: Cover colour routes
 
     private func pixels(_ parts: [((Double, Double, Double), Int)]) -> [(Double, Double, Double)] {

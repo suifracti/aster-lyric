@@ -147,6 +147,7 @@ struct PulseAnalyzer {
     private var flux: [Double] = []
     private var tempoCandidates: [Double] = []
     private var bpm: Double?
+    private var loudestBass = 0.0
 
     /// Band edges as FFT bins (46.875 Hz each).
     private static let bands: [(Int, Int)] = {
@@ -160,15 +161,23 @@ struct PulseAnalyzer {
     }
 
     mutating func ingest(_ buffer: CMSampleBuffer) {
+        // Spotify's sound arrives as two separate channels, so the list holds
+        // two buffers: ask for its size first (one AudioBufferList is too small).
+        var size = 0
+        CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            buffer, bufferListSizeNeededOut: &size, bufferListOut: nil, bufferListSize: 0,
+            blockBufferAllocator: nil, blockBufferMemoryAllocator: nil, flags: 0, blockBufferOut: nil)
+        guard size > 0 else { return }
+        let raw = UnsafeMutableRawPointer.allocate(byteCount: size, alignment: MemoryLayout<Int>.alignment)
+        defer { raw.deallocate() }
+        let list = raw.bindMemory(to: AudioBufferList.self, capacity: 1)
         var blockBuffer: CMBlockBuffer?
-        var list = AudioBufferList()
         let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
-            buffer, bufferListSizeNeededOut: nil, bufferListOut: &list,
-            bufferListSize: MemoryLayout<AudioBufferList>.size, blockBufferAllocator: nil,
-            blockBufferMemoryAllocator: nil, flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
-            blockBufferOut: &blockBuffer)
+            buffer, bufferListSizeNeededOut: nil, bufferListOut: list, bufferListSize: size,
+            blockBufferAllocator: nil, blockBufferMemoryAllocator: nil,
+            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment, blockBufferOut: &blockBuffer)
         guard status == noErr else { return }
-        let buffers = UnsafeMutableAudioBufferListPointer(&list)
+        let buffers = UnsafeMutableAudioBufferListPointer(list)
         guard let first = buffers.first, let data = first.mData else { return }
         let count = Int(first.mDataByteSize) / MemoryLayout<Float>.size
         let left = data.assumingMemoryBound(to: Float.self)
@@ -179,6 +188,7 @@ struct PulseAnalyzer {
         } else {
             pending.append(contentsOf: UnsafeBufferPointer(start: left, count: count))
         }
+        _ = blockBuffer
         while pending.count >= Self.frameSize {
             process(Array(pending[0..<Self.frameSize]))
             pending.removeFirst(Self.hop)
@@ -226,6 +236,11 @@ struct PulseAnalyzer {
         }
 
         func ratio(_ band: Int, _ value: Double) -> Double { longAverage[band] < 0.001 ? 1 : value / longAverage[band] }
+        loudestBass = max(loudestBass, ratio(0, now[0]))
+        if frameCount % Int(fps * 5) == 0 {
+            LyricsE2ELog.log("PULSE levels bassPeak=\(String(format: "%.2f", loudestBass)) bpm=\(bpm.map { String(format: "%.0f", $0) } ?? "-")")
+            loudestBass = 0
+        }
         V3MusicPulse.publish(V3MusicPulse.Levels(
             bass: ratio(0, now[0]), mid: ratio(1, now[1]), treble: ratio(2, now[2]),
             bassAverage: ratio(0, average[0]), bpm: bpm,
@@ -263,8 +278,10 @@ struct PulseAnalyzer {
     }
 }
 
-/// A soft light at the cover that brightens and swells on the beat. Drawn by
-/// Core Animation from a display link; SwiftUI is not redrawn per frame.
+/// The beat as light: a halo around the cover (outside it, so the cover
+/// does not hide it) that brightens and widens, and a faint lift of the
+/// whole picture. Core Animation from a display link; SwiftUI is not
+/// redrawn per frame.
 struct V3MusicPulseLight: NSViewRepresentable {
     let color: NSColor
     let center: UnitPoint
@@ -279,28 +296,41 @@ struct V3MusicPulseLight: NSViewRepresentable {
 }
 
 final class V3MusicPulseLightView: NSView {
-    private let glow = CAGradientLayer()
+    private let halo = CAGradientLayer()
+    private let wash = CALayer()
     private var link: CADisplayLink?
     private var envelope = 0.0
+    private var steady = 0.0
     private var lastTime: CFTimeInterval = 0
     private var center = UnitPoint.center
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        glow.type = .radial
-        glow.startPoint = CGPoint(x: 0.5, y: 0.5)
-        glow.endPoint = CGPoint(x: 1, y: 1)
-        glow.opacity = 0
-        layer?.addSublayer(glow)
+        layerUsesCoreImageFilters = true
+        halo.type = .radial
+        halo.startPoint = CGPoint(x: 0.5, y: 0.5)
+        halo.endPoint = CGPoint(x: 1, y: 1)
+        halo.opacity = 0
+        wash.opacity = 0
+        // Screen blending only ever lightens what is under it.
+        let screen = CIFilter(name: "CIScreenBlendMode")
+        halo.compositingFilter = screen
+        wash.compositingFilter = screen
+        layer?.addSublayer(wash)
+        layer?.addSublayer(halo)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     func configure(color: NSColor, center: UnitPoint, active: Bool) {
         self.center = center
-        glow.colors = [color.withAlphaComponent(0.55).cgColor, color.withAlphaComponent(0.18).cgColor, NSColor.clear.cgColor]
-        glow.locations = [0, 0.45, 1]
+        let light = (color.usingColorSpace(.sRGB) ?? color).blended(withFraction: 0.35, of: .white) ?? color
+        // Clear where the cover sits, brightest just outside it, then fading.
+        halo.colors = [NSColor.clear.cgColor, NSColor.clear.cgColor, light.withAlphaComponent(0.75).cgColor,
+                       light.withAlphaComponent(0.28).cgColor, light.withAlphaComponent(0.08).cgColor, NSColor.clear.cgColor]
+        halo.locations = [0, 0.24, 0.40, 0.62, 0.82, 1]
+        wash.backgroundColor = light.cgColor
         needsLayout = true
         if active, link == nil {
             let next = displayLink(target: self, selector: #selector(step(_:)))
@@ -308,18 +338,19 @@ final class V3MusicPulseLightView: NSView {
             link = next
         } else if !active, let current = link {
             current.invalidate(); link = nil
-            envelope = 0
-            glow.opacity = 0
+            envelope = 0; steady = 0
+            halo.opacity = 0; wash.opacity = 0
         }
     }
 
     override func layout() {
         super.layout()
-        let size = min(bounds.width, bounds.height) * 1.1
+        let size = min(bounds.width, bounds.height) * 1.5
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        glow.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+        halo.bounds = CGRect(x: 0, y: 0, width: size, height: size)
         // UnitPoint is top-left based; the layer's y grows upward.
-        glow.position = CGPoint(x: bounds.width * center.x, y: bounds.height * (1 - center.y))
+        halo.position = CGPoint(x: bounds.width * center.x, y: bounds.height * (1 - center.y))
+        wash.frame = bounds
         CATransaction.commit()
     }
 
@@ -329,13 +360,18 @@ final class V3MusicPulseLightView: NSView {
         lastTime = now
         let levels = V3MusicPulse.levels
         let fresh = ProcessInfo.processInfo.systemUptime - levels.updatedAt < 0.5
-        // A beat is the bass jumping above its usual level.
-        let hit = fresh ? min(1, max(0, (levels.bass - 1.08) / 0.9)) : 0
-        envelope = max(hit, envelope * exp(-elapsed / 0.18))
+        // A beat: the bass right now above its usual level. Quiet songs sit
+        // near 1.0, so the trigger starts just above it.
+        let hit = fresh ? min(1, max(0, (levels.bass - 1.0) / 0.55)) : 0
+        envelope = max(hit, envelope * exp(-elapsed / 0.22))
+        // The song's overall energy, slow: the halo never goes fully dark mid-song.
+        let energy = fresh ? min(1, max(0, (levels.bassAverage - 0.6) / 0.8)) : 0
+        steady += (energy - steady) * min(1, elapsed / 0.8)
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        glow.opacity = Float(0.05 + 0.38 * envelope) * (fresh ? 1 : 0)
-        let scale = 1 + 0.08 * envelope
-        glow.transform = CATransform3DMakeScale(scale, scale, 1)
+        halo.opacity = fresh ? Float(0.12 + 0.18 * steady + 0.55 * envelope) : 0
+        let scale = 1 + 0.10 * envelope
+        halo.transform = CATransform3DMakeScale(scale, scale, 1)
+        wash.opacity = fresh ? Float(0.07 * envelope) : 0
         CATransaction.commit()
     }
 }

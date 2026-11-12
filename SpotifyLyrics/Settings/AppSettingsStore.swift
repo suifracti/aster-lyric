@@ -130,10 +130,21 @@ public enum V3AmbientTreatment: String, CaseIterable, Sendable {
 }
 
 /// 光随歌曲: the light answers the lyrics or the song's progress.
+/// 背景素材, one choice: the song's Canvas clip (the cover when it has
+/// none), the cover, or the artist's photo.
 public enum V3BackdropSource: String, CaseIterable, Identifiable, Sendable {
-    case cover = "", artist
+    case video, cover = "", artist
     public var id: String { rawValue }
-    public var title: String { self == .cover ? "封面" : "歌手照片" }
+    public var title: String {
+        switch self { case .video: return "视频"; case .cover: return "封面"; case .artist: return "歌手照片" }
+    }
+
+    /// First round had two controls (a source and a video switch); the
+    /// user had to turn video off to see the photo. One choice replaces them.
+    static func migrated(source: String?, usesVideo: Bool?) -> V3BackdropSource {
+        if source == V3BackdropSource.artist.rawValue { return .artist }
+        return usesVideo == false ? .cover : .video
+    }
 }
 
 public enum V3AmbientLyricMotion: String, CaseIterable, Identifiable, Sendable {
@@ -1087,12 +1098,8 @@ public final class AppSettingsStore: ObservableObject {
         didSet { defaults.set(v3AmbientLyricMotion.rawValue, forKey: "v3.ambient.lyricMotion.v1") }
     }
     /// 背景素材: the backdrop is made from the cover or from the artist's photo.
-    @Published public var v3BackdropSource: V3BackdropSource = .cover {
-        didSet { defaults.set(v3BackdropSource.rawValue, forKey: "v3.backdrop.source.v1") }
-    }
-    /// A song's Spotify Canvas, when the Spotify app has it, plays as the backdrop.
-    @Published public var v3BackdropUsesVideo = true {
-        didSet { defaults.set(v3BackdropUsesVideo, forKey: "v3.backdrop.video.v1") }
+    @Published public var v3BackdropSource: V3BackdropSource = .video {
+        didSet { defaults.set(v3BackdropSource.rawValue, forKey: "v3.backdrop.source.v2") }
     }
     /// 随音乐律动: Spotify's sound drives the light. Needs screen recording,
     /// so it is off until the user turns it on.
@@ -1506,8 +1513,9 @@ public final class AppSettingsStore: ObservableObject {
         self.v3PlayerTitleMarquee = defaults.bool(forKey: "v3.playerBar.marquee.v1")
         self.v3PlayerProgressOnCover = defaults.bool(forKey: "v3.playerBar.onCover.v1")
         self.v3AmbientLyricMotion = V3AmbientLyricMotion(rawValue: defaults.string(forKey: "v3.ambient.lyricMotion.v1") ?? "") ?? .off
-        self.v3BackdropSource = V3BackdropSource(rawValue: defaults.string(forKey: "v3.backdrop.source.v1") ?? "") ?? .cover
-        self.v3BackdropUsesVideo = defaults.object(forKey: "v3.backdrop.video.v1") as? Bool ?? true
+        self.v3BackdropSource = defaults.string(forKey: "v3.backdrop.source.v2").flatMap(V3BackdropSource.init(rawValue:))
+            ?? V3BackdropSource.migrated(source: defaults.string(forKey: "v3.backdrop.source.v1"),
+                                         usesVideo: defaults.object(forKey: "v3.backdrop.video.v1") as? Bool)
         self.v3MusicMotionEnabled = defaults.bool(forKey: "v3.musicMotion.v1")
         self.lyricsRestoreCensoredWords = defaults.object(forKey: "lyrics.restoreCensored.v1") as? Bool ?? true
         self.floatingHiddenFromCapture = defaults.bool(forKey: "floating.hiddenFromCapture.v1")
