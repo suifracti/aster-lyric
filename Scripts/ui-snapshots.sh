@@ -186,6 +186,8 @@ declare -a CASES=(
   "reading-dark-off|--artwork dark --reading-protection off --scene coverPhoto --toolbar faint"
   "reading-dark-shadow|--artwork dark --reading-protection shadow --scene coverPhoto --toolbar faint"
   "reading-dark-glow|--artwork dark --reading-protection glow --scene coverPhoto --toolbar faint"
+  "toolbar-side|--scene coverPhoto --toolbar full --toolbar-style sidePull --appearance dark --window-composite"
+  "toolbar-side-panel|--panel hover:picture --scene coverPhoto --toolbar full --toolbar-style sidePull --appearance dark --window-composite"
   "menubar-dark|--surface menubar --appearance dark"
   "menubar-light|--surface menubar --appearance light"
   "settings-light|--surface settings --appearance light"

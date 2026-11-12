@@ -104,6 +104,8 @@ enum MainWindowResponsiveThresholds {
     static let compactLyricsFocusWidth: CGFloat = 900
     static let compactLyricsFocusHeight: CGFloat = 640
     static let toolbarRevealHeight: CGFloat = 96
+    /// 侧拉: how close to the right edge opens the column (and keeps it open).
+    static let sideToolbarRevealWidth: CGFloat = 76
 }
 
 final class V3PlaybackInteractionRelay: Equatable {
@@ -432,7 +434,21 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         content: toolBar(for: geometry.size))
                         .frame(width: 0, height: 0)
                 }
-                if toolbarStyle != .outside {
+                if toolbarStyle == .sidePull {
+                    // 侧拉: a column at the right edge, centred, sliding in from outside.
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        toolBar(for: geometry.size)
+                            .opacity(toolbarOpacity)
+                            .offset(x: toolbarOpacity < 1 ? 72 : 0)
+                            .allowsHitTesting(toolbarOpacity > 0)
+                            .accessibilityHidden(toolbarOpacity == 0)
+                            .animation(LyricsDesignTokens.Motion.animation(reduceMotion: reduceMotion), value: toolbarOpacity)
+                    }
+                    .padding(.trailing, 14)
+                    .frame(maxHeight: .infinity)
+                }
+                if toolbarStyle != .outside && toolbarStyle != .sidePull {
                 HStack(spacing: 16) {
                     if toolbarStyle != .titleBar { Spacer(minLength: 0) }
                     toolBar(for: geometry.size)
@@ -504,7 +520,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     if isPointerInsidePlaybackRegion != pointerInRegion {
                         isPointerInsidePlaybackRegion = pointerInRegion
                     }
-                    let inToolbar = location.y <= MainWindowResponsiveThresholds.toolbarRevealHeight
+                    // 侧拉 opens from the right edge; every other style from the top.
+                    let inToolbar = settings.v3ToolbarStyle == .sidePull
+                        ? location.x >= geometry.size.width - MainWindowResponsiveThresholds.sideToolbarRevealWidth
+                        : location.y <= MainWindowResponsiveThresholds.toolbarRevealHeight
                     if isPointerInToolbarRegion != inToolbar {
                         isPointerInToolbarRegion = inToolbar
                     }
@@ -1867,7 +1886,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         let value = isFocusMode ? 0 : toolbar.opacity(pointerInside: isPointerInsideCanvas && !liveOnly, nearTop: toolsVisible,
                         otherPanelOpen: toolbarPanelIsPresented)
         // 下拉: nothing at all until the pointer reaches the top edge.
-        return settings.v3ToolbarStyle == .pullDown && value < 1 ? 0 : value
+        let hidesUntilEdge = settings.v3ToolbarStyle == .pullDown || settings.v3ToolbarStyle == .sidePull
+        return hidesUntilEdge && value < 1 ? 0 : value
     }
 
 #if DEBUG
@@ -1998,7 +2018,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         // whenever the window becomes key, which reads as a stuck selection.
         .focusEffectDisabled()
         .environment(\.lyricIslandCompactTools,
-                     (size.width < 720 && style != .outside) || style == .iconOnly || style == .titleBar || style == .radial)
+                     (size.width < 720 && style != .outside) || style == .iconOnly || style == .titleBar || style == .radial
+                        || style == .sidePull)
         .background(GeometryReader { geometry in
             Color.clear.preference(key: V3ToolbarFramePreferenceKey.self,
                 value: geometry.frame(in: .named("v3-window-canvas")))
@@ -2009,15 +2030,18 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     }
 
     private func toolbarGroup(_ panels: [ToolbarPopover], showsSettings: Bool) -> some View {
-        HStack(spacing: 3) {
+        let vertical = settings.v3ToolbarStyle == .sidePull
+        let layout = vertical ? AnyLayout(VStackLayout(spacing: 3)) : AnyLayout(HStackLayout(spacing: 3))
+        return layout {
             ForEach(panels, id: \.rawValue) { panel in
                 toolbarPanelButton(panel)
             }
             if showsSettings {
                 // Global, low-frequency settings sit at the trailing end, apart
                 // from the listening tools.
-                Rectangle().fill(Color.primary.opacity(0.18)).frame(width: 1, height: 18)
-                    .padding(.horizontal, 2)
+                Rectangle().fill(Color.primary.opacity(0.18))
+                    .frame(width: vertical ? 18 : 1, height: vertical ? 1 : 18)
+                    .padding(vertical ? .vertical : .horizontal, 2)
                 settingsToolbarButton
             }
         }

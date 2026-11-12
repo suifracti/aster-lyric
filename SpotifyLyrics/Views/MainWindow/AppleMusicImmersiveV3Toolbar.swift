@@ -197,11 +197,18 @@ private struct V3ToolPopoverAnchor: NSViewRepresentable {
             // AppKit clips positioning rectangles to their positioning view.
             guard let positioningView = anchor.window?.contentView else { return }
             var buttonRect = anchor.bounds
-            if !anchor.isFlipped { buttonRect.origin.y -= 4 }
-            buttonRect.size.height += 4
+            // 侧拉: the tools are a column at the right edge, so panels open to their left.
+            let sideways = AppSettingsStore.shared.v3ToolbarStyle == .sidePull
+            if sideways {
+                buttonRect.origin.x -= 4
+                buttonRect.size.width += 4
+            } else {
+                if !anchor.isFlipped { buttonRect.origin.y -= 4 }
+                buttonRect.size.height += 4
+            }
             let rect = anchor.convert(buttonRect, to: positioningView)
             coordinator.popover.show(relativeTo: rect, of: positioningView,
-                                     preferredEdge: positioningView.isFlipped ? .maxY : .minY)
+                                     preferredEdge: sideways ? .minX : positioningView.isFlipped ? .maxY : .minY)
             if let window = coordinator.hosting?.view.window, let owner = anchor.window {
                 let frame = V3HoverPanelPlacement.frame(window.frame, inside: owner.frame)
                 let dx = frame.minX - window.frame.minX
