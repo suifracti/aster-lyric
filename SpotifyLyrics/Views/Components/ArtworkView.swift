@@ -11,16 +11,28 @@ struct ArtworkView: View {
     var cornerRadiusRatio: CGFloat = 0.18
     var preservesCompleteArtwork: Bool = false
     @State private var remoteArtwork: NSImage?
+    /// The cover being replaced, kept underneath until the new one is clear.
+    @State private var outgoingArtwork: NSImage?
+    @State private var developed = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
             fallbackArtwork
 
+            if let outgoingArtwork {
+                Image(nsImage: outgoingArtwork)
+                    .resizable()
+                    .aspectRatio(contentMode: preservesCompleteArtwork ? .fit : .fill)
+            }
             if let remoteArtwork {
+                // 显影: a new cover comes up out of a soft blur, like a print developing.
                 Image(nsImage: remoteArtwork)
                     .resizable()
                     .aspectRatio(contentMode: preservesCompleteArtwork ? .fit : .fill)
-                    .transition(.opacity)
+                    .blur(radius: developed || reduceMotion ? 0 : size * 0.05)
+                    .scaleEffect(developed || reduceMotion ? 1 : 1.04)
+                    .opacity(developed ? 1 : 0)
             }
 
             if showsAlbumLabel {
@@ -43,10 +55,19 @@ struct ArtworkView: View {
         .shadow(color: .black.opacity(showsAlbumLabel ? 0.28 : 0.18), radius: size * 0.08, y: size * 0.04)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(track.album.isEmpty ? "专辑封面" : "专辑封面，\(track.album)")
-        .task(id: "\(track.id)|\(effectiveArtworkURL?.absoluteString ?? "no-artwork")|\(debugForceNoArtwork ? "debug-no-artwork" : "artwork")") {
-            remoteArtwork = nil
-            guard !debugForceNoArtwork else { return }
-            remoteArtwork = await ArtworkImageLoader.shared.image(for: effectiveArtworkURL)
+        .task(id: "\(effectiveArtworkURL?.absoluteString ?? "no-artwork")|\(debugForceNoArtwork ? "debug-no-artwork" : "artwork")") {
+            // A song without artwork never keeps the previous song's image.
+            let next = debugForceNoArtwork ? nil : await ArtworkImageLoader.shared.image(for: effectiveArtworkURL)
+            guard !Task.isCancelled else { return }
+            guard let next else { outgoingArtwork = nil; remoteArtwork = nil; developed = true; return }
+            if next === remoteArtwork { outgoingArtwork = nil; developed = true; return }
+            outgoingArtwork = remoteArtwork
+            developed = false
+            remoteArtwork = next
+            try? await Task.sleep(nanoseconds: 30_000_000)
+            withAnimation(reduceMotion ? .easeInOut(duration: 0.25) : .easeOut(duration: 0.75)) { developed = true }
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            if !Task.isCancelled { outgoingArtwork = nil }
         }
     }
 
