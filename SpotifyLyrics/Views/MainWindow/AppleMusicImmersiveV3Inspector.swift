@@ -669,6 +669,8 @@ struct V3VisualControls {
                 if showsExplanations { backgroundMotionControls }
             }
             V3MusicMotionRow(settings: settings)
+            Toggle("暂停时褪色", isOn: $settings.v3PauseFadesColor)
+                .help("暂停一会儿后，背景慢慢褪成接近黑白；继续播放时颜色很快回来。")
             if scene != .focusedLyrics && scene != .coverPhoto && settings.v3ShowForegroundArtwork {
                 V3PanelSection(title: "前景封面")
                 V3NumericSlider("尺寸", value: $settings.v3ArtworkSizeScale, in: 0.8...1.4, step: 0.05,

@@ -1334,7 +1334,9 @@ final class TimedLyricHighlightView<Content: View>: NSView {
                     spring.duration = 0.001
                     spring.beginTime = 0
                 } else if elapsed >= 0 {
-                    spring.timeOffset = elapsed
+                    // Started in the past, not timeOffset: an offset wraps
+                    // around and would replay the start of the spring.
+                    spring.beginTime = layer.convertTime(CACurrentMediaTime(), from: nil) - elapsed
                 } else if playing {
                     spring.beginTime = layer.convertTime(CACurrentMediaTime(), from: nil) + (-elapsed)
                 } else {
@@ -1342,6 +1344,35 @@ final class TimedLyricHighlightView<Content: View>: NSView {
                 }
                 layer.add(spring, forKey: "lift")
             }
+        }
+        animateLongNoteGlow(now: now, playing: playing)
+    }
+
+    /// 长音: a word held for a second or more glows while it is sung and lets
+    /// the glow go just after. Only the lit copy glows; paused shows none.
+    private func animateLongNoteGlow(now: TimeInterval, playing: Bool) {
+        for (index, piece) in litPieces.subviews.enumerated() where fragments.indices.contains(index) {
+            guard let layer = piece.layer else { continue }
+            layer.removeAnimation(forKey: "longNote")
+            let fragment = fragments[index]
+            let held = fragment.endTime - fragment.startTime
+            guard held >= 1.0, playing, now < fragment.endTime + 0.7 else { layer.shadowOpacity = 0; continue }
+            layer.shadowColor = NSColor.white.cgColor
+            layer.shadowOffset = .zero
+            layer.shadowRadius = max(4, bounds.height * 0.16)
+            layer.shadowOpacity = 0
+            let total = held + 0.7
+            let glow = CAKeyframeAnimation(keyPath: "shadowOpacity")
+            glow.values = [0, 0.35, 0.8, 0]
+            glow.keyTimes = [0, NSNumber(value: 0.35 / total), NSNumber(value: held / total), 1]
+            glow.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .easeIn),
+                                    CAMediaTimingFunction(name: .easeOut)]
+            glow.duration = total
+            glow.fillMode = .both
+            glow.isRemovedOnCompletion = false
+            let elapsed = now - fragment.startTime
+            glow.beginTime = layer.convertTime(CACurrentMediaTime(), from: nil) - elapsed
+            layer.add(glow, forKey: "longNote")
         }
     }
 }

@@ -1116,6 +1116,10 @@ public final class AppSettingsStore: ObservableObject {
     }
     /// 副歌加强: chorus marked on the progress bar, the picture a step
     /// brighter and the sung line glowing while the chorus plays.
+    /// 暂停褪色: the backdrop slowly loses its colour while paused.
+    @Published public var v3PauseFadesColor = true {
+        didSet { defaults.set(v3PauseFadesColor, forKey: "v3.pauseFadesColor.v1") }
+    }
     @Published public var v3ChorusEmphasis = true {
         didSet { defaults.set(v3ChorusEmphasis, forKey: "v3.chorusEmphasis.v1") }
     }
@@ -1546,6 +1550,7 @@ public final class AppSettingsStore: ObservableObject {
         self.v3MusicMotionEnabled = defaults.bool(forKey: "v3.musicMotion.v1")
         self.lyricsRestoreCensoredWords = defaults.object(forKey: "lyrics.restoreCensored.v1") as? Bool ?? true
         self.v3ChorusEmphasis = defaults.object(forKey: "v3.chorusEmphasis.v1") as? Bool ?? true
+        self.v3PauseFadesColor = defaults.object(forKey: "v3.pauseFadesColor.v1") as? Bool ?? true
         self.floatingHiddenFromCapture = defaults.bool(forKey: "floating.hiddenFromCapture.v1")
         self.floatingHidesWhenPaused = defaults.bool(forKey: "floating.hideWhenPaused.v1")
         self.floatingHidesOverFullScreen = defaults.bool(forKey: "floating.hideOverFullScreen.v1")

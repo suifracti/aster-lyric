@@ -81,6 +81,8 @@ struct AppleMusicImmersiveV3BackdropView: View {
     /// The song's Spotify Canvas on disk, once found.
     @State private var canvasFile: URL?
     @State private var canvasReady = false
+    /// 暂停褪色, set a moment after pausing so a seek never flickers.
+    @State private var pausedFade = false
 
     private var artworkPresentation: V3ArtworkPresentation { presentationOverride ?? settings.v3ArtworkPresentation }
     private var backdropBlurRadius: Double { settings.v3PreviewBlur(for: artworkPresentation, scene: listeningScene) }
@@ -129,6 +131,11 @@ struct AppleMusicImmersiveV3BackdropView: View {
             Color.white.opacity(inChorus && presentationOverride == nil ? 0.07 : 0)
                 .blendMode(.screen)
                 .animation(accessibilityReduceMotion ? nil : .easeInOut(duration: 0.9), value: inChorus)
+            if pausedFade {
+                // Takes the colour out, keeps the light and dark of the picture.
+                Color.gray.blendMode(.saturation).opacity(0.78)
+                    .transition(.opacity)
+            }
             if settings.v3MusicMotionEnabled && presentationOverride == nil {
                 V3MusicPulseLight(color: (palette.identity ?? palette.glow).nsColor, center: coverLightCenter,
                                   active: pulseWanted, clock: clock)
@@ -143,6 +150,14 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 .frame(width: 0, height: 0)
         }
         .animation(.easeInOut(duration: 0.8), value: canvasReady)
+        .animation(accessibilityReduceMotion ? .easeInOut(duration: 0.2)
+                   : pausedFade ? .easeInOut(duration: 2.4) : .easeOut(duration: 0.5), value: pausedFade)
+        .task(id: "\(isPlaying)|\(settings.v3PauseFadesColor)|\(presentationOverride == nil)") {
+            guard !isPlaying, settings.v3PauseFadesColor, presentationOverride == nil else { pausedFade = false; return }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            pausedFade = true
+        }
         .task(id: canvasTaskKey) { await findCanvas() }
         .onChange(of: pulseWanted, initial: true) { _, wanted in
             guard presentationOverride == nil else { return }
