@@ -3,6 +3,7 @@ import SwiftUI
 public struct ListeningStatisticsView: View {
     @EnvironmentObject private var playback: PlaybackState
     @State private var visibleSongCount = 20
+    @State private var recapStatus: String?
     @State private var selectedTimeRange: ListeningStatisticsTimeRange = .allTime
 
     public init() {}
@@ -43,6 +44,25 @@ public struct ListeningStatisticsView: View {
                         emptyState
                     } else {
                         summary(statistics)
+                        HStack(spacing: 10) {
+                            Button {
+                                recapStatus = "正在生成…"
+                                Task { @MainActor in
+                                    if let url = await V3RecapCard.make(statistics) {
+                                        recapStatus = "已复制，并存到 图片/Aster Lyric"
+                                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                                    } else {
+                                        recapStatus = "没能生成"
+                                    }
+                                }
+                            } label: {
+                                Label("生成回顾卡", systemImage: "photo.on.rectangle")
+                            }
+                            .help("把这一时间范围做成一张 1080×1350 的图：听了多久、最常听的歌手和前五首")
+                            if let recapStatus {
+                                Text(recapStatus).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
                         if !statistics.dailyPlayCounts.isEmpty {
                             trendSection(statistics.dailyPlayCounts)
                         }

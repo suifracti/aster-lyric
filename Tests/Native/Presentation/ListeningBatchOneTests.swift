@@ -368,4 +368,25 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(ListeningCoverWall.primaryArtist("Aimer feat. someone"), "aimer feat. someone".replacingOccurrences(of: " feat.", with: ""))
 
     }
+
+    @MainActor
+    func testRecapCardRendersAtPosterSize() throws {
+        let songs = (1...5).map { ListeningStatisticsSong(stableKey: "s\($0)", title: "歌 \($0)",
+                                                          artist: "歌手", observedListeningTime: 600, sessionCount: 6 - $0) }
+        let statistics = ListeningStatistics(timeRange: .last30Days, totalListeningTime: 45_000, sessionCount: 120,
+                                             uniqueSongCount: 48, topSongs: songs,
+                                             topArtists: [ListeningStatisticsArtist(artist: "YOASOBI", observedListeningTime: 9000, sessionCount: 30)],
+                                             dailyPlayCounts: [])
+        let renderer = ImageRenderer(content: V3RecapCardView(statistics: statistics, songs: songs, covers: [:], ground: nil))
+        renderer.proposedSize = ProposedViewSize(V3LyricShareCard.size)
+        renderer.scale = 1
+        let image = try XCTUnwrap(renderer.cgImage)
+        XCTAssertEqual(image.width, 1080)
+        XCTAssertEqual(image.height, 1350)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("aster-recap-card-test.png")
+        try NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: url)
+        print("RECAP_CARD_TEST \(url.path)")
+        XCTAssertEqual(V3RecapCard.durationText(45_000), "12 小时 30 分")
+        XCTAssertEqual(V3RecapCard.durationText(1_800), "30 分钟")
+    }
 }

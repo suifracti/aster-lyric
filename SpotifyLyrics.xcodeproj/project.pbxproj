@@ -255,6 +255,7 @@
 		B1E8DDB9AA8A6D3EA696CAAA /* V3VUMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67A7CF6CB7618D621BDD647B /* V3VUMeter.swift */; };
 		CB5378C490C25028178B464B /* V3LyricShareCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = F517BF6CE987A087DD4BA095 /* V3LyricShareCard.swift */; };
 		45D81E49ED2AA16E1B7760C4 /* ListeningCoverWall.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0719C6699D3AB7FF8D4F84FA /* ListeningCoverWall.swift */; };
+		8E0B70EE956F8B5F62F2BC55 /* V3RecapCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A45882509A12B6FB7F5BC43 /* V3RecapCard.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -512,6 +513,7 @@
 		67A7CF6CB7618D621BDD647B /* V3VUMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3VUMeter.swift; sourceTree = "<group>"; };
 		F517BF6CE987A087DD4BA095 /* V3LyricShareCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3LyricShareCard.swift; sourceTree = "<group>"; };
 		0719C6699D3AB7FF8D4F84FA /* ListeningCoverWall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningCoverWall.swift; sourceTree = "<group>"; };
+		2A45882509A12B6FB7F5BC43 /* V3RecapCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3RecapCard.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -674,6 +676,7 @@
 				110006042D83400100000000 /* ListeningHistoryView.swift */,
 				0719C6699D3AB7FF8D4F84FA /* ListeningCoverWall.swift */,
 				110006062D83400100000000 /* ListeningStatisticsView.swift */,
+				2A45882509A12B6FB7F5BC43 /* V3RecapCard.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -1227,6 +1230,7 @@
 				45D81E49ED2AA16E1B7760C4 /* ListeningCoverWall.swift in Sources */,
 				110006052D83400100000001 /* ListeningStatisticsModels.swift in Sources */,
 				110006062D83400100000001 /* ListeningStatisticsView.swift in Sources */,
+				8E0B70EE956F8B5F62F2BC55 /* V3RecapCard.swift in Sources */,
 				110006072D83400100000001 /* PersonalDataSync.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

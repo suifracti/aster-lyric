@@ -20,8 +20,13 @@ enum V3LyricShareCard {
             ground: cover.flatMap { thumbnail($0, side: 10) }))
         renderer.proposedSize = ProposedViewSize(size)
         renderer.scale = 1
-        guard let image = renderer.nsImage,
-              let tiff = image.tiffRepresentation,
+        guard let image = renderer.nsImage else { return nil }
+        return deliver(image, name: track.title)
+    }
+
+    /// Copies the picture and saves it under ~/Pictures/Aster Lyric.
+    static func deliver(_ image: NSImage, name: String) -> URL? {
+        guard let tiff = image.tiffRepresentation,
               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return nil }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.writeObjects([image])
@@ -29,8 +34,7 @@ enum V3LyricShareCard {
             .appendingPathComponent("Aster Lyric", isDirectory: true) else { return nil }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        let name = "\(fileSafe(track.title)) \(stamp).png"
-        let url = folder.appendingPathComponent(name)
+        let url = folder.appendingPathComponent("\(fileSafe(name)) \(stamp).png")
         do { try png.write(to: url) } catch { return nil }
         return url
     }
@@ -43,7 +47,7 @@ enum V3LyricShareCard {
 
     /// A tiny thumbnail, stretched up, is a soft colour field with no blur pass
     /// (ImageRenderer does not reliably apply blur).
-    private static func thumbnail(_ image: NSImage, side: Int) -> NSImage? {
+    static func thumbnail(_ image: NSImage, side: Int) -> NSImage? {
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side,
                                          bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                                          colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
