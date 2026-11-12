@@ -191,6 +191,7 @@ declare -a CASES=(
   "menubar-dark|--surface menubar --appearance dark"
   "menubar-light|--surface menubar --appearance light"
   "settings-light|--surface settings --appearance light"
+  "settings-appearance|--surface settings --settings-page 外观 --appearance light"
   "settings-lyrics|--surface settings --settings-page 歌词与翻译 --appearance light"
   "settings-ai|--surface settings --settings-page 'AI 翻译' --appearance light"
 )

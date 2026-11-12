@@ -141,6 +141,60 @@ struct V3InlineSwitch: View {
     }
 }
 
+/// Several independent on/off choices in one row, drawn on the same rounded
+/// track as `V3SegmentedPicker` so every multi-option row in the panels
+/// looks alike. An empty title keeps the label column so the row lines up
+/// under the control above it.
+struct V3ChipToggles: View {
+    let title: String
+    let items: [(String, Binding<Bool>)]
+    var height: CGFloat = 26
+    @State private var hovered: Int?
+
+    init(_ title: String, items: [(String, Binding<Bool>)], height: CGFloat = 26) {
+        self.title = title
+        self.items = items
+        self.height = height
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title).font(.system(size: 12.5)).lineLimit(1)
+                .frame(width: V3PanelMetrics.labelWidth, alignment: .leading)
+                .accessibilityHidden(title.isEmpty)
+            HStack(spacing: 0) {
+                ForEach(items.indices, id: \.self) { index in
+                    let on = items[index].1.wrappedValue
+                    Button { items[index].1.wrappedValue.toggle() } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: on ? "checkmark" : "circle")
+                                .font(.system(size: on ? 9 : 7, weight: .bold))
+                                .foregroundStyle(on ? Color.primary : Color.secondary.opacity(0.6))
+                            Text(items[index].0)
+                                .font(.system(size: 11, weight: on ? .semibold : .regular))
+                                .lineLimit(1).minimumScaleFactor(0.75)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: height - 4)
+                        .background(RoundedRectangle(cornerRadius: 5)
+                            .fill(Color.primary.opacity(on ? 0.16 : hovered == index ? 0.06 : 0)))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { hovered = $0 ? index : (hovered == index ? nil : hovered) }
+                    .accessibilityLabel(items[index].0)
+                    .accessibilityValue(on ? "开" : "关")
+                    .accessibilityAddTraits(.isToggle)
+                }
+            }
+            .padding(2)
+            .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.08)))
+            .animation(.easeInOut(duration: 0.16), value: items.map { $0.1.wrappedValue })
+        }
+        .frame(minHeight: V3PanelMetrics.rowHeight)
+    }
+}
+
 /// Panel switches use the row style; the same controls elsewhere stay plain switches.
 struct V3ToggleStyleUnlessPanel: ViewModifier {
     let inPanel: Bool

@@ -580,14 +580,9 @@ struct V3VisualControls {
                 V3SegmentedPicker("进度条", selection: $settings.v3ProgressStyle,
                                   options: V3ProgressStyle.allCases.map { ($0.title, $0) })
                     .help("歌词刻度：每句歌词的位置，悬停看那句。波形：按歌词疏密画出的起伏，Spotify 不提供音频数据。")
-                HStack(spacing: 12) {
-                    Color.clear.frame(width: V3PanelMetrics.labelWidth, height: 1)
-                    V3InlineSwitch(title: "悬停出按钮", isOn: $settings.v3PlayerButtonsOnHover)
-                    V3InlineSwitch(title: "歌名滚动", isOn: $settings.v3PlayerTitleMarquee)
-                    V3InlineSwitch(title: "进度贴封面", isOn: $settings.v3PlayerProgressOnCover)
-                    Spacer(minLength: 0)
-                }
-                .frame(minHeight: V3PanelMetrics.rowHeight)
+                V3ChipToggles("", items: [("悬停出按钮", $settings.v3PlayerButtonsOnHover),
+                                          ("歌名滚动", $settings.v3PlayerTitleMarquee),
+                                          ("进度贴封面", $settings.v3PlayerProgressOnCover)])
             }
         }
     }
@@ -713,14 +708,9 @@ struct V3VisualControls {
                     $0 != .custom || settings.displayPreferences.listeningLayerPreset == .custom
                 }.map { ($0.title, $0) })
             // Under the 显示 choice, aligned with it: the three switches it sets.
-            HStack(spacing: 14) {
-                Color.clear.frame(width: V3PanelMetrics.labelWidth, height: 1)
-                V3InlineSwitch(title: "原文", isOn: displayBinding(\.showOriginal))
-                V3InlineSwitch(title: "译文", isOn: displayBinding(\.showTranslation))
-                V3InlineSwitch(title: "读音", isOn: displayBinding(\.showKana))
-                Spacer(minLength: 0)
-            }
-            .frame(minHeight: V3PanelMetrics.rowHeight)
+            V3ChipToggles("", items: [("原文", displayBinding(\.showOriginal)),
+                                      ("译文", displayBinding(\.showTranslation)),
+                                      ("读音", displayBinding(\.showKana))])
             lyricStyleControls
             V3NumericSlider("字号", value: displayDoubleBinding(\.fontSize), in: 14...42, step: 1, unit: "pt")
                 .help("原文与译文字号；在歌词上双指捏合也可调整")
@@ -737,12 +727,8 @@ struct V3VisualControls {
             Toggle("亮封面自动加阴影", isOn: $settings.v3BrightCoverShadowEnabled)
                 .help("封面、舞台遇亮封面且清晰度为关闭时自动加文字阴影；关闭后「关闭」保持完全不加。")
             V3DisclosureRow(title: "读音与更多", isExpanded: $settings.v3TextAdvancedExpanded) {
-                V3PanelRow(title: "辅助读音") {
-                    HStack(spacing: 14) {
-                        V3InlineSwitch(title: "罗马音", isOn: displayBinding(\.showRomaji))
-                        V3InlineSwitch(title: "拼音", isOn: displayBinding(\.showPinyin))
-                    }
-                }
+                V3ChipToggles("辅助读音", items: [("罗马音", displayBinding(\.showRomaji)),
+                                                ("拼音", displayBinding(\.showPinyin))])
                 V3PanelRow(title: "注音排版") {
                     Picker("注音排版", selection: displayBinding(\.kanaDisplayMode)) {
                         Text("汉字上方").tag(KanaDisplayMode.inlineRuby)
