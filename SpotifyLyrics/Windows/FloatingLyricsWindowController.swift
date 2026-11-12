@@ -28,6 +28,11 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
     private var settings: AppSettingsStore?
     private var settingsCancellables: Set<AnyCancellable> = []
     private var screenChangeObserver: NSObjectProtocol?
+    /// Hidden for a moment by context (paused, a full-screen app), not closed.
+    private var contextHidden = false
+    private var contextCancellables: Set<AnyCancellable> = []
+    private var contextObservers: [NSObjectProtocol] = []
+    private var pauseHideTask: Task<Void, Never>?
     private var didRestore = false
 
     override init() {
@@ -187,6 +192,7 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
         self.settings = settings
 
         if panel == nil { interactionMode = settings.floatingWindowInteractionMode }
+        observeContext(state: state, settings: settings)
 
         if settingsCancellables.isEmpty {
             settings.$floatingWindowAlwaysOnTop
@@ -297,7 +303,7 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
         } else {
             panel.styleMask.remove(.resizable)
         }
-        panel.ignoresMouseEvents = interactionMode == .passThrough
+        panel.ignoresMouseEvents = contextHidden || interactionMode == .passThrough
         if !editable, panel.isKeyWindow {
             panel.resignKey()
         }
@@ -318,7 +324,69 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
 
     private func applyOpacity() {
         guard let panel, let settings else { return }
-        panel.alphaValue = CGFloat(FloatingDesktopTypography.panelOpacity(value: settings.floatingWindowOpacity, transparent: settings.floatingLyricsPresentation == .transparentV2, keepsTextOpaque: settings.floatingDesktopKeepsTextOpaque))
+        let opacity = CGFloat(FloatingDesktopTypography.panelOpacity(value: settings.floatingWindowOpacity, transparent: settings.floatingLyricsPresentation == .transparentV2, keepsTextOpaque: settings.floatingDesktopKeepsTextOpaque))
+        panel.ignoresMouseEvents = contextHidden || interactionMode == .passThrough
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = contextHidden ? 0.45 : 0.25
+            panel.animator().alphaValue = contextHidden ? 0 : opacity
+        }
+    }
+
+    /// 暂停时隐藏 (after 3 s, so a seek or a quick pause does not flash) and
+    /// 有全屏应用时隐藏 (LX Music has both).
+    private func observeContext(state: PlaybackState, settings: AppSettingsStore) {
+        guard contextCancellables.isEmpty else { return }
+        state.$isPlaying.removeDuplicates().receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.refreshContext() }.store(in: &contextCancellables)
+        settings.$floatingHidesWhenPaused.receive(on: RunLoop.main)
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.refreshContext() } }.store(in: &contextCancellables)
+        settings.$floatingHidesOverFullScreen.receive(on: RunLoop.main)
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.refreshContext() } }.store(in: &contextCancellables)
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didActivateApplicationNotification] {
+            contextObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    self?.refreshContext()
+                }
+            })
+        }
+    }
+
+    private func refreshContext() {
+        guard let settings else { return }
+        let paused = settings.floatingHidesWhenPaused && playbackState?.isPlaying == false
+        let fullScreen = settings.floatingHidesOverFullScreen && Self.anotherAppIsFullScreen()
+        pauseHideTask?.cancel()
+        if paused && !fullScreen && !contextHidden {
+            pauseHideTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard !Task.isCancelled, let self, self.playbackState?.isPlaying == false,
+                      self.settings?.floatingHidesWhenPaused == true else { return }
+                self.setContextHidden(true)
+            }
+            return
+        }
+        setContextHidden(paused || fullScreen)
+    }
+
+    private func setContextHidden(_ hidden: Bool) {
+        guard hidden != contextHidden else { return }
+        contextHidden = hidden
+        applyOpacity()
+    }
+
+    /// Another app's window covering the whole screen in the active space.
+    static func anotherAppIsFullScreen() -> Bool {
+        guard let screen = NSScreen.main?.frame,
+              let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return false }
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        return list.contains { info in
+            guard (info[kCGWindowLayer as String] as? Int) == 0,
+                  (info[kCGWindowOwnerPID as String] as? Int32) != ownPID,
+                  let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] else { return false }
+            return (bounds["Width"] ?? 0) >= screen.width && (bounds["Height"] ?? 0) >= screen.height
+        }
     }
 
     private func applyPresentation() {

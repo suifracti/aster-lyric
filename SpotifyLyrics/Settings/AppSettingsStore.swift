@@ -1123,6 +1123,14 @@ public final class AppSettingsStore: ObservableObject {
     @Published public var lyricsRestoreCensoredWords = true {
         didSet { defaults.set(lyricsRestoreCensoredWords, forKey: "lyrics.restoreCensored.v1") }
     }
+    /// Desktop lyrics fade out while playback has been paused for a moment.
+    @Published public var floatingHidesWhenPaused = false {
+        didSet { defaults.set(floatingHidesWhenPaused, forKey: "floating.hideWhenPaused.v1") }
+    }
+    /// Desktop lyrics fade out while another app fills the screen.
+    @Published public var floatingHidesOverFullScreen = false {
+        didSet { defaults.set(floatingHidesOverFullScreen, forKey: "floating.hideOverFullScreen.v1") }
+    }
     /// Desktop lyrics and the capsule stay out of screenshots and recordings.
     @Published public var floatingHiddenFromCapture = false {
         didSet { defaults.set(floatingHiddenFromCapture, forKey: "floating.hiddenFromCapture.v1") }
@@ -1539,6 +1547,8 @@ public final class AppSettingsStore: ObservableObject {
         self.lyricsRestoreCensoredWords = defaults.object(forKey: "lyrics.restoreCensored.v1") as? Bool ?? true
         self.v3ChorusEmphasis = defaults.object(forKey: "v3.chorusEmphasis.v1") as? Bool ?? true
         self.floatingHiddenFromCapture = defaults.bool(forKey: "floating.hiddenFromCapture.v1")
+        self.floatingHidesWhenPaused = defaults.bool(forKey: "floating.hideWhenPaused.v1")
+        self.floatingHidesOverFullScreen = defaults.bool(forKey: "floating.hideOverFullScreen.v1")
         self.v3ExpandArtworkWhenDetailsHidden = defaults.object(forKey: Key.v3ExpandArtworkWhenDetailsHidden) as? Bool ?? true
         self.v3ShowForegroundArtwork = defaults.object(forKey: Key.v3ShowForegroundArtwork) as? Bool ?? true
         self.v3EdgeProgressEnabled = defaults.object(forKey: Key.v3EdgeProgressEnabled) as? Bool ?? false

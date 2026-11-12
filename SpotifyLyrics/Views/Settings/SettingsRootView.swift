@@ -524,6 +524,10 @@ private struct AppearanceSettingsView: View {
                     }
                     FloatingDesktopColorControls(settings: settings)
                     Toggle("悬浮歌词保持置顶", isOn: $settings.floatingWindowAlwaysOnTop)
+                    Toggle("暂停时隐藏", isOn: $settings.floatingHidesWhenPaused)
+                        .help("暂停 3 秒后淡出，继续播放时回来；跳转或短暂停顿不会闪。")
+                    Toggle("有全屏应用时隐藏", isOn: $settings.floatingHidesOverFullScreen)
+                        .help("别的 App 全屏（看视频、演示）时淡出，离开全屏后回来。")
                     Toggle("截图和录屏时隐藏", isOn: $settings.floatingHiddenFromCapture)
                         .help("桌面歌词和顶部胶囊不出现在截图、录屏和屏幕共享里；屏幕上照常显示。")
                     Picker("默认交互状态", selection: floatingModeBinding) {
