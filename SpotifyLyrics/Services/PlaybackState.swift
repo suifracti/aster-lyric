@@ -76,6 +76,8 @@ public final class PlaybackState: ObservableObject {
     @Published public private(set) var isTrackLiked: Bool?
     @Published public private(set) var playerModes: PlayerPlaybackModes?
     @Published public private(set) var playbackNotice: String?
+    /// A short notice in the listening view, for actions started from the lyrics.
+    public func showNotice(_ text: String) { playbackNotice = text }
     private var likeConfirmation = V3LikeConfirmation()
     private var isChangingLike = false
     private let spotifyLibraryService = SpotifyCatalogService()

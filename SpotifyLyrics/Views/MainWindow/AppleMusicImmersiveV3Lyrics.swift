@@ -339,6 +339,17 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                             }
                         },
                         onCopyLine: { LyricsCopyText.copy($0) },
+                        onShareLine: { line in
+                            let track = documentTrack
+                            Task { @MainActor in
+                                if let url = await V3LyricShareCard.make(line: line, track: track) {
+                                    state.showNotice("分享卡已复制，并存到 图片/Aster Lyric")
+                                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                                } else {
+                                    state.showNotice("分享卡没能生成")
+                                }
+                            }
+                        },
                         onCopyAll: { LyricsCopyText.copy(LyricsCopyText.format(lines)) },
                         onCopyPassage: { index in
                             copyRequest = V3LyricsCopyRequest(
@@ -534,6 +545,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     let onSeek: (TimeInterval) -> Void
     let onRuby: ((String, String) -> Void)?
     let onCopyLine: (String) -> Void
+    var onShareLine: (LyricLine) -> Void = { _ in }
     let onCopyAll: () -> Void
     let onCopyPassage: (Int) -> Void
 
@@ -680,6 +692,9 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             }
             Button("复制这一行", systemImage: "doc.on.doc") {
                 onCopyLine(line.originalText)
+            }
+            if !isPreview, !line.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button("做成分享卡", systemImage: "photo.on.rectangle") { onShareLine(line) }
             }
             Button("复制整首歌词", systemImage: "doc.on.doc.fill") {
                 onCopyAll()

@@ -1,5 +1,6 @@
 import AppKit
 import Compression
+import SwiftUI
 import XCTest
 @testable import SpotifyLyrics
 
@@ -325,5 +326,28 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertLessThan(settled ?? 9, 0.45)
         XCTAssertGreaterThan(settled ?? 0, 0.15)
         XCTAssertEqual(V3VUMeterFace.reading(1), 0.6, accuracy: 0.001, "the song's own average reads below 0 VU")
+    }
+
+    @MainActor
+    func testShareCardRendersAtPosterSizeAndNamesFilesSafely() throws {
+        let cover = NSImage(size: NSSize(width: 64, height: 64), flipped: false) { rect in
+            NSColor.systemPink.setFill(); rect.fill()
+            NSColor.systemIndigo.setFill(); NSBezierPath(ovalIn: rect.insetBy(dx: 8, dy: 8)).fill()
+            return true
+        }
+        let renderer = ImageRenderer(content: V3LyricShareCardView(
+            line: "この夜を越えて、まだ見ぬ朝へ", translation: "越过今夜，走向未见的清晨",
+            title: "夜を越えて", artist: "Visual Fixture", cover: cover, ground: cover))
+        renderer.proposedSize = ProposedViewSize(V3LyricShareCard.size)
+        renderer.scale = 1
+        let image = try XCTUnwrap(renderer.cgImage)
+        XCTAssertEqual(image.width, 1080)
+        XCTAssertEqual(image.height, 1350)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("aster-share-card-test.png")
+        let rep = NSBitmapImageRep(cgImage: image)
+        try rep.representation(using: .png, properties: [:])?.write(to: url)
+        print("SHARE_CARD_TEST \(url.path)")
+        XCTAssertEqual(V3LyricShareCard.fileSafe("A/B: C?"), "A B  C")
+        XCTAssertEqual(V3LyricShareCard.fileSafe("   "), "歌词")
     }
 }
