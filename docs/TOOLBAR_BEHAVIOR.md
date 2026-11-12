@@ -924,6 +924,14 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
   - the top five songs with their covers, on the top song's colours.
 - The picture is copied and saved like the lyric share card. Nothing is uploaded.
 
+**声纹圈** (a new 新呈现, B12, after Plexamp's Soundprint).
+- While 随音乐律动 hears the song, its loudness is recorded into 180 bins and drawn as short bars just outside the foreground cover.
+- The loop starts at top centre and runs clockwise. The heard part is in the song colour, and a dot marks where the song is now.
+- It is a rectangle hugging the cover, not a circle: a circle around the diagonal ran off the window and under the player card.
+- Recordings are kept per song in Caches/Soundprints, so a song heard before shows its whole loop.
+- The scene's player card stays.
+- 新呈现 is now two rows of four.
+
 **Checked:**
 - The particles were rendered in a scratch window, one per weather, because Spotify was paused.
 - The fog veil was checked in the real main window; the setting was restored afterwards.
