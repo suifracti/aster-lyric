@@ -1149,13 +1149,17 @@ struct TimedLyricHighlight<Content: View>: NSViewRepresentable {
     let fragments: [TimedSpanFragment]
     let totalWidth: CGFloat
     var inset: CGFloat = 0
+    /// 逐字上浮: the dim words, drawn here so that each word (dim and lit
+    /// together) can rise as it is sung. nil keeps the flat fill.
+    var liftingBase: AnyView? = nil
     @ViewBuilder let content: () -> Content
     func makeNSView(context: Context) -> TimedLyricHighlightView<Content> {
         TimedLyricHighlightView(root: content())
     }
     func updateNSView(_ view: TimedLyricHighlightView<Content>, context: Context) {
         view.host.rootView = content()
-        view.configure(clock: clock, fragments: fragments, totalWidth: totalWidth, inset: inset)
+        view.configure(clock: clock, fragments: fragments, totalWidth: totalWidth, inset: inset,
+                       liftingBase: liftingBase, root: content())
     }
 }
 
@@ -1166,6 +1170,13 @@ final class TimedLyricHighlightView<Content: View>: NSView {
     private var fragments: [TimedSpanFragment] = []
     private var totalWidth: CGFloat = 0
     private var inset: CGFloat = 0
+    // Lifting: one slice of the dim and one of the lit line per word.
+    private var liftingBase: AnyView?
+    private var root: Content?
+    private let basePieces = NSView()
+    private let litPieces = NSView()
+    private var builtFor: [TimedSpanFragment] = []
+
     init(root: Content) {
         host = NSHostingView(rootView: root)
         host.sizingOptions = []
@@ -1176,14 +1187,36 @@ final class TimedLyricHighlightView<Content: View>: NSView {
         reveal.backgroundColor = NSColor.white.cgColor
         reveal.anchorPoint = .zero
         host.layer?.mask = reveal
+        for container in [basePieces, litPieces] {
+            container.wantsLayer = true
+            container.isHidden = true
+            addSubview(container)
+        }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    func configure(clock: LyricsPresentationClock, fragments: [TimedSpanFragment], totalWidth: CGFloat, inset: CGFloat) {
-        guard self.clock != clock || self.fragments != fragments || self.totalWidth != totalWidth || self.inset != inset else { return }
+
+    func configure(clock: LyricsPresentationClock, fragments: [TimedSpanFragment], totalWidth: CGFloat, inset: CGFloat,
+                   liftingBase: AnyView? = nil, root: Content? = nil) {
+        let lifting = liftingBase != nil
+        guard self.clock != clock || self.fragments != fragments || self.totalWidth != totalWidth || self.inset != inset
+                || (self.liftingBase != nil) != lifting else { return }
         self.clock = clock; self.fragments = fragments; self.totalWidth = totalWidth; self.inset = inset
+        self.liftingBase = liftingBase
+        self.root = root
         needsLayout = true
     }
+
+    private var lifts: Bool {
+        liftingBase != nil && !fragments.isEmpty && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    /// A fragment's left edge in this view's coordinates.
+    private func x(_ value: CGFloat) -> CGFloat {
+        guard totalWidth > 0 else { return 0 }
+        return inset + max(0, bounds.width - 2 * inset) * min(1, max(0, value / totalWidth))
+    }
+
     override func layout() {
         super.layout()
         host.frame = bounds
@@ -1198,6 +1231,23 @@ final class TimedLyricHighlightView<Content: View>: NSView {
             if fraction == 1 { return bounds.width }
             return inset + max(0, bounds.width - 2 * inset) * fraction
         }
+        let lifting = lifts
+        host.isHidden = lifting
+        basePieces.isHidden = !lifting
+        litPieces.isHidden = !lifting
+        let maskTarget = lifting ? litPieces.layer : host.layer
+        if lifting {
+            basePieces.frame = bounds
+            litPieces.frame = bounds
+            buildPiecesIfNeeded()
+            litPieces.layer?.mask = reveal
+            host.layer?.mask = nil
+            animateLift(now: now, playing: clock.isPlaying)
+        } else {
+            litPieces.layer?.mask = nil
+            host.layer?.mask = reveal
+        }
+        _ = maskTarget
         reveal.removeAllAnimations()
         CATransaction.begin(); CATransaction.setDisableActions(true)
         reveal.position = .zero
@@ -1213,5 +1263,85 @@ final class TimedLyricHighlightView<Content: View>: NSView {
         animation.fillMode = .forwards
         animation.isRemovedOnCompletion = false
         reveal.add(animation, forKey: "lyricFill")
+    }
+
+    /// One dim and one lit copy of the line per word, each masked to that
+    /// word's slice, so the word can move on its own.
+    private func buildPiecesIfNeeded() {
+        guard let liftingBase, let root else { return }
+        guard builtFor != fragments || basePieces.subviews.count != fragments.count
+                || basePieces.subviews.first?.frame.size != bounds.size else {
+            for container in [basePieces, litPieces] {
+                for (index, piece) in container.subviews.enumerated() { setSlice(piece, index: index) }
+            }
+            return
+        }
+        builtFor = fragments
+        basePieces.subviews.forEach { $0.removeFromSuperview() }
+        litPieces.subviews.forEach { $0.removeFromSuperview() }
+        for index in fragments.indices {
+            let base = NSHostingView(rootView: liftingBase)
+            let lit = NSHostingView(rootView: root)
+            for (piece, container) in [(base as NSView, basePieces), (lit as NSView, litPieces)] {
+                (piece as? NSHostingView<AnyView>)?.sizingOptions = []
+                (piece as? NSHostingView<Content>)?.sizingOptions = []
+                piece.wantsLayer = true
+                piece.frame = bounds
+                container.addSubview(piece)
+                setSlice(piece, index: index)
+            }
+        }
+    }
+
+    private func setSlice(_ piece: NSView, index: Int) {
+        piece.frame = bounds
+        let left = index == 0 ? 0 : x(fragments[index].startX)
+        let right = index == fragments.count - 1 ? bounds.width : x(fragments[index + 1].startX)
+        let mask = piece.layer?.mask ?? CALayer()
+        mask.backgroundColor = NSColor.white.cgColor
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        // Room above and below so a rising word's top is not cut.
+        mask.frame = CGRect(x: left, y: -bounds.height * 0.25, width: max(0, right - left), height: bounds.height * 1.5)
+        CATransaction.commit()
+        piece.layer?.mask = mask
+    }
+
+    /// Apple Music's word lift as Lyrimuse measured it: about 0.06 em on a
+    /// spring (ω 3.65, ζ 0.9) that settles in about 1.4 s, starting when the
+    /// word starts. Words already sung are up; later ones wait.
+    private func animateLift(now: TimeInterval, playing: Bool) {
+        let lift = bounds.height * 0.05
+        let omega = 3.65, zeta = 0.9
+        for container in [basePieces, litPieces] {
+            for (index, piece) in container.subviews.enumerated() where fragments.indices.contains(index) {
+                guard let layer = piece.layer else { continue }
+                layer.removeAnimation(forKey: "lift")
+                let start = fragments[index].startTime
+                let elapsed = now - start
+                // y grows upward in an unflipped layer; flipped views grow down.
+                let up: CGFloat = piece.isFlipped ? -lift : lift
+                let spring = CASpringAnimation(keyPath: "transform.translation.y")
+                spring.mass = 1
+                spring.stiffness = omega * omega
+                spring.damping = 2 * zeta * omega
+                spring.fromValue = 0
+                spring.toValue = up
+                spring.duration = spring.settlingDuration
+                spring.fillMode = .both
+                spring.isRemovedOnCompletion = false
+                if elapsed >= spring.duration || (!playing && elapsed >= 0) {
+                    spring.fromValue = up
+                    spring.duration = 0.001
+                    spring.beginTime = 0
+                } else if elapsed >= 0 {
+                    spring.timeOffset = elapsed
+                } else if playing {
+                    spring.beginTime = layer.convertTime(CACurrentMediaTime(), from: nil) + (-elapsed)
+                } else {
+                    continue
+                }
+                layer.add(spring, forKey: "lift")
+            }
+        }
     }
 }

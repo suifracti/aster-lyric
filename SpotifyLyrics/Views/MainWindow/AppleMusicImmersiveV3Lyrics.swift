@@ -656,6 +656,9 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
         )
         .equatable()
         .padding(.leading, indent)
+        // 换句波浪: the rows below the new line trail and settle one after another.
+        .modifier(V3WaveLag(trigger: currentIndex ?? -1, steps: index - (currentIndex ?? index),
+                            enabled: synchronized && bigLineAvailableHeight == nil && readingScene != .linerNotes))
         .environmentObject(settings)
         .environment(\.v3LyricStyle, settings.v3LyricStyle)
         .environment(\.rubyCorrectionAction, onRuby == nil ? nil : rubyActionRelay)
@@ -702,28 +705,62 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     }
 }
 
+/// 换句波浪 (Lyrimuse/AMLL): when the line changes, a row `steps` below it
+/// starts a little lower and springs into place 50 ms later per row, so the
+/// page settles like a wave from the top down. One animation per row per
+/// line change; nothing is redrawn per frame.
+private struct V3WaveLag: ViewModifier {
+    let trigger: Int
+    let steps: Int
+    let enabled: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var lag: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .offset(y: lag)
+            .onChange(of: trigger) { old, new in
+                guard enabled, !reduceMotion, new > old, steps > 0, steps <= 10 else { return }
+                var still = Transaction(); still.disablesAnimations = true
+                withTransaction(still) { lag = min(28, CGFloat(steps) * 7) }
+                withAnimation(.spring(response: 0.55, dampingFraction: 0.82).delay(min(0.4, Double(steps) * 0.05))) {
+                    lag = 0
+                }
+            }
+    }
+}
+
 /// Only the three dots are scheduled; lyric rows keep their boundary-driven rendering.
+/// The dots breathe as Apple Music's do (Lyrimuse measured it: a 7 s
+/// breath between 0.90 and 1.28, never fainter than 0.22), light up one by
+/// one through the gap, and swell and fade in the last 0.4 s before the voice.
 private struct V3VocalCountdown: View {
     @Environment(\.v3CoverAccent) private var accent
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let window: LyricsTimeline.VocalCountdownWindow
     let clock: LyricsPresentationClock
     var body: some View {
         V3AnimationIsland {
-            TimelineView(.animation(minimumInterval: 0.1, paused: !clock.isPlaying)) { _ in
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !clock.isPlaying)) { _ in
             let time = clock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
-            let progress = (time - window.start) / (window.end - window.start)
+            let length = max(0.1, window.end - window.start)
+            let progress = (time - window.start) / length
+            let remaining = window.end - time
+            let breath = reduceMotion ? 1 : 0.90 + 0.38 * (0.5 - 0.5 * cos(2 * .pi * max(0, time - window.start) / 7))
+            let ending = remaining < 0.4 ? max(0, remaining / 0.4) : 1
             HStack(spacing: 7) {
                 ForEach(0..<3) { index in
-                    Circle().fill(accent.opacity(0.2 + 0.8 * max(0, min(1, progress * 3 - Double(index)))))
+                    Circle().fill(accent.opacity(0.22 + 0.78 * max(0, min(1, progress * 3 - Double(index)))))
                         .frame(width: 8, height: 8)
                 }
             }
-            .opacity(time >= window.start && time < window.end ? 1 : 0)
+            .scaleEffect(reduceMotion ? 1 : breath * (ending < 1 ? 1 + 0.28 * (1 - ending) : 1))
+            .opacity(time >= window.start && time < window.end ? ending : 0)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("前奏或间奏，准备进入下一句")
             }
         }
-        .frame(width: 38, height: 12)
+        .frame(width: 46, height: 16)
     }
 }
 
@@ -1934,6 +1971,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
 }
 
 private struct AppleMusicImmersiveV3TimedRowView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.v3CoverAccent) private var coverAccent
     @Environment(\.v3LyricStyle) private var lyricStyle
     @Environment(\.lyricTextAlignment) private var textAlignment
@@ -1965,13 +2003,20 @@ private struct AppleMusicImmersiveV3TimedRowView: View {
         let text = visualLine.text
         let fraction = visualLine.fillFraction(at: currentTime)
         if showsFill {
+            let dim = Color.white.opacity(lyricStyle == .karaoke ? 0.26 : 0.42)
+            // 逐字上浮: with word timing the dim words are drawn by the
+            // highlight too, so each word rises whole as it is sung.
+            let lifting = clock != nil && !reduceMotion && !visualLine.fragments.isEmpty
             Text(text)
                 .font(font)
-                .foregroundColor(.white.opacity(lyricStyle == .karaoke ? 0.26 : 0.42))
+                .foregroundColor(dim)
+                .opacity(lifting ? 0 : 1)
                 .overlay(
                     GeometryReader { geo in
                         if let clock {
-                            TimedLyricHighlight(clock: clock, fragments: visualLine.fragments, totalWidth: visualLine.totalWidth) {
+                            TimedLyricHighlight(clock: clock, fragments: visualLine.fragments, totalWidth: visualLine.totalWidth,
+                                                liftingBase: lifting ? AnyView(Text(text).font(font).foregroundColor(dim)
+                                                    .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)) : nil) {
                                 // 卡拉OK: what has been sung is lit, not only coloured.
                                 Text(text).font(font).foregroundColor(lyricStyle == .karaoke ? .white : coverAccent)
                                     .shadow(color: lyricStyle == .karaoke ? coverAccent : .clear, radius: 6)

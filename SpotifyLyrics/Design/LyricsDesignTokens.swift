@@ -58,7 +58,8 @@ enum V3LyricMotionPolicy {
     static let layoutNSWeight: CGFloat = 0.3
 
     static func followAnimation(reduceMotion: Bool, bpm: Double? = V3MusicPulse.currentBPM) -> Animation? {
-        reduceMotion ? nil : .easeInOut(duration: followDuration(bpm: bpm))
+        // A spring, like Apple Music's page: it settles instead of easing to a stop.
+        reduceMotion ? nil : .spring(response: followDuration(bpm: bpm), dampingFraction: 0.86)
     }
 
     /// With 随音乐律动 on and a tempo heard, the page keeps time: 0.56 s at
