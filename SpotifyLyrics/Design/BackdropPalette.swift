@@ -27,6 +27,17 @@ public struct BackdropPalette: Equatable, Sendable {
     public let saturation: Double
     public let readabilityVeilOpacity: Double
     public let textureOpacity: Double
+    /// How the cover's colour is built (see `CoverColorRoute`). Added after
+    /// the accepted looks: primary/secondary/glow above are unchanged and
+    /// these only steer automatic choices, 双色, 窗光 and the accent.
+    public var route: CoverColorRoute = .structural
+    /// The cover's own colour: the hue family with the most coverage and
+    /// colour, not one stray vivid pixel.
+    public var identity: BackdropColor?
+    /// For a two-colour cover, the second family.
+    public var partner: BackdropColor?
+    /// The colour of the cover's outer 8%, where it meets the background.
+    public var edge: BackdropColor?
 
     public init(
         primary: BackdropColor,
@@ -116,7 +127,7 @@ public struct BackdropPalette: Equatable, Sendable {
             veil = 0.18
         }
 
-        return BackdropPalette(
+        var palette = BackdropPalette(
             primary: primary,
             secondary: secondary,
             glow: glow,
@@ -125,6 +136,12 @@ public struct BackdropPalette: Equatable, Sendable {
             readabilityVeilOpacity: max(veil, averageSaturation > 0.7 ? 0.24 : 0.16),
             textureOpacity: averageLuminance > 0.82 ? 0.35 : 0.45
         )
+        let analysis = CoverColorRoute.analyze(representation)
+        palette.route = analysis.route
+        palette.identity = analysis.identity
+        palette.partner = analysis.partner
+        palette.edge = analysis.edge
+        return palette
     }
 
     private static func luminance(of color: BackdropColor) -> Double {
@@ -389,5 +406,154 @@ public actor BackdropPaletteCache {
         }
 
         return palette
+    }
+}
+
+
+/// Which kind of colour a cover has, after Tauon's routed art themes
+/// (`t_art_theme.py`, `t_art_theme_duotone.py`), reimplemented here:
+/// - 暗底标志色: mostly dark and neutral with one clear colour;
+/// - 双色: two well-supported hues, apart in hue and in tone;
+/// - 浅色中性: light and largely grey or white;
+/// - 结构: everything else.
+/// Colour strength is measured relative to the swatch's own brightness, so
+/// deep navy or rust is not mistaken for grey.
+public enum CoverColorRoute: String, Sendable {
+    case structural, darkIdentity, duet, paleNeutral
+
+    public var title: String {
+        switch self {
+        case .structural: return "结构"
+        case .darkIdentity: return "暗底标志色"
+        case .duet: return "双色"
+        case .paleNeutral: return "浅色中性"
+        }
+    }
+
+    struct Family {
+        var coverage: Double
+        var hue: Double
+        var lightness: Double
+        var chroma: Double
+        var color: BackdropColor
+    }
+
+    struct Bin { var count = 0.0, r = 0.0, g = 0.0, b = 0.0, l = 0.0, c = 0.0, hx = 0.0, hy = 0.0 }
+
+    struct Analysis {
+        var route: CoverColorRoute
+        var identity: BackdropColor?
+        var partner: BackdropColor?
+        var edge: BackdropColor?
+    }
+
+    static func analyze(_ representation: NSBitmapImageRep) -> Analysis {
+        let width = max(1, representation.pixelsWide), height = max(1, representation.pixelsHigh)
+        let step = max(1, max(width, height) / 48)
+        let border = max(1, Int(Double(min(width, height)) * 0.08))
+        var pixels: [(r: Double, g: Double, b: Double, edge: Bool)] = []
+        for y in stride(from: 0, to: height, by: step) {
+            for x in stride(from: 0, to: width, by: step) {
+                guard let c = representation.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                let onEdge = x < border || y < border || x >= width - border || y >= height - border
+                pixels.append((Double(c.redComponent), Double(c.greenComponent), Double(c.blueComponent), onEdge))
+            }
+        }
+        return analyze(pixels.map { ($0.r, $0.g, $0.b) }, edge: pixels.filter(\.edge).map { ($0.r, $0.g, $0.b) })
+    }
+
+    static func analyze(_ pixels: [(Double, Double, Double)], edge: [(Double, Double, Double)] = []) -> Analysis {
+        guard !pixels.isEmpty else { return Analysis(route: .structural) }
+        let total = Double(pixels.count)
+        func relative(_ v: Double) -> Double { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+        func contrastLuminance(_ p: (Double, Double, Double)) -> Double {
+            0.2126 * relative(p.0) + 0.7152 * relative(p.1) + 0.0722 * relative(p.2)
+        }
+        var meanLuminance = 0.0, darkMass = 0.0, darkNeutralMass = 0.0, neutralMass = 0.0
+        // 24 hue bins of chromatic pixels.
+        var bins = Array(repeating: Bin(), count: 24)
+        for p in pixels {
+            let lum = contrastLuminance(p)
+            meanLuminance += lum
+            let maximum = max(p.0, p.1, p.2), minimum = min(p.0, p.1, p.2)
+            let lightness = (maximum + minimum) / 2
+            let relativeChroma = maximum > 0 ? (maximum - minimum) / maximum : 0
+            let hlsSaturation = maximum == minimum ? 0 : (maximum - minimum) / (1 - abs(2 * lightness - 1))
+            if lum <= 0.11 {
+                darkMass += 1
+                if maximum - minimum <= 0.18 || lightness <= 0.09 { darkNeutralMass += 1 }
+            }
+            if hlsSaturation < 0.18 || maximum - minimum < 0.14 { neutralMass += 1 }
+            guard relativeChroma >= 0.25, maximum >= 0.12 else { continue }
+            let hue = hueOf(p)
+            let bin = min(23, Int(hue * 24))
+            bins[bin].count += 1; bins[bin].r += p.0; bins[bin].g += p.1; bins[bin].b += p.2
+            bins[bin].l += lightness; bins[bin].c += relativeChroma
+            bins[bin].hx += cos(hue * 2 * .pi); bins[bin].hy += sin(hue * 2 * .pi)
+        }
+        meanLuminance /= total
+        darkMass /= total; darkNeutralMass /= total; neutralMass /= total
+
+        // Neighbouring bins join into one family (wrapping around red).
+        var families: [Family] = []
+        var visited = Array(repeating: false, count: 24)
+        let start = (0..<24).first { bins[$0].count == 0 } ?? 0
+        for offset in 0..<24 {
+            let index = (start + offset) % 24
+            guard bins[index].count > 0, !visited[index] else { continue }
+            var members: [Int] = []
+            var cursor = index
+            while bins[cursor].count > 0, !visited[cursor] {
+                visited[cursor] = true; members.append(cursor); cursor = (cursor + 1) % 24
+            }
+            let n = members.reduce(0.0) { $0 + bins[$1].count }
+            let sum = { (key: KeyPath<Bin, Double>) in members.reduce(0.0) { $0 + bins[$1][keyPath: key] } }
+            var hue = atan2(sum(\.hy), sum(\.hx)) / (2 * .pi)
+            if hue < 0 { hue += 1 }
+            families.append(Family(coverage: n / total, hue: hue, lightness: sum(\.l) / n, chroma: sum(\.c) / n,
+                                   color: BackdropColor(red: sum(\.r) / n, green: sum(\.g) / n, blue: sum(\.b) / n)))
+        }
+        let supported = families.filter { $0.coverage >= 0.06 }
+        let identity = supported.max { $0.coverage * (0.5 + $0.chroma) < $1.coverage * (0.5 + $1.chroma) }
+        let edgeColor: BackdropColor? = edge.isEmpty ? nil : BackdropColor(
+            red: edge.map(\.0).reduce(0, +) / Double(edge.count),
+            green: edge.map(\.1).reduce(0, +) / Double(edge.count),
+            blue: edge.map(\.2).reduce(0, +) / Double(edge.count))
+        let usableIdentity = identity.flatMap { $0.coverage >= 0.12 && $0.chroma >= 0.26 ? $0.color : nil }
+
+        if let identity, meanLuminance <= 0.18, darkMass >= 0.52, darkNeutralMass >= 0.32,
+           identity.coverage >= 0.16, identity.chroma >= 0.26 {
+            return Analysis(route: .darkIdentity, identity: identity.color, edge: edgeColor)
+        }
+        var best: (score: Double, first: Family, second: Family)?
+        for (i, first) in supported.enumerated() {
+            for second in supported[(i + 1)...] {
+                let hueGap = min(abs(first.hue - second.hue), 1 - abs(first.hue - second.hue))
+                let toneGap = abs(first.lightness - second.lightness)
+                guard min(first.coverage, second.coverage) >= 0.12, first.coverage + second.coverage >= 0.34,
+                      min(first.chroma, second.chroma) >= 0.18, hueGap >= 0.18, toneGap >= 0.16 else { continue }
+                let score = (first.coverage + second.coverage) * (0.55 + (first.chroma + second.chroma) / 2)
+                    * (0.65 + hueGap) * (0.65 + toneGap)
+                if best == nil || score > best!.score { best = (score, first, second) }
+            }
+        }
+        if let best, meanLuminance < 0.47 {
+            return Analysis(route: .duet, identity: best.first.color, partner: best.second.color, edge: edgeColor)
+        }
+        if meanLuminance >= 0.50, neutralMass >= 0.45 {
+            return Analysis(route: .paleNeutral, identity: usableIdentity, edge: edgeColor)
+        }
+        return Analysis(route: .structural, identity: usableIdentity, edge: edgeColor)
+    }
+
+    private static func hueOf(_ p: (Double, Double, Double)) -> Double {
+        let maximum = max(p.0, p.1, p.2), minimum = min(p.0, p.1, p.2), delta = maximum - minimum
+        guard delta > 0 else { return 0 }
+        var hue: Double
+        if maximum == p.0 { hue = ((p.1 - p.2) / delta).truncatingRemainder(dividingBy: 6) }
+        else if maximum == p.1 { hue = (p.2 - p.0) / delta + 2 }
+        else { hue = (p.0 - p.1) / delta + 4 }
+        hue /= 6
+        return hue < 0 ? hue + 1 : hue
     }
 }

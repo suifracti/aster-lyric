@@ -2001,33 +2001,48 @@ private extension Font.Weight {
 
 /// 打字机: the current line appears from left to right over the time it is
 /// sung (its end time, else three seconds). Lines with word timing already
-/// fill word by word and are left alone.
+/// fill word by word and are left alone. One linear animation per line, set
+/// again on seek or pause; SwiftUI does not re-render it every frame.
 private struct V3TypewriterReveal: ViewModifier {
     let active: Bool
     let start: TimeInterval
     let end: TimeInterval?
     let clock: LyricsPresentationClock
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var fraction: Double = 1
 
     func body(content: Content) -> some View {
         if active && !reduceMotion {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !clock.isPlaying)) { _ in
-                let now = clock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
-                let length = max(0.6, min(6, (end ?? start + 3) - start) * 0.85)
-                let fraction = min(1, max(0, (now - start) / length))
-                content.mask(alignment: .leading) {
-                    LinearGradient(stops: [
-                        .init(color: .white, location: 0),
-                        .init(color: .white, location: fraction),
-                        .init(color: .clear, location: min(1, fraction + 0.06))
-                    ], startPoint: .leading, endPoint: .trailing)
-                    .opacity(fraction >= 1 ? 0 : 1)
-                    .background(fraction >= 1 ? Color.white : Color.clear)
+            content
+                .mask(alignment: .leading) {
+                    GeometryReader { geometry in
+                        HStack(spacing: 0) {
+                            Rectangle().frame(width: geometry.size.width * fraction)
+                            LinearGradient(colors: [.white, .clear], startPoint: .leading, endPoint: .trailing)
+                                .frame(width: geometry.size.width * 0.06)
+                                .opacity(fraction >= 1 ? 0 : 1)
+                            Spacer(minLength: 0)
+                        }
+                    }
                 }
-            }
+                .onAppear(perform: restart)
+                .onChange(of: clock) { _, _ in restart() }
+                .onChange(of: start) { _, _ in restart() }
         } else {
             content
         }
+    }
+
+    private var length: Double { max(0.6, min(6, (end ?? start + 3) - start) * 0.85) }
+
+    private func restart() {
+        let now = clock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+        let current = min(1, max(0, (now - start) / length))
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) { fraction = current }
+        guard clock.isPlaying, current < 1 else { return }
+        withAnimation(.linear(duration: (1 - current) * length)) { fraction = 1 }
     }
 }
 

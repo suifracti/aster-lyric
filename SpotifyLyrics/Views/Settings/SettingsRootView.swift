@@ -524,6 +524,8 @@ private struct AppearanceSettingsView: View {
                     }
                     FloatingDesktopColorControls(settings: settings)
                     Toggle("悬浮歌词保持置顶", isOn: $settings.floatingWindowAlwaysOnTop)
+                    Toggle("截图和录屏时隐藏", isOn: $settings.floatingHiddenFromCapture)
+                        .help("桌面歌词和顶部胶囊不出现在截图、录屏和屏幕共享里；屏幕上照常显示。")
                     Picker("默认交互状态", selection: floatingModeBinding) {
                         ForEach(FloatingLyricsInteractionMode.allCases, id: \.self) { mode in
                             Text(mode.title).tag(mode)

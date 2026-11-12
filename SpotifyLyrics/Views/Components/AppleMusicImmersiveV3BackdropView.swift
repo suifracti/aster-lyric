@@ -70,6 +70,11 @@ struct AppleMusicImmersiveV3BackdropView: View {
     @State private var subjectCenter: CGPoint?
     @State private var accessibilityDisplayRevision = 0
     @State private var isWindowVisible = false
+    /// The picture the backdrop is made from: the cover, or the artist's photo.
+    @State private var backdropImageURL: URL?
+    /// The song's Spotify Canvas on disk, once found.
+    @State private var canvasFile: URL?
+    @State private var canvasReady = false
 
     private var artworkPresentation: V3ArtworkPresentation { presentationOverride ?? settings.v3ArtworkPresentation }
     private var backdropBlurRadius: Double { settings.v3PreviewBlur(for: artworkPresentation, scene: listeningScene) }
@@ -103,9 +108,20 @@ struct AppleMusicImmersiveV3BackdropView: View {
                     artworkLayers(image: artworkImage, ambientImage: ambientArtworkImage)
                         .transition(.opacity)
                 }
+                if showsCanvas, let canvasFile {
+                    // The clip covers the picture; the darker veil keeps lyrics readable over motion.
+                    V3CanvasVideoView(file: canvasFile, playing: isPlaying && isWindowVisible,
+                                      blurRadius: perceptualBlur * 10) { canvasReady = true }
+                        .opacity(canvasReady ? 1 : 0)
+                    Color.black.opacity(canvasReady ? 0.26 : 0)
+                }
                 // Legacy exposure and the accepted original look stay unchanged.
                 // The common *local* reading protection is applied by the text host.
                 if artworkPresentation != .stage { Color.black.opacity(readabilityVeilOpacity) }
+            }
+            if settings.v3MusicMotionEnabled && presentationOverride == nil {
+                V3MusicPulseLight(color: (palette.identity ?? palette.glow).nsColor, center: coverLightCenter,
+                                  active: pulseWanted)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -116,9 +132,16 @@ struct AppleMusicImmersiveV3BackdropView: View {
             V3WindowVisibilityProbe(isVisible: $isWindowVisible)
                 .frame(width: 0, height: 0)
         }
-        .task(id: track.artworkURL) {
+        .animation(.easeInOut(duration: 0.8), value: canvasReady)
+        .task(id: canvasTaskKey) { await findCanvas() }
+        .onChange(of: pulseWanted, initial: true) { _, wanted in
+            guard presentationOverride == nil else { return }
+            V3MusicPulse.shared.setWanted(wanted)
+        }
+        .onDisappear { if presentationOverride == nil { V3MusicPulse.shared.setWanted(false) } }
+        .task(id: backdropImageURL ?? track.artworkURL) {
             subjectCenter = nil
-            guard let analysis = await V3ArtworkSubject.analysis(for: track.artworkURL),
+            guard let analysis = await V3ArtworkSubject.analysis(for: backdropImageURL ?? track.artworkURL),
                   let region = analysis.regions.max(by: { $0.width * $0.height < $1.width * $1.height }) else { return }
             guard !Task.isCancelled else { return }
             subjectCenter = CGPoint(x: region.midX, y: region.midY)
@@ -137,7 +160,47 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
     private var requestKey: String {
         let identityKey = identity?.stableKey ?? track.id
-        return "\(paletteCacheKey)|\(identityKey)|\(debugForceNoArtwork ? "debug-no-artwork" : "artwork")"
+        return "\(paletteCacheKey)|\(identityKey)|\(debugForceNoArtwork ? "debug-no-artwork" : "artwork")|\(settings.v3BackdropSource.rawValue)"
+    }
+
+    /// Scene cards and hover previews draw this view too; only the real
+    /// backdrop plays a clip.
+    private var showsCanvas: Bool {
+        settings.v3BackdropUsesVideo && presentationOverride == nil
+    }
+
+    private var spotifyTrackID: String? {
+        guard let raw = track.spotifyId?.trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
+        let id = raw.hasPrefix("spotify:track:") ? String(raw.dropFirst("spotify:track:".count)) : raw
+        return id.count == 22 && id.unicodeScalars.allSatisfy({ $0.isASCII && CharacterSet.alphanumerics.contains($0) }) ? id : nil
+    }
+
+    /// Listening runs only while it can be seen and heard.
+    private var pulseWanted: Bool {
+        settings.v3MusicMotionEnabled && presentationOverride == nil && isPlaying && isWindowVisible
+    }
+
+    private var canvasTaskKey: String { "\(spotifyTrackID ?? "-")|\(showsCanvas)" }
+
+    /// Spotify fetches a song's Canvas a little after the song starts, so a
+    /// first miss is looked at again for about three minutes.
+    private func findCanvas() async {
+        canvasReady = false
+        canvasFile = nil
+        guard showsCanvas, let id = spotifyTrackID else { return }
+        for attempt in 0..<12 {
+            if let remote = await V3CanvasStore.shared.remoteClip(trackID: id) {
+                let local = await V3CanvasStore.shared.localFile(for: remote)
+                guard !Task.isCancelled else { return }
+                if let local {
+                    LyricsE2ELog.log("CANVAS ready id=\(id) attempt=\(attempt)")
+                    canvasFile = local
+                }
+                return
+            }
+            try? await Task.sleep(nanoseconds: UInt64((attempt < 3 ? 5 : 15) * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+        }
     }
 
     private var paletteCacheKey: String {
@@ -494,8 +557,12 @@ struct AppleMusicImmersiveV3BackdropView: View {
     @ViewBuilder
     private func duotoneArtworkLayers(image: NSImage) -> some View {
         let brightness = settings.v3BackgroundBrightness(for: .authenticAmbient, scene: listeningScene)
-        let ink = ambientColor(palette.secondary, saturation: 1.1, maximumLuminance: 0.16 * brightness)
-        let paper = ambientColor(palette.glow, saturation: 1.15, maximumLuminance: min(0.85, 0.62 * brightness))
+        // A two-colour cover is reprinted in its own two families, the darker as ink.
+        let pair = palette.route == .duet ? palette.identity.flatMap { a in palette.partner.map { b in (a, b) } } : nil
+        let darker = pair.map { Self.lightness($0.0) <= Self.lightness($0.1) ? $0.0 : $0.1 }
+        let lighter = pair.map { Self.lightness($0.0) <= Self.lightness($0.1) ? $0.1 : $0.0 }
+        let ink = ambientColor(darker ?? palette.secondary, saturation: 1.1, maximumLuminance: 0.16 * brightness)
+        let paper = ambientColor(lighter ?? palette.glow, saturation: 1.15, maximumLuminance: min(0.85, 0.62 * brightness))
         ZStack {
             ink
             GeometryReader { canvas in
@@ -520,7 +587,9 @@ struct AppleMusicImmersiveV3BackdropView: View {
     /// 窗光: the cover as a window; a few soft shafts of its light fall
     /// across the lyrics from above the cover.
     private var windowLightShafts: some View {
-        let light = ambientColor(palette.glow, saturation: 0.7, maximumLuminance: 0.95)
+        // The cover's own colour when it has one clear colour on a dark ground.
+        let light = ambientColor(palette.route == .darkIdentity ? (palette.identity ?? palette.glow) : palette.glow,
+                                 saturation: 0.7, maximumLuminance: 0.95)
         return GeometryReader { canvas in
             let w = canvas.size.width, h = canvas.size.height
             // The room is a little darker than 原版 so the light reads as light.
@@ -970,7 +1039,14 @@ struct AppleMusicImmersiveV3BackdropView: View {
             return
         }
 
-        guard let artworkURL = track.artworkURL,
+        // 歌手照片 when chosen and found; otherwise the cover.
+        var sourceURL = track.artworkURL
+        if settings.v3BackdropSource == .artist, let photo = await V3ArtistImageStore.shared.imageURL(for: track) {
+            sourceURL = photo
+        }
+        guard !Task.isCancelled else { return }
+        backdropImageURL = sourceURL
+        guard let artworkURL = sourceURL,
               let image = await ArtworkImageLoader.shared.image(for: artworkURL),
               let imageData = image.tiffRepresentation,
               !Task.isCancelled else {
@@ -979,12 +1055,12 @@ struct AppleMusicImmersiveV3BackdropView: View {
         }
 
         let snapshot = await AppleMusicImmersiveV3BackdropCache.shared.snapshot(
-            for: paletteCacheKey,
+            for: AppleMusicImmersiveV3BackdropKey.make(artworkURL: artworkURL),
             artworkData: imageData
         )
         guard key == requestKey, !Task.isCancelled else { return }
 
-        LyricsE2ELog.log("ARTWORK backdrop ready key=\(key)")
+        LyricsE2ELog.log("ARTWORK backdrop ready key=\(key) route=\(snapshot.palette.route.rawValue) source=\(settings.v3BackdropSource == .artist && sourceURL != track.artworkURL ? "artist" : "cover")")
         let nextArtwork = NSImage(data: snapshot.artworkData)
         let nextAmbientArtwork = NSImage(data: snapshot.ambientArtworkData)
         let nextNoise = NSImage(data: snapshot.noiseData)
@@ -1003,6 +1079,10 @@ struct AppleMusicImmersiveV3BackdropView: View {
             outgoingArtworkImage = nil
             outgoingAmbientArtworkImage = nil
         }
+    }
+
+    private static func lightness(_ value: BackdropColor) -> Double {
+        (max(value.red, value.green, value.blue) + min(value.red, value.green, value.blue)) / 2
     }
 
     private func color(_ value: BackdropColor, saturation: Double = 1) -> Color {

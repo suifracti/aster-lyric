@@ -281,7 +281,8 @@ enum LyricIslandArtworkColors {
 
     static func edgeAccent(_ palette: BackdropPalette) -> Color {
         // A near-white/black album must still yield a visible, quiet progress line.
-        let source = palette.saturation > 0.08 ? palette.primary : palette.glow
+        // The cover's own colour family when it has one; else as before.
+        let source = palette.identity ?? (palette.saturation > 0.08 ? palette.primary : palette.glow)
         let ns = source.nsColor.usingColorSpace(.sRGB) ?? NSColor.systemTeal
         var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
         ns.getHue(&h, saturation: &s, brightness: &b, alpha: &a)

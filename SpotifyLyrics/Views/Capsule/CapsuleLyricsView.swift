@@ -116,7 +116,7 @@ struct CapsuleLyricsView: View {
     var body: some View {
         sizedContainer
         .contentShape(Rectangle())
-        .onHover { inside in
+        .v3OnHover { inside in
             if !isTopAttachedV4 {
                 inside ? windowController.pointerEntered() : windowController.pointerExited()
             }

@@ -41,7 +41,8 @@ public struct ReadingProjection: Equatable, Sendable {
         self.isNoSelection = isNoSelection
     }
 
-    public func applying(to base: [LyricLine], scriptConversion: ScriptConversionID = .none) -> [LyricLine] {
+    public func applying(to base: [LyricLine], scriptConversion: ScriptConversionID = .none,
+                         restoresCensoredWords: Bool = false) -> [LyricLine] {
         guard !base.isEmpty else { return base }
         let byIndex = isNoSelection
             ? [:]
@@ -94,6 +95,14 @@ public struct ReadingProjection: Equatable, Sendable {
                 }
             } else {
                 line.readingSurfaceText = nil
+            }
+            if restoresCensoredWords {
+                let surface = line.readingSurfaceText ?? source.originalText
+                let restored = LyricCensorRestorer.restore(surface)
+                if restored != surface, restored.utf16.count == surface.utf16.count {
+                    line.readingSurfaceText = restored
+                    line.timedSpans = LyricCensorRestorer.respan(line.timedSpans, text: restored)
+                }
             }
             return line
         }
@@ -665,7 +674,12 @@ public final class ReadingSessionController: ObservableObject {
     }
 
     public func project(onto lines: [LyricLine]) -> [LyricLine] {
-        projection.applying(to: lines, scriptConversion: settings.readingPreferences.scriptConversion)
+        projection.applying(to: lines, scriptConversion: settings.readingPreferences.scriptConversion,
+                            restoresCensoredWords: settings.lyricsRestoreCensoredWords)
+    }
+
+    /// Part of the projection cache key: the display changes with it.
+    public var restoresCensoredWords: Bool { settings.lyricsRestoreCensoredWords
     }
 
     private func persistAdoption(versionID: UUID, token: UInt64) {

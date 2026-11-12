@@ -222,7 +222,7 @@ struct V3ThemeSelectorView: View {
         let details = card.entries.map { $0.title + "：" + ($0.detail ?? "") }.joined(separator: "\n")
         return V3SegmentedPicker(card.rowTitle, selection: selection, options: options)
             .accessibilityIdentifier("v3.card.style." + card.id)
-            .help(card.automatic ? "自动：按每首歌的封面选择。细节很多的用双色，亮的用原版，暗的用羽化。\n" + details : details)
+            .help(card.automatic ? "自动：按每首歌的封面选择。细节很多或两种颜色分明的用双色，亮的用原版，暗的用羽化。\n" + details : details)
     }
 
     private func applyAutomaticAmbient() {
@@ -395,9 +395,11 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
     /// behind the lyrics; a bright one 原版; a dark one 羽化. 窗光 is a
     /// matter of taste and is never chosen by the app. The boundaries are
     /// first settings from the user's own covers.
-    static func automaticAmbient(luminance: Double, detail: Double = 0) -> Entry {
+    /// A cover with two strong colours (`CoverColorRoute.duet`) also gets
+    /// 双色: it reprints the cover in exactly those two.
+    static func automaticAmbient(luminance: Double, detail: Double = 0, route: CoverColorRoute = .structural) -> Entry {
         let lights = cards[0].entries
-        if detail >= busyCoverDetail { return lights[2] }
+        if detail >= busyCoverDetail || route == .duet { return lights[2] }
         return luminance >= 0.42 ? lights[0] : lights[1]
     }
     static let busyCoverDetail = 0.072
@@ -420,7 +422,7 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
                                       defaults: UserDefaults = .lyricsQ) {
         guard defaults.object(forKey: ambientAutomaticKey) as? Bool ?? true, palette != .neutral else { return }
         guard cards[0].entries.contains(where: { inUse($0, settings: settings) }) else { return }
-        let target = automaticAmbient(luminance: palette.luminance, detail: detail)
+        let target = automaticAmbient(luminance: palette.luminance, detail: detail, route: palette.route)
         guard !inUse(target, settings: settings), let scene = target.scene else { return }
         if scene == .originalAmbient { settings.v3AmbientTreatment = target.treatment }
         settings.selectV3Scene(scene, renderer: target.renderer)
@@ -650,6 +652,13 @@ struct V3VisualControls {
                     ), options: [("铺满", false), ("尽量完整", true)])
                     .help("背景取景不改变前景封面；可铺满裁切或保留完整内容。")
                     backdropScaleControls
+                    V3SegmentedPicker("背景素材", selection: $settings.v3BackdropSource,
+                                      options: V3BackdropSource.allCases.map { ($0.title, $0) })
+                        .accessibilityIdentifier("v3.backdrop.source")
+                        .help("歌手照片：像 Spotify 电视版那样用主唱歌手的照片做背景；取不到时仍用封面。前景封面不变。")
+                    Toggle("有视频时用视频", isOn: $settings.v3BackdropUsesVideo)
+                        .accessibilityIdentifier("v3.backdrop.video")
+                        .help("歌曲有 Spotify Canvas 短片时，背景改为循环播放它。只读本机 Spotify 已缓存的地址；Spotify 往往在歌曲开始后才取到，所以可能晚几秒出现。暂停、窗口隐藏或系统减少动态效果时停住。")
                 }
                 if scene == .originalAmbient && renderer == .authenticAmbient {
                     V3NumericSlider("背景明暗", value: Binding(
@@ -662,6 +671,7 @@ struct V3VisualControls {
                 }
                 if showsExplanations { backgroundMotionControls }
             }
+            V3MusicMotionRow(settings: settings)
             if scene != .focusedLyrics && scene != .coverPhoto && settings.v3ShowForegroundArtwork {
                 V3PanelSection(title: "前景封面")
                 V3NumericSlider("尺寸", value: $settings.v3ArtworkSizeScale, in: 0.8...1.4, step: 0.05,
@@ -763,6 +773,8 @@ struct V3VisualControls {
                 .pickerStyle(.menu).labelsHidden().fixedSize()
             }
             Toggle("远处歌词隐藏辅助读音", isOn: displayBinding(\.hideDistantAuxiliary))
+            Toggle("还原被星号遮住的词", isOn: $settings.lyricsRestoreCensoredWords)
+                .help("来源把脏话写成 f**k、sh*t 时显示完整的词，方便跟唱。只改显示，不改保存的歌词。")
             V3NumericSlider("其他行", value: displayBinding(\.opacity), in: 0.15...1, step: 0.05, unit: "%", displayScale: 100)
                 .help("非当前歌词的透明度")
         }
@@ -1007,5 +1019,36 @@ struct V3TranslationComparisonSheet: View {
         }
         .frame(minWidth: 760, idealWidth: 960, minHeight: 480, idealHeight: 650)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+
+/// 随音乐律动 and what it is doing. It needs screen and audio recording
+/// permission and shows the system's recording mark while it listens.
+struct V3MusicMotionRow: View {
+    @ObservedObject var settings: AppSettingsStore
+    @ObservedObject private var pulse = V3MusicPulse.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Toggle("随音乐律动", isOn: $settings.v3MusicMotionEnabled)
+                .accessibilityIdentifier("v3.musicMotion")
+                .help("听 Spotify 的声音：鼓点时封面处的光一亮一胀，歌词换行的快慢跟着歌曲速度。只采 Spotify 的声音、不录麦克风、不保存；需要屏幕与系统录音权限，听的时候菜单栏会有录制标志。暂停或窗口隐藏时停止。")
+            if settings.v3MusicMotionEnabled {
+                Text(statusText).font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var statusText: String {
+        switch pulse.status {
+        case .off: return "播放时开始听"
+        case .starting: return "正在连接 Spotify 的声音…"
+        case .running:
+            if let bpm = V3MusicPulse.currentBPM { return "正在听，约 \(Int(bpm.rounded())) BPM" }
+            return "正在听"
+        case .failed(let message): return message
+        }
     }
 }

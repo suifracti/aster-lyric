@@ -243,6 +243,11 @@
 		A60F090600000000000007B1 /* V3PlaybackStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60F090600000000000007B0 /* V3PlaybackStyles.swift */; };
 		E2DB54FBA5EBC7345D14030D /* V3AnimationIsland.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00FC2B2BF3EFEEE824C385EE /* V3AnimationIsland.swift */; };
 		3315F23098FEBB035649E39B /* V3PanelGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = C140F38276CD374A993F5B22 /* V3PanelGlass.swift */; };
+		3F93C6CEC5F0C50BFD8DFAD7 /* SpotifyLocalCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B2982DD38CC16476A5FE34D /* SpotifyLocalCache.swift */; };
+		1F3AAA6A26CAB37EE98F5312 /* V3BackdropMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA56EE83873FAB67D1E6F5D6 /* V3BackdropMedia.swift */; };
+		9526CF3AD59EC3F0FA1DBF2E /* V3MusicPulse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 624159F7CC9D36787F275E78 /* V3MusicPulse.swift */; };
+		4BCE22E8F6CCBB19513C712E /* LyricCensorRestorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8929C92865638419A83900F /* LyricCensorRestorer.swift */; };
+		F44CE541129D043DBFCD53E2 /* V3AlwaysHover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DD84F91FEAE16E4F5C026CE /* V3AlwaysHover.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -488,6 +493,11 @@
 		A60F090600000000000007B0 /* V3PlaybackStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3PlaybackStyles.swift; sourceTree = "<group>"; };
 		00FC2B2BF3EFEEE824C385EE /* V3AnimationIsland.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3AnimationIsland.swift; sourceTree = "<group>"; };
 		C140F38276CD374A993F5B22 /* V3PanelGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Components/V3PanelGlass.swift; sourceTree = "<group>"; };
+		8B2982DD38CC16476A5FE34D /* SpotifyLocalCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyLocalCache.swift; sourceTree = "<group>"; };
+		FA56EE83873FAB67D1E6F5D6 /* V3BackdropMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3BackdropMedia.swift; sourceTree = "<group>"; };
+		624159F7CC9D36787F275E78 /* V3MusicPulse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Capture/V3MusicPulse.swift; sourceTree = "<group>"; };
+		E8929C92865638419A83900F /* LyricCensorRestorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricCensorRestorer.swift; sourceTree = "<group>"; };
+		6DD84F91FEAE16E4F5C026CE /* V3AlwaysHover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3AlwaysHover.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -575,6 +585,7 @@
 				110000002D83400000000028 /* Spotify */,
 				110000002D83400000000029 /* Settings */,
 				110000FC2D83400100000000 /* SpotifyScreenCaptureAudioSpike.swift */,
+				624159F7CC9D36787F275E78 /* V3MusicPulse.swift */,
 				110000FD2D83400100000000 /* CaptureContinuityPolicy.swift */,
 				110000FE2D83400100000000 /* CapturedAudioModels.swift */,
 				110000FF2D83400100000000 /* LiveCaptureCoordinator.swift */,
@@ -692,6 +703,8 @@
 				110000212D83400100000000 /* LyricsViewport.swift */,
 				110000222D83400100000000 /* ArtworkBackgroundView.swift */,
 				110000512D83400100000000 /* AppleMusicImmersiveV3BackdropView.swift */,
+				FA56EE83873FAB67D1E6F5D6 /* V3BackdropMedia.swift */,
+				6DD84F91FEAE16E4F5C026CE /* V3AlwaysHover.swift */,
 				110000292D83400100000000 /* SongSearchPopover.swift */,
 				110000722D83400100000000 /* ManualLyricsActionsView.swift */,
 				110000FB2D83400100000000 /* CurrentSongOperationsView.swift */,
@@ -780,6 +793,7 @@
 				110000A52D83400100000000 /* ReadingEngineRegistry.swift */,
 				110000A62D83400100000000 /* ReadingSettings.swift */,
 				110000A72D83400100000000 /* ReadingSessionController.swift */,
+				E8929C92865638419A83900F /* LyricCensorRestorer.swift */,
 				110000AA2D83400100000000 /* ReadingLanguageGate.swift */,
 				110000AB2D83400100000000 /* AIReadingCandidateService.swift */,
 				110000342D83400100000000 /* JapaneseKanaGenerator.swift */,
@@ -834,6 +848,7 @@
 				110000572D83400100000000 /* SpotifyAPIModels.swift */,
 				110000582D83400100000000 /* SpotifyTokenStore.swift */,
 				110000592D83400100000000 /* SpotifyCatalogService.swift */,
+				8B2982DD38CC16476A5FE34D /* SpotifyLocalCache.swift */,
 				1100005A2D83400100000000 /* SpotifyAuthorizationManager.swift */,
 				A1B2C3D42D83400000000000 /* PlaylistPickerModel.swift */,
 				768FC1580F09DD166BCBA7B9 /* PlaylistBrowserModel.swift */,
@@ -1046,6 +1061,7 @@
 				110000E02D83400100000001 /* TimedTranscript.swift in Sources */,
 				110000E12D83400100000001 /* AudioInputMetadata.swift in Sources */,
 				110000FC2D83400100000001 /* SpotifyScreenCaptureAudioSpike.swift in Sources */,
+				9526CF3AD59EC3F0FA1DBF2E /* V3MusicPulse.swift in Sources */,
 				110000FD2D83400100000001 /* CaptureContinuityPolicy.swift in Sources */,
 				110000FE2D83400100000001 /* CapturedAudioModels.swift in Sources */,
 				110000FF2D83400100000001 /* LiveCaptureCoordinator.swift in Sources */,
@@ -1085,6 +1101,8 @@
 				2D67EB8DBEDEFAC5F793BEC8 /* V3ToolbarModel.swift in Sources */,
 				B31702F52C144DEE90000001 /* V3WindowEdgePlaybackOverlay.swift in Sources */,
 				110000512D83400100000001 /* AppleMusicImmersiveV3BackdropView.swift in Sources */,
+				1F3AAA6A26CAB37EE98F5312 /* V3BackdropMedia.swift in Sources */,
+				F44CE541129D043DBFCD53E2 /* V3AlwaysHover.swift in Sources */,
 				110001302D83400100000001 /* V3ResponsiveGeometry.swift in Sources */,
 				110000432D83400100000001 /* NetEaseExperimentalLyricsProvider.swift in Sources */,
 				110000452D83400100000001 /* LocalAudioASRService.swift in Sources */,
@@ -1106,6 +1124,7 @@
 				110000A52D83400100000001 /* ReadingEngineRegistry.swift in Sources */,
 				110000A62D83400100000001 /* ReadingSettings.swift in Sources */,
 				110000A72D83400100000001 /* ReadingSessionController.swift in Sources */,
+				4BCE22E8F6CCBB19513C712E /* LyricCensorRestorer.swift in Sources */,
 				110000AA2D83400100000001 /* ReadingLanguageGate.swift in Sources */,
 				110000AB2D83400100000001 /* AIReadingCandidateService.swift in Sources */,
 				110000342D83400100000001 /* JapaneseKanaGenerator.swift in Sources */,
@@ -1120,6 +1139,7 @@
 				110000572D83400100000001 /* SpotifyAPIModels.swift in Sources */,
 				110000582D83400100000001 /* SpotifyTokenStore.swift in Sources */,
 				110000592D83400100000001 /* SpotifyCatalogService.swift in Sources */,
+				3F93C6CEC5F0C50BFD8DFAD7 /* SpotifyLocalCache.swift in Sources */,
 				1100005A2D83400100000001 /* SpotifyAuthorizationManager.swift in Sources */,
 				1100005B2D83400100000001 /* SpotifyTrackMapper.swift in Sources */,
 				1100005C2D83400100000001 /* SpotifySearchProvider.swift in Sources */,
@@ -1432,6 +1452,7 @@
 		};
 		20F29C7351DC494205783402 /* Native Test Sources */ = {
 			isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; runOnlyForDeploymentPostprocessing = 0; files = (
+				A64F0B1500000000000000F1,
 				77BDB79A9B6514A974EE96DE,
 				A1B2C3D62D83400100000001,
 				FB2698985591B3233543ABBE,
@@ -1512,6 +1533,8 @@
 		77BDB79A9B6514A974EE96DE = {isa = PBXBuildFile; fileRef = AF8DB5959F9D7D8A47B31CCA; };
 		A1B2C3D62D83400000000000 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Playback/PlaylistPickerTests.swift"; sourceTree = SOURCE_ROOT; };
 		A1B2C3D62D83400100000001 = {isa = PBXBuildFile; fileRef = A1B2C3D62D83400000000000; };
+		A64F0B1500000000000000F0 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Presentation/ListeningBatchOneTests.swift"; sourceTree = SOURCE_ROOT; };
+		A64F0B1500000000000000F1 = {isa = PBXBuildFile; fileRef = A64F0B1500000000000000F0; };
 	};
 	rootObject = 110000002D83400000000006 /* Project object */;
 }

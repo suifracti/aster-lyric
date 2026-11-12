@@ -26,6 +26,7 @@
 | 加光效、加播放呈现、新呈现不显示或挡住歌词 | L-019；V3AmbientTreatment、v3ScenePlayerHidden、V3PlaybackStyles.swift |
 | 工具栏/歌词/播放栏样式、核对只在指针附近显示的界面 | L-020；V3ToolbarStyle、V3LyricStyle、v3PlayerBarOptions |
 | 已采用的歌突然“歌词暂不可用”、合作歌手写法不同（假名/罗马字）进了核对 | L-021；redirectNewSpotifyKey、retryingStore、nameReadingKey |
+| 视频背景（Canvas）、歌手照片背景、按封面配色、随音乐律动、拖进度吸附、跳转回弹、脏词显示 | L-022；SpotifyLocalCache、V3BackdropMedia、CoverColorRoute、V3MusicPulse、LyricCensorRestorer |
 | 在窗口边缘拖进度会变成缩放窗口、进度线靠近时下移不好看、胶囊和工具栏像两套控件、画面面板底部被截断 | L-015；V3EdgePillScrubber、V3ControlBarSurface、V3ThemeSelectorView |
 | 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
@@ -289,6 +290,18 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - 测试 `testGuestWrittenInKanaIsTheSameGuest`。
 
 以后再遇到“别人有歌词、我们没有”，先看日志里是否有 `PERSISTENCE` / `SESSION failed`，再看 `MATCH` 的扣分项。
+
+## L-022 第一批调研方案：本机 Canvas、歌手照片、封面路线、律动
+
+- **Canvas 只读本机。** Spotify 的 Canvas 只在私有接口里给，条款不许第三方用。客户端把加载过的 Canvas 地址存在 `PersistentCache/Users/<账号>-user/primary.ldb`：键是 `!xmeta#cache#` + `01 30` + `#` + 长度 + uri + `#`，值是 protobuf `Any` 包着的 `EntityCanvazResponse.Canvaz`（2 地址、4 类型、5 uri）。`SpotifyLocalCache.swift` 按 LevelDB/Snappy 公开格式自己实现只读查找（不开库、不抢锁、单文件读失败就跳过）。Lyrimuse 是 GPL、本仓库保留所有权利，所以没抄它的代码，只参考做法。实测 2,818 首有 Canvas，每次 20–30 ms。
+- **粗扫会严重低估。** 直接 grep `.ldb` 只看到几百条，因为数据块大多是 Snappy 压缩的。
+- **歌手照片不需要登录。** 公开嵌入页 `open.spotify.com/embed/track/<id>` 里有歌手 uri（`SpotifyTrackArtistResolver` 本来就请求这一页，现在顺带留下 ID）；官方 oEmbed 给 320 px 头像，图片 ID 的尺寸码 `00005174` 换成 `0000e5eb` 即 640 px。
+- **已定外观不动。** `BackdropPalette` 的主色、副色、光色保持原算法；新增 `route / identity / partner / edge` 只用于自动选择、双色、窗光和强调色（`CoverColorRoute`，参照 Tauon）。
+- **律动单独采集。** `V3MusicPulse` 不复用排轴的采集（那边有身份守卫和排轴状态），自己开一路只含 Spotify 的 ScreenCaptureKit 音频流；画面每帧用锁读数值，SwiftUI 不随帧重绘。默认关闭：持续采集会让菜单栏一直显示录制标志。
+- **跳转保持与单句循环冲突。** 循环靠 Spotify 报告的位置判断句尾，保持会把它挡住（`testLyricLineRepeatsUntilCancelledAndStopsOnTrackChange` 抓到）；来源 `lyric-line-loop` 不保持。
+- **脏词还原只做等长替换。** 走 `ReadingProjection` 的显示投影（和繁简转换同一处），逐字片段按原 UTF-16 范围重取文字；投影缓存键加上这个开关。
+- **顺带修正**：`testPinnedPlacement` 还在要求“永远不放左侧”，与 Round 14 的“右侧放不下就放左侧”冲突，已按现行为更新。
+- **未在真窗口核对**：本轮 Spotify 不响应 Apple Events，视频背景、歌手照片、律动没能在播放中的歌上看到效果。另有三个源码约定脚本（`apple_music_immersive_v3_contract`、`capsule_lyrics_contract`、`capsule_v4_top_attached_contract`）在改动前就失败，与本轮无关。
 
 ## 实际覆盖与接续
 

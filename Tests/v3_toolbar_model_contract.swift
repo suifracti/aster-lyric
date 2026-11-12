@@ -498,10 +498,15 @@ final class V3ToolbarPresentationTests: XCTestCase {
         let roomy = LyricIslandPanelPlacement.frame(owner: owner, visible: visible, requested: requested)
         XCTAssertEqual(roomy.minX, owner.maxX + 12)
         XCTAssertFalse(roomy.intersects(owner))
+        // Since Round 14 the panel goes to the left of the window when the
+        // right has no room, and overlaps only when neither side fits.
         let wide = CGRect(x: 760, y: 180, width: 900, height: 800)
-        let edge = LyricIslandPanelPlacement.frame(owner: wide, visible: visible, requested: requested)
+        let left = LyricIslandPanelPlacement.frame(owner: wide, visible: visible, requested: requested)
+        XCTAssertEqual(left.maxX, wide.minX - 12)
+        XCTAssertFalse(left.intersects(wide))
+        let full = CGRect(x: 200, y: 180, width: 1400, height: 800)
+        let edge = LyricIslandPanelPlacement.frame(owner: full, visible: visible, requested: requested)
         XCTAssertEqual(edge.maxX, visible.maxX - 8)
-        XCTAssertGreaterThan(edge.minX, wide.minX, "never to the left")
     }
 }
 

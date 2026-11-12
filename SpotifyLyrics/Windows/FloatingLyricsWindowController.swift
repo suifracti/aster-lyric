@@ -193,6 +193,10 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
                 .receive(on: RunLoop.main)
                 .sink { [weak self] _ in self?.applyWindowLevel() }
                 .store(in: &settingsCancellables)
+            settings.$floatingHiddenFromCapture
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in self?.applyWindowLevel() }
+                .store(in: &settingsCancellables)
             settings.$floatingWindowInteractionModeRawValue
                 .receive(on: RunLoop.main)
                 .sink { [weak self] rawValue in
@@ -308,6 +312,8 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
         // `.floating` stays below system alerts and menus; no statusBar or
         // modalPanel level is used for the lyric window.
         panel.level = settings.floatingWindowAlwaysOnTop ? .floating : .normal
+        // 截图和录屏时隐藏 (LX Music has the same switch).
+        panel.sharingType = settings.floatingHiddenFromCapture ? .none : .readOnly
     }
 
     private func applyOpacity() {

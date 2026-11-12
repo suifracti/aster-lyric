@@ -285,7 +285,8 @@ struct V3WindowEdgePlaybackOverlay: View {
     private func finishSeek(fraction: Double) {
         defer { cancelDraft() }
         guard canSeek, dragTrackKey == state.currentTrackIdentity?.stableKey else { return }
-        state.seek(to: min(1, max(0, fraction)) * state.currentTrack.duration, source: "v3-edge-progress")
+        state.seek(to: state.lyricSnappedSeekTarget(min(1, max(0, fraction)) * state.currentTrack.duration),
+                   source: "v3-edge-progress")
     }
 
     private func cancelDraft() {

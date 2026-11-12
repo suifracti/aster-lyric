@@ -167,6 +167,7 @@ public final class PlaybackState: ObservableObject {
         let sourceContentHash: String?
         let lineCount: Int
         let readingRevision: UInt64
+        var restoresCensoredWords = false
     }
     private struct PendingManualLyricsAdoption {
         let requestID: UUID
@@ -1952,6 +1953,39 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
+    /// Dragging a progress bar lands on the start of the nearest sung line
+    /// when one starts within 1.5 s, so playback resumes at a whole line
+    /// (SPlayer does the same). Keyboard and editor seeks stay exact.
+    public func lyricSnappedSeekTarget(_ time: TimeInterval) -> TimeInterval {
+        Self.lyricSnappedTarget(time, lines: liveLyrics, synchronized: liveLyricsAreSynchronized)
+    }
+
+    nonisolated static func lyricSnappedTarget(_ time: TimeInterval, lines: [LyricLine], synchronized: Bool,
+                                               window: TimeInterval = 1.5) -> TimeInterval {
+        guard synchronized, time.isFinite else { return time }
+        let starts = lines.lazy
+            .filter { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .map(\.timestamp).filter { $0 > 0 }
+        guard let nearest = starts.min(by: { abs($0 - time) < abs($1 - time) }),
+              abs(nearest - time) <= window else { return time }
+        return nearest
+    }
+
+    /// After a seek Spotify can still report the old position for a moment.
+    /// Until it reports a position near the target (or 2.2 s pass, as in
+    /// Kaset), the clock keeps running from the target instead of jumping back.
+    struct PendingSeek { let target: TimeInterval; let issuedAt: TimeInterval; let trackKey: String? }
+    private var pendingSeek: PendingSeek?
+    static let seekHoldSeconds: TimeInterval = 2.2
+
+    nonisolated static func heldPosition(reported: TimeInterval, isPlaying: Bool, pending: PendingSeek,
+                                         now: TimeInterval) -> TimeInterval? {
+        let elapsed = now - pending.issuedAt
+        guard elapsed >= 0, elapsed <= seekHoldSeconds else { return nil }
+        let expected = pending.target + (isPlaying ? elapsed : 0)
+        return abs(reported - expected) > 1.5 ? expected : nil
+    }
+
     public func seek(to time: TimeInterval, source: String = "programmatic") {
         guard canInteractWithPlayback else { return }
         guard time.isFinite,
@@ -1974,6 +2008,10 @@ public final class PlaybackState: ObservableObject {
         // Product path: capture continuity + auto-align must see seeks outside DEBUG.
         AutomaticAlignmentJobController.shared.notifySeek(from: previousPosition, to: seekTime)
         resetPlaybackAnchor(to: seekTime, source: .seek, previousTime: previousPosition)
+        // The line loop watches the reported position to find the line's end,
+        // so its own seeks are not held.
+        pendingSeek = source == "lyric-line-loop" ? nil : PendingSeek(
+            target: seekTime, issuedAt: ProcessInfo.processInfo.systemUptime, trackKey: currentTrackIdentity?.stableKey)
 
         guard canControlSpotify else { return }
         invalidateProviderRefresh()
@@ -2932,7 +2970,8 @@ public final class PlaybackState: ObservableObject {
             lyricsVersionID: session.activeLyricsVersionID,
             sourceContentHash: session.activeSourceContentHash,
             lineCount: base.count,
-            readingRevision: session === lyricsSession ? readingSession.currentRevision : 0
+            readingRevision: session === lyricsSession ? readingSession.currentRevision : 0,
+            restoresCensoredWords: session === lyricsSession && readingSession.restoresCensoredWords
         )
         if let cache, cache.key == key {
             return cache.lines
@@ -3111,7 +3150,18 @@ public final class PlaybackState: ObservableObject {
         if isPlaying != snapshot.isPlaying { isPlaying = snapshot.isPlaying }
         // S2 live-capture continuity: Desktop position can jump after a user
         // seek without going through seek(to:). Product auto-align reuses this.
-        let incoming = snapshot.position
+        var incoming = snapshot.position
+        if let pending = pendingSeek {
+            if identityChanged || pending.trackKey != nextIdentity.stableKey {
+                pendingSeek = nil
+            } else if let held = Self.heldPosition(reported: incoming, isPlaying: snapshot.isPlaying, pending: pending,
+                                                   now: observedAtMonotonic ?? ProcessInfo.processInfo.systemUptime) {
+                LyricsE2ELog.log("SEEK hold reported=\(incoming) held=\(held)")
+                incoming = held
+            } else {
+                pendingSeek = nil
+            }
+        }
         if !identityChanged, wasPlaying, snapshot.isPlaying,
            previousPosition >= nextTrack.duration - 12, incoming < 12,
            previousPosition - incoming > 12 {
@@ -3130,7 +3180,7 @@ public final class PlaybackState: ObservableObject {
             anchorSource = .poll
         }
         resetPlaybackAnchor(
-            to: snapshot.position,
+            to: incoming,
             source: anchorSource,
             previousTime: previousPosition,
             observedAtMonotonic: observedAtMonotonic

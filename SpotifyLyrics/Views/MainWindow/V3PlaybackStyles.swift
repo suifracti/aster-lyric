@@ -485,7 +485,7 @@ private struct V3CoverProgressPresentation: View {
                     defer { draft = nil }
                     guard v3CanSeek(state) else { return }
                     let target = min(1, max(0, value.location.x / rect.width))
-                    state.seek(to: target * state.currentTrack.duration, source: "v3-cover-progress")
+                    state.seek(to: state.lyricSnappedSeekTarget(target * state.currentTrack.duration), source: "v3-cover-progress")
                 })
             .accessibilityElement()
             .accessibilityLabel("播放进度")
@@ -625,35 +625,49 @@ struct V3LyricWaveform: View {
 
     private static let count = 56
 
-    private var levels: [Double] {
-        var buckets = Array(repeating: 0.0, count: Self.count)
+    /// The shape depends only on the lyrics and the song length, so it is
+    /// worked out once per song, not on every progress tick.
+    @MainActor private static var cache: (key: Int, levels: [Double])?
+
+    @MainActor static func levels(lines: [LyricLine], duration: Double) -> [Double] {
+        var hasher = Hasher()
+        hasher.combine(duration)
+        for line in lines { hasher.combine(line.id); hasher.combine(line.timestamp) }
+        let key = hasher.finalize()
+        if let cache, cache.key == key { return cache.levels }
+        var buckets = Array(repeating: 0.0, count: count)
         guard duration > 0 else { return buckets.map { _ in 0.4 } }
         for line in lines where line.timestamp >= 0 && line.timestamp < duration {
-            let index = min(Self.count - 1, Int(line.timestamp / duration * Double(Self.count)))
+            let index = min(count - 1, Int(line.timestamp / duration * Double(count)))
             buckets[index] += Double(line.originalText.count)
         }
         // Smooth over neighbours so single lines do not spike.
         let smooth = buckets.indices.map { i in
-            (buckets[max(0, i - 1)] + buckets[i] * 2 + buckets[min(Self.count - 1, i + 1)]) / 4
+            (buckets[max(0, i - 1)] + buckets[i] * 2 + buckets[min(count - 1, i + 1)]) / 4
         }
         let peak = max(1, smooth.max() ?? 1)
-        return smooth.enumerated().map { index, value in
+        let result = smooth.enumerated().map { index, value in
             value == 0 ? 0.22 + 0.06 * sin(Double(index)) : 0.28 + 0.72 * value / peak
         }
+        cache = (key, result)
+        return result
     }
 
     var body: some View {
-        let values = levels
-        GeometryReader { geometry in
-            let step = geometry.size.width / CGFloat(Self.count)
-            HStack(alignment: .center, spacing: max(1, step * 0.35)) {
-                ForEach(values.indices, id: \.self) { index in
-                    Capsule()
-                        .fill(Double(index) / Double(Self.count) < fraction ? accent.opacity(0.92) : Color.white.opacity(0.26))
-                        .frame(height: max(3, height * values[index]))
-                }
+        let values = Self.levels(lines: lines, duration: duration)
+        // One drawing pass instead of 56 capsule views.
+        Canvas { context, size in
+            let step = size.width / CGFloat(Self.count)
+            let barWidth = max(1, step * 0.65)
+            let played = GraphicsContext.Shading.color(accent.opacity(0.92))
+            let ahead = GraphicsContext.Shading.color(.white.opacity(0.26))
+            for (index, value) in values.enumerated() {
+                let barHeight = max(3, size.height * value)
+                let rect = CGRect(x: CGFloat(index) * step, y: (size.height - barHeight) / 2,
+                                  width: barWidth, height: barHeight)
+                context.fill(Path(roundedRect: rect, cornerRadius: barWidth / 2),
+                             with: Double(index) / Double(Self.count) < fraction ? played : ahead)
             }
-            .frame(width: geometry.size.width, height: height)
         }
         .frame(height: height)
         .allowsHitTesting(false)

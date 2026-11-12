@@ -774,3 +774,27 @@ Work in this order. Each batch is built, tested, restarted and pushed on its own
 Verification for every batch: the native target and the source contracts pass; layout is checked with `Scripts/ui-snapshots.sh` for clipping and overlap only. The assistant cannot see the real window (the desktop-control tool refuses this app), so real look and feel are the user's to confirm from the running app.
 
 **Status (2026-11-12):** batches A–H are done and each was tested and pushed on its own. G went no further than headings and row forms for the translation controls; a full settings re-layout was not attempted. Look and feel in the real window await the user's review.
+
+## Round 15: listening batch one from the research pool (2026-11-12)
+
+The user picked the first batch from the research pool (Obsidian 调研笔记 section 四: A1, A4, A7, B1, B2, B7, K1, K3 and the small items E1, E2, G2, I1, I9, H2).
+
+**A. What the backdrop is made from (画面 › 背景).**
+- **有视频时用视频** (on by default): when a song has a Spotify Canvas, the backdrop plays it in a silent loop over the picture, under a slightly darker veil. The address is read only from the Spotify app's own cache on this Mac (`primary.ldb`, read as bytes, never opened, locked or written); the clip comes from Spotify's public CDN and is kept in Caches (400 MB, oldest dropped first). Spotify loads a Canvas a little after the song starts, so the app looks again for about three minutes. The clip stops while paused, while the window is hidden and under reduced motion. Scene cards and previews never play it.
+- **背景素材: 封面 / 歌手照片**: 歌手照片 uses the primary artist's photo, the "other cover" of Spotify's TV apps. Artist IDs come from the exact track's public embed page; the photo from Spotify's public oEmbed (the 640 px size). When there is none, the cover is used.
+- **Cover colour routes**: each cover is classed as 暗底标志色, 双色, 浅色中性 or 结构 (after Tauon). The accepted looks keep their colours; the route only steers: 自动 also picks 双色 for a two-colour cover; 双色 reprints such a cover in its own two colours; 窗光's light takes the cover's own colour on a dark cover; the accent (progress, sung text) comes from the cover's main colour family rather than one vivid pixel.
+
+**B. 随音乐律动 (画面, off by default).** The app listens to the Spotify app's sound only (no microphone, nothing saved) while the song plays in a visible window. Bass, mids and treble are measured against the song so far (MilkDrop's method); on a beat a soft light at the cover brightens and swells, drawn by Core Animation. A tempo is estimated from the onsets; with one, the lyric page's line follow takes 0.56 s at 60 BPM down to 0.32 s at 150. It needs screen and system audio recording permission and shows the system's recording mark; the row under the switch says what it is doing.
+
+**C. Lighter drawing.** Word-by-word fill was already a Core Animation mask; 打字机 is now one linear animation per line instead of a 30 fps redraw, and the 波形 progress is worked out once per song and drawn in one pass.
+
+**D. Small items.**
+- Dragging a progress bar (card, edge pill, cover progress) lands on the start of the nearest sung line within 1.5 s. Keyboard and editor seeks stay exact.
+- After a seek, a position Spotify reports from before the seek is ignored for up to 2.2 s (Kaset). The line loop's own seeks are not held.
+- 设置 › 桌面歌词: **截图和录屏时隐藏** keeps desktop lyrics and the capsule out of screenshots, recordings and screen sharing.
+- Matching: the last sung line against the song's length. Ending within a quarter of the song is a little extra evidence; ending more than 5 s after the song is over keeps the lyrics from being adopted on their own.
+- 文字 › 读音与更多: **还原被星号遮住的词** (on by default) shows f**k as fuck, same length so word timing holds. Display only.
+- Hover on the outside toolbar's buttons, desktop lyrics and the capsule uses an AppKit tracking area, so it works while another app is in front.
+
+**Not checked in the real window yet:** Spotify stopped answering Apple Events during this round, so the Canvas backdrop, the artist photo and 随音乐律动 could not be seen on a playing song. Checked instead: the cache reader against the real cache (2,818 Canvas entries, 20–30 ms per lookup), a downloaded clip (8 s, 720×1280, silent) and unit tests.
+

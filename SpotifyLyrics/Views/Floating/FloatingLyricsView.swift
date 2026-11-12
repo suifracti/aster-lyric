@@ -37,7 +37,7 @@ struct FloatingLyricsView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        .onHover { hovering in
+        .v3OnHover { hovering in
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) {
                 isHovering = hovering
             }

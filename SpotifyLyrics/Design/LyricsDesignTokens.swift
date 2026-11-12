@@ -57,8 +57,17 @@ enum V3LyricMotionPolicy {
     /// Matches `Font.Weight.semibold` in the V3 row renderer.
     static let layoutNSWeight: CGFloat = 0.3
 
-    static func followAnimation(reduceMotion: Bool) -> Animation? {
-        reduceMotion ? nil : .easeInOut(duration: followDuration)
+    static func followAnimation(reduceMotion: Bool, bpm: Double? = V3MusicPulse.currentBPM) -> Animation? {
+        reduceMotion ? nil : .easeInOut(duration: followDuration(bpm: bpm))
+    }
+
+    /// With 随音乐律动 on and a tempo heard, the page keeps time: 0.56 s at
+    /// 60 BPM down to 0.32 s at 150 (lyrics-plus maps tempo to its line delay
+    /// the same way). Without a tempo nothing changes.
+    static func followDuration(bpm: Double?) -> Double {
+        guard let bpm, bpm.isFinite, bpm > 0 else { return followDuration }
+        let clamped = min(150, max(60, bpm))
+        return 0.56 - (clamped - 60) / 90 * 0.24
     }
 }
 

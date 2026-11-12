@@ -539,7 +539,7 @@ struct QuietToolbarButtonStyle: ButtonStyle {
         configuration.label
             .opacity(configuration.isPressed ? 0.60 : hovering ? 1 : 0.86)
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .onHover { hovering = $0 }
+            .v3OnHover { hovering = $0 }
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hovering)
     }
 }

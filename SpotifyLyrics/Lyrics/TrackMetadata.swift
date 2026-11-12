@@ -126,6 +126,7 @@ public actor SpotifyTrackArtistResolver {
         let title: String
         let duration: TimeInterval
         let names: [String]
+        var artistIDs: [String] = []
 
         func matches(_ track: Track) -> Bool {
             guard TrackTextNormalizer.normalize(title) == TrackTextNormalizer.normalize(track.title),
@@ -164,6 +165,12 @@ public actor SpotifyTrackArtistResolver {
     public func artists(for track: Track) async -> [String]? {
         guard let result = await metadata(for: track), result.matches(track) else { return nil }
         return result.names
+    }
+
+    /// Spotify artist IDs of the exact track, primary first. Used to fetch
+    /// the artist's photo; never used as lyric identity evidence.
+    public func artistIDs(for track: Track) async -> [String] {
+        await metadata(for: track)?.artistIDs ?? []
     }
 
     /// Catalog metadata is for matching only. Callers retain the playback identity
@@ -282,17 +289,18 @@ public actor SpotifyTrackArtistResolver {
                   let title = entity["title"] as? String, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   let milliseconds = entity["duration"] as? Double, milliseconds.isFinite, milliseconds > 0,
                   let artists = entity["artists"] as? [[String: Any]], !artists.isEmpty, artists.count <= 16 else { return nil }
-            let names = artists.compactMap { artist -> String? in
+            let pairs = artists.compactMap { artist -> (name: String, id: String)? in
                 guard let name = artist["name"] as? String,
                       let uri = artist["uri"] as? String, uri.hasPrefix("spotify:artist:") else { return nil }
                 let nameValue = name.trimmingCharacters(in: .whitespacesAndNewlines)
                 let artistID = String(uri.dropFirst("spotify:artist:".count))
                 guard !nameValue.isEmpty, artistID.count == 22,
                       artistID.unicodeScalars.allSatisfy({ $0.isASCII && CharacterSet.alphanumerics.contains($0) }) else { return nil }
-                return nameValue
+                return (nameValue, artistID)
             }
-            guard names.count == artists.count else { return nil }
-            return TrackArtists(title: title, duration: milliseconds / 1000, names: names)
+            guard pairs.count == artists.count else { return nil }
+            return TrackArtists(title: title, duration: milliseconds / 1000, names: pairs.map(\.name),
+                                artistIDs: pairs.map(\.id))
         } catch {
             return nil
         }

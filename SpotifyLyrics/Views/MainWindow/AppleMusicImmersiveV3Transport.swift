@@ -221,7 +221,7 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
         // Preserve that target rather than replacing it with the live clock.
         guard !editing, let draftPosition else { return }
         self.draftPosition = nil
-        state.seek(to: min(max(draftPosition, 0), duration), source: "v3-progress-slider")
+        state.seek(to: state.lyricSnappedSeekTarget(min(max(draftPosition, 0), duration)), source: "v3-progress-slider")
     }
 }
 

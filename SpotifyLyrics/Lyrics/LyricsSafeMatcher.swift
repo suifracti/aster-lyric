@@ -364,6 +364,20 @@ public enum LyricsSafeMatcher {
             }
         }
 
+        // The last sung line against the song's length (Lyrimuse's strongest
+        // single check). Ending within a quarter of the song before its end
+        // is a little extra evidence; ending more than 5 s after the song is
+        // over is a contradiction: those lines could never be reached, which
+        // almost always means the full lyrics of a longer version.
+        if let fit = Self.lyricsEndFit(lines: candidate.lines, synchronized: candidate.isSynchronized,
+                                       songDuration: metadataDuration) {
+            switch fit {
+            case .fits(let closeness): add("lyricsEndFits", 0.03 + 0.05 * closeness)
+            case .overshoots: add("lyricsEndOvershoot", -0.30)
+            case .early: break
+            }
+        }
+
         let metadataAlbum = TrackTextNormalizer.normalize(metadata.track.album)
         let candidateAlbum = TrackTextNormalizer.normalize(candidate.album)
         if !metadataAlbum.isEmpty, metadataAlbum == candidateAlbum {
@@ -540,6 +554,10 @@ public enum LyricsSafeMatcher {
         tier = constrainSpotifyCreditedArtistReading(tier)
         if partialArtistName && !hasStrongIndependentIdentity {
             tier = minTier(tier, reasons.contains("durationClose") && !versionConflict ? .autoMedium : .candidates)
+        }
+        // Lines after the song ends are never adopted on their own.
+        if reasons.contains("lyricsEndOvershoot") {
+            tier = minTier(tier, .candidates)
         }
         return LyricsMatchDecision(
             tier: tier,
@@ -819,6 +837,19 @@ public enum LyricsSafeMatcher {
         if score >= 0.58 { return .autoMedium }
         if score >= 0.25 { return .candidates }
         return .reject
+    }
+
+    enum LyricsEndFit: Equatable { case fits(Double), overshoots, early }
+
+    /// `nil` when the lyrics are not timed or the song length is unknown.
+    static func lyricsEndFit(lines: [LyricLine], synchronized: Bool, songDuration: TimeInterval) -> LyricsEndFit? {
+        guard synchronized, songDuration.isFinite, songDuration > 30,
+              let last = lines.last(where: { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?.timestamp,
+              last.isFinite, last > 0 else { return nil }
+        if last > songDuration + 5 { return .overshoots }
+        let ratio = abs(last - songDuration) / songDuration
+        guard ratio <= 0.25 else { return .early }
+        return .fits(1 - ratio / 0.25)
     }
 
     private static func clamp(_ value: Double) -> Double {

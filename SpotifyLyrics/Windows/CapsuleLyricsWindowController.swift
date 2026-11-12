@@ -54,6 +54,7 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
     private weak var playbackState: PlaybackState?
     private var settings: AppSettingsStore?
     private var selectionObserver: AnyCancellable?
+    private var captureObserver: AnyCancellable?
     private var outsideClickMonitor: Any?
     private var localClickMonitor: Any?
     private var globalMouseMonitor: Any?
@@ -286,6 +287,11 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
     private func configure(state: PlaybackState, settings: AppSettingsStore) {
         playbackState = state
         self.settings = settings
+        if captureObserver == nil {
+            captureObserver = settings.$floatingHiddenFromCapture
+                .receive(on: RunLoop.main)
+                .sink { [weak self] hidden in self?.panel?.sharingType = hidden ? .none : .readOnly }
+        }
         if selectionObserver == nil {
             selectionObserver = settings.presentationSelections.$persistedSelections
                 .dropFirst().sink { [weak self] _ in
@@ -334,6 +340,7 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]
         panel.isMovable = false
         panel.isMovableByWindowBackground = false
+        panel.sharingType = (settings ?? AppSettingsStore.shared).floatingHiddenFromCapture ? .none : .readOnly
         installContent(on: panel, state: state)
         return panel
     }
