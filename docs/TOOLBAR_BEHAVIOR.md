@@ -802,3 +802,21 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 
 **Not checked in the real window yet:** Spotify stopped answering Apple Events during this round, so the Canvas backdrop, the artist photo and 随音乐律动 could not be seen on a playing song. Checked instead: the cache reader against the real cache (2,818 Canvas entries, 20–30 ms per lookup), a downloaded clip (8 s, 720×1280, silent) and unit tests.
 
+## Round 15b: one backdrop size, word timing from QQ and Kugou, duets (2026-11-12)
+
+**Backdrop size is the same in every scene.** The user had asked for this before.
+- 取景 and 背景缩放 are one setting for every scene, 羽化 included (`v3.backdrop.sharedComplete.v1`, `v3.backdrop.sharedScale.v1`, seeded from the scene in use).
+- 尽量完整 shows the whole cover, with a heavily blurred copy around it. 铺满 just fills the window: the extra 1.12× is gone.
+- 羽化's backdrop is centred like the others and is no longer enlarged around the subject. This follows the earlier rule that backdrops are centred with equal left and right margins.
+
+**Matching across Chinese scripts.** Titles and artists are compared with Traditional folded to Simplified (曾經你說 / 曾经你说). Identity keys are unchanged, and search still asks in both scripts.
+
+**Word timing.**
+- Kugou now asks for KRC, QQ for QRC, and each falls back to line timing.
+- Among safely matched sources, word timing already wins.
+- Songs adopted before this keep their choice until 重试查找.
+
+**Duets.**
+- A KRC/QRC line that is only `歌手：` names the singer of the lines after it; that line is not shown.
+- Voices follow the order they first sing. The second voice is set in by 12% of the column, and the singer's name appears in small type where the voice changes.
+

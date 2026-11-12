@@ -27,6 +27,7 @@
 | 工具栏/歌词/播放栏样式、核对只在指针附近显示的界面 | L-020；V3ToolbarStyle、V3LyricStyle、v3PlayerBarOptions |
 | 已采用的歌突然“歌词暂不可用”、合作歌手写法不同（假名/罗马字）进了核对 | L-021；redirectNewSpotifyKey、retryingStore、nameReadingKey |
 | 视频背景（Canvas）、歌手照片背景、按封面配色、随音乐律动、拖进度吸附、跳转回弹、脏词显示 | L-022；SpotifyLocalCache、V3BackdropMedia、CoverColorRoute、V3MusicPulse、LyricCensorRestorer |
+| 不同画面背景大小不一样、取景切了没效果、繁体歌名对不上简体来源、别人有逐字/对唱我们没有 | L-023；V3BackdropArtworkGeometry、v3SharedBackdropComplete、TrackTextNormalizer.normalize、KRCParser、QRCParser |
 | 在窗口边缘拖进度会变成缩放窗口、进度线靠近时下移不好看、胶囊和工具栏像两套控件、画面面板底部被截断 | L-015；V3EdgePillScrubber、V3ControlBarSurface、V3ThemeSelectorView |
 | 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
@@ -307,6 +308,42 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **脏词还原只做等长替换。** 走 `ReadingProjection` 的显示投影（和繁简转换同一处），逐字片段按原 UTF-16 范围重取文字；投影缓存键加上这个开关。
 - **顺带修正**：`testPinnedPlacement` 还在要求“永远不放左侧”，与 Round 14 的“右侧放不下就放左侧”冲突，已按现行为更新。
 - **未在真窗口核对**：本轮 Spotify 不响应 Apple Events，视频背景、歌手照片、律动没能在播放中的歌上看到效果。另有三个源码约定脚本（`apple_music_immersive_v3_contract`、`capsule_lyrics_contract`、`capsule_v4_top_attached_contract`）在改动前就失败，与本轮无关。
+
+## L-023 背景大小统一、繁简匹配、QQ/酷狗逐字与对唱
+
+**背景大小。** 用户要求过不同画面背景一样大。
+
+当时的原因：
+- 每个场景各存一份取景和缩放，默认值也不同。
+- 铺满在 100% 时还额外放大 1.12 倍。
+- “尽量完整”仍按 1.15 倍裁掉方形封面的上下，看起来和铺满一样。
+- 垫底的模糊副本跟着模糊滑块走，低模糊时几乎是清楚的，像第二张被裁切的封面。
+- 羽化有自己的一套：按封面位置偏移，还为主体放大 1.3 倍。
+
+现在的做法：
+- 取景和缩放所有画面共用一份（羽化也用）。
+- 完整就是整张放下，铺满就是刚好铺满。
+- 垫底层固定重度模糊。
+- 羽化背景居中、不额外放大。这沿用 2026-10 定下的“背景严格居中、左右对称”。
+
+**繁简。** 《曾經你說（說唱版）》的候选因“歌名不同 + 主唱冲突”被全部拒绝，其实只是 Spotify 用繁体、来源用简体。
+- `TrackTextNormalizer.normalize` 先做繁体转简体。
+- 身份键用的是 `TrackIdentity.normalizedComponent`，不受影响。
+- 搜索词去重时不折算，所以两种写法都会去查。
+
+**逐字。** 之前只有网易云 yrc 带逐字，QQ 和酷狗都只取了逐行，所以“别人有逐字我们没有”。
+- **KRC**：`fmt=krc`，内容是 base64，以 `krc1` 开头，用 16 字节固定密钥异或，再 zlib 压缩；字的时间相对于行。
+- **QRC**：`musicu.fcg` 的 `GetPlayLyricInfo` 接口，参数 `qrc=1, crypt=1`，返回十六进制。
+  - 解密用 QQ 版三重 DES（解-加-解）。它沿用 Brad Conte 公共领域 DES 的位布局，即每 4 字节倒序读取。
+  - QQ 改了两处 S 盒（S2[23]=15，S4[53]=10），密钥编排后半段取位也错开一位。
+  - 只按标准 DES 打 S 盒补丁是解不开的，必须照这个布局实现。
+  - 解密后是 zlib 压缩的 XML，`LyricContent` 里每个字写成“字(绝对开始,时长)”。
+  - 字本身可能是括号，正则用懒惰匹配 `(.*?)\((\d+),(\d+)\)`。
+- 网易云 `YRCParser` 按左括号切字，直接套 KRC 会切错，所以 KRC 单独写了解析器。
+
+**对唱。**
+- 两种格式里只有“歌手名：”的一行，表示下面几句由谁唱。
+- 对唱原来只往右偏 6pt，看不出来。现在第二声部缩进 12%，换人处用小字标名字，顺序按出场先后。
 
 ## 实际覆盖与接续
 
