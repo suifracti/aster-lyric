@@ -568,6 +568,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     }
                 }
             }
+            .modifier(V3RainRoomModifier(enabled: settings.v3RainRoom && !isFocusMode, playing: state.isPlaying))
             .onChange(of: toolbarPanelIsPresented) { _, presented in
                 if !presented && !isPointerInToolbarRegion { toolsVisible = false }
             }
@@ -2250,6 +2251,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     .accessibilityIdentifier("menubar.lyrics.toggle")
                     .help("直接开启或关闭菜单栏歌词；播放面板仍可从菜单栏图标打开。")
             }
+            Toggle("雨夜房间", isOn: $settings.v3RainRoom)
+                .help("把听歌画面缩进雨夜书桌上的一台显示器里：窗外下雨，台灯暖光。画面里的操作照常。")
             V3PanelRow(title: liveOnly ? "全屏歌词" : "全屏歌词") {
                 Button(liveOnly ? "退出" : "打开") {
                     WindowManager.shared.toggleFullScreen(state: state, settings: settings)

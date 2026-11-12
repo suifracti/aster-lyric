@@ -1127,6 +1127,10 @@ public final class AppSettingsStore: ObservableObject {
     @Published public var v3GlassWeather: V3GlassWeather = .off {
         didSet { defaults.set(v3GlassWeather.rawValue, forKey: "v3.glassWeather.v1") }
     }
+    /// 雨夜房间: the listening view as a monitor on a desk on a rainy night.
+    @Published public var v3RainRoom = false {
+        didSet { defaults.set(v3RainRoom, forKey: "v3.rainRoom.v1") }
+    }
     /// 副歌时换素材: during a chorus the backdrop shows the other material
     /// (the Canvas clip over a still picture, or the still picture over a clip).
     @Published public var v3ChorusSwapsMaterial = false {
@@ -1577,6 +1581,7 @@ public final class AppSettingsStore: ObservableObject {
         self.v3PauseFadesColor = defaults.object(forKey: "v3.pauseFadesColor.v1") as? Bool ?? true
         self.v3GlassWeather = V3GlassWeather(rawValue: defaults.string(forKey: "v3.glassWeather.v1") ?? "") ?? .off
         self.v3LyricImagery = defaults.object(forKey: "v3.lyricImagery.v1") as? Bool ?? false
+        self.v3RainRoom = defaults.object(forKey: "v3.rainRoom.v1") as? Bool ?? false
         self.v3ChorusSwapsMaterial = defaults.object(forKey: "v3.chorusSwapsMaterial.v1") as? Bool ?? false
         self.v3SpectrumStyle = V3SpectrumStyle(rawValue: defaults.string(forKey: "v3.spectrumStyle.v1") ?? "") ?? .off
         self.floatingHiddenFromCapture = defaults.bool(forKey: "floating.hiddenFromCapture.v1")

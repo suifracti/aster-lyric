@@ -258,6 +258,7 @@
 		8E0B70EE956F8B5F62F2BC55 /* V3RecapCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A45882509A12B6FB7F5BC43 /* V3RecapCard.swift */; };
 		7961F7366756AAE36F9E0657 /* V3Soundprint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F08A7A731F3B8EEC06885CF /* V3Soundprint.swift */; };
 		1105A1906693D1AF2CEEBC42 /* V3SpectrumOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 575AF9352293F29B428528FB /* V3SpectrumOverlay.swift */; };
+		AC936591B69E13C83D87B58C /* V3RainRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E196A8B9474C651A633F926 /* V3RainRoom.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -518,6 +519,7 @@
 		2A45882509A12B6FB7F5BC43 /* V3RecapCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3RecapCard.swift; sourceTree = "<group>"; };
 		7F08A7A731F3B8EEC06885CF /* V3Soundprint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3Soundprint.swift; sourceTree = "<group>"; };
 		575AF9352293F29B428528FB /* V3SpectrumOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3SpectrumOverlay.swift; sourceTree = "<group>"; };
+		5E196A8B9474C651A633F926 /* V3RainRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3RainRoom.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -697,6 +699,7 @@
 				F517BF6CE987A087DD4BA095 /* V3LyricShareCard.swift */,
 				67A7CF6CB7618D621BDD647B /* V3VUMeter.swift */,
 				7F08A7A731F3B8EEC06885CF /* V3Soundprint.swift */,
+				5E196A8B9474C651A633F926 /* V3RainRoom.swift */,
 				118DEDA41F433714AD0B0910 /* V3SearchPanel.swift */,
 				35FDDBAC403CC53CC0FAC566 /* AppleMusicImmersiveV3LyricBar.swift */,
 				29670441C088A914F1A776E1 /* AppleMusicImmersiveV3QuickControls.swift */,
@@ -1127,6 +1130,7 @@
 				CB5378C490C25028178B464B /* V3LyricShareCard.swift in Sources */,
 				B1E8DDB9AA8A6D3EA696CAAA /* V3VUMeter.swift in Sources */,
 				7961F7366756AAE36F9E0657 /* V3Soundprint.swift in Sources */,
+				AC936591B69E13C83D87B58C /* V3RainRoom.swift in Sources */,
 				A569E2C0D54C4AE25DACADD0 /* V3SearchPanel.swift in Sources */,
 				AF4738C40CC270950960061F /* AppleMusicImmersiveV3LyricBar.swift in Sources */,
 				0397361CF07CC824F9B93C85 /* AppleMusicImmersiveV3QuickControls.swift in Sources */,
