@@ -22,6 +22,7 @@
 | 边缘线内移/加粗、胶囊热区、封面卡片不同宽、分段选中块乱动 | L-012；V3EdgeRailView、V3ResponsiveGeometry、V3SegmentedPicker |
 | 面板控件不统一、选项太多太杂、画面风格太多、播放栏按钮不一致、歌词库页签变黑 | L-016；V3PanelRow、V3RowToggleStyle、V3DisclosureRow、foldedEntryIndices、V3PlaybackButtons |
 | 译文风格不对、「我的风格」不见了、设置里的预设和实际不符 | L-017；TranslationPromptPresetID.personalV2、personalV2Guidance |
+| 模糊变化不均匀、找旧环境光的圆形、歌词库面板切换卡顿 | L-018；V3BlurCurve、featheredAmbientArtworkLayers、V3LibraryOwner |
 | 在窗口边缘拖进度会变成缩放窗口、进度线靠近时下移不好看、胶囊和工具栏像两套控件、画面面板底部被截断 | L-015；V3EdgePillScrubber、V3ControlBarSurface、V3ThemeSelectorView |
 | 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
@@ -232,6 +233,15 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 用户设置里保存的是 `translationPrompt.personalV2.v2`（full-audit-v2-r1，2026-10-09 按用户全部确认译稿审计出的规则），正式库里 22 份 AI 译文都用它生成。但这个预设只在 Codex 快照提交 `5a96753`（不在 main）里存在，main 的枚举里没有它，`TranslationPromptPresetID(rawValue:) ?? .naturalSong` 静默退回较短的“自然歌曲 v2”。2026-11-12 按同一 raw value 恢复为第一项和新安装默认值，指令原文取自 `5a96753`，并附上 10-15 复核得出的多语种说明（`personalV2Guidance`）。自然歌曲等其他预设保留可选；已保存的译文不重写，只有新的请求使用。
 
 当时正式库里没有人工改过的译文（`is_manually_edited` 为 0），所以没有新的用户修订可以对照；22 份 AI 译文按现有规则抽查，没有发现擅加“永远/一定”、无据补性别代词或拆并行。用户的确认译稿在 Vault 的翻译目录，不在本项目文件夹内，这次没有读取。下次改译风前先查 `defaults read com.spotifylyrics.app ai.promptPresetID` 看用户实际选的是哪个，并确认枚举里有它。
+
+## L-018 模糊曲线、羽化圆形与主窗口订阅歌词库
+
+**模糊曲线。** 用户反复说模糊“指数增长”。在真实窗口里把同一首歌的背景模糊依次设为 0 到 100 截图，量背景细节：旧曲线 `pow(n, 1.35)` 在 25% 已去掉大半细节，50% 以后几乎不再变化。2026-11-12 改为按比例增长的 `V3BlurCurve.response`（底数 24），各画面 100% 的最大半径不变，每四分之一滑块把半径乘以同一倍数。已保存的数值经 `V3BlurCurve.fromV1` 换算一次（标记 `v3.blur.curve.v2`），画面不变、显示的数字变了；色场类画面（内页、专注、独立色场）的滑块含义不同，数值不动。
+下次调模糊，先在真实窗口逐档截图对比，不要只看公式。
+
+**羽化的圆形。** 用户记得的“四周特别模糊、中间一个清晰圆形”的环境光，就是 `2c7c083`（2026-10-16）之前的柔光羽化。四周铺满一层恒定重模糊（36pt 加滑块），中间是与窗口等高的圆形封面。那次提交把四周的模糊也绑到滑块上，于是低模糊时圆和四周分不出来。该提交在 README、发布说明和旧截图里都没有出现，是从项目笔记“移除羽化模式固定 36pt 背景模糊”一句找到的。
+
+**主窗口订阅歌词库。** `AppleMusicImmersiveV3WindowView` 用 `@StateObject` 持有 `PersonalLyricsLibraryService`，但 body 不读它的任何属性。它的每次 `@Published` 变化（加载提示、列表、选中详情）都会让整个主窗口连同歌词重算，用户感到歌词库面板里切换卡顿。现在由不发布变化的 `V3LibraryOwner` 持有；显示歌词库数据的面板仍各自 `@ObservedObject`。改善是按代码路径判断的，没有在真实窗口计时。
 
 ## 实际覆盖与接续
 

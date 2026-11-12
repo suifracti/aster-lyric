@@ -145,10 +145,21 @@ private final class V3PointerLocationBox {
 }
 
 /// Independent Apple Music-inspired main canvas. V2 and Lyrics Focus remain
+/// Holds the library service without republishing its changes.
+@MainActor
+final class V3LibraryOwner: ObservableObject {
+    let service = PersonalLyricsLibraryService()
+}
+
 /// separate layouts; this view owns only the V3 canvas and its transient tools.
 struct AppleMusicImmersiveV3WindowView: View, Equatable {
     let state: PlaybackState
-    @StateObject private var library = PersonalLyricsLibraryService()
+    /// The window owns the library service but does not observe it: none of
+    /// its body reads the service, and observing it re-evaluated the whole
+    /// window (lyrics included) on every library list, status or selection
+    /// change. The panels that show library data observe it themselves.
+    @StateObject private var libraryOwner = V3LibraryOwner()
+    private var library: PersonalLyricsLibraryService { libraryOwner.service }
     @State private var contentRevision: UInt64 = 0
     @State private var contentRefreshQueue = V3ContentRefreshQueue()
 

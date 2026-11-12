@@ -241,17 +241,15 @@ struct AppleMusicImmersiveV3BackdropView: View {
         max(0, min(100, backdropBlurRadius)) / 100.0
     }
 
-    /// Existing renderer response retained for compatibility. Physical radius
-    /// differences are not a guarantee of equal perceived changes near the upper end.
+    /// Equal slider steps give equal visible steps; see `V3BlurCurve`.
     private var perceptualBlur: Double {
-        pow(normalizedBlur, 1.35)
+        V3BlurCurve.response(normalizedBlur)
     }
 
     private var effectiveBlurRadius: Double {
         if settings.v3InstrumentalPureImmersion && isInstrumental {
             return perceptualBlur * 4.0
         }
-        // Crisp non-linear mapping (0% = 0.0pt, 25% = 5.9pt, 60% = 19.1pt, 80% = 28.1pt, 100% = 38.0pt)
         // For pure Gaussian mode, provide a smooth, creamy blur up to 54pt.
         let maxBlur = artworkPresentation == .classicGaussian ? 54.0 : 38.0
         return perceptualBlur * maxBlur
@@ -619,9 +617,13 @@ struct AppleMusicImmersiveV3BackdropView: View {
             1.3,
             style.paletteSaturation * 1.18 + (increaseContrast ? 0.06 : 0)
         )
+        // 羽化 is a clear round cover inside a heavily blurred room. The
+        // surround keeps a fixed heavy blur at every slider position (as in
+        // the version before 2026-10-16, which the user asked back); the
+        // slider softens only the round cover.
         let diffusionRadius = perceptualBlur * 64.0
-        let washBlur = diffusionRadius * 1.30
-        let washOpacity = 0.38 * min(1.0, 0.35 + perceptualBlur * 1.6)
+        let washBlur = 36 + diffusionRadius
+        let washOpacity = 0.38
 
         LinearGradient(
             colors: [
@@ -648,18 +650,17 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
         // Show the complete cover as a softly feathered source of ambient light.
         GeometryReader { canvas in
-            let rect = V3BackdropArtworkGeometry.rect(canvas: canvas.size, artwork: image.size,
-                                                       scale: backdropImageScale, complete: showsCompleteArtwork)
-            let side = min(rect.width, rect.height)
-            let sourceWidth = rect.width
-            let sourceHeight = rect.height
+            // The circle is as tall as the window; 背景缩放 resizes it.
+            let side = min(canvas.size.height * 1.02, canvas.size.width * 0.86) * artworkSizeScale
+            let sourceWidth = side
+            let sourceHeight = side
             let imageX: CGFloat = artworkPosition == "right" ? 0.56
                 : (artworkPosition == "center" ? 0.50 : 0.44)
 
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)
-                .aspectRatio(contentMode: showsCompleteArtwork ? .fit : .fill)
+                .aspectRatio(contentMode: .fill)
                 .frame(width: sourceWidth, height: sourceHeight)
                 .clipped()
                 .blur(radius: diffusionRadius)

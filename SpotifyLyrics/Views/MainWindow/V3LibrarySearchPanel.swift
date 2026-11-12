@@ -2,9 +2,16 @@ import SwiftUI
 
 struct V3LibrarySearchPresentation: Equatable {
     enum Tab: String, CaseIterable, Identifiable {
-        case library, search, playlists
+        case library, history, statistics, search, playlists
         var id: Self { self }
-        var title: String { switch self { case .library: return "歌词库"; case .search: return "搜索"; case .playlists: return "歌单" } }
+        var title: String {
+            switch self {
+            case .library: return "歌词库"; case .history: return "最近播放"; case .statistics: return "统计"
+            case .search: return "搜索"; case .playlists: return "歌单"
+            }
+        }
+        /// Pages that list what was listened to; they have no search field.
+        var isListening: Bool { self == .history || self == .statistics }
     }
     var tab: Tab?
     var isPresented: Bool { tab != nil }
@@ -66,14 +73,26 @@ struct V3LibrarySearchPanel: View {
                             set: { presentation.open($0) }
                         ), options: V3LibrarySearchPresentation.Tab.allCases.map { ($0.title, $0) },
                            showsLabel: false, height: 28)
-                        .frame(width: 216)
-                        TextField(presentation.tab == .search ? "搜索歌曲或艺人" : presentation.tab == .playlists ? "搜索歌单或歌曲" : "搜索歌词库", text: Binding(get: { query }, set: { query = $0 }))
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit { updateSearch() }
-                        managementMenu
+                        .frame(width: 360)
+                        if presentation.tab?.isListening == true {
+                            Spacer(minLength: 0)
+                            Button {
+                                if presentation.tab == .history { state.refreshListeningHistory() }
+                                else { state.refreshListeningStatistics(for: state.listeningStatistics?.timeRange ?? .allTime) }
+                            } label: { Image(systemName: "arrow.clockwise") }
+                            .buttonStyle(.borderless).help("刷新")
+                        } else {
+                            TextField(presentation.tab == .search ? "搜索歌曲或艺人" : presentation.tab == .playlists ? "搜索歌单或歌曲" : "搜索歌词库", text: Binding(get: { query }, set: { query = $0 }))
+                                .textFieldStyle(.roundedBorder)
+                                .onSubmit { updateSearch() }
+                            managementMenu
+                        }
                         Button("在新窗口打开") {
                             let tab = presentation.tab
                             presentation.dismiss()
+                            if tab == .history { state.selectedLibraryToolTab = .history }
+                            else if tab == .statistics { state.selectedLibraryToolTab = .statistics }
+                            else if tab == .library { state.selectedLibraryToolTab = .library }
                             openWindow(id: tab == .search ? "song-search" : tab == .playlists ? "playlist-browser" : "personal-library-activity")
                         }
                         .font(.caption).buttonStyle(.borderless)
@@ -87,6 +106,10 @@ struct V3LibrarySearchPanel: View {
                             V3PlaylistPanel(browser: state.playlistBrowser, query: query, currentTrackID: state.currentTrack.spotifyId, currentArtworkURL: state.currentTrack.artworkURL)
                         } else if presentation.tab == .search {
                             V3SearchPanel(state: state, search: state.songSearchManager)
+                        } else if presentation.tab == .history {
+                            ListeningHistoryView()
+                        } else if presentation.tab == .statistics {
+                            ListeningStatisticsView()
                         } else {
                             libraryContent
                         }

@@ -238,6 +238,60 @@ public enum V3ReadingProtection: String, CaseIterable, Identifiable, Codable, Se
     }
 }
 
+/// How 背景模糊 (0–100%) becomes blur. The eye judges blur by ratio: 2 pt
+/// to 4 pt reads like 20 pt to 40 pt. So the radius grows by a constant
+/// factor per step, and each quarter of the slider is an equal step:
+/// about 5%, 17%, 43% and 100% of a look's largest radius.
+///
+/// The curve before 2026-11-12 was `pow(n, 1.35)`: 15%, 39%, 68%, 100%.
+/// Measured in the real window, half the slider already removed all detail
+/// and the upper half barely changed anything.
+public enum V3BlurCurve {
+    static let base = 24.0
+    public static let migratedKey = "v3.blur.curve.v2"
+
+    /// 0...1 of the look's largest radius for a slider position of 0...1.
+    public static func response(_ position: Double) -> Double {
+        let n = min(1, max(0, position))
+        return (pow(base, n) - 1) / (base - 1)
+    }
+
+    /// The slider value that draws what `percent` drew on the old curve.
+    public static func fromV1(_ percent: Double) -> Double {
+        let old = pow(min(1, max(0, percent / 100)), 1.35)
+        return (100 * log(1 + (base - 1) * old) / log(base)).rounded()
+    }
+
+    /// Looks whose slider is the softness of a colour field, not a blur
+    /// radius. Their values and their response are unchanged.
+    static func usesColourField(scene: String?, renderer: String) -> Bool {
+        scene == V3ListeningScene.linerNotes.rawValue || scene == V3ListeningScene.focusedLyrics.rawValue
+            || (scene == V3ListeningScene.flowingField.rawValue && renderer == V3ArtworkPresentation.classic.rawValue)
+            || (scene == nil && renderer == V3ArtworkPresentation.lyricsOnly.rawValue)
+    }
+
+    /// Rewrites saved slider values once so every saved picture looks as it
+    /// did. Keys and raw IDs are untouched; only the numbers move.
+    static func migrate(_ defaults: UserDefaults, rendererKeys: [(renderer: String, key: String)], legacyKey: String,
+                        presetsKey: String) {
+        guard !defaults.bool(forKey: migratedKey) else { return }
+        defaults.set(true, forKey: migratedKey)
+        for item in rendererKeys where !usesColourField(scene: nil, renderer: item.renderer) {
+            if let value = defaults.object(forKey: item.key) as? Double { defaults.set(fromV1(value), forKey: item.key) }
+        }
+        if let value = defaults.object(forKey: legacyKey) as? Double { defaults.set(fromV1(value), forKey: legacyKey) }
+        guard let data = defaults.data(forKey: presetsKey),
+              var presets = try? JSONSerialization.jsonObject(with: data) as? [String: [String: Any]] else { return }
+        for (key, value) in presets {
+            let parts = key.split(separator: "/", maxSplits: 1).map(String.init)
+            guard parts.count == 2, !usesColourField(scene: parts[0], renderer: parts[1]),
+                  let blur = value["blur"] as? Double else { continue }
+            presets[key]?["blur"] = fromV1(blur)
+        }
+        if let updated = try? JSONSerialization.data(withJSONObject: presets) { defaults.set(updated, forKey: presetsKey) }
+    }
+}
+
 /// Finite, independent scene+renderer presets. Does not mutate any of the eight old keys.
 public struct V3ScenePreset: Codable, Equatable, Sendable {
     public var blur: Double
@@ -252,7 +306,10 @@ public struct V3ScenePreset: Codable, Equatable, Sendable {
     /// background so the old lighter 封面柔焦 entry stays reachable.
     public var backgroundBrightness: Double
     public static func initial(scene: V3ListeningScene, renderer: V3ArtworkPresentation) -> Self {
-        Self(blur: renderer == .authenticAmbient ? 25 : renderer == .stage ? 0 : renderer == .classicGaussian ? 58 : 36,
+        // The starting pictures are the ones tuned on the old curve.
+        let colourField = V3BlurCurve.usesColourField(scene: scene.rawValue, renderer: renderer.rawValue)
+        let tuned: Double = renderer == .authenticAmbient ? 25 : renderer == .stage ? 0 : renderer == .classicGaussian ? 58 : 36
+        return Self(blur: colourField ? tuned : V3BlurCurve.fromV1(tuned),
              foregroundScale: 1, foregroundPosition: "left",
              foregroundVisible: scene == .originalAmbient || scene == .flowingField || scene == .linerNotes,
              backdropScale: 1, completeArtwork: renderer == .stage || renderer == .ambientFeathered,
@@ -568,7 +625,7 @@ public final class AppSettingsStore: ObservableObject {
         isProjectingScene = true
         v3ListeningSceneRawValue = ""
         v3ArtworkPresentationRawValue = renderer.rawValue
-        v3BackdropBlurRadius = v3BlurByPresentation[renderer] ?? 36
+        v3BackdropBlurRadius = v3BlurByPresentation[renderer] ?? V3BlurCurve.fromV1(36)
         v3ArtworkSizeScale = v3PreviewScale(for: renderer, scene: nil)
         v3ArtworkPosition = v3PreviewPosition(for: renderer, scene: nil)
         v3ShowForegroundArtwork = defaults.object(forKey: Key.v3ShowForegroundArtwork) as? Bool ?? true
@@ -1031,7 +1088,7 @@ public final class AppSettingsStore: ObservableObject {
     }
     public func v3PreviewBlur(for style: V3ArtworkPresentation, scene: V3ListeningScene?) -> Double {
         if let scene { return v3Preset(for: scene, renderer: style).blur }
-        return v3BlurByPresentation[style] ?? 36
+        return v3BlurByPresentation[style] ?? V3BlurCurve.fromV1(36)
     }
 
     public func v3PreviewPosition(for style: V3ArtworkPresentation) -> String {
@@ -1233,13 +1290,16 @@ public final class AppSettingsStore: ObservableObject {
 
     public init(defaults: UserDefaults = .lyricsQ) {
         self.defaults = defaults
+        V3BlurCurve.migrate(defaults,
+            rendererKeys: V3ArtworkPresentation.allCases.map { ($0.rawValue, Self.v3BlurDefaultsKey(for: $0)) },
+            legacyKey: Key.v3BackdropBlurRadius, presetsKey: Key.v3ScenePresets)
         self.lyricsOffsetStore = ScopedLyricsOffsetStore(defaults: defaults)
         self.v3LyricsPositions = (defaults.dictionary(forKey: Key.v3LyricsPositions) as? [String: String] ?? [:])
             .filter { ["automatic", "left", "center", "right"].contains($0.value) }
         self.v3AtmosphereLevels = (defaults.dictionary(forKey: Key.v3AtmosphereLevels) as? [String: Int] ?? [:])
             .filter { V3ArtworkPresentation(rawValue: $0.key) != nil }
             .mapValues { min(2, max(0, $0)) }
-        let legacyBlur = defaults.object(forKey: Key.v3BackdropBlurRadius) as? Double ?? 36.0
+        let legacyBlur = defaults.object(forKey: Key.v3BackdropBlurRadius) as? Double ?? V3BlurCurve.fromV1(36)
         let selectedPresentation: V3ArtworkPresentation
         if let storedPresentation = defaults.string(forKey: Key.v3ArtworkPresentation),
            let presentation = V3ArtworkPresentation(rawValue: storedPresentation) {
@@ -1251,16 +1311,16 @@ public final class AppSettingsStore: ObservableObject {
             self.v3ArtworkPresentationRawValue = selectedPresentation.rawValue
         }
         let blurDefaults: [V3ArtworkPresentation: Double] = [
-            .authenticAmbient: 25.0,
-            .ambient: 58.0,
+            .authenticAmbient: V3BlurCurve.fromV1(25),
+            .ambient: V3BlurCurve.fromV1(58),
             .stage: 0.0,
-            .classic: 36.0,
+            .classic: V3BlurCurve.fromV1(36),
             // First selection of the fourth mode starts at the user's existing
             // ambient setting, then remembers its own slider value.
-            .classicGaussian: 58.0,
-            .ambientFeathered: defaults.object(forKey: Key.v3BackdropBlurAmbient) as? Double ?? 58.0,
+            .classicGaussian: V3BlurCurve.fromV1(58),
+            .ambientFeathered: defaults.object(forKey: Key.v3BackdropBlurAmbient) as? Double ?? V3BlurCurve.fromV1(58),
             .lyricsOnly: 72.0,
-            .albumPoster: 65.0
+            .albumPoster: V3BlurCurve.fromV1(65)
         ]
         for presentation in V3ArtworkPresentation.allCases {
             let stored = defaults.object(forKey: Self.v3BlurDefaultsKey(for: presentation)) as? Double

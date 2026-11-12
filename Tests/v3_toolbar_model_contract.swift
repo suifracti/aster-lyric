@@ -356,6 +356,34 @@ final class V3ToolbarPresentationTests: XCTestCase {
         XCTAssertEqual(settings.v3ListeningScene, .focusedLyrics, "other scenes are left alone")
     }
 
+    /// Equal slider quarters are equal visible steps (constant ratio), and
+    /// saved values move once so every saved picture looks as it did.
+    func testBlurGrowsByRatioAndSavedPicturesStayTheSame() {
+        let quarters = [0.25, 0.5, 0.75, 1.0].map(V3BlurCurve.response)
+        XCTAssertEqual(V3BlurCurve.response(0), 0)
+        XCTAssertEqual(quarters[3], 1, accuracy: 1e-9)
+        let r1 = (quarters[1] + 0.05) / (quarters[0] + 0.05), r2 = (quarters[2] + 0.05) / (quarters[1] + 0.05)
+        XCTAssertEqual(r1, r2, accuracy: 0.35, "each quarter multiplies the radius by about the same factor")
+        for old in [0.0, 10, 25, 36, 58, 100] {
+            let drawn = pow(old / 100, 1.35)
+            XCTAssertEqual(V3BlurCurve.response(V3BlurCurve.fromV1(old) / 100), drawn, accuracy: 0.02, "\(old)")
+        }
+        let suite = "lyricsq-blur-curve-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let presets: [String: [String: Any]] = [
+            "scene.originalAmbient.v1/v3ArtworkPresentation.authenticAmbient.v1": ["blur": 25.0],
+            "scene.linerNotes.v1/v3ArtworkPresentation.albumPoster.v1": ["blur": 22.0]]
+        defaults.set(try! JSONSerialization.data(withJSONObject: presets), forKey: "v3.scene.presets.v1")
+        defaults.set(36.0, forKey: "v3.backdropBlurRadius")
+        V3BlurCurve.migrate(defaults, rendererKeys: [], legacyKey: "v3.backdropBlurRadius", presetsKey: "v3.scene.presets.v1")
+        V3BlurCurve.migrate(defaults, rendererKeys: [], legacyKey: "v3.backdropBlurRadius", presetsKey: "v3.scene.presets.v1")
+        let moved = try! JSONSerialization.jsonObject(with: defaults.data(forKey: "v3.scene.presets.v1")!) as! [String: [String: Any]]
+        XCTAssertEqual(moved["scene.originalAmbient.v1/v3ArtworkPresentation.authenticAmbient.v1"]?["blur"] as? Double, 48, "moved once")
+        XCTAssertEqual(moved["scene.linerNotes.v1/v3ArtworkPresentation.albumPoster.v1"]?["blur"] as? Double, 22, "colour fields keep their value")
+        XCTAssertEqual(defaults.double(forKey: "v3.backdropBlurRadius"), 60)
+    }
+
     /// Someone sitting on 经典·纯高斯 moves to 柔和光晕 and keeps their blur.
     @MainActor
     func testRemovedLegacyEntriesMigrateToTheMergedEntry() {
@@ -368,7 +396,8 @@ final class V3ToolbarPresentationTests: XCTestCase {
         let settings = AppSettingsStore(defaults: defaults)
         XCTAssertNil(settings.v3ListeningScene)
         XCTAssertEqual(settings.v3ArtworkPresentation, .classic)
-        XCTAssertEqual(settings.v3BackdropBlurRadius, 58, accuracy: 0.001)
+        // The saved 58 is moved once to the new blur curve; the picture is the same.
+        XCTAssertEqual(settings.v3BackdropBlurRadius, V3BlurCurve.fromV1(58), accuracy: 0.001)
     }
 
     /// 经典·原版环境光 becomes 原版环境光, which is the same picture.
