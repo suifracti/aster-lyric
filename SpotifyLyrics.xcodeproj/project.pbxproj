@@ -252,6 +252,7 @@
 		B8100D70E36CBFB92D34A8D4 /* QRCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40DF9B0900A715F2A4D5ABB9 /* QRCParser.swift */; };
 		7AC0299AB1122ECA99C2BF8F /* LyricsChorus.swift in Sources */ = {isa = PBXBuildFile; fileRef = B56E1FC19D3B55F23DC5DB66 /* LyricsChorus.swift */; };
 		53A2E3726FF64255E8D79047 /* V3GlassWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61DA7987B78B10D893654A30 /* V3GlassWeather.swift */; };
+		B1E8DDB9AA8A6D3EA696CAAA /* V3VUMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67A7CF6CB7618D621BDD647B /* V3VUMeter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -506,6 +507,7 @@
 		40DF9B0900A715F2A4D5ABB9 /* QRCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCParser.swift; sourceTree = "<group>"; };
 		B56E1FC19D3B55F23DC5DB66 /* LyricsChorus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsChorus.swift; sourceTree = "<group>"; };
 		61DA7987B78B10D893654A30 /* V3GlassWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3GlassWeather.swift; sourceTree = "<group>"; };
+		67A7CF6CB7618D621BDD647B /* V3VUMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3VUMeter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -680,6 +682,7 @@
 				5B66A09EEF171C1407B62B5B /* V3LibrarySearchPanel.swift */,
 				4192699E3CE13AFF565B3821 /* V3PlaylistPanel.swift */,
 				A60F090600000000000007B0 /* V3PlaybackStyles.swift */,
+				67A7CF6CB7618D621BDD647B /* V3VUMeter.swift */,
 				118DEDA41F433714AD0B0910 /* V3SearchPanel.swift */,
 				35FDDBAC403CC53CC0FAC566 /* AppleMusicImmersiveV3LyricBar.swift */,
 				29670441C088A914F1A776E1 /* AppleMusicImmersiveV3QuickControls.swift */,
@@ -1106,6 +1109,7 @@
 				BCB9A8387836D0270DF19860 /* V3LibrarySearchPanel.swift in Sources */,
 				DF21E96E6A4E08F95E5BD7D0 /* V3PlaylistPanel.swift in Sources */,
 				A60F090600000000000007B1 /* V3PlaybackStyles.swift in Sources */,
+				B1E8DDB9AA8A6D3EA696CAAA /* V3VUMeter.swift in Sources */,
 				A569E2C0D54C4AE25DACADD0 /* V3SearchPanel.swift in Sources */,
 				AF4738C40CC270950960061F /* AppleMusicImmersiveV3LyricBar.swift in Sources */,
 				0397361CF07CC824F9B93C85 /* AppleMusicImmersiveV3QuickControls.swift in Sources */,

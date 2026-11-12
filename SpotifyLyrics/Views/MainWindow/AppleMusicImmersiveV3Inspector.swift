@@ -572,9 +572,15 @@ struct V3VisualControls {
             V3SegmentedPicker("播放呈现", selection: $settings.v3PlaybackPresentation,
                               options: V3PlaybackPresentation.established.map { ($0.title, $0) })
             // The six newer presentations, one click away like the first three.
-            V3SegmentedPicker("新呈现", selection: $settings.v3PlaybackPresentation,
-                              options: V3PlaybackPresentation.additions.map { ($0.title, $0) })
-                .help(V3PlaybackPresentation.additions.map { $0.title + "：" + $0.detail }.joined(separator: "\n"))
+            // Two rows, like 歌词呈现, so no name has to shrink to fit.
+            let additions = V3PlaybackPresentation.additions
+            VStack(spacing: 2) {
+                V3SegmentedPicker("新呈现", selection: $settings.v3PlaybackPresentation,
+                                  options: additions.prefix(4).map { ($0.title, $0) })
+                V3SegmentedPicker("", selection: $settings.v3PlaybackPresentation,
+                                  options: additions.dropFirst(4).map { ($0.title, $0) })
+            }
+            .help(additions.map { $0.title + "：" + $0.detail }.joined(separator: "\n"))
             // The player card's own options, while the scene shows its card.
             if !settings.v3ScenePlayerHidden {
                 V3SegmentedPicker("进度条", selection: $settings.v3ProgressStyle,

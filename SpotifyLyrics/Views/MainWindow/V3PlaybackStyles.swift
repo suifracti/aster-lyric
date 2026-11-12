@@ -161,6 +161,7 @@ struct V3PlaybackStyleOverlay: View {
             case .corner: V3CornerPresentation(state: state, settings: settings, accent: accent ?? .white, canvas: geometry.size)
             case .shelf: V3ShelfPresentation(state: state, browser: state.playlistBrowser, accent: accent ?? .white)
             case .interlude: V3InterludePresentation(state: state, browser: state.playlistBrowser)
+            case .vu: V3VUMeterPresentation(state: state, settings: settings, accent: accent ?? .white)
             case .coverProgress:
                 if let cover, cover.isLargeEnough {
                     V3CoverProgressPresentation(state: state, cover: cover)

@@ -32,6 +32,8 @@ public enum V3PlaybackPresentation: String, CaseIterable, Identifiable, Sendable
     /// 2026-11-12 additions. Stored under their own key; the two switches
     /// behind the first three are unchanged.
     case spine, coverProgress, shelf, vinyl, corner, interlude
+    /// 2026-11-13: VU 表.
+    case vu
     public var id: String { rawValue }
     public var title: String {
         switch self {
@@ -44,6 +46,7 @@ public enum V3PlaybackPresentation: String, CaseIterable, Identifiable, Sendable
         case .vinyl: return "黑胶"
         case .corner: return "角落"
         case .interlude: return "幕间"
+        case .vu: return "VU 表"
         }
     }
     public var detail: String {
@@ -57,10 +60,11 @@ public enum V3PlaybackPresentation: String, CaseIterable, Identifiable, Sendable
         case .vinyl: return "封面后露出黑胶，播放时转动，外圈是进度"
         case .corner: return "角落一张小唱片卡，可拖到四个角"
         case .interlude: return "只在歌曲开头和结尾出现歌名卡与下一首"
+        case .vu: return "左下角一块指针表，低频和高频两根指针带真实惯性；需打开随音乐律动"
         }
     }
     public static var established: [Self] { [.standard, .onHover, .windowEdge] }
-    public static var additions: [Self] { [.spine, .coverProgress, .shelf, .vinyl, .corner, .interlude] }
+    public static var additions: [Self] { [.spine, .coverProgress, .shelf, .vinyl, .corner, .interlude, .vu] }
     /// The scene's own player card is not drawn.
     public var hidesScenePlayer: Bool { self != .standard && self != .onHover }
     /// The scene draws no cover either; the style shows the song itself.

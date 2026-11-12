@@ -309,4 +309,21 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertNil(V3LyricImagery.detect(["Brainstorm"]))
         XCTAssertNil(V3LyricImagery.detect([nil, ""]))
     }
+
+    func testVUNeedleSettlesInAboutAThirdOfASecondWithASmallOvershoot() {
+        let needles = V3VUNeedles()
+        var t = 0.0, peak = 0.0, settled: Double?
+        _ = needles.step(targets: [0, 0], now: t)
+        while t < 1.5 {
+            t += 1.0 / 30.0
+            needles.step(targets: [1, 1], now: t)
+            peak = max(peak, needles.position[0])
+            if settled == nil, abs(needles.position[0] - 1) < 0.02, abs(needles.velocity[0]) < 0.2 { settled = t }
+        }
+        XCTAssertGreaterThan(peak, 1.0, "a real movement overshoots a little")
+        XCTAssertLessThan(peak, 1.03)
+        XCTAssertLessThan(settled ?? 9, 0.45)
+        XCTAssertGreaterThan(settled ?? 0, 0.15)
+        XCTAssertEqual(V3VUMeterFace.reading(1), 0.6, accuracy: 0.001, "the song's own average reads below 0 VU")
+    }
 }
