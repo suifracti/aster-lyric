@@ -900,6 +900,16 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 - Without 随音乐律动 the needles rest and the card says so.
 - 新呈现 is now two rows (4 + 3), so no name has to shrink.
 
+**做成分享卡** (`e38b41f`, lyric context menu).
+- Turns one line into a 1080 × 1350 picture:
+  - the cover's colours as the ground, drawn as a stretched thumbnail because `ImageRenderer` does not reliably blur;
+  - the cover;
+  - the line, sized by its length so a line of about 14 CJK characters stays on one line;
+  - its translation;
+  - the title, the artist and a small "Aster · Lyric".
+- The picture is copied to the clipboard, saved to ~/Pictures/Aster Lyric and shown in Finder. Nothing is uploaded.
+- Rendering at poster size is unit-tested.
+
 **Checked:**
 - The particles were rendered in a scratch window, one per weather, because Spotify was paused.
 - The fog veil was checked in the real main window; the setting was restored afterwards.
