@@ -11,7 +11,6 @@ public enum LyricsSource: String, CaseIterable, Codable, Sendable {
     case kuwoExperimental
     case kugouExperimental
     case petitLyrics
-    case appleMusicCatalog
     case unknown
     case asrMachineGenerated
     case automaticAlignment
@@ -32,7 +31,6 @@ public enum LyricsSource: String, CaseIterable, Codable, Sendable {
         case .kuwoExperimental: return "酷我音乐（实验）"
         case .kugouExperimental: return "酷狗音乐（实验）"
         case .petitLyrics: return "プチリリ（实验）"
-        case .appleMusicCatalog: return "Apple Music"
         case .unknown: return "未知来源"
         case .asrMachineGenerated: return "ASR 草稿（待校正）"
         case .automaticAlignment: return "自动排轴"
