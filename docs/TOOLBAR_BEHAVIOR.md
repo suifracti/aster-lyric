@@ -941,12 +941,25 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 - It draws at 30 fps only while playing and visible, and is absent under 减少动态效果.
 - A full MilkDrop or 3D visualizer is still a separate scene for later.
 
+**副歌时换素材** (`7072fbc`, 画面 › 背景素材, off by default; B13 for the backdrop).
+- During a chorus, the backdrop's clip layer flips:
+  - a still cover or artist photo gives way to the Spotify Canvas clip;
+  - a clip gives way to the still picture.
+- A 1.2 s cross-fade in each direction; the backdrop changes back when the chorus ends.
+- This is a temporary override of the clip layer only, separate from the hover preview. The saved material never changes.
+
+**雨夜房间** (`50c8de2`, 更多 › 窗口, off by default; A13).
+- The whole listening view is drawn at 62% as the screen of a monitor on a desk.
+- Around it: a dark wall, and a window of far city lights with rain (the 窗上天气 particles, running while playing). Below and beside: the desk and a lamp's warm light.
+- The view is only drawn smaller. Layout, pointer regions and clicks inside the screen are unchanged.
+- Switching it on or off zooms with a spring and does not rebuild the view.
+- Checked in the real window with Spotify paused; the setting was restored.
+
 **Not done from the "later" list, and why:**
 - **C12 writing on a fogged window:** needs stroke-order data for Chinese and Japanese.
 - **D3 emphasis by meaning:** the meaning judgement is not reliable enough.
 - **D4 emphasis by singing:** held notes are covered by 长音 glow; sizing by loudness barely showed.
-- **B13 changing the look by section:** the only way to change the look temporarily is the hover preview, and borrowing it would break previews. A separate temporary override is needed first. It may also disturb listening.
-- **A13 rain-night room:** a scene of its own, still to be designed.
+- **B13 beyond the backdrop:** 副歌时换素材 above covers the backdrop. Changing the whole scene by section is still left, because it may disturb listening.
 
 **Checked:**
 - The particles were rendered in a scratch window, one per weather, because Spotify was paused.

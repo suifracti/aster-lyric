@@ -394,4 +394,6 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **声纹圈画在封面外的矩形环上**，起点和方向沿用窗口边缘进度：顶部正中、顺时针。按对角线画圆环会超出窗口，还会压到下方播放卡。录音存在 Caches/Soundprints，每首一个 JSON，180 格，每格用滑动混合（0.7/0.3）记录。
 - **频谱 24 段**：从 50 Hz 到 12 kHz 按音高均分，每段至少一个 FFT 格，相邻段首尾相接；每段对自己的长期均值归一。环绕封面和声纹圈共用 `V3SpectrumOverlay.loopPoint` 的矩形环，起点顶部正中、顺时针。
 - `FloatingLyricsPresentationTests.testFloatingPresentationBehavior`（A-B-A 宽度键复用）偶尔失败，连续重跑两次都过，判断为偶发，与频谱无关。注意：命令链里不要把提交排在测试之后又不看测试结果，这次就因此带着失败提交了一次（重跑全过）。
+- **临时改画面不要借用悬停预览的 `presentationOverride`**。副歌时换素材给背景视图单独加了参数 `chorusSwapsMaterial`，只翻转短片层：显示条件为“已保存的素材是视频”与“正在副歌”二者不同时为真。短片提前找好，切换时不用再等。
+- **雨夜房间用 `V3RainRoomModifier`**，挂在主窗口指针追踪（`onContinuousHover`）之后，所以画面里的坐标仍是缩放前的。关闭时缩放为 1、房间透明，视图结构不变，开关不会重建内容。
 
