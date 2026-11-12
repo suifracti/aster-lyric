@@ -112,6 +112,8 @@ struct V3ThemeSelectorView: View {
     @State private var thumbnail: NSImage?
     @State private var tint = Color.accentColor
     @State private var previewTask: Task<Void, Never>?
+    /// Which of 环境光's three lights was used last, so its card returns to it.
+    @AppStorage("v3.ambient.lastLook.v1", store: .lyricsQ) private var lastAmbientLook = ""
 
     private func clearPreview() {
         previewTask?.cancel(); previewTask = nil
@@ -148,7 +150,7 @@ struct V3ThemeSelectorView: View {
     }
 
     var body: some View {
-        let looks = V3SceneFamily.looks
+        let cards = V3SceneFamily.cards
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Text("场景").font(.system(size: 13, weight: .semibold))
@@ -158,17 +160,20 @@ struct V3ThemeSelectorView: View {
                     .font(.system(size: 11))
                     .help("停留后临时预览，移开恢复，点击才采用；预览不会保存设置或调用 AI")
             }
-            // One level, nothing behind a menu: every look is a card chosen
-            // with one click. Each is an existing scene + renderer pair and
-            // keeps its saved values.
-            VStack(spacing: 6) {
-                ForEach(Array(stride(from: 0, to: looks.count, by: 3)), id: \.self) { start in
-                    HStack(alignment: .top, spacing: 6) {
-                        ForEach(looks[start..<min(start + 3, looks.count)]) { entry in
-                            lookCard(entry)
-                        }
-                    }
-                }
+            // One row, nothing behind a menu. Each card is an existing scene
+            // + renderer pair and keeps its saved values.
+            HStack(alignment: .top, spacing: 6) {
+                ForEach(cards) { card in lookCard(card) }
+            }
+            // 环境光 is one scene with three lights. Which suits depends on
+            // the song, so all three stay one click away in a plain row.
+            if let card = cards.first(where: { $0.entries.count > 1 && $0.entries.contains(where: isCurrent) }) {
+                V3SegmentedPicker(card.title, selection: Binding(
+                    get: { card.entries.firstIndex(where: isCurrent) ?? 0 },
+                    set: { adopt(card.entries[$0]) }
+                ), options: card.entries.enumerated().map { (V3SceneFamily.shortTitle($1), $0) })
+                .accessibilityIdentifier("v3.ambient.style")
+                .help(card.entries.map { $0.title + "：" + ($0.detail ?? "") }.joined(separator: "\n"))
             }
             if !compact, settings.v3ListeningScene != nil {
                 Button("恢复此场景的默认值", role: .destructive) {
@@ -190,7 +195,16 @@ struct V3ThemeSelectorView: View {
 
     /// Selection always matches scene + renderer: the same renderer draws
     /// differently inside a scene and as a legacy preset.
-    private func lookCard(_ entry: V3SceneFamily.Entry) -> some View {
+    /// The entry a card stands for: the one in use, else the one last used
+    /// on that card, else its first.
+    private func entry(of card: V3SceneFamily.Card) -> V3SceneFamily.Entry {
+        card.entries.first(where: isCurrent)
+            ?? card.entries.first { $0.id == lastAmbientLook }
+            ?? card.entries[0]
+    }
+
+    private func lookCard(_ card: V3SceneFamily.Card) -> some View {
+        let entry = entry(of: card)
         let selected = isCurrent(entry)
         let target = renderer(for: entry)
         let previewing = !selected && preview == target && previewScene == entry.scene
@@ -209,7 +223,7 @@ struct V3ThemeSelectorView: View {
                         }
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 6))
-                Text(entry.title)
+                Text(card.title)
                     .font(.system(size: 11.5, weight: selected ? .semibold : .regular))
                     .foregroundStyle(selected || previewing ? Color.primary : Color.secondary)
                     .lineLimit(1).minimumScaleFactor(0.85)
@@ -226,7 +240,7 @@ struct V3ThemeSelectorView: View {
         .buttonStyle(.plain)
         .onHover { hovering($0, scene: entry.scene, renderer: target) }
         .help(entry.detail ?? entry.title)
-        .accessibilityLabel(entry.title)
+        .accessibilityLabel(card.title)
         .accessibilityIdentifier("v3.scene." + (entry.scene?.rawValue ?? "legacy") + "." + target.rawValue)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -234,6 +248,9 @@ struct V3ThemeSelectorView: View {
     private func adopt(_ entry: V3SceneFamily.Entry) {
         let target = renderer(for: entry)
         clearPreview()
+        if V3SceneFamily.cards.contains(where: { $0.entries.count > 1 && $0.entries.contains(entry) }) {
+            lastAmbientLook = entry.id
+        }
         if let scene = entry.scene { settings.selectV3Scene(scene, renderer: target) }
         else { settings.selectLegacyV3Presentation(target) }
     }
@@ -300,17 +317,38 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
 
     var primaryScene: V3ListeningScene { scenes[0] }
 
-    /// The 画面 panel lists every look on one level, all in view: six
-    /// cards. Three look-alikes have no card of their own:
-    /// - 柔和光晕 draws like 原版环境光 with a darker background (背景明暗).
-    /// - 独立色场 and 唱片卡 were, like 内页, "the cover's colour, the cover
-    ///   on the left, the lyrics on the right". 内页 now has the colour
-    ///   field as its background and stands for all three.
-    /// A saved choice of one of them keeps drawing until a card is picked.
-    static var looks: [Entry] {
+    /// One card in the 画面 panel. Most stand for one entry; 环境光 stands
+    /// for its three lights, chosen in a row under the cards.
+    struct Card: Identifiable {
+        let title: String
+        let entries: [Entry]
+        var id: String { title }
+    }
+
+    /// The 画面 panel shows five cards in one row, none behind a menu.
+    /// - 环境光: 原版环境光, 柔和光晕 (the round glow) and 柔光羽化. One
+    ///   layout, three lights; which suits depends on the song.
+    /// - 内页 also stands for 独立色场 and 唱片卡: all three were "the
+    ///   cover's colour, the cover on the left, the lyrics on the right".
+    ///   内页 has the colour field as its background.
+    /// A saved 独立色场 or 唱片卡 choice keeps drawing until a card is picked.
+    static var cards: [Card] {
         let all = allCases.flatMap(\.entries)
-        return ["原版环境光", "柔光羽化", "内页", "封面", "舞台", "专注"]
-            .compactMap { title in all.first { $0.title == title } }
+        func entries(_ titles: [String]) -> [Entry] { titles.compactMap { title in all.first { $0.title == title } } }
+        return [Card(title: "环境光", entries: entries(["原版环境光", "柔和光晕", "柔光羽化"])),
+                Card(title: "内页", entries: entries(["内页"])),
+                Card(title: "封面", entries: entries(["封面"])),
+                Card(title: "舞台", entries: entries(["舞台"])),
+                Card(title: "专注", entries: entries(["专注"]))]
+    }
+
+    static func shortTitle(_ entry: Entry) -> String {
+        switch entry.title {
+        case "原版环境光": return "原版"
+        case "柔和光晕": return "光晕"
+        case "柔光羽化": return "羽化"
+        default: return entry.title
+        }
     }
 
     /// 4 categories, 9 styles. 经典·柔和光晕 and 经典·封面海报 survive as the
