@@ -55,6 +55,14 @@ final class ListeningBatchOneTests: XCTestCase {
                        "https://image-cdn-fa.spotifycdn.com/image/ab6761610000e5ebddfeef94d35f21d1af62a9d9")
     }
 
+    func testCoverFallbackUsesTheLargerSize() {
+        let small = URL(string: "https://image-cdn-ak.spotifycdn.com/image/ab67616d00001e02f1abf2765238ce9f309e0b7d")!
+        XCTAssertEqual(SpotifyPublicArtwork.larger(small).absoluteString,
+                       "https://image-cdn-ak.spotifycdn.com/image/ab67616d0000b273f1abf2765238ce9f309e0b7d")
+        XCTAssertEqual(SpotifyPublicArtwork.trackID(from: "spotify:track:5Q8K5lNtJlRMIsMB1Ha8P6"), "5Q8K5lNtJlRMIsMB1Ha8P6")
+        XCTAssertNil(SpotifyPublicArtwork.trackID(from: "spotify:local:abc"))
+    }
+
     // MARK: Cover colour routes
 
     private func pixels(_ parts: [((Double, Double, Double), Int)]) -> [(Double, Double, Double)] {

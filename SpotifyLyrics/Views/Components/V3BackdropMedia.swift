@@ -120,6 +120,37 @@ actor V3ArtistImageStore {
     }
 }
 
+/// A song's cover from Spotify's public oEmbed, used when Spotify Desktop
+/// gives no artwork address. Only the track ID is sent.
+enum SpotifyPublicArtwork {
+    static func trackID(from raw: String) -> String? {
+        let value = raw.hasPrefix("spotify:track:") ? String(raw.dropFirst("spotify:track:".count)) : raw
+        return value.count == 22 && value.unicodeScalars.allSatisfy({ $0.isASCII && CharacterSet.alphanumerics.contains($0) })
+            ? value : nil
+    }
+
+    static func coverURL(trackID: String) async -> URL? {
+        var parts = URLComponents(string: "https://open.spotify.com/oembed")!
+        parts.queryItems = [URLQueryItem(name: "url", value: "https://open.spotify.com/track/" + trackID)]
+        guard let url = parts.url else { return nil }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 6)
+        request.httpShouldHandleCookies = false
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let thumbnail = (object["thumbnail_url"] as? String).flatMap(URL.init(string:)),
+              thumbnail.scheme == "https" else { return nil }
+        return larger(thumbnail)
+    }
+
+    /// oEmbed gives the 300 px cover (`ab67616d 00001e02 …`); `0000b273` is 640 px.
+    static func larger(_ url: URL) -> URL {
+        let text = url.absoluteString
+        guard text.contains("/image/ab67616d00001e02") else { return url }
+        return URL(string: text.replacingOccurrences(of: "/image/ab67616d00001e02", with: "/image/ab67616d0000b273")) ?? url
+    }
+}
+
 /// A silent looping clip filling its frame. It stops while the song is
 /// paused, the window is hidden or the system asks for reduced motion.
 struct V3CanvasVideoView: NSViewRepresentable {

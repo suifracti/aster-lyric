@@ -1252,8 +1252,15 @@ public final class PlaybackState: ObservableObject {
         desktopArtworkTask?.cancel()
         let provider = provider
         desktopArtworkTask = Task { @MainActor [weak self] in
-            let artwork = await provider.artworkURL(for: track, source: snapshot.sourceIdentity)
+            var artwork = await provider.artworkURL(for: track, source: snapshot.sourceIdentity)
             LyricsE2ELog.log("ARTWORK desktop id=\(track.id ?? "none") found=\(artwork != nil) cancelled=\(Task.isCancelled)")
+            // Spotify Desktop sometimes gives no artwork address (it does when it
+            // stops answering Apple Events well). The song's public oEmbed has it.
+            if artwork == nil, snapshot.sourceIdentity == .spotifyDesktop, !Task.isCancelled,
+               let id = track.id.flatMap(SpotifyPublicArtwork.trackID(from:)) {
+                artwork = await SpotifyPublicArtwork.coverURL(trackID: id)
+                LyricsE2ELog.log("ARTWORK oembed id=\(id) found=\(artwork != nil)")
+            }
             guard let url = artwork,
                   !Task.isCancelled, let self,
                   self.hasLiveTrack, self.lastObservedDesktopSource == snapshot.sourceIdentity,
