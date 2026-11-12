@@ -910,6 +910,12 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 - The picture is copied to the clipboard, saved to ~/Pictures/Aster Lyric and shown in Finder. Nothing is uploaded.
 - Rendering at poster size is unit-tested.
 
+**封面墙** (`6bfc554`, 歌词库 › 最近播放 › 列表 / 封面墙).
+- Lists each song once, most recent first, as a wall of covers tilted −4° (flat under 减少动态效果) that scrolls both ways.
+- Pointing at a cover lifts it and shows the title and play count. Every cover not by the same first-named singer dims, so the singer's songs stand out.
+- Records carry no Spotify link, so a cover does not start playback.
+- The 列表 / 封面墙 choice is remembered (`listening.history.coverWall.v1`).
+
 **Checked:**
 - The particles were rendered in a scratch window, one per weather, because Spotify was paused.
 - The fog veil was checked in the real main window; the setting was restored afterwards.
