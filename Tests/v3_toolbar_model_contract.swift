@@ -395,7 +395,7 @@ final class V3ToolbarPresentationTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = AppSettingsStore(defaults: defaults)
-        XCTAssertEqual(V3PlaybackPresentation.additions.map(\.title), ["侧脊", "封面进度", "唱片架", "黑胶", "角落", "幕间", "VU 表"])
+        XCTAssertEqual(V3PlaybackPresentation.additions.map(\.title), ["侧脊", "封面进度", "唱片架", "黑胶", "角落", "幕间", "VU 表", "声纹圈"])
         settings.v3PlaybackPresentation = .vinyl
         XCTAssertEqual(settings.v3PlaybackPresentation, .vinyl)
         XCTAssertFalse(settings.v3EdgeProgressEnabled)

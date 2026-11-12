@@ -256,6 +256,7 @@
 		CB5378C490C25028178B464B /* V3LyricShareCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = F517BF6CE987A087DD4BA095 /* V3LyricShareCard.swift */; };
 		45D81E49ED2AA16E1B7760C4 /* ListeningCoverWall.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0719C6699D3AB7FF8D4F84FA /* ListeningCoverWall.swift */; };
 		8E0B70EE956F8B5F62F2BC55 /* V3RecapCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A45882509A12B6FB7F5BC43 /* V3RecapCard.swift */; };
+		7961F7366756AAE36F9E0657 /* V3Soundprint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F08A7A731F3B8EEC06885CF /* V3Soundprint.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -514,6 +515,7 @@
 		F517BF6CE987A087DD4BA095 /* V3LyricShareCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3LyricShareCard.swift; sourceTree = "<group>"; };
 		0719C6699D3AB7FF8D4F84FA /* ListeningCoverWall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningCoverWall.swift; sourceTree = "<group>"; };
 		2A45882509A12B6FB7F5BC43 /* V3RecapCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3RecapCard.swift; sourceTree = "<group>"; };
+		7F08A7A731F3B8EEC06885CF /* V3Soundprint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3Soundprint.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -692,6 +694,7 @@
 				A60F090600000000000007B0 /* V3PlaybackStyles.swift */,
 				F517BF6CE987A087DD4BA095 /* V3LyricShareCard.swift */,
 				67A7CF6CB7618D621BDD647B /* V3VUMeter.swift */,
+				7F08A7A731F3B8EEC06885CF /* V3Soundprint.swift */,
 				118DEDA41F433714AD0B0910 /* V3SearchPanel.swift */,
 				35FDDBAC403CC53CC0FAC566 /* AppleMusicImmersiveV3LyricBar.swift */,
 				29670441C088A914F1A776E1 /* AppleMusicImmersiveV3QuickControls.swift */,
@@ -1120,6 +1123,7 @@
 				A60F090600000000000007B1 /* V3PlaybackStyles.swift in Sources */,
 				CB5378C490C25028178B464B /* V3LyricShareCard.swift in Sources */,
 				B1E8DDB9AA8A6D3EA696CAAA /* V3VUMeter.swift in Sources */,
+				7961F7366756AAE36F9E0657 /* V3Soundprint.swift in Sources */,
 				A569E2C0D54C4AE25DACADD0 /* V3SearchPanel.swift in Sources */,
 				AF4738C40CC270950960061F /* AppleMusicImmersiveV3LyricBar.swift in Sources */,
 				0397361CF07CC824F9B93C85 /* AppleMusicImmersiveV3QuickControls.swift in Sources */,

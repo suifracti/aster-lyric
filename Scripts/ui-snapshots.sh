@@ -189,6 +189,7 @@ declare -a CASES=(
   "toolbar-side|--scene coverPhoto --toolbar full --toolbar-style sidePull --appearance dark --window-composite"
   "toolbar-side-panel|--panel hover:picture --scene coverPhoto --toolbar full --toolbar-style sidePull --appearance dark --window-composite"
   "playback-vu|--scene coverPhoto --playback-presentation vu --toolbar faint --appearance dark"
+  "playback-soundprint|--playback-presentation soundprint --toolbar faint --appearance dark"
   "menubar-dark|--surface menubar --appearance dark"
   "menubar-light|--surface menubar --appearance light"
   "settings-light|--surface settings --appearance light"

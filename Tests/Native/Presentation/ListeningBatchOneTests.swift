@@ -389,4 +389,26 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(V3RecapCard.durationText(45_000), "12 小时 30 分")
         XCTAssertEqual(V3RecapCard.durationText(1_800), "30 分钟")
     }
+
+    @MainActor
+    func testSoundprintKeepsOneRingPerSongAndBlendsEachBin() {
+        let store = V3SoundprintStore.shared
+        let key = "test-soundprint-\(UUID().uuidString)"
+        XCTAssertTrue(store.print(for: key).allSatisfy { $0 < 0 }, "nothing heard yet")
+        store.record(1.0, at: 0.5, for: key)
+        store.record(0.0, at: 0.5, for: key)
+        let bin = V3SoundprintStore.bins / 2
+        XCTAssertEqual(Double(store.print(for: key)[bin]), 0.7, accuracy: 0.001, "a running blend, not the last value")
+        store.record(0.4, at: 1.0, for: key)
+        XCTAssertEqual(store.print(for: key).filter { $0 >= 0 }.count, 1, "the end of the song is outside the ring")
+        XCTAssertTrue(store.print(for: "other-\(key)").allSatisfy { $0 < 0 }, "each song its own ring")
+    }
+
+    func testSoundprintLoopStartsAtTopCentreAndGoesClockwise() {
+        let rect = CGRect(x: 0, y: 0, width: 100, height: 100)
+        XCTAssertEqual(V3SoundprintRing.loopPoint(0, around: rect).point, CGPoint(x: 50, y: 0))
+        XCTAssertEqual(V3SoundprintRing.loopPoint(0.125, around: rect).point, CGPoint(x: 100, y: 0), "top right corner")
+        XCTAssertEqual(V3SoundprintRing.loopPoint(0.25, around: rect).normal, CGVector(dx: 1, dy: 0), "down the right side")
+        XCTAssertEqual(V3SoundprintRing.loopPoint(0.5, around: rect).point, CGPoint(x: 50, y: 100), "bottom centre")
+    }
 }
