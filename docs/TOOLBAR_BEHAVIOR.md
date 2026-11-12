@@ -820,3 +820,12 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 - A KRC/QRC line that is only `歌手：` names the singer of the lines after it; that line is not shown.
 - Voices follow the order they first sing. The second voice is set in by 12% of the column, and the singer's name appears in small type where the voice changes.
 
+**Matching, later the same evening.**
+- Titles with the same characters apart from spaces, dashes and brackets are the same title (如果真爱 - ２０２４ 说唱版 / 如果真爱（2024说唱版）).
+- A Spotify title that only adds a version name to the source's title is adopted (听悲伤的情歌 - 女版 / 听悲伤的情歌). This holds when the singer is the same, the length is within a second and the extra words do not change the content (伴奏, Live, DJ, Remix, 加速… still block).
+
+**Apple Music lyrics (设置 › 歌词来源).**
+- The user pastes their own `media-user-token`, which is kept in the Keychain. Without it nothing is asked.
+- The catalog is read with the public token in Apple's web player script. Syllable TTML gives word timing and each line's singer.
+- **Spotify's own lyrics are not offered.** Its web token endpoint refuses third parties and wants a rotating one-time code; our own OAuth token is denied (403 RBAC). Getting round that would mean defeating its access control.
+
