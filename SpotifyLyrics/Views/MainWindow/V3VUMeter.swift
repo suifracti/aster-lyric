@@ -26,6 +26,9 @@ struct V3VUMeterPresentation: View {
             if !settings.v3MusicMotionEnabled {
                 Text("打开「随音乐律动」后指针才会动")
                     .font(.system(size: 10.5)).foregroundStyle(.secondary)
+            } else if state.isPlaying, V3MusicPulse.hearsSilence {
+                Text("没有听到声音：Spotify 自己的音量是 0 吗？")
+                    .font(.system(size: 10.5)).foregroundStyle(.secondary)
             }
         }
         .padding(12)

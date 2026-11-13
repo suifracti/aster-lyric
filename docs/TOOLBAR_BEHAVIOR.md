@@ -955,8 +955,24 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 - Switching it on or off zooms with a spring and does not rebuild the view.
 - Checked in the real window with Spotify paused; the setting was restored.
 
+**雾窗 lyric style** (文字 › 歌词呈现, C12 without stroke data).
+- The current line is wiped out of the fog along its sung time, with a soft fingertip edge and a faint wet streak behind the words.
+- Every other line sits behind the fog: fainter and blurred, more with distance.
+- No stroke-order data and no new licence. Writing stroke by stroke is still not done.
+
+**随音乐律动 says when it hears nothing.**
+- Spotify's own volume at 0 gives a stream of zeros, so the VU needles, 频谱 and 声纹圈 stand still.
+- After 3 s of silence, the 随音乐律动 row and the VU card say: 没有听到声音：Spotify 自己的音量是 0 吗？
+
+**Seen in the real window while playing (2026-11-13):**
+- Rain: streaks and drops on the glass.
+- Snow.
+- 雾窗: the reveal part-way through a line.
+- Not seen: the VU needles, 频谱 and 声纹圈 moving, because Spotify's volume was 0 and it was left as it was.
+- On a pale backdrop the rain is hard to see.
+
 **Not done from the "later" list, and why:**
-- **C12 writing on a fogged window:** needs stroke-order data for Chinese and Japanese.
+- **C12 stroke by stroke:** the 雾窗 style above wipes the line out of the fog; true stroke order still needs stroke data for Chinese and Japanese.
 - **D3 emphasis by meaning:** the meaning judgement is not reliable enough.
 - **D4 emphasis by singing:** held notes are covered by 长音 glow; sizing by loudness barely showed.
 - **B13 beyond the backdrop:** 副歌时换素材 above covers the backdrop. Changing the whole scene by section is still left, because it may disturb listening.

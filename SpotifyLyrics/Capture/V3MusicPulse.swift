@@ -34,6 +34,14 @@ final class V3MusicPulse: NSObject, ObservableObject {
         /// 24 log-spaced bands, 50 Hz–12 kHz, each against its own long-term
         /// average and mapped to 0…1 (0.5 = that band's usual level).
         var spectrum: [Float] = []
+        /// Seconds of unbroken silence. Spotify's own volume at 0 gives a
+        /// stream of zeros: everything that follows the sound stands still.
+        var silentSeconds: Double = 0
+    }
+    /// The stream is arriving but has been silent for a while.
+    nonisolated static var hearsSilence: Bool {
+        let value = levels
+        return ProcessInfo.processInfo.systemUptime - value.updatedAt < 2 && value.silentSeconds > 3
     }
 
     private static let shared_ = OSAllocatedUnfairLock(initialState: Levels())
@@ -188,6 +196,7 @@ struct PulseAnalyzer {
     private var bpm: Double?
     private var loudestBass = 0.0
     private var spectrumLong = [Double](repeating: 0, count: spectrumBands.count)
+    private var silentFrames = 0
 
     /// 频谱: 24 bands spaced evenly in pitch from 50 Hz to 12 kHz, each at
     /// least one FFT bin wide.
@@ -301,6 +310,7 @@ struct PulseAnalyzer {
             LyricsE2ELog.log("PULSE levels bassPeak=\(String(format: "%.2f", loudestBass)) bpm=\(bpm.map { String(format: "%.0f", $0) } ?? "-")")
             loudestBass = 0
         }
+        silentFrames = (now[0] + now[1] + now[2]) < 1e-5 ? silentFrames + 1 : 0
         var spectrum = [Float](repeating: 0, count: Self.spectrumBands.count)
         let longRate = perFrame(frameCount < 50 ? 0.9 : 0.995)
         for (index, range) in Self.spectrumBands.enumerated() {
@@ -313,7 +323,8 @@ struct PulseAnalyzer {
         V3MusicPulse.publish(V3MusicPulse.Levels(
             bass: ratio(0, now[0]), mid: ratio(1, now[1]), treble: ratio(2, now[2]),
             bassAverage: ratio(0, average[0]), bpm: bpm,
-            updatedAt: ProcessInfo.processInfo.systemUptime, spectrum: spectrum))
+            updatedAt: ProcessInfo.processInfo.systemUptime, spectrum: spectrum,
+            silentSeconds: Double(silentFrames) / fps))
     }
 
     /// Autocorrelation of the onset curve over 60–190 BPM. A lag whose half

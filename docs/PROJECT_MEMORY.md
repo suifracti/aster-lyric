@@ -406,3 +406,10 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **同一首歌的不同条目歌词不一样**：专辑版条目（ブルーリグレット）没有歌词（-1901 / 24001），单曲条目有。所以要逐个候选取词，不能只看第一条。
 - **排查顺序**：先看日志里各来源的 `PROBE finish … outcome=`，再用 curl 复现那个接口，最后对照调研目录里别家的实现。
 
+## L-027 播放中核对的结果与“听不到声音”（2026-11-13）
+
+- **Spotify 自己的音量为 0 时，ScreenCaptureKit 采到的是全零**，日志是 `PULSE levels bassPeak=0.00 bpm=-`。VU 表、频谱、声纹圈都不动，这不是采集坏了。现在静音 3 秒后界面会提示（`V3MusicPulse.hearsSilence`）。排查律动“没反应”先看这行日志，再看 `osascript -e 'tell application "Spotify" to sound volume'`。
+- **用户正在播放时可以直接核对播放中的效果**，不用改播放状态：用 defaults 临时打开效果，重启 App，`screencapture -l` 拍，再还原。选窗口要按面积最大选，用户钉着面板时第一个窗口是面板。
+- **粒子层在 App 里坐标没有翻转**（日志 `WEATHER … flipped=false geometryFlipped=false`），雨、雪都从上往下。浅色背景上雨丝很淡，是对比度问题。
+- **雾窗样式**复用 `V3TypewriterReveal`（`fingertip: true`）：更宽的软边，加一条四周渐隐的水痕；其他行用比景深更重的模糊。
+

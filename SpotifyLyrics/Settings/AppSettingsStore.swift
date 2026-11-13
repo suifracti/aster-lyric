@@ -100,10 +100,11 @@ public enum V3ToolbarStyle: String, CaseIterable, Identifiable, Sendable {
 
 /// How the lyrics are drawn. 标准 is the established look.
 public enum V3LyricStyle: String, CaseIterable, Identifiable, Sendable {
-    case standard = "", depth, karaoke, single, typewriter, lightColor, inlineTranslation
+    case standard = "", depth, karaoke, single, typewriter, lightColor, inlineTranslation, fogWriting
     public var id: String { rawValue }
     public var title: String {
         switch self {
+        case .fogWriting: return "雾窗"
         case .standard: return "标准"; case .depth: return "景深"; case .karaoke: return "卡拉OK"
         case .single: return "单行"; case .typewriter: return "打字机"; case .lightColor: return "光色"
         case .inlineTranslation: return "译文同行"
@@ -116,6 +117,7 @@ public enum V3LyricStyle: String, CaseIterable, Identifiable, Sendable {
         case .karaoke: return "逐字歌词唱到的字发光，未唱的更暗"
         case .single: return "只留当前行并放大，前后一行小字"
         case .typewriter: return "当前行按演唱时间逐字出现"
+        case .fogWriting: return "像在起雾的玻璃上用手指写：当前行沿演唱时间被擦出来，带一道水痕；其他行隔着雾，又淡又糊"
         case .lightColor: return "当前行是白光，外圈带封面颜色的光晕"
         case .inlineTranslation: return "放得下时译文跟在原文后面同一行"
         }

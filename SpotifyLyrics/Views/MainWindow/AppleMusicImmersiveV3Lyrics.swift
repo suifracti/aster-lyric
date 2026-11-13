@@ -1346,6 +1346,10 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
         if lyricStyle == .depth, isSynchronized, !isActive {
             return min(5.5, 1.1 * CGFloat(clampedDistance) + 0.4)
         }
+        // 雾窗: every other line is behind the fog.
+        if lyricStyle == .fogWriting, isSynchronized, !isActive {
+            return min(6, 2.2 + 0.9 * CGFloat(clampedDistance))
+        }
         guard isSynchronized, clampedDistance > 1 else { return 0 }
         switch clampedDistance {
         case 2: return 0.2
@@ -1382,6 +1386,11 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
         .modifier(V3TypewriterReveal(active: lyricStyle == .typewriter && isActive && isSynchronized
                                          && line.timedSpans?.isEmpty != false,
                                      start: line.timestamp, end: line.endTime, clock: presentationClock))
+        // 雾窗: the line is wiped out of the fog with a soft fingertip edge,
+        // leaving a faint wet streak behind the words.
+        .modifier(V3TypewriterReveal(active: lyricStyle == .fogWriting && isActive && isSynchronized,
+                                     start: line.timestamp, end: line.endTime, clock: presentationClock,
+                                     fingertip: true))
         // Only the current line emits light; readability protection stays independent.
         .shadow(color: isActive ? .white.opacity(0.6 * settings.v3CurrentLineGlow) : .clear,
                 radius: 8, x: 0, y: 0)
@@ -2099,21 +2108,37 @@ private struct V3TypewriterReveal: ViewModifier {
     let start: TimeInterval
     let end: TimeInterval?
     let clock: LyricsPresentationClock
+    /// 雾窗: a wide soft edge and a wet streak behind the revealed part.
+    var fingertip = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var fraction: Double = 1
+
+    private func reveal(edge: CGFloat) -> some View {
+        GeometryReader { geometry in
+            HStack(spacing: 0) {
+                Rectangle().frame(width: geometry.size.width * fraction)
+                LinearGradient(colors: [.white, .clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: geometry.size.width * edge)
+                    .opacity(fraction >= 1 ? 0 : 1)
+                Spacer(minLength: 0)
+            }
+        }
+    }
 
     func body(content: Content) -> some View {
         if active && !reduceMotion {
             content
-                .mask(alignment: .leading) {
-                    GeometryReader { geometry in
-                        HStack(spacing: 0) {
-                            Rectangle().frame(width: geometry.size.width * fraction)
-                            LinearGradient(colors: [.white, .clear], startPoint: .leading, endPoint: .trailing)
-                                .frame(width: geometry.size.width * 0.06)
-                                .opacity(fraction >= 1 ? 0 : 1)
-                            Spacer(minLength: 0)
-                        }
+                .mask(alignment: .leading) { reveal(edge: fingertip ? 0.14 : 0.06) }
+                .background {
+                    if fingertip {
+                        // Soft on every side: fades up, down and toward the far end,
+                        // so it reads as a wiped streak and not as a band.
+                        LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .white.opacity(0.07), location: 0.5),
+                                               .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom)
+                            .padding(.vertical, -6)
+                            .mask(LinearGradient(stops: [.init(color: .white, location: 0), .init(color: .white, location: 0.55),
+                                                         .init(color: .clear, location: 0.95)], startPoint: .leading, endPoint: .trailing))
+                            .mask(alignment: .leading) { reveal(edge: 0.14) }
                     }
                 }
                 .onAppear(perform: restart)

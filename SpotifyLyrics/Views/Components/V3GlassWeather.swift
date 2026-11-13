@@ -144,6 +144,9 @@ final class V3ParticleHostView: NSView {
             build(kind)
         }
         let rate: Float = running && kind != nil ? 1 : 0
+        if rate != falling.birthRate {
+            LyricsE2ELog.log("WEATHER kind=\(String(describing: kind)) running=\(running) bounds=\(bounds) flipped=\(isFlipped) geometryFlipped=\(layer?.isGeometryFlipped ?? false) superFlipped=\(superview?.isFlipped ?? false)")
+        }
         falling.birthRate = rate
         surface.birthRate = rate
     }

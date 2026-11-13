@@ -596,6 +596,7 @@ struct V3VisualControls {
     /// 歌词呈现: seven looks in two rows, all one click away.
     var lyricStyleControls: some View {
         let first = Array(V3LyricStyle.allCases.prefix(4)), second = Array(V3LyricStyle.allCases.dropFirst(4))
+        // 4 + 4: 雾窗 joins the second row.
         return VStack(spacing: 2) {
             V3SegmentedPicker("歌词呈现", selection: $settings.v3LyricStyle, options: first.map { ($0.title, $0) })
             V3SegmentedPicker("", selection: $settings.v3LyricStyle, options: second.map { ($0.title, $0) })
@@ -1050,6 +1051,7 @@ struct V3MusicMotionRow: View {
         case .starting: return "正在连接 Spotify 的声音…"
         case .running:
             let _ = pulse.analysisRevision
+            if V3MusicPulse.hearsSilence { return "没有听到声音：Spotify 自己的音量是 0 吗？" }
             let analysis = V3MusicPulse.analysis
             if let bpm = analysis.bpm {
                 let key = analysis.key.map { " · \($0) 调" + (analysis.camelot.map { "（\($0)）" } ?? "") } ?? ""
