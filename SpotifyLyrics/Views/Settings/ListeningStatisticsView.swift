@@ -4,6 +4,9 @@ public struct ListeningStatisticsView: View {
     @EnvironmentObject private var playback: PlaybackState
     @State private var visibleSongCount = 20
     @State private var recapStatus: String?
+    /// 0 → 1 while the three summary figures count up.
+    @State private var rolled = 1.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedTimeRange: ListeningStatisticsTimeRange = .allTime
 
     public init() {}
@@ -87,9 +90,24 @@ public struct ListeningStatisticsView: View {
         .onAppear {
             playback.refreshListeningStatistics(for: selectedTimeRange)
         }
+        .onChange(of: playback.listeningStatistics) { _, _ in rollFigures() }
         .onChange(of: selectedTimeRange) { _, newValue in
             visibleSongCount = 20
             playback.refreshListeningStatistics(for: newValue)
+        }
+    }
+
+    /// Counts the summary figures up from zero in a dozen steps (about 0.7 s).
+    private func rollFigures() {
+        guard !reduceMotion else { rolled = 1; return }
+        rolled = 0
+        Task { @MainActor in
+            for step in 1...12 {
+                try? await Task.sleep(nanoseconds: 55_000_000)
+                // Ease out: most of the distance early, the last digits slowly.
+                let t = Double(step) / 12
+                withAnimation(.easeOut(duration: 0.12)) { rolled = 1 - pow(1 - t, 3) }
+            }
         }
     }
 
@@ -112,19 +130,19 @@ public struct ListeningStatisticsView: View {
         HStack(spacing: 0) {
             summaryCard(
                 title: "总听歌时长",
-                value: formattedDuration(statistics.totalListeningTime),
+                value: formattedDuration(statistics.totalListeningTime * rolled),
                 icon: "clock"
             )
             Divider().frame(height: 44).padding(.horizontal, 16)
             summaryCard(
                 title: "播放记录",
-                value: "\(statistics.sessionCount)",
+                value: "\(Int((Double(statistics.sessionCount) * rolled).rounded()))",
                 icon: "music.note.list"
             )
             Divider().frame(height: 44).padding(.horizontal, 16)
             summaryCard(
                 title: "独立歌曲数",
-                value: "\(statistics.uniqueSongCount)",
+                value: "\(Int((Double(statistics.uniqueSongCount) * rolled).rounded()))",
                 icon: "music.quarternote.3"
             )
         }
@@ -132,9 +150,11 @@ public struct ListeningStatisticsView: View {
 
     private func summaryCard(title: String, value: String, icon: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
+            // 里程表: the digits roll up to the figure when it arrives or changes.
             Text(value)
                 .font(.system(size: 24, weight: .semibold, design: .rounded))
                 .monospacedDigit()
+                .contentTransition(.numericText())
             Label(title, systemImage: icon)
                 .font(.caption)
                 .foregroundStyle(.secondary)

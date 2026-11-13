@@ -1153,6 +1153,18 @@ public final class AppSettingsStore: ObservableObject {
     @Published public var v3ChorusEmphasis = true {
         didSet { defaults.set(v3ChorusEmphasis, forKey: "v3.chorusEmphasis.v1") }
     }
+    /// 只看前方: lines already sung disappear; only the current line and what is ahead stay.
+    @Published public var v3HidesSungLines = false {
+        didSet { defaults.set(v3HidesSungLines, forKey: "v3.hidesSungLines.v1") }
+    }
+    /// 鼠标视差: the backdrop leans a few points against the pointer.
+    @Published public var v3BackdropParallax = false {
+        didSet { defaults.set(v3BackdropParallax, forKey: "v3.backdropParallax.v1") }
+    }
+    /// 随时段调色: dawn a little cooler, dusk warmer, late night a deeper blue.
+    @Published public var v3DayTint = false {
+        didSet { defaults.set(v3DayTint, forKey: "v3.dayTint.v1") }
+    }
     /// Words a source printed as f**k are shown whole. Display only.
     @Published public var lyricsRestoreCensoredWords = true {
         didSet { defaults.set(lyricsRestoreCensoredWords, forKey: "lyrics.restoreCensored.v1") }
@@ -1581,6 +1593,9 @@ public final class AppSettingsStore: ObservableObject {
         self.lyricsRestoreCensoredWords = defaults.object(forKey: "lyrics.restoreCensored.v1") as? Bool ?? true
         self.v3ChorusEmphasis = defaults.object(forKey: "v3.chorusEmphasis.v1") as? Bool ?? true
         self.v3PauseFadesColor = defaults.object(forKey: "v3.pauseFadesColor.v1") as? Bool ?? true
+        self.v3HidesSungLines = defaults.bool(forKey: "v3.hidesSungLines.v1")
+        self.v3BackdropParallax = defaults.bool(forKey: "v3.backdropParallax.v1")
+        self.v3DayTint = defaults.bool(forKey: "v3.dayTint.v1")
         self.v3GlassWeather = V3GlassWeather(rawValue: defaults.string(forKey: "v3.glassWeather.v1") ?? "") ?? .off
         self.v3LyricImagery = defaults.object(forKey: "v3.lyricImagery.v1") as? Bool ?? false
         self.v3RainRoom = defaults.object(forKey: "v3.rainRoom.v1") as? Bool ?? false

@@ -431,4 +431,52 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(Double(after[0]), 0.86, accuracy: 0.001, "falls 1.4 per second")
         XCTAssertEqual(smoother.step([0.9, 0], now: 0.2)[0], 0.9, "rises at once")
     }
+
+    // MARK: Batch four — line stepping, hour wash, parallax
+
+    func testStepLineGoesToTheNeighbouringSungLine() {
+        let lines = [LyricLine(timestamp: 10, originalText: "a"), LyricLine(timestamp: 20, originalText: "b"),
+                     LyricLine(timestamp: 25, originalText: " "), LyricLine(timestamp: 30, originalText: "c")]
+        XCTAssertEqual(PlaybackState.lyricStepTarget(from: 21, lines: lines, synchronized: true, forward: true), 30,
+                       "empty lines are skipped")
+        XCTAssertEqual(PlaybackState.lyricStepTarget(from: 20.6, lines: lines, synchronized: true, forward: false), 10,
+                       "just into a line, back means the line before")
+        XCTAssertEqual(PlaybackState.lyricStepTarget(from: 23, lines: lines, synchronized: true, forward: false), 20,
+                       "well into a line, back restarts it")
+        XCTAssertEqual(PlaybackState.lyricStepTarget(from: 10.2, lines: lines, synchronized: true, forward: false), 10)
+        XCTAssertNil(PlaybackState.lyricStepTarget(from: 31, lines: lines, synchronized: true, forward: true))
+        XCTAssertNil(PlaybackState.lyricStepTarget(from: 5, lines: lines, synchronized: true, forward: false))
+        XCTAssertNil(PlaybackState.lyricStepTarget(from: 21, lines: lines, synchronized: false, forward: true))
+    }
+
+    func testLineKeysAreQAndE() {
+        XCTAssertEqual(V3ListeningKey.resolve("q", modifiers: [], repeating: false, focused: true, editing: false), .previousLine)
+        XCTAssertEqual(V3ListeningKey.resolve("E", modifiers: [], repeating: true, focused: true, editing: false), .nextLine)
+        XCTAssertNil(V3ListeningKey.resolve("q", modifiers: [.command], repeating: false, focused: true, editing: false))
+        XCTAssertNil(V3ListeningKey.resolve("e", modifiers: [], repeating: false, focused: true, editing: true))
+    }
+
+    func testHourWashOnlyAtDawnDuskAndLateNight() {
+        XCTAssertNil(V3DayTint.wash(hour: 12))
+        XCTAssertNil(V3DayTint.wash(hour: 21))
+        XCTAssertEqual(V3DayTint.wash(hour: 6.5)?.opacity ?? 0, 0.12, accuracy: 0.001)
+        XCTAssertEqual(V3DayTint.wash(hour: 18)?.opacity ?? 0, 0.14, accuracy: 0.001)
+        XCTAssertEqual(V3DayTint.wash(hour: 1)?.opacity ?? 0, 0.16, accuracy: 0.001)
+        XCTAssertEqual(V3DayTint.wash(hour: 23.25)?.opacity ?? 0, 0.08, accuracy: 0.001, "fades in over half an hour")
+        XCTAssertEqual(V3DayTint.wash(hour: 4.25)?.opacity ?? 0, 0.08, accuracy: 0.001, "and out")
+        XCTAssertGreaterThan(V3DayTint.wash(hour: 18)?.red ?? 0, V3DayTint.wash(hour: 18)?.blue ?? 1, "dusk is warm")
+    }
+
+    func testParallaxLeansAwayFromThePointerWithoutShowingAnEdge() {
+        let size = CGSize(width: 1000, height: 600)
+        XCTAssertEqual(V3BackdropParallax.offset(pointer: nil, in: size), .zero)
+        XCTAssertEqual(V3BackdropParallax.offset(pointer: CGPoint(x: 500, y: 300), in: size), .zero)
+        let corner = V3BackdropParallax.offset(pointer: CGPoint(x: 1000, y: 0), in: size)
+        XCTAssertEqual(corner.width, -12, accuracy: 0.001)
+        XCTAssertEqual(corner.height, 12, accuracy: 0.001)
+        // The enlargement covers the furthest lean on both axes.
+        let grow = V3BackdropParallax.scale(for: size) - 1
+        XCTAssertGreaterThanOrEqual(grow * size.height / 2, 12 - 0.001)
+        XCTAssertGreaterThanOrEqual(grow * size.width / 2, 12 - 0.001)
+    }
 }

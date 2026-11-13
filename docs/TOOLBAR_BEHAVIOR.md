@@ -983,3 +983,29 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 - The VU card and the 画面 panel were checked with the offscreen host.
 
 **Not seen playing:** the weather and imagery over a playing song, and the needles moving.
+
+## Round 18: batch four from the pool — small listening details (2026-11-13)
+
+The three recommended batches are done. This round takes small items the pool never put in a batch. All are off by default except where noted, and none adds a row of its own: they join existing chip rows.
+
+**Lyrics**
+- **只看前方 (C7):** lines already sung fade out; the current line and those ahead stay. Timed lyrics only. Key `v3.hidesSungLines.v1`.
+  - It sits in the 歌词行 chip row with 大字 and 副歌加强 (those two were separate switches before).
+- **上一句 / 下一句 (E4):** `Q` and `E`. Holding the key repeats.
+  - Back goes to the start of the line being sung once it is more than 1.5 s in; otherwise to the line before.
+  - Empty lines are skipped. A looped line stops looping.
+  - Lyrics without timing answer with a notice and do nothing.
+- **单句循环 on the progress bar (E5):** the looped line shows as a bracket in the cover's colour with a white outline, at least 6 pt wide.
+
+**Backdrop** — one chip row 背景细节: 暂停褪色, 鼠标视差, 随时段调色.
+- **鼠标视差 (A11):** the backdrop leans up to 12 pt away from the pointer and is enlarged by just that much, so no edge shows. Off in focus mode and with reduced motion. Key `v3.backdropParallax.v1`.
+- **随时段调色 (A10):** a soft-light wash by local time — cool at 5:00–8:00, warm at 16:30–19:30, deep blue at 23:00–4:30, nothing otherwise. Each band fades in and out over half an hour. Key `v3.dayTint.v1`.
+
+**Statistics**
+- **里程表 (F11):** the three summary figures count up from zero in about 0.7 s when they arrive or the range changes. Not with reduced motion.
+
+**Checked:** 182 native tests pass. 只看前方 was seen in the real window on a playing song; the backdrop sits where it did with the new wrapper around it.
+
+**Not seen:** 鼠标视差, `Q` / `E`, the loop bracket and the counting figures need a pointer or a key press in the app, which the assistant cannot give. The wash was not seen either: the check ran at 22:54, before the night band.
+
+**Left out and why:** 去年今天 (F5) — the records are a few weeks old and the history query reads the latest 100, so there is nothing to show yet.

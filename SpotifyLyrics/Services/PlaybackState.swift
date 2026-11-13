@@ -699,6 +699,38 @@ public final class PlaybackState: ObservableObject {
         playbackNotice = "循环这一句"
     }
 
+    /// The looped line as a stretch of the song, for the progress bar.
+    public var lyricLineLoopSpan: ClosedRange<TimeInterval>? {
+        guard loopedLyricLineID != nil, let loop = lyricLineLoop, loop.end > loop.start else { return nil }
+        return loop.start...loop.end
+    }
+
+    /// Where 上一句 / 下一句 lands. Back goes to the start of the line being
+    /// sung once it is more than 1.5 s in, otherwise to the line before.
+    nonisolated static func lyricStepTarget(from time: TimeInterval, lines: [LyricLine], synchronized: Bool,
+                                            forward: Bool) -> TimeInterval? {
+        guard synchronized, time.isFinite else { return nil }
+        let starts = lines.lazy
+            .filter { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .map(\.timestamp).filter { $0 >= 0 }.sorted()
+        if forward { return starts.first { $0 > time + 0.05 } }
+        guard let current = starts.lastIndex(where: { $0 <= time + 0.05 }) else { return nil }
+        if current == 0 || time - starts[current] > 1.5 { return starts[current] }
+        return starts[current - 1]
+    }
+
+    /// Jumps one sung line back or forward. False when the lyrics have no timing to jump by.
+    @discardableResult
+    public func stepLyricLine(forward: Bool) -> Bool {
+        guard canSeekDisplayedLyrics, !isShowingSearchPreview,
+              let target = Self.lyricStepTarget(from: presentationTimeNow, lines: liveLyrics,
+                  synchronized: liveLyricsAreSynchronized, forward: forward),
+              target < max(currentTrack.duration, target + 1) else { return false }
+        cancelLyricLineLoop()
+        seek(to: max(0, target - presentationClock.presentationOffset), source: "lyric-line-step")
+        return true
+    }
+
     private func repeatLyricLineIfNeeded() -> Bool {
         guard let loop = lyricLineLoop else { return false }
         guard loop.identity == currentTrackIdentity, loop.revision == lyricsSession.revision else {

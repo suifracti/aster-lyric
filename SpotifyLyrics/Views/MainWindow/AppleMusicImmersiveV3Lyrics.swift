@@ -667,7 +667,8 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             trackStableKey: trackStableKey,
             artistDisplay: artistDisplay,
             presentationClock: presentationClock,
-            bigLineAvailableHeight: isActive ? bigLineAvailableHeight : nil
+            bigLineAvailableHeight: isActive ? bigLineAvailableHeight : nil,
+            isPast: synchronized && settings.v3HidesSungLines && (currentIndex.map { index < $0 } ?? false)
         )
         .equatable()
         // 副歌: the sung line in the chorus carries the cover's colour as light.
@@ -1242,6 +1243,8 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
     let artistDisplay: String?
     var presentationClock: LyricsPresentationClock = LyricsPresentationClock()
     var bigLineAvailableHeight: CGFloat? = nil
+    /// 只看前方: this line has been sung and is hidden.
+    var isPast = false
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -1260,6 +1263,7 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
     static func == (lhs: AppleMusicImmersiveV3LyricRow, rhs: AppleMusicImmersiveV3LyricRow) -> Bool {
         lhs.line == rhs.line
             && lhs.isActive == rhs.isActive
+            && lhs.isPast == rhs.isPast
             && lhs.clampedDistance == rhs.clampedDistance
             && lhs.isSynchronized == rhs.isSynchronized
             && lhs.availableWidth == rhs.availableWidth
@@ -1401,6 +1405,9 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
         .blur(radius: reduceMotion ? 0 : rowBlur)
         .animation(nil, value: isActive)
         .animation(nil, value: layoutSignature)
+        // 只看前方: a sung line fades away instead of staying dimmed above.
+        .opacity(isPast ? 0 : 1)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.5), value: isPast)
     }
 }
 

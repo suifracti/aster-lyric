@@ -259,6 +259,7 @@
 		7961F7366756AAE36F9E0657 /* V3Soundprint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F08A7A731F3B8EEC06885CF /* V3Soundprint.swift */; };
 		1105A1906693D1AF2CEEBC42 /* V3SpectrumOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 575AF9352293F29B428528FB /* V3SpectrumOverlay.swift */; };
 		AC936591B69E13C83D87B58C /* V3RainRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E196A8B9474C651A633F926 /* V3RainRoom.swift */; };
+		DA975609E99F9B7D88940D37 /* V3BackdropAmbience.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D0D30F2EEEB4975F8C197C7 /* V3BackdropAmbience.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -520,6 +521,7 @@
 		7F08A7A731F3B8EEC06885CF /* V3Soundprint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3Soundprint.swift; sourceTree = "<group>"; };
 		575AF9352293F29B428528FB /* V3SpectrumOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3SpectrumOverlay.swift; sourceTree = "<group>"; };
 		5E196A8B9474C651A633F926 /* V3RainRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3RainRoom.swift; sourceTree = "<group>"; };
+		7D0D30F2EEEB4975F8C197C7 /* V3BackdropAmbience.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3BackdropAmbience.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -731,6 +733,7 @@
 				110000212D83400100000000 /* LyricsViewport.swift */,
 				110000222D83400100000000 /* ArtworkBackgroundView.swift */,
 				110000512D83400100000000 /* AppleMusicImmersiveV3BackdropView.swift */,
+				7D0D30F2EEEB4975F8C197C7 /* V3BackdropAmbience.swift */,
 				FA56EE83873FAB67D1E6F5D6 /* V3BackdropMedia.swift */,
 				61DA7987B78B10D893654A30 /* V3GlassWeather.swift */,
 				575AF9352293F29B428528FB /* V3SpectrumOverlay.swift */,
@@ -1141,6 +1144,7 @@
 				2D67EB8DBEDEFAC5F793BEC8 /* V3ToolbarModel.swift in Sources */,
 				B31702F52C144DEE90000001 /* V3WindowEdgePlaybackOverlay.swift in Sources */,
 				110000512D83400100000001 /* AppleMusicImmersiveV3BackdropView.swift in Sources */,
+				DA975609E99F9B7D88940D37 /* V3BackdropAmbience.swift in Sources */,
 				1F3AAA6A26CAB37EE98F5312 /* V3BackdropMedia.swift in Sources */,
 				53A2E3726FF64255E8D79047 /* V3GlassWeather.swift in Sources */,
 				1105A1906693D1AF2CEEBC42 /* V3SpectrumOverlay.swift in Sources */,

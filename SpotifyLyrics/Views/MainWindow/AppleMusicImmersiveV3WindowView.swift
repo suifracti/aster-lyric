@@ -367,6 +367,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 // width in a tall window. Keep that drawing overflow inside
                 // the canvas so it cannot shift the top-trailing foreground.
                 .frame(width: geometry.size.width, height: geometry.size.height)
+                .modifier(V3BackdropAmbience(parallax: settings.v3BackdropParallax && !isFocusMode,
+                                             dayTint: settings.v3DayTint))
                 .blur(radius: librarySearch.isPresented ? 5 : 0)
 
                 if settings.v3AmbientLyricMotion != .off, usesAmbientLight, !isFocusMode {
@@ -1628,6 +1630,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         case .previous: state.previousTrack(); showLyricNotice("上一首")
         case .next: state.nextTrack(); showLyricNotice("下一首")
         case .like: state.toggleTrackLike(fromKeyboard: true)
+        case .previousLine: showLyricNotice(state.stepLyricLine(forward: false) ? "上一句" : "这份歌词没有时间，不能按句跳")
+        case .nextLine: showLyricNotice(state.stepLyricLine(forward: true) ? "下一句" : "没有下一句可跳")
         case .offset(let delta):
             let store = settings.lyricsOffsetStore
             if store.setActiveValue(store.activeOffset + delta) {
@@ -1654,7 +1658,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private var listeningKeyList: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack { Text("听歌按键").font(.headline); Spacer(); Button("关闭") { showsListeningKeys = false } }
-            ForEach(["空格 · 播放 / 暂停", "A / D · 上一首 / 下一首", "S · 喜欢，再按移除", "Z / C · 偏移 −0.1s / +0.1s", "X · 偏移归零", "/ · 模糊 0 / 25 / 50 / 75 / 100%", ", / . · 模糊 −5% / +5%", "F · 专注模式", "Shift + / · 全部按键", "Esc · 关闭面板 / 退出专注"], id: \.self) { Text($0) }
+            ForEach(["空格 · 播放 / 暂停", "A / D · 上一首 / 下一首", "Q / E · 上一句 / 下一句", "S · 喜欢，再按移除", "Z / C · 偏移 −0.1s / +0.1s", "X · 偏移归零", "/ · 模糊 0 / 25 / 50 / 75 / 100%", ", / . · 模糊 −5% / +5%", "F · 专注模式", "Shift + / · 全部按键", "Esc · 关闭面板 / 退出专注"], id: \.self) { Text($0) }
         }
         .padding(22).frame(width: 320)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))

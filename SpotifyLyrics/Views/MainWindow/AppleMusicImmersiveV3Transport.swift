@@ -149,6 +149,17 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
 
                 }
 
+                // 单句循环: the looped line as a bright bracket on the track.
+                if let loop = state.lyricLineLoopSpan, duration > 0 {
+                    let span = max(6, width * CGFloat((min(loop.upperBound, duration) - loop.lowerBound) / duration))
+                    Capsule().stroke(Color.white.opacity(0.95), lineWidth: 1.5)
+                        .background(Capsule().fill(coverAccent.opacity(0.55)))
+                        .frame(width: span, height: trackHeight + 6)
+                        .offset(x: min(max(0, width - span), width * CGFloat(loop.lowerBound / duration)))
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+
                 if options.progress == .lyricTicks {
                     // Where each lyric line starts; hover a tick to read its line.
                     ForEach(Array(state.liveLyrics.enumerated()), id: \.offset) { _, line in

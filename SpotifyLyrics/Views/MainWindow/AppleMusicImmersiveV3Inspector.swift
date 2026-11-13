@@ -673,8 +673,10 @@ struct V3VisualControls {
                 if showsExplanations { backgroundMotionControls }
             }
             V3MusicMotionRow(settings: settings)
-            Toggle("暂停时褪色", isOn: $settings.v3PauseFadesColor)
-                .help("暂停一会儿后，背景慢慢褪成接近黑白；继续播放时颜色很快回来。")
+            V3ChipToggles("背景细节", items: [("暂停褪色", $settings.v3PauseFadesColor),
+                                            ("鼠标视差", $settings.v3BackdropParallax),
+                                            ("随时段调色", $settings.v3DayTint)])
+                .help("暂停褪色：暂停一会儿后，背景慢慢褪成接近黑白，继续播放时颜色很快回来。\n鼠标视差：背景随鼠标位置轻轻偏几点，像隔着一层玻璃。\n随时段调色：清晨偏冷、傍晚偏暖、深夜偏深蓝，白天不变。")
             V3SegmentedPicker("窗上天气", selection: $settings.v3GlassWeather,
                               options: V3GlassWeather.allCases.map { ($0.title, $0) })
                 .help("像隔着一扇窗：雨丝和挂在玻璃上的水珠、慢慢飘的雪、缓缓流动的雾。暂停时停下，减少动态效果时不显示。")
@@ -731,10 +733,10 @@ struct V3VisualControls {
             lyricStyleControls
             V3NumericSlider("字号", value: displayDoubleBinding(\.fontSize), in: 14...42, step: 1, unit: "pt")
                 .help("原文与译文字号；在歌词上双指捏合也可调整")
-            Toggle("大字模式", isOn: $settings.v3BigLineModeEnabled)
-                .help("当前句约两倍大，其他行缩小变淡，适合远处跟唱")
-            Toggle("副歌加强", isOn: $settings.v3ChorusEmphasis)
-                .help("从歌词里找出重复的段落当作副歌：进度条上标成浅色段，唱到副歌时画面亮一档、当前句带封面色的光。")
+            V3ChipToggles("歌词行", items: [("大字", $settings.v3BigLineModeEnabled),
+                                          ("副歌加强", $settings.v3ChorusEmphasis),
+                                          ("只看前方", $settings.v3HidesSungLines)])
+                .help("大字：当前句约两倍大，其他行缩小变淡，适合远处跟唱。\n副歌加强：从歌词里找出重复的段落当作副歌，进度条上标成浅色段，唱到副歌时画面亮一档、当前句带封面色的光。\n只看前方：唱过的歌词隐去，只留当前句和后面的；只对带时间的歌词有效。")
             V3SegmentedPicker("对齐", selection: $settings.v3LyricsPosition,
                               options: [("跟随场景", "automatic"), ("左", "left"), ("居中", "center"), ("右", "right")])
                 .help("跟随场景：当前使用" + (settings.v3ListeningScene == .coverPhoto ? "右侧阅读区" : settings.v3ArtworkPresentation == .stage ? "居中阅读区" : "左对齐"))

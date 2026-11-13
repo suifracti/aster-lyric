@@ -35,19 +35,21 @@ struct V3LyricActions {
 
 /// Main-window listening keys; text entry and system key combinations pass through.
 enum V3ListeningKey: Equatable {
-    case playPause, previous, next, like, resetOffset, focus, help, escape
+    case playPause, previous, next, like, resetOffset, focus, help, escape, previousLine, nextLine
     case offset(Double), blurFine(Double), blurCycle
 
     static func resolve(_ text: String, modifiers: NSEvent.ModifierFlags, repeating: Bool,
                         focused: Bool, editing: Bool) -> Self? {
         guard focused, !editing, modifiers.intersection([.command, .option, .control]).isEmpty else { return nil }
         let key = text.lowercased()
-        if repeating && !["z", "c", ",", ".", "<", ">"].contains(key) { return nil }
+        if repeating && !["z", "c", ",", ".", "<", ">", "q", "e"].contains(key) { return nil }
         switch key {
         case " ": return .playPause
         case "a": return .previous
         case "d": return .next
         case "s": return .like
+        case "q": return .previousLine
+        case "e": return .nextLine
         case "z": return .offset(-0.1)
         case "c": return .offset(0.1)
         case "x": return .resetOffset

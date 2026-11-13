@@ -413,3 +413,10 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **粒子层在 App 里坐标没有翻转**（日志 `WEATHER … flipped=false geometryFlipped=false`），雨、雪都从上往下。浅色背景上雨丝很淡，是对比度问题。
 - **雾窗样式**复用 `V3TypewriterReveal`（`fingertip: true`）：更宽的软边，加一条四周渐隐的水痕；其他行用比景深更重的模糊。
 
+## L-028 方案池第四批的做法（2026-11-13）
+
+- **推荐的三批做完后，方案池里还有几十条没排进批次的小项**（A、C、E、F、G、H、I、J 各组都有）。用户说“继续”时，从这些里挑量小、风险低的做，不必再等下载或调音量的授权。
+- **背景的附加效果包在 `V3BackdropAmbience` 修饰器里**，指针位置的状态留在修饰器内部，鼠标移动时不会重算背景视图。两个开关都关时结构不变（始终有一层 GeometryReader），切换不会重建背景、重载视频。
+- **行级的显隐放在 `.animation(nil, value: isActive)` 之外**再叠一层 `.opacity` 和自己的动画，否则会被里面的“无动画”吞掉。
+- **按句跳转用 `presentationTimeNow`**（歌词时间），跳转目标减去 `presentationOffset`，和单句循环一致；连按时靠“跳转保持”让时钟停在目标上，不会跳回。
+
