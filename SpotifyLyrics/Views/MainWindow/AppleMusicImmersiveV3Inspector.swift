@@ -588,7 +588,9 @@ struct V3VisualControls {
                     .help("歌词刻度：每句歌词的位置，悬停看那句。波形：按歌词疏密画出的起伏，Spotify 不提供音频数据。")
                 V3ChipToggles("", items: [("悬停出按钮", $settings.v3PlayerButtonsOnHover),
                                           ("歌名滚动", $settings.v3PlayerTitleMarquee),
-                                          ("进度贴封面", $settings.v3PlayerProgressOnCover)])
+                                          ("进度贴封面", $settings.v3PlayerProgressOnCover),
+                                          ("封面题句", $settings.v3CoverCaption)])
+                    .help("封面题句：正在唱的那一句写在封面下沿，像海报上的标语；只对带时间的歌词显示。")
             }
         }
     }
@@ -675,8 +677,9 @@ struct V3VisualControls {
             V3MusicMotionRow(settings: settings)
             if settings.v3MusicMotionEnabled {
                 V3ChipToggles("跟着低音", items: [("封面呼吸", $settings.v3CoverBreath),
+                                                ("轮廓光", $settings.v3CoverRimLight),
                                                 ("四边灯带", $settings.v3EdgeLights)])
-                    .help("封面呼吸：前景封面随低音胀大一点点，最多 2%。\n四边灯带：窗口四边一圈封面色的光，随低音变亮。\n都靠「随音乐律动」听到的声音；Spotify 自己的音量为 0 时不动。")
+                    .help("封面呼吸：前景封面随低音胀大一点点，最多 2%。\n轮廓光：封面的边随低音亮一下。\n四边灯带：窗口四边一圈封面色的光，随低音变亮。\n都靠「随音乐律动」听到的声音；Spotify 自己的音量为 0 时不动。")
             }
             V3ChipToggles("背景细节", items: [("颗粒", $settings.v3BackdropGrain),
                                             ("暂停褪色", $settings.v3PauseFadesColor),

@@ -1032,3 +1032,15 @@ The three recommended batches are done. This round takes small items the pool ne
 **Not seen:** the cover and the lights moving (Spotify's volume was 0), the 停靠 buttons (they need a click), and a real credit-only result from a source.
 
 **Looked at and left:** hiding bracketed text (I10) — it changes the line's length, and word timing, ruby and translation alignment are all keyed to character offsets.
+
+## Round 20: batch six — cover rim light and cover caption (2026-11-13)
+
+- **轮廓光 (B5):** the foreground cover's outline lights with the bass: a blurred line in the cover's colour and a thin white one, both invisible between hits. It is the middle chip of 跟着低音 (封面呼吸 / 轮廓光 / 四边灯带). Off by default. Key `v3.coverRimLight.v1`.
+- **封面题句 (E8):** the line being sung is set along the cover's lower edge, white on a short dark gradient, like the tagline on a poster. Off by default. Key `v3.coverCaption.v1`.
+  - Timed lyrics only; nothing is drawn between songs, for untimed lyrics, or on covers under 120 pt.
+  - Type is 4.8% of the cover's width, held between 11 and 22 pt, two lines at most.
+  - It is the fourth chip in the row under 进度条 (悬停出按钮 / 歌名滚动 / 进度贴封面 / 封面题句).
+
+**Checked:** 186 native tests pass. 封面题句 was seen in the real window on a playing song. The 画面 panel was rendered offscreen: the four-chip row fits.
+
+**Not seen:** 轮廓光 lighting up (Spotify's volume was 0).

@@ -1161,6 +1161,14 @@ public final class AppSettingsStore: ObservableObject {
     @Published public var v3CoverBreath = false {
         didSet { defaults.set(v3CoverBreath, forKey: "v3.coverBreath.v1") }
     }
+    /// 封面轮廓光: the cover's outline lights with the bass (needs 随音乐律动).
+    @Published public var v3CoverRimLight = false {
+        didSet { defaults.set(v3CoverRimLight, forKey: "v3.coverRimLight.v1") }
+    }
+    /// 封面题句: the line being sung along the cover's lower edge.
+    @Published public var v3CoverCaption = false {
+        didSet { defaults.set(v3CoverCaption, forKey: "v3.coverCaption.v1") }
+    }
     /// 四边灯带: the window's edges glow with the bass (needs 随音乐律动).
     @Published public var v3EdgeLights = false {
         didSet { defaults.set(v3EdgeLights, forKey: "v3.edgeLights.v1") }
@@ -1609,6 +1617,8 @@ public final class AppSettingsStore: ObservableObject {
         self.v3BackdropParallax = defaults.bool(forKey: "v3.backdropParallax.v1")
         self.v3DayTint = defaults.bool(forKey: "v3.dayTint.v1")
         self.v3CoverBreath = defaults.bool(forKey: "v3.coverBreath.v1")
+        self.v3CoverRimLight = defaults.bool(forKey: "v3.coverRimLight.v1")
+        self.v3CoverCaption = defaults.bool(forKey: "v3.coverCaption.v1")
         self.v3EdgeLights = defaults.bool(forKey: "v3.edgeLights.v1")
         self.v3BackdropGrain = defaults.object(forKey: "v3.backdropGrain.v1") as? Bool ?? true
         self.v3GlassWeather = V3GlassWeather(rawValue: defaults.string(forKey: "v3.glassWeather.v1") ?? "") ?? .off

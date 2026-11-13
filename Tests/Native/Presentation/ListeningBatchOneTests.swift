@@ -508,4 +508,10 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertFalse(LyricsCreditOnly.matches([String]()))
         XCTAssertFalse(LyricsCreditOnly.matches(["Written by the river: a song"]), "a sung line that happens to hold a colon later")
     }
+
+    func testCoverCaptionTypeStaysReadableOnAnyCover() {
+        XCTAssertEqual(V3CoverCaption.fontSize(coverWidth: 120), 11, "never below 11 pt")
+        XCTAssertEqual(V3CoverCaption.fontSize(coverWidth: 330), 15.84, accuracy: 0.01)
+        XCTAssertEqual(V3CoverCaption.fontSize(coverWidth: 900), 22, "never above 22 pt")
+    }
 }

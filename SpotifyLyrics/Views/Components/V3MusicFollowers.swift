@@ -64,3 +64,67 @@ struct V3EdgeLights: View {
         .accessibilityHidden(true)
     }
 }
+
+/// 封面轮廓光: the foreground cover's outline lights up with the bass.
+struct V3CoverRimLight: View {
+    let cover: V3ForegroundCoverFrame
+    let accent: Color
+    let running: Bool
+    @State private var box = V3BassFollowerBox()
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !running)) { _ in
+            let level = running ? box.step() : 0
+            let shape = RoundedRectangle(cornerRadius: cover.cornerRadius, style: .continuous)
+            ZStack {
+                shape.stroke(accent, lineWidth: 5).blur(radius: 9).opacity(0.85 * level)
+                shape.stroke(Color.white, lineWidth: 1.2).opacity(0.75 * level)
+            }
+            .frame(width: cover.frame.width, height: cover.frame.height)
+            .position(x: cover.frame.midX, y: cover.frame.midY)
+            .blendMode(.screen)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// 封面题句: the line being sung, set along the cover's lower edge like the
+/// tagline on a poster. `text` nil shows nothing.
+struct V3CoverCaption: View {
+    let cover: V3ForegroundCoverFrame
+    let text: String?
+    let lineIndex: Int?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    static func fontSize(coverWidth: CGFloat) -> CGFloat { min(22, max(11, coverWidth * 0.048)) }
+
+    var body: some View {
+        let shown = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        ZStack(alignment: .bottom) {
+            if !shown.isEmpty {
+                LinearGradient(colors: [.clear, .black.opacity(0.62)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: cover.frame.height * 0.34)
+                    .transition(.opacity)
+                Text(shown)
+                    .font(.system(size: Self.fontSize(coverWidth: cover.frame.width), weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                    .padding(.horizontal, cover.frame.width * 0.07)
+                    .padding(.bottom, cover.frame.height * 0.055)
+                    .id(lineIndex)
+                    .transition(.opacity)
+            }
+        }
+        .frame(width: cover.frame.width, height: cover.frame.height, alignment: .bottom)
+        .clipShape(RoundedRectangle(cornerRadius: cover.cornerRadius, style: .continuous))
+        .position(x: cover.frame.midX, y: cover.frame.midY)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: lineIndex)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: shown.isEmpty)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}

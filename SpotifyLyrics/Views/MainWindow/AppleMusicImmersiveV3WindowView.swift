@@ -418,6 +418,20 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
 
+                if settings.v3CoverRimLight, settings.v3MusicMotionEnabled, hoveredStyle == nil, !reduceMotion,
+                   let cover = foregroundCover, cover.isLargeEnough {
+                    V3CoverRimLight(cover: cover, accent: coverAccent ?? .white, running: state.isPlaying)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                }
+                if settings.v3CoverCaption, hoveredStyle == nil, !librarySearch.isPresented,
+                   let cover = foregroundCover, cover.isLargeEnough {
+                    let index = state.liveLyricsAreSynchronized && !state.isShowingSearchPreview ? state.currentLineIndex : nil
+                    V3CoverCaption(cover: cover,
+                                   text: index.flatMap { state.lyrics.indices.contains($0) ? state.lyrics[$0].originalText : nil },
+                                   lineIndex: index)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                }
+
                 if settings.v3PlayerProgressOnCover, !settings.v3ScenePlayerHidden, !isFocusMode,
                    let cover = foregroundCover, cover.isLargeEnough {
                     V3CoverEdgeProgress(state: state, cover: cover, accent: coverAccent ?? .white)
