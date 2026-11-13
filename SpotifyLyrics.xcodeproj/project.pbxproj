@@ -260,6 +260,8 @@
 		1105A1906693D1AF2CEEBC42 /* V3SpectrumOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 575AF9352293F29B428528FB /* V3SpectrumOverlay.swift */; };
 		AC936591B69E13C83D87B58C /* V3RainRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E196A8B9474C651A633F926 /* V3RainRoom.swift */; };
 		DA975609E99F9B7D88940D37 /* V3BackdropAmbience.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D0D30F2EEEB4975F8C197C7 /* V3BackdropAmbience.swift */; };
+		20B8349BBED22F3D7FE17023 /* V3MusicFollowers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A15CC0D12654E4F8C55A49B0 /* V3MusicFollowers.swift */; };
+		AC64F81C1FF0A05129ACA273 /* LyricsCreditOnly.swift in Sources */ = {isa = PBXBuildFile; fileRef = 691058B73179FA592C15242B /* LyricsCreditOnly.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -522,6 +524,8 @@
 		575AF9352293F29B428528FB /* V3SpectrumOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3SpectrumOverlay.swift; sourceTree = "<group>"; };
 		5E196A8B9474C651A633F926 /* V3RainRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3RainRoom.swift; sourceTree = "<group>"; };
 		7D0D30F2EEEB4975F8C197C7 /* V3BackdropAmbience.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3BackdropAmbience.swift; sourceTree = "<group>"; };
+		A15CC0D12654E4F8C55A49B0 /* V3MusicFollowers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3MusicFollowers.swift; sourceTree = "<group>"; };
+		691058B73179FA592C15242B /* LyricsCreditOnly.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsCreditOnly.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -734,6 +738,7 @@
 				110000222D83400100000000 /* ArtworkBackgroundView.swift */,
 				110000512D83400100000000 /* AppleMusicImmersiveV3BackdropView.swift */,
 				7D0D30F2EEEB4975F8C197C7 /* V3BackdropAmbience.swift */,
+				A15CC0D12654E4F8C55A49B0 /* V3MusicFollowers.swift */,
 				FA56EE83873FAB67D1E6F5D6 /* V3BackdropMedia.swift */,
 				61DA7987B78B10D893654A30 /* V3GlassWeather.swift */,
 				575AF9352293F29B428528FB /* V3SpectrumOverlay.swift */,
@@ -794,6 +799,7 @@
 				110000122D83400100000000 /* TrackIdentity.swift */,
 				110000132D83400100000000 /* LyricsModels.swift */,
 				110000142D83400100000000 /* LRCParser.swift */,
+				691058B73179FA592C15242B /* LyricsCreditOnly.swift */,
 				120000022D83400100000000 /* TTMLParser.swift */,
 				120000022D83409900000000 /* YRCParser.swift */,
 				036201EF5830E1ABA1560F06 /* KRCParser.swift */,
@@ -1056,6 +1062,7 @@
 				110000122D83400100000001 /* TrackIdentity.swift in Sources */,
 				110000132D83400100000001 /* LyricsModels.swift in Sources */,
 				110000142D83400100000001 /* LRCParser.swift in Sources */,
+				AC64F81C1FF0A05129ACA273 /* LyricsCreditOnly.swift in Sources */,
 				120000022D83400100000001 /* TTMLParser.swift in Sources */,
 				120000022D83409900000001 /* YRCParser.swift in Sources */,
 				1894F58964647B39701CD0A2 /* KRCParser.swift in Sources */,
@@ -1145,6 +1152,7 @@
 				B31702F52C144DEE90000001 /* V3WindowEdgePlaybackOverlay.swift in Sources */,
 				110000512D83400100000001 /* AppleMusicImmersiveV3BackdropView.swift in Sources */,
 				DA975609E99F9B7D88940D37 /* V3BackdropAmbience.swift in Sources */,
+				20B8349BBED22F3D7FE17023 /* V3MusicFollowers.swift in Sources */,
 				1F3AAA6A26CAB37EE98F5312 /* V3BackdropMedia.swift in Sources */,
 				53A2E3726FF64255E8D79047 /* V3GlassWeather.swift in Sources */,
 				1105A1906693D1AF2CEEBC42 /* V3SpectrumOverlay.swift in Sources */,

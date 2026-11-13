@@ -719,7 +719,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             endRadius: 980
         )
 
-        if let noiseImage {
+        if let noiseImage, settings.v3BackdropGrain {
             Image(nsImage: noiseImage)
                 .resizable(resizingMode: .tile)
                 .blendMode(.softLight)
@@ -785,7 +785,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             endRadius: 1050
         )
 
-        if let noiseImage {
+        if let noiseImage, settings.v3BackdropGrain {
             Image(nsImage: noiseImage)
                 .resizable(resizingMode: .tile)
                 .blendMode(.softLight)
@@ -901,7 +901,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
             endRadius: 1050
         )
 
-        if let noiseImage {
+        if let noiseImage, settings.v3BackdropGrain {
             Image(nsImage: noiseImage)
                 .resizable(resizingMode: .tile)
                 .blendMode(.softLight)

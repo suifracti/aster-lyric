@@ -479,4 +479,33 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(grow * size.height / 2, 12 - 0.001)
         XCTAssertGreaterThanOrEqual(grow * size.width / 2, 12 - 0.001)
     }
+
+    // MARK: Batch five — bass followers, docking, credit-only lyrics
+
+    func testBassFollowerJumpsUpAndFallsBack() {
+        var follower = V3BassFollower()
+        XCTAssertEqual(follower.step(bass: 1.0, now: 0), 0, "the song's usual level lifts nothing")
+        XCTAssertEqual(follower.step(bass: 1.55, now: 0.03), 1, accuracy: 0.001, "a hit arrives at once")
+        let later = follower.step(bass: 1.0, now: 0.13)
+        XCTAssertEqual(later, exp(-0.1 / 0.22), accuracy: 0.001)
+        XCTAssertEqual(follower.step(bass: nil, now: 5), exp(-0.1 / 0.22) * exp(-0.1 / 0.22), accuracy: 0.001,
+                       "a long gap counts as one step, and stale levels lift nothing")
+    }
+
+    func testDesktopLyricsDockCentresTopAndBottom() {
+        let visible = CGRect(x: 0, y: 80, width: 1440, height: 795)
+        let size = CGSize(width: 600, height: 120)
+        XCTAssertEqual(FloatingLyricsDock.origin(size: size, visibleFrame: visible, place: .top), CGPoint(x: 420, y: 747))
+        XCTAssertEqual(FloatingLyricsDock.origin(size: size, visibleFrame: visible, place: .bottom), CGPoint(x: 420, y: 88))
+    }
+
+    func testCreditOnlyLyricsAreNotLyrics() {
+        XCTAssertTrue(LyricsCreditOnly.matches(["作词 : 某人", "作曲 : 某人", "编曲：某人"]))
+        XCTAssertTrue(LyricsCreditOnly.matches(lrc: "[ti:歌]\n[00:00.00] 作词 : A\n[00:01.00] 作曲 : B\n"))
+        XCTAssertTrue(LyricsCreditOnly.matches(["サヨナラ - stb", "词：stb", "曲：stb"]), "a heading before the credits")
+        XCTAssertFalse(LyricsCreditOnly.matches(["作词 : 某人", "作曲 : 某人", "今天的风很轻"]))
+        XCTAssertFalse(LyricsCreditOnly.matches(["今天的风很轻", "曲终人散"]), "no colon, no credit")
+        XCTAssertFalse(LyricsCreditOnly.matches([String]()))
+        XCTAssertFalse(LyricsCreditOnly.matches(["Written by the river: a song"]), "a sung line that happens to hold a colon later")
+    }
 }

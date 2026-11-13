@@ -76,7 +76,8 @@ public final class QQExperimentalLyricsProvider: LyricsProvider, @unchecked Send
                     )
                     synced = false
                 }
-                guard !lines.isEmpty else { continue }
+                // Credits alone (作词 / 作曲 …) are not this song's lyrics.
+                guard !lines.isEmpty, !LyricsCreditOnly.matches(lines) else { continue }
                 // Word timing (QRC) for a likely match; translation and romaji
                 // from the plain lyric are laid over it. Line timing otherwise.
                 var resolvedLines = lines

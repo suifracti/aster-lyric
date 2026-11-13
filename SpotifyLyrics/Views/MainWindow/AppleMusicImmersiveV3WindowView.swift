@@ -383,6 +383,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .blur(radius: librarySearch.isPresented ? 5 : 0)
                 }
+                if settings.v3EdgeLights, settings.v3MusicMotionEnabled, hoveredStyle == nil, !reduceMotion {
+                    V3EdgeLights(accent: coverAccent ?? .white, running: state.isPlaying)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                }
                 if settings.v3SpectrumStyle != .off, hoveredStyle == nil, !isFocusMode {
                     V3SpectrumOverlay(style: settings.v3SpectrumStyle,
                                       running: state.isPlaying && settings.v3MusicMotionEnabled,

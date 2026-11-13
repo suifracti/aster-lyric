@@ -178,6 +178,8 @@ public final class NetEaseExperimentalLyricsProvider: LyricsProvider, @unchecked
         let tlyric = decoded.tlyric?.lyric?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let yrc = decoded.yrc?.lyric?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if lrc.isEmpty && yrc.isEmpty { return nil }
+        // Only 作词 / 作曲 lines and no sung words: the catalogue has no lyric body.
+        if yrc.isEmpty, LyricsCreditOnly.matches(lrc: lrc) { return nil }
         return NetEaseLyricPayload(
             lrc: lrc,
             tlyric: tlyric.isEmpty ? nil : tlyric,

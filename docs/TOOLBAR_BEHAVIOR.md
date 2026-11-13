@@ -1009,3 +1009,26 @@ The three recommended batches are done. This round takes small items the pool ne
 **Not seen:** 鼠标视差, `Q` / `E`, the loop bracket and the counting figures need a pointer or a key press in the app, which the assistant cannot give. The wash was not seen either: the check ran at 22:54, before the night band.
 
 **Left out and why:** 去年今天 (F5) — the records are a few weeks old and the history query reads the latest 100, so there is nothing to show yet.
+
+## Round 19: batch five from the pool — bass followers, grain, docking, credit-only lyrics (2026-11-13)
+
+**跟着低音** — a chip row shown only while 随音乐律动 is on. Both off by default.
+- **封面呼吸 (B3):** every foreground cover swells by up to 2% with the bass. Key `v3.coverBreath.v1`.
+- **四边灯带 (B4):** a soft band of the cover's colour along the window's four edges; nearly gone between hits (6%), up to 56% on a hit. Key `v3.edgeLights.v1`.
+- Both rise at once and fall back over about 0.22 s. With Spotify's own volume at 0, or with reduced motion, they stand still.
+
+**背景细节** gains a first chip, **颗粒 (A14):** the fine grain over the backdrop. On by default, as it always was; off removes it. Key `v3.backdropGrain.v1`.
+
+**Desktop lyrics, 停靠 (G4):** two buttons in 设置 → 桌面歌词: 屏幕顶部居中 and 程序坞上方居中.
+- The window moves to the centre of its own screen, 8 pt from the menu bar or the Dock, and keeps its size. The place is remembered; it can still be dragged away.
+- Nothing happens while the desktop lyrics are closed.
+
+**Credit-only lyrics (I3):** a result whose every line is a credit (作词 / 作曲 / 编曲 / lyrics by …, with a colon), optionally after one "Title - Artist" heading, is not adopted.
+- NetEase: treated as "found the song, no lyric body". QQ: that candidate is skipped.
+- A sung line anywhere keeps the lyrics. More than 30 lines is never treated as credits.
+
+**Checked:** 185 native tests pass. In the real window the layout is unchanged with 四边灯带, 封面呼吸 and 随时段调色 on and 颗粒 off.
+
+**Not seen:** the cover and the lights moving (Spotify's volume was 0), the 停靠 buttons (they need a click), and a real credit-only result from a source.
+
+**Looked at and left:** hiding bracketed text (I10) — it changes the line's length, and word timing, ruby and translation alignment are all keyed to character offsets.

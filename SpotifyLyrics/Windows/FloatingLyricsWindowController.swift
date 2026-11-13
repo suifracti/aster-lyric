@@ -14,6 +14,22 @@ private final class FloatingLyricsStylePanel: NSPanel {
 
 /// Retains one panel/frame, but creates its SwiftUI content only while shown.
 /// Hidden desktop lyrics must not keep observing playback in the background.
+/// Where 停靠 puts the desktop lyrics: centred under the menu bar, or centred
+/// just above the Dock. The window keeps its size.
+enum FloatingLyricsDock: String {
+    case top, bottom
+    static let requested = Notification.Name("FloatingLyricsDockRequested")
+    static let margin: CGFloat = 8
+
+    static func origin(size: CGSize, visibleFrame: CGRect, place: FloatingLyricsDock) -> CGPoint {
+        let x = visibleFrame.midX - size.width / 2
+        switch place {
+        case .top: return CGPoint(x: x, y: visibleFrame.maxY - size.height - margin)
+        case .bottom: return CGPoint(x: x, y: visibleFrame.minY + margin)
+        }
+    }
+}
+
 @MainActor
 final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindowDelegate {
     @Published private(set) var isVisible = false
@@ -35,15 +51,33 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
     private var pauseHideTask: Task<Void, Never>?
     private var didRestore = false
 
+    private var dockObserver: NSObjectProtocol?
+
     override init() {
         super.init()
         observeScreenChanges()
+        dockObserver = NotificationCenter.default.addObserver(forName: FloatingLyricsDock.requested, object: nil,
+                                                              queue: .main) { [weak self] note in
+            guard let place = (note.object as? String).flatMap(FloatingLyricsDock.init(rawValue:)) else { return }
+            MainActor.assumeIsolated { self?.dock(place) }
+        }
+    }
+
+    /// Moves the desktop lyrics to the top or bottom centre of its screen and remembers it.
+    func dock(_ place: FloatingLyricsDock) {
+        guard let panel else { return }
+        let visible = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
+        guard let visible else { return }
+        let origin = FloatingLyricsDock.origin(size: panel.frame.size, visibleFrame: visible, place: place)
+        panel.setFrame(CGRect(origin: origin, size: panel.frame.size), display: true, animate: true)
+        saveFrame(panel)
     }
 
     deinit {
         if let screenChangeObserver {
             NotificationCenter.default.removeObserver(screenChangeObserver)
         }
+        if let dockObserver { NotificationCenter.default.removeObserver(dockObserver) }
         settingsCancellables.forEach { $0.cancel() }
     }
 

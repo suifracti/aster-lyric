@@ -673,10 +673,16 @@ struct V3VisualControls {
                 if showsExplanations { backgroundMotionControls }
             }
             V3MusicMotionRow(settings: settings)
-            V3ChipToggles("背景细节", items: [("暂停褪色", $settings.v3PauseFadesColor),
+            if settings.v3MusicMotionEnabled {
+                V3ChipToggles("跟着低音", items: [("封面呼吸", $settings.v3CoverBreath),
+                                                ("四边灯带", $settings.v3EdgeLights)])
+                    .help("封面呼吸：前景封面随低音胀大一点点，最多 2%。\n四边灯带：窗口四边一圈封面色的光，随低音变亮。\n都靠「随音乐律动」听到的声音；Spotify 自己的音量为 0 时不动。")
+            }
+            V3ChipToggles("背景细节", items: [("颗粒", $settings.v3BackdropGrain),
+                                            ("暂停褪色", $settings.v3PauseFadesColor),
                                             ("鼠标视差", $settings.v3BackdropParallax),
                                             ("随时段调色", $settings.v3DayTint)])
-                .help("暂停褪色：暂停一会儿后，背景慢慢褪成接近黑白，继续播放时颜色很快回来。\n鼠标视差：背景随鼠标位置轻轻偏几点，像隔着一层玻璃。\n随时段调色：清晨偏冷、傍晚偏暖、深夜偏深蓝，白天不变。")
+                .help("颗粒：背景上一层很淡的噪点，让大片渐变不显得塑料。\n暂停褪色：暂停一会儿后，背景慢慢褪成接近黑白，继续播放时颜色很快回来。\n鼠标视差：背景随鼠标位置轻轻偏几点，像隔着一层玻璃。\n随时段调色：清晨偏冷、傍晚偏暖、深夜偏深蓝，白天不变。")
             V3SegmentedPicker("窗上天气", selection: $settings.v3GlassWeather,
                               options: V3GlassWeather.allCases.map { ($0.title, $0) })
                 .help("像隔着一扇窗：雨丝和挂在玻璃上的水珠、慢慢飘的雪、缓缓流动的雾。暂停时停下，减少动态效果时不显示。")

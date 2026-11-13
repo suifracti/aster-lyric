@@ -420,3 +420,12 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **行级的显隐放在 `.animation(nil, value: isActive)` 之外**再叠一层 `.opacity` 和自己的动画，否则会被里面的“无动画”吞掉。
 - **按句跳转用 `presentationTimeNow`**（歌词时间），跳转目标减去 `presentationOffset`，和单句循环一致；连按时靠“跳转保持”让时钟停在目标上，不会跳回。
 
+## L-029 第五批的做法与坑（2026-11-13）
+
+- **`@MainActor` 写在类声明上一行**，往它和类之间插入别的类型会让类失去主线程隔离，报一串 “main actor-isolated … from a nonisolated context”。新类型插在 `@MainActor` 之前。
+- **设置页拿不到桌面歌词控制器**（控制器由 `WindowManager` 持有）。停靠用通知 `FloatingLyricsDock.requested` 传给控制器。
+- **跟着低音的效果共用 `V3BassFollower`**：瞬时升、0.22 秒回落，数据过期（0.5 秒没更新）当作 0。视图用 `TimelineView` 每秒 30 次读一次，状态放在一个不发布变化的盒子里。
+- **封面呼吸挂在 `v3ReportsForegroundCover` 里**，所有前景封面都有；上报的封面位置仍是静止时的。
+- **显示层不能改歌词行的长度**：逐字时间、注音、译文对齐都按字符位置。星号还原因为长度不变才安全；隐藏括号内容（I10）因此没做。
+- **“只有署名”的假歌词**在来源里拦（网易云、QQ），不进匹配打分。
+

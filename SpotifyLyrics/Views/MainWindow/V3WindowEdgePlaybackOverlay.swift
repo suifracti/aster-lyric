@@ -397,6 +397,8 @@ extension View {
             Color.clear.preference(key: V3ForegroundCoverPreferenceKey.self,
                 value: V3ForegroundCoverFrame(frame: rounded, cornerRadius: (rounded.width * cornerRadiusRatio).rounded()))
         })
+        // 封面呼吸 rides on every foreground cover; the reported frame stays the resting one.
+        .modifier(V3CoverBreath())
     }
 }
 
