@@ -514,4 +514,36 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(V3CoverCaption.fontSize(coverWidth: 330), 15.84, accuracy: 0.01)
         XCTAssertEqual(V3CoverCaption.fontSize(coverWidth: 900), 22, "never above 22 pt")
     }
+
+    // MARK: Batch seven — kept lines, whole-line timing
+
+    @MainActor func testFavoriteLinesToggleAndPersist() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("fav-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = V3FavoriteLines(fileURL: url)
+        XCTAssertTrue(store.toggle(text: " 今天的风很轻 ", translation: "", title: "歌", artist: "人", trackKey: "k1", artworkURL: nil))
+        XCTAssertTrue(store.toggle(text: "第二句", translation: "second", title: "歌", artist: "人", trackKey: "k1", artworkURL: nil))
+        XCTAssertFalse(store.toggle(text: "   ", translation: nil, title: "歌", artist: "人", trackKey: "k1", artworkURL: nil), "empty lines are not kept")
+        XCTAssertEqual(store.entries.map(\.text), ["第二句", "今天的风很轻"], "newest first, trimmed")
+        XCTAssertNil(store.entries[1].translation, "an empty translation is not stored")
+        XCTAssertTrue(store.contains(text: "今天的风很轻", trackKey: "k1"))
+        XCTAssertFalse(store.contains(text: "今天的风很轻", trackKey: "k2"), "the same words in another song are another line")
+
+        let reopened = V3FavoriteLines(fileURL: url)
+        XCTAssertEqual(reopened.entries.map(\.text), ["第二句", "今天的风很轻"])
+        XCTAssertFalse(reopened.toggle(text: "第二句", translation: nil, title: "歌", artist: "人", trackKey: "k1", artworkURL: nil),
+                       "a second toggle removes it")
+        XCTAssertEqual(V3FavoriteLines(fileURL: url).entries.count, 1)
+    }
+
+    func testWholeLineTimingDropsOnlyTheWordTiming() {
+        var line = LyricLine(timestamp: 12, originalText: "hello world")
+        XCTAssertEqual(line.withoutWordTiming, line, "a line without word timing is left alone")
+        line.timedSpans = [TimedTextSpan(id: 0, text: "hello", startTime: 12, endTime: 12.5, utf16Start: 0, utf16Length: 5)]
+        let plain = line.withoutWordTiming
+        XCTAssertNil(plain.timedSpans)
+        XCTAssertEqual(plain.id, line.id)
+        XCTAssertEqual(plain.timestamp, 12)
+        XCTAssertEqual(plain.originalText, "hello world")
+    }
 }

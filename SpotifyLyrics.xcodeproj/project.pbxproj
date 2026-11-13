@@ -262,6 +262,8 @@
 		DA975609E99F9B7D88940D37 /* V3BackdropAmbience.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D0D30F2EEEB4975F8C197C7 /* V3BackdropAmbience.swift */; };
 		20B8349BBED22F3D7FE17023 /* V3MusicFollowers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A15CC0D12654E4F8C55A49B0 /* V3MusicFollowers.swift */; };
 		AC64F81C1FF0A05129ACA273 /* LyricsCreditOnly.swift in Sources */ = {isa = PBXBuildFile; fileRef = 691058B73179FA592C15242B /* LyricsCreditOnly.swift */; };
+		CC936560DC7B5A93A8AB543D /* V3FavoriteLines.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4718DEA0801889626B70F166 /* V3FavoriteLines.swift */; };
+		598548A9D413CD4EFB599C7C /* FavoriteLinesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BBBF9743852EB9CEB70F376 /* FavoriteLinesView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -526,6 +528,8 @@
 		7D0D30F2EEEB4975F8C197C7 /* V3BackdropAmbience.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3BackdropAmbience.swift; sourceTree = "<group>"; };
 		A15CC0D12654E4F8C55A49B0 /* V3MusicFollowers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3MusicFollowers.swift; sourceTree = "<group>"; };
 		691058B73179FA592C15242B /* LyricsCreditOnly.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsCreditOnly.swift; sourceTree = "<group>"; };
+		4718DEA0801889626B70F166 /* V3FavoriteLines.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3FavoriteLines.swift; sourceTree = "<group>"; };
+		0BBBF9743852EB9CEB70F376 /* FavoriteLinesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteLinesView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -686,6 +690,7 @@
 				110000F82D83400100000000 /* ExperienceLibrarySettingsView.swift */,
 				110000A82D83400100000000 /* ReadingSettingsView.swift */,
 				110006042D83400100000000 /* ListeningHistoryView.swift */,
+				0BBBF9743852EB9CEB70F376 /* FavoriteLinesView.swift */,
 				0719C6699D3AB7FF8D4F84FA /* ListeningCoverWall.swift */,
 				110006062D83400100000000 /* ListeningStatisticsView.swift */,
 				2A45882509A12B6FB7F5BC43 /* V3RecapCard.swift */,
@@ -800,6 +805,7 @@
 				110000132D83400100000000 /* LyricsModels.swift */,
 				110000142D83400100000000 /* LRCParser.swift */,
 				691058B73179FA592C15242B /* LyricsCreditOnly.swift */,
+				4718DEA0801889626B70F166 /* V3FavoriteLines.swift */,
 				120000022D83400100000000 /* TTMLParser.swift */,
 				120000022D83409900000000 /* YRCParser.swift */,
 				036201EF5830E1ABA1560F06 /* KRCParser.swift */,
@@ -1063,6 +1069,7 @@
 				110000132D83400100000001 /* LyricsModels.swift in Sources */,
 				110000142D83400100000001 /* LRCParser.swift in Sources */,
 				AC64F81C1FF0A05129ACA273 /* LyricsCreditOnly.swift in Sources */,
+				CC936560DC7B5A93A8AB543D /* V3FavoriteLines.swift in Sources */,
 				120000022D83400100000001 /* TTMLParser.swift in Sources */,
 				120000022D83409900000001 /* YRCParser.swift in Sources */,
 				1894F58964647B39701CD0A2 /* KRCParser.swift in Sources */,
@@ -1251,6 +1258,7 @@
 				110006022D83400100000001 /* PersonalLyricsLibraryView.swift in Sources */,
 				110006032D83400100000001 /* ListeningHistoryModels.swift in Sources */,
 				110006042D83400100000001 /* ListeningHistoryView.swift in Sources */,
+				598548A9D413CD4EFB599C7C /* FavoriteLinesView.swift in Sources */,
 				45D81E49ED2AA16E1B7760C4 /* ListeningCoverWall.swift in Sources */,
 				110006052D83400100000001 /* ListeningStatisticsModels.swift in Sources */,
 				110006062D83400100000001 /* ListeningStatisticsView.swift in Sources */,

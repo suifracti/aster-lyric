@@ -339,6 +339,14 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                             }
                         },
                         onCopyLine: { LyricsCopyText.copy($0) },
+                        onFavoriteLine: { line in
+                            let track = documentTrack
+                            let kept = V3FavoriteLines.shared.toggle(
+                                text: line.originalText, translation: line.translationText, title: track.title,
+                                artist: track.artist, trackKey: TrackIdentity(track: track).stableKey,
+                                artworkURL: track.artworkURL)
+                            state.showNotice(kept ? "已收藏，在歌词库的「金句」里" : "已取消收藏")
+                        },
                         onShareLine: { line in
                             let track = documentTrack
                             Task { @MainActor in
@@ -545,6 +553,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     let onSeek: (TimeInterval) -> Void
     let onRuby: ((String, String) -> Void)?
     let onCopyLine: (String) -> Void
+    var onFavoriteLine: (LyricLine) -> Void = { _ in }
     var onShareLine: (LyricLine) -> Void = { _ in }
     let onCopyAll: () -> Void
     let onCopyPassage: (Int) -> Void
@@ -656,7 +665,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             ? abs(index - (currentIndex ?? index))
             : 0
         let content = AppleMusicImmersiveV3LyricRow(
-            line: line,
+            line: settings.v3WholeLineTiming ? line.withoutWordTiming : line,
             isActive: isActive,
             distance: readingScene == .linerNotes ? 0 : (readingScene == .focusedLyrics ? min(1, distance) : distance),
             isSynchronized: synchronized,
@@ -696,6 +705,8 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             }
             if !isPreview, !line.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Button("做成分享卡", systemImage: "photo.on.rectangle") { onShareLine(line) }
+                let kept = trackStableKey.map { V3FavoriteLines.shared.contains(text: line.originalText, trackKey: $0) } ?? false
+                Button(kept ? "取消收藏这句" : "收藏这句", systemImage: kept ? "star.slash" : "star") { onFavoriteLine(line) }
             }
             Button("复制整首歌词", systemImage: "doc.on.doc.fill") {
                 onCopyAll()

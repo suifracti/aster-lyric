@@ -12,6 +12,7 @@ public enum LibraryToolTab: String, CaseIterable, Identifiable {
     case library = "我的歌词库"
     case history = "最近播放"
     case statistics = "听歌统计"
+    case favorites = "金句"
 
     public var id: String { rawValue }
 }

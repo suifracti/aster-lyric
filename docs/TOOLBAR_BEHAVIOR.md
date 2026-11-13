@@ -1044,3 +1044,16 @@ The three recommended batches are done. This round takes small items the pool ne
 **Checked:** 186 native tests pass. 封面题句 was seen in the real window on a playing song. The 画面 panel was rendered offscreen: the four-chip row fits.
 
 **Not seen:** 轮廓光 lighting up (Spotify's volume was 0).
+
+## Round 21: batch seven — kept lines, whole-line timing (2026-11-13)
+
+- **金句 (F8):** right-click a lyric line → 收藏这句 (取消收藏这句 once kept). A notice confirms it.
+  - Kept lines are listed in the lyric library window under a fourth tab, 金句: the line, its translation if it had one, song · artist · date, with 复制 and 移除. Newest first.
+  - Stored in `Application Support/SpotifyLyrics/favorite-lines.json`, beside the database. The database and its schema are not touched.
+  - The same words in another song are a separate entry; empty lines cannot be kept.
+- **整句亮 (H7):** a fourth chip in 歌词行. Lyrics with word timing are shown line by line, without the word-by-word fill. Off by default. Key `v3.wholeLineTiming.v1`. Display only: the stored lyrics keep their word timing.
+- **Settings search** already matches pages by keyword (H4 as far as it is done). The new names were added: 桌面歌词, 停靠, 程序坞, 暂停时隐藏, 全屏, 截图, 录屏; 金句, 收藏, 封面墙, 回顾卡.
+
+**Checked:** 188 native tests pass, including saving and reopening the kept-lines file in a temporary folder. The app starts and plays with the build.
+
+**Not seen:** the 收藏这句 menu and the 金句 tab need a right-click and a click. 整句亮 was switched on for one capture, but the song was at its last lines and may have had no word timing, so the picture proves nothing.

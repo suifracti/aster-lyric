@@ -677,3 +677,13 @@ public struct LyricsAutomaticSelectionEvidence: Sendable {
         self.hardReject = hardReject; self.versionConflict = versionConflict
     }
 }
+
+extension LyricLine {
+    /// The same line with its word timing left out, for 整句亮.
+    var withoutWordTiming: LyricLine {
+        guard timedSpans?.isEmpty == false else { return self }
+        var copy = self
+        copy.timedSpans = nil
+        return copy
+    }
+}

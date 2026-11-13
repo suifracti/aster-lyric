@@ -1094,6 +1094,8 @@ public struct UnifiedLibraryHistoryWindowView: View {
             ListeningHistoryView()
         case .statistics:
             ListeningStatisticsView()
+        case .favorites:
+            FavoriteLinesView()
         }
     }
 }

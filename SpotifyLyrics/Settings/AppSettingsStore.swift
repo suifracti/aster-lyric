@@ -1177,6 +1177,10 @@ public final class AppSettingsStore: ObservableObject {
     @Published public var v3BackdropGrain = true {
         didSet { defaults.set(v3BackdropGrain, forKey: "v3.backdropGrain.v1") }
     }
+    /// 整句亮: word timing is ignored; each line lights as a whole.
+    @Published public var v3WholeLineTiming = false {
+        didSet { defaults.set(v3WholeLineTiming, forKey: "v3.wholeLineTiming.v1") }
+    }
     /// 鼠标视差: the backdrop leans a few points against the pointer.
     @Published public var v3BackdropParallax = false {
         didSet { defaults.set(v3BackdropParallax, forKey: "v3.backdropParallax.v1") }
@@ -1617,6 +1621,7 @@ public final class AppSettingsStore: ObservableObject {
         self.v3BackdropParallax = defaults.bool(forKey: "v3.backdropParallax.v1")
         self.v3DayTint = defaults.bool(forKey: "v3.dayTint.v1")
         self.v3CoverBreath = defaults.bool(forKey: "v3.coverBreath.v1")
+        self.v3WholeLineTiming = defaults.bool(forKey: "v3.wholeLineTiming.v1")
         self.v3CoverRimLight = defaults.bool(forKey: "v3.coverRimLight.v1")
         self.v3CoverCaption = defaults.bool(forKey: "v3.coverCaption.v1")
         self.v3EdgeLights = defaults.bool(forKey: "v3.edgeLights.v1")
