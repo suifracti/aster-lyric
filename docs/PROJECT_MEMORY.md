@@ -30,6 +30,7 @@
 | 不同画面背景大小不一样、取景切了没效果、繁体歌名对不上简体来源、别人有逐字/对唱我们没有 | L-023；V3BackdropArtworkGeometry、v3SharedBackdropComplete、TrackTextNormalizer.normalize、KRCParser、QRCParser |
 | 逐字上浮/长音发光动画跳回开头、状态栏弹窗改版、换歌封面闪占位图、暂停褪色、桌面歌词情境隐藏 | L-024；LyricLineView animateLift、MenuBarLyricsPopoverView、ArtworkView、v3PauseFadesColor、FloatingLyricsWindowController.observeContext |
 | 粒子（雨雪雾、歌词意象）不显示、VU 表指针手感、新呈现一行放不下、分享卡排版跑偏、封面墙离屏图空白、声纹圈、频谱 | L-025；V3GlassWeather、V3ParticleHostView、V3VUMeter、V3LyricShareCard、ListeningCoverWall、V3Soundprint、V3SpectrumOverlay |
+| QQ 来源突然全部 http(500)、别人有词我们“暂无歌词正文” | L-026；QQExperimentalLyricsProvider.searchBases |
 | 在窗口边缘拖进度会变成缩放窗口、进度线靠近时下移不好看、胶囊和工具栏像两套控件、画面面板底部被截断 | L-015；V3EdgePillScrubber、V3ControlBarSurface、V3ThemeSelectorView |
 | 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
@@ -396,4 +397,12 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - `FloatingLyricsPresentationTests.testFloatingPresentationBehavior`（A-B-A 宽度键复用）偶尔失败，连续重跑两次都过，判断为偶发，与频谱无关。注意：命令链里不要把提交排在测试之后又不看测试结果，这次就因此带着失败提交了一次（重跑全过）。
 - **临时改画面不要借用悬停预览的 `presentationOverride`**。副歌时换素材给背景视图单独加了参数 `chorusSwapsMaterial`，只翻转短片层：显示条件为“已保存的素材是视频”与“正在副歌”二者不同时为真。短片提前找好，切换时不用再等。
 - **雨夜房间用 `V3RainRoomModifier`**，挂在主窗口指针追踪（`onContinuousHover`）之后，所以画面里的坐标仍是缩放前的。关闭时缩放为 1、房间透明，视图结构不变，开关不会重建内容。
+
+## L-026 QQ 搜索主机失效（2026-11-13）
+
+- **现象**：《サヨナラ》（stb）别的 App 有词，我们显示“已找到歌曲，暂无歌词正文”。日志里 QQ 每次都是 `outcome=http(500)`，网易云只有空目录命中。
+- **原因**：`c.y.qq.com` 的 `client_search_cp` 对所有搜索都回 HTTP 500；`shc.y.qq.com` 同一路径正常，响应结构一样（Lyrimuse 也是先试 shc）。QQ 来源因此对所有歌都失效，不只这一首。
+- **做法**：`searchBases` 按顺序试 shc、c，失败记一行 `QQ search host failed`。旧格式响应把多位歌手用 `;` 连成一个名字（`stb;NEA`），解析时拆开。
+- **同一首歌的不同条目歌词不一样**：专辑版条目（ブルーリグレット）没有歌词（-1901 / 24001），单曲条目有。所以要逐个候选取词，不能只看第一条。
+- **排查顺序**：先看日志里各来源的 `PROBE finish … outcome=`，再用 curl 复现那个接口，最后对照调研目录里别家的实现。
 

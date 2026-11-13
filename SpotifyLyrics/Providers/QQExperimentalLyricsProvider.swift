@@ -150,8 +150,33 @@ public final class QQExperimentalLyricsProvider: LyricsProvider, @unchecked Send
         }
     }
 
+    /// Search hosts, in order. Since 2026-11 c.y.qq.com answers every search
+    /// with HTTP 500 while shc.y.qq.com still works (same response shape), so
+    /// QQ found nothing for any song until this list existed.
+    static let searchBases = [
+        "https://shc.y.qq.com/soso/fcgi-bin/client_search_cp",
+        "https://c.y.qq.com/soso/fcgi-bin/client_search_cp",
+    ]
+
     private func search(title: String, artist: String) async throws -> [QQSong] {
-        var components = URLComponents(string: "https://c.y.qq.com/soso/fcgi-bin/client_search_cp")!
+        var lastError: Error = LyricsFailure.parseFailure
+        for base in Self.searchBases {
+            if Task.isCancelled { throw LyricsFailure.cancelled }
+            do {
+                let songs = try await search(title: title, artist: artist, base: base)
+                return songs
+            } catch let error as URLError where error.code == .cancelled {
+                throw error
+            } catch {
+                LyricsE2ELog.log("QQ search host failed base=\(base) error=\(error)")
+                lastError = error
+            }
+        }
+        throw lastError
+    }
+
+    private func search(title: String, artist: String, base: String) async throws -> [QQSong] {
+        var components = URLComponents(string: base)!
         components.queryItems = [
             URLQueryItem(name: "w", value: "\(title) \(artist)"),
             URLQueryItem(name: "format", value: "json"),
@@ -312,7 +337,9 @@ private struct QQSongDTO: Decodable {
             songmid: songmid,
             songID: songid,
             name: songname,
-            artists: (singer ?? []).map(\.name),
+            // The old response joins a song's singers with ";" ("stb;NEA").
+            artists: (singer ?? []).flatMap { $0.name.split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) } }
+                .filter { !$0.isEmpty },
             album: albumname ?? "",
             duration: TimeInterval(interval ?? 0)
         )
