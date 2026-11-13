@@ -744,9 +744,11 @@ struct V3VisualControls {
                 .help("原文与译文字号；在歌词上双指捏合也可调整")
             V3ChipToggles("歌词行", items: [("大字", $settings.v3BigLineModeEnabled),
                                           ("副歌加强", $settings.v3ChorusEmphasis),
-                                          ("只看前方", $settings.v3HidesSungLines),
-                                          ("整句亮", $settings.v3WholeLineTiming)])
-                .help("整句亮：有逐字时间的歌词也按整句显示，不逐字填色。\n大字：当前句约两倍大，其他行缩小变淡，适合远处跟唱。\n副歌加强：从歌词里找出重复的段落当作副歌，进度条上标成浅色段，唱到副歌时画面亮一档、当前句带封面色的光。\n只看前方：唱过的歌词隐去，只留当前句和后面的；只对带时间的歌词有效。")
+                                          ("换气", $settings.v3BreathIn)])
+                .help("大字：当前句约两倍大，其他行缩小变淡，适合远处跟唱。\n副歌加强：从歌词里找出重复的段落当作副歌，进度条上标成浅色段，唱到副歌时画面亮一档、当前句带封面色的光。\n换气：间奏或长空隙（4 秒以上）快结束时，下一句提前两秒慢慢亮起来。")
+            V3ChipToggles("", items: [("只看前方", $settings.v3HidesSungLines),
+                                      ("整句亮", $settings.v3WholeLineTiming)])
+                .help("只看前方：唱过的歌词隐去，只留当前句和后面的；只对带时间的歌词有效。\n整句亮：有逐字时间的歌词也按整句显示，不逐字填色。")
             V3SegmentedPicker("对齐", selection: $settings.v3LyricsPosition,
                               options: [("跟随场景", "automatic"), ("左", "left"), ("居中", "center"), ("右", "right")])
                 .help("跟随场景：当前使用" + (settings.v3ListeningScene == .coverPhoto ? "右侧阅读区" : settings.v3ArtworkPresentation == .stage ? "居中阅读区" : "左对齐"))

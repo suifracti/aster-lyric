@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 
 /// The bass right now as 0…1: up at once on a hit, back down over about a
@@ -126,5 +127,60 @@ struct V3CoverCaption: View {
         .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: shown.isEmpty)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+/// 人声包络: when no sound is heard and the song has no beat grid, the light
+/// follows the starts of the sung words instead (Lyrimuse does the same).
+/// The window view publishes the current line's word starts here.
+enum V3VocalOnsets {
+    private static let state = OSAllocatedUnfairLock(initialState: [TimeInterval]())
+
+    static var current: [TimeInterval] {
+        get { state.withLock { $0 } }
+        set { state.withLock { $0 = newValue } }
+    }
+
+    /// Word starts of a line, in lyric time, sorted; empty without word timing.
+    static func onsets(of line: LyricLine?) -> [TimeInterval] {
+        (line?.timedSpans ?? []).map(\.startTime).sorted()
+    }
+
+    /// The index of the word that began within the last `window` seconds, if any.
+    static func index(at time: TimeInterval, in onsets: [TimeInterval], window: TimeInterval = 0.12) -> Int? {
+        guard let index = onsets.lastIndex(where: { $0 <= time }), time - onsets[index] < window else { return nil }
+        return index
+    }
+}
+
+/// 换气: through the last two seconds of a long gap the line about to be
+/// sung comes up — a glow and a slight swell — so the entry is not a surprise.
+struct V3BreathIn: ViewModifier {
+    let window: LyricsTimeline.VocalCountdownWindow?
+    let clock: LyricsPresentationClock
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    static let lead: TimeInterval = 2
+
+    /// 0 until `lead` seconds before the voice, then rising to 1 at the entry.
+    static func level(time: TimeInterval, end: TimeInterval) -> Double {
+        let remaining = end - time
+        guard remaining >= 0, remaining < lead else { return 0 }
+        let t = 1 - remaining / lead
+        return t * t * (3 - 2 * t)
+    }
+
+    func body(content: Content) -> some View {
+        if let window, !reduceMotion {
+            TimelineView(.animation(minimumInterval: 1.0 / 20, paused: !clock.isPlaying)) { _ in
+                let level = Self.level(time: clock.presentationTime(at: ProcessInfo.processInfo.systemUptime), end: window.end)
+                content
+                    .shadow(color: .white.opacity(0.7 * level), radius: 10)
+                    .brightness(0.25 * level)
+                    .scaleEffect(1 + 0.02 * level, anchor: .leading)
+            }
+        } else {
+            content
+        }
     }
 }

@@ -405,6 +405,7 @@ final class V3MusicPulseLightView: NSView {
     private var center = UnitPoint.center
     var clock: LyricsPresentationClock?
     private var lastBeat = -1
+    private var lastOnset: TimeInterval = -1
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -466,6 +467,7 @@ final class V3MusicPulseLightView: NSView {
         let beats = V3MusicPulse.analysis.beats
         var hit = 0.0
         var timed = false
+        var voiced = false
         if !beats.isEmpty, let clock, clock.isPlaying {
             // Spotify's own beat grid: light on each beat, the bar's first beat brightest.
             timed = true
@@ -478,12 +480,23 @@ final class V3MusicPulseLightView: NSView {
                 hit = (beats[index].positionInBar == 1 ? 1.0 : 0.55) * loudness
             }
             lastBeat = index
-        } else if fresh {
+        } else if fresh, levels.silentSeconds < 1 {
             // No beat grid: the bass right now above its usual level.
             hit = min(1, max(0, (levels.bass - 1.0) / 0.55))
+        } else if let clock, clock.isPlaying {
+            // Nothing heard and no beat grid: follow the starts of the sung words.
+            let onsets = V3VocalOnsets.current
+            if !onsets.isEmpty {
+                voiced = true
+                let time = clock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+                if let index = V3VocalOnsets.index(at: time, in: onsets), onsets[index] != lastOnset {
+                    lastOnset = onsets[index]
+                    hit = 0.5
+                }
+            }
         }
         envelope = min(1, max(hit, envelope * exp(-elapsed / 0.22)))
-        let live = fresh || timed
+        let live = fresh || timed || voiced
         CATransaction.begin(); CATransaction.setDisableActions(true)
         // Nothing between beats: the light appears only on them.
         halo.opacity = live ? Float(0.65 * envelope) : 0

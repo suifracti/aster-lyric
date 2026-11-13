@@ -1057,3 +1057,21 @@ The three recommended batches are done. This round takes small items the pool ne
 **Checked:** 188 native tests pass, including saving and reopening the kept-lines file in a temporary folder. The app starts and plays with the build.
 
 **Not seen:** the 收藏这句 menu and the 金句 tab need a right-click and a click. 整句亮 was switched on for one capture, but the song was at its last lines and may have had no word timing, so the picture proves nothing.
+
+## Round 22: batch eight — breath in, light on the sung words, full screen on another display (2026-11-13)
+
+- **换气 (C5):** in a gap of 4 s or more (the same gaps that show the three dots), the line about to be sung comes up over the last 2 s: a white glow, a little brightness and a 2% swell. Off by default. Key `v3.breathIn.v1`. Not with reduced motion.
+  - 歌词行 is now two chip rows: 大字 / 副歌加强 / 换气, then 只看前方 / 整句亮.
+- **人声包络 (B6):** part of 随音乐律动, no switch of its own. When no sound is heard (Spotify's volume at 0) and the song has no beat grid, the light at the cover pulses at the start of each sung word of the current line, at half the strength of a beat. Needs word timing; otherwise nothing changes.
+  - Order of sources for the light: Spotify's beat grid, then the bass heard, then the sung words.
+- **全屏歌词开在另一块屏幕 (G10):** a switch in 设置 → 桌面歌词. With two or more displays, full-screen lyrics open on the display after the main window's; with one display nothing changes. Key `fullScreen.prefersOtherScreen.v1`.
+
+**Checked:** 191 native tests pass. With 换气 on, the lyric rows in the real window look as before outside a gap.
+
+**Not seen:** 换气 inside a gap, the light following words, and full screen on a second display (this Mac has one display).
+
+**Still open from the pool, and what each waits for:**
+- G8 menu-bar word lift — the menu bar draws plain text; it needs its own drawing.
+- I2 agreement between sources, I4 shifting a whole time axis, I13 borrowing another version's lyrics — these change matching; the source statistics are due to be read again on 2026-11-18 first.
+- J2 harmony on its own line — only TTML sources mark harmony.
+- C12 stroke order, full MilkDrop — need third-party data or code downloaded, which the user has not approved.

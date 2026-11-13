@@ -546,4 +546,36 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(plain.timestamp, 12)
         XCTAssertEqual(plain.originalText, "hello world")
     }
+
+    // MARK: Batch eight — breath in, vocal onsets, the other display
+
+    func testBreathInRisesOverTheLastTwoSeconds() {
+        XCTAssertEqual(V3BreathIn.level(time: 10, end: 20), 0, "nothing until two seconds before the voice")
+        XCTAssertEqual(V3BreathIn.level(time: 19, end: 20), 0.5, accuracy: 0.001)
+        XCTAssertEqual(V3BreathIn.level(time: 20, end: 20), 1, accuracy: 0.001)
+        XCTAssertEqual(V3BreathIn.level(time: 20.1, end: 20), 0, "gone once the line is sung")
+    }
+
+    func testVocalOnsetsHitOncePerWord() {
+        var line = LyricLine(timestamp: 10, originalText: "ab cd")
+        XCTAssertTrue(V3VocalOnsets.onsets(of: line).isEmpty)
+        XCTAssertTrue(V3VocalOnsets.onsets(of: nil).isEmpty)
+        line.timedSpans = [TimedTextSpan(id: 1, text: "cd", startTime: 11, endTime: 11.5, utf16Start: 3, utf16Length: 2),
+                           TimedTextSpan(id: 0, text: "ab", startTime: 10, endTime: 10.5, utf16Start: 0, utf16Length: 2)]
+        let onsets = V3VocalOnsets.onsets(of: line)
+        XCTAssertEqual(onsets, [10, 11])
+        XCTAssertEqual(V3VocalOnsets.index(at: 10.05, in: onsets), 0)
+        XCTAssertNil(V3VocalOnsets.index(at: 10.5, in: onsets), "between words there is no hit")
+        XCTAssertEqual(V3VocalOnsets.index(at: 11.1, in: onsets), 1)
+        XCTAssertNil(V3VocalOnsets.index(at: 9, in: onsets))
+    }
+
+    func testFullScreenPicksTheNextDisplayOnlyWhenAsked() {
+        XCTAssertEqual(FullScreenLyricsWindowController.targetIndex(home: 0, count: 1, prefersOther: true), 0)
+        XCTAssertEqual(FullScreenLyricsWindowController.targetIndex(home: 0, count: 2, prefersOther: false), 0)
+        XCTAssertEqual(FullScreenLyricsWindowController.targetIndex(home: 0, count: 2, prefersOther: true), 1)
+        XCTAssertEqual(FullScreenLyricsWindowController.targetIndex(home: 1, count: 2, prefersOther: true), 0)
+        XCTAssertEqual(FullScreenLyricsWindowController.targetIndex(home: nil, count: 3, prefersOther: true), 1)
+        XCTAssertNil(FullScreenLyricsWindowController.targetIndex(home: 0, count: 0, prefersOther: true))
+    }
 }

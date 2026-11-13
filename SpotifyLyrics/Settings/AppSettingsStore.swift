@@ -1181,6 +1181,14 @@ public final class AppSettingsStore: ObservableObject {
     @Published public var v3WholeLineTiming = false {
         didSet { defaults.set(v3WholeLineTiming, forKey: "v3.wholeLineTiming.v1") }
     }
+    /// 换气: after a long gap the next line comes up two seconds early.
+    @Published public var v3BreathIn = false {
+        didSet { defaults.set(v3BreathIn, forKey: "v3.breathIn.v1") }
+    }
+    /// 全屏歌词 opens on another display when there is one.
+    @Published public var fullScreenPrefersOtherScreen = false {
+        didSet { defaults.set(fullScreenPrefersOtherScreen, forKey: "fullScreen.prefersOtherScreen.v1") }
+    }
     /// 鼠标视差: the backdrop leans a few points against the pointer.
     @Published public var v3BackdropParallax = false {
         didSet { defaults.set(v3BackdropParallax, forKey: "v3.backdropParallax.v1") }
@@ -1621,6 +1629,8 @@ public final class AppSettingsStore: ObservableObject {
         self.v3BackdropParallax = defaults.bool(forKey: "v3.backdropParallax.v1")
         self.v3DayTint = defaults.bool(forKey: "v3.dayTint.v1")
         self.v3CoverBreath = defaults.bool(forKey: "v3.coverBreath.v1")
+        self.v3BreathIn = defaults.bool(forKey: "v3.breathIn.v1")
+        self.fullScreenPrefersOtherScreen = defaults.bool(forKey: "fullScreen.prefersOtherScreen.v1")
         self.v3WholeLineTiming = defaults.bool(forKey: "v3.wholeLineTiming.v1")
         self.v3CoverRimLight = defaults.bool(forKey: "v3.coverRimLight.v1")
         self.v3CoverCaption = defaults.bool(forKey: "v3.coverCaption.v1")

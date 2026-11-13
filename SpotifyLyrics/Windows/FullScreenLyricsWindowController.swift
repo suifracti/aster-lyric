@@ -83,7 +83,19 @@ final class FullScreenLyricsWindowController: NSObject, ObservableObject, NSWind
     }
 
     private func targetScreen() -> NSScreen? {
-        WindowStatePersistence.shared.attachedMainWindow?.screen ?? NSScreen.main ?? NSScreen.screens.first
+        let home = WindowStatePersistence.shared.attachedMainWindow?.screen ?? NSScreen.main ?? NSScreen.screens.first
+        let screens = NSScreen.screens
+        guard let index = Self.targetIndex(home: home.flatMap { screens.firstIndex(of: $0) }, count: screens.count,
+                                           prefersOther: AppSettingsStore.shared.fullScreenPrefersOtherScreen) else { return home }
+        return screens[index]
+    }
+
+    /// Which display 全屏歌词 opens on: the main window's own, or — when asked
+    /// and there is more than one — the next display after it.
+    nonisolated static func targetIndex(home: Int?, count: Int, prefersOther: Bool) -> Int? {
+        guard count > 0 else { return nil }
+        let base = home.flatMap { (0..<count).contains($0) ? $0 : nil } ?? 0
+        return prefersOther && count > 1 ? (base + 1) % count : base
     }
 
     func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposedOptions: NSApplication.PresentationOptions) -> NSApplication.PresentationOptions {

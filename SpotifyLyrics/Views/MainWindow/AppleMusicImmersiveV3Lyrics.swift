@@ -623,6 +623,8 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
                         .accessibilityLabel("演唱：\(name)")
                 }
                 row(for: line, index: index)
+                    .modifier(V3BreathIn(window: settings.v3BreathIn && countdown?.lineIndex == index ? countdown : nil,
+                                         clock: presentationClock))
                     .padding(.top, readingScene == .linerNotes && isParagraphStart(index) ? 14 : 0)
                     .id(line.id)
             }

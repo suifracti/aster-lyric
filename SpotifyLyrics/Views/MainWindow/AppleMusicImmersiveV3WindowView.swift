@@ -589,6 +589,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
             }
             .modifier(V3RainRoomModifier(enabled: settings.v3RainRoom && !isFocusMode, playing: state.isPlaying))
+            .onChange(of: state.currentLineIndex, initial: true) { _, index in
+                // 人声包络: the light can follow these word starts when no sound is heard.
+                V3VocalOnsets.current = settings.v3MusicMotionEnabled && state.liveLyricsAreSynchronized
+                    ? V3VocalOnsets.onsets(of: index.flatMap { state.lyrics.indices.contains($0) ? state.lyrics[$0] : nil })
+                    : []
+            }
             .onChange(of: toolbarPanelIsPresented) { _, presented in
                 if !presented && !isPointerInToolbarRegion { toolsVisible = false }
             }

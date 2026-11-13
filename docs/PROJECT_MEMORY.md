@@ -435,3 +435,10 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **整句亮只在显示层去掉逐字时间**（`LyricLine.withoutWordTiming`，在行视图的入口处），不改保存的歌词，也不改行的文字和长度。
 - **设置搜索是按页匹配关键词**（`SettingsCategory.searchTerms`）。加了新设置要把名字补进对应页的关键词，否则搜不到。
 
+## L-031 换气、人声包络、全屏选屏（2026-11-13）
+
+- **换气复用间奏三点的窗口**（`LyricsTimeline.vocalCountdownWindow`，空隙 4 秒以上）。只有窗口指向的那一行包一层 `TimelineView`，其他行不受影响。
+- **律动光的三个来源按顺序用**：Spotify 的节拍表、听到的低音、当前句逐字的起点。第三个由窗口在换行时写进 `V3VocalOnsets.current`，光层自己读，不经过背景视图的参数。
+- **判断“没听到声音”用 `silentSeconds`**，不是数据是否新鲜：Spotify 音量为 0 时采集仍在送全零的数据。
+- **全屏歌词选屏**是纯函数 `targetIndex(home:count:prefersOther:)`；这台机器只有一块屏，没法实测。
+

@@ -131,7 +131,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .general: return "Spotify Apple Music 自动连接 Client ID 授权 在线曲库"
         case .lyricsAndText: return "显示翻译 显示原文 字号 字体 透明度 繁简 转换 自动搜索 提前加载 预加载 下一首 自动排轴 时间轴"
-        case .appearance: return "布局 背景 模糊 环境光 封面舞台 经典放大 柔光羽化 纯净歌词 封面海报 菜单栏 置顶 悬浮 透明 颜色 窗口状态 桌面歌词 停靠 程序坞 暂停时隐藏 全屏 截图 录屏"
+        case .appearance: return "布局 背景 模糊 环境光 封面舞台 经典放大 柔光羽化 纯净歌词 封面海报 菜单栏 置顶 悬浮 透明 颜色 窗口状态 桌面歌词 停靠 程序坞 全屏歌词 第二块屏幕 外接显示器 暂停时隐藏 全屏 截图 录屏"
         case .reading: return "日语 中文 注音 Ruby 声调 本地引擎 自动生成 人工词典 优先级 读音候选"
         case .advancedAndData: return "数据库 存储 索引 重置 日志 导出 清除"
         case .servicesAndSources: return "Provider 免费 实验 LRCLIB 本地 Uta-Net UtaTime AWA"
@@ -529,6 +529,8 @@ private struct AppearanceSettingsView: View {
                         .help("暂停 3 秒后淡出，继续播放时回来；跳转或短暂停顿不会闪。")
                     Toggle("有全屏应用时隐藏", isOn: $settings.floatingHidesOverFullScreen)
                         .help("别的 App 全屏（看视频、演示）时淡出，离开全屏后回来。")
+                    Toggle("全屏歌词开在另一块屏幕", isOn: $settings.fullScreenPrefersOtherScreen)
+                        .help("接了第二块屏幕时，全屏歌词开在主窗口所在屏幕的下一块上，主窗口留在原处；只有一块屏幕时不变。")
                     Toggle("截图和录屏时隐藏", isOn: $settings.floatingHiddenFromCapture)
                         .help("桌面歌词和顶部胶囊不出现在截图、录屏和屏幕共享里；屏幕上照常显示。")
                     HStack(spacing: 8) {
