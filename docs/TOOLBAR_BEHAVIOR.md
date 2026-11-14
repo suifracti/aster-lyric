@@ -1148,4 +1148,6 @@ The source statistics were read on 2026-11-15 rather than 11-18: nothing was lis
   - Bass followers on a hit (`--bass 1.6`, a Debug-only steady level; nothing is captured): 轮廓光 adds a ring in the cover's colour round the cover, 封面呼吸 makes the cover a little larger, 四边灯带 brightens. At `--bass 1.0` none of them shows.
   - 换气: a fixture with an 8 s gap, paused 1 s before the next line (playing renders move past it). On, the coming line is a little larger with a faint white glow; off, it is plain. The three dots show in both.
 
-**Still to be seen by the user, with a song playing:** 流动 (needs real sound and WebGL). 鼠标视差, Q/E and 收藏这句 have their logic under unit tests; only the feel by hand is left.
+- **流动 rendered without Spotify** (`Scripts/flow-snapshot.swift`: the bundled page off screen, fed a synthetic beat, canvas saved): the page loads, presets draw and follow the wave. One preset filled almost the whole frame with white, which would bury white lyrics even at half strength, so the canvas now has `filter: brightness(.65)`.
+
+**Still to be tried by hand:** 鼠标视差, Q/E and 收藏这句 — their logic is under unit tests; only the feel is left. 流动 inside the window with real sound.
