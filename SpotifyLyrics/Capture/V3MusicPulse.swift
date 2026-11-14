@@ -163,6 +163,19 @@ final class V3MusicPulse: NSObject, ObservableObject {
     fileprivate nonisolated static func publish(_ levels: Levels) {
         shared_.withLock { $0 = levels }
     }
+
+#if DEBUG
+    /// Fixture renders only: a steady bass level, refreshed so it never goes stale.
+    nonisolated static func debugHoldBass(_ bass: Double) {
+        Thread.detachNewThread {
+            while true {
+                publish(Levels(bass: bass, bassAverage: 1, updatedAt: ProcessInfo.processInfo.systemUptime,
+                               spectrum: Array(repeating: 0.6, count: 24)))
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+        }
+    }
+#endif
 }
 
 extension V3MusicPulse: SCStreamOutput, SCStreamDelegate {

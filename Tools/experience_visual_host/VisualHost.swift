@@ -437,6 +437,9 @@ private struct ExperienceFixtureRoot: View {
                 }
                 playback.startProvider()
                 try? await Task.sleep(for:.seconds(1))
+                // `--bass 1.6`: hold a bass level (1 = the song's usual) for the
+                // effects that follow it; nothing is captured.
+                if let bass = Double(ExperienceArguments.value("--bass", fallback: "")) { V3MusicPulse.debugHoldBass(bass) }
                 // `--loop-line 2`: loop that lyric line, as from its context menu.
                 if let index = Int(ExperienceArguments.value("--loop-line", fallback: "")),
                    playback.liveLyrics.indices.contains(index), let identity = playback.currentTrackIdentity {

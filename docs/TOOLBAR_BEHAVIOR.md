@@ -1145,6 +1145,7 @@ The source statistics were read on 2026-11-15 rather than 11-18: nothing was lis
   - 轮廓光: nothing at rest, as designed (it lights only on a bass hit); the white edge in both images is the cover's own outline.
   - 金句 page: two fixture entries show with translation, song, time and 复制 / 移除. Debug runs now keep `favorite-lines.json` beside the test database (`SPOTIFYLYRICS_DATABASE_PATH`), so fixtures and tests never read or write the listener's file; Release is unchanged. Visual host: `--surface favorites --favorites-json path`.
   - Loop bracket (`--loop-line N`, as from the context menu): a 5 s line on the player card's rail was about 3 pt, shown at the 6 pt minimum and covered by the hover thumb. It is now at least the thumb plus 8 pt wide, centred on the line, so both ends show beside the thumb.
+  - Bass followers on a hit (`--bass 1.6`, a Debug-only steady level; nothing is captured): 轮廓光 adds a ring in the cover's colour round the cover, 封面呼吸 makes the cover a little larger, 四边灯带 brightens. At `--bass 1.0` none of them shows.
   - 换气: a fixture with an 8 s gap, paused 1 s before the next line (playing renders move past it). On, the coming line is a little larger with a faint white glow; off, it is plain. The three dots show in both.
 
-**Still to be seen by the user, with a song playing:** 流动, 轮廓光 on a bass hit, 鼠标视差, Q/E, and choosing 收藏这句 from the context menu.
+**Still to be seen by the user, with a song playing:** 流动 (needs real sound and WebGL). 鼠标视差, Q/E and 收藏这句 have their logic under unit tests; only the feel by hand is left.
