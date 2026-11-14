@@ -1143,5 +1143,6 @@ The source statistics were read on 2026-11-15 rather than 11-18: nothing was lis
   - 只看前方: the sung lines above the active one are gone; off, they are there.
   - 四边灯带: shows at rest as a band along the edges. Offscreen it has a hard inner edge because the offscreen render skips the blur; in the real window (capture of 2026-11-15 with sound) it is a soft glow. Not a bug.
   - 轮廓光: nothing at rest, as designed (it lights only on a bass hit); the white edge in both images is the cover's own outline.
+  - 换气: a fixture with an 8 s gap, paused 1 s before the next line (playing renders move past it). On, the coming line is a little larger with a faint white glow; off, it is plain. The three dots show in both.
 
-**Still to be seen by the user, with a song playing:** 流动, 轮廓光 on a bass hit, 鼠标视差, Q/E, the loop bracket, 收藏 and the 金句 tab, 换气 in a gap.
+**Still to be seen by the user, with a song playing:** 流动, 轮廓光 on a bass hit, 鼠标视差, Q/E, the loop bracket, 收藏 and the 金句 tab.
