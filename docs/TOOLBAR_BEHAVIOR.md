@@ -1104,3 +1104,26 @@ The pool is done, so the options added over nine batches are put in order. Nothi
   - 频谱 moved next to 随音乐律动, which it needs.
 
 **Checked:** 193 native tests pass. Offscreen panel images of 画面 and 更多 show the new rows. The lower part of 更多画面选项 is below the fold of the offscreen image and was not seen.
+
+## Round 25: source statistics read again; artists written another way (2026-11-15)
+
+The source statistics were read on 2026-11-15 rather than 11-18: nothing was listened to after 11-13, so waiting would add no data.
+
+- **What the statistics say** (347 lookups, 11-12 to 11-13; 470 songs in all): 428 songs adopted, 38 none, 4 review.
+  - Most of the 42 were last looked up before the artist-alias (11-11) and version-name (11-12) fixes. Searched again with the current code (a temporary test, nothing saved): 10 of them are now adopted.
+  - lyrics.ovh timed out 96 times in 122 and never alone found lyrics. It is asked only after the other sources fail, in parallel and once per lookup, so it costs little. Left as it is.
+  - Nobody set a per-song offset (no scoped offset keys at all).
+- **Matching changes:**
+  - **Artist in the credits:** a candidate whose credits include the track's artist, though not first (坠落: 方言, 徐梓淳; 星星的眼泪: 超星, 傲七爷(江偌绮)), is adopted at the lower automatic tier when the title is the same and the length is within 2 s. Otherwise it stays an artist conflict.
+  - **Producer credit:** 活着 and 活着（Prod.By Red killer）are the same title (`titleProducerCreditExact`).
+  - **Singer from a band:** `suis from Yorushika` also matches `suis`.
+  - **Long o written "oh":** suisoh reads as すいそう (水槽) when compared with Spotify-credited names.
+  - Effect, searched again live: 坠落 and 星星的眼泪 adopted; 星めぐる詩 and 29時はビビッド now show a candidate instead of nothing.
+- **Closed without building:**
+  - I2 agreement between sources: already in place (`agreementAdoption`, `partialArtistLyricsAgreement`).
+  - I4 shifting a whole time axis: no per-song offset was ever set, so there is no sign of the need.
+  - I13 borrowing another song's lyrics: of the 42, only one (a cover of 星に願いを) would use it, and a namesake would be adopted wrongly.
+
+**Checked:** 196 native tests pass, including cases that must stay unadopted (artist not in the credits, another length, another title).
+
+**Left as they are:** Kiddy / ロクデナシ is found only by the title-only query, which keeps its penalty. Names that differ entirely (SherryBoss / 伊稀, Sanghee / さんひ, AYANE / 松岡みやび) stay unmatched.

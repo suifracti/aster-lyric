@@ -609,4 +609,46 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(TTMLParser.tidiedBackground("(a) b (c)"), "(a) b (c)", "inner brackets are left alone")
         XCTAssertNil(TTMLParser.tidiedBackground(" \n "))
     }
+
+    // MARK: Artist written another way (2026-11-15 source re-read)
+
+    private func decide(track title: String, _ artist: String, _ duration: Double,
+                        candidate cTitle: String, _ cArtist: String, _ cDuration: Double) -> LyricsMatchDecision {
+        let track = Track(title: title, artist: artist, album: "", duration: duration)
+        let identity = TrackIdentity(track: track)
+        let lines = [LyricLine(timestamp: 10, originalText: "line one"), LyricLine(timestamp: max(20, cDuration - 30), originalText: "line two")]
+        let candidate = LyricsCandidate(id: "c", identity: identity, title: cTitle, artist: cArtist, album: "",
+                                        duration: cDuration, lines: lines, source: .neteaseExperimental, confidence: 0.8)
+        return LyricsSafeMatcher.decide(candidate: candidate, metadata: TrackMetadata.bootstrap(from: track))
+    }
+
+    func testArtistListedSecondIsTheSameRecording() {
+        let second = decide(track: "坠落", "徐梓淳", 205, candidate: "坠落", "方言, 徐梓淳", 205)
+        XCTAssertEqual(second.tier, .autoMedium, second.reasons.joined(separator: ","))
+        XCTAssertTrue(second.reasons.contains("primaryArtistInCredits"))
+        let bracketed = decide(track: "星星的眼泪", "傲七爷", 251, candidate: "星星的眼泪", "超星, 傲七爷(江偌绮)", 251)
+        XCTAssertEqual(bracketed.tier, .autoMedium, bracketed.reasons.joined(separator: ","))
+        XCTAssertNotEqual(decide(track: "坠落", "徐梓淳", 205, candidate: "坠落", "方言, 徐梓淳", 230).tier, .autoMedium,
+                          "another length is not the same recording")
+        XCTAssertEqual(decide(track: "坠落", "徐梓淳", 205, candidate: "坠落", "方言", 205).tier, .reject,
+                       "an artist not in the credits stays a conflict")
+        XCTAssertNotEqual(decide(track: "坠落", "徐梓淳", 205, candidate: "坠落之后", "方言, 徐梓淳", 205).tier, .autoMedium)
+    }
+
+    func testProducerCreditInTheTitleIsTheSameSong() {
+        XCTAssertEqual(TrackTextNormalizer.strippingProducerCredit("活着（Prod.By Red killer）"), "活着")
+        XCTAssertEqual(TrackTextNormalizer.strippingProducerCredit("Song (prod. X)"), "Song")
+        XCTAssertEqual(TrackTextNormalizer.strippingProducerCredit("Song - Prod. by X"), "Song")
+        XCTAssertEqual(TrackTextNormalizer.strippingProducerCredit("Product"), "Product")
+        let credit = decide(track: "活着", "Sop天", 165, candidate: "活着（Prod.By Red killer）", "Sop天", 165)
+        XCTAssertTrue(credit.reasons.contains("titleProducerCreditExact"), credit.reasons.joined(separator: ","))
+        XCTAssertTrue(credit.tier == .autoMedium || credit.tier == .autoHigh, credit.reasons.joined(separator: ","))
+    }
+
+    func testSingerFromBandIsTheSinger() {
+        XCTAssertEqual(TrackTextNormalizer.fromArtistNames("suis from Yorushika"), ["suis"])
+        XCTAssertTrue(TrackTextNormalizer.fromArtistNames("Yorushika").isEmpty)
+        let from = decide(track: "星めぐる詩", "suis from Yorushika", 202, candidate: "星めぐる詩", "suis", 202)
+        XCTAssertTrue(from.tier == .autoMedium || from.tier == .autoHigh, from.reasons.joined(separator: ","))
+    }
 }

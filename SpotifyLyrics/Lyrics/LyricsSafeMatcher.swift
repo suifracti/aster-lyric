@@ -100,6 +100,8 @@ public enum LyricsSafeMatcher {
         var versionConflict = false
         var incompleteArtistSet = false
         var partialArtistName = false
+        /// The track's artist is credited on the candidate, though not first.
+        var creditedArtist = false
         var hasStrongIndependentIdentity = false
 
         func add(_ code: String, _ delta: Double, hard: Bool = false) {
@@ -158,6 +160,13 @@ public enum LyricsSafeMatcher {
         } else if latinSpacingKey(candidate.title) != nil,
                   latinSpacingKey(candidate.title) == latinSpacingKey(metadata.track.title) {
             add("titleLatinSpacingExact", 0.28)
+        } else if TrackTextNormalizer.strippingProducerCredit(candidate.title) != candidate.title
+                    || TrackTextNormalizer.strippingProducerCredit(metadata.track.title) != metadata.track.title,
+                  !TrackTextNormalizer.normalize(TrackTextNormalizer.strippingProducerCredit(candidate.title)).isEmpty,
+                  TrackTextNormalizer.normalize(TrackTextNormalizer.strippingProducerCredit(candidate.title))
+                    == TrackTextNormalizer.normalize(TrackTextNormalizer.strippingProducerCredit(metadata.track.title)) {
+            // Only a producer credit differs (活着 / 活着（Prod.By Red killer）).
+            add("titleProducerCreditExact", 0.28)
         } else if featuredTitleVariation {
             add("titleFeaturedBaseExact", 0.24)
             add(hasConfirmedFeaturedAlias ? "featuredNameAliasConfirmed" : "featuredNameUnverified", 0)
@@ -265,6 +274,18 @@ public enum LyricsSafeMatcher {
             // is a candidate, which two agreeing sources can still settle.
             partialArtistName = true
             add("primaryArtistPartialName", 0.18)
+        } else if (reasons.contains("titleExact") || reasons.contains("titleTypographyExact")
+                    || reasons.contains("titleProducerCreditExact")),
+                  metadata.track.duration > 0, candidate.duration > 0,
+                  abs(metadata.track.duration - candidate.duration) <= 2,
+                  !Set(metadataArtists.map { TrackTextNormalizer.normalizeArtistToken($0.primary) }.filter { !$0.isEmpty })
+                    .isDisjoint(with: Set(candidateArtists.all.flatMap { [$0] + TrackTextNormalizer.parentheticalArtistNames($0) }
+                        .map(TrackTextNormalizer.normalizeArtistToken).filter { !$0.isEmpty })) {
+            // 坠落 by 方言, 徐梓淳 for Spotify's 徐梓淳; 超星, 傲七爷(江偌绮) for
+            // 傲七爷. The same title and length with the artist in the credits
+            // is the same recording, listed in another order.
+            creditedArtist = true
+            add("primaryArtistInCredits", 0.24)
         } else if candidatePrimary.isEmpty {
             let isManual = queryVariant?.queryKind == .manualOverride
             add("primaryArtistMissing", -0.30, hard: !isManual)
@@ -310,7 +331,8 @@ public enum LyricsSafeMatcher {
                     let sameRelease = metadataPrimaryMatches && expectedFeatured.isEmpty && missing.isEmpty
                         && candidateFeaturedInTitle.isEmpty && metadataFeaturedInTitle.isEmpty
                         && metadata.verifiedSpotifyArtists.isEmpty
-                        && (reasons.contains("titleExact") || reasons.contains("titleTypographyExact"))
+                        && (reasons.contains("titleExact") || reasons.contains("titleTypographyExact")
+                            || reasons.contains("titleProducerCreditExact"))
                         && metadata.track.duration.isFinite && candidate.duration.isFinite
                         && metadata.track.duration > 0 && candidate.duration > 0
                         && abs(metadata.track.duration - candidate.duration) <= 2
@@ -442,7 +464,7 @@ public enum LyricsSafeMatcher {
             }
 
             let tierPrimaryMatch = metadataPrimaryMatches || metadataPrimaryReadingMatches || spotifyCreditedArtistReadingMatches
-                || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity) || partialArtistName
+                || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity) || partialArtistName || creditedArtist
             var tier = tierFor(score: score, primaryArtistMatches: tierPrimaryMatch, hardReject: hardReject)
             if hardReject {
                 tier = .reject
@@ -486,6 +508,9 @@ public enum LyricsSafeMatcher {
             if partialArtistName && !hasStrongIndependentIdentity {
                 tier = Self.minTier(tier, reasons.contains("durationClose") && !versionConflict ? .autoMedium : .candidates)
             }
+            if creditedArtist && !hasStrongIndependentIdentity {
+                tier = Self.minTier(tier, versionConflict ? .candidates : .autoMedium)
+            }
             return LyricsMatchDecision(
                 tier: tier,
                 score: clamp(score),
@@ -499,7 +524,7 @@ public enum LyricsSafeMatcher {
 
         var tier: LyricsMatchTier
         let tierPrimaryMatch = metadataPrimaryMatches || metadataPrimaryReadingMatches || spotifyCreditedArtistReadingMatches
-            || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity) || partialArtistName
+            || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity) || partialArtistName || creditedArtist
         if hardReject {
             tier = .reject
         } else if reasons.contains("titleMismatch") && !hasStrongIndependentIdentity && queryVariant?.queryKind != .manualOverride {
@@ -554,6 +579,9 @@ public enum LyricsSafeMatcher {
         tier = constrainSpotifyCreditedArtistReading(tier)
         if partialArtistName && !hasStrongIndependentIdentity {
             tier = minTier(tier, reasons.contains("durationClose") && !versionConflict ? .autoMedium : .candidates)
+        }
+        if creditedArtist && !hasStrongIndependentIdentity {
+            tier = minTier(tier, versionConflict ? .candidates : .autoMedium)
         }
         // 听悲伤的情歌 - 女版 against 听悲伤的情歌 by the same singer at the
         // same length: the extra words only name the version. Same singer,
@@ -760,7 +788,9 @@ public enum LyricsSafeMatcher {
                 .filter { !$0.isEmpty }
             guard !words.isEmpty else { return nil }
             return words.map { word in
+                // suisoh / すいそう: "oh" is a long o before a consonant or at the end.
                 String(word)
+                    .replacingOccurrences(of: #"oh(?![aeiouy])"#, with: "o", options: .regularExpression)
                     .replacingOccurrences(of: "ou", with: "o")
                     .replacingOccurrences(of: "oo", with: "o")
                     .replacingOccurrences(of: "aa", with: "a")
@@ -816,8 +846,9 @@ public enum LyricsSafeMatcher {
             .filter { $0.field == .artist }
             .map { TrackTextNormalizer.artistTokens($0.value) })
         // `GAN (岩田剛典)`: either name alone is the same primary artist.
+        // `suis from Yorushika`: the singer alone is.
         groups.append(contentsOf: groups.flatMap { group in
-            TrackTextNormalizer.parentheticalArtistNames(group.primary).map {
+            (TrackTextNormalizer.parentheticalArtistNames(group.primary) + TrackTextNormalizer.fromArtistNames(group.primary)).map {
                 TrackTextNormalizer.ArtistTokens(primary: $0, featured: group.featured)
             }
         })

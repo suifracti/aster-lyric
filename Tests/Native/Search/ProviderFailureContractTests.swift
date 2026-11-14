@@ -1094,7 +1094,9 @@ final class ProviderFailureContractTests: XCTestCase {
                           spotifyId: "1ww8Qq9GU6VxO293E2najn")
         let candidate = LyricsCandidate(id: "netease:1383422260", identity: TrackIdentity(track: track),
             title: "活着（Prod.By Red killer）", artist: "Sop天, 橙汁, BFG_Music", album: track.album,
-            duration: 165.373, lines: [LyricLine(timestamp: 1, originalText: "Fixture")],
+            // 35 s longer: since 2026-11-15 the same length is adopted (a producer
+            // credit alone is the same song), and this test needs a review result.
+            duration: 200.373, lines: [LyricLine(timestamp: 1, originalText: "Fixture")],
             source: .neteaseExperimental, confidence: 0.9)
         let counter = ProviderFailureCounter()
         let provider = ProviderFailureCountingLyricsProvider(name: "NetEase Experimental", result: .candidates([candidate]), counter: counter)

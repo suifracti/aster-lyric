@@ -286,6 +286,30 @@ public enum TrackTextNormalizer {
         return tags
     }
 
+    /// The title without a producer credit: 活着（Prod.By Red killer）, Song (prod. X),
+    /// Song - Prod. by X. A credit names who made the beat, not another song.
+    public static func strippingProducerCredit(_ title: String) -> String {
+        let patterns = [
+            #"\s*[\(\[（【]\s*prod(?:uced)?\.?\s*(?:by\b)?[^\)\]）】]*[\)\]）】]\s*"#,
+            #"\s*[-–—]\s*prod(?:uced)?\.?\s*by\s+.+$"#
+        ]
+        var s = title
+        for p in patterns {
+            s = s.replacingOccurrences(of: p, with: " ", options: [.regularExpression, .caseInsensitive])
+        }
+        return s.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// `suis from Yorushika`: the singer named before `from` is the credited
+    /// artist on other services. Empty when the name has no such form.
+    public static func fromArtistNames(_ raw: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: #"^\s*(.+?)\s+from\s+(.+?)\s*$"#, options: [.caseInsensitive]),
+              let match = regex.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
+              let singer = Range(match.range(at: 1), in: raw) else { return [] }
+        let name = String(raw[singer])
+        return normalizeArtistToken(name).isEmpty ? [] : [name]
+    }
+
     public static func stripVersionMarkers(fromTitle title: String) -> String {
         var s = title
         let patterns = [
