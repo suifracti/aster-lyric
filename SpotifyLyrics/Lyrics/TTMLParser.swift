@@ -105,7 +105,8 @@ public enum TTMLParser {
                     originalText: rawLine.originalText,
                     endTime: rawLine.endTime,
                     performerID: rawLine.performerID,
-                    timedSpans: validSpans
+                    timedSpans: validSpans,
+                    backgroundText: rawLine.backgroundText
                 )
             )
         }
@@ -156,6 +157,20 @@ public enum TTMLParser {
     }
 }
 
+extension TTMLParser {
+    /// 和声 text as one tidy line: whitespace collapsed, and the brackets many
+    /// files wrap it in removed. Nil when nothing is left.
+    static func tidiedBackground(_ raw: String) -> String? {
+        var text = raw.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        let pairs: [(Character, Character)] = [("(", ")"), ("（", "）")]
+        for (open, close) in pairs where text.first == open && text.last == close && text.count > 2 {
+            let inner = text.dropFirst().dropLast()
+            if !inner.contains(open) && !inner.contains(close) { text = String(inner).trimmingCharacters(in: .whitespaces) }
+        }
+        return text.isEmpty ? nil : text
+    }
+}
+
 private final class TTMLParserDelegate: NSObject, XMLParserDelegate {
     enum SpanKind {
         case primary
@@ -187,6 +202,7 @@ private final class TTMLParserDelegate: NSObject, XMLParserDelegate {
         let performerID: String?
         let originalText: String
         let candidateSpans: [CandidateSpan]?
+        let backgroundText: String?
     }
 
     var title: String?
@@ -203,6 +219,8 @@ private final class TTMLParserDelegate: NSObject, XMLParserDelegate {
     private var currentPerformerID: String?
 
     private var canonicalParagraphText = ""
+    /// 和声 (`x-bg`) text of the paragraph, kept beside the canonical text.
+    private var backgroundParagraphText = ""
     private var spanStack: [SpanFrame] = []
     private var paragraphCandidateSpans: [CandidateSpan] = []
 
@@ -232,6 +250,7 @@ private final class TTMLParserDelegate: NSObject, XMLParserDelegate {
         } else if inBody && name == "p" {
             inParagraph = true
             canonicalParagraphText = ""
+            backgroundParagraphText = ""
             paragraphCandidateSpans = []
             spanStack = []
             currentPerformerID = agent(from: attributeDict)
@@ -306,6 +325,8 @@ private final class TTMLParserDelegate: NSObject, XMLParserDelegate {
             // Contract 1: Only primary span text enters canonical text
             if spanStack[topIndex].kind == .primary {
                 canonicalParagraphText += string
+            } else if spanStack[topIndex].kind == .background {
+                backgroundParagraphText += string
             }
         } else {
             // Contract 1: Direct text nodes between spans enter canonical text in order.
@@ -386,7 +407,8 @@ private final class TTMLParserDelegate: NSObject, XMLParserDelegate {
                     endTime: currentLineEnd,
                     performerID: currentPerformerID,
                     originalText: trimmedCanonical,
-                    candidateSpans: adjustedSpans
+                    candidateSpans: adjustedSpans,
+                    backgroundText: TTMLParser.tidiedBackground(backgroundParagraphText)
                 )
             )
         } else if name == "body" {

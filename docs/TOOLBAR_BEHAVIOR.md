@@ -1075,3 +1075,21 @@ The three recommended batches are done. This round takes small items the pool ne
 - I2 agreement between sources, I4 shifting a whole time axis, I13 borrowing another version's lyrics — these change matching; the source statistics are due to be read again on 2026-11-18 first.
 - J2 harmony on its own line — only TTML sources mark harmony.
 - C12 stroke order, full MilkDrop — need third-party data or code downloaded, which the user has not approved.
+
+## Round 23: batch nine — backing vocals on their own line, 流动 (2026-11-15)
+
+- **和声 (J2):** when an AMLL (TTML) lyric marks backing vocals (`x-bg`), they show as one small italic line under the sung line, quieter than the reading and translation layers. No switch; lines without backing vocals look as before.
+  - The sung line's own text is unchanged, so word timing, ruby and translation keep their offsets.
+  - Wrapping brackets are removed: "(ooh yeah)" shows as "ooh yeah".
+  - Stored without a database migration: an optional `backgroundText` in the word-timing JSON (`lyrics_timing_versions.spans_payload`). Schema stays v13. Earlier builds ignore the field.
+  - Limits: lyrics already saved show backing vocals only after they are fetched again; a line with backing vocals but no word timing does not keep them; editing a lyric's timing drops them for that version.
+- **流动 (B11):** a fourth 频谱 choice. MilkDrop presets fill the window behind the lyrics at half strength, driven by the sound 随音乐律动 hears; a new preset about every 28 s, blended over 2.7 s. Stops when paused. Not with reduced motion.
+  - butterchurn 2.6.7 and butterchurn-presets 2.4.7 (MIT) are bundled in `Resources/Butterchurn` with their licences. The page is local, its content policy allows no network, and it never takes the pointer or the scroll wheel.
+  - Drawn at half resolution. It runs in a WebKit process of its own (about 100 MB or more of memory while on).
+- **C12 stroke-order writing: closed without the data.** The 雾窗 lyric style already writes the line along the sung time. At singing speed (about 0.2 s a character) the order of strokes cannot be seen, and the data is tens of MB under Arphic/LGPL terms.
+
+**Checked:** 193 native tests pass. With Spotify playing at a low volume: the bottom spectrum moves, 封面呼吸 changes the cover's size, 四边灯带 shows at the window edges. The 流动 page loads and reports ready in the real app; paused, it draws nothing and the window looks as before.
+
+**Not seen:** 流动 while a song plays; 和声 on a real song (needs an AMLL lyric with backing vocals, fetched after this build); 轮廓光 could not be told apart in the captures.
+
+**Still open from the pool:** G8 menu-bar word lift; I2, I4, I13 after the source statistics are read again on 2026-11-18.

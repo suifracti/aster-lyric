@@ -1290,6 +1290,10 @@ public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
     public var performerID: String?
     /// Word / syllable level timing spans. Optional additive enhancement.
     public var timedSpans: [TimedTextSpan]?
+    /// 和声: what the backing voices sing under this line (TTML `x-bg`).
+    /// Shown as its own small line; never part of `originalText`, so word
+    /// timing, ruby and translation offsets are untouched.
+    public var backgroundText: String?
     /// Runtime-only reading projection fields. They are never written back
     /// into the source lyric version; the shared ReadingSessionController
     /// uses them to distinguish pinyin/script-converted display from legacy
@@ -1309,9 +1313,11 @@ public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
         performerID: String? = nil,
         timedSpans: [TimedTextSpan]? = nil,
         readingRepresentationID: String? = nil,
-        readingSurfaceText: String? = nil
+        readingSurfaceText: String? = nil,
+        backgroundText: String? = nil
     ) {
         self.id = id
+        self.backgroundText = backgroundText
         self.timestamp = timestamp
         self.endTime = endTime
         self.originalText = originalText
@@ -1339,7 +1345,8 @@ public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
             performerID: performerID,
             timedSpans: timedSpans,
             readingRepresentationID: readingRepresentationID,
-            readingSurfaceText: readingSurfaceText
+            readingSurfaceText: readingSurfaceText,
+            backgroundText: backgroundText
         )
     }
 

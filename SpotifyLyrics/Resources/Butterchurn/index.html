@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:">
+<style>html,body{margin:0;height:100%;background:transparent;overflow:hidden}canvas{width:100%;height:100%;display:block}</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script src="butterchurn.min.js"></script>
+<script src="butterchurnPresets.min.js"></script>
+<script>
+// Fed from the app: the sound arrives as bytes, nothing here listens or connects.
+(function () {
+  var canvas = document.getElementById('c');
+  var lib = window.butterchurn && (window.butterchurn.default || window.butterchurn);
+  var pack = window.butterchurnPresets && (window.butterchurnPresets.default || window.butterchurnPresets);
+  var viz = null, presets = {}, names = [], running = false, lastSwitch = 0, raf = 0;
+  var wave = new Uint8Array(1024).fill(128);
+  var scale = 0.5;   // drawn at half size and stretched: soft by nature, far cheaper
+
+  function size() {
+    var w = Math.max(64, Math.round(canvas.clientWidth * scale)), h = Math.max(64, Math.round(canvas.clientHeight * scale));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; if (viz) viz.setRendererSize(w, h); }
+  }
+  function next(blend) {
+    if (!viz || !names.length) return;
+    var name = names[Math.floor(Math.random() * names.length)];
+    try { viz.loadPreset(presets[name], blend); } catch (e) {}
+    lastSwitch = performance.now();
+  }
+  function frame() {
+    raf = 0;
+    if (!running || !viz) return;
+    size();
+    if (performance.now() - lastSwitch > 28000) next(2.7);
+    try { viz.render({ audioLevels: { timeByteArray: wave, timeByteArrayL: wave, timeByteArrayR: wave } }); } catch (e) {}
+    raf = requestAnimationFrame(frame);
+  }
+  window.asterFeed = function (b64) {
+    var s = atob(b64), n = Math.min(s.length, wave.length);
+    for (var i = 0; i < n; i++) wave[i] = s.charCodeAt(i);
+  };
+  window.asterRun = function (on) {
+    running = !!on;
+    if (running && !raf) raf = requestAnimationFrame(frame);
+  };
+  window.asterNext = function () { next(2.0); };
+  try {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    size();
+    viz = lib.createVisualizer(new Ctx(), canvas, { width: canvas.width, height: canvas.height, pixelRatio: 1, textureRatio: 1 });
+    presets = pack.getPresets(); names = Object.keys(presets);
+    next(0);
+    window.asterReady = true;
+  } catch (e) { window.asterError = String(e); }
+})();
+</script>
+</body>
+</html>

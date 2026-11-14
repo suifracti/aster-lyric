@@ -3,10 +3,10 @@ import SwiftUI
 /// 频谱: the 24 bands of 随音乐律动 drawn in the song's colour — a thin
 /// strip along the bottom (B9) or fanned around the foreground cover (B11).
 public enum V3SpectrumStyle: String, CaseIterable, Identifiable, Sendable {
-    case off = "", bottom, ring
+    case off = "", bottom, ring, flow
     public var id: String { rawValue }
     public var title: String {
-        switch self { case .off: return "关闭"; case .bottom: return "底部细条"; case .ring: return "环绕封面" }
+        switch self { case .off: return "关闭"; case .bottom: return "底部细条"; case .ring: return "环绕封面"; case .flow: return "流动" }
     }
 }
 
@@ -38,7 +38,12 @@ struct V3SpectrumOverlay: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        if style != .off, !reduceMotion {
+        if style == .flow, !reduceMotion {
+            V3FlowLayer(running: running)
+                .opacity(0.5)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        } else if style != .off, !reduceMotion {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !running || !visible)) { context in
                 Canvas { ctx, size in
                     let levels = V3MusicPulse.levels
@@ -49,7 +54,7 @@ struct V3SpectrumOverlay: View {
                     switch style {
                     case .bottom: drawBottom(&ctx, size: size, values: values)
                     case .ring: if let cover { drawRing(&ctx, cover: cover, values: values) }
-                    case .off: break
+                    case .off, .flow: break
                     }
                 }
             }

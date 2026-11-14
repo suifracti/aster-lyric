@@ -192,11 +192,15 @@ public struct LineTimingPayload: Codable, Sendable, Equatable {
     public let lineIndex: Int
     public let performerID: String?
     public let spans: [TimedTextSpan]
+    /// 和声 text of the line. Optional and left out of the JSON when absent,
+    /// so earlier payloads and earlier builds read the same as before.
+    public let backgroundText: String?
 
-    public init(lineIndex: Int, performerID: String? = nil, spans: [TimedTextSpan]) {
+    public init(lineIndex: Int, performerID: String? = nil, spans: [TimedTextSpan], backgroundText: String? = nil) {
         self.lineIndex = lineIndex
         self.performerID = performerID
         self.spans = spans
+        self.backgroundText = backgroundText
     }
 }
 
@@ -211,7 +215,7 @@ public struct DocumentTimingPayload: Codable, Sendable, Equatable {
         var payloads: [LineTimingPayload] = []
         for (idx, line) in lines.enumerated() {
             if let spans = line.timedSpans, !spans.isEmpty {
-                payloads.append(LineTimingPayload(lineIndex: idx, performerID: line.performerID, spans: spans))
+                payloads.append(LineTimingPayload(lineIndex: idx, performerID: line.performerID, spans: spans, backgroundText: line.backgroundText))
             }
         }
         guard !payloads.isEmpty else { return nil }
@@ -220,6 +224,16 @@ public struct DocumentTimingPayload: Codable, Sendable, Equatable {
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(doc) else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+
+    /// 和声 text by line index. Read apart from `decode` so the timing map
+    /// that validation and editing share keeps its shape.
+    public static func decodeBackground(_ json: String) -> [Int: String] {
+        guard let data = json.data(using: .utf8),
+              let doc = try? JSONDecoder().decode(DocumentTimingPayload.self, from: data) else { return [:] }
+        var result: [Int: String] = [:]
+        for line in doc.lines { if let text = line.backgroundText, !text.isEmpty { result[line.lineIndex] = text } }
+        return result
     }
 
     public static func decode(_ json: String) -> [Int: (performerID: String?, spans: [TimedTextSpan])]? {

@@ -69,6 +69,7 @@
 		110000352D83400100000001 /* LyricsQueryPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000352D83400100000000 /* LyricsQueryPlanner.swift */; };
 		110000362D83400100000001 /* LyricsSafeMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000362D83400100000000 /* LyricsSafeMatcher.swift */; };
 		110000372D83400100000001 /* LyricsRecoveryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000372D83400100000000 /* LyricsRecoveryModels.swift */; };
+		110000402D83400100000B01 /* Butterchurn in Resources */ = {isa = PBXBuildFile; fileRef = 110000402D83400100000B00 /* Butterchurn */; };
 		110000402D83400100000001 /* japanese_kanji_readings.json in Resources */ = {isa = PBXBuildFile; fileRef = 110000402D83400100000000 /* japanese_kanji_readings.json */; };
 		110001402D83400100000001 /* SpotifyLyrics.icns in Resources */ = {isa = PBXBuildFile; fileRef = 110001402D83400100000000 /* SpotifyLyrics.icns */; };
 		110000432D83400100000001 /* NetEaseExperimentalLyricsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000432D83400100000000 /* NetEaseExperimentalLyricsProvider.swift */; };
@@ -264,6 +265,7 @@
 		AC64F81C1FF0A05129ACA273 /* LyricsCreditOnly.swift in Sources */ = {isa = PBXBuildFile; fileRef = 691058B73179FA592C15242B /* LyricsCreditOnly.swift */; };
 		CC936560DC7B5A93A8AB543D /* V3FavoriteLines.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4718DEA0801889626B70F166 /* V3FavoriteLines.swift */; };
 		598548A9D413CD4EFB599C7C /* FavoriteLinesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BBBF9743852EB9CEB70F376 /* FavoriteLinesView.swift */; };
+		CBF1C72A447D992D0B2F587D /* V3FlowLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9B118B60424DA1F1DDBD431 /* V3FlowLayer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -333,6 +335,7 @@
 		110000352D83400100000000 /* LyricsQueryPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsQueryPlanner.swift; sourceTree = "<group>"; };
 		110000362D83400100000000 /* LyricsSafeMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsSafeMatcher.swift; sourceTree = "<group>"; };
 		110000372D83400100000000 /* LyricsRecoveryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsRecoveryModels.swift; sourceTree = "<group>"; };
+		110000402D83400100000B00 /* Butterchurn */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Butterchurn; sourceTree = "<group>"; };
 		110000402D83400100000000 /* japanese_kanji_readings.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = japanese_kanji_readings.json; sourceTree = "<group>"; };
 		110001402D83400100000000 /* SpotifyLyrics.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = SpotifyLyrics.icns; sourceTree = "<group>"; };
 		110000432D83400100000000 /* NetEaseExperimentalLyricsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetEaseExperimentalLyricsProvider.swift; sourceTree = "<group>"; };
@@ -530,6 +533,7 @@
 		691058B73179FA592C15242B /* LyricsCreditOnly.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsCreditOnly.swift; sourceTree = "<group>"; };
 		4718DEA0801889626B70F166 /* V3FavoriteLines.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3FavoriteLines.swift; sourceTree = "<group>"; };
 		0BBBF9743852EB9CEB70F376 /* FavoriteLinesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteLinesView.swift; sourceTree = "<group>"; };
+		C9B118B60424DA1F1DDBD431 /* V3FlowLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3FlowLayer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -747,6 +751,7 @@
 				FA56EE83873FAB67D1E6F5D6 /* V3BackdropMedia.swift */,
 				61DA7987B78B10D893654A30 /* V3GlassWeather.swift */,
 				575AF9352293F29B428528FB /* V3SpectrumOverlay.swift */,
+				C9B118B60424DA1F1DDBD431 /* V3FlowLayer.swift */,
 				6DD84F91FEAE16E4F5C026CE /* V3AlwaysHover.swift */,
 				110000292D83400100000000 /* SongSearchPopover.swift */,
 				110000722D83400100000000 /* ManualLyricsActionsView.swift */,
@@ -946,6 +951,7 @@
 		110000412D83400100000000 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				110000402D83400100000B00 /* Butterchurn */,
 				110000402D83400100000000 /* japanese_kanji_readings.json */,
 				110001402D83400100000000 /* SpotifyLyrics.icns */,
 			);
@@ -1163,6 +1169,7 @@
 				1F3AAA6A26CAB37EE98F5312 /* V3BackdropMedia.swift in Sources */,
 				53A2E3726FF64255E8D79047 /* V3GlassWeather.swift in Sources */,
 				1105A1906693D1AF2CEEBC42 /* V3SpectrumOverlay.swift in Sources */,
+				CBF1C72A447D992D0B2F587D /* V3FlowLayer.swift in Sources */,
 				F44CE541129D043DBFCD53E2 /* V3AlwaysHover.swift in Sources */,
 				110001302D83400100000001 /* V3ResponsiveGeometry.swift in Sources */,
 				110000432D83400100000001 /* NetEaseExperimentalLyricsProvider.swift in Sources */,
@@ -1274,6 +1281,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				110000402D83400100000B01 /* Butterchurn in Resources */,
 				110000402D83400100000001 /* japanese_kanji_readings.json in Resources */,
 				110001402D83400100000001 /* SpotifyLyrics.icns in Resources */,
 			);

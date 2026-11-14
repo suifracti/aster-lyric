@@ -238,6 +238,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 if let timing = timingMap[i] {
                     updatedLines[i].performerID = timing.performerID
                     updatedLines[i].timedSpans = timing.spans
+                    updatedLines[i].backgroundText = timingRecord.flatMap { DocumentTimingPayload.decodeBackground($0.spansPayload)[i] }
                 }
             }
             document = LyricsDocument(
@@ -1750,6 +1751,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                     if let timing = timingMap[i] {
                         updatedLines[i].performerID = timing.performerID
                         updatedLines[i].timedSpans = timing.spans
+                        updatedLines[i].backgroundText = timingRecord.flatMap { DocumentTimingPayload.decodeBackground($0.spansPayload)[i] }
                     }
                 }
                 baseDoc = baseDoc.replacingLines(updatedLines, timingVersionID: timingRecord?.id)
@@ -1793,6 +1795,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 if let timing = timingMap[i] {
                     updatedLines[i].performerID = timing.performerID
                     updatedLines[i].timedSpans = timing.spans
+                    updatedLines[i].backgroundText = timingRecord.flatMap { DocumentTimingPayload.decodeBackground($0.spansPayload)[i] }
                 }
             }
             baseDoc = baseDoc.replacingLines(updatedLines, timingVersionID: timingRecord?.id)

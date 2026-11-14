@@ -205,7 +205,8 @@ public enum LyricsLayerEnricher {
                 performerID: line.performerID,
                 timedSpans: line.timedSpans,
                 readingRepresentationID: line.readingRepresentationID,
-                readingSurfaceText: line.readingSurfaceText
+                readingSurfaceText: line.readingSurfaceText,
+                backgroundText: line.backgroundText
             )
         }
     }

@@ -578,4 +578,35 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(FullScreenLyricsWindowController.targetIndex(home: nil, count: 3, prefersOther: true), 1)
         XCTAssertNil(FullScreenLyricsWindowController.targetIndex(home: 0, count: 0, prefersOther: true))
     }
+
+    // MARK: 和声
+
+    func testBackingVocalsBecomeTheirOwnLine() throws {
+        let ttml = """
+        <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div>
+        <p begin="1.000" end="4.000"><span begin="1.000" end="2.000">Hello</span> <span begin="2.000" end="3.000">there</span><span ttm:role="x-bg" begin="3.000" end="4.000"><span begin="3.000" end="4.000">(ooh</span> <span begin="3.500" end="4.000">yeah)</span></span></p>
+        <p begin="5.000" end="6.000"><span begin="5.000" end="6.000">Plain</span></p>
+        </div></body></tt>
+        """
+        let track = Track(id: "bg-test", title: "T", artist: "A", album: "", duration: 10)
+        let document = try XCTUnwrap(TTMLParser.parse(ttml, identity: TrackIdentity(track: track)))
+        XCTAssertEqual(document.lines[0].originalText, "Hello there", "the sung line keeps its own text and offsets")
+        XCTAssertEqual(document.lines[0].backgroundText, "ooh yeah")
+        XCTAssertEqual(document.lines[0].timedSpans?.count, 2)
+        XCTAssertNil(document.lines[1].backgroundText)
+
+        let payload = try XCTUnwrap(DocumentTimingPayload.encode(document.lines))
+        XCTAssertEqual(DocumentTimingPayload.decodeBackground(payload), [0: "ooh yeah"])
+        XCTAssertEqual(DocumentTimingPayload.decode(payload)?[0]?.spans.count, 2, "the timing map reads as before")
+        let plain = try XCTUnwrap(DocumentTimingPayload.encode([document.lines[1]]))
+        XCTAssertFalse(plain.contains("backgroundText"), "lines without backing vocals store exactly what they stored before")
+        XCTAssertTrue(DocumentTimingPayload.decodeBackground(plain).isEmpty)
+    }
+
+    func testBackingVocalBracketsAreTidied() {
+        XCTAssertEqual(TTMLParser.tidiedBackground("  (la  la) "), "la la")
+        XCTAssertEqual(TTMLParser.tidiedBackground("（啦啦）"), "啦啦")
+        XCTAssertEqual(TTMLParser.tidiedBackground("(a) b (c)"), "(a) b (c)", "inner brackets are left alone")
+        XCTAssertNil(TTMLParser.tidiedBackground(" \n "))
+    }
 }

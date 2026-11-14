@@ -1506,7 +1506,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
     }()
     private var baseSize: CGFloat {
         guard let height = bigLineAvailableHeight else { return preferredBaseSize }
-        let key = "\(line.id)|\(effectiveOriginalText)|\(displayKanaText ?? "")|\(distinctRomaji ?? "")|\(line.translationText ?? "")|\(preferences)|\(height)|\(readableLineWidth)|\(preferredBaseSize)|\(dictionaryRevision)" as NSString
+        let key = "\(line.id)|\(effectiveOriginalText)|\(displayKanaText ?? "")|\(distinctRomaji ?? "")|\(line.translationText ?? "")|\(line.backgroundText ?? "")|\(preferences)|\(height)|\(readableLineWidth)|\(preferredBaseSize)|\(dictionaryRevision)" as NSString
         if let size = Self.bigLineSizeCache.object(forKey: key) { return CGFloat(size.doubleValue) }
         let fitted = V3BigLineLayout.fit(preferredSize: preferredBaseSize, maxHeight: height) { size in
             let ratio = size / preferredBaseSize
@@ -1537,6 +1537,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
             if preferences.showOriginal && preferences.kanaDisplayMode == .independentLine && shouldShowKana && !readingRepeatsOriginal {
                 auxiliary.append((displayKanaText ?? "", preferredAuxiliarySize * ratio))
             }
+            if let backing = backgroundLine { auxiliary.append((backing, preferredAuxiliarySize * ratio)) }
             if shouldShowRomaji, let romaji = distinctRomaji { auxiliary.append((romaji, preferredAuxiliarySize * ratio)) }
             if preferences.showTranslation, let translation = line.translationText {
                 auxiliary.append((translation, max(14, preferredAuxiliarySize * 0.94) * ratio))
@@ -1699,6 +1700,11 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
             && (effectiveOriginalText.contains("纯音乐") || effectiveOriginalText.contains("没有填词"))
     }
 
+    private var backgroundLine: String? {
+        guard preferences.showOriginal, let text = line.backgroundText, !text.isEmpty, !isInstrumentalLine else { return nil }
+        return text
+    }
+
     private var inlineTranslation: String? {
         guard settings.v3LyricStyle == .inlineTranslation, preferences.showTranslation,
               let text = line.translationText, !text.isEmpty, !isInstrumentalLine else { return nil }
@@ -1851,6 +1857,16 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                 Text(kana)
                     .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
                     .foregroundStyle(isActive ? coverAccent : .white)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let backing = backgroundLine {
+                // 和声: the backing voices get their own small line under the
+                // words, quieter than the reading and translation layers.
+                Text(backing)
+                    .font(.system(size: auxiliarySize, weight: .medium, design: .rounded).italic())
+                    .foregroundStyle(.white.opacity(isActive ? 0.62 : 0.36))
+                    .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
             }
 

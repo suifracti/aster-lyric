@@ -37,6 +37,9 @@ final class V3MusicPulse: NSObject, ObservableObject {
         /// Seconds of unbroken silence. Spotify's own volume at 0 gives a
         /// stream of zeros: everything that follows the sound stands still.
         var silentSeconds: Double = 0
+        /// The latest 1024 samples as unsigned bytes around 128, for the
+        /// 流动 picture, which wants the wave itself and not the bands.
+        var waveform: [UInt8] = []
     }
     /// The stream is arriving but has been silent for a while.
     nonisolated static var hearsSilence: Bool {
@@ -324,7 +327,8 @@ struct PulseAnalyzer {
             bass: ratio(0, now[0]), mid: ratio(1, now[1]), treble: ratio(2, now[2]),
             bassAverage: ratio(0, average[0]), bpm: bpm,
             updatedAt: ProcessInfo.processInfo.systemUptime, spectrum: spectrum,
-            silentSeconds: Double(silentFrames) / fps))
+            silentSeconds: Double(silentFrames) / fps,
+            waveform: samples.map { UInt8(max(0, min(255, 128 + $0 * 127))) }))
     }
 
     /// Autocorrelation of the onset curve over 60–190 BPM. A lag whose half
