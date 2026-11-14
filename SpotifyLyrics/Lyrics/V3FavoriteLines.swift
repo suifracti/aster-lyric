@@ -17,7 +17,15 @@ final class V3FavoriteLines: ObservableObject {
 
     static let shared = V3FavoriteLines(fileURL: defaultURL)
     static var defaultURL: URL? {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+#if DEBUG
+        // Test and fixture runs move the database; the kept lines move with it,
+        // so a fixture never reads or writes the listener's own file.
+        if let override = ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DATABASE_PATH"],
+           !override.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return URL(fileURLWithPath: override).deletingLastPathComponent().appendingPathComponent("favorite-lines.json")
+        }
+#endif
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("SpotifyLyrics", isDirectory: true)
             .appendingPathComponent("favorite-lines.json")
     }

@@ -256,6 +256,14 @@ struct ExperienceVisualHostApp: App {
         }
         let protection = ExperienceArguments.value("--reading-protection", fallback: "")
         if !protection.isEmpty { defaults.set(protection, forKey: AppSettingsStore.Key.v3ReadingProtection) }
+        // `--favorites-json path`: 金句 entries for this fixture, placed beside
+        // the temporary database where the store looks in Debug runs.
+        let favorites = ExperienceArguments.value("--favorites-json", fallback: "")
+        if !favorites.isEmpty, let target = V3FavoriteLines.defaultURL {
+            try? FileManager.default.removeItem(at: target)
+            do { try FileManager.default.copyItem(at: URL(fileURLWithPath: favorites), to: target) }
+            catch { print("[VisualHost] favorites copy failed: \(error)") }
+        }
         // `--set key=value` (repeatable): any setting for this fixture only.
         // true/false become Bool, numbers Double, anything else String.
         let arguments = ProcessInfo.processInfo.arguments
@@ -429,6 +437,12 @@ private struct ExperienceFixtureRoot: View {
                 }
                 playback.startProvider()
                 try? await Task.sleep(for:.seconds(1))
+                // `--loop-line 2`: loop that lyric line, as from its context menu.
+                if let index = Int(ExperienceArguments.value("--loop-line", fallback: "")),
+                   playback.liveLyrics.indices.contains(index), let identity = playback.currentTrackIdentity {
+                    playback.toggleLyricLineLoop(lineID: playback.liveLyrics[index].id, documentIdentity: identity,
+                                                 documentRevision: playback.lyricsSession.revision)
+                }
                 if ProcessInfo.processInfo.arguments.contains("--sleep-timer") { playback.configureSleepTimer(.thirty) }
                 if ProcessInfo.processInfo.arguments.contains("--fullscreen-preview-isolation") {
                     let previewTrack = Track(id: "spotify:track:unplayedpreview",
@@ -647,7 +661,7 @@ private struct ExperienceFixtureRoot: View {
                     try? await Task.sleep(for: .milliseconds(800))
                 }
                 var extraWindow: NSWindow?
-                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker"].contains(ExperienceArguments.surface) {
+                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker", "favorites"].contains(ExperienceArguments.surface) {
                     MenuBarLyricsController.shared.bind(playbackState: playback)
                     let root: AnyView
                     if ExperienceArguments.surface == "playlist-picker" {
@@ -663,6 +677,9 @@ private struct ExperienceFixtureRoot: View {
                         root = AnyView(TranslationProviderControls(settings: settings)
                             .padding(16).frame(width: 360)
                             .background(Color(nsColor: .windowBackgroundColor)))
+                    } else if ExperienceArguments.surface == "favorites" {
+                        root = AnyView(FavoriteLinesView().padding(16).frame(width: 520, height: 460)
+                            .background(Color(nsColor: .windowBackgroundColor)))
                     } else if ExperienceArguments.surface == "menubar" {
                         root = AnyView(MenuBarLyricsPopoverView(controller: MenuBarLyricsController.shared))
                     } else {
@@ -670,6 +687,7 @@ private struct ExperienceFixtureRoot: View {
                     }
                     let hosting = NSHostingView(rootView: root.environment(\.colorScheme, ExperienceArguments.value("--appearance", fallback: "dark") == "light" ? .light : .dark))
                     let size = ExperienceArguments.surface == "search-full" ? CGSize(width: 440, height: 470)
+                        : ExperienceArguments.surface == "favorites" ? CGSize(width: 520, height: 460)
                         : ExperienceArguments.surface == "playlist-picker" ? CGSize(width: 380, height: 480)
                         : ["models", "search-panel"].contains(ExperienceArguments.surface) ? CGSize(width: 360, height: 520)
                         : ExperienceArguments.surface == "menubar" ? CGSize(width: 340, height: 560) : ExperienceArguments.size

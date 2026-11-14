@@ -151,11 +151,16 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
 
                 // 单句循环: the looped line as a bright bracket on the track.
                 if let loop = state.lyricLineLoopSpan, duration > 0 {
-                    let span = max(6, width * CGFloat((min(loop.upperBound, duration) - loop.lowerBound) / duration))
+                    // A line is a few seconds: on a short rail it would vanish under the
+                    // hover thumb. At least the thumb plus 8 pt, centred on the line,
+                    // so both ends always show beside the thumb.
+                    let exact = width * CGFloat((min(loop.upperBound, duration) - loop.lowerBound) / duration)
+                    let span = max(LyricsDesignTokens.Progress.hoverThumbSize + 8, exact)
+                    let middle = width * CGFloat((loop.lowerBound + min(loop.upperBound, duration)) / 2 / duration)
                     Capsule().stroke(Color.white.opacity(0.95), lineWidth: 1.5)
                         .background(Capsule().fill(coverAccent.opacity(0.55)))
                         .frame(width: span, height: trackHeight + 6)
-                        .offset(x: min(max(0, width - span), width * CGFloat(loop.lowerBound / duration)))
+                        .offset(x: min(max(0, width - span), middle - span / 2))
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
