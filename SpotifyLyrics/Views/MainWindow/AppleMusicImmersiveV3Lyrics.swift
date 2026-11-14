@@ -1860,16 +1860,6 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let backing = backgroundLine {
-                // 和声: the backing voices get their own small line under the
-                // words, quieter than the reading and translation layers.
-                Text(backing)
-                    .font(.system(size: auxiliarySize, weight: .medium, design: .rounded).italic())
-                    .foregroundStyle(.white.opacity(isActive ? 0.62 : 0.36))
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
             if shouldShowRomaji, let romaji = distinctRomaji {
                 Text(romaji)
                     .font(.system(size: auxiliarySize, weight: .medium, design: .rounded))
@@ -1881,6 +1871,16 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
 
             if showsTranslation, preferences.showTranslation, let translation = line.translationText, !translation.isEmpty {
                 translationText(translation)
+            }
+
+            if let backing = backgroundLine {
+                // 和声: the backing voices get their own small line under the
+                // sung line's reading and translation, quieter than the reading and translation layers.
+                Text(backing)
+                    .font(.system(size: auxiliarySize, weight: .medium, design: .rounded).italic())
+                    .foregroundStyle(.white.opacity(isActive ? 0.62 : 0.36))
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .lineLimit(nil)

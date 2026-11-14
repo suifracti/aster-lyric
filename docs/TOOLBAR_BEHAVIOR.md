@@ -1136,4 +1136,6 @@ The source statistics were read on 2026-11-15 rather than 11-18: nothing was lis
 
 **Checked:** 197 native tests pass, including the nested case. The real file was parsed in a temporary test that was removed afterwards.
 
-**Still to be seen by the user, with a song playing:** 流动, 和声 in the window, 轮廓光, 鼠标视差, Q/E, the loop bracket, 收藏 and the 金句 tab, 整句亮, 换气 in a gap.
+- **和声 seen offscreen:** the visual host's `--fixture-json` lines take an optional `background`. In a render at 0:19 the 和声 line first sat between the sung line and its romaji, splitting the reading from its text; it now comes after the reading and the translation.
+
+**Still to be seen by the user, with a song playing:** 流动, 轮廓光, 鼠标视差, Q/E, the loop bracket, 收藏 and the 金句 tab, 整句亮, 换气 in a gap.

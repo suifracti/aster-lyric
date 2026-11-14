@@ -40,6 +40,8 @@ private struct ExperienceFixture: Decodable {
         let kana: String?
         let romaji: String?
         let translation: String?
+        /// 和声 (backing vocals) shown as their own small line.
+        let background: String?
     }
     let track: Track
     let language: String?
@@ -112,7 +114,8 @@ private struct ExperienceLyricsProvider: LyricsProvider {
         if let fixture = ExperienceArguments.fixture {
             let lines = fixture.lines.map {
                 LyricLine(timestamp: $0.start, originalText: $0.original, endTime: $0.end,
-                          translationText: $0.translation, romajiText: $0.romaji, kanaText: $0.kana)
+                          translationText: $0.translation, romajiText: $0.romaji, kanaText: $0.kana,
+                          backgroundText: $0.background)
             }
             return .match(LyricsDocument(identity: identity, title: track.title, artist: track.artist,
                                          album: track.album, duration: track.duration, lines: lines,
