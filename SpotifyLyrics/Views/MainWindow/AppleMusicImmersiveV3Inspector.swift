@@ -571,11 +571,11 @@ struct V3VisualControls {
         VStack(spacing: 2) {
             V3SegmentedPicker("播放呈现", selection: $settings.v3PlaybackPresentation,
                               options: V3PlaybackPresentation.established.map { ($0.title, $0) })
-            // The six newer presentations, one click away like the first three.
-            // Two rows, like 歌词呈现, so no name has to shrink to fit.
+            // The later presentations continue under the same label, like the
+            // second row of 歌词呈现: one setting reads as one group.
             let additions = V3PlaybackPresentation.additions
             VStack(spacing: 2) {
-                V3SegmentedPicker("新呈现", selection: $settings.v3PlaybackPresentation,
+                V3SegmentedPicker("", selection: $settings.v3PlaybackPresentation,
                                   options: additions.prefix(4).map { ($0.title, $0) })
                 V3SegmentedPicker("", selection: $settings.v3PlaybackPresentation,
                                   options: additions.dropFirst(4).map { ($0.title, $0) })
@@ -608,8 +608,12 @@ struct V3VisualControls {
 
     /// 工具栏: six ways to show the same tools.
     var toolbarStyleControls: some View {
-        V3SegmentedPicker("工具栏", selection: $settings.v3ToolbarStyle,
-                          options: V3ToolbarStyle.allCases.map { ($0.title, $0) })
+        // 4 + 4, like 歌词呈现 and 播放呈现: eight names in one row touch each other.
+        let first = Array(V3ToolbarStyle.allCases.prefix(4)), second = Array(V3ToolbarStyle.allCases.dropFirst(4))
+        return VStack(spacing: 2) {
+            V3SegmentedPicker("工具栏", selection: $settings.v3ToolbarStyle, options: first.map { ($0.title, $0) })
+            V3SegmentedPicker("", selection: $settings.v3ToolbarStyle, options: second.map { ($0.title, $0) })
+        }
             .help(V3ToolbarStyle.allCases.map { $0.title + "：" + $0.detail }.joined(separator: "\n"))
     }
 
@@ -674,6 +678,12 @@ struct V3VisualControls {
                 }
                 if showsExplanations { backgroundMotionControls }
             }
+            V3ChipToggles("背景细节", items: [("颗粒", $settings.v3BackdropGrain),
+                                            ("暂停褪色", $settings.v3PauseFadesColor),
+                                            ("鼠标视差", $settings.v3BackdropParallax),
+                                            ("随时段调色", $settings.v3DayTint)])
+                .help("颗粒：背景上一层很淡的噪点，让大片渐变不显得塑料。\n暂停褪色：暂停一会儿后，背景慢慢褪成接近黑白，继续播放时颜色很快回来。\n鼠标视差：背景随鼠标位置轻轻偏几点，像隔着一层玻璃。\n随时段调色：清晨偏冷、傍晚偏暖、深夜偏深蓝，白天不变。")
+            V3PanelSection(title: "随音乐")
             V3MusicMotionRow(settings: settings)
             if settings.v3MusicMotionEnabled {
                 V3ChipToggles("跟着低音", items: [("封面呼吸", $settings.v3CoverBreath),
@@ -681,17 +691,13 @@ struct V3VisualControls {
                                                 ("四边灯带", $settings.v3EdgeLights)])
                     .help("封面呼吸：前景封面随低音胀大一点点，最多 2%。\n轮廓光：封面的边随低音亮一下。\n四边灯带：窗口四边一圈封面色的光，随低音变亮。\n都靠「随音乐律动」听到的声音；Spotify 自己的音量为 0 时不动。")
             }
-            V3ChipToggles("背景细节", items: [("颗粒", $settings.v3BackdropGrain),
-                                            ("暂停褪色", $settings.v3PauseFadesColor),
-                                            ("鼠标视差", $settings.v3BackdropParallax),
-                                            ("随时段调色", $settings.v3DayTint)])
-                .help("颗粒：背景上一层很淡的噪点，让大片渐变不显得塑料。\n暂停褪色：暂停一会儿后，背景慢慢褪成接近黑白，继续播放时颜色很快回来。\n鼠标视差：背景随鼠标位置轻轻偏几点，像隔着一层玻璃。\n随时段调色：清晨偏冷、傍晚偏暖、深夜偏深蓝，白天不变。")
-            V3SegmentedPicker("窗上天气", selection: $settings.v3GlassWeather,
-                              options: V3GlassWeather.allCases.map { ($0.title, $0) })
-                .help("像隔着一扇窗：雨丝和挂在玻璃上的水珠、慢慢飘的雪、缓缓流动的雾。暂停时停下，减少动态效果时不显示。")
             V3SegmentedPicker("频谱", selection: $settings.v3SpectrumStyle,
                               options: V3SpectrumStyle.allCases.map { ($0.title, $0) })
                 .help("把正在播放的声音画出来：沿窗口底部一条，环绕前景封面，或铺满窗口的流动图案（MilkDrop 预设，约半分钟换一种，换歌也换）。需要打开随音乐律动。")
+            V3PanelSection(title: "氛围")
+            V3SegmentedPicker("窗上天气", selection: $settings.v3GlassWeather,
+                              options: V3GlassWeather.allCases.map { ($0.title, $0) })
+                .help("像隔着一扇窗：雨丝和挂在玻璃上的水珠、慢慢飘的雪、缓缓流动的雾。暂停时停下，减少动态效果时不显示。")
             Toggle("歌词意象", isOn: $settings.v3LyricImagery)
                 .help("唱到雨、雪、星、花（中日韩英关键词）时，那一句飘一阵对应的粒子。")
             if scene != .focusedLyrics && scene != .coverPhoto && settings.v3ShowForegroundArtwork {

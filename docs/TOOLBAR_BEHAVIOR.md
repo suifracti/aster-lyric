@@ -1093,3 +1093,14 @@ The three recommended batches are done. This round takes small items the pool ne
 **Not seen:** 流动 while a song plays; 和声 on a real song (needs an AMLL lyric with backing vocals, fetched after this build); 轮廓光 could not be told apart in the captures.
 
 **Still open from the pool:** G8 menu-bar word lift; I2, I4, I13 after the source statistics are read again on 2026-11-18.
+
+## Round 24: one pass over the panels (2026-11-15)
+
+The pool is done, so the options added over nine batches are put in order. Nothing is removed and no key changes.
+
+- **播放呈现 is one group.** The label 新呈现 is gone: the eleven presentations sit in three rows under 播放呈现, like the two rows of 歌词呈现.
+- **工具栏 is two rows of four** (标准 / 图标 / 分组 / 下拉, then 侧拉 / 标题栏 / 环形 / 窗外). Eight names in one row touched each other.
+- **更多画面选项 is grouped under small headings**, in this order: 夜间柔和; **背景** (取景, 缩放, 背景素材, 副歌时换素材, 背景明暗, 背景动态, then the 背景细节 chips); **随音乐** (随音乐律动, 跟着低音, 频谱); **氛围** (窗上天气, 歌词意象); 前景封面; 播放.
+  - 频谱 moved next to 随音乐律动, which it needs.
+
+**Checked:** 193 native tests pass. Offscreen panel images of 画面 and 更多 show the new rows. The lower part of 更多画面选项 is below the fold of the offscreen image and was not seen.

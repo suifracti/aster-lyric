@@ -452,3 +452,9 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
   - 资源以文件夹引用加进工程（`lastKnownFileType = folder`），整个 `Butterchurn` 目录原样进包。
   - 启动日志有一行 `FLOW page ready`；不是 ready 就是 WebGL 或脚本出错，后面跟错误文字。
 - **动 Spotify 音量前当场读一次状态**：这次第二回验证时沿用了一小时前“播放中、音量 0”的印象，实际用户已改成暂停、音量 84，结果被调成 0，随后改回。每次调之前读状态和音量，记下原值，结束时恢复到原值而不是固定值；暂停时不调。
+
+## L-033 改了 `some View` 的实际类型后，离屏图崩在 `initializeWithCopy`（2026-11-15）
+
+- **现象**：把 `toolbarStyleControls` 从一个控件改成 `VStack` 后，更多面板的离屏渲染崩溃，栈顶是 `initializeWithCopy for HelpView`，在 `toolbarPanel(for:)` 里。
+- **原因**：增量编译没有重编使用这个属性的另一个文件，它还按旧类型的内存布局复制。
+- **做法**：`touch` 使用方的文件（这次是 `Views/MainWindow/*.swift`）再构建。看到这种栈先怀疑旧产物，不要先改代码。
