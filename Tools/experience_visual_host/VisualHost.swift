@@ -256,6 +256,16 @@ struct ExperienceVisualHostApp: App {
         }
         let protection = ExperienceArguments.value("--reading-protection", fallback: "")
         if !protection.isEmpty { defaults.set(protection, forKey: AppSettingsStore.Key.v3ReadingProtection) }
+        // `--set key=value` (repeatable): any setting for this fixture only.
+        // true/false become Bool, numbers Double, anything else String.
+        let arguments = ProcessInfo.processInfo.arguments
+        for (index, argument) in arguments.enumerated() where argument == "--set" && index + 1 < arguments.count {
+            let pair = arguments[index + 1].split(separator: "=", maxSplits: 1).map(String.init)
+            guard pair.count == 2 else { continue }
+            if pair[1] == "true" || pair[1] == "false" { defaults.set(pair[1] == "true", forKey: pair[0]) }
+            else if let number = Double(pair[1]) { defaults.set(number, forKey: pair[0]) }
+            else { defaults.set(pair[1], forKey: pair[0]) }
+        }
         let settings=AppSettingsStore(defaults:defaults)
         if ProcessInfo.processInfo.arguments.contains("--model-fixture") {
             var configuration = settings.aiTranslationConfiguration

@@ -1138,4 +1138,10 @@ The source statistics were read on 2026-11-15 rather than 11-18: nothing was lis
 
 - **和声 seen offscreen:** the visual host's `--fixture-json` lines take an optional `background`. In a render at 0:19 the 和声 line first sat between the sung line and its romaji, splitting the reading from its text; it now comes after the reading and the translation.
 
-**Still to be seen by the user, with a song playing:** 流动, 轮廓光, 鼠标视差, Q/E, the loop bracket, 收藏 and the 金句 tab, 整句亮, 换气 in a gap.
+- **Seen offscreen while "playing"** (the visual host now takes `--set key=value` for any setting, repeatable):
+  - 整句亮: off, the active timed line is lit up to the sung word; on, the whole line is lit.
+  - 只看前方: the sung lines above the active one are gone; off, they are there.
+  - 四边灯带: shows at rest as a band along the edges. Offscreen it has a hard inner edge because the offscreen render skips the blur; in the real window (capture of 2026-11-15 with sound) it is a soft glow. Not a bug.
+  - 轮廓光: nothing at rest, as designed (it lights only on a bass hit); the white edge in both images is the cover's own outline.
+
+**Still to be seen by the user, with a song playing:** 流动, 轮廓光 on a bass hit, 鼠标视差, Q/E, the loop bracket, 收藏 and the 金句 tab, 换气 in a gap.
