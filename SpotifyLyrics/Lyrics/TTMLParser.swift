@@ -277,7 +277,15 @@ private final class TTMLParserDelegate: NSObject, XMLParserDelegate {
 
             // Nested-safe span kind resolution
             let kind: SpanKind
-            if let parent = spanStack.last, parent.kind != .primary {
+            if let parent = spanStack.last, parent.kind == .background,
+               sRole.contains("x-translation") || sRole.contains("translation") {
+                // AMLL nests the backing line's translation and romanization
+                // inside the x-bg span; they are not part of what is sung.
+                kind = .translation
+            } else if let parent = spanStack.last, parent.kind == .background,
+                      sRole.contains("x-roman") || sRole.contains("roman") {
+                kind = .romanization
+            } else if let parent = spanStack.last, parent.kind != .primary {
                 kind = parent.kind
             } else if sRole.contains("x-bg") || sRole.contains("background") {
                 kind = .background

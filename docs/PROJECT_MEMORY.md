@@ -447,6 +447,7 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **加一个可选数据先看有没有 JSON 列**：和声存在逐字时间的 JSON（`spans_payload`）里，`LineTimingPayload.backgroundText` 可选，没有时不写进 JSON，所以旧数据的去重比较和旧版本读取都不变，不用升数据库版本。
   - 和声另用 `DocumentTimingPayload.decodeBackground` 读，不改 `decode` 返回的元组，校验和编辑那几处不用动。
   - 不要为了存和声写出“有行但 spans 为空”的条目：`decode` 遇到空 spans 会让整份逐字时间作废。
+  - **AMLL 把和声的译文、罗马音嵌在 `x-bg` 里面**（真实文件 One Last Kiss）。解析时和声里的 `x-translation` / `x-roman` 子 span 不算和声文字；只用手写的简单样例测不出来，要拿真实文件试。
 - **流动用 WKWebView 跑 butterchurn**：声音由 App 每秒 30 次把 1024 个采样（`Levels.waveform`）以 base64 送进页面，页面不用麦克风也不联网（CSP `default-src 'none'`）。`render({audioLevels})` 接受外部采样。
   - 预设的公式要 `unsafe-eval`；网页视图 `hitTest` 返回 nil、滚轮转给下一个响应者，才不会挡住歌词的滚动和点击。
   - 资源以文件夹引用加进工程（`lastKnownFileType = folder`），整个 `Butterchurn` 目录原样进包。

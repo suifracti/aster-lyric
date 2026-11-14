@@ -595,6 +595,15 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(document.lines[0].timedSpans?.count, 2)
         XCTAssertNil(document.lines[1].backgroundText)
 
+        // AMLL nests the backing line's translation and romanization inside x-bg.
+        let nested = """
+        <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div>
+        <p begin="1.000" end="4.000"><span begin="1.000" end="2.000">Oh</span><span ttm:role="x-bg"><span begin="2.000" end="3.000">(忘れられない人)</span><span ttm:role="x-translation" xml:lang="zh-CN">你永远是我无法忘记的人</span><span ttm:role="x-roman">wa su re ra re na i hi to</span></span></p>
+        </div></body></tt>
+        """
+        let nestedDocument = try XCTUnwrap(TTMLParser.parse(nested, identity: TrackIdentity(track: track)))
+        XCTAssertEqual(nestedDocument.lines[0].backgroundText, "忘れられない人", "only what the backing voices sing")
+
         let payload = try XCTUnwrap(DocumentTimingPayload.encode(document.lines))
         XCTAssertEqual(DocumentTimingPayload.decodeBackground(payload), [0: "ooh yeah"])
         XCTAssertEqual(DocumentTimingPayload.decode(payload)?[0]?.spans.count, 2, "the timing map reads as before")

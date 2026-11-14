@@ -1127,3 +1127,13 @@ The source statistics were read on 2026-11-15 rather than 11-18: nothing was lis
 **Checked:** 196 native tests pass, including cases that must stay unadopted (artist not in the credits, another length, another title).
 
 **Left as they are:** Kiddy / ロクデナシ is found only by the title-only query, which keeps its penalty. Names that differ entirely (SherryBoss / 伊稀, Sanghee / さんひ, AYANE / 松岡みやび) stay unmatched.
+
+## Round 26: 和声 checked on a real file; the pool closed (2026-11-15)
+
+- **和声 on a real AMLL file** (One Last Kiss, public `amll-ttml-db`, 12 backing lines): AMLL nests the backing line's translation and romanization inside the `x-bg` span, and all of it went into the 和声 line ("(忘れられない人)你永远是我无法忘记的人wa su re ra re na i hi to"). Fixed: a translation or romanization span inside `x-bg` is not backing text. All 12 lines now read as sung ("忘れられない人", "Oh oh oh oh"). Word timing of the sung lines is unchanged and valid.
+- **G8 menu-bar word lift: closed.** The menu-bar lyric is one monochrome template image 22 pt high; the system tints it, so sung words cannot be told apart by colour, and a lift of 0.05 × 13 pt is about 0.65 pt, which cannot be seen there. The capsule half of G8 stays with the future Dynamic Island design, as the user decided for G5.
+- **The pool is closed.** Every item is built, already existed, or is closed with a reason (Rounds 18–26).
+
+**Checked:** 197 native tests pass, including the nested case. The real file was parsed in a temporary test that was removed afterwards.
+
+**Still to be seen by the user, with a song playing:** 流动, 和声 in the window, 轮廓光, 鼠标视差, Q/E, the loop bracket, 收藏 and the 金句 tab, 整句亮, 换气 in a gap.
