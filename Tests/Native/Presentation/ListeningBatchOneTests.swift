@@ -674,7 +674,8 @@ final class ListeningBatchOneTests: XCTestCase {
         // A longer version, another word or another singer stays out.
         XCTAssertNotEqual(decideTimeless("タイムレス (feat. 茉ひる)", "高瀬統也, 茉ひる", 192).tier, .autoMedium)
         XCTAssertEqual(decideTimeless("トゥモロー (feat. 茉ひる)", "高瀬統也, 茉ひる", 174.892).tier, .reject)
-        XCTAssertEqual(decideTimeless("タイムレス", "別の歌手", 174.892).tier, .reject)
+        XCTAssertEqual(decideTimeless("タイムレス", "Another Singer", 174.892).tier, .reject)
+        XCTAssertNotEqual(decideTimeless("タイムレス", "別の歌手", 175.0).tier, .autoMedium, "a whole-second length is not a master length")
         XCTAssertNotEqual(decideTimeless("タイムレス (feat. 茉ひる)", "高瀬統也, 茉ひる", 174.5).tier, .autoMedium, "a guest alone needs the exact length")
         XCTAssertEqual(decideTimeless("Timeless (feat. mahiru)", "別の人, 茉ひる", 174.892).tier, .autoMedium, "same title, credited guest, exact length")
         XCTAssertNotEqual(decideTimeless("タイムレス (feat. 茉ひる) [LIVE TOUR 2024 Ver.]", "高瀬統也, 茉ひる", 174.892).tier, .autoMedium)
@@ -684,6 +685,31 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(LyricsSafeMatcher.loanwordKey("Seventeen"), LyricsSafeMatcher.loanwordKey("セブンティーン"))
         XCTAssertNotEqual(LyricsSafeMatcher.loanwordKey("Timeless"), LyricsSafeMatcher.loanwordKey("トゥモロー"))
         XCTAssertNil(LyricsSafeMatcher.loanwordKey("夜に駆ける"), "only katakana or Latin words have a loanword key")
+    }
+
+    /// Stay with me / TakaseToya is Stay with me / 高瀬統也 on NetEase, 0.048 s apart.
+    func testSingerInAnotherScriptAtTheSameLength() {
+        let same = decide(track: "Stay with me", "TakaseToya", 222.624, candidate: "Stay with me", "高瀬統也", 222.672)
+        XCTAssertEqual(same.tier, .autoMedium, same.reasons.joined(separator: ","))
+        XCTAssertTrue(same.reasons.contains("primaryArtistOtherScriptExactLength"))
+        XCTAssertEqual(decide(track: "Stay with me", "TakaseToya", 222.624, candidate: "Stay with me", "松たか子", 258).tier, .reject)
+        XCTAssertEqual(decide(track: "Stay with me", "TakaseToya", 222.624, candidate: "Stay with me", "高瀬統也", 223.4).tier, .reject,
+                       "without the exact length a name in another script is not enough")
+        XCTAssertEqual(decide(track: "Stay with me", "TakaseToya", 222.624, candidate: "Stay with me", "Other Singer", 222.624).tier, .reject,
+                       "two Latin names that differ are two singers")
+        XCTAssertNotEqual(decide(track: "Stay with me", "TakaseToya", 222.624, candidate: "Stay with me (Live)", "高瀬統也", 222.624).tier, .autoMedium)
+    }
+
+    /// Library re-check, 2026-11-15.
+    func testRomanizedTitleWithoutLongVowelAndPunctuatedName() {
+        let rescue = decide(track: "resukyumi-! (feat. syo24)", "429, syo24", 134.71, candidate: "れすきゅみー！ (feat. syo24)", "429、syo24", 134.0)
+        XCTAssertEqual(rescue.tier, .autoMedium, rescue.reasons.joined(separator: ","))
+        let riria = decide(track: "最後のバイバイ。", "Riria.", 231.5, candidate: "最後のバイバイ。", "りりあ。", 231.0)
+        XCTAssertEqual(riria.tier, .autoMedium, riria.reasons.joined(separator: ","))
+        // Whole-second lengths cannot prove the same master.
+        let wholeSecond = decide(track: "ルミネセンス", "Lovely Summer Chan", 305.02, candidate: "ルミネセンス", "ラブリーサマーちゃん", 305.0)
+        XCTAssertNotEqual(wholeSecond.tier, .autoMedium, wholeSecond.reasons.joined(separator: ","))
+        XCTAssertNotEqual(decide(track: "Stay with me", "TakaseToya", 222.62, candidate: "Stay with Me", "裘德", 223.0).tier, .autoMedium)
     }
 
     func testSingerFromBandIsTheSinger() {

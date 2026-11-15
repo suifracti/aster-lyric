@@ -112,6 +112,30 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
 
     }
 
+    /// 2026-11-15: 110 songs had plain text only and 「全部补全」 skipped them.
+    func testPlainTextOnlyIsMarkedWithoutTimeline() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("library-synced-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("test.sqlite3"),
+                                          alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await repo.prepare()
+        let track = Track(title: "Plain fixture", artist: "Singer", album: "Album", duration: 200, spotifyId: "plain-song")
+        let identity = TrackIdentity(track: track)
+        func document(synced: Bool, text: String) -> LyricsDocument {
+            LyricsDocument(identity: identity, title: track.title, artist: track.artist, album: track.album, duration: track.duration,
+                lines: [LyricLine(timestamp: synced ? 12 : 0, originalText: text)],
+                isSynchronized: synced, source: .lrclib, confidence: 0.9, providerSourceID: text)
+        }
+        _ = try await repo.save(track: track, identity: identity, document: document(synced: false, text: "plain words"))
+        let plain = try await repo.loadPersonalLibraryEntries()
+        XCTAssertEqual(plain.count, 1)
+        XCTAssertEqual(plain.first?.hasSyncedLyrics, false)
+        _ = try await repo.save(track: track, identity: identity, document: document(synced: true, text: "timed words"))
+        let timed = try await repo.loadPersonalLibraryEntries()
+        XCTAssertEqual(timed.first?.hasSyncedLyrics, true)
+    }
+
     private func executeSQL(_ sql: String, at databaseURL: URL) throws {
         var database: OpaquePointer?
         guard sqlite3_open(databaseURL.path, &database) == SQLITE_OK, let database else {

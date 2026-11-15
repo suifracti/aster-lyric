@@ -102,6 +102,9 @@ public enum LyricsSafeMatcher {
         var partialArtistName = false
         /// The track's artist is credited on the candidate, though not first.
         var creditedArtist = false
+        /// TakaseToya / 高瀬統也: the singer's name in another script, carried
+        /// by the same title and the same length to the millisecond.
+        var otherScriptArtist = false
         var hasStrongIndependentIdentity = false
 
         func add(_ code: String, _ delta: Double, hard: Bool = false) {
@@ -291,6 +294,18 @@ public enum LyricsSafeMatcher {
             // is the same recording, listed in another order.
             creditedArtist = true
             add("primaryArtistInCredits", 0.24)
+        } else if (reasons.contains("titleExact") || reasons.contains("titleTypographyExact")
+                    || reasons.contains("titleLoanwordReading")),
+                  metadata.track.duration > 0, candidate.duration > 0,
+                  abs(metadata.track.duration - candidate.duration) <= 0.05,
+                  candidate.duration.rounded() != candidate.duration,
+                  metadataArtists.contains(where: { Self.namesInDifferentScripts($0.primary, candidateArtists.primary) }) {
+            // Given names in kanji cannot be read reliably (統也 came out as
+            // みつる + unknown), so the reading cannot settle it. A Latin name
+            // against a Japanese/Chinese one, with the same title and the
+            // same master length, is the same singer written twice.
+            otherScriptArtist = true
+            add("primaryArtistOtherScriptExactLength", 0.22)
         } else if candidatePrimary.isEmpty {
             let isManual = queryVariant?.queryKind == .manualOverride
             add("primaryArtistMissing", -0.30, hard: !isManual)
@@ -384,7 +399,10 @@ public enum LyricsSafeMatcher {
                 add("durationClose", 0.12)
                 // Same length to the millisecond: both stores carry the
                 // same master. Recorded for the featured-artist rule below.
-                if difference <= 0.05 { add("durationExact", 0) }
+                // Kugou and others give whole seconds; 184.0 against 184.03
+                // is luck, not the same master, so only a length with its
+                // own milliseconds counts.
+                if difference <= 0.05, candidateDuration.rounded() != candidateDuration { add("durationExact", 0) }
             } else if difference <= 5 {
                 add("durationNear", 0.06)
             } else if difference <= 15 {
@@ -473,6 +491,7 @@ public enum LyricsSafeMatcher {
 
             let tierPrimaryMatch = metadataPrimaryMatches || metadataPrimaryReadingMatches || spotifyCreditedArtistReadingMatches
                 || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity) || partialArtistName || creditedArtist
+                || otherScriptArtist
             var tier = tierFor(score: score, primaryArtistMatches: tierPrimaryMatch, hardReject: hardReject)
             if hardReject {
                 tier = .reject
@@ -533,6 +552,7 @@ public enum LyricsSafeMatcher {
         var tier: LyricsMatchTier
         let tierPrimaryMatch = metadataPrimaryMatches || metadataPrimaryReadingMatches || spotifyCreditedArtistReadingMatches
             || artistAlias != nil || (featuredArtistOnly && hasStrongIndependentIdentity) || partialArtistName || creditedArtist
+                || otherScriptArtist
         if hardReject {
             tier = .reject
         } else if reasons.contains("titleMismatch") && !hasStrongIndependentIdentity && queryVariant?.queryKind != .manualOverride {
@@ -593,7 +613,7 @@ public enum LyricsSafeMatcher {
         }
         if reasons.contains("titleLoanwordReading") && !hasStrongIndependentIdentity {
             let sameSinger = metadataPrimaryMatches || metadataPrimaryReadingMatches || spotifyCreditedArtistReadingMatches
-                || reasons.contains("featuredArtistExactLength")
+                || reasons.contains("featuredArtistExactLength") || otherScriptArtist
             tier = minTier(tier, sameSinger && reasons.contains("durationClose") && !versionConflict ? .autoMedium : .candidates)
         }
         if reasons.contains("shortTitleReading") && !hasStrongIndependentIdentity {
@@ -604,6 +624,9 @@ public enum LyricsSafeMatcher {
             tier = minTier(tier, reasons.contains("durationClose") && !versionConflict ? .autoMedium : .candidates)
         }
         if creditedArtist && !hasStrongIndependentIdentity {
+            tier = minTier(tier, versionConflict ? .candidates : .autoMedium)
+        }
+        if otherScriptArtist && !hasStrongIndependentIdentity {
             tier = minTier(tier, versionConflict ? .candidates : .autoMedium)
         }
         // 听悲伤的情歌 - 女版 against 听悲伤的情歌 by the same singer at the
@@ -769,10 +792,18 @@ public enum LyricsSafeMatcher {
     private static func titlesHaveSameReading(_ lhs: String, _ rhs: String, minimumLatinLength: Int = 3) -> Bool {
         func latinKey(_ value: String) -> String? {
             let folded = value.folding(options: [.diacriticInsensitive, .caseInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
-            guard folded.unicodeScalars.allSatisfy({ $0.isASCII }) else { return nil }
+            // Punctuation such as 。 or ！ says nothing about the reading
+            // (Riria. / りりあ。); letters outside ASCII still rule it out.
             let key = folded.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }
+            guard key.allSatisfy({ $0.isASCII }) else { return nil }
             let result = String(String.UnicodeScalarView(key))
             return result.count >= minimumLatinLength ? result : nil
+        }
+        /// Spotify's romanized titles often drop long vowels
+        /// (resukyumi- / れすきゅみー, kimitoauyoru / きみとあうよる).
+        func withoutLongVowels(_ key: String) -> String {
+            key.replacingOccurrences(of: "ou", with: "o")
+                .replacingOccurrences(of: "([aeiou])\\1+", with: "$1", options: .regularExpression)
         }
         func readingKey(_ japanese: String) -> String? {
             guard japanese.count <= 256,
@@ -793,8 +824,8 @@ public enum LyricsSafeMatcher {
             titleReadings.values.setObject(key as NSString, forKey: japanese as NSString)
             return key
         }
-        if let latin = latinKey(lhs), let japanese = readingKey(rhs) { return latin == japanese }
-        if let latin = latinKey(rhs), let japanese = readingKey(lhs) { return latin == japanese }
+        if let latin = latinKey(lhs), let japanese = readingKey(rhs) { return latin == japanese || withoutLongVowels(latin) == withoutLongVowels(japanese) }
+        if let latin = latinKey(rhs), let japanese = readingKey(lhs) { return latin == japanese || withoutLongVowels(latin) == withoutLongVowels(japanese) }
         return false
     }
 
@@ -842,6 +873,18 @@ public enum LyricsSafeMatcher {
         let leftJoined = left.joined(), rightJoined = right.joined()
         guard leftJoined.count >= 4 else { return false }
         return leftJoined == rightJoined || leftJoined == right.reversed().joined()
+    }
+
+    /// One name only in Latin letters, the other with kanji or kana.
+    private static func namesInDifferentScripts(_ lhs: String, _ rhs: String) -> Bool {
+        func isLatin(_ text: String) -> Bool {
+            let letters = text.unicodeScalars.filter { CharacterSet.letters.contains($0) }
+            return !letters.isEmpty && letters.allSatisfy(\.isASCII)
+        }
+        func isCJK(_ text: String) -> Bool {
+            text.unicodeScalars.contains { (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value) }
+        }
+        return (isLatin(lhs) && isCJK(rhs)) || (isCJK(lhs) && isLatin(rhs))
     }
 
     /// Spotify writes an English title, the provider its katakana spelling.

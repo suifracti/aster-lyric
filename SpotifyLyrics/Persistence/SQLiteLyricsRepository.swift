@@ -3938,7 +3938,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     ) throws -> PersonalLyricsLibraryEntry {
         let family = try resolvedIdentityFamily(stableKey: stableKey)
         let lyricsStmt = try prepare("""
-            SELECT id, is_manually_edited, is_locked, confidence, updated_at, source
+            SELECT id, is_manually_edited, is_locked, confidence, updated_at, source, is_synced
             FROM lyrics_versions
             WHERE track_stable_key IN (\(placeholders(count: family.count)))
             ORDER BY is_preferred DESC, is_locked DESC, confidence DESC, updated_at DESC;
@@ -3947,6 +3947,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: lyricsStmt) }
 
         var lyricsVersionCount = 0
+        var hasSyncedLyrics = false
         var hasLockedLyrics = false
         var hasManualLyrics = false
         let selectionRevoked = try hasRevokedLyricsSelection(stableKey: stableKey)
@@ -3966,6 +3967,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             let isLocked = sqlite3_column_int(lyricsStmt, 2) == 1
             let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(lyricsStmt, 4))
             let source = columnText(lyricsStmt, index: 5) ?? ""
+            if sqlite3_column_int(lyricsStmt, 6) == 1 { hasSyncedLyrics = true }
 
             if isLocked { hasLockedLyrics = true }
             if isManual || source == "local" || source == "manual" { hasManualLyrics = true }
@@ -4104,7 +4106,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             activeLyricsVersionID: activeLyricsVersionID,
             activeTranslationVersionID: activeTranslationVersionID,
             activeReadingVersionIDs: activeReadingVersionIDs,
-            activeTimingVersionID: activeTimingVersionID
+            activeTimingVersionID: activeTimingVersionID,
+            hasSyncedLyrics: hasSyncedLyrics
         )
     }
 

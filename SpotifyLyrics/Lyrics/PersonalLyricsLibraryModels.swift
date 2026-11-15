@@ -33,6 +33,9 @@ public struct PersonalLyricsLibraryEntry: Identifiable, Equatable, Sendable, Cod
     public let activeTranslationVersionID: UUID?
     public let activeReadingVersionIDs: [String: UUID]
     public let activeTimingVersionID: UUID?
+    /// At least one stored version has line timestamps. A song with plain
+    /// text only still counts as missing lyrics for singing along.
+    public let hasSyncedLyrics: Bool
 
     public init(
         trackStableKey: String,
@@ -58,8 +61,10 @@ public struct PersonalLyricsLibraryEntry: Identifiable, Equatable, Sendable, Cod
         activeLyricsVersionID: UUID?,
         activeTranslationVersionID: UUID?,
         activeReadingVersionIDs: [String: UUID] = [:],
-        activeTimingVersionID: UUID? = nil
+        activeTimingVersionID: UUID? = nil,
+        hasSyncedLyrics: Bool = true
     ) {
+        self.hasSyncedLyrics = hasSyncedLyrics
         self.trackStableKey = trackStableKey
         self.spotifyTrackID = spotifyTrackID
         self.spotifyURI = spotifyURI
