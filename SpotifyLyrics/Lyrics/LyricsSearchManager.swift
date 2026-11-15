@@ -206,6 +206,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         variant: LyricsQueryVariant,
         collectCandidatesOnly: Bool = false,
         waitsForTiming: Bool = false,
+        lineTimingHeld: Bool = false,
         onProvisional: (@Sendable (LyricsDocument) async -> Void)? = nil,
         onCandidates: (@Sendable ([LyricsCandidate]) async -> Void)? = nil
     ) async -> [ProviderProbeResult] {
@@ -222,8 +223,9 @@ public final class LyricsSearchManager: @unchecked Sendable {
                     .result(await probe(indexedProvider, track: track, identity: identity))
                 }
             }
-            /// A plain-text result may already be adoptable, but a source with
-            /// real timestamps is worth a short wait inside the same round.
+            /// A plain-text or line-timed result may already be adoptable, but a
+            /// source with finer timestamps (word timing from 网易 yrc, QQ qrc,
+            /// 酷狗 krc, AMLL) is worth a short wait inside the same round.
             func startGrace() {
                 guard !graceStarted else { return }
                 graceStarted = true
@@ -242,8 +244,11 @@ public final class LyricsSearchManager: @unchecked Sendable {
                 switch event {
                 case .graceTick:
                     guard !settled, !collectCandidatesOnly else { continue }
-                    if let plain = results.filter({ hasAutomaticResult($0, metadata: metadata, variant: variant) })
-                        .min(by: { $0.index < $1.index }), precedingResolved(plain.index) {
+                    let timed = results.filter { hasAutomaticResult($0, metadata: metadata, variant: variant, minimumTiming: 1) }
+                    let ready = timed.isEmpty && !waitsForTiming
+                        ? results.filter { hasAutomaticResult($0, metadata: metadata, variant: variant) }
+                        : timed
+                    if !lineTimingHeld, let best = ready.min(by: { $0.index < $1.index }), precedingResolved(best.index) {
                         settled = true
                         group.cancelAll()
                     }
@@ -267,16 +272,29 @@ public final class LyricsSearchManager: @unchecked Sendable {
                             hasAutomaticResult($0, metadata: metadata, variant: variant)
                         }
                         let timed = automatic.filter {
-                            hasAutomaticResult($0, metadata: metadata, variant: variant, requiresTiming: true)
+                            hasAutomaticResult($0, metadata: metadata, variant: variant, minimumTiming: 1)
                         }
-                        if let timedReady = timed.min(by: { $0.index < $1.index }),
-                           precedingResolved(timedReady.index) {
-                            // Once an eligible timed result and its preceding
-                            // providers have resolved, unrelated lower-priority
-                            // work cannot keep the listening UI blocked.
+                        let worded = timed.filter {
+                            hasAutomaticResult($0, metadata: metadata, variant: variant, minimumTiming: 2)
+                        }
+                        if let wordReady = worded.min(by: { $0.index < $1.index }),
+                           precedingResolved(wordReady.index) {
+                            // Word timing is the best any source can give. Once
+                            // it and its preceding providers have resolved,
+                            // lower-priority work cannot improve the result.
                             settled = true
                             group.cancelAll()
-                        } else if !waitsForTiming, let plainReady = automatic.min(by: { $0.index < $1.index }),
+                        } else if let timedReady = timed.min(by: { $0.index < $1.index }),
+                                  precedingResolved(timedReady.index) {
+                            // Line timing is adoptable (and already on screen
+                            // as a provisional), but a later source may still
+                            // have word timing for the same song. Settling on
+                            // the first line-timed answer is why Lyrimuse had
+                            // 逐字 where we showed 逐行. With line timing
+                            // already stored, only word timing ends the round.
+                            if !lineTimingHeld { startGrace() }
+                            enqueueNext()
+                        } else if !waitsForTiming, !lineTimingHeld, let plainReady = automatic.min(by: { $0.index < $1.index }),
                                   precedingResolved(plainReady.index) {
                             startGrace()
                             enqueueNext()
@@ -317,7 +335,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         return accepted.values.sorted(by: LyricsCandidate.hasPrecedence)
     }
 
-    private static func hasAutomaticResult(_ probe: ProviderProbeResult, metadata: TrackMetadata, variant: LyricsQueryVariant, requiresTiming: Bool = false) -> Bool {
+    private static func hasAutomaticResult(_ probe: ProviderProbeResult, metadata: TrackMetadata, variant: LyricsQueryVariant, minimumTiming: Int = 0) -> Bool {
         let candidates: [LyricsCandidate]
         switch probe.result {
         case .candidates(let list): candidates = list
@@ -333,7 +351,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         return candidates.contains { candidate in
             guard candidate.identity == metadata.identity,
                   !candidate.requiresTextOnlyPreview,
-                  !requiresTiming || timingPriority(of: candidate) > 0,
+                  minimumTiming == 0 || timingPriority(of: candidate) >= minimumTiming,
                   candidate.lines.contains(where: { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { return false }
             let decision = LyricsSafeMatcher.decide(candidate: candidate, metadata: metadata, aliasUsed: metadata.aliases.first { $0.id == variant.aliasIDs.first }, queryVariant: variant)
             return decision.tier == .autoHigh || decision.tier == .autoMedium
@@ -399,6 +417,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         aliases: [TrackAlias] = [],
         collectCandidatesOnly: Bool = false,
         plainAlreadyHeld: Bool = false,
+        lineTimingHeld: Bool = false,
         onProvisional: (@Sendable (LyricsDocument) async -> Void)? = nil,
         onCandidates: (@Sendable ([LyricsCandidate]) async -> Void)? = nil,
         onlyProviders: Set<String>? = nil
@@ -538,9 +557,9 @@ public final class LyricsSearchManager: @unchecked Sendable {
                         var results = await Self.probeNetworkProviders(
                             track: probeTrack, identity: identity, providers: primary,
                             metadata: meta, variant: variant, collectCandidatesOnly: collectCandidatesOnly,
-                            waitsForTiming: plainAlreadyHeld,
+                            waitsForTiming: plainAlreadyHeld, lineTimingHeld: lineTimingHeld,
                             onProvisional: onProvisional, onCandidates: publishCandidates)
-                        if !Task.isCancelled, !supplements.isEmpty,
+                        if !Task.isCancelled, !supplements.isEmpty, !lineTimingHeld,
                            collectCandidatesOnly || !results.contains(where: { Self.hasAutomaticResult($0, metadata: meta, variant: variant) }) {
                             results += await Self.probeNetworkProviders(
                                 track: probeTrack, identity: identity, providers: supplements,

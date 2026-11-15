@@ -122,12 +122,14 @@ public enum YRCParser {
             }
 
             let lineSpans = hasRealDuration ? spans : nil
+            let bounds = TimedLineBounds.covering(spans: lineSpans ?? [], start: lineStart,
+                                                  end: durMs > 0 ? lineEnd : (words.last?.end ?? lineStart))
 
             parsedLines.append(
                 LyricLine(
-                    timestamp: lineStart,
+                    timestamp: bounds.start,
                     originalText: fullLineText,
-                    endTime: durMs > 0 ? lineEnd : (words.last?.end ?? lineStart),
+                    endTime: bounds.end,
                     timedSpans: lineSpans
                 )
             )

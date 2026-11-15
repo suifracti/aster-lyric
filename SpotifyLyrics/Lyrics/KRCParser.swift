@@ -86,8 +86,10 @@ enum KRCParser {
             }
             let hasTiming = spans.contains { $0.endTime > $0.startTime }
             rawIndices.append(rawIndex)
-            lines.append(LyricLine(timestamp: lineStart, originalText: full,
-                                   endTime: durationMs > 0 ? lineStart + durationMs / 1000 : nil,
+            let bounds = TimedLineBounds.covering(spans: hasTiming ? spans : [], start: lineStart,
+                                                  end: durationMs > 0 ? lineStart + durationMs / 1000 : nil)
+            lines.append(LyricLine(timestamp: bounds.start, originalText: full,
+                                   endTime: bounds.end,
                                    performerID: performer,
                                    timedSpans: hasTiming ? spans : nil))
         }

@@ -114,9 +114,10 @@ enum QRCParser {
                                            utf16Start: cursor, utf16Length: length))
                 cursor += length
             }
-            let lineStart = startMs / 1000
-            lines.append(LyricLine(timestamp: lineStart, originalText: full,
-                                   endTime: durationMs > 0 ? lineStart + durationMs / 1000 : nil,
+            let bounds = TimedLineBounds.covering(spans: spans, start: startMs / 1000,
+                                                  end: durationMs > 0 ? (startMs + durationMs) / 1000 : nil)
+            lines.append(LyricLine(timestamp: bounds.start, originalText: full,
+                                   endTime: bounds.end,
                                    performerID: performer,
                                    timedSpans: spans.contains { $0.endTime > $0.startTime } ? spans : nil))
         }

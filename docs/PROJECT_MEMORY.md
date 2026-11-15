@@ -37,7 +37,7 @@
 | 英文歌名对片假名歌名（Timeless/タイムレス）、汉字人名读不出、别人有时间轴我们只有纯文本 | L-036；LyricsSafeMatcher.loanwordKey、titleLoanwordReading、durationExact、featuredArtistExactLength |
 | 停在「核对歌词版本」：多出合作署名、双名客串、(Explicit)、翻译歌名但同母带、伴奏同长 | L-037；promoteSameMaster、sameMasterTolerance、TrackTextNormalizer 伴奏标记 |
 | 已存纯文本永远升级不到时间轴、只按歌名搜到的全对结果仍要核对、「原名 - 英文名」 | L-038；plainAlreadyHeld/waitsForTiming、looseQueryConfirmed、titleBilingualPair、publisherPageExact |
-| 别人有逐字我们只有逐行、已存逐行不会升级成逐字、行切换比别人慢一点 | L-041；probeNetworkProviders lineTimingHeld、LyricsWordTimingUpgrade、scheduleWordTimingUpgrade、PlaybackState.lineSwitchLead、scheduleLineBoundaryWake |
+| 别人有逐字我们只有逐行、已存逐行不会升级成逐字、行切换比别人慢一点 | L-041；probeNetworkProviders lineTimingHeld、LyricsWordTimingUpgrade、TimedLineBounds（QRC/KRC/YRC 行尾）、scheduleWordTimingUpgrade、PlaybackState.lineSwitchLead、scheduleLineBoundaryWake |
 | 缺歌词里同一首歌的重复记录（时长错、借用别首的 ID）、批量补全拿错时长去搜 | L-039；PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere、needsLyrics |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
 
@@ -596,12 +596,14 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
   - 库里存的是 10-26 的 QQ 逐行版本（`qq:003oOucp2MpXLz`，没有 `lyrics_timing_versions`），当时还不读 QRC。加载命中已存版本后不再搜索，所以永远停在逐行。直接请求 QQ `GetPlayLyricInfo`，这首歌有 QRC；网易这首没有 yrc（`/api/song/lyric` 与 `/v1` 都只回 lrc，别的歌会回 yrc，接口本身没问题）。
   - 首次搜索时，`probeNetworkProviders` 只要有一个带时间轴的结果（逐行也算）且排在前面的来源都返回了，就立刻收工，后面可能有逐字的来源被取消。
   - 正式库只读副本里，首选同步版本中只有约六分之一带逐字（LRCLIB 144 条全是逐行，网易 225 条里 27 条逐字）。
+  - **第三层，也是 Lost My Mind 选不到 QQ 逐字的直接原因**：QRC、KRC、YRC 每行的 `[开始,时长]` 是单独取整的，最后一个字可能比行尾晚几毫秒（「また世界の底に」行尾 31.395，末字到 31.396）。`hasValidTimedSpans` 要求每个字都在行内，只要有一行不合格，整首就按逐行排序，于是与 LRCLIB 逐行比分数时落败。现在三个解析器都让行覆盖它的字（`TimedLineBounds.covering`）。这个函数只用于排序，画面上的逐字渲染原本不受影响。修正后用真实网络实测：Lost My Mind 首次搜索和「已存逐行再查」都选中 QQ 逐字（36 行）；アイドル 从 LRCLIB 逐行变为酷狗逐字。
 - **改动**：
   - 搜索：有逐字结果才立即收工；只有逐行时显示临时版本，再给 3 秒宽限等逐字来源（和纯文本宽限同一个计时）。新参数 `lineTimingHeld`：已存逐行时只有逐字能结束这一轮，不问纯文本补充源。
-  - 加载：已存版本是在线来源的逐行、没有逐字，先照常显示，再在后台查一次（`scheduleWordTimingUpgrade`，每首每次启动一次，批量会话不做）。结果必须通过 `LyricsWordTimingUpgrade.isCompatible`：有逐字（至少一半的行），并且已存版本八成以上的行在新版本里有同样的文字、起点差不超过 1 秒。满足才显示、保存，并把首选改成新版本。手工、本地、对齐、ASR 版本不动；锁定版本由保存时的锁检查挡住；已取消采用的歌不改首选。
+  - 加载：已存版本是在线来源的逐行、没有逐字，先照常显示，再在后台查一次（`scheduleWordTimingUpgrade`，每首每次启动一次，批量会话不做）。结果必须通过 `LyricsWordTimingUpgrade.isCompatible`：有逐字（至少一半的行），并且已存版本八成以上的行在新版本里有同样的文字、起点差不超过 1 秒。满足才显示、保存，并把首选改成新版本。本次启动里已经预加载过或刚搜过的歌不再查（预加载已按逐字优先搜过所有来源）。手工、本地、对齐、ASR 版本不动；锁定版本由保存时的锁检查挡住；已取消采用的歌不改首选。
 - **行切换慢的原因**（`[LINE_INDEX]` 日志，Lost My Mind 与 Shigoto yameta）：
   - 歌词源时间戳没有系统性偏差：QQ LRC 与网易 LRC 同句起点差在 ±0.45 秒内来回，平均约 +5 ms。
   - 读 Spotify 位置已按往返时间的一半补偿（上限 0.15 秒），不是主要原因。
   - 主要原因是行边界定时器。`Task.sleep(nanoseconds:)` 走 `dispatch_after`，系统允许把唤醒推迟最多延时的十分之一，3–7 秒的行间隔实测晚了 31–214 ms。改成 `Task.sleep(until:tolerance: .milliseconds(2), clock: .continuous)`，并在计算延时的同时定下截止时刻。之后实测晚 0.5–9 ms（日志 `BOUNDARY_WAKE late=`）。
   - 索引切换后，SwiftUI 还要 45–85 ms 才开始跟随滚动，而 0.40 秒的弹簧约 0.1 秒才走到一半。所以加了全局提前量 `PlaybackState.lineSwitchLead = 0.15` 秒，只作用于当前行索引；逐字填充仍按原时间戳。改后滚动在时间戳前约 85 ms 开始。日志里 `lead=` 字段显示提前量，`PRESENTATION_CLOCK_CROSS_TIME` 已含提前量。
-- **测试**：`ProviderFailureContractTests` 新增三项：逐行先到时仍采用稍后的逐字；已存逐行时越过宽限等逐字；升级只接受同文字同时间线，且不动手工版本。
+- **测试**：`ProviderFailureContractTests` 新增四项：逐行先到时仍采用稍后的逐字；已存逐行时越过宽限等逐字；升级只接受同文字同时间线，且不动手工版本；QRC 行覆盖末字后仍算逐字。全量 220 项通过，1 项按原样跳过。
+- **注意**：其他会话执行 `pkill -x SpotifyLyrics` 时，正在跑的测试宿主（同名进程）也会被杀掉，报 `Restarting after unexpected exit`，失败的用例是随机的。这种情况单独重跑即可。

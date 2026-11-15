@@ -1072,6 +1072,94 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertEqual(upgraded.source, .kugouExperimental)
     }
 
+    private func wordTimingFixture() -> (Track, TrackIdentity, lineTimed: LyricsCandidate, wordTimed: LyricsCandidate) {
+        // Lost My Mind: QQ's line-timed LRC answered first and ended the round,
+        // while QQ's own QRC (or another source) had word timing.
+        let track = Track(title: "Lost My Mind (feat. nakotanmaru)", artist: "PIKASONIC", album: "Lost My Mind", duration: 211.2)
+        let identity = TrackIdentity(track: track)
+        let words = ["息をするのだって", "慣れたわけじゃない", "確かなものなんて", "どこにもない"]
+        func line(_ index: Int, words timed: Bool) -> LyricLine {
+            let text = words[index], start = Double(10 + index * 4)
+            let span = TimedTextSpan(id: 0, text: text, startTime: start, endTime: start + 3,
+                utf16Start: 0, utf16Length: text.utf16.count)
+            return LyricLine(timestamp: start, originalText: text, timedSpans: timed ? [span] : nil)
+        }
+        let lineTimed = LyricsCandidate(id: "qq-lrc", identity: identity, title: track.title, artist: "PIKASONIC",
+            album: "Lost My Mind", duration: 211, lines: words.indices.map { line($0, words: false) },
+            isSynchronized: true, source: .qqExperimental, confidence: 0.9, providerSourceID: "qq:lrc")
+        let wordTimed = LyricsCandidate(id: "kugou-krc", identity: identity, title: track.title, artist: "PIKASONIC",
+            album: "Lost My Mind", duration: 211, lines: words.indices.map { line($0, words: true) },
+            isSynchronized: true, source: .kugouExperimental, confidence: 0.9, providerSourceID: "kugou:krc")
+        return (track, identity, lineTimed, wordTimed)
+    }
+
+    func testWordTimingFromALaterSourceBeatsTheFirstLineTimedAnswer() async {
+        let (track, identity, lineTimed, wordTimed) = wordTimingFixture()
+        let manager = LyricsSearchManager(providers: [
+            ProviderFailureDelayedLyricsProvider(name: "QQ Music Experimental", delay: 10_000_000, result: .candidates([lineTimed])),
+            ProviderFailureDelayedLyricsProvider(name: "酷狗（实验）", delay: 800_000_000, result: .candidates([wordTimed]))
+        ])
+        let outcome = await manager.search(track: track, identity: identity)
+        guard case .match(let document) = outcome.result else { return XCTFail("\(outcome.result)") }
+        XCTAssertEqual(document.source, .kugouExperimental, "a line-timed answer no longer ends the round at once")
+        XCTAssertTrue(LyricsWordTimingUpgrade.hasWordTiming(document))
+    }
+
+    func testStoredLineTimingWaitsPastTheGraceForWordTiming() async {
+        let (track, identity, lineTimed, wordTimed) = wordTimingFixture()
+        let manager = LyricsSearchManager(providers: [
+            ProviderFailureDelayedLyricsProvider(name: "QQ Music Experimental", delay: 10_000_000, result: .candidates([lineTimed])),
+            ProviderFailureDelayedLyricsProvider(name: "酷狗（实验）", delay: 3_600_000_000, result: .candidates([wordTimed]))
+        ])
+        let outcome = await manager.search(track: track, identity: identity, lineTimingHeld: true)
+        guard case .match(let document) = outcome.result else { return XCTFail("\(outcome.result)") }
+        XCTAssertEqual(document.source, .kugouExperimental)
+    }
+
+    func testWordTimingUpgradeKeepsTheSameLinesAndProtectsManualVersions() {
+        let (_, _, lineTimed, wordTimed) = wordTimingFixture()
+        let held = lineTimed.makeDocument(), upgrade = wordTimed.makeDocument()
+        XCTAssertTrue(LyricsWordTimingUpgrade.wantsUpgrade(held))
+        XCTAssertFalse(LyricsWordTimingUpgrade.wantsUpgrade(upgrade), "already word-timed")
+        XCTAssertTrue(LyricsWordTimingUpgrade.isCompatible(held: held, upgrade: upgrade))
+        XCTAssertFalse(LyricsWordTimingUpgrade.isCompatible(held: held, upgrade: held), "line timing is no upgrade")
+
+        let shifted = upgrade.replacingLines(upgrade.lines.map { line in
+            var copy = line
+            copy.timestamp += 3
+            copy.timedSpans = line.timedSpans?.map {
+                TimedTextSpan(id: $0.id, text: $0.text, startTime: $0.startTime + 3, endTime: $0.endTime + 3,
+                              utf16Start: $0.utf16Start, utf16Length: $0.utf16Length)
+            }
+            return copy
+        })
+        XCTAssertFalse(LyricsWordTimingUpgrade.isCompatible(held: held, upgrade: shifted), "another timeline")
+
+        let otherWords = upgrade.replacingLines(upgrade.lines.map { line in
+            var copy = line
+            copy.originalText = "別の歌詞"
+            copy.timedSpans = [TimedTextSpan(id: 0, text: "別の歌詞", startTime: line.timestamp, endTime: line.timestamp + 3,
+                                             utf16Start: 0, utf16Length: 4)]
+            return copy
+        })
+        XCTAssertFalse(LyricsWordTimingUpgrade.isCompatible(held: held, upgrade: otherWords), "other lyrics")
+
+        var manual = lineTimed
+        manual = LyricsCandidate(id: manual.id, identity: manual.identity, title: manual.title, artist: manual.artist,
+            album: manual.album, duration: manual.duration, lines: manual.lines, isSynchronized: true,
+            source: .manualEdit, confidence: 1, providerSourceID: nil)
+        XCTAssertFalse(LyricsWordTimingUpgrade.wantsUpgrade(manual.makeDocument()), "a manual edit is never replaced")
+    }
+
+    func testQRCLineCoversItsWordsSoWordTimingStillRanksFirst() {
+        // Lost My Mind: the header said the line ended at 31.395 while its
+        // last word ended at 31.396; every QQ QRC then ranked as line timing.
+        let qrc = "[29185,2210]ま(29185,226)た(29411,200)世(29611,236)界(29848,261)の(30109,400)底(30509,525)に(31035,361)"
+        let line = QRCParser.parseLines(qrc).first
+        XCTAssertEqual(line?.endTime ?? 0, 31.396, accuracy: 0.0005)
+        XCTAssertTrue(line?.hasValidTimedSpans(lineStartIsMeaningful: true) == true)
+    }
+
     func testBestAvailableMatchIsShownButAnotherSingerOrVersionIsNot() async {
         let track = Track(title: "shion", artist: "angelize", album: "shion", duration: 150.8)
         let identity = TrackIdentity(track: track)

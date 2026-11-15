@@ -267,6 +267,7 @@
 		598548A9D413CD4EFB599C7C /* FavoriteLinesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BBBF9743852EB9CEB70F376 /* FavoriteLinesView.swift */; };
 		CBF1C72A447D992D0B2F587D /* V3FlowLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9B118B60424DA1F1DDBD431 /* V3FlowLayer.swift */; };
 		9FCAAA54002CED4CEE4B45EE /* LyricsSourceHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3C50E284A39FA3355C1B5EC /* LyricsSourceHealth.swift */; };
+		F4B70A21BD013856C07514DA /* LyricsWordTimingUpgrade.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82F6E63ACED1AB7AF40C07E2 /* LyricsWordTimingUpgrade.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -536,6 +537,7 @@
 		0BBBF9743852EB9CEB70F376 /* FavoriteLinesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteLinesView.swift; sourceTree = "<group>"; };
 		C9B118B60424DA1F1DDBD431 /* V3FlowLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3FlowLayer.swift; sourceTree = "<group>"; };
 		A3C50E284A39FA3355C1B5EC /* LyricsSourceHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsSourceHealth.swift; sourceTree = "<group>"; };
+		82F6E63ACED1AB7AF40C07E2 /* LyricsWordTimingUpgrade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsWordTimingUpgrade.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -856,6 +858,7 @@
 				110000862D83400100000000 /* FullScreenLyricsPresentation.swift */,
 				110000352D83400100000000 /* LyricsQueryPlanner.swift */,
 				110000362D83400100000000 /* LyricsSafeMatcher.swift */,
+				82F6E63ACED1AB7AF40C07E2 /* LyricsWordTimingUpgrade.swift */,
 				110000372D83400100000000 /* LyricsRecoveryModels.swift */,
 				110000452D83400100000000 /* LocalAudioASRService.swift */,
 				110000882D83400100000000 /* LyricsLanguageGate.swift */,
@@ -1202,6 +1205,7 @@
 				110000342D83400100000001 /* JapaneseKanaGenerator.swift in Sources */,
 				110000352D83400100000001 /* LyricsQueryPlanner.swift in Sources */,
 				110000362D83400100000001 /* LyricsSafeMatcher.swift in Sources */,
+				F4B70A21BD013856C07514DA /* LyricsWordTimingUpgrade.swift in Sources */,
 				110000372D83400100000001 /* LyricsRecoveryModels.swift in Sources */,
 				110000522D83400100000001 /* DatabaseModels.swift in Sources */,
 				110000532D83400100000001 /* DatabaseMigrator.swift in Sources */,

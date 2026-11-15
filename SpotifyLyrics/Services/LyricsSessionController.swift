@@ -63,6 +63,10 @@ public final class LyricsSessionController: ObservableObject {
     private var recoveryAttempts = 0
     private let recoveryCooldowns: [TimeInterval]
     private var retryTask: Task<Void, Never>?
+    private var wordTimingUpgradeTask: Task<Void, Never>?
+    /// Songs whose stored line timing was already checked for a word-timed
+    /// upgrade in this run; one bounded search per song per launch.
+    private static var wordTimingUpgradeAttempts: Set<String> = []
     private let sourceRetryDelay: TimeInterval
     private var retriedIdentity: TrackIdentity?
     private var isRecoveryAttempt = false
@@ -456,6 +460,8 @@ public final class LyricsSessionController: ObservableObject {
                     LyricsE2ELog.log(
                         "SESSION persistence save rev=\(requestRevision) disposition=\(String(describing: saved?.disposition)) lines=\(document.lines.count)"
                     )
+                    // This search already preferred word timing; no upgrade check this run.
+                    await MainActor.run { _ = Self.wordTimingUpgradeAttempts.insert(identity.stableKey) }
                 } catch {
                     let message = error.localizedDescription
                     LyricsE2ELog.log("PERSISTENCE save failed rev=\(requestRevision) error=\(message)")
@@ -463,6 +469,21 @@ public final class LyricsSessionController: ObservableObject {
                         guard let self, self.activeIdentity == identity, self.revision == requestRevision else { return }
                         self.persistenceStatusMessage = message
                     }
+                }
+            }
+
+            // Stored line timing shows at once; a bounded search then looks
+            // for word timing of the same lines (see LyricsWordTimingUpgrade).
+            if didApply, !Task.isCancelled, automaticallySearch, !reviewOnly, !forceRefresh, !isBatch,
+               let held = cachedReference,
+               case .match(let shown) = outcome.result, shown == held.document,
+               LyricsWordTimingUpgrade.wantsUpgrade(held.document),
+               // A preload already searched every source this run, word timing first.
+               !Self.preloadedRecordingIDs.contains(TrackIdentity.playbackID(for: track) ?? "") {
+                let aliases = storedAliases
+                await MainActor.run { [weak self] in
+                    self?.scheduleWordTimingUpgrade(track: track, identity: identity, revision: requestRevision,
+                                                    held: held, aliases: aliases)
                 }
             }
 
@@ -1172,6 +1193,8 @@ public final class LyricsSessionController: ObservableObject {
         recoveryTask = nil
         retryTask?.cancel()
         retryTask = nil
+        wordTimingUpgradeTask?.cancel()
+        wordTimingUpgradeTask = nil
     }
 
     private static func shouldRetrySourceFailures(_ result: LyricsLookupResult) -> Bool {
@@ -1275,6 +1298,60 @@ public final class LyricsSessionController: ObservableObject {
                 outcome: outcomeLabel
             )
             self.retryTask = nil
+        }
+    }
+
+    private func scheduleWordTimingUpgrade(
+        track: Track,
+        identity: TrackIdentity,
+        revision expectedRevision: UInt64,
+        held: StoredLyricsDocument,
+        aliases: [TrackAlias]
+    ) {
+        guard let heldVersionID = held.versionID,
+              activeIdentity == identity, revision == expectedRevision,
+              Self.wordTimingUpgradeAttempts.insert(identity.stableKey).inserted else { return }
+        wordTimingUpgradeTask?.cancel()
+        LyricsE2ELog.log("SESSION word-timing upgrade search source=\(held.document.source) provider=\(held.document.providerSourceID ?? "") rev=\(expectedRevision)")
+        wordTimingUpgradeTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let started = Date()
+            let outcome = await self.searchManager.search(
+                track: track,
+                identity: identity,
+                aliases: aliases,
+                lineTimingHeld: true
+            )
+            let elapsed = String(format: "%.2f", Date().timeIntervalSince(started))
+            guard !Task.isCancelled, self.activeIdentity == identity, self.revision == expectedRevision,
+                  self.activeLyricsVersionID == heldVersionID else { return }
+            guard case .match(let document) = outcome.result,
+                  LyricsWordTimingUpgrade.isCompatible(held: held.document, upgrade: document) else {
+                let found: String
+                if case .match(let document) = outcome.result {
+                    found = "\(document.source) words=\(LyricsWordTimingUpgrade.hasWordTiming(document))"
+                } else { found = LyricsSourceStats.outcome(for: outcome.result) }
+                LyricsE2ELog.log("SESSION word-timing upgrade kept line timing found=\(found) elapsed=\(elapsed)s")
+                return
+            }
+            self.apply(.match(document), identity: identity, requestRevision: expectedRevision)
+            LyricsE2ELog.log("SESSION word-timing upgrade applied source=\(document.source) provider=\(document.providerSourceID ?? "") lines=\(document.lines.count) elapsed=\(elapsed)s")
+            do {
+                let saved = try await self.persistMatch(document, track: track, identity: identity,
+                                                        decision: outcome.automaticDecision, expectedRevision: expectedRevision)
+                // Automatic saves never displace a preferred version; this one
+                // carries the same lines, so it takes the preference over.
+                if let versionID = saved?.versionID, versionID != heldVersionID,
+                   let repository = self.repository,
+                   let editing = repository as? any LyricsEditingRepository,
+                   !(try await repository.isLyricsSelectionRevoked(identity: identity)) {
+                    try await editing.adoptLyricsVersion(trackStableKey: identity.stableKey, lyricsVersionID: versionID)
+                }
+                LyricsE2ELog.log("SESSION word-timing upgrade saved disposition=\(String(describing: saved?.disposition))")
+            } catch {
+                LyricsE2ELog.log("SESSION word-timing upgrade save failed error=\(error.localizedDescription)")
+            }
+            self.wordTimingUpgradeTask = nil
         }
     }
 

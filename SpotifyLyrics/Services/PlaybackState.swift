@@ -3541,7 +3541,8 @@ public final class PlaybackState: ObservableObject {
     ) {
         let lines = liveLyrics
         let synchronized = liveLyricsAreSynchronized
-        let time = incomingTime ?? presentationTimeNow(usingPresentationOffset: presentationOffset)
+        let time = (incomingTime ?? presentationTimeNow(usingPresentationOffset: presentationOffset))
+            + (isMockPreviewMode ? 0 : Self.lineSwitchLead)
         let newIndex = LyricsTimeline.activeLineIndex(
             lines: lines,
             time: time,
@@ -3576,7 +3577,7 @@ public final class PlaybackState: ObservableObject {
             let oldText = liveCurrentLineIndex.map(String.init) ?? "nil"
             let newText = newIndex.map(String.init) ?? "nil"
             LyricsE2ELog.log(
-                "[LINE_INDEX] reason=\(source.rawValue) suppress=\(suppress) previousTime=\(prevText) incoming=\(timeText) delta=\(deltaText) LINE_START_TIME=\(startText) PRESENTATION_CLOCK_CROSS_TIME=\(timeText) INDEX_CHANGE_TIME=\(monoText) STATE_PUBLISH_TIME=\(monoText) old=\(oldText) proposed=\(newText)"
+                "[LINE_INDEX] reason=\(source.rawValue) suppress=\(suppress) lead=\(isMockPreviewMode ? 0 : Self.lineSwitchLead) previousTime=\(prevText) incoming=\(timeText) delta=\(deltaText) LINE_START_TIME=\(startText) PRESENTATION_CLOCK_CROSS_TIME=\(timeText) INDEX_CHANGE_TIME=\(monoText) STATE_PUBLISH_TIME=\(monoText) old=\(oldText) proposed=\(newText)"
             )
         }
 #endif
@@ -3606,6 +3607,13 @@ public final class PlaybackState: ObservableObject {
         scheduleLineBoundaryWake(lines: lines, synchronized: synchronized, time: time)
     }
 
+    /// The line index switches this much before the line's timestamp. After
+    /// the wake, SwiftUI needs 45–85 ms to start the follow scroll and the
+    /// 0.40 s spring is halfway after about 0.1 s, so without a lead the new
+    /// line visibly arrived ~0.15 s after the singer (measured 2026-11-15).
+    /// Word fill keeps its own exact timestamps; only the line switch leads.
+    static let lineSwitchLead: TimeInterval = 0.15
+
     private func scheduleLineBoundaryWake(
         lines: [LyricLine],
         synchronized: Bool,
@@ -3624,10 +3632,21 @@ public final class PlaybackState: ObservableObject {
         let delay = boundary - time
         let generation = lineBoundaryGeneration
         guard delay > 0.0005 else { return }
-        let nanoseconds = UInt64(min(delay, 3600) * 1_000_000_000)
+        // `Task.sleep(nanoseconds:)` lets the system coalesce the wake by up
+        // to a tenth of the delay, so a 3–7 s line gap woke 30–215 ms after
+        // the timestamp (LINE_INDEX logs, Lost My Mind, 2026-11-15) and every
+        // line switch trailed other players. A small explicit tolerance keeps
+        // the boundary on time.
+        let deadline = ContinuousClock.now + .seconds(min(delay, 3600))
+#if DEBUG
+        let targetUptime = ProcessInfo.processInfo.systemUptime + delay
+#endif
         lineBoundaryTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: nanoseconds)
+            try? await Task.sleep(until: deadline, tolerance: .milliseconds(2), clock: .continuous)
             guard !Task.isCancelled else { return }
+#if DEBUG
+            LyricsE2ELog.log(String(format: "[LINE_INDEX] BOUNDARY_WAKE late=%.1fms", (ProcessInfo.processInfo.systemUptime - targetUptime) * 1000))
+#endif
             guard let self, self.lineBoundaryGeneration == generation else { return }
             self.syncPublishedLineIndex(source: .boundary)
         }
