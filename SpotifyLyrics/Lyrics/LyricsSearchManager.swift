@@ -119,8 +119,10 @@ public final class LyricsSearchManager: @unchecked Sendable {
         providers: [LyricsProvider],
         name: String = "Lyrics Search",
         negativeCacheLifetime: TimeInterval = 45,
-        spotifyArtistResolver: SpotifyTrackArtistResolver? = nil
+        spotifyArtistResolver: SpotifyTrackArtistResolver? = nil,
+        sourceHealth: LyricsSourceHealth = LyricsSourceHealth()
     ) {
+        self.sourceHealth = sourceHealth
         self.providers = providers
         self.name = name
         self.negativeCacheLifetime = max(1, negativeCacheLifetime)
@@ -137,6 +139,10 @@ public final class LyricsSearchManager: @unchecked Sendable {
         clearNegativeCache()
         LyricsE2ELog.log("MANAGER providers updated=" + providers.map { $0.name }.joined(separator: ","))
     }
+
+    /// Online sources that failed repeatedly and now wait in the supplement
+    /// lane (see `LyricsSourceHealth`).
+    public let sourceHealth: LyricsSourceHealth
 
     public func providerNames() -> [String] {
         providerSnapshot().map(\.name)
@@ -506,8 +512,18 @@ public final class LyricsSearchManager: @unchecked Sendable {
                     } else {
                         let enabled = networkProviders.filter { !unavailableProviders.contains($0.index) }
                         // These supplements run only after the other sources fail to identify lyrics.
-                        let supplements = enabled.filter { Self.supplementProviderNames.contains($0.provider.name) }
-                        let primary = enabled.filter { !Self.supplementProviderNames.contains($0.provider.name) }
+                        // A source that is resting after repeated outages joins them, so a broken
+                        // source no longer holds up every song yet is still asked when nothing else helps.
+                        let health = sourceHealth
+                        let isSupplement: (IndexedProvider) -> Bool = {
+                            Self.supplementProviderNames.contains($0.provider.name) || health.isResting($0.provider.name)
+                        }
+                        let supplements = enabled.filter(isSupplement)
+                        let primary = enabled.filter { !isSupplement($0) }
+                        let resting = enabled.filter { health.isResting($0.provider.name) }
+                        if !resting.isEmpty {
+                            LyricsE2ELog.log("SEARCH resting id=\(searchID) rank=\(variant.rank) providers=\(resting.map { $0.provider.name }.joined(separator: ","))")
+                        }
                         let publishCandidates: @Sendable ([LyricsCandidate]) async -> Void = { candidates in
                             LyricsE2ELog.log("SEARCH preview id=\(searchID) rank=\(variant.rank) elapsed=\(String(format: "%.3f", Date().timeIntervalSince(started)))s count=\(candidates.count)")
                             await onCandidates?(candidates)
@@ -526,6 +542,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
                         probeResults = results
                         probeCache[queryKey] = probeResults
                         for probe in probeResults {
+                            sourceHealth.record(provider: probe.provider.name, result: probe.result)
                             if case .failed(let failure) = probe.result {
                                 switch failure {
                                 case .serverError(let code) where (500...599).contains(code): unavailableProviders.insert(probe.index)

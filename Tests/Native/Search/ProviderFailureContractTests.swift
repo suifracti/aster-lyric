@@ -1297,3 +1297,91 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertEqual(retryLines.first?["outcome"] as? String, "adopted")
     }
 }
+
+/// Source health (2026-11-15): failures come in runs, so a source that failed
+/// twice in a row rests in the supplement lane for 15 minutes.
+final class LyricsSourceHealthTests: XCTestCase {
+    func testTwoOutagesInARowRestTheSourceAndAnyAnswerEndsTheRest() {
+        let health = LyricsSourceHealth()
+        let now = Date()
+        health.record(provider: "LRCLIB", result: .failed(.serverError(503)), at: now)
+        XCTAssertFalse(health.isResting("LRCLIB", at: now), "one failure is not a run")
+        health.record(provider: "LRCLIB", result: .failed(.timedOut), at: now)
+        XCTAssertTrue(health.isResting("LRCLIB", at: now))
+        XCTAssertTrue(health.isResting("LRCLIB", at: now.addingTimeInterval(14 * 60)))
+        XCTAssertFalse(health.isResting("LRCLIB", at: now.addingTimeInterval(16 * 60)), "the rest expires")
+        health.record(provider: "LRCLIB", result: .noMatch, at: now)
+        XCTAssertFalse(health.isResting("LRCLIB", at: now), "an answer proves the source is back")
+    }
+
+    func testOnlyOutagesCount() {
+        let health = LyricsSourceHealth()
+        for result: LyricsLookupResult in [.failed(.serverError(404)), .failed(.parseFailure), .failed(.cancelled), .failed(.cancelled)] {
+            health.record(provider: "QQ", result: result)
+        }
+        XCTAssertFalse(health.isResting("QQ"), "a 404, a parse problem or a cancel is not an outage")
+        health.record(provider: "QQ", result: .failed(.networkUnavailable))
+        health.record(provider: "QQ", result: .failed(.cancelled))
+        health.record(provider: "QQ", result: .failed(.rateLimited(1)))
+        XCTAssertTrue(health.isResting("QQ"), "a cancel between two outages does not break the run")
+    }
+
+    func testRelaunchRemembersRecentOutagesFromTheStatisticsFile() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("health-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let now = Date()
+        let iso = ISO8601DateFormatter()
+        func line(_ minutesAgo: Double, _ sources: [(String, String, Double)]) -> String {
+            let entry: [String: Any] = ["time": iso.string(from: now.addingTimeInterval(-minutesAgo * 60)),
+                "sources": sources.map { ["provider": $0.0, "result": $0.1, "seconds": $0.2] }]
+            return String(data: try! JSONSerialization.data(withJSONObject: entry), encoding: .utf8)!
+        }
+        let text = [
+            line(40, [("lyrics.ovh", "failed(timedOut)", 3), ("lyrics.ovh", "failed(timedOut)", 3)]),
+            line(5, [("LRCLIB", "failed(serverError(503))", 1.2), ("NetEase Experimental", "candidates(3)", 0.7)]),
+            line(4, [("LRCLIB", "failed(serverError(503))", 1.1), ("QQ Music Experimental", "failed(timedOut)", 5)]),
+            // A reused probe repeats the earlier answer with zero seconds.
+            line(3, [("QQ Music Experimental", "failed(timedOut)", 0)]),
+        ].joined(separator: "\n") + "\n"
+        try text.write(to: url, atomically: true, encoding: .utf8)
+        let health = LyricsSourceHealth(seedingFrom: url, now: now)
+        XCTAssertEqual(health.restingProviders(at: now), ["LRCLIB"])
+    }
+
+    func testRestingSourceWaitsWhileAnotherSourceHasTheLyrics() async {
+        let track = Track(id: "spotify:track:health", title: "Health Fixture", artist: "Fixture Artist", album: "Fixture", duration: 200)
+        let identity = TrackIdentity(track: track)
+        let good = ProviderFailureFixedLyricsProvider(name: "NetEase Experimental", result: .match(LyricsDocument(
+            identity: identity, title: track.title, artist: track.artist, album: track.album, duration: track.duration,
+            lines: (1...6).map { LyricLine(timestamp: Double($0 * 5), originalText: "fixture line \($0)") },
+            isSynchronized: true, source: .neteaseExperimental, confidence: 0.95)))
+        func search(resting: Bool) async -> (LyricsLookupResult, Int) {
+            let counter = ProviderFailureCounter()
+            let broken = ProviderFailureCountingLyricsProvider(name: "LRCLIB", result: .failed(.serverError(503)), counter: counter)
+            let health = LyricsSourceHealth()
+            if resting {
+                health.record(provider: "LRCLIB", result: .failed(.serverError(503)))
+                health.record(provider: "LRCLIB", result: .failed(.serverError(503)))
+            }
+            let outcome = await LyricsSearchManager(providers: [broken, good], sourceHealth: health).search(track: track, identity: identity)
+            return (outcome.result, counter.value)
+        }
+        let normal = await search(resting: false)
+        guard case .match = normal.0 else { return XCTFail("fixture must be adopted: \(normal.0)") }
+        XCTAssertEqual(normal.1, 1, "a healthy source is asked first, as before")
+        let rested = await search(resting: true)
+        guard case .match = rested.0 else { return XCTFail("the other source still supplies the lyrics: \(rested.0)") }
+        XCTAssertEqual(rested.1, 0, "a resting source is not waited for when another source has the lyrics")
+
+        // When nothing else helps, the resting source is still asked.
+        let counter = ProviderFailureCounter()
+        let health = LyricsSourceHealth()
+        health.record(provider: "LRCLIB", result: .failed(.timedOut))
+        health.record(provider: "LRCLIB", result: .failed(.timedOut))
+        let onlyBroken = ProviderFailureCountingLyricsProvider(name: "LRCLIB", result: .noMatch, counter: counter)
+        let empty = ProviderFailureFixedLyricsProvider(name: "NetEase Experimental", result: .noMatch)
+        _ = await LyricsSearchManager(providers: [onlyBroken, empty], sourceHealth: health).search(track: track, identity: identity)
+        XCTAssertGreaterThan(counter.value, 0)
+        XCTAssertFalse(health.isResting("LRCLIB"), "its answer ends the rest")
+    }
+}

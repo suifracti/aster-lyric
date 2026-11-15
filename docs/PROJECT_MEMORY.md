@@ -31,6 +31,7 @@
 | 逐字上浮/长音发光动画跳回开头、状态栏弹窗改版、换歌封面闪占位图、暂停褪色、桌面歌词情境隐藏 | L-024；LyricLineView animateLift、MenuBarLyricsPopoverView、ArtworkView、v3PauseFadesColor、FloatingLyricsWindowController.observeContext |
 | 粒子（雨雪雾、歌词意象）不显示、VU 表指针手感、新呈现一行放不下、分享卡排版跑偏、封面墙离屏图空白、声纹圈、频谱 | L-025；V3GlassWeather、V3ParticleHostView、V3VUMeter、V3LyricShareCard、ListeningCoverWall、V3Soundprint、V3SpectrumOverlay |
 | QQ 来源突然全部 http(500)、别人有词我们“暂无歌词正文” | L-026；QQExperimentalLyricsProvider.searchBases |
+| 某个来源一段时间连着超时/503、每首新歌都卡几秒、来源顺序要不要按统计调 | L-035；LyricsSourceHealth、LyricsSearchManager supplements |
 | 在窗口边缘拖进度会变成缩放窗口、进度线靠近时下移不好看、胶囊和工具栏像两套控件、画面面板底部被截断 | L-015；V3EdgePillScrubber、V3ControlBarSurface、V3ThemeSelectorView |
 | 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
@@ -467,3 +468,18 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
   - 歌名、时长从 `listening_history_sessions` 取（正式库先复制只读副本）。统计和历史里的 Spotify ID 是小写，嵌入页解析器用不了，所以探针缺「Spotify 认证歌手」这条证据，结果比 App 里略保守。
 - **新规则都要同时满足「歌名一致 + 时长差 ≤2 秒」**，并且最高只到较低的自动档。歌手在署名里但不在第一位、歌名只差制作人标注、`X from Y`、罗马字 `oh` 长音。
 - **改了匹配后，旧测试里拿真实歌当「需要核对」样本的会变**（这次是「活着」）。改样本让它仍是核对结果，不要放宽规则去迁就测试。
+
+## L-035 来源排序：故障成片出现，让坏掉的来源先休息（2026-11-15）
+
+- **读统计的结论**（`source-stats.jsonl`，10-24 至 11-15，598 次查找）：默认顺序本身是对的。首个命中的来源依次是 LRCLIB 214、网易 85、QQ 47、AMLL 24；酷狗、酷我、LinkCore、プチリリ、lyrics.ovh 从没给过直接命中，只给候选。按命中率重排换不来时间。
+- **时间主要耗在两处**。
+  - 一是故障成片：LRCLIB 在 10-30 连报 503 共 50 次；lyrics.ovh 在 11-12、11-13 超时约 90 次，且几乎都紧跟在上一次失败之后；QQ、LinkCore 也有短的连串。
+  - 二是找不到时要换写法重查：每种写法一轮，一轮约 3–6 秒。
+- **超时不用调**：按「有用结果多晚到」看，酷狗和プチリリ的有效结果恰恰是慢的那批（酷狗 >3 秒的 156 次里有 128 次有用），一刀切会丢歌词。并发从 3 提到 6 的模拟只把中位轮次从 2.8 秒降到 2.4 秒，却会给非官方接口加压，没做。
+- **做法**：新增 `LyricsSourceHealth`。
+  - 同一来源连续两次超时、断网、限流或 5xx，就休息 15 分钟。
+  - 休息期间它被放进补充位：其他来源能采用时不再等它，什么都找不到时仍会问它，所以不丢结果。
+  - 它任何一次正常回答（包括「没找到」「解析失败」）都立刻结束休息；取消不算数。
+  - 现在播放、预览、预载、补全四处共用 `.shared`；启动时回放统计文件最后 15 分钟（跳过 0 秒的复用记录），重启后仍记得正在出的故障。测试各用新实例，互不影响。日志里有 `SEARCH resting`。
+- **覆盖**：`LyricsSourceHealthTests` 4 项（连续失败与恢复、只算真故障、从统计文件恢复、休息中的来源不被等待但最后仍会被问）。完整原生 200 项：第一次跑出 1 个失败，没能定位是哪项；之后连续 4 次全部通过（1 跳过）。改动后在真实 App 里看过一次正常找词，但没有遇到真实故障，休息这一路只有单元测试证据。
+

@@ -236,12 +236,14 @@ public final class PlaybackState: ObservableObject {
         let session = LyricsSessionController(
             providers: lyricsProviders,
             repository: resolvedRepository,
-            spotifyArtistResolver: lyricsProvider == nil ? .shared : nil
+            spotifyArtistResolver: lyricsProvider == nil ? .shared : nil,
+            sourceHealth: lyricsProvider == nil ? .shared : nil
         )
         let previewSession = LyricsSessionController(
             providers: lyricsProviders,
             repository: resolvedRepository,
-            spotifyArtistResolver: lyricsProvider == nil ? .shared : nil
+            spotifyArtistResolver: lyricsProvider == nil ? .shared : nil,
+            sourceHealth: lyricsProvider == nil ? .shared : nil
         )
         let translationRepository = (resolvedRepository as? any TranslationRepository)
             ?? UnavailableTranslationRepository()
@@ -1641,7 +1643,7 @@ public final class PlaybackState: ObservableObject {
 
     public func completeMissingLyrics(track: Track) async {
         let session = LyricsSessionController(providers: preloadLyricsProviders,
-            repository: lyricsRepository, spotifyArtistResolver: .shared, isBatch: true)
+            repository: lyricsRepository, spotifyArtistResolver: .shared, sourceHealth: .shared, isBatch: true)
         await session.loadForPreloading(track: track)
     }
 
@@ -1663,7 +1665,7 @@ public final class PlaybackState: ObservableObject {
                     for track in tracks {
                         group.addTask { @MainActor in
                             let session = LyricsSessionController(providers: providers, repository: repository,
-                                spotifyArtistResolver: .shared, isPreload: true)
+                                spotifyArtistResolver: .shared, sourceHealth: .shared, isPreload: true)
                             await session.loadForPreloading(track: track)
                         }
                     }

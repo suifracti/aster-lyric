@@ -87,11 +87,13 @@ public final class LyricsSessionController: ObservableObject {
         recoveryCooldowns: [TimeInterval] = [2, 5],
         spotifyArtistResolver: SpotifyTrackArtistResolver? = nil,
         sourceStats: LyricsSourceStats = .shared,
+        sourceHealth: LyricsSourceHealth? = nil,
         sourceRetryDelay: TimeInterval = 30,
         isPreload: Bool = false,
         isBatch: Bool = false
     ) {
-        self.searchManager = LyricsSearchManager(providers: providers, name: name, spotifyArtistResolver: spotifyArtistResolver)
+        self.searchManager = LyricsSearchManager(providers: providers, name: name, spotifyArtistResolver: spotifyArtistResolver,
+                                                 sourceHealth: sourceHealth ?? LyricsSourceHealth())
         self.repository = repository
         self.sourceStats = sourceStats
         self.isPreload = isPreload
