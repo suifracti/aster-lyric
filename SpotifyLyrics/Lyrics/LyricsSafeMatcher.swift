@@ -215,6 +215,10 @@ public enum LyricsSafeMatcher {
             add("tempoBaseTitleExact", 0.24)
         } else if manualTitleMatches {
             add("manualTitleMatch", 0.20)
+        } else if titlesAreBilingualPair(candidate.title, metadata.track.title) {
+            // 愛℃ - Love°C for Spotify's Love°C: the source writes the
+            // original name and the English one together. Capped below.
+            add("titleBilingualPair", 0.26)
         } else if titlesAreLoanwordPair(candidate.title, metadata.track.title) {
             // Timeless / タイムレス: an English title and its katakana
             // spelling. Sound-alike keys are loose, so this alone never
@@ -478,6 +482,17 @@ public enum LyricsSafeMatcher {
             return Self.minTier(tier, .autoMedium)
         }
 
+        // A title-only query asks the source for every song of that name.
+        // How a result was found does not change what it is: the exact title,
+        // the exact singer and the same length (just saying, the body is
+        // honest. / shikiura sougo, found after the artist query came back
+        // empty) is the same recording.
+        let looseQueryConfirmed = !hardReject && !versionConflict && !incompleteArtistSet
+            && (reasons.contains("titleExact") || reasons.contains("titleTypographyExact") || reasons.contains("titleBilingualPair"))
+            && (metadataPrimaryMatches || metadataPrimaryReadingMatches || otherScriptArtist)
+            && reasons.contains("durationClose")
+            && !reasons.contains("lyricsEndOvershoot")
+
         // もう一度 (Sped Up Ver.) for "Again - Sped Up Ver.", the NOISE with
         // the sampled song's title translated: the title was translated, but
         // the singer is the same and the store reports the same length to the
@@ -487,11 +502,25 @@ public enum LyricsSafeMatcher {
         func promoteSameMaster(_ tier: LyricsMatchTier) -> LyricsMatchTier {
             guard tier == .candidates || tier == .reject, !hardReject, !versionConflict,
                   metadataPrimaryMatches || metadataPrimaryReadingMatches,
-                  reasons.contains("durationExact"), reasons.contains("lyricsEndFits"),
+                  reasons.contains("durationExact"), !reasons.contains("lyricsEndOvershoot"),
+                  candidate.lines.filter({ !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }).count >= 2,
                   candidate.isSynchronized, metadataTags == candidateTags,
                   !candidateTags.contains(.instrumental), !candidateTags.contains(.karaoke)
             else { return tier }
             add("sameMasterLength", 0)
+            return .autoMedium
+        }
+        // Kuzuyan on the publisher's own release page (LinkCore / TuneCore):
+        // the page names the exact title and the exact artist but no length.
+        // The words of a release page are the release's words.
+        func promotePublisherPage(_ tier: LyricsMatchTier) -> LyricsMatchTier {
+            guard tier == .candidates, candidate.source == .linkcore, !candidate.isSynchronized,
+                  !(candidate.duration > 0), !hardReject, !versionConflict, metadataPrimaryMatches,
+                  reasons.contains("titleExact") || reasons.contains("titleTypographyExact"),
+                  metadataTags == candidateTags, !candidateTags.contains(.instrumental),
+                  candidate.lines.contains(where: { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+            else { return tier }
+            add("publisherPageExact", 0)
             return .autoMedium
         }
 
@@ -547,7 +576,7 @@ public enum LyricsSafeMatcher {
                 tier = minTier(tier, score >= 0.25 ? .candidates : .reject)
             }
             if queryVariant?.queryKind == .titleOnlyLoose && !hasStrongIndependentIdentity {
-                tier = minTier(tier, score >= 0.25 ? .candidates : .reject)
+                tier = minTier(tier, looseQueryConfirmed ? .autoMedium : (score >= 0.25 ? .candidates : .reject))
             }
             if reasons.contains("titleFuzzy") && !hasStrongIndependentIdentity {
                 tier = minTier(tier, .candidates)
@@ -568,7 +597,7 @@ public enum LyricsSafeMatcher {
                 tier = Self.minTier(tier, versionConflict ? .candidates : .autoMedium)
             }
             if queryVariant?.queryKind != .manualOverride && queryVariant?.queryKind != .titleOnlyLoose {
-                tier = promoteSameMaster(tier)
+                tier = promotePublisherPage(promoteSameMaster(tier))
             }
             return LyricsMatchDecision(
                 tier: tier,
@@ -623,7 +652,9 @@ public enum LyricsSafeMatcher {
             // song, but it is insufficient for unattended adoption.
             tier = score >= 0.25 ? .candidates : .reject
         } else if queryVariant?.queryKind == .titleOnlyLoose && !hasStrongIndependentIdentity {
-            tier = score >= 0.25 ? .candidates : .reject
+            tier = looseQueryConfirmed
+                ? minTier(tierFor(score: score, primaryArtistMatches: tierPrimaryMatch, hardReject: hardReject), .autoMedium)
+                : (score >= 0.25 ? .candidates : .reject)
         } else {
             tier = tierFor(score: score, primaryArtistMatches: tierPrimaryMatch, hardReject: hardReject)
         }
@@ -642,6 +673,10 @@ public enum LyricsSafeMatcher {
 
         if reasons.contains("titleParallelExact") || reasons.contains("titleLatinSpacingExact") {
             tier = minTier(tier, metadataPrimaryMatches && reasons.contains("durationClose") ? .autoMedium : .candidates)
+        }
+        if reasons.contains("titleBilingualPair") && !hasStrongIndependentIdentity {
+            let sameSinger = metadataPrimaryMatches || metadataPrimaryReadingMatches || otherScriptArtist
+            tier = minTier(tier, sameSinger && reasons.contains("durationClose") && !versionConflict ? .autoMedium : .candidates)
         }
         if reasons.contains("titleLoanwordReading") && !hasStrongIndependentIdentity {
             let sameSinger = metadataPrimaryMatches || metadataPrimaryReadingMatches || spotifyCreditedArtistReadingMatches
@@ -672,7 +707,7 @@ public enum LyricsSafeMatcher {
             add("versionNameSameRecording", 0.04)
         }
         if queryVariant?.queryKind != .manualOverride && queryVariant?.queryKind != .titleOnlyLoose {
-            tier = promoteSameMaster(tier)
+            tier = promotePublisherPage(promoteSameMaster(tier))
         }
         // Lines after the song ends are never adopted on their own.
         if reasons.contains("lyricsEndOvershoot") {
@@ -729,6 +764,30 @@ public enum LyricsSafeMatcher {
         // Validate each complete form against every complete form on the
         // other side. No partial match or untranslated surplus is accepted.
         return (left ?? [lhs]).allSatisfy { a in (right ?? [rhs]).allSatisfy { same(a, $0) } }
+    }
+
+    /// `原題 - English title` against either half alone. One half must be
+    /// Japanese/Chinese and the other Latin, so a subtitle or a version
+    /// label (`曲 - Live`) is never taken for a second name.
+    static func titlesAreBilingualPair(_ lhs: String, _ rhs: String) -> Bool {
+        func halves(_ raw: String) -> (String, String)? {
+            guard let regex = try? NSRegularExpression(pattern: #"^(.+?)\s+[-–—]\s+(.+)$"#),
+                  let match = regex.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
+                  let a = Range(match.range(at: 1), in: raw), let b = Range(match.range(at: 2), in: raw) else { return nil }
+            let first = raw[a].trimmingCharacters(in: .whitespaces), second = raw[b].trimmingCharacters(in: .whitespaces)
+            let scripts = [ScriptDetector.detect(first), ScriptDetector.detect(second)]
+            guard scripts.contains(.latin), scripts.contains(where: { $0 == .kanjiHiraganaKatakana }),
+                  TrackTextNormalizer.extractVersionTags(fromTitle: first).isEmpty,
+                  TrackTextNormalizer.extractVersionTags(fromTitle: second).isEmpty else { return nil }
+            return (first, second)
+        }
+        func equal(_ a: String, _ b: String) -> Bool {
+            let key = TrackTextNormalizer.normalize(a)
+            return !key.isEmpty && (key == TrackTextNormalizer.normalize(b) || titlesHaveSameTypography(a, b))
+        }
+        if let (a, b) = halves(lhs), halves(rhs) == nil, equal(a, rhs) || equal(b, rhs) { return true }
+        if let (a, b) = halves(rhs), halves(lhs) == nil, equal(a, lhs) || equal(b, lhs) { return true }
+        return false
     }
 
     static func titleOnlyAddsVersionName(track: String, candidate: String) -> Bool {

@@ -1041,6 +1041,37 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertTrue(document.lines.first?.hasValidTimedSpans() == true)
     }
 
+    func testRetryForTimingWaitsForTheSlowSourceWhenPlainTextIsAlreadyHeld() async throws {
+        // アンコール: LRCLIB answers plain text at once, KuGou (eighth in the
+        // real order) answers with a timeline after the 3 s grace. A first
+        // search shows the plain text; the retry made because only plain
+        // text is stored must wait for KuGou, or it can never upgrade.
+        let track = Track(title: "アンコール", artist: "YOASOBI", album: "THE BOOK 2", duration: 271.44)
+        let identity = TrackIdentity(track: track)
+        let words = ["一", "二", "三", "四"]
+        let plain = LyricsCandidate(id: "lrclib", identity: identity, title: "アンコール", artist: "YOASOBI",
+            album: "THE BOOK 2", duration: 271.0, lines: words.map { LyricLine(timestamp: 0, originalText: $0) },
+            isSynchronized: false, source: .lrclib, confidence: 0.95, providerSourceID: "lrclib")
+        let timed = LyricsCandidate(id: "kugou", identity: identity, title: "アンコール", artist: "YOASOBI",
+            album: "", duration: 271.0, lines: words.enumerated().map { LyricLine(timestamp: Double(20 + $0.offset * 60), originalText: $0.element) },
+            isSynchronized: true, source: .kugouExperimental, confidence: 0.9, providerSourceID: "kugou")
+        func manager() -> LyricsSearchManager {
+            LyricsSearchManager(providers: [
+                ProviderFailureDelayedLyricsProvider(name: "LRCLIB", delay: 10_000_000, result: .candidates([plain])),
+                ProviderFailureDelayedLyricsProvider(name: "酷狗（实验）", delay: 3_600_000_000, result: .candidates([timed]))
+            ])
+        }
+
+        let first = await manager().search(track: track, identity: identity)
+        guard case .match(let shown) = first.result else { return XCTFail("\(first.result)") }
+        XCTAssertFalse(shown.isSynchronized, "the first search still shows plain text without waiting")
+
+        let retry = await manager().search(track: track, identity: identity, plainAlreadyHeld: true)
+        guard case .match(let upgraded) = retry.result else { return XCTFail("\(retry.result)") }
+        XCTAssertTrue(upgraded.isSynchronized)
+        XCTAssertEqual(upgraded.source, .kugouExperimental)
+    }
+
     func testCatalogDurationOverridesDesktopDurationWithoutChangingIdentity() async throws {
         let track = Track(title: "shion", artist: "angelize", album: "shion", duration: 150.8,
                           spotifyId: "spotify:track:0t5DDnfp0dkgeSnokvbIQY")

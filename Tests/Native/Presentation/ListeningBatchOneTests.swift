@@ -623,14 +623,16 @@ final class ListeningBatchOneTests: XCTestCase {
 
     private func decide(track title: String, _ artist: String, _ duration: Double,
                         candidate cTitle: String, _ cArtist: String, _ cDuration: Double,
-                        aliases: [String] = []) -> LyricsMatchDecision {
+                        aliases: [String] = [], loose: Bool = false) -> LyricsMatchDecision {
         let track = Track(title: title, artist: artist, album: "", duration: duration)
         let identity = TrackIdentity(track: track)
         let lines = [LyricLine(timestamp: 10, originalText: "line one"), LyricLine(timestamp: max(20, cDuration - 30), originalText: "line two")]
         let candidate = LyricsCandidate(id: "c", identity: identity, title: cTitle, artist: cArtist, album: "",
                                         duration: cDuration, lines: lines, source: .neteaseExperimental, confidence: 0.8,
                                         declaredTitleAliases: aliases)
-        return LyricsSafeMatcher.decide(candidate: candidate, metadata: TrackMetadata.bootstrap(from: track))
+        let variant = loose ? LyricsQueryVariant(rank: 6, strategy: .titleOnlyLoose, queryKind: .titleOnlyLoose,
+                                                 titleQuery: title, artistQuery: nil) : nil
+        return LyricsSafeMatcher.decide(candidate: candidate, metadata: TrackMetadata.bootstrap(from: track), queryVariant: variant)
     }
 
     func testArtistListedSecondIsTheSameRecording() {
@@ -752,6 +754,50 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertNotEqual(decide(track: "Again", "stb", 185.504, candidate: "もう一度 (Sped Up Ver.)", "stb", 185.504).tier, .autoMedium)
         XCTAssertNotEqual(decide(track: "Again", "stb", 185.504, candidate: "もう一度", "Another Singer", 185.504).tier, .autoMedium)
         XCTAssertNotEqual(decide(track: "Again", "stb", 185.504, candidate: "もう一度", "stb", 185.904).tier, .autoMedium)
+    }
+
+    func testTitleOnlyQueryAndBilingualTitlesStillAdoptTheSameRecording() {
+        // Found by title alone, but title, singer and length all agree.
+        let shikiura = decide(track: "叶わぬ恋じゃ終われない！", "ハコニワリリィ", 190.96,
+                              candidate: "叶わぬ恋じゃ終われない!", "ハコニワリリィ", 190.96, loose: true)
+        XCTAssertEqual(shikiura.tier, .autoMedium, shikiura.reasons.joined(separator: ","))
+        let kiddy = decide(track: "Kiddy", "Rokudenashi", 199.4, candidate: "Kiddy", "ロクデナシ", 199.0, loose: true)
+        XCTAssertEqual(kiddy.tier, .autoMedium, kiddy.reasons.joined(separator: ","))
+        // Original and English names written together.
+        let love = decide(track: "Love°C", "TakaseToya", 230.729, candidate: "愛℃ - Love°C", "TakaseToya", 231.0)
+        XCTAssertEqual(love.tier, .autoMedium, love.reasons.joined(separator: ","))
+        let station = decide(track: "星街の駅で - At Hoshimachi Station", "tuki.", 239.4, candidate: "星街の駅で", "tuki.", 239.0)
+        XCTAssertEqual(station.tier, .autoMedium, station.reasons.joined(separator: ","))
+
+        // Loose results with another singer, another length or a version
+        // label stay out; a dash followed by a version is not a second name.
+        XCTAssertNotEqual(decide(track: "Kiddy", "Rokudenashi", 199.4, candidate: "Kiddy", "Someone Else", 199.0, loose: true).tier, .autoMedium)
+        XCTAssertNotEqual(decide(track: "Kiddy", "Rokudenashi", 199.4, candidate: "Kiddy", "ロクデナシ", 230.0, loose: true).tier, .autoMedium)
+        XCTAssertNotEqual(decide(track: "Kiddy", "Rokudenashi", 199.4, candidate: "Kiddy (Live)", "ロクデナシ", 199.0, loose: true).tier, .autoMedium)
+        XCTAssertFalse(LyricsSafeMatcher.titlesAreBilingualPair("夜に駆ける - Live", "夜に駆ける"))
+        XCTAssertFalse(LyricsSafeMatcher.titlesAreBilingualPair("Song - Another Song", "Song"))
+        XCTAssertNotEqual(decide(track: "Love°C", "TakaseToya", 230.729, candidate: "愛℃ - Love°C", "Other", 231.0).tier, .autoMedium)
+        XCTAssertNotEqual(decide(track: "Love°C", "TakaseToya", 230.729, candidate: "愛℃ - Love°C", "TakaseToya", 250.0).tier, .autoMedium)
+    }
+
+    func testSameMasterWithEarlyLastLineAndThePublishersOwnPage() {
+        let twin = decide(track: "822", "橙汁", 182.405, candidate: "0822", "橙汁", 182.405)
+        XCTAssertNotEqual(twin.tier, .reject, twin.reasons.joined(separator: ","))
+        let track = Track(title: "Kuzuyan", artist: "Haruki Hamano", album: "NET BaBY", duration: 188.5)
+        let identity = TrackIdentity(track: track)
+        let page = LyricsCandidate(id: "lc", identity: identity, title: "Kuzuyan", artist: "Haruki Hamano", album: "",
+                                   duration: 0, lines: [LyricLine(timestamp: 0, originalText: "words")], isSynchronized: false,
+                                   source: .linkcore, confidence: 0.7)
+        let metadata = TrackMetadata.bootstrap(from: track)
+        XCTAssertEqual(LyricsSafeMatcher.decide(candidate: page, metadata: metadata).tier, .autoMedium)
+        let other = LyricsCandidate(id: "lc2", identity: identity, title: "Kuzuyan", artist: "Someone", album: "",
+                                    duration: 0, lines: [LyricLine(timestamp: 0, originalText: "words")], isSynchronized: false,
+                                    source: .linkcore, confidence: 0.7)
+        XCTAssertNotEqual(LyricsSafeMatcher.decide(candidate: other, metadata: metadata).tier, .autoMedium)
+        let live = LyricsCandidate(id: "lc3", identity: identity, title: "Kuzuyan (Live)", artist: "Haruki Hamano", album: "",
+                                   duration: 0, lines: [LyricLine(timestamp: 0, originalText: "words")], isSynchronized: false,
+                                   source: .linkcore, confidence: 0.7)
+        XCTAssertNotEqual(LyricsSafeMatcher.decide(candidate: live, metadata: metadata).tier, .autoMedium)
     }
 
     func testSingerFromBandIsTheSinger() {

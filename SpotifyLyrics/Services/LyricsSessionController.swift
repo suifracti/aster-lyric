@@ -308,6 +308,7 @@ public final class LyricsSessionController: ObservableObject {
                         queryOverride: queryOverrideSnapshot,
                         forceRefresh: forceRefresh,
                         aliases: storedAliases,
+                        plainAlreadyHeld: retainsPlainCache && !reviewOnly,
                         onProvisional: { [weak self] document in
                             await MainActor.run { [weak self] in
                                 guard !suppressProvisional, !Task.isCancelled, let self, self.activeIdentity == identity, self.revision == requestRevision,

@@ -205,6 +205,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         metadata: TrackMetadata,
         variant: LyricsQueryVariant,
         collectCandidatesOnly: Bool = false,
+        waitsForTiming: Bool = false,
         onProvisional: (@Sendable (LyricsDocument) async -> Void)? = nil,
         onCandidates: (@Sendable ([LyricsCandidate]) async -> Void)? = nil
     ) async -> [ProviderProbeResult] {
@@ -275,7 +276,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
                             // work cannot keep the listening UI blocked.
                             settled = true
                             group.cancelAll()
-                        } else if let plainReady = automatic.min(by: { $0.index < $1.index }),
+                        } else if !waitsForTiming, let plainReady = automatic.min(by: { $0.index < $1.index }),
                                   precedingResolved(plainReady.index) {
                             startGrace()
                             enqueueNext()
@@ -397,6 +398,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         forceRefresh: Bool = false,
         aliases: [TrackAlias] = [],
         collectCandidatesOnly: Bool = false,
+        plainAlreadyHeld: Bool = false,
         onProvisional: (@Sendable (LyricsDocument) async -> Void)? = nil,
         onCandidates: (@Sendable ([LyricsCandidate]) async -> Void)? = nil,
         onlyProviders: Set<String>? = nil
@@ -528,9 +530,14 @@ public final class LyricsSearchManager: @unchecked Sendable {
                             LyricsE2ELog.log("SEARCH preview id=\(searchID) rank=\(variant.rank) elapsed=\(String(format: "%.3f", Date().timeIntervalSince(started)))s count=\(candidates.count)")
                             await onCandidates?(candidates)
                         }
+                        // With plain text already on screen this search exists to
+                        // find timestamps: another plain answer is no reason to
+                        // stop waiting for the slower sources (酷狗 is eighth and
+                        // was cut off by the 3 s grace on every retry).
                         var results = await Self.probeNetworkProviders(
                             track: probeTrack, identity: identity, providers: primary,
                             metadata: meta, variant: variant, collectCandidatesOnly: collectCandidatesOnly,
+                            waitsForTiming: plainAlreadyHeld,
                             onProvisional: onProvisional, onCandidates: publishCandidates)
                         if !Task.isCancelled, !supplements.isEmpty,
                            collectCandidatesOnly || !results.contains(where: { Self.hasAutomaticResult($0, metadata: meta, variant: variant) }) {
