@@ -1150,4 +1150,6 @@ The source statistics were read on 2026-11-15 rather than 11-18: nothing was lis
 
 - **流动 rendered without Spotify** (`Scripts/flow-snapshot.swift`: the bundled page off screen, fed a synthetic beat, canvas saved): the page loads, presets draw and follow the wave. One preset filled almost the whole frame with white, which would bury white lyrics even at half strength, so the canvas now has `filter: brightness(.65)`.
 
-**Still to be tried by hand:** 鼠标视差, Q/E and 收藏这句 — their logic is under unit tests; only the feel is left. 流动 inside the window with real sound.
+- 流动 checked in the real window with real sound (2026-11-15, LOVE & ROLL, playing): it follows the music, but the raw canvas laid grainy bands across the lyrics. The canvas is now blurred (14 px) and scaled 1.06 so its edges stay hidden, leaving a soft colour wash behind readable lyrics.
+
+**Still to be tried by hand:** 鼠标视差, Q/E and 收藏这句 — their logic is under unit tests; only the feel is left.
