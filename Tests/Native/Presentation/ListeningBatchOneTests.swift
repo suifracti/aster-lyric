@@ -654,6 +654,38 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertTrue(credit.tier == .autoMedium || credit.tier == .autoHigh, credit.reasons.joined(separator: ","))
     }
 
+    /// Timeless (feat. mahiru) by TakaseToya on Spotify is タイムレス (feat. 茉ひる)
+    /// by 高瀬統也, 茉ひる on NetEase, same length to the millisecond. Only the
+    /// timed NetEase copy has timestamps (2026-11-15, user report).
+    func testKatakanaLoanwordTitleAndKanjiNameAreTheSameRecording() {
+        func decideTimeless(_ cTitle: String, _ cArtist: String, _ cDuration: Double) -> LyricsMatchDecision {
+            let track = Track(title: "Timeless (feat. mahiru)", artist: "TakaseToya, 茉ひる", album: "LOVE-C", duration: 174.892)
+            var metadata = TrackMetadata.bootstrap(from: track)
+            metadata.verifiedSpotifyArtists = ["TakaseToya", "茉ひる"]
+            let lines = (0..<20).map { LyricLine(timestamp: Double(10 + $0 * 7), originalText: "歌詞 \($0)") }
+            let candidate = LyricsCandidate(id: "c", identity: TrackIdentity(track: track), title: cTitle, artist: cArtist,
+                album: "タイムレス", duration: cDuration, lines: lines, isSynchronized: true,
+                source: .neteaseExperimental, confidence: 0.8)
+            return LyricsSafeMatcher.decide(candidate: candidate, metadata: metadata)
+        }
+        let same = decideTimeless("タイムレス (feat. 茉ひる)", "高瀬統也, 茉ひる", 174.892)
+        XCTAssertEqual(same.tier, .autoMedium, same.reasons.joined(separator: ","))
+        XCTAssertTrue(same.reasons.contains("titleLoanwordReading"), same.reasons.joined(separator: ","))
+        // A longer version, another word or another singer stays out.
+        XCTAssertNotEqual(decideTimeless("タイムレス (feat. 茉ひる)", "高瀬統也, 茉ひる", 192).tier, .autoMedium)
+        XCTAssertEqual(decideTimeless("トゥモロー (feat. 茉ひる)", "高瀬統也, 茉ひる", 174.892).tier, .reject)
+        XCTAssertEqual(decideTimeless("タイムレス", "別の歌手", 174.892).tier, .reject)
+        XCTAssertNotEqual(decideTimeless("タイムレス (feat. 茉ひる)", "高瀬統也, 茉ひる", 174.5).tier, .autoMedium, "a guest alone needs the exact length")
+        XCTAssertEqual(decideTimeless("Timeless (feat. mahiru)", "別の人, 茉ひる", 174.892).tier, .autoMedium, "same title, credited guest, exact length")
+        XCTAssertNotEqual(decideTimeless("タイムレス (feat. 茉ひる) [LIVE TOUR 2024 Ver.]", "高瀬統也, 茉ひる", 174.892).tier, .autoMedium)
+
+        XCTAssertEqual(LyricsSafeMatcher.loanwordKey("Timeless"), LyricsSafeMatcher.loanwordKey("タイムレス"))
+        XCTAssertEqual(LyricsSafeMatcher.loanwordKey("Jump"), LyricsSafeMatcher.loanwordKey("ジャンプ"))
+        XCTAssertEqual(LyricsSafeMatcher.loanwordKey("Seventeen"), LyricsSafeMatcher.loanwordKey("セブンティーン"))
+        XCTAssertNotEqual(LyricsSafeMatcher.loanwordKey("Timeless"), LyricsSafeMatcher.loanwordKey("トゥモロー"))
+        XCTAssertNil(LyricsSafeMatcher.loanwordKey("夜に駆ける"), "only katakana or Latin words have a loanword key")
+    }
+
     func testSingerFromBandIsTheSinger() {
         XCTAssertEqual(TrackTextNormalizer.fromArtistNames("suis from Yorushika"), ["suis"])
         XCTAssertTrue(TrackTextNormalizer.fromArtistNames("Yorushika").isEmpty)

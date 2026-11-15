@@ -34,6 +34,7 @@
 | 某个来源一段时间连着超时/503、每首新歌都卡几秒、来源顺序要不要按统计调 | L-035；LyricsSourceHealth、LyricsSearchManager supplements |
 | 在窗口边缘拖进度会变成缩放窗口、进度线靠近时下移不好看、胶囊和工具栏像两套控件、画面面板底部被截断 | L-015；V3EdgePillScrubber、V3ControlBarSurface、V3ThemeSelectorView |
 | 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
+| 英文歌名对片假名歌名（Timeless/タイムレス）、汉字人名读不出、别人有时间轴我们只有纯文本 | L-036；LyricsSafeMatcher.loanwordKey、titleLoanwordReading、durationExact、featuredArtistExactLength |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
 
 ## 默认自动执行：不等用户提醒
@@ -482,4 +483,15 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
   - 它任何一次正常回答（包括「没找到」「解析失败」）都立刻结束休息；取消不算数。
   - 现在播放、预览、预载、补全四处共用 `.shared`；启动时回放统计文件最后 15 分钟（跳过 0 秒的复用记录），重启后仍记得正在出的故障。测试各用新实例，互不影响。日志里有 `SEARCH resting`。
 - **覆盖**：`LyricsSourceHealthTests` 4 项（连续失败与恢复、只算真故障、从统计文件恢复、休息中的来源不被等待但最后仍会被问）。完整原生 200 项：第一次跑出 1 个失败，没能定位是哪项；之后连续 4 次全部通过（1 跳过）。改动后在真实 App 里看过一次正常找词，但没有遇到真实故障，休息这一路只有单元测试证据。
+
+## L-036 外来语歌名与毫秒级同长（2026-11-15）
+
+- **用户报告**：Timeless (feat. mahiru)／TakaseToya 只有 LRCLIB 纯文本，别的 App 有时间轴。网易其实有「タイムレス (feat. 茉ひる)」／高瀬統也, 茉ひる，时长 174.892 秒，与 Spotify 一模一样，却因 `titleMismatch` 和 `featuredArtistOnly` 被拒。
+- **人名读音靠不住**：MeCab 把「統也」读成 みつる＋未知字。人名的训读本来就猜不准，不要指望靠读音去对汉字人名和罗马字人名。
+  - 这次顺带让 `artistsHaveSameReading` 能对上「连写 vs 分写」（TakaseToya / Takase Toya），但这首歌靠的不是它。
+- **新规则**：
+  - `titleLoanwordReading`：英文歌名对片假名歌名，用 `loanwordKey` 比较：只留辅音；l/r、v/b、m/n、th/s 合并；英文里写成长音的 r、w 去掉；至少 3 个辅音。这个比较很宽，单靠它最多只到「候选」。要自动采用，还得同一歌手（或下一条）、时长 ≤2 秒、无版本冲突，而且最多只到较低的自动档。
+  - `durationExact`（≤0.05 秒）＋客串歌手在署名里＋歌名一致或外来语一致 → `featuredArtistExactLength`，进较低的自动档。同长到毫秒，说明两家用的是同一份母带。伴奏版常常也同长，但带版本词，会被版本冲突挡住。
+- **已存纯文本会自己升级**：自动采用的纯文本（非用户锁定）再次加载时会再搜一次带时间轴的版本；带时间轴的排在纯文本前面（`bestAutomaticAdoption` 先比 timingPriority）。所以修完规则后，重启 App 或下次播放就会换掉，不用动数据库。实测重启后 2.2 秒换成网易逐行版。
+- **偶发失败**：`FloatingLyricsPresentationTests` 拿真实 NSCache 验证「换回原键能取回旧值」，但 NSCache 随时可能清掉内容，所以偶尔失败。L-035 那次没定位到的失败就是它。已改成直接比较缓存键的相等与哈希。
 

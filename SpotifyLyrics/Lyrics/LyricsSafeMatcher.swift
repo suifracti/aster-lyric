@@ -208,6 +208,11 @@ public enum LyricsSafeMatcher {
             add("tempoBaseTitleExact", 0.24)
         } else if manualTitleMatches {
             add("manualTitleMatch", 0.20)
+        } else if titlesAreLoanwordPair(candidate.title, metadata.track.title) {
+            // Timeless / タイムレス: an English title and its katakana
+            // spelling. Sound-alike keys are loose, so this alone never
+            // adopts; see the cap below.
+            add("titleLoanwordReading", 0.24)
         } else if !candidateTitle.isEmpty,
                   !metadataTitle.isEmpty,
                   (candidateTitle.contains(metadataTitle) || metadataTitle.contains(candidateTitle)) {
@@ -377,6 +382,9 @@ public enum LyricsSafeMatcher {
             let difference = abs(metadataDuration - candidateDuration)
             if difference <= 2 {
                 add("durationClose", 0.12)
+                // Same length to the millisecond: both stores carry the
+                // same master. Recorded for the featured-artist rule below.
+                if difference <= 0.05 { add("durationExact", 0) }
             } else if difference <= 5 {
                 add("durationNear", 0.06)
             } else if difference <= 15 {
@@ -433,7 +441,7 @@ public enum LyricsSafeMatcher {
         func constrainSpotifyCreditedArtistReading(_ tier: LyricsMatchTier) -> LyricsMatchTier {
             guard reasons.contains("spotifyCreditedArtistReadingExact") else { return tier }
             let exactTitle = reasons.contains("titleExact") || reasons.contains("titleTypographyExact")
-                || exactSpotifyTitleAliasMatchesCandidate
+                || exactSpotifyTitleAliasMatchesCandidate || reasons.contains("titleLoanwordReading")
             guard exactTitle, reasons.contains("durationClose"), !versionConflict, !hardReject else {
                 return Self.minTier(tier, .candidates)
             }
@@ -537,7 +545,17 @@ public enum LyricsSafeMatcher {
             let titleEvidence = reasons.contains("titleExact")
                 || reasons.contains("titleAliasConfirmed")
                 || reasons.contains("titleAliasQuery")
-            tier = titleEvidence && score >= 0.10 ? .candidates : .reject
+            // 高瀬統也 cannot be read reliably (given names rarely can), but a
+            // credited guest, the same title and the same length to the
+            // millisecond leave no other recording.
+            let sameTitle = reasons.contains("titleExact") || reasons.contains("titleTypographyExact")
+                || reasons.contains("titleLoanwordReading")
+            if sameTitle && reasons.contains("durationExact") && !reasons.contains("lyricsEndOvershoot") {
+                tier = .autoMedium
+                add("featuredArtistExactLength", 0)
+            } else {
+                tier = titleEvidence && score >= 0.10 ? .candidates : .reject
+            }
         } else if queryVariant?.queryKind == .manualOverride {
             // Manual recovery may present a title-matching alternative even
             // when localized artist names differ. It never becomes automatic;
@@ -572,6 +590,11 @@ public enum LyricsSafeMatcher {
 
         if reasons.contains("titleParallelExact") || reasons.contains("titleLatinSpacingExact") {
             tier = minTier(tier, metadataPrimaryMatches && reasons.contains("durationClose") ? .autoMedium : .candidates)
+        }
+        if reasons.contains("titleLoanwordReading") && !hasStrongIndependentIdentity {
+            let sameSinger = metadataPrimaryMatches || metadataPrimaryReadingMatches || spotifyCreditedArtistReadingMatches
+                || reasons.contains("featuredArtistExactLength")
+            tier = minTier(tier, sameSinger && reasons.contains("durationClose") && !versionConflict ? .autoMedium : .candidates)
         }
         if reasons.contains("shortTitleReading") && !hasStrongIndependentIdentity {
             tier = minTier(tier, metadataPrimaryMatches && reasons.contains("durationClose") ? .autoMedium : .candidates)
@@ -812,8 +835,58 @@ public enum LyricsSafeMatcher {
 
         let left = readingTokens(lhs) ?? normalizedTokens(lhs)
         let right = readingTokens(rhs) ?? normalizedTokens(rhs)
-        guard let left, let right, left.count == right.count, !left.isEmpty else { return false }
-        return left == right
+        guard let left, let right, !left.isEmpty, !right.isEmpty else { return false }
+        if left.count == right.count, left.sorted() == right.sorted() { return true }
+        // TakaseToya / 高瀬 統也: one side writes the name as one word.
+        // Compare the whole name in either order, never a part of it.
+        let leftJoined = left.joined(), rightJoined = right.joined()
+        guard leftJoined.count >= 4 else { return false }
+        return leftJoined == rightJoined || leftJoined == right.reversed().joined()
+    }
+
+    /// Spotify writes an English title, the provider its katakana spelling.
+    /// Guest names inside the title are left to the artist checks: the
+    /// same guest is often written mahiru on one side and 茉ひる on the other.
+    private static func titlesAreLoanwordPair(_ lhs: String, _ rhs: String) -> Bool {
+        func base(_ title: String) -> String {
+            title.replacingOccurrences(of: #"[（(]\s*(?:feat\.?|ft\.?|featuring)\s+[^）)]+[）)]"#, with: "", options: [.regularExpression, .caseInsensitive])
+                .replacingOccurrences(of: #"\s+(?:feat\.?|ft\.?|featuring)\s+[^()（）]+$"#, with: "", options: [.regularExpression, .caseInsensitive])
+        }
+        let left = base(lhs), right = base(rhs)
+        func isKatakana(_ text: String) -> Bool {
+            text.unicodeScalars.contains { (0x30A0...0x30FF).contains($0.value) }
+        }
+        // One Latin and one katakana title; two Latin titles are not loanwords.
+        guard isKatakana(left) != isKatakana(right),
+              let leftKey = loanwordKey(left), let rightKey = loanwordKey(right) else { return false }
+        return leftKey == rightKey
+    }
+
+    /// A rough sound key shared by an English word and its katakana
+    /// spelling: consonants only, with the sounds katakana merges (l/r, v/b,
+    /// m/n, th/s…) folded together and the English r and w that katakana
+    /// writes as a long vowel dropped. Needs three consonants or more.
+    static func loanwordKey(_ raw: String) -> String? {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let scalars = text.unicodeScalars.filter { !CharacterSet.whitespaces.contains($0) }
+        guard !scalars.isEmpty, text.count <= 64 else { return nil }
+        let katakana = scalars.allSatisfy { (0x30A0...0x30FF).contains($0.value) }
+        let latin = scalars.allSatisfy { $0.isASCII && (CharacterSet.letters.contains($0) || "'-".unicodeScalars.contains($0)) }
+        guard katakana || latin else { return nil }
+        var sound = (katakana ? JapaneseRomanizer.romanize(text) : text).lowercased().filter { $0.isASCII && $0.isLetter }
+        func replace(_ pattern: String, _ with: String) {
+            sound = sound.replacingOccurrences(of: pattern, with: with, options: .regularExpression)
+        }
+        if latin {
+            replace("ph", "f"); replace("gh", ""); replace("ck", "k"); replace("c(?=[eiy])", "s"); replace("c", "k")
+            replace("q", "k"); replace("x", "ks"); replace("th", "s"); replace("wh", "w")
+            replace("(?<=[aeiouy])r(?![aeiouy])", ""); replace("w(?![aeiouy])", "")
+        }
+        replace("sh", "s"); replace("ch", "t"); replace("ts", "t"); replace("l", "r"); replace("v", "b")
+        replace("z", "s"); replace("m", "n")
+        replace("[aeiouyh]", "")
+        replace("(.)\\1+", "$1")
+        return sound.count >= 3 ? sound : nil
     }
 
     private static func featuredBaseTitle(_ title: String) -> String {

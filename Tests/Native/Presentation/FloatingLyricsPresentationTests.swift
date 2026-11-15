@@ -57,16 +57,15 @@ final class FloatingLyricsPresentationTests: XCTestCase {
             "primary and companion strings must not alias through a delimiter"
         )
 
-        let widthProbe = NSCache<FloatingEstimatedLineWidthCacheKey, NSNumber>()
-        widthProbe.setObject(NSNumber(value: 1), forKey: shortWidthKey)
-        XCTAssertTrue(widthProbe.object(forKey: widthKey(rubyTokens: longTokens)) == nil)
-        widthProbe.setObject(NSNumber(value: 2), forKey: widthKey(rubyTokens: longTokens))
-        XCTAssertTrue(widthProbe.object(forKey: widthKey(rubyTokens: shortTokens))?.intValue == 1, "A-to-B-to-A width key reuse must restore A")
-        let fitProbe = NSCache<FloatingFittedFontSizeCacheKey, NSNumber>()
-        fitProbe.setObject(NSNumber(value: 34), forKey: shortFitKey)
-        XCTAssertTrue(fitProbe.object(forKey: fitKey(rubyTokens: longTokens)) == nil)
-        fitProbe.setObject(NSNumber(value: 14), forKey: fitKey(rubyTokens: longTokens))
-        XCTAssertTrue(fitProbe.object(forKey: fitKey(rubyTokens: shortTokens))?.intValue == 34, "A-to-B-to-A fit key reuse must restore A")
+        // NSCache may evict at any moment, so probing a real cache made this
+        // check flaky (2026-11-15). The A-to-B-to-A guarantee is key identity:
+        // A rebuilt after B must equal the first A and hash the same.
+        let rebuiltWidthKey = widthKey(rubyTokens: shortTokens)
+        XCTAssertTrue(!shortWidthKey.isEqual(widthKey(rubyTokens: longTokens)))
+        XCTAssertTrue(shortWidthKey.isEqual(rebuiltWidthKey) && shortWidthKey.hash == rebuiltWidthKey.hash, "A-to-B-to-A width key reuse must restore A")
+        let rebuiltFitKey = fitKey(rubyTokens: shortTokens)
+        XCTAssertTrue(!shortFitKey.isEqual(fitKey(rubyTokens: longTokens)))
+        XCTAssertTrue(shortFitKey.isEqual(rebuiltFitKey) && shortFitKey.hash == rebuiltFitKey.hash, "A-to-B-to-A fit key reuse must restore A")
 
         #if canImport(AppKit)
         let shortRubyWidth = FloatingDesktopTypography.estimatedLineWidth(
