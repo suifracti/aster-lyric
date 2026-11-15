@@ -99,7 +99,7 @@ There is no lyric bar; the user removed it on 2026-10-21. Every setting lives in
 
 **Nothing is removed.** Every control that was in a toolbar panel before 2026-10-20 stays reachable from its panel, folding into a collapsed section where needed. The settings window may show them as well.
 
-**Moved to the settings window:** 翻译服务 login and connection details (the model picker stays in 译文), 恢复此风格的默认值, and every explanatory paragraph.
+**Moved to the settings window:** 翻译服务 login and connection details (keys, endpoints), 恢复此风格的默认值, and every explanatory paragraph. The choice of service itself is back in 译文 (2026-11-15, user request "想用 api"): 翻译服务, then API (自定义兼容 / DeepSeek) or 连接方式 (Gemini / Antigravity) when that service has several, and for an API service a 「在设置中填写…」 row that opens Settings → AI 翻译. Switching keeps each service's own model.
 
 **Removed from 更多:** 「歌词版本」, which 歌词库 now covers.
 
@@ -295,7 +295,7 @@ A control never appears on both sides. Where the other side used to have it, sho
 |---|---|---|
 | 显示原文 / 译文 / 罗马音 / 拼音 | Toolbar 文字 / 译文 | Settings 歌词与翻译 and 读音; the current-song operations panel |
 | 注音排版 (kana mode), 远处歌词隐藏辅助读音 | Toolbar 文字 | Settings 读音 (it keeps only the user dictionary; 假名替换 is one of the kana modes and moves with 注音排版); the current-song operations panel |
-| AI 模型, 思考强度 | Toolbar 译文 | Settings AI 翻译 (it keeps service, key, endpoint and personal style) |
+| 翻译服务, AI 模型, 思考强度 | Toolbar 译文 | Settings AI 翻译 (it keeps service, key, endpoint and personal style) |
 | 新歌词自动翻译 | Toolbar 译文 | Settings 歌词与翻译 |
 | 菜单栏歌词 on/off | Toolbar 更多 | Settings 外观 (it keeps the window's appearance details) |
 | 场景悬停预览 | Toolbar 画面 | Settings |

@@ -1749,6 +1749,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
             }
             V3PanelSection(title: "服务")
+            TranslationProviderControls(settings: settings).serviceRows
+            if TranslationProviderControls(settings: settings).needsConnectionSettings {
+                V3PanelRow(title: settings.aiTranslationConfiguration.isConfigured ? "接口与密钥" : "未填接口或模型") {
+                    Button("在设置中填写…") { openAISettings() }
+                        .buttonStyle(.borderless).controlSize(.small)
+                }
+            }
             TranslationProviderControls(settings: settings).modelRow
             TranslationProviderControls(settings: settings).reasoningRow
             if displaysAIReadingControls {

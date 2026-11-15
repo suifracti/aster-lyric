@@ -1001,6 +1001,44 @@ struct TranslationProviderControls: View {
         }
     }
 
+    /// Tool-panel form of the service choice. Switching keeps each service's
+    /// own model and settings; keys and endpoints stay in Settings.
+    var serviceRows: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            V3PanelRow(title: "翻译服务") {
+                Picker("翻译服务", selection: Binding(get: { family }, set: { settings.selectTranslationProvider($0) })) {
+                    ForEach(TranslationEngineCatalog.selectable, id: \.stableID) { engine in
+                        Text(engine.displayName).tag(engine.stableID)
+                    }
+                }
+                .pickerStyle(.menu).labelsHidden().fixedSize()
+                .accessibilityIdentifier("ai.service")
+            }
+            if family == TranslationEngineID.openAICompatible.rawValue {
+                V3PanelRow(title: "API") {
+                    Picker("API 服务", selection: backendBinding) {
+                        Text("自定义兼容 API").tag(TranslationEngineID.openAICompatible.rawValue)
+                        Text("DeepSeek API").tag(TranslationEngineID.deepSeekAPI.rawValue)
+                    }
+                    .pickerStyle(.menu).labelsHidden().fixedSize()
+                }
+            } else if family == TranslationEngineID.geminiCLI.rawValue {
+                V3PanelRow(title: "连接方式") {
+                    Picker("连接方式", selection: backendBinding) {
+                        Text("Gemini CLI").tag(TranslationEngineID.geminiCLI.rawValue)
+                        Text("Antigravity CLI").tag(TranslationEngineID.antigravityCLI.rawValue)
+                    }
+                    .pickerStyle(.menu).labelsHidden().fixedSize()
+                }
+            }
+        }
+    }
+
+    /// API services need an endpoint and a key, which only Settings holds.
+    var needsConnectionSettings: Bool {
+        family == TranslationEngineID.openAICompatible.rawValue
+    }
+
     var reasoningRow: some View {
         V3PanelRow(title: "思考强度") {
             reasoningPicker.pickerStyle(.menu).labelsHidden().fixedSize()
