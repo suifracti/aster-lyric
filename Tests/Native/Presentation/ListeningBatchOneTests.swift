@@ -622,12 +622,14 @@ final class ListeningBatchOneTests: XCTestCase {
     // MARK: Artist written another way (2026-11-15 source re-read)
 
     private func decide(track title: String, _ artist: String, _ duration: Double,
-                        candidate cTitle: String, _ cArtist: String, _ cDuration: Double) -> LyricsMatchDecision {
+                        candidate cTitle: String, _ cArtist: String, _ cDuration: Double,
+                        aliases: [String] = []) -> LyricsMatchDecision {
         let track = Track(title: title, artist: artist, album: "", duration: duration)
         let identity = TrackIdentity(track: track)
         let lines = [LyricLine(timestamp: 10, originalText: "line one"), LyricLine(timestamp: max(20, cDuration - 30), originalText: "line two")]
         let candidate = LyricsCandidate(id: "c", identity: identity, title: cTitle, artist: cArtist, album: "",
-                                        duration: cDuration, lines: lines, source: .neteaseExperimental, confidence: 0.8)
+                                        duration: cDuration, lines: lines, source: .neteaseExperimental, confidence: 0.8,
+                                        declaredTitleAliases: aliases)
         return LyricsSafeMatcher.decide(candidate: candidate, metadata: TrackMetadata.bootstrap(from: track))
     }
 
@@ -710,6 +712,46 @@ final class ListeningBatchOneTests: XCTestCase {
         let wholeSecond = decide(track: "ルミネセンス", "Lovely Summer Chan", 305.02, candidate: "ルミネセンス", "ラブリーサマーちゃん", 305.0)
         XCTAssertNotEqual(wholeSecond.tier, .autoMedium, wholeSecond.reasons.joined(separator: ","))
         XCTAssertNotEqual(decide(track: "Stay with me", "TakaseToya", 222.62, candidate: "Stay with Me", "裘德", 223.0).tier, .autoMedium)
+    }
+
+    func testReleaseCreditsGuestNamesAndExplicitTagDoNotBlockAdoption() {
+        // Provider lists the whole release credit; Spotify shows the singer.
+        let distance = decide(track: "Distance", "茉ひる", 175.125, candidate: "ディスタンス", "茉ひる、RINZO、VILLSHANA", 175.0)
+        XCTAssertEqual(distance.tier, .autoMedium, distance.reasons.joined(separator: ","))
+        let night = decide(track: "kimitoauyoru", "茉ひる", 162.4, candidate: "君と会う夜", "茉ひる、RINZO", 162.0)
+        XCTAssertEqual(night.tier, .autoMedium, night.reasons.joined(separator: ","))
+        // A guest written under two names is still the guest in the title.
+        let oracle = decide(track: "oracle (feat. nayuta) - Mwk Remix", "Room97", 203.4,
+                            candidate: "oracle (feat. nayuta) (Mwk Remix)", "Room97, nayuta (葉月なの)", 203.0)
+        XCTAssertEqual(oracle.tier, .autoMedium, oracle.reasons.joined(separator: ","))
+        let curse = decide(track: "you are my curse", "nyamura", 140.086, candidate: "you are my curse (Explicit)", "nyamura", 140.0)
+        XCTAssertTrue(curse.tier == .autoMedium || curse.tier == .autoHigh, curse.reasons.joined(separator: ","))
+
+        // Still kept for review: a different singer, a clean edit, a
+        // guest version far from the length, an instrumental.
+        XCTAssertNotEqual(decide(track: "Distance", "茉ひる", 175.125, candidate: "ディスタンス", "RINZO、茉ひる", 175.0).tier, .autoMedium)
+        XCTAssertNotEqual(decide(track: "you are my curse", "nyamura", 140.086, candidate: "you are my curse (Clean)", "nyamura", 140.0).tier, .autoMedium)
+        XCTAssertNotEqual(decide(track: "kimitoauyoru", "茉ひる", 162.4, candidate: "君と会う夜", "茉ひる、RINZO", 171.0).tier, .autoMedium)
+        XCTAssertNotEqual(decide(track: "忘れてやらない", "結束バンド", 223.4, candidate: "忘れてやらない (纯音乐)", "結束バンド", 223.0).tier, .autoMedium)
+    }
+
+    func testTranslatedTitleAtTheSameMasterLength() {
+        let again = decide(track: "Again - Sped Up Ver.", "stb", 185.504, candidate: "もう一度 (Sped Up Ver.)", "stb, NEA", 185.504)
+        XCTAssertEqual(again.tier, .autoMedium, again.reasons.joined(separator: ","))
+        let noise = decide(track: "the NOISE (Contains a Samples of 夜に駆ける)", "LE SSERAFIM", 224.28,
+                           candidate: "the NOISE (Contains a Samples of Into The Night)", "LE SSERAFIM, YOASOBI", 224.28)
+        XCTAssertEqual(noise.tier, .autoMedium, noise.reasons.joined(separator: ","))
+        // Stores differ by a few hundredths for one master.
+        let mayday = decide(track: "Mayday", "Tsukuyomi", 202.933, candidate: "メデ", "月詠み", 202.988, aliases: ["Mayday"])
+        XCTAssertEqual(mayday.tier, .autoMedium, mayday.reasons.joined(separator: ","))
+
+        // Whole seconds, a backing track, a sped-up cut against the original,
+        // another singer: still not adopted.
+        XCTAssertNotEqual(decide(track: "不够", "橙汁", 200.071, candidate: "千度雪寻", "橙汁", 200.0).tier, .autoMedium)
+        XCTAssertNotEqual(decide(track: "听悲伤的情歌 - 女版", "一口甜", 198.02, candidate: "听悲伤的情歌 (伴奏)", "一口甜", 198.02).tier, .autoMedium)
+        XCTAssertNotEqual(decide(track: "Again", "stb", 185.504, candidate: "もう一度 (Sped Up Ver.)", "stb", 185.504).tier, .autoMedium)
+        XCTAssertNotEqual(decide(track: "Again", "stb", 185.504, candidate: "もう一度", "Another Singer", 185.504).tier, .autoMedium)
+        XCTAssertNotEqual(decide(track: "Again", "stb", 185.504, candidate: "もう一度", "stb", 185.904).tier, .autoMedium)
     }
 
     func testSingerFromBandIsTheSinger() {

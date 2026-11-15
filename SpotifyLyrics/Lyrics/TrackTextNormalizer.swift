@@ -276,6 +276,11 @@ public enum TrackTextNormalizer {
         }
         if title.contains("リミックス"), !tags.contains(.remix) { tags.append(.remix) }
         if title.contains("インスト"), !tags.contains(.instrumental) { tags.append(.instrumental) }
+        // 伴奏 / 纯音乐 / オフボーカル: the backing track, same length as the song.
+        if ["伴奏", "纯音乐", "純音楽", "オフボーカル"].contains(where: title.contains), !tags.contains(.instrumental) {
+            tags.append(.instrumental)
+        }
+        if title.contains("カラオケ"), !tags.contains(.karaoke) { tags.append(.karaoke) }
         if title.contains("カバー"), !tags.contains(.cover) { tags.append(.cover) }
         if title.contains("リマスター"), !tags.contains(.remaster) { tags.append(.remaster) }
         if title.contains("映画") || title.contains("電影") || title.contains("劇場") || title.contains("剧场"),

@@ -35,6 +35,7 @@
 | 在窗口边缘拖进度会变成缩放窗口、进度线靠近时下移不好看、胶囊和工具栏像两套控件、画面面板底部被截断 | L-015；V3EdgePillScrubber、V3ControlBarSurface、V3ThemeSelectorView |
 | 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
 | 英文歌名对片假名歌名（Timeless/タイムレス）、汉字人名读不出、别人有时间轴我们只有纯文本 | L-036；LyricsSafeMatcher.loanwordKey、titleLoanwordReading、durationExact、featuredArtistExactLength |
+| 停在「核对歌词版本」：多出合作署名、双名客串、(Explicit)、翻译歌名但同母带、伴奏同长 | L-037；promoteSameMaster、sameMasterTolerance、TrackTextNormalizer 伴奏标记 |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
 
 ## 默认自动执行：不等用户提醒
@@ -499,7 +500,26 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
   - 读音比较先去掉标点（Riria.／りりあ。）。
   - 罗马字歌名省略长音也算同读（resukyumi-!／れすきゅみー！）。
 - **毫秒级同长只认带毫秒的时长**：酷狗等来源只给整秒。184.0 秒对 184.03 秒只是凑巧；翻唱常用原伴奏，长度几乎一样。`durationExact` 和 `primaryArtistOtherScriptExactLength` 都要求候选时长不是整数秒。
-- **不做的**：翻译过的歌名（Starry Sea／星降る海）无法和「同一歌手、时长相近的另一首歌」区分开。重查里就有「星街の駅で」对上「零-zero-」、「不够」对上「千度雪寻」，所以这类继续留给核对。
+- **不做的**：翻译过的歌名（Starry Sea／星降る海）无法和「同一歌手、时长相近的另一首歌」区分开（L-037 只放行了毫秒级同长的情况）。重查里就有「星街の駅で」对上「零-zero-」、「不够」对上「千度雪寻」，所以这类继续留给核对。
 - **来源时有时无**：网易上同一首「Stay with me」，一次返回、一次「没找到」。不要只凭一次查询就断定某个来源没有。
 - **偶发失败**：`FloatingLyricsPresentationTests` 拿真实 NSCache 验证「换回原键能取回旧值」，但 NSCache 随时可能清掉内容，所以偶尔失败。L-035 那次没定位到的失败就是它。已改成直接比较缓存键的相等与哈希。
+
+## L-037 核对页里证据已够的歌（2026-11-15）
+
+- **方法**：上一轮在线重查后，仍有 125 首没自动选上（核对页 12、纯文本 45、没找到的约 60）。再用当前代码在线逐个列出未被自动采用的候选和原因。这次没有写正式库，临时探针用完已删。
+- **放行的四类**（都最多只到较低的自动档）：
+  - **来源多列了合作署名**：歌名靠读音或外来语对上（君と会う夜／kimitoauyoru、ディスタンス／Distance），歌手一致、时长 ≤2 秒，就算同一首。歌名完全一致时原本就这样处理。
+  - **客串用双名**：`nayuta (葉月なの)` 用括号里外任一个名字都能对上标题里的 feat.。
+  - **(Explicit)**：只是内容标记，比较歌名时忽略。(Clean) 是另剪的版本，不忽略。
+  - **翻译歌名＋同一份母带**（`promoteSameMaster`）：同一歌手（一致或读音一致），时长差 ≤0.1 秒且候选时长带毫秒，版本标记相同，带时间轴且最后一句落在歌曲之内，就采用，即使歌名被翻译过。
+    - 例子：もう一度 (Sped Up Ver.)／Again - Sped Up Ver.，the NOISE 括号里被采样的歌名被翻译。
+    - 毫秒容差从 0.05 放宽到 0.1（`sameMasterTolerance`）：月詠み「メデ」在网易是 202.988 秒，Spotify 是 202.933 秒。另名写法规则（`primaryArtistOtherScriptExactLength`）同时接受来源自己声明的歌名别名，所以 春めくことば／Spring Words、メデ／Mayday 都能对上。
+- **伴奏**：同一份母带的伴奏版长度一模一样。「伴奏、纯音乐、純音楽、オフボーカル」此前没有被标成伴奏，现已补上，「カラオケ」也标成卡拉 OK。带这些标记的候选永远不会因为同长被放行。
+- **仍留给核对或不采用的**：
+  - 整秒时长：不够／千度雪寻（200.0 秒）。
+  - 时长差几秒的翻唱或 Live（VITA 演唱会版）。
+  - 弾き語り 版（时长差 0.36 秒，算不上同一份母带）。
+  - 同名不同歌手：网易用「Mayday」搜到五月天「如果我们不曾相遇」（202.388 秒），被拒。
+- **实测**：用真实搜索流程，Distance、君と会う夜、oracle (Mwk Remix) 从核对或没词变成自动选中带时间轴的版本。网易单查时 春めくことば、メデ 判为自动采用，但连查第二次全部返回「没找到」，那次搜索只拿到 LRCLIB 纯文本。之后再次加载时会自动升级（L-036）。
+- **网易限流**：短时间连续查询后，网易返回 noMatch 而不是错误，来源健康记录（L-035）把它当正常回答。要改得先有统计证据，不要凭一次现象去改。
 

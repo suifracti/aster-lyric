@@ -61,6 +61,10 @@ public struct LyricsMatchDecision: Equatable, Sendable {
 }
 
 public enum LyricsSafeMatcher {
+    /// Two stores encoding the same master report lengths a few hundredths
+    /// of a second apart (月詠み's メデ: 202.988 against 202.933).
+    static let sameMasterTolerance: TimeInterval = 0.1
+
     public static func evidenceCeiling(forAliasSource source: TrackAliasSource) -> LyricsMatchTier {
         switch source {
         case .machineGenerated:
@@ -295,9 +299,9 @@ public enum LyricsSafeMatcher {
             creditedArtist = true
             add("primaryArtistInCredits", 0.24)
         } else if (reasons.contains("titleExact") || reasons.contains("titleTypographyExact")
-                    || reasons.contains("titleLoanwordReading")),
+                    || reasons.contains("titleLoanwordReading") || reasons.contains("titleProviderAliasConfirmed")),
                   metadata.track.duration > 0, candidate.duration > 0,
-                  abs(metadata.track.duration - candidate.duration) <= 0.05,
+                  abs(metadata.track.duration - candidate.duration) <= Self.sameMasterTolerance,
                   candidate.duration.rounded() != candidate.duration,
                   metadataArtists.contains(where: { Self.namesInDifferentScripts($0.primary, candidateArtists.primary) }) {
             // Given names in kanji cannot be read reliably (統也 came out as
@@ -327,10 +331,15 @@ public enum LyricsSafeMatcher {
             let expectedFeatured = Set(((metadataGroup?.featured ?? []) + titleGuests)
                 .map(TrackTextNormalizer.nameReadingKey).filter { !$0.isEmpty })
             let candidateTitleGuests = declaredFeaturedArtists(in: candidate.title)
-            let actualFeatured = Set(((candidateArtists.featured) + candidateTitleGuests)
-                .map(TrackTextNormalizer.nameReadingKey).filter { !$0.isEmpty })
+            // `nayuta (葉月なの)` is one guest under two names; either name
+            // answers for her.
+            let actualGuestNames: [Set<String>] = (candidateArtists.featured + candidateTitleGuests).map { name in
+                let names = TrackTextNormalizer.parentheticalArtistNames(name)
+                return Set(([name] + names).map(TrackTextNormalizer.nameReadingKey).filter { !$0.isEmpty })
+            }.filter { !$0.isEmpty }
+            let actualFeatured = Set(actualGuestNames.flatMap { $0 })
             let missing = expectedFeatured.subtracting(actualFeatured)
-            let extra = actualFeatured.subtracting(expectedFeatured)
+            let extra = Set(actualGuestNames.filter { $0.isDisjoint(with: expectedFeatured) }.compactMap(\.first))
 
             if missing.isEmpty && extra.isEmpty && !expectedFeatured.isEmpty {
                 add("featuredArtistsExact", 0.06)
@@ -352,7 +361,10 @@ public enum LyricsSafeMatcher {
                         && candidateFeaturedInTitle.isEmpty && metadataFeaturedInTitle.isEmpty
                         && metadata.verifiedSpotifyArtists.isEmpty
                         && (reasons.contains("titleExact") || reasons.contains("titleTypographyExact")
-                            || reasons.contains("titleProducerCreditExact"))
+                            || reasons.contains("titleProducerCreditExact")
+                            // 君と会う夜 / kimitoauyoru, ディスタンス / Distance:
+                            // these reasons cap the tier at autoMedium anyway.
+                            || reasons.contains("titleReadingExact") || reasons.contains("titleLoanwordReading"))
                         && metadata.track.duration.isFinite && candidate.duration.isFinite
                         && metadata.track.duration > 0 && candidate.duration > 0
                         && abs(metadata.track.duration - candidate.duration) <= 2
@@ -402,7 +414,7 @@ public enum LyricsSafeMatcher {
                 // Kugou and others give whole seconds; 184.0 against 184.03
                 // is luck, not the same master, so only a length with its
                 // own milliseconds counts.
-                if difference <= 0.05, candidateDuration.rounded() != candidateDuration { add("durationExact", 0) }
+                if difference <= Self.sameMasterTolerance, candidateDuration.rounded() != candidateDuration { add("durationExact", 0) }
             } else if difference <= 5 {
                 add("durationNear", 0.06)
             } else if difference <= 15 {
@@ -464,6 +476,23 @@ public enum LyricsSafeMatcher {
                 return Self.minTier(tier, .candidates)
             }
             return Self.minTier(tier, .autoMedium)
+        }
+
+        // もう一度 (Sped Up Ver.) for "Again - Sped Up Ver.", the NOISE with
+        // the sampled song's title translated: the title was translated, but
+        // the singer is the same and the store reports the same length to the
+        // hundredth of a second. That is the same master. The backing track
+        // is the one same-length recording without the words, so anything
+        // marked as one is left out, and the timed lines must fit the song.
+        func promoteSameMaster(_ tier: LyricsMatchTier) -> LyricsMatchTier {
+            guard tier == .candidates || tier == .reject, !hardReject, !versionConflict,
+                  metadataPrimaryMatches || metadataPrimaryReadingMatches,
+                  reasons.contains("durationExact"), reasons.contains("lyricsEndFits"),
+                  candidate.isSynchronized, metadataTags == candidateTags,
+                  !candidateTags.contains(.instrumental), !candidateTags.contains(.karaoke)
+            else { return tier }
+            add("sameMasterLength", 0)
+            return .autoMedium
         }
 
         if let queryVariant {
@@ -537,6 +566,9 @@ public enum LyricsSafeMatcher {
             }
             if creditedArtist && !hasStrongIndependentIdentity {
                 tier = Self.minTier(tier, versionConflict ? .candidates : .autoMedium)
+            }
+            if queryVariant?.queryKind != .manualOverride && queryVariant?.queryKind != .titleOnlyLoose {
+                tier = promoteSameMaster(tier)
             }
             return LyricsMatchDecision(
                 tier: tier,
@@ -639,6 +671,9 @@ public enum LyricsSafeMatcher {
             tier = .autoMedium
             add("versionNameSameRecording", 0.04)
         }
+        if queryVariant?.queryKind != .manualOverride && queryVariant?.queryKind != .titleOnlyLoose {
+            tier = promoteSameMaster(tier)
+        }
         // Lines after the song ends are never adopted on their own.
         if reasons.contains("lyricsEndOvershoot") {
             tier = minTier(tier, .candidates)
@@ -713,6 +748,14 @@ public enum LyricsSafeMatcher {
     }
 
     private static func titlesHaveSameTypography(_ lhs: String, _ rhs: String) -> Bool {
+        // "(Explicit)" only flags the content; the explicit cut is the
+        // original recording. "Clean" is left alone: it is a re-edit.
+        func withoutExplicitTag(_ title: String) -> String {
+            title.replacingOccurrences(
+                of: #"\s*(?:[(\[（【]\s*explicit(?:\s+version)?\s*[)\]）】]|\s-\s+explicit(?:\s+version)?\s*$)"#,
+                with: "", options: [.regularExpression, .caseInsensitive])
+        }
+        let lhs = withoutExplicitTag(lhs), rhs = withoutExplicitTag(rhs)
         func key(_ title: String) -> String {
             TrackTextNormalizer.normalize(title)
                 .split(separator: " ")
