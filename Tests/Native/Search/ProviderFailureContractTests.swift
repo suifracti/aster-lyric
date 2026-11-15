@@ -1072,6 +1072,29 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertEqual(upgraded.source, .kugouExperimental)
     }
 
+    func testBestAvailableMatchIsShownButAnotherSingerOrVersionIsNot() async {
+        let track = Track(title: "shion", artist: "angelize", album: "shion", duration: 150.8)
+        let identity = TrackIdentity(track: track)
+        func candidate(_ title: String, _ artist: String, _ duration: Double, synced: Bool = true) -> LyricsCandidate {
+            LyricsCandidate(id: title + artist + "\(duration)", identity: identity, title: title, artist: artist, album: "",
+                duration: duration, lines: (0..<20).map { LyricLine(timestamp: Double($0 * 7), originalText: "words \($0)") },
+                isSynchronized: synced, source: .qqExperimental, confidence: 0.9, providerSourceID: title + artist)
+        }
+        func outcome(_ list: [LyricsCandidate]) async -> LyricsLookupResult {
+            await LyricsSearchManager(providers: [ProviderFailureFixedLyricsProvider(name: "QQ Music Experimental", result: .candidates(list))])
+                .search(track: track, identity: identity).result
+        }
+        // Timed beats plain; the closer length wins among timed ones.
+        if case .match(let d) = await outcome([candidate("shion", "angelize", 200.0, synced: false),
+                                                candidate("shion", "Angelize", 190.0), candidate("shion", "Angelize", 168.0)]) {
+            XCTAssertTrue(d.isSynchronized); XCTAssertEqual(d.duration ?? 0, 168.0, accuracy: 0.01)
+        } else { XCTFail("expected the best available match") }
+        // Another singer, a live take, a title that only contains the name.
+        if case .match = await outcome([candidate("shion", "Saucy Dog", 168.0)]) { XCTFail("another singer") }
+        if case .match = await outcome([candidate("shion (Live)", "angelize", 168.0)]) { XCTFail("live version") }
+        if case .match = await outcome([candidate("shion no hanataba", "angelize", 168.0)]) { XCTFail("other title") }
+    }
+
     func testCatalogDurationOverridesDesktopDurationWithoutChangingIdentity() async throws {
         let track = Track(title: "shion", artist: "angelize", album: "shion", duration: 150.8,
                           spotifyId: "spotify:track:0t5DDnfp0dkgeSnokvbIQY")
@@ -1106,9 +1129,13 @@ final class ProviderFailureContractTests: XCTestCase {
             duration: 168, lines: (0..<37).map { LyricLine(timestamp: Double($0 * 4), originalText: "電波を超え届く君のもとへ") },
             isSynchronized: true, source: .qqExperimental, confidence: 0.9, providerSourceID: "qq:shion")
         let source = ProviderFailureFixedLyricsProvider(name: "QQ Music Experimental", result: .match(document))
+        // Without the catalog length the match is weaker, but it is still the
+        // only song of that name by angelize: it is shown, not sent to review
+        // (2026-11-15, Spotify itself shows 2:30 for it).
         let oldDuration = await LyricsSearchManager(providers: [source]).search(track: track, identity: identity)
-        guard case .candidates = oldDuration.result else { return XCTFail("Expected to reproduce the reported downgrade") }
+        guard case .match = oldDuration.result else { return XCTFail("Expected the best available match, got \(oldDuration.result)") }
         XCTAssertTrue(oldDuration.diagnostics.flatMap(\.matchDecisions).contains { $0.reasons.contains("durationFar") })
+        XCTAssertTrue(oldDuration.automaticDecision?.reasons.contains("bestAvailableFallback") == true)
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [CatalogDurationFixture.self]
         let outcome = await LyricsSearchManager(providers: [source],
@@ -1124,9 +1151,10 @@ final class ProviderFailureContractTests: XCTestCase {
         let track = Track(title: "活着", artist: "Sop天, 橙汁, BFG Music", album: "活着", duration: 165.373,
                           spotifyId: "1ww8Qq9GU6VxO293E2najn")
         let candidate = LyricsCandidate(id: "netease:1383422260", identity: TrackIdentity(track: track),
-            title: "活着（Prod.By Red killer）", artist: "Sop天, 橙汁, BFG_Music", album: track.album,
-            // 35 s longer: since 2026-11-15 the same length is adopted (a producer
-            // credit alone is the same song), and this test needs a review result.
+            title: "活着的意义", artist: "Sop天, 橙汁, BFG_Music", album: track.album,
+            // A title that only contains the song's name, 35 s longer: neither
+            // a direct adoption nor the best-available fallback, so it stays a
+            // review result, which this test needs.
             duration: 200.373, lines: [LyricLine(timestamp: 1, originalText: "Fixture")],
             source: .neteaseExperimental, confidence: 0.9)
         let counter = ProviderFailureCounter()
@@ -1233,7 +1261,9 @@ final class ProviderFailureContractTests: XCTestCase {
         func candidate(_ id: String, source: LyricsSource, duration: TimeInterval,
                        lines: [String]) -> LyricsCandidate {
             LyricsCandidate(
-                id: id, identity: identity, title: "YOU & IDOL", artist: "相対性理論",
+                // A title that only contains the song's name keeps this a
+                // review list (the best-available fallback never takes it).
+                id: id, identity: identity, title: "YOU & IDOL (2011 take)", artist: "相対性理論",
                 album: "TOWN AGE", duration: duration,
                 lines: lines.map { LyricLine(timestamp: 0, originalText: $0) },
                 isSynchronized: false, source: source, confidence: 0.9, providerSourceID: id
@@ -1280,7 +1310,7 @@ final class ProviderFailureContractTests: XCTestCase {
         let identity = TrackIdentity(track: track)
         let qqToggle = ProviderFailureToggle()
         let reviewCandidate = LyricsCandidate(
-            id: "review-candidate", identity: identity, title: "Retry Song", artist: track.artist,
+            id: "review-candidate", identity: identity, title: "Retry Song Reprise", artist: track.artist,
             album: track.album, duration: 260, lines: [LyricLine(timestamp: 0, originalText: "review")],
             source: .local, confidence: 0.7
         )

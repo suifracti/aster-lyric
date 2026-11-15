@@ -446,6 +446,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         var acceptedCandidates: [String: LyricsCandidate] = [:]
         var translationDonors: [String: EvaluatedCandidate] = [:]
         var rejectedForExplanation: [EvaluatedCandidate] = []
+        var reviewCandidates: [EvaluatedCandidate] = []
         var sawNoLyrics = false
         var sawNoMatch = false
         var firstFailure: LyricsFailure?
@@ -774,6 +775,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
             guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics) }
 
             rejectedForExplanation.append(contentsOf: evaluatedCandidates.filter { $0.decision.tier == .reject })
+            reviewCandidates.append(contentsOf: evaluatedCandidates.filter { $0.decision.tier == .candidates })
             for item in evaluatedCandidates where !collectCandidatesOnly && item.candidate.lines.contains(where: {
                 !($0.translationText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }) {
@@ -905,6 +907,25 @@ public final class LyricsSearchManager: @unchecked Sendable {
                 return SearchOutcome(result: .match(document), diagnostics: diagnostics,
                     alternatives: [selected.candidate], automaticDecision: decision)
             }
+        }
+
+        // Other players always show something. When every check above came
+        // short only on evidence (a 168 s QQ "shion" for Spotify's 150.8 s,
+        // nothing else by angelize), the best match by title and singer is
+        // shown instead of a review page. A different singer, another version
+        // (live, remix, instrumental, sped up) or a title that only contains
+        // the name stay for review.
+        if !collectCandidatesOnly, (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let fallback = Self.bestAvailableFallback(in: reviewCandidates, metadata: meta) {
+            let document = Self.finalizeDocument(fallback.document, identity: identity)
+            let base = fallback.decision
+            let decision = LyricsMatchDecision(tier: .autoMedium, score: base.score, versionConflict: false,
+                queryKind: base.queryKind, reasons: base.reasons + ["bestAvailableFallback"],
+                evidence: base.evidence + [LyricsMatchEvidence(code: "bestAvailableFallback", delta: 0)])
+            LyricsE2ELog.log("MANAGER AUTO_ADOPT best-available provider=\(fallback.providerName) title=\(fallback.candidate.title) duration=\(fallback.candidate.duration) sync=\(document.isSynchronized) evidence=\(base.reasons.joined(separator: ","))")
+            return SearchOutcome(result: .match(document), diagnostics: diagnostics,
+                alternatives: LyricsCandidate.removingDuplicateLyrics(acceptedCandidates.values.sorted(by: LyricsCandidate.hasPrecedence)),
+                automaticDecision: decision)
         }
 
         if !acceptedCandidates.isEmpty {
@@ -1127,6 +1148,47 @@ public final class LyricsSearchManager: @unchecked Sendable {
             }
         }
         return hasValidLineTiming ? 1 : 0
+    }
+
+    private static let fallbackTitleEvidence: Set<String> = [
+        "titleExact", "titleTypographyExact", "titleParallelExact", "titleLatinSpacingExact",
+        "titleProducerCreditExact", "titleReadingExact", "titleLoanwordReading", "titleBilingualPair",
+        "titleAliasConfirmed", "titleProviderAliasConfirmed", "titleAliasQuery", "titleFeaturedBaseExact"
+    ]
+    private static let fallbackArtistEvidence: Set<String> = [
+        // A name that agrees only in part may be a namesake; it stays for review.
+        "primaryArtistExact", "primaryArtistReadingExact", "primaryArtistAlias", "primaryArtistInCredits",
+        "primaryArtistOtherScriptExactLength"
+    ]
+
+    /// The candidate a listener would pick: same title and singer, words to
+    /// show, no other version. Timed lyrics first, then lyrics that do not
+    /// run past the song, then the closest length.
+    private static func bestAvailableFallback(in items: [EvaluatedCandidate], metadata: TrackMetadata) -> EvaluatedCandidate? {
+        let eligible = items.filter { item in
+            let reasons = Set(item.decision.reasons)
+            return !item.decision.hardReject && !item.decision.versionConflict
+                && !item.candidate.requiresTextOnlyPreview
+                && item.candidate.identity == metadata.identity
+                && !declaresExcludedVersion(item.candidate)
+                && !reasons.contains("titleFuzzy") && !reasons.contains("featuredArtistOnly")
+                && !reasons.isDisjoint(with: fallbackTitleEvidence)
+                && !reasons.isDisjoint(with: fallbackArtistEvidence)
+                && item.candidate.lines.contains { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        }
+        func gap(_ item: EvaluatedCandidate) -> Double {
+            let duration = item.candidate.duration
+            guard duration > 0, metadata.track.duration > 0 else { return .greatestFiniteMagnitude }
+            return abs(duration - metadata.track.duration)
+        }
+        return eligible.min { a, b in
+            let ta = timingPriority(of: a.candidate), tb = timingPriority(of: b.candidate)
+            if ta != tb { return ta > tb }
+            let oa = a.decision.reasons.contains("lyricsEndOvershoot"), ob = b.decision.reasons.contains("lyricsEndOvershoot")
+            if oa != ob { return !oa }
+            if gap(a) != gap(b) { return gap(a) < gap(b) }
+            return a.decision.score > b.decision.score
+        }
     }
 
     /// Two sources returning the same title, primary artist and length confirm
