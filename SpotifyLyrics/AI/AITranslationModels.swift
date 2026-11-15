@@ -325,18 +325,6 @@ public enum TranslationPromptPresetCatalog {
     以上取舍适用于日语、英语和其他语言以及混合语言的歌。按每行实际语言理解，不把日语的表达习惯或假名读音规则套到英语和其他语言上。疑似转写错误不等于可以自行换一个原文。
     """
 
-    /// What 我的风格 does, in the words shown under the style menu.
-    public static let personalV2Summary = """
-    从逐句人工定稿的歌词译文中整理的译法（full-audit-v3-r6），可在下方改成你自己的：
-    · 先读懂整首歌的场景（在哪、在做什么），每句按这个场景理解。
-    · 按歌的口吻定语体：撒娇的用「呐」「好不好」，许愿的用庄重中文，随口的用随口的说法。
-    · 意思不改：先弄清谁对谁说、做了什么，不替歌词编故事。
-    · 像人物会说出口的中文；需要时说清「我」「你」；短句就短译，能用现成说法就不铺长句。
-    · 一句话被分行切开时，在相邻行里重新组织让每行通顺，但唱到哪行就显示哪行的意思。
-    · 英文一般译出来；反复的英文钩子（如 kill me baby）保留原文，句尾单挂的词融进句意。
-    · 用中文通行的叫法，不音译、不死译。
-    """
-
     /// The user's own edit of 我的风格 (Settings → 翻译风格 → 编辑). Empty
     /// means the built-in text; 恢复默认 removes it.
     public static let personalV2OverrideKey = "ai.personalStyleOverride.v1"
