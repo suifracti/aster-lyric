@@ -582,6 +582,12 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
   - 原 shion 测试改为期望自动采用（没有目录时长时走兜底）。
   - 新增 `testBestAvailableMatchIsShownButAnotherSingerOrVersionIsNot`，覆盖三点：带时间轴优先于纯文本、时长更接近者优先；另一位歌手、Live、只是包含歌名的标题都不会被自动采用。
   - 三个原本依赖「核对」结果的测试（预加载、来源重试、同一来源重复歌词），把候选歌名改成只是包含原歌名，测试本身要验证的行为不变。
+- **同一首歌读不到已存歌词**（ラヴイットベイビー，同日）：这首歌用的是同一个 Spotify ID，但 Spotify 有时报「はてなぷれいりすと, Nqsi／166.168 秒」，有时报「はてなぷれいりすと／141.29 秒」。stable key 里含歌手和时长，所以这两种报法对应两条 key。
+  - 10-26 先按 141 秒写下了一条没有 ID 列的空记录，后来网易的带时间轴歌词存在了 166 秒那条 key 下。
+  - 同 ID 归并（`redirectNewSpotifyKey`）只在新 key 还没有记录、而旧记录带 ID 列时才生效，这里两个条件都不满足。所以 11-15 再报 141 秒时读不到，只能重新搜索，又因为时长不符被判为「身份待确认」。
+  - 修法（`adoptedSameSpotifyTrackStableKey`，只读）：读取时本 key 没有可用版本，就去找同一 Spotify ID 前缀下、歌名规范化后相同、按正常读取规则有可用版本（已采用、锁定或高可信，且未撤销）的记录，直接用它的歌词。歌名不同的不沿用，因为切歌瞬间读到的 ID 可能属于上一首（L-039）。
+  - 验证：正式库只读副本上，修复前读不到，修复后读到网易 40 行。新增测试 `testSameSpotifyTrackReadsItsSavedLyricsWhateverLengthThePlayerReports` 按真实库的状态造数据，不加修复时失败。
+  - 后续：已有的 `redirectNewSpotifyKey` 归并时不看歌名，借来的 ID 可能被错并。这次没有改它。
 
 ## L-041 逐字优先与行切换准时（2026-11-15）
 
@@ -599,10 +605,3 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
   - 主要原因是行边界定时器。`Task.sleep(nanoseconds:)` 走 `dispatch_after`，系统允许把唤醒推迟最多延时的十分之一，3–7 秒的行间隔实测晚了 31–214 ms。改成 `Task.sleep(until:tolerance: .milliseconds(2), clock: .continuous)`，并在计算延时的同时定下截止时刻。之后实测晚 0.5–9 ms（日志 `BOUNDARY_WAKE late=`）。
   - 索引切换后，SwiftUI 还要 45–85 ms 才开始跟随滚动，而 0.40 秒的弹簧约 0.1 秒才走到一半。所以加了全局提前量 `PlaybackState.lineSwitchLead = 0.15` 秒，只作用于当前行索引；逐字填充仍按原时间戳。改后滚动在时间戳前约 85 ms 开始。日志里 `lead=` 字段显示提前量，`PRESENTATION_CLOCK_CROSS_TIME` 已含提前量。
 - **测试**：`ProviderFailureContractTests` 新增三项：逐行先到时仍采用稍后的逐字；已存逐行时越过宽限等逐字；升级只接受同文字同时间线，且不动手工版本。
-
-- **同一首歌读不到已存歌词**（ラヴイットベイビー，同日）：这首歌用的是同一个 Spotify ID，但 Spotify 有时报「はてなぷれいりすと, Nqsi／166.168 秒」，有时报「はてなぷれいりすと／141.29 秒」。stable key 里含歌手和时长，所以这两种报法对应两条 key。
-  - 10-26 先按 141 秒写下了一条没有 ID 列的空记录，后来网易的带时间轴歌词存在了 166 秒那条 key 下。
-  - 同 ID 归并（`redirectNewSpotifyKey`）只在新 key 还没有记录、而旧记录带 ID 列时才生效，这里两个条件都不满足。所以 11-15 再报 141 秒时读不到，只能重新搜索，又因为时长不符被判为「身份待确认」。
-  - 修法（`adoptedSameSpotifyTrackStableKey`，只读）：读取时本 key 没有可用版本，就去找同一 Spotify ID 前缀下、歌名规范化后相同、按正常读取规则有可用版本（已采用、锁定或高可信，且未撤销）的记录，直接用它的歌词。歌名不同的不沿用，因为切歌瞬间读到的 ID 可能属于上一首（L-039）。
-  - 验证：正式库只读副本上，修复前读不到，修复后读到网易 40 行。新增测试 `testSameSpotifyTrackReadsItsSavedLyricsWhateverLengthThePlayerReports` 按真实库的状态造数据，不加修复时失败。
-  - 后续：已有的 `redirectNewSpotifyKey` 归并时不看歌名，借来的 ID 可能被错并。这次没有改它。
