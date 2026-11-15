@@ -308,6 +308,16 @@ public enum TranslationPromptPresetCatalog {
     以上取舍适用于日语、英语和其他语言以及混合语言的歌。按每行实际语言理解，不把日语的表达习惯或假名读音规则套到英语和其他语言上。疑似转写错误不等于可以自行换一个原文。
     """
 
+    /// What 我的风格 does, in the words shown under the style menu.
+    public static let personalV2Summary = """
+    按你在 Obsidian 定稿的译法整理（full-audit-v3-r1）：
+    · 意思不改：先弄清谁对谁说、做了什么，不替歌词编故事。
+    · 像人物会说出口的中文；需要时说清「我」「你」，不压成电报体。
+    · 一句话被分行切开时，在相邻行里重新组织，让每一行都通顺。
+    · 留住语气分寸、意象和副歌里的细微变化；英文部分也译出来。
+    · 用中文通行的叫法，不音译、不死译。
+    """
+
     public static var personalV2Guidance: String { personalV2Instructions + "\n\n" + personalV2LanguageNote }
 }
 

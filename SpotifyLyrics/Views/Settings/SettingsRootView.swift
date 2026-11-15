@@ -1397,16 +1397,31 @@ private struct AISettingsView: View {
             Section("翻译默认行为") {
                 TextField("目标语言", text: configurationBinding(\.targetLanguage))
                     .textFieldStyle(.roundedBorder)
+                // Two choices only (2026-11-15): the user's own style, or text
+                // they write. Older presets stay readable for saved settings.
                 Picker("翻译风格", selection: stylePresetBinding) {
-                    ForEach(TranslationPromptPresetCatalog.all, id: \.id) { preset in
-                        Text(preset.displayName).tag(preset.id.rawValue)
+                    Text("我的风格").tag(TranslationPromptPresetID.personalV2.rawValue)
+                    Text("自定义").tag(TranslationPromptPresetID.custom.rawValue)
+                    if let legacy = TranslationPromptPresetCatalog.all.first(where: {
+                        $0.id.rawValue == settings.aiTranslationConfiguration.promptPresetID
+                            && $0.id != .personalV2 && $0.id != .custom
+                    }) {
+                        Text("\(legacy.displayName)（旧设置）").tag(legacy.id.rawValue)
                     }
                 }
-                Picker("个人翻译风格", selection: profileBinding) {
-                    Text("不使用个人档案").tag("")
-                    ForEach(settings.translationProfiles.list(), id: \.id) { profile in
-                        Text(profile.name).tag(profile.id.uuidString)
+                if settings.aiTranslationConfiguration.promptPresetID == TranslationPromptPresetID.custom.rawValue {
+                    VStack(alignment: .leading, spacing: 5) {
+                        TextEditor(text: configurationBinding(\.customSystemPrompt))
+                            .frame(minHeight: 90)
+                            .font(.system(size: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+                        Text("写下你想要的译法，例如语气、用词、要保留的东西。只在选「自定义」时使用。")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
+                } else if settings.aiTranslationConfiguration.promptPresetID == TranslationPromptPresetID.personalV2.rawValue {
+                    Text(TranslationPromptPresetCatalog.personalV2Summary)
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 ToolbarPanelLink(title: "新歌词自动翻译在 工具栏 → 译文", panel: .translation)
             }
@@ -1516,19 +1531,14 @@ private struct AISettingsView: View {
                                 Text(strategy.title).tag(strategy)
                             }
                         }
-                        if settings.aiTranslationConfiguration.promptPresetID == TranslationPromptPresetID.custom.rawValue {
-                            TextField("自定义风格说明", text: configurationBinding(\.style))
-                                .textFieldStyle(.roundedBorder)
+                        Picker("个人翻译风格档案", selection: profileBinding) {
+                            Text("不使用个人档案").tag("")
+                            ForEach(settings.translationProfiles.list(), id: \.id) { profile in
+                                Text(profile.name).tag(profile.id.uuidString)
+                            }
                         }
                         Button("管理个人翻译风格", systemImage: "person.crop.circle.badge.pencil") {
                             showProfileManager = true
-                        }
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("自定义系统提示词（可选）")
-                            TextEditor(text: configurationBinding(\.customSystemPrompt))
-                                .frame(minHeight: 70)
-                                .font(.system(size: 12))
-                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
                         }
                         VStack(alignment: .leading, spacing: 4) {
                             Button("查看当前 Prompt 内容", systemImage: "doc.text.magnifyingglass") {

@@ -296,6 +296,7 @@ A control never appears on both sides. Where the other side used to have it, sho
 | 显示原文 / 译文 / 罗马音 / 拼音 | Toolbar 文字 / 译文 | Settings 歌词与翻译 and 读音; the current-song operations panel |
 | 注音排版 (kana mode), 远处歌词隐藏辅助读音 | Toolbar 文字 | Settings 读音 (it keeps only the user dictionary; 假名替换 is one of the kana modes and moves with 注音排版); the current-song operations panel |
 | 翻译服务, AI 模型, 思考强度 | Toolbar 译文 | Settings AI 翻译 (it keeps service, key, endpoint and personal style) |
+| 翻译风格 | Settings AI 翻译 → 翻译默认行为 | Two choices only (2026-11-15, user): 我的风格 with its short summary shown underneath, and 自定义 with a text box whose text is used only while 自定义 is chosen. Older presets (自然歌曲, 忠实直译 …) stay readable as 「（旧设置）」 when already saved; 个人翻译风格档案 moved into 高级模型参数与提示词. |
 | 新歌词自动翻译 | Toolbar 译文 | Settings 歌词与翻译 |
 | 菜单栏歌词 on/off | Toolbar 更多 | Settings 外观 (it keeps the window's appearance details) |
 | 场景悬停预览 | Toolbar 画面 | Settings |

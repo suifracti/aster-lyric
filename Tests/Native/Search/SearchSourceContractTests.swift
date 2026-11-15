@@ -96,6 +96,18 @@ final class SearchSourceContractTests: XCTestCase {
             XCTAssertFalse(prompt.system.contains("move meaning across lines"), engine)
             XCTAssertFalse(prompt.system.contains("Natural song style v2"), engine)
         }
+        // 自定义 text is used only when 自定义 is chosen, never mixed into 我的风格.
+        configuration.customSystemPrompt = "用更口语的东北话"
+        for engine in [TranslationEngineID.codexChatGPT.rawValue, TranslationEngineID.openAIAPI.rawValue] {
+            configuration.engineID = engine
+            configuration.promptPresetID = TranslationPromptPresetID.personalV2.rawValue
+            XCTAssertFalse(try builder.build(context: context, configuration: configuration).system.contains("东北话")
+                           || (try builder.build(context: context, configuration: configuration).user.contains("东北话")), engine)
+            configuration.promptPresetID = TranslationPromptPresetID.custom.rawValue
+            let custom = try builder.build(context: context, configuration: configuration)
+            XCTAssertTrue(custom.system.contains("东北话") || custom.user.contains("东北话"), engine)
+        }
+        configuration.customSystemPrompt = ""
         configuration.promptPresetID = TranslationPromptPresetID.naturalSong.rawValue
         let natural = try builder.build(context: context, configuration: configuration)
         XCTAssertTrue(natural.system.contains("Natural song style v2"), "the other styles stay selectable")
