@@ -1465,11 +1465,11 @@ private struct AISettingsView: View {
                 } else if settings.aiTranslationConfiguration.promptPresetID == TranslationPromptPresetID.personalV2.rawValue {
                     if personalStyleOverride.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text(TranslationPromptPresetCatalog.personalV2Summary)
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
                         Text("我的风格已按你的修改使用（下面的完整说明就是发给模型的内容）。")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     DisclosureGroup("编辑我的风格", isExpanded: $isEditingPersonalStyle) {
                         VStack(alignment: .leading, spacing: 6) {
