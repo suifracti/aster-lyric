@@ -38,6 +38,7 @@
 | 停在「核对歌词版本」：多出合作署名、双名客串、(Explicit)、翻译歌名但同母带、伴奏同长 | L-037；promoteSameMaster、sameMasterTolerance、TrackTextNormalizer 伴奏标记 |
 | 已存纯文本永远升级不到时间轴、只按歌名搜到的全对结果仍要核对、「原名 - 英文名」 | L-038；plainAlreadyHeld/waitsForTiming、looseQueryConfirmed、titleBilingualPair、publisherPageExact |
 | 别人有逐字我们只有逐行、已存逐行不会升级成逐字、行切换比别人慢一点 | L-041；probeNetworkProviders lineTimingHeld、LyricsWordTimingUpgrade、TimedLineBounds（QRC/KRC/YRC 行尾）、scheduleWordTimingUpgrade、PlaybackState.lineSwitchLead、scheduleLineBoundaryWake |
+| AI 译文读起来像照日文断行切开、主语缺失、太书面、和我自己的译法不像 | L-042；`personalV2Instructions` full-audit-v3-r1、Codex 合同里的跨行条款 |
 | 缺歌词里同一首歌的重复记录（时长错、借用别首的 ID）、批量补全拿错时长去搜 | L-039；PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere、needsLyrics |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
 
@@ -607,3 +608,21 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
   - 索引切换后，SwiftUI 还要 45–85 ms 才开始跟随滚动，而 0.40 秒的弹簧约 0.1 秒才走到一半。所以加了全局提前量 `PlaybackState.lineSwitchLead = 0.15` 秒，只作用于当前行索引；逐字填充仍按原时间戳。改后滚动在时间戳前约 85 ms 开始。日志里 `lead=` 字段显示提前量，`PRESENTATION_CLOCK_CROSS_TIME` 已含提前量。
 - **测试**：`ProviderFailureContractTests` 新增四项：逐行先到时仍采用稍后的逐字；已存逐行时越过宽限等逐字；升级只接受同文字同时间线，且不动手工版本；QRC 行覆盖末字后仍算逐字。全量 220 项通过，1 项按原样跳过。
 - **注意**：其他会话执行 `pkill -x SpotifyLyrics` 时，正在跑的测试宿主（同名进程）也会被杀掉，报 `Restarting after unexpected exit`，失败的用例是随机的。这种情况单独重跑即可。
+
+## L-042 我的风格 v3：按定稿与 AI 稿逐行对照修订（2026-11-15）
+
+- **依据**：库里 22 份 AI 译文都由 full-audit-v2-r1 生成，没有一份被用户在 App 里改过，所以没有「AI 稿 → 用户改稿」的数据。改用重合的三首对照：AI 稿对照 Vault「音乐与翻译/曲目」里的用户定稿，即 雪庇（逐句确认稿）、アーカイブ（共同打磨稿）、アオイハル（用户主导）。这次没有发新的翻译请求。
+- **AI 稿大多没译错，差别稳定在五处**：
+  1. 照日文断点切出半截短语。用户会把同一句话的词在相邻行之间挪动，让每一行中文都通顺。v2 的「尽量让每行保有原行承担的意义」和 Codex 合同的「never move meaning across lines」把 AI 卡死了。
+  2. 主语、受话人省得太多。用户需要时就说「我」「你」。
+  3. 缺少口语的分寸词，如「一点点」「还是」「都」。
+  4. 压缩的说法被逐词搬运，例如「既読の速度で愛はかって」。
+  5. 用了音译或字面词，例如 ミモザ 被译成「米莫萨」，用户用的是「银荆」。
+- **v3 改动**：
+  - 第 3、5、6 条补上以上要求。
+  - 「逐行显示的结构约束」改为：同一句话的相邻行可以重新分配词语，每行必须有内容，不跨句，重复段分法一致。
+  - 新增 8 组用户定稿示例，并注明只学取舍、不搬词句。
+  - Codex 合同改为允许同一句话在相邻行之间重新分配。
+  - 版本号改为 full-audit-v3-r1。预设 raw value 仍是 `translationPrompt.personalV2.v2`，用户设置不变。
+- **范围**：已保存的 AI 译文不改，新的请求才用 v3（提示词哈希变了，旧稿仍可采用、可切回）。v3 的实际译文质量还没有真实请求验证；要验证得对 雪庇 / アーカイブ 等重新翻译，这需要用户授权模型请求。
+

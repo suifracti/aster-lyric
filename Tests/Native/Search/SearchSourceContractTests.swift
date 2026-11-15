@@ -72,7 +72,7 @@ final class SearchSourceContractTests: XCTestCase {
         XCTAssertEqual(runCount(), 5, "a failure is retried, never remembered")
     }
 
-    /// The user's saved preset is 我的风格 (full-audit-v2-r1). It must resolve
+    /// The user's saved preset is 我的风格 (full-audit-v3-r1). It must resolve
     /// to that guidance, not fall back silently to another style.
     func testSavedPersonalStyleResolvesToTheAuditedGuidance() throws {
         let saved = "translationPrompt.personalV2.v2"
@@ -88,15 +88,19 @@ final class SearchSourceContractTests: XCTestCase {
         for engine in [TranslationEngineID.codexChatGPT.rawValue, TranslationEngineID.deepSeekAPI.rawValue] {
             configuration.engineID = engine
             let prompt = try builder.build(context: context, configuration: configuration)
-            XCTAssertTrue(prompt.system.contains("full-audit-v2-r1"), engine)
+            XCTAssertTrue(prompt.system.contains("full-audit-v3-r1"), engine)
             XCTAssertTrue(prompt.system.contains("【多语种】"), engine)
+            // v3: a sentence split across lines may be regrouped so each
+            // Chinese line reads naturally; no contract line may forbid it.
+            XCTAssertTrue(prompt.system.contains("按中文自然的停顿重新分到这几行里"), engine)
+            XCTAssertFalse(prompt.system.contains("move meaning across lines"), engine)
             XCTAssertFalse(prompt.system.contains("Natural song style v2"), engine)
         }
         configuration.promptPresetID = TranslationPromptPresetID.naturalSong.rawValue
         let natural = try builder.build(context: context, configuration: configuration)
         XCTAssertTrue(natural.system.contains("Natural song style v2"), "the other styles stay selectable")
         configuration.promptPresetID = "translationPrompt.unknown.v9"
-        XCTAssertTrue(try builder.build(context: context, configuration: configuration).system.contains("full-audit-v2-r1"),
+        XCTAssertTrue(try builder.build(context: context, configuration: configuration).system.contains("full-audit-v3-r1"),
                       "an unknown saved value falls back to the user's style")
     }
 
