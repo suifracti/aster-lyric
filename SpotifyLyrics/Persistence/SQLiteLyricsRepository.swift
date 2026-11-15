@@ -204,7 +204,11 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             if identity.stableKey != key { adoptedMusicPlaybackKeys[identity.stableKey] = key }
         }
         // An adopted recording is authoritative even when the player refreshes its display metadata.
-        let canonicalKey = try resolvedCanonicalStableKey(identity.stableKey)
+        var canonicalKey = try resolvedCanonicalStableKey(identity.stableKey)
+        if try fetchTrack(stableKey: canonicalKey) == nil || fetchBestVersion(stableKey: canonicalKey) == nil,
+           let sameSong = try adoptedSameSpotifyTrackStableKey(stableKey: identity.stableKey, title: track.title) {
+            canonicalKey = sameSong
+        }
         guard let trackRecord = try fetchTrack(stableKey: canonicalKey) else {
             return nil
         }
@@ -3002,6 +3006,48 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         defer { sqlite3_finalize(statement) }
         try bindText(name, at: 1, to: statement)
         return sqlite3_step(statement) == SQLITE_ROW
+    }
+
+    /// ラヴイットベイビー came back from Spotify as 141.29 s by one artist
+    /// after it had been saved as 166.168 s by two. The stable key holds both,
+    /// so the saved lyrics were not found and the song went to review. One
+    /// Spotify track ID is one recording whatever length or credits the
+    /// player reports this time, so its adopted version is used. Only under
+    /// the same title: an ID read mid-skip can belong to the previous song
+    /// (5o45jo… sat on two different titles, L-039). Read-only.
+    private func adoptedSameSpotifyTrackStableKey(stableKey: String, title: String) throws -> String? {
+        guard stableKey.hasPrefix("spotify-id:"),
+              let prefix = stableKey.components(separatedBy: "|metadata:").first,
+              prefix.count > "spotify-id:".count else { return nil }
+        let wanted = TrackTextNormalizer.normalize(title)
+        guard !wanted.isEmpty else { return nil }
+        let query = try prepare("""
+            SELECT t.stable_key, t.title FROM tracks t
+            WHERE substr(t.stable_key, 1, length(?) + 1) = ? || '|' AND t.stable_key <> ?
+            ORDER BY t.updated_at DESC, t.stable_key ASC;
+            """)
+        defer { sqlite3_finalize(query) }
+        try bindText(prefix, at: 1, to: query)
+        try bindText(prefix, at: 2, to: query)
+        try bindText(stableKey, at: 3, to: query)
+        var keys: [String] = []
+        while true {
+            let result = sqlite3_step(query)
+            guard result == SQLITE_ROW else {
+                guard result == SQLITE_DONE else { throw lastError() }
+                break
+            }
+            guard let key = columnText(query, index: 0), let rowTitle = columnText(query, index: 1),
+                  TrackTextNormalizer.normalize(rowTitle) == wanted else { continue }
+            keys.append(key)
+        }
+        // The same rule as a direct read: adopted, locked or trusted, never
+        // a revoked choice.
+        for key in keys {
+            let canonical = try resolvedCanonicalStableKey(key)
+            if try fetchBestVersion(stableKey: canonical) != nil { return canonical }
+        }
+        return nil
     }
 
     private func adoptedAppleMusicStableKey(for track: Track) throws -> String? {

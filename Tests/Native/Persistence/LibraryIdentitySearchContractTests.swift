@@ -136,6 +136,48 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         XCTAssertEqual(timed.first?.hasSyncedLyrics, true)
     }
 
+    func testSameSpotifyTrackReadsItsSavedLyricsWhateverLengthThePlayerReports() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("same-spotify-id-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let databaseURL = root.appendingPathComponent("test.sqlite3")
+        let repo = SQLiteLyricsRepository(databaseURL: databaseURL, alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await repo.prepare()
+        let id = "4tqLygfzhk4lEQQuLWPykj"
+        // NetEase's timed lyrics saved when Spotify reported two artists, 166.168 s.
+        let saved = Track(title: "ラヴイットベイビー", artist: "はてなぷれいりすと, Nqsi", album: "ラヴイットベイビー",
+                          duration: 166.168, spotifyId: id)
+        let savedIdentity = TrackIdentity(track: saved)
+        _ = try await repo.save(track: saved, identity: savedIdentity, document: LyricsDocument(
+            identity: savedIdentity, title: saved.title, artist: saved.artist, album: saved.album, duration: saved.duration,
+            lines: [LyricLine(timestamp: 12, originalText: "らぶいっと")], isSynchronized: true,
+            source: .neteaseExperimental, confidence: 0.95, providerSourceID: "netease:3360385286"))
+
+        // The real database also holds an empty row from 10-26, when Spotify
+        // reported one artist and 141.29 s, written without the ID columns
+        // and so never redirected. Plus a row from a skip: same ID, another title.
+        let replay = Track(title: "ラヴイットベイビー", artist: "はてなぷれいりすと", album: "ラヴイットベイビー",
+                           duration: 141.29, spotifyId: id)
+        let replayIdentity = TrackIdentity(track: replay)
+        let otherTitle = Track(title: "別の歌", artist: "はてなぷれいりすと", album: "", duration: 150.5, spotifyId: id)
+        let otherIdentity = TrackIdentity(track: otherTitle)
+        var handle: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(databaseURL.path, &handle), SQLITE_OK)
+        for (key, track) in [(replayIdentity.stableKey, replay), (otherIdentity.stableKey, otherTitle)] {
+            let sql = "INSERT INTO tracks(stable_key, title, artist_display, album, duration, created_at, updated_at) VALUES ('\(key)', '\(track.title)', '\(track.artist)', '\(track.album)', \(track.duration), 0, 0);"
+            XCTAssertEqual(sqlite3_exec(handle, sql, nil, nil, nil), SQLITE_OK)
+        }
+        sqlite3_close(handle)
+
+        let reopened = SQLiteLyricsRepository(databaseURL: databaseURL, alignmentProvenanceDirectory: root.appendingPathComponent("reopened"))
+        try await reopened.prepare()
+        let stored = try await reopened.loadBestStored(track: replay, identity: replayIdentity)
+        XCTAssertEqual(stored?.document.lines.first?.originalText, "らぶいっと")
+        XCTAssertEqual(stored?.document.identity, replayIdentity)
+        let none = try await reopened.loadBestStored(track: otherTitle, identity: otherIdentity)
+        XCTAssertNil(none, "the same ID under another title is a mis-read during a skip")
+    }
+
     func testRowsWithAWrongLengthOrBorrowedIDAreNotListedAsMissing() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("library-ghost-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
