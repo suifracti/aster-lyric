@@ -14,10 +14,7 @@ struct ProviderModelDirectoryLoader: Sendable {
             guard let key=KeychainAITranslationAPIKeyStore(account:OpenAIAPIDefaults.keychainAccount).read(), !key.isEmpty else { throw AITranslationError.missingAPIKey }
             let all=try await OpenAICompatibleClient().listModels(configuration:c,apiKey:key)
             // Only models that can translate, newest first; the listener picks.
-            return all.filter { OpenAIAPIDefaults.isChatModel($0.id) }.map {
-                TranslationModelDescriptor(id: $0.id, displayName: $0.displayName,
-                                           reasoningEfforts: OpenAIAPIDefaults.reasoningEfforts)
-            }.sorted { $0.id.compare($1.id, options: [.numeric, .caseInsensitive]) == .orderedDescending }
+            return all.filter { OpenAIAPIDefaults.isChatModel($0.id) }.sorted { $0.id.compare($1.id, options: [.numeric, .caseInsensitive]) == .orderedDescending }
         case .openAICompatible, .deepSeekAPI:
             if c.engineID == TranslationEngineID.deepSeekAPI.rawValue, c.baseURL.isEmpty { c.baseURL=DeepSeekTranslationService.defaultBaseURL }
             guard !c.baseURL.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { throw AITranslationError.invalidEndpoint }
@@ -1069,9 +1066,9 @@ public enum OpenAIAPIDefaults {
         return !excluded.contains { lower.contains($0) }
     }
 
-    /// The `reasoning_effort` values every OpenAI reasoning model accepts.
-    /// Leaving it unset uses the model's own default.
-    public static let reasoningEfforts = ["low", "medium", "high"]
+    /// Used only when no directory knows the model's own levels; leaving
+    /// the effort unset uses the model's default.
+    public static let reasoningEfforts = ["low", "medium", "high", "xhigh"]
 }
 
 public struct DeepSeekTranslationService: TranslationEngine, Sendable {

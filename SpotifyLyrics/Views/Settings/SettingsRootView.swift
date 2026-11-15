@@ -1142,7 +1142,8 @@ struct TranslationProviderControls: View {
         if let cached = descriptor?.reasoningEfforts {
             values = cached
         } else if provider == TranslationEngineID.openAIAPI.rawValue {
-            values = OpenAIAPIDefaults.reasoningEfforts
+            values = settings.translationModelSettings.knownReasoningEfforts(model: settings.aiTranslationConfiguration.model)
+                ?? OpenAIAPIDefaults.reasoningEfforts
         } else if provider == TranslationEngineID.grokBuild.rawValue {
             // Older model directories contain IDs only; the local Grok cache
             // carries the provider's per-model capability fields.

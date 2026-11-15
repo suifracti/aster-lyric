@@ -595,6 +595,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let aiFallbackStrategy = "ai.fallbackStrategy"
         public static let aiWorkflowID = "ai.workflowID"
         public static let aiCodexReasoningEffort = "ai.codexReasoningEffort"
+        public static let aiOpenAIReasoningEffort = "ai.openAIReasoningEffort"
         public static let settingsCenterPresentation = "settings.centerPresentation"
         public static let readingPreferences = "reading.preferences.v1"
         public static let v3PlaybackDetailsOnHover = "v3.playbackDetailsOnHover"
@@ -2263,7 +2264,8 @@ public final class AppSettingsStore: ObservableObject {
             profileSnapshot: defaults.string(forKey: Key.aiProfileSnapshot) ?? "",
             fallbackStrategy: TranslationFallbackStrategy(rawValue: defaults.string(forKey: Key.aiFallbackStrategy) ?? "none") ?? .none,
             workflowID: defaults.string(forKey: Key.aiWorkflowID) ?? TranslationWorkflowID.contextualV2.rawValue,
-            codexReasoningEffort: defaults.string(forKey: Key.aiCodexReasoningEffort) ?? ""
+            codexReasoningEffort: defaults.string(forKey: Key.aiCodexReasoningEffort) ?? "",
+            openAIReasoningEffort: defaults.string(forKey: Key.aiOpenAIReasoningEffort) ?? ""
         )
     }
 
@@ -2287,6 +2289,7 @@ public final class AppSettingsStore: ObservableObject {
         defaults.set(configuration.fallbackStrategy.rawValue, forKey: Key.aiFallbackStrategy)
         defaults.set(configuration.workflowID, forKey: Key.aiWorkflowID)
         defaults.set(configuration.codexReasoningEffort, forKey: Key.aiCodexReasoningEffort)
+        defaults.set(configuration.openAIReasoningEffort, forKey: Key.aiOpenAIReasoningEffort)
     }
 
     private static func loadCachedModels(defaults: UserDefaults) -> [TranslationModelDescriptor] {

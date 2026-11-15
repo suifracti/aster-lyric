@@ -882,6 +882,33 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertFalse(session.prefersAITranslation)
     }
 
+    @MainActor
+    func testOpenAIEffortUsesTheModelsOwnLevelsAndSurvivesARelaunch() async throws {
+        let suite = "openai-effort-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        // The Codex directory knows gpt-6-astra's levels; OpenAI's list does not.
+        let codex = AITranslationConfiguration(engineID: TranslationEngineID.codexChatGPT.rawValue)
+        let store = TranslationModelSettingsStore(defaults: defaults, configuration: codex) { _ in
+            [TranslationModelDescriptor(id: "gpt-6-astra", reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"])]
+        }
+        store.refresh(codex)
+        let deadline = Date().addingTimeInterval(2)
+        while store.knownReasoningEfforts(model: "gpt-6-astra") == nil && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(store.knownReasoningEfforts(model: "gpt-6-astra"), ["low", "medium", "high", "xhigh", "max", "ultra"])
+        XCTAssertNil(store.knownReasoningEfforts(model: "gpt-unknown"))
+
+        let settings = AppSettingsStore(defaults: defaults)
+        _ = settings.translationModelSettings
+        settings.selectTranslationProvider(TranslationEngineID.openAIAPI.rawValue)
+        let controls = TranslationProviderControls(settings: settings)
+        controls.modelBinding.wrappedValue = "gpt-6-astra"
+        controls.reasoningBinding.wrappedValue = "max"
+        XCTAssertEqual(settings.aiTranslationConfiguration.providerReasoningSetting, "reasoning_effort=max")
+        // A relaunch reads it before anything opens the translation panel.
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).aiTranslationConfiguration.openAIReasoningEffort, "max")
+    }
+
     func testSingerFromBandIsTheSinger() {
         XCTAssertEqual(TrackTextNormalizer.fromArtistNames("suis from Yorushika"), ["suis"])
         XCTAssertTrue(TrackTextNormalizer.fromArtistNames("Yorushika").isEmpty)

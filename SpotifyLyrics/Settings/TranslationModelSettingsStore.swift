@@ -144,6 +144,17 @@ public final class TranslationModelSettingsStore: ObservableObject {
         remember(next);return next
     }
 
+    /// The effort levels another directory reports for the same model ID.
+    /// OpenAI's own model list carries none, while the Codex directory lists
+    /// them for the very same models (gpt-6-astra: low … ultra).
+    public func knownReasoningEfforts(model:String) -> [String]? {
+        guard !model.isEmpty else { return nil }
+        for list in directories.values {
+            if let efforts = list.first(where: { $0.id == model })?.reasoningEfforts, !efforts.isEmpty { return efforts }
+        }
+        return nil
+    }
+
     public func selectionKind(model:String) -> String {
         if model.isEmpty { return "尚未选择模型" }
         return models.contains { $0.id==model } ? "已发现模型" : "ID 未在当前目录"
