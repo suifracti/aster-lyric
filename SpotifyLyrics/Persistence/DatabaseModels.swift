@@ -336,6 +336,7 @@ public struct DatabaseTranslationVersionRecord: Equatable, Sendable {
         case .geminiCLI: service = "Gemini"
         case .antigravityCLI: service = "Gemini · Antigravity"
         case .deepSeekAPI: service = "DeepSeek"
+        case .openAIAPI: service = "OpenAI"
         case .openAICompatible: service = "兼容 API"
         case nil: service = "译文（来源未记录）"
         }

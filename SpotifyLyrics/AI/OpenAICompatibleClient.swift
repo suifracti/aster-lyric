@@ -125,14 +125,20 @@ public struct OpenAICompatibleClient: Sendable {
         request.timeoutInterval = configuration.timeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": configuration.model,
-            "temperature": configuration.temperature,
             "messages": [
                 ["role": "system", "content": system],
                 ["role": "user", "content": user]
             ]
         ]
+        // OpenAI's reasoning models reject any temperature but the default;
+        // the listener should not have to know that.
+        if configuration.engineID != TranslationEngineID.openAIAPI.rawValue {
+            body["temperature"] = configuration.temperature
+        } else if !configuration.openAIReasoningEffort.isEmpty {
+            body["reasoning_effort"] = configuration.openAIReasoningEffort
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
 
         let requestID = UUID().uuidString

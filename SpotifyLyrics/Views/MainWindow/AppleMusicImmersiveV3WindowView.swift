@@ -1734,6 +1734,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 V3PanelRow(title: "当前译文") {
                     Menu {
                         Button("自动（推荐）") { state.restoreRecommendedTranslation() }
+                        Button("AI 翻译（没有就不显示）") { state.preferAITranslation() }
                         ForEach(state.translationVersions, id: \.record.id) { version in
                             Button(translationVersionTitle(version)) {
                                 state.selectTranslation(versionID: version.record.id)
@@ -1741,18 +1742,19 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         }
                         Button("不显示") { state.selectNoTranslationVersion() }
                     } label: {
-                        Text(state.translationVersions.isEmpty ? "暂无译文" :
+                        Text(state.prefersAITranslation && state.selectedTranslation == nil ? "AI 翻译 · 这首还没有" :
+                             state.translationVersions.isEmpty ? "暂无译文" :
                              state.selectedTranslation.map(translationVersionTitle) ?? "不显示")
                     }
                     .menuStyle(.borderlessButton).fixedSize()
-                    .disabled(state.translationVersions.isEmpty)
                 }
             }
             V3PanelSection(title: "服务")
             TranslationProviderControls(settings: settings).serviceRows
             if TranslationProviderControls(settings: settings).needsConnectionSettings {
-                V3PanelRow(title: settings.aiTranslationConfiguration.isConfigured ? "接口与密钥" : "未填接口或模型") {
-                    Button("在设置中填写…") { openAISettings() }
+                V3PanelRow(title: TranslationProviderControls(settings: settings).keyOnly ? "密钥"
+                           : (settings.aiTranslationConfiguration.isConfigured ? "接口与密钥" : "未填接口或模型")) {
+                    Button(TranslationProviderControls(settings: settings).keyOnly ? "填写密钥…" : "在设置中填写…") { openAISettings() }
                         .buttonStyle(.borderless).controlSize(.small)
                 }
             }

@@ -29,6 +29,8 @@ public struct AITranslationConfiguration: Equatable, Sendable {
     /// model-default, enabled, or disabled; never infer another provider's scale.
     public var deepSeekThinkingMode: String
     public var deepSeekReasoningEffort: String
+    /// OpenAI's `reasoning_effort`; empty sends nothing (the model's default).
+    public var openAIReasoningEffort: String
 
     public init(
         baseURL: String = "",
@@ -52,7 +54,8 @@ public struct AITranslationConfiguration: Equatable, Sendable {
         geminiThinkingBudget: Int? = nil,
         antigravityEffort: String = "",
         deepSeekThinkingMode: String = "model-default",
-        deepSeekReasoningEffort: String = ""
+        deepSeekReasoningEffort: String = "",
+        openAIReasoningEffort: String = ""
     ) {
         self.baseURL = baseURL
         self.model = model
@@ -76,12 +79,17 @@ public struct AITranslationConfiguration: Equatable, Sendable {
         self.antigravityEffort = antigravityEffort.trimmingCharacters(in: .whitespacesAndNewlines)
         self.deepSeekThinkingMode = deepSeekThinkingMode
         self.deepSeekReasoningEffort = deepSeekReasoningEffort.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.openAIReasoningEffort = openAIReasoningEffort.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     public var isConfigured: Bool {
         switch TranslationEngineID(rawValue: engineID) {
         case .appleSystem: return true
-        case .codexChatGPT, .grokBuild, .geminiCLI, .antigravityCLI, .deepSeekAPI:
+        case .codexChatGPT, .grokBuild, .geminiCLI, .antigravityCLI:
+            return !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // The endpoint is fixed; the listener picks the model from the
+        // account's list, which loads as soon as the key is saved.
+        case .deepSeekAPI, .openAIAPI:
             return !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .openAICompatible, .none: break
         }
@@ -121,6 +129,7 @@ public struct AITranslationConfiguration: Equatable, Sendable {
         case .geminiCLI: fields += ["gemini", geminiThinkingLevel, geminiThinkingBudget.map(String.init) ?? ""]
         case .antigravityCLI: fields += ["antigravity", antigravityEffort]
         case .deepSeekAPI: fields += ["deepseek", deepSeekThinkingMode, deepSeekReasoningEffort]
+        case .openAIAPI: fields += ["openai", openAIReasoningEffort]
         case .openAICompatible, .appleSystem, .none: break
         }
         let payload = try! JSONEncoder().encode(fields)
@@ -229,6 +238,7 @@ extension AITranslationConfiguration {
             let mode = deepSeekThinkingMode.isEmpty ? "model-default" : deepSeekThinkingMode
             let effort = deepSeekReasoningEffort.isEmpty ? "model-default" : deepSeekReasoningEffort
             return "thinking=\(mode);reasoning_effort=\(effort)"
+        case .openAIAPI: return "reasoning_effort=" + (openAIReasoningEffort.isEmpty ? "model-default" : openAIReasoningEffort)
         case .openAICompatible, .appleSystem, .none: return ""
         }
     }

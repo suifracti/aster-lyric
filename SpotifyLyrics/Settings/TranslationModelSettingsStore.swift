@@ -33,12 +33,14 @@ public final class TranslationModelSettingsStore: ObservableObject {
         var agy: String
         var deepSeekMode: String
         var deepSeekEffort: String
+        var openAIEffort: String?
         init(_ c: AITranslationConfiguration) {
             model=c.model; baseURL=c.baseURL; temperature=c.temperature
             apiCredentialAccount=c.apiCredentialAccount
             codex=c.codexReasoningEffort; grok=c.grokReasoningEffort
             geminiLevel=c.geminiThinkingLevel; geminiBudget=c.geminiThinkingBudget
             agy=c.antigravityEffort; deepSeekMode=c.deepSeekThinkingMode; deepSeekEffort=c.deepSeekReasoningEffort
+            openAIEffort=c.openAIReasoningEffort
         }
         func applying(to input: AITranslationConfiguration) -> AITranslationConfiguration {
             var c=input; c.model=model
@@ -48,6 +50,7 @@ public final class TranslationModelSettingsStore: ObservableObject {
             case .geminiCLI: c.geminiThinkingLevel=geminiLevel; c.geminiThinkingBudget=geminiBudget; c.baseURL=""
             case .antigravityCLI: c.antigravityEffort=agy; c.baseURL=""
             case .deepSeekAPI: c.baseURL=baseURL; c.temperature=temperature; c.deepSeekThinkingMode=deepSeekMode; c.deepSeekReasoningEffort=deepSeekEffort
+            case .openAIAPI: c.baseURL=OpenAIAPIDefaults.baseURL; c.openAIReasoningEffort=openAIEffort ?? ""
             case .openAICompatible: c.baseURL=baseURL; c.temperature=temperature;c.apiCredentialAccount=apiCredentialAccount ?? "default"
             case .appleSystem, .none: c.baseURL=""
             }
@@ -96,7 +99,7 @@ public final class TranslationModelSettingsStore: ObservableObject {
 
     public func remember(_ c: AITranslationConfiguration) {
         records[c.engineID]=Record(c)
-        if [TranslationEngineID.openAICompatible.rawValue,TranslationEngineID.deepSeekAPI.rawValue].contains(c.engineID) {
+        if [TranslationEngineID.openAICompatible.rawValue,TranslationEngineID.deepSeekAPI.rawValue,TranslationEngineID.openAIAPI.rawValue].contains(c.engineID) {
             records[Self.scope(c)]=Record(c)
             defaults.set(c.engineID,forKey:"ai.lastAPIBackend.v1")
         }
@@ -216,6 +219,7 @@ public enum TranslationReasoningPolicy {
         case .geminiCLI:return c.geminiThinkingLevel
         case .antigravityCLI:return c.antigravityEffort
         case .deepSeekAPI:return c.deepSeekReasoningEffort
+        case .openAIAPI:return c.openAIReasoningEffort
         default:return ""
         }
     }
@@ -227,6 +231,7 @@ public enum TranslationReasoningPolicy {
         case .geminiCLI:c.geminiThinkingLevel=value;c.geminiThinkingBudget=nil
         case .antigravityCLI:c.antigravityEffort=value
         case .deepSeekAPI:c.deepSeekReasoningEffort=value
+        case .openAIAPI:c.openAIReasoningEffort=value
         default:break
         }
         return c

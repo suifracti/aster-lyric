@@ -1027,6 +1027,8 @@ public final class PlaybackState: ObservableObject {
     public func archiveTranslation(versionID: UUID) { translationSession.archiveTranslation(versionID: versionID) }
     public func cancelTranslation() { translationSession.cancel() }
     public func restoreRecommendedTranslation() { translationSession.restoreRecommended() }
+    public var prefersAITranslation: Bool { translationSession.prefersAITranslation }
+    public func preferAITranslation() { translationSession.preferAITranslation() }
 
     /// Explicitly clears the live lyric projection for this session without
     /// deleting any stored LyricsVersion.

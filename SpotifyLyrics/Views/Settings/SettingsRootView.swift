@@ -968,16 +968,10 @@ struct TranslationProviderControls: View {
         VStack(alignment: .leading, spacing: 2) {
             V3PanelRow(title: "AI 模型") {
                 HStack(spacing: 4) {
-                    Picker("AI 模型", selection: modelBinding) {
-                        if !settings.aiCachedModels.contains(where: { $0.id == settings.aiTranslationConfiguration.model }) {
-                            Text(settings.aiTranslationConfiguration.model.isEmpty ? "选择模型" : settings.aiTranslationConfiguration.model)
-                                .tag(settings.aiTranslationConfiguration.model)
-                        }
-                        ForEach(settings.aiCachedModels, id: \.id) { model in
-                            Text(model.displayName).tag(model.id)
-                        }
-                    }
-                    .pickerStyle(.menu).labelsHidden().fixedSize()
+                    choiceMenu(current: settings.aiCachedModels.first { $0.id == settings.aiTranslationConfiguration.model }?.displayName
+                                   ?? (settings.aiTranslationConfiguration.model.isEmpty ? "选择模型" : settings.aiTranslationConfiguration.model),
+                               options: settings.aiCachedModels.map { ($0.displayName, $0.id) },
+                               selected: settings.aiTranslationConfiguration.model) { modelBinding.wrappedValue = $0 }
                     .disabled(provider == TranslationEngineID.appleSystem.rawValue)
                     .onAppear { _ = settings.translationModelSettings }
                     .accessibilityIdentifier("ai.model")
@@ -1005,33 +999,56 @@ struct TranslationProviderControls: View {
     /// own model and settings; keys and endpoints stay in Settings.
     var serviceRows: some View {
         VStack(alignment: .leading, spacing: 2) {
+            // Menus of buttons, not menu-style Pickers: inside the hover panel
+            // a Picker kept showing the old choice after a new one was made.
             V3PanelRow(title: "翻译服务") {
-                Picker("翻译服务", selection: Binding(get: { family }, set: { settings.selectTranslationProvider($0) })) {
-                    ForEach(TranslationEngineCatalog.selectable, id: \.stableID) { engine in
-                        Text(engine.displayName).tag(engine.stableID)
-                    }
-                }
-                .pickerStyle(.menu).labelsHidden().fixedSize()
-                .accessibilityIdentifier("ai.service")
+                choiceMenu(current: TranslationEngineCatalog.selectable.first { $0.stableID == family }?.displayName ?? "选择",
+                           options: TranslationEngineCatalog.selectable.map { ($0.displayName, $0.stableID) },
+                           selected: family) { settings.selectTranslationProvider($0) }
+                    .accessibilityIdentifier("ai.service")
             }
             if family == TranslationEngineID.openAICompatible.rawValue {
                 V3PanelRow(title: "API") {
-                    Picker("API 服务", selection: backendBinding) {
-                        Text("自定义兼容 API").tag(TranslationEngineID.openAICompatible.rawValue)
-                        Text("DeepSeek API").tag(TranslationEngineID.deepSeekAPI.rawValue)
+                    choiceMenu(current: Self.apiBackends.first { $0.1 == provider }?.0 ?? "选择",
+                               options: Self.apiBackends, selected: provider) { id in
+                        settings.selectTranslationProvider(id)
+                        // A saved key: list the account's models straight away.
+                        if id != TranslationEngineID.openAICompatible.rawValue, settings.aiCachedModels.isEmpty {
+                            settings.refreshAIModelDirectory()
+                        }
                     }
-                    .pickerStyle(.menu).labelsHidden().fixedSize()
                 }
             } else if family == TranslationEngineID.geminiCLI.rawValue {
                 V3PanelRow(title: "连接方式") {
-                    Picker("连接方式", selection: backendBinding) {
-                        Text("Gemini CLI").tag(TranslationEngineID.geminiCLI.rawValue)
-                        Text("Antigravity CLI").tag(TranslationEngineID.antigravityCLI.rawValue)
-                    }
-                    .pickerStyle(.menu).labelsHidden().fixedSize()
+                    choiceMenu(current: Self.geminiBackends.first { $0.1 == provider }?.0 ?? "选择",
+                               options: Self.geminiBackends, selected: provider) { settings.selectTranslationProvider($0) }
                 }
             }
         }
+    }
+
+    static let apiBackends: [(String, String)] = [
+        ("OpenAI API", TranslationEngineID.openAIAPI.rawValue),
+        ("DeepSeek API", TranslationEngineID.deepSeekAPI.rawValue),
+        ("自定义兼容 API", TranslationEngineID.openAICompatible.rawValue)
+    ]
+    static let geminiBackends: [(String, String)] = [
+        ("Gemini CLI", TranslationEngineID.geminiCLI.rawValue),
+        ("Antigravity CLI", TranslationEngineID.antigravityCLI.rawValue)
+    ]
+
+    private func choiceMenu(current: String, options: [(String, String)], selected: String,
+                            choose: @escaping (String) -> Void) -> some View {
+        Menu {
+            ForEach(options, id: \.1) { option in
+                Button { choose(option.1) } label: {
+                    if option.1 == selected { Label(option.0, systemImage: "checkmark") } else { Text(option.0) }
+                }
+            }
+        } label: {
+            Text(current)
+        }
+        .menuStyle(.borderlessButton).fixedSize()
     }
 
     /// API services need an endpoint and a key, which only Settings holds.
@@ -1039,9 +1056,20 @@ struct TranslationProviderControls: View {
         family == TranslationEngineID.openAICompatible.rawValue
     }
 
+    var keyOnly: Bool {
+        [TranslationEngineID.openAIAPI.rawValue, TranslationEngineID.deepSeekAPI.rawValue].contains(provider)
+    }
+
     var reasoningRow: some View {
         V3PanelRow(title: "思考强度") {
-            reasoningPicker.pickerStyle(.menu).labelsHidden().fixedSize()
+            let options = advertisedReasoningOptions ?? []
+            let value = reasoningBinding.wrappedValue
+            choiceMenu(current: options.contains(value) ? reasoningLabel(value) : reasoningSelectionLabel,
+                       options: (provider == TranslationEngineID.openAIAPI.rawValue ? [("模型默认", "")] : [])
+                            + options.map { (reasoningLabel($0), $0) },
+                       selected: value) { reasoningBinding.wrappedValue = $0 }
+                .disabled(!supportsReasoningControl || options.isEmpty)
+                .accessibilityIdentifier("ai.reasoningEffort")
         }
     }
 
@@ -1103,7 +1131,7 @@ struct TranslationProviderControls: View {
     private var supportsReasoningControl: Bool {
         [TranslationEngineID.codexChatGPT.rawValue, TranslationEngineID.grokBuild.rawValue,
          TranslationEngineID.geminiCLI.rawValue, TranslationEngineID.antigravityCLI.rawValue,
-         TranslationEngineID.deepSeekAPI.rawValue].contains(provider)
+         TranslationEngineID.deepSeekAPI.rawValue, TranslationEngineID.openAIAPI.rawValue].contains(provider)
     }
 
     private var advertisedReasoningOptions: [String]? {
@@ -1113,6 +1141,8 @@ struct TranslationProviderControls: View {
         let values: [String]?
         if let cached = descriptor?.reasoningEfforts {
             values = cached
+        } else if provider == TranslationEngineID.openAIAPI.rawValue {
+            values = OpenAIAPIDefaults.reasoningEfforts
         } else if provider == TranslationEngineID.grokBuild.rawValue {
             // Older model directories contain IDs only; the local Grok cache
             // carries the provider's per-model capability fields.
@@ -1128,7 +1158,7 @@ struct TranslationProviderControls: View {
 
     private var reasoningSelectionLabel: String {
         let value = reasoningBinding.wrappedValue
-        guard !value.isEmpty else { return "待选择" }
+        guard !value.isEmpty else { return provider == TranslationEngineID.openAIAPI.rawValue ? "模型默认" : "待选择" }
         if let custom = customReasoningOverride, custom.value == value { return custom.label }
         if advertisedReasoningOptions?.contains(value) == true { return reasoningLabel(value) }
         let status: String
@@ -1159,8 +1189,9 @@ struct TranslationProviderControls: View {
                 }
             } else if family == TranslationEngineID.openAICompatible.rawValue {
                 Picker("API 服务", selection: backendBinding) {
-                    Text("自定义兼容 API").tag(TranslationEngineID.openAICompatible.rawValue)
+                    Text("OpenAI API").tag(TranslationEngineID.openAIAPI.rawValue)
                     Text("DeepSeek API").tag(TranslationEngineID.deepSeekAPI.rawValue)
+                    Text("自定义兼容 API").tag(TranslationEngineID.openAICompatible.rawValue)
                 }
             }
             if provider != TranslationEngineID.appleSystem.rawValue {
@@ -1280,7 +1311,80 @@ private struct AISettingsView: View {
     @State private var showProfileManager = false
     @State private var isAdvancedAIExpanded = false
 
-    private var keyStore: KeychainAITranslationAPIKeyStore { KeychainAITranslationAPIKeyStore() }
+    private var engineID: String { settings.aiTranslationConfiguration.engineID }
+    /// OpenAI and DeepSeek need nothing but a key: fixed endpoint, model
+    /// picked automatically, each key in its own Keychain item.
+    private var isKeyOnlyEngine: Bool {
+        [TranslationEngineID.openAIAPI.rawValue, TranslationEngineID.deepSeekAPI.rawValue].contains(engineID)
+    }
+    private var keyStore: KeychainAITranslationAPIKeyStore {
+        switch TranslationEngineID(rawValue: engineID) {
+        case .openAIAPI: return KeychainAITranslationAPIKeyStore(account: OpenAIAPIDefaults.keychainAccount)
+        case .deepSeekAPI: return KeychainAITranslationAPIKeyStore(account: DeepSeekTranslationService.keychainAccount)
+        default: return KeychainAITranslationAPIKeyStore()
+        }
+    }
+    /// Whether a key was saved, remembered without reading the Keychain.
+    private var storedKeyFlag: Bool {
+        get {
+            isKeyOnlyEngine ? UserDefaults.lyricsQ.bool(forKey: "ai.apiKeyConfigured.v1." + engineID)
+                : settings.aiTranslationAPIKeyConfigured
+        }
+        nonmutating set {
+            if isKeyOnlyEngine { UserDefaults.lyricsQ.set(newValue, forKey: "ai.apiKeyConfigured.v1." + engineID) }
+            else { settings.aiTranslationAPIKeyConfigured = newValue }
+        }
+    }
+
+    private var keyOnlySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SecureField(engineID == TranslationEngineID.openAIAPI.rawValue ? "OpenAI API Key（sk-…）" : "DeepSeek API Key（sk-…）",
+                        text: $apiKeyDraft)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(saveKey)
+            HStack {
+                Button(hasStoredKey ? "替换密钥" : "保存密钥", action: saveKey)
+                    .disabled(apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if hasStoredKey {
+                    Button("清除密钥", role: .destructive, action: clearKey)
+                }
+                Text(hasStoredKey ? "已保存（Keychain）" : "未填写").font(.caption).foregroundStyle(.secondary)
+            }
+            if !statusMessage.isEmpty {
+                Text(statusMessage).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+            Text("只需要填密钥，接口地址不用管。保存后会列出这个账号能用的模型，在 工具栏 → 译文 里选模型和思考强度。")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func saveKey() {
+        let value = apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        do {
+            try keyStore.save(value)
+            apiKeyDraft = ""
+            hasStoredKey = true
+            storedKeyFlag = true
+            statusMessage = "密钥已保存到 Keychain（不会显示或写入日志）。"
+            if isKeyOnlyEngine { settings.refreshAIModelDirectory() }
+        } catch {
+            statusMessage = "保存失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func clearKey() {
+        do {
+            try keyStore.delete()
+            hasStoredKey = false
+            apiKeyDraft = ""
+            storedKeyFlag = false
+            statusMessage = "密钥已清除。"
+        } catch {
+            statusMessage = "清除失败：\(error.localizedDescription)"
+        }
+    }
 
     var body: some View {
         Form {
@@ -1320,6 +1424,9 @@ private struct AISettingsView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                if isKeyOnlyEngine {
+                    keyOnlySection
+                } else {
                 DisclosureGroup("API 地址、Key 与连接测试") {
                     TextField("兼容接口地址（Base URL）", text: configurationBinding(\.baseURL))
                         .textFieldStyle(.roundedBorder)
@@ -1335,7 +1442,7 @@ private struct AISettingsView: View {
                                 try keyStore.save(value)
                                 apiKeyDraft = ""
                                 hasStoredKey = true
-                                settings.aiTranslationAPIKeyConfigured = true
+                                storedKeyFlag = true
                                 statusMessage = "API Key 已保存到 Keychain（不会显示或写入日志）。"
                             } catch {
                                 statusMessage = "保存失败：\(error.localizedDescription)"
@@ -1347,7 +1454,7 @@ private struct AISettingsView: View {
                                 try keyStore.delete()
                                 hasStoredKey = false
                                 apiKeyDraft = ""
-                                settings.aiTranslationAPIKeyConfigured = false
+                                storedKeyFlag = false
                                 statusMessage = "API Key 已清除。"
                             } catch {
                                 statusMessage = "清除失败：\(error.localizedDescription)"
@@ -1386,6 +1493,7 @@ private struct AISettingsView: View {
                     Text("Base URL 支持已包含 /v1、完整 /v1/chat/completions 和自定义反代路径；应用不会重复拼接 /v1。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
                 }
             }
 
@@ -1456,7 +1564,12 @@ private struct AISettingsView: View {
                 .environmentObject(settings)
         }
         .onAppear {
-            hasStoredKey = settings.aiTranslationAPIKeyConfigured
+            hasStoredKey = storedKeyFlag
+        }
+        .onChange(of: engineID) { _, _ in
+            hasStoredKey = storedKeyFlag
+            apiKeyDraft = ""
+            statusMessage = ""
         }
     }
 

@@ -800,6 +800,88 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertNotEqual(LyricsSafeMatcher.decide(candidate: live, metadata: metadata).tier, .autoMedium)
     }
 
+    func testOpenAIAPINeedsOnlyAKeyAndTheListenerPicksModelAndEffort() async throws {
+        XCTAssertTrue(OpenAIAPIDefaults.isChatModel("gpt-5.1-mini"))
+        XCTAssertFalse(OpenAIAPIDefaults.isChatModel("gpt-4o-realtime-preview"))
+        XCTAssertFalse(OpenAIAPIDefaults.isChatModel("text-embedding-3-small"))
+
+        final class Recorder: AIHTTPClient, @unchecked Sendable {
+            var requests: [URLRequest] = []
+            func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+                requests.append(request)
+                let body = #"{"choices":[{"message":{"content":"[{\"index\":0,\"translation\":\"ok\"}]"}}]}"#
+                return (Data(body.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
+        }
+        let http = Recorder()
+        let service = OpenAICompatibleTranslationService.openAI(client: OpenAICompatibleClient(httpClient: http),
+                                                               keyStore: InMemoryAITranslationAPIKeyStore(key: "sk-test"))
+        // No model chosen yet: nothing is sent and nothing is picked for the listener.
+        var configuration = AITranslationConfiguration(engineID: TranslationEngineID.openAIAPI.rawValue)
+        XCTAssertFalse(configuration.isConfigured)
+        do { try await service.testConnection(configuration: configuration); XCTFail("needs a chosen model") } catch {}
+        XCTAssertTrue(http.requests.isEmpty)
+
+        // Model and effort chosen; the endpoint is never typed.
+        configuration.model = "gpt-5.1"
+        configuration = TranslationReasoningPolicy.setting("high", in: configuration)
+        try await service.testConnection(configuration: configuration)
+        let chat = try XCTUnwrap(http.requests.last)
+        XCTAssertEqual(chat.url?.absoluteString, "https://api.openai.com/v1/chat/completions")
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: chat.httpBody ?? Data()) as? [String: Any])
+        XCTAssertEqual(json["model"] as? String, "gpt-5.1")
+        XCTAssertEqual(json["reasoning_effort"] as? String, "high")
+        XCTAssertNil(json["temperature"], "OpenAI reasoning models reject a non-default temperature")
+        XCTAssertEqual(configuration.providerReasoningSetting, "reasoning_effort=high")
+        XCTAssertEqual(TranslationEngineCatalog.topLevelID(for: TranslationEngineID.openAIAPI.rawValue),
+                       TranslationEngineID.openAICompatible.rawValue)
+        XCTAssertTrue(TranslationEngineRegistry.make(stableID: TranslationEngineID.deepSeekAPI.rawValue) is DeepSeekTranslationService,
+                      "DeepSeek is wired, not the unavailable placeholder")
+    }
+
+    @MainActor
+    func testAIOnlyTranslationHidesTheSourcesOwnTranslation() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ai-only-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let repo = SQLiteLyricsRepository(databaseURL: dir.appendingPathComponent("t.sqlite3"),
+                                          alignmentProvenanceDirectory: dir.appendingPathComponent("p"))
+        try await repo.prepare()
+        let track = Track(title: "Luv it", artist: "Singer", album: "A", duration: 120)
+        let identity = TrackIdentity(track: track)
+        let document = LyricsDocument(identity: identity, title: track.title, artist: track.artist, album: track.album,
+            duration: 120, lines: [LyricLine(timestamp: 1, originalText: "きみとなら", translationText: "和你的话"),
+                                   LyricLine(timestamp: 5, originalText: "恋したいの", translationText: "想恋爱")],
+            isSynchronized: true, source: .neteaseExperimental, confidence: 0.9)
+        let saved = try await repo.save(track: track, identity: identity, document: document)
+        let suite = "ai-only-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let session = TranslationSessionController(repository: repo, engine: nil, selectionDefaults: defaults, acceptanceBudget: nil)
+        var config = AITranslationConfiguration(engineID: TranslationEngineID.openAIAPI.rawValue)
+        config.autoTranslateNewLyrics = false
+        func waitFor(_ condition: () -> Bool) async throws {
+            let deadline = Date().addingTimeInterval(3)
+            while !condition() && Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
+        }
+        session.synchronize(document: document, lyricsVersionID: saved.versionID,
+                            sourceContentHash: saved.sourceContentHash, configuration: config)
+        try await waitFor { session.selectedVersion != nil }
+        XCTAssertEqual(session.selectedVersion?.isEmbeddedTranslation, true, "automatic shows the source's translation")
+
+        session.preferAITranslation()
+        try await waitFor { session.selectedVersion == nil }
+        XCTAssertNil(session.selectedVersion)
+        XCTAssertTrue(session.project(onto: document.lines).allSatisfy { $0.translationText == nil },
+                      "no AI translation yet: nothing is shown")
+        XCTAssertTrue(defaults.bool(forKey: TranslationSessionController.prefersAITranslationKey), "kept for every song")
+
+        session.restoreRecommended()
+        try await waitFor { session.selectedVersion != nil }
+        XCTAssertEqual(session.selectedVersion?.isEmbeddedTranslation, true)
+        XCTAssertFalse(session.prefersAITranslation)
+    }
+
     func testSingerFromBandIsTheSinger() {
         XCTAssertEqual(TrackTextNormalizer.fromArtistNames("suis from Yorushika"), ["suis"])
         XCTAssertTrue(TrackTextNormalizer.fromArtistNames("Yorushika").isEmpty)

@@ -9,6 +9,15 @@ struct ProviderModelDirectoryLoader: Sendable {
         switch TranslationEngineID(rawValue:c.engineID) {
         case .codexChatGPT: return try await CodexAppServerTranslationService().listModels()
         case .grokBuild: return try await GrokBuildTranslationService().listModels()
+        case .openAIAPI:
+            c.baseURL=OpenAIAPIDefaults.baseURL
+            guard let key=KeychainAITranslationAPIKeyStore(account:OpenAIAPIDefaults.keychainAccount).read(), !key.isEmpty else { throw AITranslationError.missingAPIKey }
+            let all=try await OpenAICompatibleClient().listModels(configuration:c,apiKey:key)
+            // Only models that can translate, newest first; the listener picks.
+            return all.filter { OpenAIAPIDefaults.isChatModel($0.id) }.map {
+                TranslationModelDescriptor(id: $0.id, displayName: $0.displayName,
+                                           reasoningEfforts: OpenAIAPIDefaults.reasoningEfforts)
+            }.sorted { $0.id.compare($1.id, options: [.numeric, .caseInsensitive]) == .orderedDescending }
         case .openAICompatible, .deepSeekAPI:
             if c.engineID == TranslationEngineID.deepSeekAPI.rawValue, c.baseURL.isEmpty { c.baseURL=DeepSeekTranslationService.defaultBaseURL }
             guard !c.baseURL.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { throw AITranslationError.invalidEndpoint }
@@ -1046,9 +1055,29 @@ struct DeepSeekTranslationResponseParser {
     }
 }
 
+/// OpenAI's own API needs nothing but a key from the listener.
+public enum OpenAIAPIDefaults {
+    public static let keychainAccount = "openai-api.v1"
+    public static let baseURL = "https://api.openai.com/v1"
+
+    /// Text chat models only: no audio, image, search, embedding or
+    /// realtime variants, which cannot return a translation.
+    public static func isChatModel(_ id: String) -> Bool {
+        let lower = id.lowercased()
+        guard lower.hasPrefix("gpt-") || lower.hasPrefix("o3") || lower.hasPrefix("o4") else { return false }
+        let excluded = ["audio", "realtime", "transcribe", "tts", "image", "search", "instruct", "embedding", "codex", "preview"]
+        return !excluded.contains { lower.contains($0) }
+    }
+
+    /// The `reasoning_effort` values every OpenAI reasoning model accepts.
+    /// Leaving it unset uses the model's own default.
+    public static let reasoningEfforts = ["low", "medium", "high"]
+}
+
 public struct DeepSeekTranslationService: TranslationEngine, Sendable {
     public static let keychainAccount = "deepseek-api.v1"
     public static let defaultBaseURL = "https://api.deepseek.com"
+
     private let httpClient: any AIHTTPClient
     private let keyStore: any AITranslationAPIKeyStore
 
@@ -1114,7 +1143,6 @@ public struct DeepSeekTranslationService: TranslationEngine, Sendable {
     }
 
     public func testConnection(configuration: AITranslationConfiguration) async throws {
-        guard !configuration.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AITranslationError.notConfigured }
         _ = try resolvedURL(configuration: configuration)
         // Deliberately performs no Keychain read and no potentially chargeable API request.
     }

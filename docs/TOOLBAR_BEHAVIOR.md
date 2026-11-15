@@ -99,7 +99,7 @@ There is no lyric bar; the user removed it on 2026-10-21. Every setting lives in
 
 **Nothing is removed.** Every control that was in a toolbar panel before 2026-10-20 stays reachable from its panel, folding into a collapsed section where needed. The settings window may show them as well.
 
-**Moved to the settings window:** 翻译服务 login and connection details (keys, endpoints), 恢复此风格的默认值, and every explanatory paragraph. The choice of service itself is back in 译文 (2026-11-15, user request "想用 api"): 翻译服务, then API (自定义兼容 / DeepSeek) or 连接方式 (Gemini / Antigravity) when that service has several, and for an API service a 「在设置中填写…」 row that opens Settings → AI 翻译. Switching keeps each service's own model.
+**Moved to the settings window:** 翻译服务 login and connection details (keys, endpoints), 恢复此风格的默认值, and every explanatory paragraph. The choice of service itself is back in 译文 (2026-11-15, user request "想用 api"): 翻译服务, then API (自定义兼容 / DeepSeek) or 连接方式 (Gemini / Antigravity) when that service has several, and for an API service a 「在设置中填写…」 row that opens Settings → AI 翻译. Switching keeps each service's own model. API offers OpenAI API, DeepSeek API and a custom compatible API; OpenAI and DeepSeek need only a key (fixed endpoint, own Keychain item); saving the key lists the account's models, and the listener picks the model and 思考强度 (OpenAI: 模型默认/低/中/高). These rows are menus of buttons, not menu-style Pickers, which kept showing the old choice inside the hover panel. 当前译文 adds 「AI 翻译（没有就不显示）」: a lasting preference that shows only AI translations and no translation for a song that has none yet; 自动（推荐） turns it off.
 
 **Removed from 更多:** 「歌词版本」, which 歌词库 now covers.
 

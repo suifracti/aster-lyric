@@ -110,25 +110,43 @@ public struct OpenAICompatibleTranslationService: TranslationEngine, Sendable {
     private let client: OpenAICompatibleClient
     private let keyStore: any AITranslationAPIKeyStore
     private let promptBuilder: AITranslationPromptBuilder
+    private let engineID: TranslationEngineID
 
     public init(
         client: OpenAICompatibleClient = OpenAICompatibleClient(),
         keyStore: any AITranslationAPIKeyStore = KeychainAITranslationAPIKeyStore(),
-        promptBuilder: AITranslationPromptBuilder = AITranslationPromptBuilder()
+        promptBuilder: AITranslationPromptBuilder = AITranslationPromptBuilder(),
+        engineID: TranslationEngineID = .openAICompatible
     ) {
         self.client = client
         self.keyStore = keyStore
         self.promptBuilder = promptBuilder
+        self.engineID = engineID
+    }
+
+    /// OpenAI's own API: fixed endpoint, its own Keychain item, and a model
+    /// chosen from the account's list when the listener has not picked one.
+    public static func openAI(client: OpenAICompatibleClient = OpenAICompatibleClient(),
+                              keyStore: any AITranslationAPIKeyStore = KeychainAITranslationAPIKeyStore(account: OpenAIAPIDefaults.keychainAccount)) -> Self {
+        Self(client: client, keyStore: keyStore, engineID: .openAIAPI)
     }
 
     public var metadata: TranslationEngineMetadata {
         TranslationEngineMetadata(
-            stableID: TranslationEngineID.openAICompatible.rawValue,
-            displayName: "OpenAI-compatible API",
+            stableID: engineID.rawValue,
+            displayName: engineID == .openAIAPI ? "OpenAI API" : "OpenAI-compatible API",
             availability: .requiresConfiguration,
             requiresAPIKey: true,
             supportsModelDirectory: true
         )
+    }
+
+    /// OpenAI's own API: the endpoint is never typed by the listener.
+    func resolved(_ input: AITranslationConfiguration, apiKey: String) async throws -> AITranslationConfiguration {
+        guard engineID == .openAIAPI else { return input }
+        var c = input
+        c.baseURL = OpenAIAPIDefaults.baseURL
+        return c
     }
 
     public func translate(
@@ -138,6 +156,7 @@ public struct OpenAICompatibleTranslationService: TranslationEngine, Sendable {
     ) async throws -> AITranslationDraft {
         guard configuration.isConfigured else { throw AITranslationError.notConfigured }
         guard let key = keyStore.read(), !key.isEmpty else { throw AITranslationError.missingAPIKey }
+        let configuration = try await resolved(configuration, apiKey: key)
         let prompt = try promptBuilder.build(context: context, configuration: configuration)
         let result = try await client.complete(
             prompt: prompt,
@@ -161,7 +180,7 @@ public struct OpenAICompatibleTranslationService: TranslationEngine, Sendable {
                 baseURLHost: AITranslationEndpoint(baseURL: configuration.baseURL).hostForLogging,
                 promptHash: prompt.promptHash,
                 sourceContentHash: sourceContentHash,
-                engineID: TranslationEngineID.openAICompatible.rawValue,
+                engineID: engineID.rawValue,
                 promptPresetID: configuration.promptPresetID,
                 profileID: configuration.profileID,
                 profileSnapshot: configuration.profileSnapshot,
@@ -178,7 +197,7 @@ public struct OpenAICompatibleTranslationService: TranslationEngine, Sendable {
     public func testConnection(configuration: AITranslationConfiguration) async throws {
         guard configuration.isConfigured else { throw AITranslationError.notConfigured }
         guard let key = keyStore.read(), !key.isEmpty else { throw AITranslationError.missingAPIKey }
-        _ = try await client.testConnection(configuration: configuration, apiKey: key)
+        _ = try await client.testConnection(configuration: try await resolved(configuration, apiKey: key), apiKey: key)
     }
 }
 
@@ -1194,15 +1213,9 @@ public enum TranslationEngineRegistry {
         case .antigravityCLI:
             return AntigravityCLITranslationService()
         case .deepSeekAPI:
-            let catalog=TranslationEngineCatalog.metadata(for:stableID)
-            let metadata=TranslationEngineMetadata(
-                stableID:stableID,
-                displayName:catalog?.displayName ?? "未接线的翻译服务",
-                availability:.unavailable,
-                requiresAPIKey:catalog?.requiresAPIKey ?? false,
-                supportsModelDirectory:catalog?.supportsModelDirectory ?? false
-            )
-            return UnavailableProviderTranslationEngine(metadata:metadata)
+            return DeepSeekTranslationService()
+        case .openAIAPI:
+            return OpenAICompatibleTranslationService.openAI()
         case .openAICompatible, .none:
             return OpenAICompatibleTranslationService()
         }

@@ -29,6 +29,10 @@ public enum TranslationSessionState: Equatable, Sendable {
 public final class TranslationSessionController: ObservableObject {
     @Published public private(set) var state: TranslationSessionState = .idle
     @Published public private(set) var selectedVersion: StoredTranslationVersion?
+    /// 「AI 翻译」 in 当前译文: show only AI translations, for every song;
+    /// a song without one shows no translation rather than the source's.
+    @Published public private(set) var prefersAITranslation = false
+    static let prefersAITranslationKey = "ai.translationPrefersAI.v1"
     @Published public private(set) var availableVersions: [StoredTranslationVersion] = []
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var progressMessage = ""
@@ -108,6 +112,7 @@ public final class TranslationSessionController: ObservableObject {
         self.repository = repository
         self.acceptanceBudget = acceptanceBudget
         self.selectionDefaults = selectionDefaults
+        self.prefersAITranslation = selectionDefaults?.bool(forKey: Self.prefersAITranslationKey) ?? false
         self.engine = service.map { TranslationEngineRegistry.wrapping($0) }
         observeTermination()
     }
@@ -121,6 +126,7 @@ public final class TranslationSessionController: ObservableObject {
         self.repository = repository
         self.acceptanceBudget = acceptanceBudget
         self.selectionDefaults = selectionDefaults
+        self.prefersAITranslation = selectionDefaults?.bool(forKey: Self.prefersAITranslationKey) ?? false
         self.engine = engine
         observeTermination()
     }
@@ -281,6 +287,7 @@ public final class TranslationSessionController: ObservableObject {
     }
 
     public func restoreRecommended() {
+        setPrefersAITranslation(false)
         guard let context else { return }
         manualSelection.removeValue(forKey: context.key)
         manualNoSelection.remove(context.key)
@@ -289,6 +296,24 @@ public final class TranslationSessionController: ObservableObject {
         pendingCandidate = nil
         progressMessage = ""
         loadExistingOrAutoTranslate(context)
+    }
+
+    /// Chooses AI translations from now on. Clears this song's own choice so
+    /// the preference applies to it at once.
+    public func preferAITranslation() {
+        setPrefersAITranslation(true)
+        guard let context else { return }
+        manualSelection.removeValue(forKey: context.key)
+        manualNoSelection.remove(context.key)
+        persistSelection(nil, key: context.key)
+        isNoSelection = false
+        progressMessage = ""
+        loadExistingOrAutoTranslate(context)
+    }
+
+    private func setPrefersAITranslation(_ value: Bool) {
+        prefersAITranslation = value
+        selectionDefaults?.set(value, forKey: Self.prefersAITranslationKey)
     }
 
     public func selectSavedVersion(versionID: UUID) async {
@@ -599,7 +624,7 @@ public final class TranslationSessionController: ObservableObject {
         _ versions: [StoredTranslationVersion],
         context: TranslationContext
     ) -> StoredTranslationVersion? {
-        let eligible = versions.filter {
+        let allEligible = versions.filter {
             $0.isComplete &&
             !$0.isDraft &&
             !$0.isArchived &&
@@ -608,7 +633,8 @@ public final class TranslationSessionController: ObservableObject {
         }
         guard !manualNoSelection.contains(context.key) else { return nil }
         if let manualID = manualSelection[context.key],
-           let manual = eligible.first(where: { $0.record.id == manualID }) { return manual }
+           let manual = allEligible.first(where: { $0.record.id == manualID }) { return manual }
+        let eligible = prefersAITranslation ? allEligible.filter { !$0.isEmbeddedTranslation } : allEligible
         if let locked = eligible.first(where: { $0.record.isLocked }) { return locked }
         if let edited = eligible.first(where: { $0.record.isManuallyEdited || (!$0.record.isMachineGenerated && !$0.isEmbeddedTranslation) }) { return edited }
         // Adopted history remains usable after a settings change. A mismatch is
