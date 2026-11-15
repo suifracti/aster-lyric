@@ -72,7 +72,7 @@ final class SearchSourceContractTests: XCTestCase {
         XCTAssertEqual(runCount(), 5, "a failure is retried, never remembered")
     }
 
-    /// The user's saved preset is 我的风格 (full-audit-v3-r3). It must resolve
+    /// The user's saved preset is 我的风格 (full-audit-v3-r4). It must resolve
     /// to that guidance, not fall back silently to another style.
     func testSavedPersonalStyleResolvesToTheAuditedGuidance() throws {
         let saved = "translationPrompt.personalV2.v2"
@@ -88,7 +88,7 @@ final class SearchSourceContractTests: XCTestCase {
         for engine in [TranslationEngineID.codexChatGPT.rawValue, TranslationEngineID.deepSeekAPI.rawValue] {
             configuration.engineID = engine
             let prompt = try builder.build(context: context, configuration: configuration)
-            XCTAssertTrue(prompt.system.contains("full-audit-v3-r3"), engine)
+            XCTAssertTrue(prompt.system.contains("full-audit-v3-r4"), engine)
             XCTAssertTrue(prompt.system.contains("【多语种】"), engine)
             // v3: a sentence split across lines may be regrouped so each
             // Chinese line reads naturally; no contract line may forbid it.
@@ -112,7 +112,7 @@ final class SearchSourceContractTests: XCTestCase {
         let natural = try builder.build(context: context, configuration: configuration)
         XCTAssertTrue(natural.system.contains("Natural song style v2"), "the other styles stay selectable")
         configuration.promptPresetID = "translationPrompt.unknown.v9"
-        XCTAssertTrue(try builder.build(context: context, configuration: configuration).system.contains("full-audit-v3-r3"),
+        XCTAssertTrue(try builder.build(context: context, configuration: configuration).system.contains("full-audit-v3-r4"),
                       "an unknown saved value falls back to the user's style")
     }
 
