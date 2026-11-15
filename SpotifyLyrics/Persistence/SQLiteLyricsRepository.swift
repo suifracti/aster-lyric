@@ -3779,10 +3779,11 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             let saved = try searchCachedLibrary(searchText)
             guard includeMissingLyrics else { return saved }
             let needle = Self.normalizedLibrarySearchText(searchText)
-            let missing = try loadPersonalLibraryEntries(includeMissingLyrics: true).filter {
+            let all = try loadPersonalLibraryEntries(includeMissingLyrics: true)
+            let missing = all.filter {
                 $0.lyricsVersionCount == 0 && Self.normalizedLibrarySearchText("\($0.title) \($0.artist) \($0.album ?? "")").contains(needle)
             }
-            return saved + missing
+            return PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere(saved, among: all) + missing
         }
         // Newly saved keys must join their recording family without a restart.
         try reloadRedirectResolver()
@@ -3804,6 +3805,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 isrc: track.isrc, title: track.title, artist: track.artistDisplay, album: track.album,
                 duration: track.duration, artworkURL: track.artworkURL.flatMap(URL.init(string:)), fallbackDate: track.updatedAt
             ))
+        }
+        if includeMissingLyrics {
+            results = PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere(results, among: results)
         }
         return results.sorted {
             if $0.lastModifiedAt != $1.lastModifiedAt { return $0.lastModifiedAt > $1.lastModifiedAt }

@@ -37,6 +37,7 @@
 | 英文歌名对片假名歌名（Timeless/タイムレス）、汉字人名读不出、别人有时间轴我们只有纯文本 | L-036；LyricsSafeMatcher.loanwordKey、titleLoanwordReading、durationExact、featuredArtistExactLength |
 | 停在「核对歌词版本」：多出合作署名、双名客串、(Explicit)、翻译歌名但同母带、伴奏同长 | L-037；promoteSameMaster、sameMasterTolerance、TrackTextNormalizer 伴奏标记 |
 | 已存纯文本永远升级不到时间轴、只按歌名搜到的全对结果仍要核对、「原名 - 英文名」 | L-038；plainAlreadyHeld/waitsForTiming、looseQueryConfirmed、titleBilingualPair、publisherPageExact |
+| 缺歌词里同一首歌的重复记录（时长错、借用别首的 ID）、批量补全拿错时长去搜 | L-039；PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere、needsLyrics |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
 
 ## 默认自动执行：不等用户提醒
@@ -540,11 +541,27 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **同一母带**（L-037）不再要求最后一句落在曲末附近，只要求不超出曲末、至少两行有字。例：822／0822 橙汁，时长都是 182.405 秒，歌词结尾较早。
 - **刻意不放行**：
   - lyrics.ovh：只按搜索词返回一段正文，没有歌名、歌手、时长可以核对。
-  - 时长差得远的版本：shion 168 秒对 150.8 秒，幽霊になって 267 秒对 240 秒，GIJIKOI 217 秒对 234.7 秒。
+  - 时长差得远的版本：GIJIKOI 217 秒（韩语版）对 234.7 秒（原版），确是两首录音。（更正，见 L-039：这里原先还列了 shion 168 对 150.8、幽霊になって 267 对 240，那是用了幽灵记录的错误时长，按真实时长两首都对得上。）
   - 酷狗整秒且差 6 秒的 ノイズキャンセル。
 - **来源时有时无**：
   - 网易短时间连查后会回答「没找到」。
   - 酷狗今天对 ハロ、晴る 也回答「没找到」，前一天却有。
   - LRCLIB 同一首歌有时给纯文本条目、有时给带时间轴的条目。
   - 所以批量重查必须放慢，单次没找到不能算漏选，要看第二遍。
+
+## L-039 幽灵记录：同一首歌的重复行（2026-11-15）
+
+- **用户指出**：shion 这类歌「时长其实一样，只是显示不一样」。
+- **查证**：在正式库只读副本上查，同一首歌有多条 tracks 记录，stable_key 里带的时长不同，都没有 redirect。
+  - shion（`spotify-id:0t5ddnfp…`）：一条 150.8 秒、无歌词，另一条是 Spotify 目录给的 168.0 秒，有带时间轴歌词。
+  - 幽霊になって、WAITING AT 3AM：各有一条 240.0 秒的记录，共用另一首歌的 ID `5o45jo…`，封面也相同，是切歌瞬间读到的错数据。真实时长分别是 267.923 秒和 171.44 秒，都已有歌词。
+  - 全库「缺歌词」243 条：21 条同 ID 的另一行已有歌词；11 条的 ID 被不同歌名共用。
+- **影响**：
+  - 「缺歌词」把这些行列出来。「全部补全」用错的时长去搜，结果搜不到或进核对。
+  - L-038 的在线重查也用了这些错时长，误把 shion、幽霊になって 判为「时长差很远」。按真实时长，QQ 的 shion 168 秒、幽霊になって 267 秒都对得上。App 里有 Spotify ID 时用的是目录时长（见 `testShionSingleQQMatchUsesCatalogDurationRatherThanProviderConfidence`）。
+- **修法**：只读，不写库，不迁移。`PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere` 给被别的行覆盖的记录标上 `coveredByAnotherRecording`；`needsLyrics` 和两个界面的 `.missing` 筛选都跳过这类行。这些行仍留在歌词库里。
+  - **同一个 Spotify ID**：另一行有歌词就算覆盖；如果这行已有纯文本，要求另一行有带时间轴的歌词。
+  - **ID 被不同歌名共用**：ID 不可信，改看同歌名同歌手的另一行有没有歌词。
+  - **ID 不同的同名录音不算覆盖**：GIJIKOI 原版（234.659 秒）与韩语版（216.875 秒）不能互相覆盖，没有 ID 的行也不按歌名合并。
+- **教训**：用库里的时长做在线重查前，先确认那一行不是幽灵记录：查同 ID、同歌名的其他行。Spotify 目录时长才是准的。
 

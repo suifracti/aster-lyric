@@ -15,10 +15,7 @@ public struct PersonalLyricsLibraryView: View {
 
         func includes(_ entry: PersonalLyricsLibraryEntry) -> Bool {
             switch self {
-            // Plain text cannot follow the song, so it is still missing,
-            // unless the user wrote or locked it.
-            case .missing: return entry.lyricsVersionCount == 0
-                || (!entry.hasSyncedLyrics && !entry.hasManualLyrics && !entry.hasLockedLyrics)
+            case .missing: return entry.needsLyrics
             case .all: return true
             case .translations: return entry.translationVersionCount > 0
             case .manual: return entry.hasManualLyrics || entry.hasManualTranslation

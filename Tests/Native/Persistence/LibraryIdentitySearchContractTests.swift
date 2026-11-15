@@ -136,6 +136,66 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         XCTAssertEqual(timed.first?.hasSyncedLyrics, true)
     }
 
+    func testRowsWithAWrongLengthOrBorrowedIDAreNotListedAsMissing() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("library-ghost-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let databaseURL = root.appendingPathComponent("test.sqlite3")
+        let repo = SQLiteLyricsRepository(databaseURL: databaseURL,
+                                          alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await repo.prepare()
+        func saveTimed(_ track: Track) async throws {
+            let identity = TrackIdentity(track: track)
+            _ = try await repo.save(track: track, identity: identity, document: LyricsDocument(
+                identity: identity, title: track.title, artist: track.artist, album: track.album, duration: track.duration,
+                lines: [LyricLine(timestamp: 12, originalText: track.title + " words")],
+                isSynchronized: true, source: .qqExperimental, confidence: 0.9, providerSourceID: track.title))
+        }
+        // Rows Spotify reported for a moment during a track change: no
+        // lyrics, a wrong length, sometimes the previous song's ID.
+        func insertBare(_ track: Track) throws {
+            let key = TrackIdentity(track: track).stableKey.replacingOccurrences(of: "'", with: "''")
+            try executeSQL("""
+                INSERT INTO tracks(stable_key, spotify_id, spotify_uri, isrc, title, artist_display, album, duration, artwork_url, created_at, updated_at)
+                VALUES ('\(key)', NULL, NULL, NULL, '\(track.title)', '\(track.artist)', '\(track.album)', \(track.duration), NULL, 1, 1);
+                """, at: databaseURL)
+        }
+        try await saveTimed(Track(title: "shion", artist: "angelize", album: "shion", duration: 168.0, spotifyId: "0t5DDnfp0dkgeSnokvbIQY"))
+        try insertBare(Track(title: "shion", artist: "angelize", album: "shion", duration: 150.8, spotifyId: "0t5DDnfp0dkgeSnokvbIQY"))
+        try await saveTimed(Track(title: "幽霊になって", artist: "Be my Girl", album: "幽霊になって", duration: 267.923, spotifyId: "2o9gqgea9s465s7vwkjadx"))
+        try await saveTimed(Track(title: "WAITING AT 3AM", artist: "Toh", album: "WAITING AT 3AM", duration: 171.44, spotifyId: "4qxveeiqym7hi9lcuoal6p"))
+        try insertBare(Track(title: "幽霊になって", artist: "Be my Girl", album: "幽霊になって", duration: 240.0, spotifyId: "5o45jo2byhtyah2flz9ti0"))
+        try insertBare(Track(title: "WAITING AT 3AM", artist: "Toh", album: "WAITING AT 3AM", duration: 240.0, spotifyId: "5o45jo2byhtyah2flz9ti0"))
+        // Two recordings with the same title: the Korean version has lyrics,
+        // the original does not and must stay on the list.
+        try await saveTimed(Track(title: "GIJIKOI", artist: "Haruki Hamano", album: "GIJIKOI (Korean ver.)", duration: 216.875, spotifyId: "0zlwh8kzv299erleomelad"))
+        try insertBare(Track(title: "GIJIKOI", artist: "Haruki Hamano", album: "meaning of tears", duration: 234.659, spotifyId: "5sfohzecupaxj580g4zjmg"))
+        try insertBare(Track(title: "Lonely fixture", artist: "Singer", album: "Album", duration: 200, spotifyId: "lonelyfixtureid"))
+
+        let entries = try await repo.loadPersonalLibraryEntries(includeMissingLyrics: true)
+        let missing = entries.filter(\.needsLyrics).map { "\($0.title)@\($0.duration)" }.sorted()
+        XCTAssertEqual(missing, ["GIJIKOI@234.659", "Lonely fixture@200.0"])
+        XCTAssertEqual(entries.filter { $0.title == "WAITING AT 3AM" }.count, 2, "rows stay in the library; only the missing list skips them")
+    }
+
+    func testPlainTextRowIsCoveredOnlyByTimedLyricsOfTheSameSong() {
+        func entry(_ key: String, title: String = "Song", versions: Int, synced: Bool) -> PersonalLyricsLibraryEntry {
+            PersonalLyricsLibraryEntry(trackStableKey: key, spotifyTrackID: nil, title: title, artist: "Singer", album: nil,
+                artworkURL: nil, lyricsVersionCount: versions, translationVersionCount: 0, readingVersionCount: 0,
+                timingVersionCount: 0, hasLockedLyrics: false, hasLockedTranslation: false, hasManualLyrics: false,
+                hasManualTranslation: false, hasReading: false, hasFineTiming: false, lastModifiedAt: Date(),
+                activeLyricsVersionID: nil, activeTranslationVersionID: nil, hasSyncedLyrics: synced)
+        }
+        let plainGhost = entry("spotify-id:abc|metadata:song|singer|song|151", versions: 1, synced: false)
+        let plainOther = entry("spotify-id:abc|metadata:song|singer|song|168", versions: 1, synced: false)
+        let timedOther = entry("spotify-id:abc|metadata:song|singer|song|168", versions: 1, synced: true)
+        XCTAssertTrue(PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere([plainGhost], among: [plainGhost, plainOther])[0].needsLyrics)
+        XCTAssertFalse(PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere([plainGhost], among: [plainGhost, timedOther])[0].needsLyrics)
+        let noID = entry("metadata:song|singer|song|151", versions: 0, synced: false)
+        XCTAssertTrue(PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere([noID], among: [noID, timedOther])[0].needsLyrics,
+                      "without an ID the same title alone proves nothing")
+    }
+
     private func executeSQL(_ sql: String, at databaseURL: URL) throws {
         var database: OpaquePointer?
         guard sqlite3_open(databaseURL.path, &database) == SQLITE_OK, let database else {

@@ -36,6 +36,57 @@ public struct PersonalLyricsLibraryEntry: Identifiable, Equatable, Sendable, Cod
     /// At least one stored version has line timestamps. A song with plain
     /// text only still counts as missing lyrics for singing along.
     public let hasSyncedLyrics: Bool
+    /// Another row of the same song already has what this one lacks. Spotify
+    /// sometimes reports a wrong length or the previous song's ID for a
+    /// moment while the track changes (shion at 150.8 s beside the real
+    /// 168 s, two different songs at 240.0 s under one ID). Such a row is not
+    /// a song missing lyrics, and searching with its length cannot work.
+    public var coveredByAnotherRecording = false
+
+    /// The 缺歌词 filter and 全部补全. Plain text cannot follow the song, so it
+    /// still counts as missing unless the user wrote or locked it.
+    public var needsLyrics: Bool {
+        guard !coveredByAnotherRecording else { return false }
+        return lyricsVersionCount == 0 || (!hasSyncedLyrics && !hasManualLyrics && !hasLockedLyrics)
+    }
+
+    /// Marks rows covered by another row of the same song.
+    /// - Same Spotify ID: covered when the other row has lyrics, or timed
+    ///   lyrics when this one already has plain text.
+    /// - An ID shared with a differently titled song is not trustworthy; the
+    ///   row is covered when a row with the same title and artist has lyrics.
+    /// Different IDs with the same title (GIJIKOI and its Korean version) are
+    /// different recordings and stay apart.
+    public static func markingRowsCoveredElsewhere(_ entries: [PersonalLyricsLibraryEntry],
+                                                   among all: [PersonalLyricsLibraryEntry]) -> [PersonalLyricsLibraryEntry] {
+        func idKey(_ entry: PersonalLyricsLibraryEntry) -> String? {
+            guard entry.trackStableKey.hasPrefix("spotify-id:"),
+                  let prefix = entry.trackStableKey.components(separatedBy: "|").first, prefix.count > "spotify-id:".count else { return nil }
+            return prefix.lowercased()
+        }
+        func fold(_ text: String) -> String {
+            text.folding(options: [.caseInsensitive, .widthInsensitive, .diacriticInsensitive], locale: nil)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        func covers(_ other: PersonalLyricsLibraryEntry, _ entry: PersonalLyricsLibraryEntry) -> Bool {
+            other.trackStableKey != entry.trackStableKey
+                && (entry.lyricsVersionCount == 0 ? other.lyricsVersionCount > 0 : other.hasSyncedLyrics)
+        }
+        let byID = Dictionary(grouping: all.filter { idKey($0) != nil }, by: { idKey($0)! })
+        return entries.map { entry in
+            guard entry.needsLyrics, let key = idKey(entry), let family = byID[key] else { return entry }
+            var marked = entry
+            let titles = Set(family.map { fold($0.title) })
+            if titles.count == 1 {
+                marked.coveredByAnotherRecording = family.contains { covers($0, entry) }
+            } else {
+                marked.coveredByAnotherRecording = all.contains {
+                    fold($0.title) == fold(entry.title) && fold($0.artist) == fold(entry.artist) && covers($0, entry)
+                }
+            }
+            return marked
+        }
+    }
 
     public init(
         trackStableKey: String,
