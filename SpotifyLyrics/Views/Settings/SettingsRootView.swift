@@ -922,6 +922,35 @@ private struct ServicesAndSourcesSettingsView: View {
     }
 }
 
+/// The 译文 panel's service, key, model and effort rows as a view of their
+/// own. It observes the settings itself: the panel lives in a separate
+/// hosting window, and rows borrowed from the parent's body kept showing the
+/// old service after a new one was chosen (2026-11-15).
+struct TranslationServicePanelRows: View {
+    @ObservedObject var settings: AppSettingsStore
+    let openSettings: () -> Void
+
+    var body: some View {
+        let controls = TranslationProviderControls(settings: settings)
+        VStack(alignment: .leading, spacing: 2) {
+            controls.serviceRows
+            if controls.needsConnectionSettings {
+                V3PanelRow(title: controls.keyOnly ? "密钥"
+                           : (settings.aiTranslationConfiguration.isConfigured ? "接口与密钥" : "未填接口或模型")) {
+                    Button(controls.keyOnly ? "填写密钥…" : "在设置中填写…", action: openSettings)
+                        .buttonStyle(.borderless).controlSize(.small)
+                }
+            }
+            controls.modelRow
+            controls.reasoningRow
+        }
+        // A new service, model or effort rebuilds the menus, so their labels
+        // can never keep showing the previous choice.
+        .id([settings.aiTranslationConfiguration.engineID, settings.aiTranslationConfiguration.model,
+             TranslationReasoningPolicy.value(settings.aiTranslationConfiguration)].joined(separator: "|"))
+    }
+}
+
 struct TranslationProviderControls: View {
     @ObservedObject var settings: AppSettingsStore
 
