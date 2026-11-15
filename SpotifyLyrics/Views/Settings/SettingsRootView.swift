@@ -1340,6 +1340,21 @@ private struct AISettingsView: View {
     @State private var showPromptPreview = false
     @State private var showProfileManager = false
     @State private var isAdvancedAIExpanded = false
+    @State private var isEditingPersonalStyle = false
+    @AppStorage(TranslationPromptPresetCatalog.personalV2OverrideKey, store: .lyricsQ)
+    private var personalStyleOverride = ""
+
+    /// Shows the built-in text until the user changes it; an edit equal to
+    /// the built-in text is stored as no edit, so later built-in updates apply.
+    private var personalStyleBinding: Binding<String> {
+        Binding(get: {
+            personalStyleOverride.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? TranslationPromptPresetCatalog.personalV2Instructions : personalStyleOverride
+        }, set: { value in
+            personalStyleOverride = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                == TranslationPromptPresetCatalog.personalV2Instructions.trimmingCharacters(in: .whitespacesAndNewlines) ? "" : value
+        })
+    }
 
     private var engineID: String { settings.aiTranslationConfiguration.engineID }
     /// OpenAI and DeepSeek need nothing but a key: fixed endpoint, model
@@ -1448,9 +1463,30 @@ private struct AISettingsView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 } else if settings.aiTranslationConfiguration.promptPresetID == TranslationPromptPresetID.personalV2.rawValue {
-                    Text(TranslationPromptPresetCatalog.personalV2Summary)
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if personalStyleOverride.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(TranslationPromptPresetCatalog.personalV2Summary)
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("我的风格已按你的修改使用（下面的完整说明就是发给模型的内容）。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    DisclosureGroup("编辑我的风格", isExpanded: $isEditingPersonalStyle) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            TextEditor(text: personalStyleBinding)
+                                .frame(minHeight: 260)
+                                .font(.system(size: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+                            HStack {
+                                Text("改动会直接用于以后的新翻译；已有译文不变。")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                Button("恢复默认") { personalStyleOverride = "" }
+                                    .disabled(personalStyleOverride.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            }
+                        }
+                    }
+                    .font(.caption)
                 }
                 ToolbarPanelLink(title: "新歌词自动翻译在 工具栏 → 译文", panel: .translation)
             }

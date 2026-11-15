@@ -337,7 +337,20 @@ public enum TranslationPromptPresetCatalog {
     · 用中文通行的叫法，不音译、不死译。
     """
 
-    public static var personalV2Guidance: String { personalV2Instructions + "\n\n" + personalV2LanguageNote }
+    /// The user's own edit of 我的风格 (Settings → 翻译风格 → 编辑). Empty
+    /// means the built-in text; 恢复默认 removes it.
+    public static let personalV2OverrideKey = "ai.personalStyleOverride.v1"
+
+    public static func personalV2Text(defaults: UserDefaults = .lyricsQ) -> String {
+        let edited = defaults.string(forKey: personalV2OverrideKey)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return edited.isEmpty ? personalV2Instructions : edited
+    }
+
+    public static func personalV2IsEdited(defaults: UserDefaults = .lyricsQ) -> Bool {
+        !(defaults.string(forKey: personalV2OverrideKey)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+    }
+
+    public static var personalV2Guidance: String { personalV2Text() + "\n\n" + personalV2LanguageNote }
 }
 
 /// A personal translation style is a UserDefaults object, not a translation

@@ -108,6 +108,19 @@ final class SearchSourceContractTests: XCTestCase {
             XCTAssertTrue(custom.system.contains("东北话") || custom.user.contains("东北话"), engine)
         }
         configuration.customSystemPrompt = ""
+        // The user's own edit of 我的风格 replaces the built-in text; 恢复默认 brings it back.
+        configuration.promptPresetID = TranslationPromptPresetID.personalV2.rawValue
+        UserDefaults.lyricsQ.set("我自己的译法：口语，短句。", forKey: TranslationPromptPresetCatalog.personalV2OverrideKey)
+        for engine in [TranslationEngineID.codexChatGPT.rawValue, TranslationEngineID.openAIAPI.rawValue] {
+            configuration.engineID = engine
+            let edited = try builder.build(context: context, configuration: configuration)
+            XCTAssertTrue(edited.system.contains("我自己的译法") || edited.user.contains("我自己的译法"), engine)
+            XCTAssertFalse(edited.system.contains("full-audit-v3-r6"), engine)
+        }
+        XCTAssertTrue(TranslationPromptPresetCatalog.personalV2IsEdited())
+        UserDefaults.lyricsQ.removeObject(forKey: TranslationPromptPresetCatalog.personalV2OverrideKey)
+        XCTAssertTrue(try builder.build(context: context, configuration: configuration).system.contains("full-audit-v3-r6")
+                      || (try builder.build(context: context, configuration: configuration).user.contains("full-audit-v3-r6")))
         configuration.promptPresetID = TranslationPromptPresetID.naturalSong.rawValue
         let natural = try builder.build(context: context, configuration: configuration)
         XCTAssertTrue(natural.system.contains("Natural song style v2"), "the other styles stay selectable")
