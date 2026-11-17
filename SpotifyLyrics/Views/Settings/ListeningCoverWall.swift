@@ -6,6 +6,7 @@ import SwiftUI
 /// lifts it, names it, and dims every cover that is not by the same singer.
 struct ListeningCoverWall: View {
     let entries: [ListeningHistoryEntry]
+    var openTrack: (String) -> Void = { MenuBarLyricsController.shared.openSettings(at: .init(.library, trackKey: $0)) }
     @State private var hoveredKey: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -45,8 +46,12 @@ struct ListeningCoverWall: View {
         ScrollView([.horizontal, .vertical]) {
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(108), spacing: 12), count: columns), spacing: 12) {
                 ForEach(tiles) { tile in
-                    ListeningWallTile(tile: tile, hovered: hoveredKey == tile.id,
-                                      dimmed: hoveredArtist != nil && tile.artistKey != hoveredArtist)
+                    Button { openTrack(tile.id) } label: {
+                        ListeningWallTile(tile: tile, hovered: hoveredKey == tile.id,
+                                          dimmed: hoveredArtist != nil && tile.artistKey != hoveredArtist)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("打开\(tile.entry.title)的歌曲档案")
                         .onHover { inside in
                             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
                                 if inside { hoveredKey = tile.id } else if hoveredKey == tile.id { hoveredKey = nil }

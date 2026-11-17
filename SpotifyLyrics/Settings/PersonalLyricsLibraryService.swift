@@ -2,6 +2,13 @@ import Foundation
 import AppKit
 import Combine
 
+struct LastOpenedLyricsRecord: Codable, Equatable {
+    static let defaultsKey = "library.lastOpenedLyricsRecord.v1"
+    let trackKey: String
+    let title: String
+    let artist: String
+}
+
 @MainActor
 public final class PersonalLyricsLibraryService: ObservableObject {
     @Published public private(set) var entries: [PersonalLyricsLibraryEntry] = []
@@ -14,6 +21,8 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     private var currentTrackStableKey: String?
     private var currentTrackRequestID = UUID()
     private var detailRequestID = UUID()
+    private var listRequestID = UUID()
+    @Published private(set) var selectedTrackIssue: String?
     private var requestedTrackStableKey: String?
     @Published public var importPreview: PersonalLibraryImportPreview?
     @Published public var pendingImportPackage: PersonalLyricsLibraryPackage?
@@ -285,37 +294,67 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         self.syncFolderURL = PersonalDataSyncStore.restoreFolderReference(defaults: defaults)
     }
 
+    func searchSavedEntries(matching query: String) async throws -> [PersonalLyricsLibraryEntry] {
+        try await repository.loadPersonalLibraryEntries(searchQuery: query)
+    }
+
     public func refresh() {
+        let requestID = UUID()
+        listRequestID = requestID
         isLoading = true
         statusMessage = "正在加载歌词库..."
         let query = searchQuery
         Task {
             do {
                 let list = try await repository.loadPersonalLibraryEntries(searchQuery: query.isEmpty ? nil : query, includeMissingLyrics: true)
+                guard listRequestID == requestID else { return }
                 self.entries = list
                 self.isLoading = false
                 self.statusMessage = list.isEmpty ? "个人歌词库为空" : "共 \(list.count) 首本地资产歌曲"
             } catch {
+                guard listRequestID == requestID else { return }
                 self.isLoading = false
                 self.statusMessage = "加载失败：\(error.localizedDescription)"
             }
         }
     }
 
-    public func selectTrack(stableKey: String) {
+    public func selectTrack(stableKey: String, rememberForWorkspace: Bool = true) {
         let requestID = UUID()
         detailRequestID = requestID
+        if requestedTrackStableKey != stableKey { selectedTrackDetail = nil }
         requestedTrackStableKey = stableKey
+        selectedTrackIssue = nil
         Task {
             do {
                 let detail = try await repository.loadPersonalLibraryTrackDetail(stableKey: stableKey)
                 guard detailRequestID == requestID else { return }
                 selectedTrackDetail = detail
+                if detail == nil { selectedTrackIssue = "本机还没有这首歌的档案" }
+                if rememberForWorkspace, let entry = detail?.entry { rememberOpenedRecord(entry) }
             } catch {
                 guard detailRequestID == requestID else { return }
+                selectedTrackIssue = "暂时读不到这首歌的档案"
                 statusMessage = "获取歌曲详情失败：\(error.localizedDescription)"
             }
         }
+    }
+
+    private func rememberOpenedRecord(_ entry: PersonalLyricsLibraryEntry) {
+        let record = LastOpenedLyricsRecord(trackKey: entry.trackStableKey, title: entry.title, artist: entry.artist)
+        let previous = defaults.data(forKey: LastOpenedLyricsRecord.defaultsKey)
+            .flatMap { try? JSONDecoder().decode(LastOpenedLyricsRecord.self, from: $0) }
+        if record != previous, let data = try? JSONEncoder().encode(record) {
+            defaults.set(data, forKey: LastOpenedLyricsRecord.defaultsKey)
+        }
+    }
+
+    func selectedDetail(for stableKey: String) -> PersonalLyricsLibraryTrackDetail? {
+        requestedTrackStableKey == stableKey ? selectedTrackDetail : nil
+    }
+
+    func selectionIssue(for stableKey: String) -> String? {
+        requestedTrackStableKey == stableKey ? selectedTrackIssue : nil
     }
 
     func currentDetail(for stableKey: String) -> PersonalLyricsLibraryTrackDetail? {
@@ -343,7 +382,10 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     }
 
     private func refreshTrackDetail(stableKey: String) {
-        if requestedTrackStableKey == stableKey { selectTrack(stableKey: stableKey) }
+        if let requestedTrackStableKey,
+           requestedTrackStableKey == stableKey || selectedTrackDetail?.entry.trackStableKey == stableKey {
+            selectTrack(stableKey: requestedTrackStableKey, rememberForWorkspace: false)
+        }
         if currentTrackStableKey == stableKey || currentTrackDetail?.entry.trackStableKey == stableKey {
             prefetchCurrentTrack(stableKey: currentTrackStableKey, force: true)
         }

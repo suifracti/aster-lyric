@@ -447,6 +447,11 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         }
     }
 
+    func openSettings(at location: SettingsLocation) {
+        SettingsNavigationRoute.shared.requestedLocation = location
+        openSettings()
+    }
+
     public func openSettings() {
         popover?.performClose(nil)
         NSApp.activate(ignoringOtherApps: true)

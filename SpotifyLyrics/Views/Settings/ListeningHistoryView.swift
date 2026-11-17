@@ -5,7 +5,11 @@ public struct ListeningHistoryView: View {
     /// 列表 or 封面墙; remembered.
     @AppStorage("listening.history.coverWall.v1") private var showsWall = false
 
-    public init() {}
+    private let openTrack: (String) -> Void
+    public init() {
+        self.init(openTrack: { MenuBarLyricsController.shared.openSettings(at: .init(.library, trackKey: $0)) })
+    }
+    init(openTrack: @escaping (String) -> Void) { self.openTrack = openTrack }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -59,7 +63,7 @@ public struct ListeningHistoryView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else if showsWall {
-                ListeningCoverWall(entries: playback.listeningHistory)
+                ListeningCoverWall(entries: playback.listeningHistory, openTrack: openTrack)
                     .padding(.horizontal, -28).padding(.bottom, -28)
             } else {
                 ScrollView {
@@ -69,9 +73,10 @@ public struct ListeningHistoryView: View {
                                 ListeningArtwork(url: entry.artworkURL)
 
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(entry.title)
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .lineLimit(1)
+                                    Button { openTrack(entry.stableKey) } label: {
+                                        Text(entry.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                                    }
+                                    .buttonStyle(.plain).help("打开歌曲档案")
                                     Text(entry.artist)
                                         .font(.system(size: 11))
                                         .foregroundStyle(.secondary)

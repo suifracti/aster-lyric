@@ -1154,3 +1154,10 @@ The source statistics were read on 2026-11-15 rather than 11-18: nothing was lis
 - 流动 checked in the real window with real sound (2026-11-15, LOVE & ROLL, playing): it follows the music, but the raw canvas laid grainy bands across the lyrics. The canvas is now blurred (14 px) and scaled 1.06 so its edges stay hidden, leaving a soft colour wash behind readable lyrics.
 
 **Still to be tried by hand:** 鼠标视差, Q/E and 收藏这句 — their logic is under unit tests; only the feel is left.
+
+
+## Round 27 · 不播放时的工作台（2026-11-18）
+
+设置首页同时是本机歌词的工作台。最近收藏的句子打开所属歌曲，最近看过的档案可以接着整理。没有收藏时主入口打开歌词库。金句、缺歌词、最近播放、统计和连接都能单独进入。
+
+侧栏搜索同时查设置、本机已保存歌曲和歌词、收藏的金句。后退和前进保留查询和原来那首歌，支持 ⌘[、⌘] 和 ⌘F。最近播放的列表与封面墙、收藏的金句可以直接打开对应档案。只有使用者手动选择版本才会改变采用结果。

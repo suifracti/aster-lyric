@@ -2,12 +2,14 @@ import SwiftUI
 
 public struct PersonalLyricsLibraryView: View {
     @EnvironmentObject private var playback: PlaybackState
-    @StateObject private var service = PersonalLyricsLibraryService()
+    @StateObject private var service: PersonalLyricsLibraryService
     @StateObject private var batch = LyricsBatchCompletion()
     @State private var selectedStableKey: String?
     @State private var libraryFilter: LibraryFilter = ProcessInfo.processInfo.arguments.contains("--library-missing") ? .missing : .all
     @State private var showSyncFolder = false
     private let embeddedInSettings: Bool
+    private let requestedTrackKey: String?
+    private let onSelection: ((String?) -> Void)?
 
     private enum LibraryFilter: String, CaseIterable, Identifiable {
         case missing = "缺歌词", all = "全部", translations = "有译文", manual = "人工歌词 / 译文", locked = "锁定歌词 / 译文"
@@ -36,12 +38,16 @@ public struct PersonalLyricsLibraryView: View {
         }
     }
 
-    public init() {
-        embeddedInSettings = false
-    }
+    public init() { self.init(embeddedInSettings: false) }
 
-    init(embeddedInSettings: Bool) {
+    init(embeddedInSettings: Bool, initialTrackKey: String? = nil, showingMissing: Bool = false,
+         service: PersonalLyricsLibraryService? = nil, onSelection: ((String?) -> Void)? = nil) {
         self.embeddedInSettings = embeddedInSettings
+        self.requestedTrackKey = initialTrackKey
+        self.onSelection = onSelection
+        _service = StateObject(wrappedValue: service ?? PersonalLyricsLibraryService())
+        _selectedStableKey = State(initialValue: initialTrackKey)
+        if showingMissing { _libraryFilter = State(initialValue: .missing) }
     }
 
     public var body: some View {
@@ -89,6 +95,8 @@ public struct PersonalLyricsLibraryView: View {
                 }
             }
         }
+        .onChange(of: requestedTrackKey) { _, key in selectedStableKey = key }
+        .onChange(of: selectedStableKey) { _, key in onSelection?(key) }
         .onChange(of: batch.isRunning) { _, running in if !running { service.refresh() } }
         .onDisappear { batch.stop() }
         .modifier(PersonalLibrarySheets(service: service))
@@ -482,8 +490,7 @@ public struct PersonalLibraryTrackDetailView: View {
 
     public var body: some View {
         Group {
-            if let detail = usesCurrentTrackDetail ? service.currentDetail(for: stableKey) : service.selectedTrackDetail,
-               usesCurrentTrackDetail || detail.entry.trackStableKey == stableKey {
+            if let detail = usesCurrentTrackDetail ? service.currentDetail(for: stableKey) : service.selectedDetail(for: stableKey) {
                 let lyricsVersions = detail.lyricsVersions.sorted { lhs, rhs in
                     if lhs.isCurrent != rhs.isCurrent { return lhs.isCurrent }
                     return lhs.updatedAt > rhs.updatedAt
@@ -574,6 +581,13 @@ public struct PersonalLibraryTrackDetailView: View {
                 }
                 .modifier(LibraryDetailScrolling(enabled: !compact))
                 .id(stableKey)
+            } else if !usesCurrentTrackDetail, let issue = service.selectionIssue(for: stableKey) {
+                VStack(spacing: 8) {
+                    Image(systemName: "music.note.list").foregroundStyle(.secondary)
+                    Text(issue).font(.callout)
+                    Button("重新读取") { service.selectTrack(stableKey: stableKey) }.buttonStyle(.borderless)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack {
                     ProgressView()
@@ -734,7 +748,7 @@ public struct PersonalLibraryTrackDetailView: View {
     private func timingVersionCard(_ tm: PersonalTimingVersionItem, entry: PersonalLyricsLibraryEntry) -> some View {
         LibraryVersionRow(kind: "timing", id: tm.id,
             title: librarySourceName(tm.source), date: tm.createdAt,
-            lineCount: (usesCurrentTrackDetail ? service.currentDetail(for: stableKey) : service.selectedTrackDetail)?
+            lineCount: (usesCurrentTrackDetail ? service.currentDetail(for: stableKey) : service.selectedDetail(for: stableKey))?
                 .lyricsVersions.first(where: { $0.id == tm.lyricsVersionID })?.lineCount ?? 0,
             isCurrent: tm.isCurrent, hasMenu: false, busy: service.revisionBusy,
             preview: { presentSheet { service.previewVersion(lyricsID: tm.lyricsVersionID, entry: entry, timingID: tm.id) } },
@@ -1051,7 +1065,7 @@ public struct PersonalDataImportPreviewSheet: View {
 
 public struct UnifiedLibraryHistoryWindowView: View {
     @EnvironmentObject private var playback: PlaybackState
-    @EnvironmentObject private var appSettings: AppSettingsStore
+    @State private var selectedLibraryKey: String?
 
     public init() {}
 
@@ -1089,15 +1103,21 @@ public struct UnifiedLibraryHistoryWindowView: View {
     private var contentArea: some View {
         switch playback.selectedLibraryToolTab {
         case .library:
-            PersonalLyricsLibraryView()
+            PersonalLyricsLibraryView(embeddedInSettings: false, initialTrackKey: selectedLibraryKey,
+                                      onSelection: { selectedLibraryKey = $0 })
         case .history:
-            ListeningHistoryView()
+            ListeningHistoryView(openTrack: openTrack)
         case .statistics:
             ListeningStatisticsView()
         case .favorites:
-            FavoriteLinesView()
+            FavoriteLinesView(openTrack: openTrack)
         }
     }
+    private func openTrack(_ key: String) {
+        selectedLibraryKey = key
+        playback.selectedLibraryToolTab = .library
+    }
+
 }
 
 

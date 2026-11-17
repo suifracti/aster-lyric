@@ -6,16 +6,18 @@ struct FavoriteLinesView: View {
     @ObservedObject private var store = V3FavoriteLines.shared
     @State private var copiedID: UUID?
 
+    var openTrack: ((String) -> Void)? = nil
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("在歌词上右键「收藏这句」，就会出现在这里")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-                .padding(.bottom, 10)
+            Text("收藏的金句").font(.system(size: 24, weight: .semibold, design: .serif))
+                .padding(.bottom, 14)
             if store.entries.isEmpty {
                 VStack(spacing: 8) {
                     Spacer()
                     Image(systemName: "quote.opening").font(.system(size: 34)).foregroundStyle(.tertiary)
                     Text("还没有收藏的句子").font(.headline).foregroundStyle(.secondary)
+                    Text("在歌词上右键，选择「收藏这句」。").font(.callout).foregroundStyle(.secondary)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -41,8 +43,19 @@ struct FavoriteLinesView: View {
                 if let translation = entry.translation {
                     Text(translation).font(.system(size: 12)).foregroundStyle(.secondary).textSelection(.enabled)
                 }
-                Text("\(entry.title) · \(entry.artist) · \(v3ShortDateText(entry.addedAt))")
-                    .font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1)
+                HStack(spacing: 7) {
+                    if let openTrack {
+                        Button { openTrack(entry.trackKey) } label: {
+                            Label(entry.title, systemImage: "music.note")
+                        }
+                        .buttonStyle(.borderless).help("打开歌曲档案")
+                    } else {
+                        Text(entry.title)
+                    }
+                    Text([entry.artist, v3ShortDateText(entry.addedAt)].filter { !$0.isEmpty }.joined(separator: " · "))
+                        .foregroundStyle(.secondary)
+                }
+                .font(.caption).lineLimit(1)
             }
             Spacer(minLength: 12)
             Button(copiedID == entry.id ? "已复制" : "复制") {

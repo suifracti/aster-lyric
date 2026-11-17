@@ -686,7 +686,7 @@ private struct ExperienceFixtureRoot: View {
                     } else if ExperienceArguments.surface == "menubar" {
                         root = AnyView(MenuBarLyricsPopoverView(controller: MenuBarLyricsController.shared))
                     } else {
-                        root = AnyView(SettingsRootView(initialPage: ExperienceArguments.value("--settings-page", fallback: "播放")).environmentObject(settings).environmentObject(playback).environmentObject(SettingsDataController()))
+                        root = AnyView(SettingsRootView(initialPage: ExperienceArguments.value("--settings-page", fallback: "工作台")).environmentObject(settings).environmentObject(playback).environmentObject(SettingsDataController()))
                     }
                     let hosting = NSHostingView(rootView: root.environment(\.colorScheme, ExperienceArguments.value("--appearance", fallback: "dark") == "light" ? .light : .dark))
                     let size = ExperienceArguments.surface == "search-full" ? CGSize(width: 440, height: 470)

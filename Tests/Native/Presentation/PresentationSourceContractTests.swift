@@ -439,6 +439,27 @@ final class PresentationSourceContractTests: XCTestCase {
         XCTAssertTrue(floating.contains("FloatingTimedRubyLayoutCache.layout(for: key)"))
     }
 
+    func testSettingsBackAndForwardKeepTheSongOpenedFromSearch() {
+        var history = SettingsHistory()
+        history.search("歌")
+        history.search("歌词片段")
+        history.open(.init(.library, trackKey: "fixture-recording"))
+        history.open(.init(.aiTranslation))
+        history.back()
+        XCTAssertEqual(history.current, .init(.library, trackKey: "fixture-recording"))
+        history.forward()
+        XCTAssertEqual(history.current.page, .aiTranslation)
+        history.back()
+        history.open(.init(.favorites))
+        XCTAssertFalse(history.canGoForward)
+        history.back()
+        history.back()
+        XCTAssertEqual(history.current.query, "歌词片段")
+        history.search("")
+        XCTAssertEqual(history.current, .init(.workspace))
+        XCTAssertFalse(history.canGoBack)
+    }
+
     func testExperienceLibraryRouteAndPreviewAdaptersStayPresentationOnly() throws {
         let adapters = try source("SpotifyLyrics/Views/Debug/PresentationPreviewAdapters.swift")
         let releaseView = try source("SpotifyLyrics/Views/Settings/ExperienceLibrarySettingsView.swift")

@@ -12,6 +12,7 @@ final class SettingsNavigationRoute: ObservableObject {
 
     @Published private(set) var pendingAISettings = false
     @Published var pendingConnectionSettings = false
+    @Published var requestedLocation: SettingsLocation?
     @Published var requestedToolbarPanel: V3ToolbarModel.Panel?
     func requestConnectionSettings() {
         pendingConnectionSettings = true
@@ -51,7 +52,10 @@ struct ToolbarPanelLink: View {
     }
 }
 
-private enum SettingsCategory: String, CaseIterable, Identifiable {
+enum SettingsCategory: String, CaseIterable, Identifiable {
+    case workspace = "工作台"
+    case favorites = "收藏的金句"
+    case missingLyrics = "缺歌词"
     case general = "播放"
     case lyricsAndText = "歌词与翻译"
     case appearance = "外观"
@@ -66,37 +70,22 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     case statistics = "听歌统计"
     case experienceLibrary = "体验版本库"
 
-    /// Sidebar sections: listening first, then lyrics, then the system.
     static var sidebarGroups: [(title: String, categories: [SettingsCategory])] {
-        [("听歌", [.general, .appearance]),
-         ("歌词", [.lyricsAndText, .aiTranslation, .reading, .library]),
-         ("系统", [.advancedAndData])]
-    }
-
-    var tileColor: Color {
-        switch self {
-        case .general: return .pink
-        case .lyricsAndText: return .blue
-        case .appearance: return .purple
-        case .reading: return .orange
-        case .advancedAndData: return .gray
-        case .servicesAndSources: return .teal
-        case .aiTranslation: return .indigo
-        case .library: return .green
-        case .history: return .cyan
-        case .statistics: return .mint
-        case .experienceLibrary: return .brown
-        }
+        [("资料", [.workspace, .library, .favorites, .history]),
+         ("偏好", [.general, .lyricsAndText, .aiTranslation, .reading, .appearance, .advancedAndData])]
     }
 
     static var primaryCases: [SettingsCategory] {
-        [.general, .lyricsAndText, .aiTranslation, .library, .appearance, .reading, .advancedAndData]
+        sidebarGroups.flatMap(\.categories)
     }
 
     var id: String { rawValue }
 
     var systemImage: String {
         switch self {
+        case .workspace: return "square.grid.2x2"
+        case .favorites: return "quote.opening"
+        case .missingLyrics: return "text.badge.plus"
         case .general: return "play.circle"
         case .lyricsAndText: return "text.quote"
         case .appearance: return "paintpalette"
@@ -113,6 +102,9 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var detail: String {
         switch self {
+        case .workspace: return "浏览本机收藏，整理歌曲档案"
+        case .favorites: return "重读收藏的歌词，找到出处"
+        case .missingLyrics: return "查看并补全缺少歌词的歌曲"
         case .general: return "播放来源、连接与启动"
         case .lyricsAndText: return "原文、中文、字体与找词"
         case .appearance: return "主窗口、封面与桌面歌词"
@@ -136,8 +128,12 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         case .advancedAndData: return "数据库 存储 索引 重置 日志 导出 清除"
         case .servicesAndSources: return "Provider 免费 实验 LRCLIB 本地 Uta-Net UtaTime AWA"
         case .aiTranslation: return "API Key Keychain Base URL Codex ChatGPT GPT 目标语言 自动翻译 提示词 Prompt 超时 Temperature 连接测试"
-        case .library: return "金句 收藏 封面墙 回顾卡"
-        case .history, .statistics, .experienceLibrary: return ""
+        case .workspace: return "首页 工作台 资料"
+        case .library: return "档案 本地 原词 版本 导入 锁定"
+        case .favorites: return "收藏 摘录 喜欢的句子"
+        case .missingLyrics: return "找词 补全 缺词 无歌词"
+        case .history: return "封面墙 回顾卡"
+        case .statistics, .experienceLibrary: return ""
         }
     }
 
@@ -149,218 +145,223 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     }
 }
 
-struct SettingsRootView: View {
-    @EnvironmentObject private var settings: AppSettingsStore
-    @StateObject private var navigationRoute = SettingsNavigationRoute.shared
-    @State private var selection: SettingsCategory = .general
-    @State private var searchText = ""
+struct SettingsLocation: Equatable {
+    let page: SettingsCategory
+    var trackKey: String?
+    var query: String
 
-    init(initialPage: String? = nil) {
-        _selection = State(initialValue: initialPage.flatMap(SettingsCategory.init(rawValue:)) ?? .general)
+    init(_ page: SettingsCategory, trackKey: String? = nil, query: String = "") {
+        self.page = page
+        self.trackKey = trackKey
+        self.query = query
+    }
+}
+
+struct SettingsHistory {
+    private(set) var current: SettingsLocation
+    private var earlier: [SettingsLocation] = []
+    private var later: [SettingsLocation] = []
+
+    init(_ page: SettingsCategory = .workspace) { current = SettingsLocation(page) }
+    var canGoBack: Bool { !earlier.isEmpty }
+    var canGoForward: Bool { !later.isEmpty }
+
+    mutating func open(_ location: SettingsLocation) {
+        guard current != location else { return }
+        earlier.append(current)
+        later.removeAll()
+        current = location
     }
 
-    private var visibleCategories: [SettingsCategory] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !query.isEmpty { return SettingsCategory.allCases.filter { $0.matches(query) } }
-        return SettingsCategory.primaryCases
+    mutating func back() {
+        guard let previous = earlier.popLast() else { return }
+        later.append(current)
+        current = previous
+    }
+
+    mutating func forward() {
+        guard let next = later.popLast() else { return }
+        earlier.append(current)
+        current = next
+    }
+
+    mutating func search(_ text: String) {
+        if text.isEmpty {
+            if !current.query.isEmpty { back() }
+        } else if current.query.isEmpty {
+            open(.init(.workspace, query: text))
+        } else {
+            current.query = text
+            later.removeAll()
+        }
+    }
+
+    mutating func rememberLibrarySelection(_ key: String?) {
+        guard current.page == .library || current.page == .missingLyrics else { return }
+        current.trackKey = key
+    }
+}
+
+struct SettingsRootView: View {
+    @EnvironmentObject private var settings: AppSettingsStore
+    @ObservedObject private var navigationRoute = SettingsNavigationRoute.shared
+    @State private var history: SettingsHistory
+    @State private var library = PersonalLyricsLibraryService()
+    @FocusState private var searchFocused: Bool
+
+    init(initialPage: String? = nil) {
+        _history = State(initialValue: SettingsHistory(initialPage.flatMap(SettingsCategory.init(rawValue:)) ?? .workspace))
+    }
+
+    private func navigate(_ destination: SettingsLocation) {
+        searchFocused = false
+        history.open(destination)
     }
 
     var body: some View {
         NavigationSplitView {
-            VStack(spacing: 0) {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    TextField("搜索设置", text: $searchText)
-                        .textFieldStyle(.plain)
-                        .accessibilityIdentifier("settings.search")
-                    if !searchText.isEmpty {
-                        Button {
-                            searchText = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help("清除搜索")
-                        .accessibilityLabel("清除搜索")
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("搜索设置、歌曲、歌词", text: Binding(
+                        get: { history.current.query },
+                        set: { history.search($0) }
+                    ))
+                    .textFieldStyle(.plain)
+                    .focused($searchFocused)
+                    .accessibilityIdentifier("settings.search")
+                    if !history.current.query.isEmpty {
+                        Button { history.search("") } label: { Image(systemName: "xmark.circle.fill") }
+                            .buttonStyle(.plain).accessibilityLabel("清除搜索")
                     }
                 }
-                .padding(8)
-                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
-                .padding(12)
+                .font(.system(size: 12))
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8))
+                .padding(.horizontal, 12).padding(.vertical, 10)
 
-                List(selection: $selection) {
-                    if isSearching {
-                        ForEach(visibleCategories) { category in
-                            sidebarRow(category, showsDetail: true)
-                        }
-                    } else {
-                        ForEach(SettingsCategory.sidebarGroups, id: \.title) { group in
-                            Section(group.title) {
-                                ForEach(group.categories) { category in
-                                    sidebarRow(category, showsDetail: false)
-                                }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 15) {
+                        ForEach(SettingsCategory.sidebarGroups, id: \.title) { section in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(section.title).font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary).padding(.leading, 10).padding(.bottom, 3)
+                                ForEach(section.categories) { category in sidebarRow(category) }
                             }
                         }
-                    }
-                    if visibleCategories.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("没有匹配的设置")
-                            Text("试试“翻译”“字体”或“Spotify”。")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Button("显示全部设置") { searchText = "" }
+                        if settings.settingsCenterPresentation == .classicNavigationV1 {
+                            Button("恢复推荐设置中心") { settings.settingsCenterPresentation = .experienceIntegratedV2 }
                                 .buttonStyle(.borderless)
                         }
-                        .padding(.vertical, 8)
                     }
-                    if settings.settingsCenterPresentation == .classicNavigationV1 {
-                        Section {
-                            Button {
-                                settings.settingsCenterPresentation = .experienceIntegratedV2
-                            } label: {
-                                Label("恢复推荐设置中心", systemImage: "arrow.uturn.backward.circle")
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                    }
+                    .padding(.horizontal, 10).padding(.bottom, 12)
                 }
-                .listStyle(.sidebar)
             }
-            .navigationTitle("设置")
+            .navigationTitle("Aster · Lyric")
             .accessibilityIdentifier(settings.settingsCenterPresentation.rawValue)
-            .navigationSplitViewColumnWidth(min: 205, ideal: 215, max: 250)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 206, max: 245)
         } detail: {
-            SettingsDetailView(selection: $selection)
-                .environmentObject(settings)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 5) {
+                    Button { history.back() } label: { Image(systemName: "chevron.left") }
+                        .disabled(!history.canGoBack).keyboardShortcut("[", modifiers: .command)
+                        .help("后退 (⌘[)").accessibilityLabel("后退")
+                    Button { history.forward() } label: { Image(systemName: "chevron.right") }
+                        .disabled(!history.canGoForward).keyboardShortcut("]", modifiers: .command)
+                        .help("前进 (⌘])").accessibilityLabel("前进")
+                    Divider().frame(height: 12).padding(.horizontal, 5)
+                    Text(history.current.query.isEmpty ? history.current.page.rawValue : "搜索本机资料")
+                        .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button { searchFocused = true } label: { Image(systemName: "magnifyingglass") }
+                        .keyboardShortcut("f", modifiers: .command).help("搜索 (⌘F)").accessibilityLabel("搜索")
+                }
+                .buttonStyle(.borderless).padding(.horizontal, 18).frame(height: 36)
+                Divider()
+                if history.current.query.isEmpty {
+                    SettingsDetailView(selection: Binding(get: { history.current.page }, set: { navigate(.init($0)) }),
+                                       trackKey: history.current.trackKey, library: library, navigate: navigate,
+                                       rememberSelection: { history.rememberLibrarySelection($0) })
+                } else {
+                    SettingsLocalSearch(query: history.current.query, library: library, navigate: navigate)
+                }
+            }
         }
-        .frame(minWidth: 800, idealWidth: 920, minHeight: 540, idealHeight: 650)
+        .frame(minWidth: 800, idealWidth: 940, minHeight: 540, idealHeight: 650)
         .background(SettingsWindowBehavior())
-        .onReceive(NotificationCenter.default.publisher(for: .lyricIslandOpenAISettings)) { _ in
-            navigateToAISettings()
+        .onReceive(NotificationCenter.default.publisher(for: .lyricIslandOpenAISettings)) { _ in consumeRoutes() }
+        .onReceive(NotificationCenter.default.publisher(for: .lyricIslandOpenConnectionSettings)) { _ in consumeRoutes() }
+        .onChange(of: navigationRoute.requestedLocation, initial: true) { _, request in
+            guard let location = request else { return }
+            navigate(location)
+            navigationRoute.requestedLocation = nil
         }
-        .onReceive(NotificationCenter.default.publisher(for: .lyricIslandOpenConnectionSettings)) { _ in
-            searchText = ""; selection = .general; navigationRoute.pendingConnectionSettings = false
-        }
-        .onAppear {
-            if navigationRoute.pendingConnectionSettings {
-                searchText = ""; selection = .general; navigationRoute.pendingConnectionSettings = false
-            }
-            if navigationRoute.consumePendingAISettingsRequest() {
-                navigateToAISettings()
-            }
-        }
+        .onAppear { consumeRoutes() }
     }
 
-    private var isSearching: Bool {
-        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private func sidebarRow(_ category: SettingsCategory, showsDetail: Bool) -> some View {
-        Label {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(category.rawValue)
-                if showsDetail {
-                    Text(category.detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
+    private func sidebarRow(_ category: SettingsCategory) -> some View {
+        let selected = history.current.page == category && history.current.query.isEmpty
+        return Button { navigate(.init(category)) } label: {
+            HStack(spacing: 10) {
+                Image(systemName: category.systemImage)
+                    .font(.system(size: 14, weight: .medium)).frame(width: 20)
+                Text(category.rawValue).font(.system(size: 13, weight: selected ? .semibold : .regular))
+                Spacer(minLength: 0)
             }
-        } icon: {
-            SettingsIconTile(systemImage: category.systemImage, color: category.tileColor)
+            .foregroundStyle(selected ? WorkspacePalette.ink : Color.primary)
+            .padding(.horizontal, 10).frame(height: 30)
+            .background(selected ? WorkspacePalette.selection : .clear, in: RoundedRectangle(cornerRadius: 7))
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 2)
-        .help(category.detail)
-        .tag(category)
+        .buttonStyle(.plain).help(category.detail)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    private func navigateToAISettings() {
-        _ = navigationRoute.consumePendingAISettingsRequest()
-        searchText = ""
-        selection = .aiTranslation
-    }
-}
-
-private struct TransitionalBridgeContainer<Content: View>: View {
-    let title: String
-    let onBack: () -> Void
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Button(action: onBack) {
-                    Label(title, systemImage: "chevron.left")
-                }
-                .buttonStyle(.borderless)
-                .accessibilityIdentifier("transitional_bridge_back_button")
-                Spacer()
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 10)
-            Divider()
-
-            content()
+    private func consumeRoutes() {
+        if navigationRoute.pendingConnectionSettings {
+            navigate(.init(.general))
+            navigationRoute.pendingConnectionSettings = false
         }
+        if navigationRoute.consumePendingAISettingsRequest() { navigate(.init(.aiTranslation)) }
     }
 }
 
 private struct SettingsDetailView: View {
     @EnvironmentObject private var settings: AppSettingsStore
     @Binding var selection: SettingsCategory
+    let trackKey: String?
+    let library: PersonalLyricsLibraryService
+    let navigate: (SettingsLocation) -> Void
+    let rememberSelection: (String?) -> Void
 
     var body: some View {
         Group {
             switch selection {
+            case .workspace:
+                SettingsWorkspace(navigate: navigate)
             case .general:
-                ServicesAndSourcesSettingsView(scope: .playback)
-                    .padding(16)
+                ServicesAndSourcesSettingsView(scope: .playback).padding(16)
             case .lyricsAndText:
                 LyricsAndTextSettingsView(
                     onOpenSources: { selection = .servicesAndSources },
                     onOpenTranslation: { selection = .aiTranslation },
                     onOpenReading: { selection = .reading }
-                )
-                .padding(16)
-            case .appearance:
-                AppearanceSettingsView()
-                    .padding(16)
-            case .reading:
-                ReadingSettingsView()
-                    .padding(16)
-            case .servicesAndSources:
-                TransitionalBridgeContainer(title: "返回歌词与翻译", onBack: { selection = .lyricsAndText }) {
-                    ServicesAndSourcesSettingsView(scope: .lyrics)
-                        .padding(16)
-                }
-            case .aiTranslation:
-                TransitionalBridgeContainer(title: "返回歌词与翻译", onBack: { selection = .lyricsAndText }) {
-                    AISettingsView()
-                        .padding(16)
-                }
+                ).padding(16)
+            case .appearance: AppearanceSettingsView().padding(16)
+            case .reading: ReadingSettingsView().padding(16)
+            case .servicesAndSources: ServicesAndSourcesSettingsView(scope: .lyrics).padding(16)
+            case .aiTranslation: AISettingsView().padding(16)
             case .advancedAndData:
-                AdvancedAndDataSettingsView(
-                    onOpenTool: { tool in selection = tool }
-                )
-                .padding(28)
-
-            case .library:
-                PersonalLyricsLibraryView(embeddedInSettings: true)
-            case .history:
-                TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
-                    ListeningHistoryView()
-                }
-            case .statistics:
-                TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
-                    ListeningStatisticsView()
-                }
+                AdvancedAndDataSettingsView(onOpenTool: { tool in selection = tool }).padding(24)
+            case .library, .missingLyrics:
+                PersonalLyricsLibraryView(embeddedInSettings: true, initialTrackKey: trackKey,
+                                          showingMissing: selection == .missingLyrics, service: library,
+                                          onSelection: rememberSelection)
+            case .history: ListeningHistoryView(openTrack: { navigate(.init(.library, trackKey: $0)) })
+            case .statistics: ListeningStatisticsView()
+            case .favorites: FavoriteLinesView(openTrack: { navigate(.init(.library, trackKey: $0)) })
             case .experienceLibrary:
-                TransitionalBridgeContainer(title: "返回高级与数据", onBack: { selection = .advancedAndData }) {
-                    ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections)
-                        .padding(28)
-                }
+                ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections).padding(24)
             }
         }
         .id(selection)
@@ -405,21 +406,6 @@ private struct SpotifyStatusRow: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-    }
-}
-
-/// System-Settings-style coloured icon tile for the sidebar.
-private struct SettingsIconTile: View {
-    let systemImage: String
-    let color: Color
-
-    var body: some View {
-        Image(systemName: systemImage)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: 22, height: 22)
-            .background(color.gradient, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .accessibilityHidden(true)
     }
 }
 

@@ -7,7 +7,7 @@
 Aster · Lyric、星弦、lyricsQ、Spotify Lyrics 属于同一项目。仓库为 `suifracti/aster-lyric`，协作分支 main。
 
 - 产品/UI 与阶段规格：[TOOLBAR_BEHAVIOR](docs/TOOLBAR_BEHAVIOR.md)。
-- 技术经验与覆盖：[PROJECT_MEMORY](docs/PROJECT_MEMORY.md)的场景索引及相关条目。
+- 每次开工前先读[项目记忆](docs/PROJECT_MEMORY.md)的场景索引及本次涉及的条目，再动手。换到另一项工作时也先读对应经验。
 - [STATUS](docs/STATUS.md)为有日期的历史状态；当前任务结合产品规格、最新完成证据与用户目标。
 - Vault 项目 README 导航，《项目总览》提供规划、经验、当前接续摘要；Handoff 保存阶段体验，Decisions 保留决定沿革。
 - 构建签名与本机操作：[DEVELOPMENT_WORKFLOW](docs/DEVELOPMENT_WORKFLOW.md)；同步参考：[SUBMISSION_BASELINE](docs/SUBMISSION_BASELINE.md)。
