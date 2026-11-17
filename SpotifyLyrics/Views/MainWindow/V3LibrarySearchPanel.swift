@@ -192,7 +192,7 @@ struct V3LibrarySearchPanel: View {
                         HStack { Text("\(batch.completed) / \(batch.total)").monospacedDigit(); Button("停止") { batch.stop() } }
                     } else if filter == .missing {
                         Button("全部补全") {
-                            batch.start(tracks: entries.filter { !$0.hasManualLyrics && !$0.hasLockedLyrics }.map { library.libraryTrack(for: $0) }) {
+                            batch.start(tracks: entries.filter { !$0.hasManualLyrics && !$0.hasLockedLyrics }.map(\.libraryTrack)) {
                                 await state.completeMissingLyrics(track: $0)
                             }
                         }.disabled(entries.isEmpty)

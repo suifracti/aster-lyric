@@ -236,21 +236,19 @@ public struct DocumentTimingPayload: Codable, Sendable, Equatable {
         return result
     }
 
-    public static func decode(_ json: String) -> [Int: (performerID: String?, spans: [TimedTextSpan])]? {
+    static func decodeRows(_ json: String) -> [Int: LineTimingPayload]? {
         guard let data = json.data(using: .utf8),
-              let doc = try? JSONDecoder().decode(DocumentTimingPayload.self, from: data) else {
-            return nil
-        }
-        var result: [Int: (performerID: String?, spans: [TimedTextSpan])] = [:]
+              let doc = try? JSONDecoder().decode(DocumentTimingPayload.self, from: data) else { return nil }
+        var rows: [Int: LineTimingPayload] = [:]
         for line in doc.lines {
-            guard line.lineIndex >= 0,
-                  !line.spans.isEmpty,
-                  result[line.lineIndex] == nil else {
-                return nil
-            }
-            result[line.lineIndex] = (line.performerID, line.spans)
+            guard line.lineIndex >= 0, !line.spans.isEmpty, rows[line.lineIndex] == nil else { return nil }
+            rows[line.lineIndex] = line
         }
-        return result
+        return rows
+    }
+
+    public static func decode(_ json: String) -> [Int: (performerID: String?, spans: [TimedTextSpan])]? {
+        decodeRows(json)?.mapValues { ($0.performerID, $0.spans) }
     }
 }
 

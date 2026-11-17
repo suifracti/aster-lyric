@@ -15,6 +15,12 @@ public struct PersonalLyricsLibraryEntry: Identifiable, Equatable, Sendable, Cod
     public let duration: Double
     public let artworkURL: URL?
 
+    var libraryTrack: Track {
+        Track(title: title, artist: artist, album: album ?? "", duration: duration,
+              isrc: isrc, spotifyId: spotifyTrackID, artworkURL: artworkURL,
+              spotifyURL: spotifyURI.flatMap(URL.init(string:)))
+    }
+
     public let lyricsVersionCount: Int
     public let translationVersionCount: Int
     public let readingVersionCount: Int
@@ -904,11 +910,12 @@ struct LibraryPassagePage: Sendable {
         let original: String
         var translation: String?
         var reading: String?
+        var background: String?
 
         func matches(_ text: String) -> Bool {
             guard !text.isEmpty else { return false }
             let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]
-            if [original, translation, reading].compactMap({ $0 }).contains(where: { $0.range(of: text, options: options) != nil }) {
+            if [original, translation, reading, background].compactMap({ $0 }).contains(where: { $0.range(of: text, options: options) != nil }) {
                 return true
             }
             guard let reading, text.unicodeScalars.contains(where: { $0.isASCII && CharacterSet.letters.contains($0) }) else { return false }

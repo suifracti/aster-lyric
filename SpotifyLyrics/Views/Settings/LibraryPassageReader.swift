@@ -104,6 +104,11 @@ struct LibraryPassageReader: View {
                 if !line.original.isEmpty {
                     Text(line.original).font(.system(size: 17, weight: .medium, design: .serif))
                 }
+                if let backing = line.background, !backing.isEmpty {
+                    Label(backing, systemImage: "person.2").labelStyle(.titleAndIcon)
+                        .font(.callout.italic()).foregroundStyle(.secondary)
+                        .accessibilityLabel("和声，\(backing)")
+                }
                 if let translation = line.translation, !translation.isEmpty,
                    showsTranslation || line.original.isEmpty || selected {
                     Text(translation).font(.callout).foregroundStyle(.secondary)

@@ -396,19 +396,21 @@ public struct LibraryTimingLineDraft: Identifiable, Equatable {
     public let lineIndex: Int
     public let originalText: String
     public let performerID: String?
+    public let backgroundText: String?
     public var spans: [LibraryTimingSpanDraft]
 
     public var id: Int { lineIndex }
 
-    public init(lineIndex: Int, originalText: String, performerID: String?, spans: [TimedTextSpan]) {
+    public init(lineIndex: Int, originalText: String, performerID: String?, spans: [TimedTextSpan], backgroundText: String? = nil) {
         self.lineIndex = lineIndex
         self.originalText = originalText
         self.performerID = performerID
+        self.backgroundText = backgroundText
         self.spans = spans.map(LibraryTimingSpanDraft.init(source:))
     }
 
     public var payload: LineTimingPayload {
-        LineTimingPayload(lineIndex: lineIndex, performerID: performerID, spans: spans.map(\.updatedSpan))
+        LineTimingPayload(lineIndex: lineIndex, performerID: performerID, spans: spans.map(\.updatedSpan), backgroundText: backgroundText)
     }
 }
 
@@ -438,7 +440,7 @@ public struct LibraryTimingRevisionDraft: Identifiable {
     public init?(track: Track, lyricsSource: StoredEditableLyricsVersion, source: DatabaseLyricsTimingVersionRecord) {
         guard source.lyricsVersionID == lyricsSource.record.id,
               source.sourceContentHash == lyricsSource.sourceContentHash,
-              let timingMap = DocumentTimingPayload.decode(source.spansPayload) else { return nil }
+              let timingMap = DocumentTimingPayload.decodeRows(source.spansPayload) else { return nil }
         let lines = timingMap.keys.sorted().compactMap { lineIndex -> LibraryTimingLineDraft? in
             guard lyricsSource.document.lines.indices.contains(lineIndex),
                   let timing = timingMap[lineIndex] else { return nil }
@@ -446,7 +448,7 @@ public struct LibraryTimingRevisionDraft: Identifiable {
                 lineIndex: lineIndex,
                 originalText: lyricsSource.document.lines[lineIndex].originalText,
                 performerID: timing.performerID,
-                spans: timing.spans
+                spans: timing.spans, backgroundText: timing.backgroundText
             )
         }
         guard !lines.isEmpty,

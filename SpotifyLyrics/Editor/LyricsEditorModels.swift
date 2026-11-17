@@ -36,6 +36,7 @@ public struct LyricsEditorLineDraft: Identifiable, Equatable, Hashable, Sendable
     /// Projection metadata retained while opening an existing timed version.
     public var performerID: String?
     public var timedSpans: [TimedTextSpan]?
+    public var backgroundText: String?
     public var readingRepresentationID: String?
     public var readingSurfaceText: String?
 
@@ -50,6 +51,7 @@ public struct LyricsEditorLineDraft: Identifiable, Equatable, Hashable, Sendable
         rubyTokens: [LyricRubyToken]? = nil,
         performerID: String? = nil,
         timedSpans: [TimedTextSpan]? = nil,
+        backgroundText: String? = nil,
         readingRepresentationID: String? = nil,
         readingSurfaceText: String? = nil
     ) {
@@ -63,6 +65,7 @@ public struct LyricsEditorLineDraft: Identifiable, Equatable, Hashable, Sendable
         self.rubyTokens = rubyTokens
         self.performerID = performerID
         self.timedSpans = timedSpans
+        self.backgroundText = backgroundText
         self.readingRepresentationID = readingRepresentationID
         self.readingSurfaceText = readingSurfaceText
     }
@@ -82,6 +85,7 @@ public struct LyricsEditorLineDraft: Identifiable, Equatable, Hashable, Sendable
             rubyTokens: line.rubyTokens,
             performerID: line.performerID,
             timedSpans: line.timedSpans,
+            backgroundText: line.backgroundText,
             readingRepresentationID: line.readingRepresentationID,
             readingSurfaceText: line.readingSurfaceText
         )
@@ -100,7 +104,8 @@ public struct LyricsEditorLineDraft: Identifiable, Equatable, Hashable, Sendable
             performerID: performerID,
             timedSpans: timedSpans,
             readingRepresentationID: readingRepresentationID,
-            readingSurfaceText: readingSurfaceText
+            readingSurfaceText: readingSurfaceText,
+            backgroundText: backgroundText
         )
     }
 }

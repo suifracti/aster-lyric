@@ -267,7 +267,7 @@ public struct PersonalLyricsLibraryView: View {
                 } else if libraryFilter == .missing {
                     Button("全部补全") {
                         let tracks = visibleEntries.filter { !$0.hasLockedLyrics && !$0.hasManualLyrics }
-                            .map { service.libraryTrack(for: $0) }
+                            .map(\.libraryTrack)
                         batch.start(tracks: tracks) { await playback.completeMissingLyrics(track: $0) }
                     }.disabled(visibleEntries.isEmpty)
                 }

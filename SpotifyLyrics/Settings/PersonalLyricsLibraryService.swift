@@ -77,7 +77,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         }
         Task {
             do {
-                let track = libraryTrack(for: entry)
+                let track = entry.libraryTrack
                 try await repository.prepare()
                 guard let source = try await repository.loadEditableVersion(versionID: lyricsID, track: track, identity: TrackIdentity(track: track)),
                       let timing = try await repository.loadPersonalLibraryTimingVersion(id: timingID),
@@ -148,7 +148,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         Task {
             defer { revisionBusy = false }
             do {
-                let track = libraryTrack(for: entry)
+                let track = entry.libraryTrack
                 let identity = TrackIdentity(track: track)
                 try await repository.prepare()
                 guard let lyricsSource = try await repository.loadEditableVersion(
@@ -194,7 +194,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         Task {
             defer { revisionBusy = false }
             do {
-                let track = libraryTrack(for: entry)
+                let track = entry.libraryTrack
                 let identity = TrackIdentity(track: track)
                 try await repository.prepare()
                 guard let lyricsSource = try await repository.loadEditableVersion(
@@ -239,7 +239,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         Task {
             defer { revisionBusy = false }
             do {
-                let track = libraryTrack(for: entry)
+                let track = entry.libraryTrack
                 let identity = TrackIdentity(track: track)
                 try await repository.prepare()
                 guard let lyricsSource = try await repository.loadEditableVersion(
@@ -275,19 +275,6 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     private let repository: SQLiteLyricsRepository
     private let defaults: UserDefaults
     private var pendingSyncFolderURL: URL?
-
-    func libraryTrack(for entry: PersonalLyricsLibraryEntry) -> Track {
-        Track(
-            title: entry.title,
-            artist: entry.artist,
-            album: entry.album ?? "",
-            duration: entry.duration,
-            isrc: entry.isrc,
-            spotifyId: entry.spotifyTrackID,
-            artworkURL: entry.artworkURL,
-            spotifyURL: entry.spotifyURI.flatMap(URL.init(string:))
-        )
-    }
 
     public init(
         repository: SQLiteLyricsRepository = SQLiteLyricsRepository(),

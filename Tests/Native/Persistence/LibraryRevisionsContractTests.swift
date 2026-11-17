@@ -270,6 +270,8 @@ final class LibraryRevisionsContractTests: XCTestCase {
             readingVersions.first { $0.record.id == readingChild.record.id }?.lines.first?.readingText,
             "manual-reading"
         )
+        let sourcePage = try await repo.readLibraryPassage(.init(trackKey: identity.stableKey, source: .original(source.record.id)))
+        XCTAssertEqual(sourcePage?.lines.first?.reading, "reading-0", "The default reading follows the library's locked version")
 
         let timingTrack = Track(title: "Timing fixture", artist: "Test", album: "Test", duration: 100, spotifyId: "timing-revision-test")
         let timingIdentity = TrackIdentity(track: timingTrack)
@@ -278,7 +280,7 @@ final class LibraryRevisionsContractTests: XCTestCase {
             lines: [LyricLine(timestamp: 1, originalText: "Timed words", endTime: 3, timedSpans: [
                 TimedTextSpan(id: 0, text: "Timed", trailingWhitespace: " ", startTime: 1.1, endTime: 1.7, utf16Start: 0, utf16Length: 5, granularity: .word),
                 TimedTextSpan(id: 1, text: "words", startTime: 1.8, endTime: 2.4, utf16Start: 6, utf16Length: 5, granularity: .word)
-            ])],
+            ], backgroundText: "echo")],
             isSynchronized: true, source: .lrclib, confidence: 0.9, providerSourceID: "timing-fixture"
         )
         let savedTimingLyrics = try await repo.save(track: timingTrack, identity: timingIdentity, document: timingDocument)
@@ -298,6 +300,12 @@ final class LibraryRevisionsContractTests: XCTestCase {
         XCTAssertEqual(retainedTiming, originalTiming)
         let editedTimingSource = try await repo.loadEditableVersion(versionID: timingSource.record.id, track: timingTrack, identity: timingIdentity)
         XCTAssertEqual(editedTimingSource?.document.timingVersionID, timingChild.id)
+        XCTAssertEqual(editedTimingSource?.document.lines.first?.backgroundText, "echo", "Editing a word time keeps the backing vocal")
+        let roundTripped = timingSource.document.lines.first.map { LyricsEditorLineDraft(line: $0).asLyricLine() }
+        XCTAssertEqual(roundTripped?.backgroundText, "echo", "Opening a saved line in the editor keeps the backing vocal")
+        let timingPage = try await repo.readLibraryPassage(.init(trackKey: timingIdentity.stableKey, source: .original(timingVersionID)))
+        XCTAssertEqual(timingPage?.lines.first?.background, "echo")
+        XCTAssertEqual(timingPage?.lines.first?.matches("ECHO"), true)
         let editedStartTime = editedTimingSource?.document.lines[0].timedSpans?.first?.startTime ?? 0
         XCTAssertEqual(editedStartTime, 1.2, accuracy: 0.0001)
         _ = try await repo.adoptPersonalLibraryTimingVersion(id: originalTiming.id, trackStableKey: timingIdentity.stableKey)
