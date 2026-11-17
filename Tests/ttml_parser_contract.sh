@@ -9,6 +9,11 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 swiftc -parse-as-library \
   SpotifyLyrics/Models/Models.swift \
+  SpotifyLyrics/DebugDatabaseSafety.swift \
+  SpotifyLyrics/Lyrics/TrackAlias.swift \
+  SpotifyLyrics/Lyrics/ReadingModels.swift \
+  SpotifyLyrics/Lyrics/ReadingScriptConversion.swift \
+  SpotifyLyrics/Lyrics/TrackTextNormalizer.swift \
   SpotifyLyrics/Lyrics/TrackIdentity.swift \
   SpotifyLyrics/Lyrics/AlignmentModels.swift \
   SpotifyLyrics/Lyrics/LyricsModels.swift \

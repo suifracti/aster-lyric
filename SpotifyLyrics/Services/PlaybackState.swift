@@ -224,7 +224,8 @@ public final class PlaybackState: ObservableObject {
             lyricsProviders = Self.makeDefaultLyricsProviders(
                 index: sharedIndex,
                 configuration: resolvedSettings.lyricsProviderConfiguration,
-                mode: resolvedSettings.lyricsSourceMode
+                mode: resolvedSettings.lyricsSourceMode,
+                settings: resolvedSettings
             )
         }
         self.preloadLyricsProviders = lyricsProviders
@@ -453,7 +454,8 @@ public final class PlaybackState: ObservableObject {
     private static func makeDefaultLyricsProviders(
         index: LocalLyricsIndex,
         configuration: LyricsProviderConfiguration,
-        mode: LyricsSourceMode = .default
+        mode: LyricsSourceMode = .default,
+        settings: AppSettingsStore
     ) -> [LyricsProvider] {
         var providers: [LyricsProvider] = []
         // Mode is the hard gate: experimental IDs never enter the chain under
@@ -471,7 +473,9 @@ public final class PlaybackState: ObservableObject {
                     LyricsE2ELog.log("Lyrics provider disabled by environment: AMLL")
                     continue
                 }
-                providers.append(AMLLLyricsProvider())
+                providers.append(AMLLLyricsProvider(translationLanguage: { @MainActor [weak settings] in
+                    settings?.aiTranslationConfiguration.targetLanguage ?? "zh-Hans"
+                }))
             case .lrclib:
                 guard ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_LRCLIB"] != "1" else {
                     LyricsE2ELog.log("Lyrics provider disabled by environment: LRCLIB")
@@ -1581,7 +1585,8 @@ public final class PlaybackState: ObservableObject {
         let providers = Self.makeDefaultLyricsProviders(
             index: LocalLyricsIndex.shared,
             configuration: configuration,
-            mode: mode
+            mode: mode,
+            settings: settingsStore
         )
         lyricsPreloadTask?.cancel()
         preloadLyricsProviders = providers

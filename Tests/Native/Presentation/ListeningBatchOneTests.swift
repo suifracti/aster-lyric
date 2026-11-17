@@ -657,6 +657,49 @@ final class ListeningBatchOneTests: XCTestCase {
 
     // MARK: 和声
 
+    func testTTMLReadsMainVoiceTranslationsAndRomanizationFromTheFile() throws {
+        let ttml = """
+        <tt xmlns:ttm="urn:ttm" xmlns:amll="urn:amll" xmlns:itunes="urn:itunes" xml:lang="ja">
+          <head><metadata>
+            <amll:meta key="musicName" value="窗边"/><amll:meta key="artists" value="本机样例"/>
+            <amll:meta key="album" value="声音来信"/>
+            <iTunesMetadata><translations><translation type="subtitle" xml:lang="zh-Hans">
+              <text for="B"><span>再</span><span>见</span><span ttm:role="x-bg">幕后</span></text>
+            </translation></translations></iTunesMetadata>
+          </metadata></head>
+          <body><div>
+            <p begin="1s" end="3s" itunes:key="A"><span begin="1s" end="2s">窓</span><span ttm:role="x-bg">あ<span ttm:role="x-translation">不是主唱</span></span><span ttm:role="x-translation" xml:lang="en">window</span><span ttm:role="x-translation" xml:lang="zh-Hans">窗</span><span ttm:role="x-roman" xml:lang="ja-Latn">mado</span></p>
+            <p begin="3s" end="5s" itunes:key="B">またね</p>
+          </div></body></tt>
+        """
+        let track = Track(title: "fixture", artist: "fixture", album: "", duration: 6)
+        let document = try XCTUnwrap(TTMLParser.parse(ttml, identity: TrackIdentity(track: track)))
+        XCTAssertEqual(document.title, "窗边")
+        XCTAssertEqual(document.artist, "本机样例")
+        XCTAssertEqual(document.album, "声音来信")
+        XCTAssertEqual(document.language, "ja")
+        XCTAssertEqual(document.lines.map(\.originalText), ["窓", "またね"])
+        XCTAssertEqual(document.lines.map(\.translationText), ["窗", "再见"])
+        XCTAssertEqual(document.lines.first?.romajiText, "mado")
+        XCTAssertEqual(document.lines.first?.backgroundText, "あ")
+        XCTAssertEqual(document.lines.first?.timedSpans?.map(\.text), ["窓"])
+        let english = TTMLParser.parse(ttml, identity: TrackIdentity(track: track), preferredTranslationLanguage: "en-GB")
+        XCTAssertEqual(english?.lines.first?.translationText, "window")
+    }
+
+    func testUntimedTTMLPreservesTextOrderWithoutInventingPlaybackTiming() throws {
+        let xml = #"<tt xmlns:itunes="urn:itunes" itunes:timing="None"><body><div><p>先读</p><p>再读</p></div></body></tt>"#
+        let track = Track(title: "fixture", artist: "fixture", album: "", duration: 0)
+        let document = try XCTUnwrap(TTMLParser.parse(xml, identity: TrackIdentity(track: track)))
+        XCTAssertFalse(document.isSynchronized)
+        XCTAssertEqual(document.lines.map(\.originalText), ["先读", "再读"])
+        let partial = #"<tt><body><div><p>序</p><p><span begin="0s" end="1s">唱</span></p><p>尾</p></div></body></tt>"#
+        let partiallyTimed = try XCTUnwrap(TTMLParser.parse(partial, identity: TrackIdentity(track: track)))
+        XCTAssertFalse(partiallyTimed.isSynchronized)
+        XCTAssertEqual(partiallyTimed.explicitlyTimedLineIndices, [1])
+        XCTAssertEqual(partiallyTimed.lines.map(\.originalText), ["序", "唱", "尾"])
+    }
+
     func testBackingVocalsBecomeTheirOwnLine() throws {
         let ttml = """
         <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div>

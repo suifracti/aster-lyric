@@ -19,6 +19,7 @@
 | 队列不更新、循环列表被裁掉、隐藏后点第三首多跳 | L-008；PlaylistBrowserModel、V3PlaylistQueuePreview |
 | 版本弹窗挂在悬浮窗、关后黑着、大歌词库关闭或丢选择 | L-009；PersonalLyricsLibraryService、PersonalLibrarySheets |
 | 有歌词源译文却不显示、部分行没有译文、重复补存 | L-010；TranslationSessionController.synchronize 与 chooseVersion |
+| TTML 自带翻译或罗马音却没显示、无时间轴的文件被当成同步歌词 | L-029 · TTMLParser、AMLLLyricsProvider |
 | 悬停歌词库转圈、版本列表开得慢 | L-011；prefetchCurrentTrack、currentDetail |
 | 边缘线内移/加粗、胶囊热区、封面卡片不同宽、分段选中块乱动 | L-012；V3EdgeRailView、V3ResponsiveGeometry、V3SegmentedPicker |
 | 面板控件不统一、选项太多太杂、画面风格太多、播放栏按钮不一致、歌词库页签变黑 | L-016；V3PanelRow、V3RowToggleStyle、V3DisclosureRow、foldedEntryIndices、V3PlaybackButtons |
@@ -465,6 +466,7 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
   - 2026-11-18 修订。加载和编辑统一用 `DocumentTimingPayload.decodeRows` 一次读出整条时间轴，可沿用同一份已校验的行和和声。先前加载每一行都会重读整首 JSON，手工调整一个词头或打开编辑器还会丢失和声。旧 `decode` 的元组接口仍然可用。
   - 不要为了存和声写出“有行但 spans 为空”的条目：`decode` 遇到空 spans 会让整份逐字时间作废。
   - **AMLL 把和声的译文、罗马音嵌在 `x-bg` 里面**（真实文件 One Last Kiss）。解析时和声里的 `x-translation` / `x-roman` 子 span 不算和声文字；只用手写的简单样例测不出来，要拿真实文件试。
+  - 2026-11-18。行内注释与 Apple 头部的译文、转写均按原句保留。头部仅按 `for` 和 `itunes:key` 的完全匹配挂回主唱。多语译文先匹配应用目标语及文字系统，否则显示文件已有的一种。解析结果保留文件语言、元数据、和声与逐字；无时间文件按原序阅读，部分计时只给确有时间的行。旧库、锁定版本和用户译文选择沿用既有规则。[AMLL TTML 规范](https://github.com/amll-dev/amll-ttml-db/blob/main/instructions/ttml-specification-en.md)
 - **流动用 WKWebView 跑 butterchurn**：声音由 App 每秒 30 次把 1024 个采样（`Levels.waveform`）以 base64 送进页面，页面不用麦克风也不联网（CSP `default-src 'none'`）。`render({audioLevels})` 接受外部采样。
   - 预设的公式要 `unsafe-eval`；网页视图 `hitTest` 返回 nil、滚轮转给下一个响应者，才不会挡住歌词的滚动和点击。
   - 资源以文件夹引用加进工程（`lastKnownFileType = folder`），整个 `Butterchurn` 目录原样进包。

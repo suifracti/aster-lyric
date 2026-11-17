@@ -30,12 +30,14 @@ struct AMLLProviderContract {
     static func main() async {
         let sampleTTML = """
         <?xml version="1.0" encoding="utf-8"?>
-        <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
+        <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xml:lang="ja">
           <body>
             <div>
               <p begin="00:01.000" end="00:03.000" ttm:agent="v1">
                 <span begin="00:01.000" end="00:02.000">Word </span>
                 <span begin="00:02.000" end="00:03.000">One</span>
+                <span ttm:role="x-translation" xml:lang="en">first line</span>
+                <span ttm:role="x-translation" xml:lang="zh-Hans">第一句</span>
               </p>
             </div>
           </body>
@@ -80,6 +82,8 @@ struct AMLLProviderContract {
         precondition(ttmlDoc.hasTimedSpans, "TTML document must have hasTimedSpans == true")
         precondition(ttmlDoc.lines.count == 1)
         precondition(ttmlDoc.lines[0].timedSpans?.count == 2)
+        precondition(ttmlDoc.language == "ja")
+        precondition(ttmlDoc.lines[0].translationText == "第一句")
 
         // 3. LRC Fallback Match
         let lrcTrack = Track(title: "LRC Song", artist: "Artist", album: "Album", duration: 180, spotifyId: "lrcOnlyTrack")

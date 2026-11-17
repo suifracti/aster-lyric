@@ -20,6 +20,7 @@ public final class AMLLLyricsProvider: LyricsProvider, @unchecked Sendable {
     private let session: AMLLSession
     public let baseURL: URL
     private let timeout: TimeInterval
+    private let translationLanguage: @Sendable () async -> String
     private let cacheLock = NSLock()
     private var cache: [String: CacheEntry] = [:]
 
@@ -28,11 +29,13 @@ public final class AMLLLyricsProvider: LyricsProvider, @unchecked Sendable {
         baseURL: URL = URL(
             string: "https://raw.githubusercontent.com/amll-dev/amll-ttml-db/main/spotify-lyrics"
         )!,
-        timeout: TimeInterval = 8
+        timeout: TimeInterval = 8,
+        translationLanguage: @escaping @Sendable () async -> String = { "zh-Hans" }
     ) {
         self.session = session
         self.baseURL = baseURL
         self.timeout = timeout
+        self.translationLanguage = translationLanguage
     }
 
     public func ttmlURL(for spotifyID: String) -> URL {
@@ -49,13 +52,15 @@ public final class AMLLLyricsProvider: LyricsProvider, @unchecked Sendable {
             return .noMatch
         }
 
-        if let cached = cachedResult(for: spotifyID) {
+        let language = await translationLanguage()
+        let cacheKey = spotifyID + "|" + language
+        if let cached = cachedResult(for: cacheKey) {
             return cached
         }
 
         // Phase 1: Try AMLL TTML first for word/syllable timing
-        if let ttmlDoc = await fetchTTML(spotifyID: spotifyID, track: track, identity: identity) {
-            store(.match(ttmlDoc), for: spotifyID)
+        if let ttmlDoc = await fetchTTML(spotifyID: spotifyID, track: track, identity: identity, language: language) {
+            store(.match(ttmlDoc), for: cacheKey)
             return .match(ttmlDoc)
         }
 
@@ -76,7 +81,7 @@ public final class AMLLLyricsProvider: LyricsProvider, @unchecked Sendable {
             }
 
             if response.statusCode == 404 {
-                store(.noMatch, for: spotifyID)
+                store(.noMatch, for: cacheKey)
                 return .noMatch
             }
             guard (200..<300).contains(response.statusCode) else {
@@ -101,7 +106,7 @@ public final class AMLLLyricsProvider: LyricsProvider, @unchecked Sendable {
                 providerSourceID: "amll:\(spotifyID)",
                 spotifyTrackID: spotifyID
             )
-            store(.match(document), for: spotifyID)
+            store(.match(document), for: cacheKey)
             return .match(document)
         } catch is CancellationError {
             return .failed(.cancelled)
@@ -125,7 +130,8 @@ public final class AMLLLyricsProvider: LyricsProvider, @unchecked Sendable {
     private func fetchTTML(
         spotifyID: String,
         track: Track,
-        identity: TrackIdentity
+        identity: TrackIdentity,
+        language: String
     ) async -> LyricsDocument? {
         var request = URLRequest(url: ttmlURL(for: spotifyID))
         request.httpMethod = "GET"
@@ -139,7 +145,7 @@ public final class AMLLLyricsProvider: LyricsProvider, @unchecked Sendable {
                   let httpResponse = response as? HTTPURLResponse,
                   (200..<300).contains(httpResponse.statusCode),
                   let content = String(data: data, encoding: .utf8),
-                  let parsed = TTMLParser.parse(content, identity: identity, source: .amll),
+                  let parsed = TTMLParser.parse(content, identity: identity, source: .amll, preferredTranslationLanguage: language),
                   !parsed.lines.isEmpty else {
                 return nil
             }
@@ -154,7 +160,9 @@ public final class AMLLLyricsProvider: LyricsProvider, @unchecked Sendable {
                 source: .amll,
                 confidence: 1,
                 providerSourceID: "amll:\(spotifyID)",
-                spotifyTrackID: spotifyID
+                spotifyTrackID: spotifyID,
+                language: parsed.language,
+                explicitlyTimedLineIndices: parsed.explicitlyTimedLineIndices
             )
         } catch {
             return nil

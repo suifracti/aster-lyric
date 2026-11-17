@@ -571,7 +571,8 @@ final class PresentationSourceContractTests: XCTestCase {
         let settingsStore = try source("SpotifyLyrics/Settings/AppSettingsStore.swift")
 
         XCTAssertTrue(popover.contains("@ObservedObject private var settings: AppSettingsStore"))
-        XCTAssertTrue(popover.contains("Toggle(\"菜单栏显示歌词\", isOn: $settings.menuBarLyricsEnabled)"))
+        XCTAssertNotNil(popover.range(of: #"Toggle\("[^"]*菜单栏[^"]*",\s*isOn:\s*\$settings\.menuBarLyricsEnabled\)"#, options: .regularExpression))
+        XCTAssertTrue(popover.contains("controller.openSettings(at: .init(appearance: .menuBar))"))
         XCTAssertTrue(popover.contains("controller.openSettings()"))
         XCTAssertTrue(controller.contains("MenuBarLyricsPopoverView(controller: self)"))
         XCTAssertTrue(controller.contains("openSettingsHandler?()"))
