@@ -110,15 +110,15 @@ final class SearchSourceContractTests: XCTestCase {
         configuration.customSystemPrompt = ""
         // The user's own edit of 我的风格 replaces the built-in text; 恢复默认 brings it back.
         configuration.promptPresetID = TranslationPromptPresetID.personalV2.rawValue
-        UserDefaults.lyricsQ.set("我自己的译法：口语，短句。", forKey: TranslationPromptPresetCatalog.personalV2OverrideKey)
+        configuration.personalStyleOverride = "我自己的译法：口语，短句。"
         for engine in [TranslationEngineID.codexChatGPT.rawValue, TranslationEngineID.openAIAPI.rawValue] {
             configuration.engineID = engine
             let edited = try builder.build(context: context, configuration: configuration)
             XCTAssertTrue(edited.system.contains("我自己的译法") || edited.user.contains("我自己的译法"), engine)
             XCTAssertFalse(edited.system.contains("full-audit-v3-r6"), engine)
+            XCTAssertFalse(edited.system.contains(TranslationPromptPresetCatalog.personalV2LanguageNote), engine)
         }
-        XCTAssertTrue(TranslationPromptPresetCatalog.personalV2IsEdited())
-        UserDefaults.lyricsQ.removeObject(forKey: TranslationPromptPresetCatalog.personalV2OverrideKey)
+        configuration.personalStyleOverride = ""
         XCTAssertTrue(try builder.build(context: context, configuration: configuration).system.contains("full-audit-v3-r6")
                       || (try builder.build(context: context, configuration: configuration).user.contains("full-audit-v3-r6")))
         configuration.promptPresetID = TranslationPromptPresetID.naturalSong.rawValue
@@ -127,6 +127,51 @@ final class SearchSourceContractTests: XCTestCase {
         configuration.promptPresetID = "translationPrompt.unknown.v9"
         XCTAssertTrue(try builder.build(context: context, configuration: configuration).system.contains("full-audit-v3-r6"),
                       "an unknown saved value falls back to the user's style")
+    }
+
+    @MainActor
+    func testPersonalStyleIsCapturedWhenSettingsLoad() throws {
+        let suite = "test.personal-style." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let key = TranslationPromptPresetCatalog.personalV2OverrideKey
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("fixture old style", forKey: key)
+        let old = AppSettingsStore(defaults: defaults).aiTranslationConfiguration
+        defaults.set("fixture new style", forKey: key)
+        let settings = AppSettingsStore(defaults: defaults)
+        let new = settings.aiTranslationConfiguration
+        let context = AITranslationContext(title: "Fixture", artist: "Fixture", album: "", sourceLanguage: "ja",
+            targetLanguage: "zh-Hans", style: "natural_song",
+            lines: [AITranslationSourceLine(index: 0, original: "fixture lyric")])
+        let builder = AITranslationPromptBuilder()
+        XCTAssertTrue(try builder.build(context: context, configuration: old).system.contains("fixture old style"))
+        XCTAssertTrue(try builder.build(context: context, configuration: new).system.contains("fixture new style"))
+        XCTAssertNotEqual(old.requestIdentity, new.requestIdentity)
+        XCTAssertNotEqual(old.promptHash, new.promptHash)
+        XCTAssertEqual(old.legacyPersonalPromptHash, AITranslationConfiguration().promptHash)
+        XCTAssertTrue(old.personalStyleGuidance.hasSuffix(TranslationPromptPresetCatalog.personalV2LanguageNote))
+
+        settings.aiTranslationConfiguration.personalStyleOverride = "An edited language note with no automatic footer."
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).aiTranslationConfiguration.personalStyleGuidance,
+                       settings.aiTranslationConfiguration.personalStyleOverride)
+        settings.aiTranslationConfiguration.personalStyleOverride = "Restored body\n\n" + TranslationPromptPresetCatalog.personalV2LanguageNote
+        XCTAssertEqual(defaults.string(forKey: key), "Restored body")
+        settings.aiTranslationConfiguration.personalStyleOverride = ""
+        XCTAssertNil(defaults.string(forKey: key))
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).aiTranslationConfiguration.personalStyleGuidance,
+                       TranslationPromptPresetCatalog.defaultPersonalGuidance)
+
+        var other = old
+        other.promptPresetID = TranslationPromptPresetID.custom.rawValue
+        var changed = other
+        changed.personalStyleOverride = "irrelevant to this preset"
+        XCTAssertEqual(other.requestIdentity, changed.requestIdentity)
+        XCTAssertEqual(other.promptHash, changed.promptHash)
+        XCTAssertNil(changed.legacyPersonalPromptHash)
+        other.engineID = TranslationEngineID.openAIAPI.rawValue
+        changed = other
+        changed.openAIReasoningEffort = "high"
+        XCTAssertNotEqual(other.requestIdentity, changed.requestIdentity)
     }
 
     func testHostUsesPrivateStorageAndNoKeychain() {

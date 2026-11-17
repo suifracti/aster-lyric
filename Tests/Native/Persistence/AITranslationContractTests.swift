@@ -1,24 +1,9 @@
 import Foundation
+import XCTest
+@testable import SpotifyLyrics
 
-@main
-struct AITranslationContract {
-    static func main() async throws {
-        try naturalStyleContract()
-        try multilingualPromptContract()
-        try await readingCLIContract()
-        try await readingBudgetContract()
-        try endpointContract()
-        try blankLineContract()
-        try responseSafetyContract()
-        try stableIDResponseContract()
-        try await clientErrorContract()
-        try await testConnectionContract()
-        try await codexOfflineContract()
-        try await protectedRecoveryContract()
-        print("AI translation contracts passed")
-    }
-
-    static func multilingualPromptContract() throws {
+final class AITranslationContractTests: XCTestCase {
+    func testMultilingualPrompt() throws {
         let line = AITranslationSourceLine(index: 0, original: "A self-authored fixture")
         for engine in [TranslationEngineID.openAICompatible, .codexChatGPT, .geminiCLI] {
             let config = AITranslationConfiguration(baseURL: "https://example.invalid/v1", model: "fixture", engineID: engine.rawValue)
@@ -28,18 +13,18 @@ struct AITranslationContract {
                     targetLanguage: "zh-Hans", style: "natural", lines: [line])
                 let prompt = try AITranslationPromptBuilder().build(context: context, configuration: config)
                 let payload = try JSONSerialization.jsonObject(with: Data(prompt.user.utf8)) as! [String: Any]
-                precondition(payload["sourceLanguage"] as? String == language)
-                precondition(prompt.system.contains("Treat this as an independent song request"),
+                XCTAssertTrue(payload["sourceLanguage"] as? String == language)
+                XCTAssertTrue(prompt.system.contains("Treat this as an independent song request"),
                     "reused provider conversations must not carry lyric content across songs")
-                precondition(!prompt.system.contains("especially in Japanese"))
+                XCTAssertTrue(!prompt.system.contains("especially in Japanese"))
                 hashes.insert(prompt.promptHash)
             }
-            precondition(hashes.count == 5, "source language must participate in prompt identity")
+            XCTAssertTrue(hashes.count == 5, "source language must participate in prompt identity")
         }
-        print("PASS multilingual source metadata and prompt identity")
+
     }
 
-    static func readingCLIContract() async throws {
+    func testReadingCLI() async throws {
         let request = ReadingGenerationRequest(lyricsVersionID: UUID(), sourceContentHash: "fixture",
             lines: [.init(lineIndex: 0, originalText: "空")], languageHint: "ja", trackStableKey: "fixture", representationID: .kana)
         let token = ReadingToken(id: 7, surface: "空", reading: nil, startOffset: 0, endOffset: 1,
@@ -50,15 +35,15 @@ struct AITranslationContract {
         let keys = MemoryKeyStore(value: nil)
         for engine in [TranslationEngineID.codexChatGPT, .geminiCLI] {
             let service = AIReadingCandidateService(keyStore: keys, acceptanceBudget: nil, cliCompletion: { prompt, config in
-                precondition(config.engineID == engine.rawValue && prompt.system.contains("nearby lyric context"))
+                XCTAssertTrue(config.engineID == engine.rawValue && prompt.system.contains("nearby lyric context"))
                 return Data(#"{"lines":[{"lineIndex":0,"tokens":[{"id":7,"reading":"そら"}]}]}"#.utf8)
             })
             let config = AITranslationConfiguration(model: "fixture", engineID: engine.rawValue)
             let refined = try await service.refine(result: result, request: request, configuration: config)
-            precondition(refined.lines[0].originalText == "空" && refined.lines[0].tokens[0].reading == "そら")
-            precondition(refined.lines[0].tokens[0].needsConfirmation && refined.warnings.contains(.aiCandidateOnly))
+            XCTAssertTrue(refined.lines[0].originalText == "空" && refined.lines[0].tokens[0].reading == "そら")
+            XCTAssertTrue(refined.lines[0].tokens[0].needsConfirmation && refined.warnings.contains(.aiCandidateOnly))
         }
-        precondition(keys.reads == 0, "CLI reading must not consult API credentials")
+        XCTAssertTrue(keys.reads == 0, "CLI reading must not consult API credentials")
         let invalid = AIReadingCandidateService(acceptanceBudget: nil, cliCompletion: { _, _ in
             Data(#"{"lines":[{"lineIndex":0,"tokens":[{"id":99,"reading":"そら"}]}]}"#.utf8)
         })
@@ -67,10 +52,10 @@ struct AITranslationContract {
                 configuration: .init(model: "fixture", engineID: TranslationEngineID.geminiCLI.rawValue))
             throw ContractFailure(message: "foreign token was accepted")
         } catch AITranslationError.invalidResponse { }
-        print("PASS GPT/Gemini reading routing, explicit candidate result and original-token protection; no model calls")
+
     }
 
-    static func readingBudgetContract() async throws {
+    func testReadingBudget() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reading-budget-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(at: root) }
@@ -92,9 +77,9 @@ struct AITranslationContract {
                 throw ContractFailure(message: "reading provider/budget gate allowed dispatch")
             } catch AITranslationError.engineUnavailable { }
         }
-        precondition(keys.reads == 0, "provider and zero-budget gates must reject before credential access")
+        XCTAssertTrue(keys.reads == 0, "provider and zero-budget gates must reject before credential access")
         let finalBudget = try Data(contentsOf: url)
-        precondition(finalBudget == initial, "zero budget must not be reset or increased")
+        XCTAssertTrue(finalBudget == initial, "zero budget must not be reset or increased")
         let accounts = ReadingCredentialAccounts()
         let routedService = AIReadingCandidateService(acceptanceBudget: nil, keyStoreFactory: { account in
             accounts.record(account)
@@ -107,12 +92,12 @@ struct AITranslationContract {
                 throw ContractFailure(message: "missing credentials accepted")
             } catch AITranslationError.notConfigured { }
         }
-        precondition(accounts.values == ["fixture-endpoint-a", "fixture-endpoint-b", "fixture-endpoint-a"],
+        XCTAssertTrue(accounts.values == ["fixture-endpoint-a", "fixture-endpoint-b", "fixture-endpoint-a"],
             "each explicit request must resolve its own current endpoint account without cached old keys")
-        print("PASS reading provider/budget/credential-account gates; zero real credentials or network")
+
     }
 
-    static func naturalStyleContract() throws {
+    func testNaturalStyle() throws {
         let lines = [AITranslationSourceLine(index: 0, original: "synthetic continuation"),
                      AITranslationSourceLine(index: 1, original: ""),
                      AITranslationSourceLine(index: 2, original: "synthetic changed question?")]
@@ -121,29 +106,30 @@ struct AITranslationContract {
         let builder = AITranslationPromptBuilder()
         for engine in [TranslationEngineID.openAICompatible, .codexChatGPT] {
             var configuration = AITranslationConfiguration(model: "fixture", engineID: engine.rawValue)
+            configuration.promptPresetID = TranslationPromptPresetID.naturalSong.rawValue
             let natural = try builder.build(context: context, configuration: configuration)
-            precondition(natural.system.contains("Natural song style v2"))
+            XCTAssertTrue(natural.system.contains("Natural song style v2"))
             let payload = try JSONSerialization.jsonObject(with: Data(natural.user.utf8)) as! [String: Any]
             let sentLines = payload["lines"] as! [[String: Any]]
-            precondition(sentLines.map { $0["text"] as! String } == lines.map(\.original),
+            XCTAssertTrue(sentLines.map { $0["text"] as! String } == lines.map(\.original),
                 "style changes must not rewrite, merge or remove source lines")
             configuration.promptPresetID = TranslationPromptPresetID.literalFaithful.rawValue
             let literal = try builder.build(context: context, configuration: configuration)
-            precondition(!literal.system.contains("Natural song style v2") && literal.promptHash != natural.promptHash,
+            XCTAssertTrue(!literal.system.contains("Natural song style v2") && literal.promptHash != natural.promptHash,
                 "literal/custom choices retain their own guidance and cache identity")
             configuration.promptPresetID = TranslationPromptPresetID.custom.rawValue
             configuration.customSystemPrompt = "fixture-specific style"
             let custom = try builder.build(context: context, configuration: configuration)
-            precondition(!custom.system.contains("Natural song style v2"))
-            precondition((custom.system + custom.user).contains("fixture-specific style"))
+            XCTAssertTrue(!custom.system.contains("Natural song style v2"))
+            XCTAssertTrue((custom.system + custom.user).contains("fixture-specific style"))
         }
-        print("PASS natural style preserves source boundaries, preset choice and prompt identity; no model calls")
+
     }
 
-    static func codexOfflineContract() async throws {
+    func testCodexOffline() async throws {
         let config = AITranslationConfiguration(model: "synthetic-model", engineID: TranslationEngineID.codexChatGPT.rawValue,
             codexReasoningEffort: "low")
-        precondition(config.isConfigured)
+        XCTAssertTrue(config.isConfigured)
         let source = [AITranslationSourceLine(index: 0, original: "synthetic one"),
                       AITranslationSourceLine(index: 1, original: "")]
         func context(_ lines: [AITranslationSourceLine]) -> AITranslationContext {
@@ -154,19 +140,19 @@ struct AITranslationContract {
         let first = try AITranslationPromptBuilder().build(context: input, configuration: config)
         let reloaded = context(source.enumerated().map { AITranslationSourceLine(index: $0.offset, original: $0.element.original) })
         let second = try AITranslationPromptBuilder().build(context: reloaded, configuration: config)
-        guard let wire = first.codexWireRequest, let secondWire = second.codexWireRequest else { fatalError("wire missing") }
-        precondition(wire.requestID != secondWire.requestID && first.promptHash == second.promptHash,
+        guard let wire = first.codexWireRequest, let secondWire = second.codexWireRequest else { throw ContractFailure(message: "wire missing") }
+        XCTAssertTrue(wire.requestID != secondWire.requestID && first.promptHash == second.promptHash,
             "nonce/display UUID changes must not invalidate stable semantic cache")
-        precondition(Set(wire.sourcesByWireID.keys) == Set(["L0", "L1"]))
-        var rules = config; rules.customSystemPrompt = "synthetic rule change"
+        XCTAssertTrue(Set(wire.sourcesByWireID.keys) == Set(["L0", "L1"]))
+        var rules = config; rules.personalStyleOverride = "synthetic rule change"
         let changedRulesPrompt = try AITranslationPromptBuilder().build(context: input, configuration: rules)
-        precondition(changedRulesPrompt.promptHash != first.promptHash)
+        XCTAssertTrue(changedRulesPrompt.promptHash != first.promptHash)
         var effort = config; effort.codexReasoningEffort = "high"
-        precondition(effort.providerCacheIdentity != config.providerCacheIdentity && effort.requestIdentity != config.requestIdentity)
+        XCTAssertTrue(effort.providerCacheIdentity != config.providerCacheIdentity && effort.requestIdentity != config.requestIdentity)
         let valid: [String: Any] = ["requestID": wire.requestID.uuidString,
             "lines": [["lineID": "L1", "translation": ""], ["lineID": "L0", "translation": "synthetic translated"]]]
         let parsed = try AITranslationResponseParser.parseCodex(JSONSerialization.data(withJSONObject: valid), request: wire)
-        precondition(parsed.map(\.lineID) == source.map(\.lineID) && parsed.map(\.index) == [0, 1])
+        XCTAssertTrue(parsed.map(\.lineID) == source.map(\.lineID) && parsed.map(\.index) == [0, 1])
         var wrongNonce = valid; wrongNonce["requestID"] = UUID().uuidString
         var extraField = valid; extraField["timestamp"] = 1
         var duplicate = valid; duplicate["lines"] = [["lineID":"L0","translation":"one"],["lineID":"L0","translation":"two"]]
@@ -175,28 +161,25 @@ struct AITranslationContract {
         for invalid in [wrongNonce, extraField, duplicate, unknown, blankMismatch] {
             do {
                 _ = try AITranslationResponseParser.parseCodex(JSONSerialization.data(withJSONObject: invalid), request: wire)
-                fatalError("malformed Codex payload accepted")
+                throw ContractFailure(message: "malformed Codex payload accepted")
             } catch AITranslationResponseError.validationFailed { }
         }
         let fake = CodexAppServerTranslationService(executableCandidates: ["/usr/bin/true"], transport: SyntheticCodexTransport(corruptNonce: false))
         let draft = try await fake.translate(context: input, sourceContentHash: "synthetic-hash", configuration: config)
-        precondition(draft.engineID == config.engineID && draft.model == config.model && draft.sourceContentHash == "synthetic-hash")
-        precondition(draft.tokenUsage?.totalTokens == 10 && draft.providerReasoningSetting == "effort=low")
+        XCTAssertTrue(draft.engineID == config.engineID && draft.model == config.model && draft.sourceContentHash == "synthetic-hash")
+        XCTAssertTrue(draft.tokenUsage?.totalTokens == 10 && draft.providerReasoningSetting == "effort=low")
         do {
             _ = try await CodexAppServerTranslationService(executableCandidates: ["/usr/bin/true"], transport: SyntheticCodexTransport(corruptNonce: true))
                 .translate(context: input, sourceContentHash: "synthetic-hash", configuration: config)
-            fatalError("fake transport nonce mismatch accepted")
+            throw ContractFailure(message: "fake transport nonce mismatch accepted")
         } catch AITranslationError.codexResponseInvalid { }
-        print("PASS Codex short IDs/UUID restore/nonce/malformed payloads/stable cache/rules/reasoning/fake transport; zero processes or network")
+
     }
 
     @MainActor
-    static func protectedRecoveryContract() async throws {
-        guard let path = ProcessInfo.processInfo.environment["SPOTIFYLYRICS_CONTRACT_ROOT"] else { fatalError("isolated fixtures required") }
-        let root = URL(fileURLWithPath: path, isDirectory: true)
-        precondition(root.lastPathComponent == "fixtures")
-        precondition(root.deletingLastPathComponent().path == URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().path)
-        precondition(!FileManager.default.fileExists(atPath: root.path))
+    func testProtectedRecovery() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         for kind in ["manual", "locked"] {
             let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent(kind + ".sqlite3"),
@@ -208,7 +191,7 @@ struct AITranslationContract {
                 duration: 10, lines: [LyricLine(timestamp: 0, originalText: "synthetic original")],
                 isSynchronized: true, source: .lrclib, confidence: 1, providerSourceID: kind)
             let source = try await repo.save(track: track, identity: identity, document: document)
-            guard let versionID = source.versionID, let hash = source.sourceContentHash else { fatalError("source missing") }
+            guard let versionID = source.versionID, let hash = source.sourceContentHash else { throw ContractFailure(message: "source missing") }
             let config = AITranslationConfiguration(model: "synthetic-model", autoTranslateNewLyrics: true,
                 engineID: TranslationEngineID.codexChatGPT.rawValue, codexReasoningEffort: "low")
             let context = AITranslationContext(title: track.title, artist: track.artist, album: "", sourceLanguage: "ja",
@@ -233,7 +216,9 @@ struct AITranslationContract {
             try await repo.updateTranslationRequest(request)
             let fake = NeverDispatchService()
             let controller = TranslationSessionController(repository: repo, service: fake, acceptanceBudget: nil)
-            controller.synchronize(document: document, lyricsVersionID: versionID, sourceContentHash: hash, configuration: config)
+            var loadedConfig = config
+            if kind == "locked" { loadedConfig.personalStyleOverride = "fixture edited personal style" }
+            controller.synchronize(document: document, lyricsVersionID: versionID, sourceContentHash: hash, configuration: loadedConfig)
             let deadline = Date().addingTimeInterval(2)
             while Date() < deadline {
                 if let journal = try await repo.loadTranslationRequest(key: key), journal.phase == .saved { break }
@@ -243,16 +228,16 @@ struct AITranslationContract {
             let journal = try await repo.loadTranslationRequest(key: key)
             let versions = try await repo.loadTranslationVersions(lyricsVersionID: versionID,
                 targetLanguage: config.targetLanguage, sourceContentHash: hash)
-            precondition(calls == 0 && journal?.phase == .saved && versions.count == 2)
-            precondition(controller.selectedVersion?.record.id == protected.record.id, "recovery overwrote manual/locked adopted version")
-            precondition(controller.project(onto: document.lines).first?.translationText == "synthetic protected old")
-            guard let candidate = versions.first(where: { $0.record.id != protected.record.id }) else { fatalError("new candidate missing") }
-            precondition(candidate.record.isDraft && !candidate.record.isArchived && candidate.record.parentVersionID == nil,
+            XCTAssertTrue(calls == 0 && journal?.phase == .saved && versions.count == 2)
+            XCTAssertTrue(controller.selectedVersion?.record.id == protected.record.id, "recovery overwrote manual/locked adopted version")
+            XCTAssertTrue(controller.project(onto: document.lines).first?.translationText == "synthetic protected old")
+            guard let candidate = versions.first(where: { $0.record.id != protected.record.id }) else { throw ContractFailure(message: "new candidate missing") }
+            XCTAssertTrue(candidate.record.isDraft && !candidate.record.isArchived && candidate.record.parentVersionID == nil,
                 "independent AI generation must remain a draft with no fabricated translation parent")
-            precondition(candidate.record.lyricsVersionID == versionID && candidate.record.sourceContentHash == hash)
-            guard let retained = versions.first(where: { $0.record.id == protected.record.id }) else { fatalError("protected history lost") }
-            precondition(retained.lines == protected.lines && retained.record.parentVersionID == protected.record.parentVersionID)
-            precondition(retained.record.isLocked == (kind == "locked") && retained.record.isManuallyEdited == (kind == "manual"))
+            XCTAssertTrue(candidate.record.lyricsVersionID == versionID && candidate.record.sourceContentHash == hash)
+            guard let retained = versions.first(where: { $0.record.id == protected.record.id }) else { throw ContractFailure(message: "protected history lost") }
+            XCTAssertTrue(retained.lines == protected.lines && retained.record.parentVersionID == protected.record.parentVersionID)
+            XCTAssertTrue(retained.record.isLocked == (kind == "locked") && retained.record.isManuallyEdited == (kind == "manual"))
             var unknownConfig = config
             unknownConfig.customSystemPrompt = "synthetic unknown request rules"
             let unknownKey = try AITranslationRequestExecution.key(identity: identity, versionID: versionID,
@@ -260,6 +245,7 @@ struct AITranslationContract {
             var unknownRequest = try await repo.beginTranslationRequest(key: unknownKey, explicitRetry: false)
             unknownRequest.phase = .dispatching
             try await repo.updateTranslationRequest(unknownRequest)
+            if kind == "locked" { unknownConfig.personalStyleOverride = "fixture current personal style" }
             let unknownController = TranslationSessionController(repository: repo, service: fake, acceptanceBudget: nil)
             unknownController.synchronize(document: document, lyricsVersionID: versionID, sourceContentHash: hash, configuration: unknownConfig)
             let unknownDeadline = Date().addingTimeInterval(2)
@@ -268,37 +254,37 @@ struct AITranslationContract {
             }
             let unknownJournal = try await repo.loadTranslationRequest(key: unknownKey)
             let unknownCalls = await fake.calls
-            precondition(unknownJournal?.phase == .dispatching && unknownJournal?.attemptID == unknownRequest.attemptID && unknownCalls == 0)
-            precondition(unknownController.selectedVersion?.record.id == protected.record.id && unknownController.progressMessage.contains("不会自动重发"))
+            XCTAssertTrue(unknownJournal?.phase == .dispatching && unknownJournal?.attemptID == unknownRequest.attemptID && unknownCalls == 0)
+            XCTAssertTrue(unknownController.selectedVersion?.record.id == protected.record.id && unknownController.progressMessage.contains("不会自动重发"))
             unknownController.cancel()
             let edit = ManualTranslationEdit(targetLanguage: config.targetLanguage, lines: ["synthetic derived edit"],
                 parentVersionID: protected.record.id)
             let editResult = try await repo.saveManualEdit(LyricsEditSaveRequest(track: track, identity: identity,
                 sourceVersionID: versionID, sourceContentHash: hash, document: document, createLyricsVersion: false,
                 preserveCurrentLyricsSelection: true, translation: edit))
-            guard let derived = editResult.translationVersion else { fatalError("derived translation missing") }
-            precondition(derived.record.id != protected.record.id && derived.record.parentVersionID == protected.record.id)
-            precondition(derived.record.sourceKind == .manualEdit && derived.record.isManuallyEdited)
-            precondition(derived.record.lyricsVersionID == versionID && derived.record.sourceContentHash == hash)
+            guard let derived = editResult.translationVersion else { throw ContractFailure(message: "derived translation missing") }
+            XCTAssertTrue(derived.record.id != protected.record.id && derived.record.parentVersionID == protected.record.id)
+            XCTAssertTrue(derived.record.sourceKind == .manualEdit && derived.record.isManuallyEdited)
+            XCTAssertTrue(derived.record.lyricsVersionID == versionID && derived.record.sourceContentHash == hash)
             let afterEdit = try await repo.loadTranslationVersions(lyricsVersionID: versionID, targetLanguage: config.targetLanguage, sourceContentHash: hash)
-            precondition(afterEdit.count == 3 && afterEdit.contains { $0.record.id == protected.record.id && $0.lines == protected.lines })
+            XCTAssertTrue(afterEdit.count == 3 && afterEdit.contains { $0.record.id == protected.record.id && $0.lines == protected.lines })
             do {
                 _ = try await repo.saveManualEdit(LyricsEditSaveRequest(track: track, identity: identity,
                     sourceVersionID: versionID, sourceContentHash: "synthetic stale hash", document: document,
                     createLyricsVersion: false, translation: edit))
-                fatalError("stale source edit accepted")
+                throw ContractFailure(message: "stale source edit accepted")
             } catch LyricsEditingRepositoryError.sourceContentMismatch { }
             let afterRejectedEdit = try await repo.loadTranslationVersions(lyricsVersionID: versionID,
                 targetLanguage: config.targetLanguage, sourceContentHash: hash)
-            precondition(afterRejectedEdit == afterEdit, "failed edit changed translation versions or parent chain")
+            XCTAssertTrue(afterRejectedEdit == afterEdit, "failed edit changed translation versions or parent chain")
             controller.selectNone()
-            precondition(controller.project(onto: document.lines).allSatisfy { $0.translationText == nil })
+            XCTAssertTrue(controller.project(onto: document.lines).allSatisfy { $0.translationText == nil })
             controller.cancel()
-            print("PASS received recovery protects \(kind) old version; independent AI nil parent/manual edit explicit parent/stale hash rejection/unknown dispatch/none; zero fake dispatch")
+
         }
     }
 
-    static func endpointContract() throws {
+    func testEndpoint() throws {
         let cases: [(String, String)] = [
             ("https://example.test", "https://example.test/v1/chat/completions"),
             ("https://example.test/", "https://example.test/v1/chat/completions"),
@@ -314,7 +300,7 @@ struct AITranslationContract {
         }
     }
 
-    static func blankLineContract() throws {
+    func testBlankLine() throws {
         let original = ["第一行", "", "第三行"]
         let valid = [
             AITranslationLine(index: 0, translation: "第一行译文"),
@@ -335,7 +321,7 @@ struct AITranslationContract {
         } catch AITranslationResponseError.validationFailed { }
     }
 
-    static func responseSafetyContract() throws {
+    func testResponseSafety() throws {
         let response = #"[{"index":0,"translation":"译文"}]"#.data(using: .utf8)!
         let parsed = try AITranslationResponseParser.parse(response, expectedLineCount: 1)
         guard parsed.count == 1, parsed[0].translation == "译文" else {
@@ -355,7 +341,7 @@ struct AITranslationContract {
         }
     }
 
-    static func stableIDResponseContract() throws {
+    func testStableIDResponse() throws {
         let first = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         let second = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
         let source = [
@@ -380,7 +366,7 @@ struct AITranslationContract {
         }
     }
 
-    static func clientErrorContract() async throws {
+    func testClientError() async throws {
         let configuration = AITranslationConfiguration(baseURL: "https://proxy.test/api/openai/v1", model: "contract-model")
         let prompt = AITranslationPrompt(system: "system", user: "source", promptHash: "hash")
 
@@ -431,7 +417,7 @@ struct AITranslationContract {
         } catch AITranslationError.invalidResponse { }
     }
 
-    static func testConnectionContract() async throws {
+    func testConnection() async throws {
         let keyStore = MemoryKeyStore(value: "key-not-printed")
         let http = RecordingHTTPClient(result: .response(
             Data(#"{"choices":[{"message":{"content":"[{\"index\":0,\"translation\":\"ok\"}]"}}]}"#.utf8),
@@ -452,7 +438,7 @@ struct AITranslationContract {
     }
 }
 
-struct ContractFailure: Error { let message: String }
+private struct ContractFailure: Error { let message: String }
 
 private enum FakeHTTPError: Error { case timedOut, network }
 
@@ -497,8 +483,8 @@ private struct SyntheticCodexTransport: CodexTranslationTransport {
     let corruptNonce: Bool
     func run(executable: String, prompt: AITranslationPrompt, model: String, reasoningEffort: String,
              timeout: TimeInterval, outputSchema: [String: Any]) async throws -> CodexTranslationResult {
-        precondition(executable == "/usr/bin/true") // Presence probe only; never executed.
-        guard let wire = prompt.codexWireRequest else { fatalError("missing wire") }
+        XCTAssertTrue(executable == "/usr/bin/true") // Presence probe only; never executed.
+        guard let wire = prompt.codexWireRequest else { throw ContractFailure(message: "missing wire") }
         let body: [String: Any] = ["requestID": corruptNonce ? UUID().uuidString : wire.requestID.uuidString,
             "lines": wire.sourceLines.enumerated().map { ["lineID": "L\($0.offset)",
                 "translation": $0.element.original.isEmpty ? "" : "synthetic translated"] }]

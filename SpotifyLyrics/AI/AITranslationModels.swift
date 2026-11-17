@@ -325,20 +325,39 @@ public enum TranslationPromptPresetCatalog {
     以上取舍适用于日语、英语和其他语言以及混合语言的歌。按每行实际语言理解，不把日语的表达习惯或假名读音规则套到英语和其他语言上。疑似转写错误不等于可以自行换一个原文。
     """
 
-    /// The user's own edit of 我的风格 (Settings → 翻译风格 → 编辑). Empty
-    /// means the built-in text; 恢复默认 removes it.
     public static let personalV2OverrideKey = "ai.personalStyleOverride.v1"
+    private static let verbatimStyleKey = "ai.personalStyleOverrideIsVerbatim.v1"
+    public static let defaultPersonalGuidance = personalV2Instructions + "\n\n" + personalV2LanguageNote
 
-    public static func personalV2Text(defaults: UserDefaults = .lyricsQ) -> String {
-        let edited = defaults.string(forKey: personalV2OverrideKey)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return edited.isEmpty ? personalV2Instructions : edited
+    static func normalizePersonalOverride(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed == defaultPersonalGuidance ? "" : trimmed
     }
 
-    public static func personalV2IsEdited(defaults: UserDefaults = .lyricsQ) -> Bool {
-        !(defaults.string(forKey: personalV2OverrideKey)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+    static func storedPersonalOverride(in defaults: UserDefaults) -> String {
+        guard let raw = defaults.string(forKey: personalV2OverrideKey) else { return "" }
+        let body = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return "" }
+        // Earlier versions stored only the editable part and appended the language note on send.
+        let text = defaults.bool(forKey: verbatimStyleKey) ? body : body + "\n\n" + personalV2LanguageNote
+        return normalizePersonalOverride(text)
     }
 
-    public static var personalV2Guidance: String { personalV2Text() + "\n\n" + personalV2LanguageNote }
+    static func storePersonalOverride(_ value: String, in defaults: UserDefaults) {
+        let text = normalizePersonalOverride(value)
+        let suffix = "\n\n" + personalV2LanguageNote
+        let legacyBody = text.hasSuffix(suffix) ? String(text.dropLast(suffix.count)) : nil
+        if text.isEmpty {
+            defaults.removeObject(forKey: personalV2OverrideKey)
+            defaults.removeObject(forKey: verbatimStyleKey)
+        } else if let legacyBody, !legacyBody.isEmpty, legacyBody == legacyBody.trimmingCharacters(in: .whitespacesAndNewlines) {
+            defaults.set(legacyBody, forKey: personalV2OverrideKey)
+            defaults.removeObject(forKey: verbatimStyleKey)
+        } else {
+            defaults.set(text, forKey: personalV2OverrideKey)
+            defaults.set(true, forKey: verbatimStyleKey)
+        }
+    }
 }
 
 /// A personal translation style is a UserDefaults object, not a translation
@@ -710,6 +729,7 @@ public struct AITranslationConfigurationIdentity: Hashable, Sendable {
     public let style: String
     public let presetID: String
     public let customRules: String
+    public let personalStyleOverride: String
     public let profileID: UUID?
     public let profileSnapshot: String
     public let workflowID: String
@@ -723,6 +743,7 @@ public struct AITranslationConfigurationIdentity: Hashable, Sendable {
     public let antigravityEffort: String
     public let deepSeekThinkingMode: String
     public let deepSeekReasoningEffort: String
+    public let openAIReasoningEffort: String
 }
 
 public struct AITranslationTokenUsage: Codable, Equatable, Sendable {

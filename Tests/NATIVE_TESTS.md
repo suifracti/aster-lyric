@@ -16,6 +16,7 @@ Existing entrypoints remain compatible and select the matching target classes:
 | Legacy entrypoint | Native coverage |
 | --- | --- |
 | lyrics_editor | LyricsEditorContractTests |
+| ai_translation | AITranslationContractTests (isolated request recovery, provider prompts and mock transports) |
 | library_revisions | LibraryRevisionsContractTests |
 | library_identity_search | LibraryIdentitySearchContractTests |
 | listening_history / listening_statistics | corresponding ContractTests |

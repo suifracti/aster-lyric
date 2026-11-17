@@ -21,7 +21,7 @@
 | 悬停歌词库转圈、版本列表开得慢 | L-011；prefetchCurrentTrack、currentDetail |
 | 边缘线内移/加粗、胶囊热区、封面卡片不同宽、分段选中块乱动 | L-012；V3EdgeRailView、V3ResponsiveGeometry、V3SegmentedPicker |
 | 面板控件不统一、选项太多太杂、画面风格太多、播放栏按钮不一致、歌词库页签变黑 | L-016；V3PanelRow、V3RowToggleStyle、V3DisclosureRow、foldedEntryIndices、V3PlaybackButtons |
-| 译文风格不对、「我的风格」不见了、设置里的预设和实际不符 | L-017；TranslationPromptPresetID.personalV2、personalV2Guidance |
+| 译文风格不对、编辑后发送的风格不同、旧翻译可能重发 | L-017；AITranslationConfiguration.personalStyleGuidance、TranslationSessionController |
 | 模糊变化不均匀、找旧环境光的圆形、歌词库面板切换卡顿 | L-018；V3BlurCurve、featheredAmbientArtworkLayers、V3LibraryOwner |
 | 加光效、加播放呈现、新呈现不显示或挡住歌词 | L-019；V3AmbientTreatment、v3ScenePlayerHidden、V3PlaybackStyles.swift |
 | 工具栏/歌词/播放栏样式、核对只在指针附近显示的界面 | L-020；V3ToolbarStyle、V3LyricStyle、v3PlayerBarOptions |
@@ -253,6 +253,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 用户设置里保存的是 `translationPrompt.personalV2.v2`（full-audit-v2-r1，2026-10-09 按用户全部确认译稿审计出的规则），正式库里 22 份 AI 译文都用它生成。但这个预设只在 Codex 快照提交 `5a96753`（不在 main）里存在，main 的枚举里没有它，`TranslationPromptPresetID(rawValue:) ?? .naturalSong` 静默退回较短的“自然歌曲 v2”。2026-11-12 按同一 raw value 恢复为第一项和新安装默认值，指令原文取自 `5a96753`，并附上 10-15 复核得出的多语种说明（`personalV2Guidance`）。自然歌曲等其他预设保留可选；已保存的译文不重写，只有新的请求使用。
 
 当时正式库里没有人工改过的译文（`is_manually_edited` 为 0），所以没有新的用户修订可以对照；22 份 AI 译文按现有规则抽查，没有发现擅加“永远/一定”、无据补性别代词或拆并行。用户的确认译稿在 Vault 的翻译目录，不在本项目文件夹内，这次没有读取。下次改译风前先查 `defaults read com.spotifylyrics.app ai.promptPresetID` 看用户实际选的是哪个，并确认枚举里有它。
+
+2026-11-18 的设置只有一个「我的风格」编辑框，正文与多语种说明都可以改。用户可以清空再输入，点完成、离开编辑框或离开页面时保存。旧设置原来只存正文，读取时补齐当年实际发送的尾注。两个提示词生成入口都使用请求创建时的设置快照。已发送的旧请求曾把所有个人风格写在同一个键下，恢复结果要沿原键和原歌词版本，重译由用户发起。检查入口是 `SearchSourceContractTests` 和 `AITranslationContractTests.testProtectedRecovery`，均走隔离库或模拟传输。
 
 ## L-018 模糊曲线、羽化圆形与主窗口订阅歌词库
 

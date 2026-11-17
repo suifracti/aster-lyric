@@ -1450,8 +1450,14 @@
 		0DEDF4B2C22A0C6063F45CD5 /* Tests/Native/Persistence/LibraryRevisionsContractTests.swift */ = {
 			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Persistence/LibraryRevisionsContractTests.swift"; sourceTree = SOURCE_ROOT;
 		};
+		1167566A7520276A410E3A64 /* Tests/Native/Persistence/AITranslationContractTests.swift */ = {
+			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Persistence/AITranslationContractTests.swift"; sourceTree = SOURCE_ROOT;
+		};
 		9A757666B9EF39CCE984CE15 /* Tests/Native/Persistence/LibraryRevisionsContractTests.swift build */ = {
 			isa = PBXBuildFile; fileRef = 0DEDF4B2C22A0C6063F45CD5 /* Tests/Native/Persistence/LibraryRevisionsContractTests.swift */;
+		};
+		23DCF1DE1098441922300C62 /* Tests/Native/Persistence/AITranslationContractTests.swift build */ = {
+			isa = PBXBuildFile; fileRef = 1167566A7520276A410E3A64 /* Tests/Native/Persistence/AITranslationContractTests.swift */;
 		};
 		2E2DD35BE6D5A5E1C3E4B0AD /* Tests/Native/Persistence/ListeningHistoryContractTests.swift */ = {
 			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Persistence/ListeningHistoryContractTests.swift"; sourceTree = SOURCE_ROOT;
@@ -1529,6 +1535,7 @@
 			isa = PBXGroup; name = "Native Tests"; sourceTree = "<group>"; children = (
 				2849EAA14F7F1E696E303139 /* Tests/Native/Persistence/LibraryIdentitySearchContractTests.swift */,
 				0DEDF4B2C22A0C6063F45CD5 /* Tests/Native/Persistence/LibraryRevisionsContractTests.swift */,
+				1167566A7520276A410E3A64 /* Tests/Native/Persistence/AITranslationContractTests.swift */,
 				2E2DD35BE6D5A5E1C3E4B0AD /* Tests/Native/Persistence/ListeningHistoryContractTests.swift */,
 				65251B5DEF939F31DE33AE35 /* Tests/Native/Persistence/ListeningStatisticsContractTests.swift */,
 				27E5F3AC9561180F6CF17B3C /* Tests/Native/Persistence/LyricsEditorContractTests.swift */,
@@ -1556,6 +1563,7 @@
 				45807C00F498AF9166DC55F3,
 				9E0B6FDF20BC8FBFE7E02E74 /* Tests/Native/Persistence/LibraryIdentitySearchContractTests.swift build */,
 				9A757666B9EF39CCE984CE15 /* Tests/Native/Persistence/LibraryRevisionsContractTests.swift build */,
+				23DCF1DE1098441922300C62 /* Tests/Native/Persistence/AITranslationContractTests.swift build */,
 				857582EE352EFDC972661F00 /* Tests/Native/Persistence/ListeningHistoryContractTests.swift build */,
 				D9A29AEF6674F0635F3BE17D /* Tests/Native/Persistence/ListeningStatisticsContractTests.swift build */,
 				A8587F7679DD850BB50C5431 /* Tests/Native/Persistence/LyricsEditorContractTests.swift build */,

@@ -519,11 +519,11 @@ public final class TranslationSessionController: ObservableObject {
         return project(onto: lines)
     }
 
-    nonisolated private static func completionContext(_ context: TranslationContext) -> TranslationCompletionContext {
+    nonisolated private static func completionContext(_ context: TranslationContext, promptHash: String? = nil) -> TranslationCompletionContext {
         TranslationCompletionContext(identity: context.identity, lyricsVersionID: context.lyricsVersionID,
             sourceContentHash: context.sourceContentHash, originalLines: context.document.lines.map(\.originalText),
             targetLanguage: context.configuration.targetLanguage, providerCacheIdentity: context.configuration.providerCacheIdentity,
-            configurationPromptHash: context.configuration.promptHash, engineID: context.configuration.engineID,
+            configurationPromptHash: promptHash ?? context.configuration.promptHash, engineID: context.configuration.engineID,
             allowsAppleFallback: context.configuration.fallbackStrategy == .automaticSystem)
     }
 
@@ -551,16 +551,27 @@ public final class TranslationSessionController: ObservableObject {
                 // unreadable. It still fails closed for any new dispatch.
                 self?.availableVersions = versions
                 self?.selectedVersion = self?.chooseVersion(versions, context: context)
-                let durableKey = try AITranslationRequestExecution.key(identity: context.identity, versionID: context.lyricsVersionID,
-                    sourceHash: context.sourceContentHash, context: context.aiContext, configuration: context.configuration)
-                var previousRequest = try await repository.loadTranslationRequest(key: durableKey)
+                var completion = Self.completionContext(context)
+                var previousRequest = try await repository.loadTranslationRequest(key: completion.requestKey())
+                var usedLegacyStyle = false
+                if previousRequest == nil || previousRequest?.phase == .prepared,
+                   let oldHash = context.configuration.legacyPersonalPromptHash {
+                    // Old versions used one journal key for all personal edits. A previously sent
+                    // request belongs to that key, even when it predates the current wording.
+                    let legacy = Self.completionContext(context, promptHash: oldHash)
+                    if let request = try await repository.loadTranslationRequest(key: legacy.requestKey()), request.phase != .prepared {
+                        previousRequest = request
+                        completion = legacy
+                        usedLegacyStyle = true
+                    }
+                }
                 guard !Task.isCancelled, self?.context?.key == key, self?.requestGeneration == loadGeneration else { return }
                 if let request = previousRequest, request.phase == .received || request.phase == .saved {
-                    let saved = try await repository.completeTranslationRequest(key: durableKey, attemptID: request.attemptID,
-                        context: Self.completionContext(context))
+                    let saved = try await repository.completeTranslationRequest(key: request.key, attemptID: request.attemptID,
+                        context: completion)
                     versions.removeAll { $0.record.id == saved.record.id }
                     versions.insert(saved, at: 0)
-                    previousRequest = try await repository.loadTranslationRequest(key: durableKey)
+                    previousRequest = try await repository.loadTranslationRequest(key: request.key)
                 }
                 guard !Task.isCancelled else { return }
                 let interrupted = previousRequest?.phase == .dispatching
@@ -589,9 +600,11 @@ public final class TranslationSessionController: ObservableObject {
                     } else if let candidate = self.pendingCandidate, self.canUseAutomatically(context) {
                         self.useExistingCandidateAutomatically(candidate, context: context, generation: loadGeneration)
                     } else if interrupted || previousRequest?.phase == .saved {
-                        self.state = .failed("上次请求已发起但没有可恢复的完整结果；不会自动重发，请主动重试")
+                        self.state = .failed(usedLegacyStyle && !interrupted
+                            ? "旧风格的结果已在译文版本中。点重新翻译可使用当前风格。"
+                            : "上次请求已发起但没有可恢复的完整结果；不会自动重发，请主动重试")
                         self.errorMessage = self.state.userFacingMessage
-                        self.progressMessage = "翻译已中断；原文和已有译文保留"
+                        self.progressMessage = usedLegacyStyle && !interrupted ? "" : "翻译已中断；原文和已有译文保留"
                     } else if allowAutomaticRequest && self.canUseAutomatically(context) && context.configuration.autoTranslateNewLyrics && context.configuration.isConfigured {
                         self.startTranslation(context, forceNewVersion: false)
                     } else {

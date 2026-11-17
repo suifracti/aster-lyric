@@ -1053,6 +1053,9 @@ public final class AppSettingsStore: ObservableObject {
 
     @Published public var aiTranslationConfiguration: AITranslationConfiguration {
         didSet {
+            if oldValue.personalStyleOverride != aiTranslationConfiguration.personalStyleOverride {
+                TranslationPromptPresetCatalog.storePersonalOverride(aiTranslationConfiguration.personalStyleOverride, in: defaults)
+            }
             persistAITranslationConfiguration(aiTranslationConfiguration)
             providerModelSettings?.remember(aiTranslationConfiguration)
         }
@@ -2266,6 +2269,7 @@ public final class AppSettingsStore: ObservableObject {
             targetLanguage: defaults.string(forKey: Key.aiTargetLanguage) ?? "zh-Hans",
             style: defaults.string(forKey: Key.aiStyle) ?? "natural_song",
             customSystemPrompt: defaults.string(forKey: Key.aiCustomSystemPrompt) ?? "",
+            personalStyleOverride: TranslationPromptPresetCatalog.storedPersonalOverride(in: defaults),
             temperature: defaults.object(forKey: Key.aiTemperature) as? Double ?? 0.2,
             timeout: defaults.object(forKey: Key.aiTimeout) as? Double ?? 60,
             autoTranslateNewLyrics: defaults.object(forKey: Key.aiAutoTranslateNewLyrics) as? Bool ?? true,
