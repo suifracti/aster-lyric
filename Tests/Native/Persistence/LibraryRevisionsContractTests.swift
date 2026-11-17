@@ -20,6 +20,48 @@ final class LibraryRevisionsContractTests: XCTestCase {
         XCTAssertEqual(roundTrip.lines.map(\.startTime), [nil, 0, nil, 12.5])
     }
 
+    func testMultilingualFileKeepsSparseLanguagesOnOneOriginalAcrossImports() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("archive.sqlite3"),
+                                          alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        let data = Data("""
+        <tt xmlns:ttm="urn:ttm" xmlns:itunes="urn:itunes" xml:lang="ja"><head><metadata>
+        <translations><translation xml:lang="zh-Hant"><text for="A">第一個夢</text></translation></translations>
+        </metadata></head><body><div>
+        <p begin="3s">風<span ttm:role="x-translation" xml:lang="zh-Hans">风</span></p>
+        <p begin="1s" itunes:key="A">夢<span ttm:role="x-translation" xml:lang="en">dream</span><span ttm:role="x-translation" xml:lang="zh-Hans">第一个梦</span></p>
+        </div></body></tt>
+        """.utf8)
+        let track = Track(title: "多种语言", artist: "测试", album: "", duration: 9)
+        let key = TrackIdentity(track: track).stableKey
+        let english = try LocalLyricsFile(data: data, kind: .ttml, preferredLanguage: "en-GB")
+        let chinese = try LocalLyricsFile(data: data, kind: .ttml, preferredLanguage: "zh-TW")
+        XCTAssertEqual(english.lines.map(\.translationText), ["dream", nil])
+        XCTAssertEqual(chinese.lines.map(\.translationText), ["第一個夢", nil])
+        XCTAssertEqual(english.viewing("zh-Hans").lines.map(\.translationText), ["第一个梦", "风"])
+        let first = try await repo.importLyricFile(english, into: track)
+        let second = try await repo.importLyricFile(chinese, into: track)
+        XCTAssertEqual(first, second)
+        let found = try await repo.loadPersonalLibraryTrackDetail(stableKey: key)
+        let detail = try XCTUnwrap(found)
+        XCTAssertEqual(detail.lyricsVersions.count, 1)
+        XCTAssertEqual(Set(detail.translationVersions.map(\.targetLanguage)), ["en", "zh-Hant", "zh-Hans"])
+        let original = try XCTUnwrap(detail.lyricsVersions.first)
+        let editable = try await repo.loadEditableVersion(versionID: original.id, track: track, identity: TrackIdentity(track: track))
+        let hash = try XCTUnwrap(editable?.sourceContentHash)
+        try await repo.preserveEmbeddedTranslation(lyricsVersionID: original.id, sourceContentHash: hash)
+        let languages = try await repo.loadTranslationVersions(lyricsVersionID: original.id, targetLanguage: "zh-TW", sourceContentHash: hash)
+        XCTAssertEqual(languages.count, 3)
+        XCTAssertEqual(StoredTranslationVersion.preferredEmbedded(in: languages, language: "zh-TW")?.record.targetLanguage, "zh-Hant")
+        XCTAssertEqual(StoredTranslationVersion.preferredEmbedded(in: languages, language: "en-GB")?.record.targetLanguage, "en")
+        for item in detail.translationVersions {
+            let page = try await repo.readLibraryPassage(.init(trackKey: key, source: .translation(item.id)))
+            let expected: [String?] = item.targetLanguage == "en" ? ["dream", nil]
+                : item.targetLanguage == "zh-Hant" ? ["第一個夢", nil] : ["第一个梦", "风"]
+            XCTAssertEqual(page?.lines.map { ($0.translation?.isEmpty == false) ? $0.translation : nil }, expected)
+        }
+    }
+
     func testLocalFileCanBeReadAndFiledBesideLockedLyricsWithoutPlaying() async throws {
         let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
         let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("files.sqlite3"),
@@ -48,6 +90,22 @@ final class LibraryRevisionsContractTests: XCTestCase {
         let detail = try await repo.loadPersonalLibraryTrackDetail(stableKey: identity.stableKey)
         XCTAssertEqual(detail?.lyricsVersions.count, 2)
         XCTAssertEqual(detail?.translationVersions.count, 1)
+        let plain = try LocalLyricsFile(data: Data(ttml.replacingOccurrences(of: " xml:lang=\"zh\"", with: "").utf8),
+                                       kind: .ttml, preferredLanguage: "en")
+        let plainTrack = Track(title: "未标语言", artist: "样例", album: "", duration: 5)
+        let plainID = TrackIdentity(track: plainTrack)
+        let target = try await repo.importLyricFile(plain, into: plainTrack)
+        guard case let .original(plainVersionID) = target.source else { return XCTFail("缺少原词") }
+        let tagged = try await repo.loadEditableVersion(versionID: plainVersionID, track: plainTrack, identity: plainID)
+        let plainSource = try XCTUnwrap(tagged)
+        let legacy = try await repo.loadTranslationVersions(lyricsVersionID: plainVersionID, targetLanguage: "zh-Hans", sourceContentHash: plainSource.sourceContentHash)
+        var edit = LibraryTranslationRevisionDraft(track: plainTrack, lyricsSource: plainSource, source: try XCTUnwrap(legacy.first), preferredLanguage: "en-GB")
+        XCTAssertEqual(edit.targetLanguage, "en-GB")
+        edit.targetLanguage = "en"
+        edit.lines[0] = "shore"
+        let savedEdit = try await repo.saveManualEdit(edit.saveRequest())
+        XCTAssertEqual(savedEdit.translationVersion?.record.targetLanguage, "en")
+        XCTAssertEqual(savedEdit.translationVersion?.record.parentVersionID, legacy.first?.record.id)
         let localTrack = Track(title: "海岸", artist: "另一录音", album: "", duration: 0)
         let local = try await repo.importLyricFile(file, into: localTrack)
         XCTAssertNotEqual(imported.trackKey, local.trackKey)

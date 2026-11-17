@@ -8,8 +8,10 @@ enum LocalLyricsFileKind: String, CaseIterable, Sendable {
 /// A file can be read before the user chooses any recording or opens the library.
 struct LocalLyricsFile: Sendable {
     let kind: LocalLyricsFileKind
-    let content: LyricsDocument
+    private(set) var content: LyricsDocument
     let locked: Bool
+    let translationLanguages: [String]
+    private(set) var initialTranslationLanguage: String?
     private let fingerprint: String
     var lines: [LyricLine] { content.lines }
 
@@ -36,6 +38,20 @@ struct LocalLyricsFile: Sendable {
             content = document
             locked = false
         }
+        translationLanguages = LyricSourceTranslation.languages(in: content.lines)
+        initialTranslationLanguage = LyricSourceTranslation.preferred(translationLanguages, for: preferredLanguage)
+    }
+
+    func viewing(_ language: String?) -> Self {
+        guard let language, language != initialTranslationLanguage, translationLanguages.contains(language) else { return self }
+        var copy = self
+        copy.content = content.replacingLines(lines.map { original in
+            var line = original
+            line.translationText = line.sourceTranslation(in: language)
+            return line
+        })
+        copy.initialTranslationLanguage = language
+        return copy
     }
 
     func document(for track: Track) -> LyricsDocument {

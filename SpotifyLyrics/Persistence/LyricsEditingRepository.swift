@@ -272,12 +272,17 @@ public struct LibraryTranslationRevisionDraft: Identifiable {
     public let lyricsSource: StoredEditableLyricsVersion
     public let source: StoredTranslationVersion
     public var lines: [String]
+    public var targetLanguage: String
+    private let originalLanguage: String
     private let originalLines: [String]
 
-    public init(track: Track, lyricsSource: StoredEditableLyricsVersion, source: StoredTranslationVersion) {
+    public init(track: Track, lyricsSource: StoredEditableLyricsVersion, source: StoredTranslationVersion, preferredLanguage: String = "zh-Hans") {
         self.track = track
         self.lyricsSource = lyricsSource
         self.source = source
+        let specified = source.record.targetLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+        targetLanguage = specified == "und" || specified.isEmpty ? preferredLanguage : specified
+        originalLanguage = targetLanguage
         var lines = Array(repeating: "", count: lyricsSource.lines.count)
         for row in source.lines where lines.indices.contains(row.lineIndex) { lines[row.lineIndex] = row.translatedText }
         self.lines = lines
@@ -294,7 +299,10 @@ public struct LibraryTranslationRevisionDraft: Identifiable {
         for index in indices { lines[index] = byLine[index] ?? "" }
     }
 
-    public var hasChanges: Bool { lines != originalLines }
+    public var hasChanges: Bool {
+        !targetLanguage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            (lines != originalLines || targetLanguage.trimmingCharacters(in: .whitespacesAndNewlines) != originalLanguage)
+    }
 
     public func saveRequest() throws -> LyricsEditSaveRequest {
         guard hasChanges else { throw LyricsEditingRepositoryError.noChanges }
@@ -311,7 +319,7 @@ public struct LibraryTranslationRevisionDraft: Identifiable {
             createLyricsVersion: false,
             preserveCurrentLyricsSelection: true,
             translation: ManualTranslationEdit(
-                targetLanguage: source.record.targetLanguage,
+                targetLanguage: targetLanguage.trimmingCharacters(in: .whitespacesAndNewlines),
                 model: source.record.model,
                 baseURLHost: source.record.baseURLHost,
                 promptHash: source.record.promptHash,

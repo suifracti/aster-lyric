@@ -21,7 +21,7 @@
 | 队列不更新、循环列表被裁掉、隐藏后点第三首多跳 | L-008；PlaylistBrowserModel、V3PlaylistQueuePreview |
 | 版本弹窗挂在悬浮窗、关后黑着、大歌词库关闭或丢选择 | L-009；PersonalLyricsLibraryService、PersonalLibrarySheets |
 | 有歌词源译文却不显示、部分行没有译文、重复补存 | L-010；TranslationSessionController.synchronize 与 chooseVersion |
-| TTML 自带翻译或罗马音却没显示、无时间轴的文件被当成同步歌词 | L-029 · TTMLParser、AMLLLyricsProvider |
+| TTML 自带翻译或罗马音却没显示、无时间轴的文件被当成同步歌词 | L-032、L-048 · TTMLParser、AMLLLyricsProvider |
 | 悬停歌词库转圈、版本列表开得慢 | L-011；prefetchCurrentTrack、currentDetail |
 | 边缘线内移/加粗、胶囊热区、封面卡片不同宽、分段选中块乱动 | L-012；V3EdgeRailView、V3ResponsiveGeometry、V3SegmentedPicker |
 | 面板控件不统一、选项太多太杂、画面风格太多、播放栏按钮不一致、歌词库页签变黑 | L-016；V3PanelRow、V3RowToggleStyle、V3DisclosureRow、foldedEntryIndices、V3PlaybackButtons |
@@ -727,6 +727,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、文件菜单和工作台拖放都能直接阅读。选了「存入」才关联到点选的录音，或用填写的歌名、歌手、专辑建立本机档案。歌曲档案里补词会先打开相同的预览，并记住具体录音。
 
 同一份文件重复存入同一录音，只保留一份。独立原词、文件自带的译文、读音和逐字沿歌词库原有版本路径保存，既有锁定和取消采用均有效。源文件不改写。TTML 按 XML 字节编码读取，LRC 的零秒时间和无时间行在导入、导出后仍可区分。
+
+多语 TTML 的每条译文按 XML 语言标记跟随原句排序。播放器、文档窗和编辑器按目标语言及文字系统选稿，整首保留同一语言，稀疏行留空。所有语言作为独立的词源译文入库；换显示语言、重复打开或后续 synchronize 均复用旧资产。同一文件的旧存档用录音、导入指纹与原词哈希识别。对旧的未标语种版本做人工修订时可指定子稿语种。
 
 已用独立 Bundle ID、临时数据库、停用 Keychain 和模型的 App 从 macOS 打开一个 LRC，经真实文档窗读取正文，点击存入并回读数据库。词库保护及 UTF-16 的证据在 LibraryRevisionsContractTests。
 

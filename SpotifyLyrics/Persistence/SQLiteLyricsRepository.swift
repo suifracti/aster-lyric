@@ -632,12 +632,12 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 try insertAlias(alias)
             }
 
-            if let duplicateID = try findVersionID(
-                stableKey: canonicalKey,
-                source: versionRecord.source,
-                providerSourceID: versionRecord.providerSourceID,
-                contentHash: versionRecord.contentHash
-            ) {
+            let isFingerprintedFile = importedLock != nil && versionRecord.providerSourceID.hasPrefix(LyricsPersistenceMapper.lyricFileSourcePrefix)
+            let duplicateID = try findVersionID(stableKey: canonicalKey, source: versionRecord.source,
+                providerSourceID: versionRecord.providerSourceID, contentHash: versionRecord.contentHash,
+                fileSourceHash: isFingerprintedFile ? sourceContentHash : nil)
+            if let duplicateID {
+                try storeSourceTranslations(document, versionID: duplicateID, sourceHash: sourceContentHash)
                 try attachTimingVersionIfNeeded(
                     document: document,
                     lyricsVersionID: duplicateID,
@@ -671,9 +671,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             for line in lines {
                 try insertLine(line)
             }
-            if importedLock != nil && lines.contains(where: { $0.translationText?.isEmpty == false }) {
-                try insertEmbeddedTranslationIfAvailable(lyricsVersionID: versionID, sourceContentHash: sourceContentHash)
-            }
+            try storeSourceTranslations(document, versionID: versionID, sourceHash: sourceContentHash,
+                                        preserveUntagged: importedLock != nil)
             try attachTimingVersionIfNeeded(
                 document: document,
                 lyricsVersionID: versionID,
@@ -812,6 +811,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                     try insertLine(line)
                 }
             }
+            try storeSourceTranslations(document, versionID: versionID, sourceHash: sourceContentHash)
             var attachmentDocument = document
             if let suppliedTimingID = document.timingVersionID,
                let suppliedTiming = try fetchTimingVersion(id: suppliedTimingID),
@@ -1326,6 +1326,34 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         return completed
     }
 
+    /// Named TTML tracks share one original. A missing line in one language stays empty.
+    private func storeSourceTranslations(_ document: LyricsDocument, versionID: UUID, sourceHash: String,
+                                         preserveUntagged: Bool = false) throws {
+        var languages = LyricSourceTranslation.languages(in: document.lines)
+        guard !languages.isEmpty else {
+            if preserveUntagged && document.lines.contains(where: { $0.translationText?.isEmpty == false }) {
+                try insertEmbeddedTranslationIfAvailable(lyricsVersionID: versionID, sourceContentHash: sourceHash)
+            }
+            return
+        }
+        // A newly filed recording opens on the language the reader was using.
+        if let preferred = languages.firstIndex(where: { tag in
+            document.lines.allSatisfy { $0.translationText == $0.sourceTranslation(in: tag) }
+        }) { languages.append(languages.remove(at: preferred)) }
+        let existing = try loadTranslationVersions(lyricsVersionID: versionID, targetLanguage: "und", sourceContentHash: sourceHash)
+        for tag in languages {
+            let texts = document.lines.map { $0.sourceTranslation(in: tag) ?? "" }
+            if existing.contains(where: { $0.isEmbeddedTranslation && $0.record.targetLanguage == tag &&
+                $0.lines.map(\.translatedText) == texts }) { continue }
+            let draft = AITranslationDraft(lines: texts.enumerated().map { .init(index: $0.offset, translation: $0.element) },
+                targetLanguage: tag, model: "词源自带译文", baseURLHost: "", promptHash: "",
+                sourceContentHash: sourceHash, sourceKind: .providerEmbedded,
+                isMachineGenerated: false, isManuallyEdited: false, engineID: "provider-embedded")
+            _ = try insertValidatedTranslation(versionID: UUID(), lyricsVersionID: versionID, sourceContentHash: sourceHash,
+                                                originalLines: document.lines.map(\.originalText), draft: draft)
+        }
+    }
+
     /// Copy complete embedded text once into independent version history. The
     /// original lyric_lines stay untouched; BEGIN IMMEDIATE serializes two
     /// controllers opening the same source concurrently.
@@ -1393,7 +1421,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                    fallback_strategy, is_draft, is_archived, provider_execution_metadata_json
             FROM translation_versions
             WHERE lyrics_version_id = ? AND (target_language = ? OR
-              (target_language = 'und' AND (source_kind IN ('providerEmbedded', 'legacyImported') OR engine_id = 'provider-embedded')))
+              source_kind = 'providerEmbedded' OR (source_kind = 'legacyImported' AND target_language = 'und') OR engine_id = 'provider-embedded')
               AND source_content_hash = ?
             ORDER BY is_locked DESC, updated_at DESC;
             """)
@@ -3296,14 +3324,15 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         stableKey: String,
         source: String,
         providerSourceID: String,
-        contentHash: String
+        contentHash: String,
+        fileSourceHash: String? = nil
     ) throws -> UUID? {
         let family = try resolvedIdentityFamily(stableKey: stableKey)
+        let match = fileSourceHash == nil ? "AND content_hash = ? LIMIT 1" : "ORDER BY (content_hash = ?) DESC"
         let statement = try prepare("""
             SELECT id FROM lyrics_versions
             WHERE track_stable_key IN (\(placeholders(count: family.count))) AND source = ?
-              AND provider_source_id = ? AND content_hash = ?
-            LIMIT 1;
+              AND provider_source_id = ? \(match);
             """)
         defer { sqlite3_finalize(statement) }
         for (index, key) in family.enumerated() {
@@ -3313,11 +3342,14 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         try bindText(source, at: offset + 1, to: statement)
         try bindText(providerSourceID, at: offset + 2, to: statement)
         try bindText(contentHash, at: offset + 3, to: statement)
-        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
-        guard let value = columnText(statement, index: 0), let id = UUID(uuidString: value) else {
-            throw LyricsRepositoryError.invalidData("歌词版本 UUID 无效")
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let value = columnText(statement, index: 0), let id = UUID(uuidString: value) else {
+                throw LyricsRepositoryError.invalidData("歌词版本 UUID 无效")
+            }
+            if let fileSourceHash, try fetchSourceLyrics(versionID: id)?.hash != fileSourceHash { continue }
+            return id
         }
-        return id
+        return nil
     }
 
     private func hasLockedVersion(stableKey: String) throws -> Bool {

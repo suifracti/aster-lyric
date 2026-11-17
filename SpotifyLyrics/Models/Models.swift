@@ -1277,12 +1277,53 @@ public enum LyricIndexAntiRegression {
     }
 }
 
+/// A translation supplied by the lyric source, kept with its actual line through sorting and projection.
+public struct LyricSourceTranslation: Hashable, Sendable {
+    public let language: String
+    public let text: String
+
+    init(language: String?, text: String) {
+        let tag = language?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        self.language = tag.isEmpty ? "und" : Locale(identifier: tag).identifier(.bcp47)
+        self.text = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: " ")
+    }
+
+    static func languages(in lines: [LyricLine]) -> [String] {
+        var seen = Set<String>(), result: [String] = []
+        for line in lines {
+            for track in line.sourceTranslations where seen.insert(track.language).inserted { result.append(track.language) }
+        }
+        return result
+    }
+
+    static func preference(_ language: String, for requested: String) -> Int {
+        if language.caseInsensitiveCompare(requested) == .orderedSame { return 0 }
+        if language == "und" { return 3 }
+        let value = Locale.Language(identifier: language), wanted = Locale.Language(identifier: requested)
+        guard value.languageCode == wanted.languageCode else { return 4 }
+        return value.script == wanted.script ? 1 : 2
+    }
+
+    static func preferred(_ languages: [String], for requested: String) -> String? {
+        languages.min { preference($0, for: requested) < preference($1, for: requested) }
+    }
+
+    static func displayName(_ language: String) -> String {
+        language == "und" ? "未标明语言" : (Locale(identifier: "zh_CN").localizedString(forIdentifier: language) ?? language)
+    }
+}
+
 public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
     public let id: UUID
     public var timestamp: TimeInterval
     public var endTime: TimeInterval?
     public var originalText: String
     public var translationText: String?
+    public var sourceTranslations: [LyricSourceTranslation]
+
+    func sourceTranslation(in language: String) -> String? {
+        sourceTranslations.first { $0.language == language }?.text
+    }
     public var romajiText: String?
     public var kanaText: String?
     public var rubyTokens: [LyricRubyToken]?
@@ -1314,10 +1355,12 @@ public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
         timedSpans: [TimedTextSpan]? = nil,
         readingRepresentationID: String? = nil,
         readingSurfaceText: String? = nil,
-        backgroundText: String? = nil
+        backgroundText: String? = nil,
+        sourceTranslations: [LyricSourceTranslation] = []
     ) {
         self.id = id
         self.backgroundText = backgroundText
+        self.sourceTranslations = sourceTranslations
         self.timestamp = timestamp
         self.endTime = endTime
         self.originalText = originalText

@@ -114,16 +114,23 @@ public enum TTMLParser {
             if hasTiming && start != nil { timedIndices.insert(lines.count) }
             let linked = rawLine.key.flatMap { delegate.header.linked[$0] } ?? []
             let companions = rawLine.companions + linked
+            var translations: [LyricSourceTranslation] = []
+            for item in companions where item.kind == .translation && !item.text.isEmpty {
+                let track = LyricSourceTranslation(language: item.language, text: item.text)
+                if !track.text.isEmpty && !translations.contains(where: { $0.language == track.language }) {
+                    translations.append(track)
+                }
+            }
             lines.append(
                 LyricLine(
                     timestamp: hasTiming ? start ?? 0 : 0,
                     originalText: rawLine.originalText,
                     endTime: hasTiming && start != nil ? rawLine.endTime ?? validSpans?.last?.endTime : nil,
-                    translationText: TTMLCompanion.preferred(.translation, in: companions, language: preferredTranslationLanguage),
                     romajiText: TTMLCompanion.preferred(.romanization, in: companions, language: delegate.language),
                     performerID: rawLine.performerID,
                     timedSpans: validSpans,
-                    backgroundText: rawLine.backgroundText
+                    backgroundText: rawLine.backgroundText,
+                    sourceTranslations: translations
                 )
             )
         }
@@ -132,6 +139,11 @@ public enum TTMLParser {
         let synchronized = timedIndices.count == lines.count
         let duration = delegate.bodyDuration ?? timedIndices.compactMap { lines[$0].endTime ?? lines[$0].timestamp }.max()
         if synchronized { lines.sort { $0.timestamp < $1.timestamp } }
+
+        let languages = LyricSourceTranslation.languages(in: lines)
+        if let preferred = LyricSourceTranslation.preferred(languages, for: preferredTranslationLanguage) {
+            for index in lines.indices { lines[index].translationText = lines[index].sourceTranslation(in: preferred) }
+        }
 
         return LyricsDocument(
             identity: identity,

@@ -215,7 +215,8 @@ public final class PersonalLyricsLibraryService: ObservableObject {
             guard let match = versions.first(where: { $0.record.id == item.id }) else { throw TranslationRepositoryError.versionNotFound }
             return match
         }
-        var draft = LibraryTranslationRevisionDraft(track: track, lyricsSource: lyrics, source: try await stored(version))
+        var draft = LibraryTranslationRevisionDraft(track: track, lyricsSource: lyrics, source: try await stored(version),
+            preferredLanguage: defaults.string(forKey: AppSettingsStore.Key.aiTargetLanguage) ?? "zh-Hans")
         if let reference { try draft.takeLines(indices, from: await stored(reference)) }
         return draft
     }

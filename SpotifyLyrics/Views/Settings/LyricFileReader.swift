@@ -90,6 +90,11 @@ struct LyricFileReader: View {
     @State private var error: String?
     @State private var showsReading = true
     @State private var showsTranslation = true
+    @State private var chosenLanguage: String?
+    private var language: String? {
+        if let chosenLanguage, file.translationLanguages.contains(chosenLanguage) { return chosenLanguage }
+        return file.initialTranslationLanguage
+    }
     @State private var find = ""
     @State private var finding = false
     @State private var matchIndex = 0
@@ -122,12 +127,28 @@ struct LyricFileReader: View {
                     Spacer(minLength: 4)
                     Button { finding.toggle(); focusedFind = finding } label: { Image(systemName: "magnifyingglass") }
                         .keyboardShortcut("f").accessibilityLabel("在文件中查找").help("在文件中查找")
-                    if file.lines.contains(where: { $0.translationText != nil || $0.romajiText != nil || $0.kanaText != nil }) {
+                    if !file.translationLanguages.isEmpty || file.lines.contains(where: { $0.translationText != nil || $0.romajiText != nil || $0.kanaText != nil }) {
                         Menu {
+                            if file.translationLanguages.count > 1 {
+                                Picker("译文语言", selection: Binding(get: { language ?? "und" }, set: { value in
+                                    chosenLanguage = value
+                                    showsTranslation = true
+                                    matchIndex = 0
+                                })) {
+                                    ForEach(file.translationLanguages, id: \.self) { tag in
+                                        Text(LyricSourceTranslation.displayName(tag)).tag(tag)
+                                    }
+                                }.pickerStyle(.inline)
+                                Divider()
+                            }
                             Toggle("显示译文", isOn: $showsTranslation)
                             Toggle("显示读音", isOn: $showsReading)
-                        } label: { Image(systemName: "textformat.size") }
-                        .menuIndicator(.hidden).fixedSize().accessibilityLabel("阅读图层")
+                        } label: {
+                            if file.translationLanguages.count > 1, let language {
+                                Label(LyricSourceTranslation.displayName(language), systemImage: "character.book.closed")
+                            } else { Label("阅读图层", systemImage: "textformat.size") }
+                        }
+                        .menuStyle(.borderlessButton).fixedSize()
                     }
                     if let close { Button(action: close) { Image(systemName: "xmark") }.accessibilityLabel("关闭文件") }
                 }
@@ -207,7 +228,7 @@ struct LyricFileReader: View {
         }
         .background(WorkspacePalette.paper)
         .sheet(isPresented: $filing) {
-            LyricFileFilingSheet(file: file, title: title, library: library) { target in
+            LyricFileFilingSheet(file: file.viewing(language), title: title, library: library) { target in
                 filed = target
                 filing = false
             }
@@ -217,7 +238,10 @@ struct LyricFileReader: View {
     private func passageLine(_ index: Int) -> LibraryPassagePage.Line {
         let line = file.lines[index]
         let reading = [line.kanaText, line.romajiText].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-        return .init(id: index, original: line.originalText, translation: line.translationText,
+        let translation: String?
+        if let language { translation = line.sourceTranslation(in: language) }
+        else { translation = line.translationText }
+        return .init(id: index, original: line.originalText, translation: translation,
                      reading: reading.isEmpty ? nil : reading, background: line.backgroundText)
     }
 
@@ -232,7 +256,7 @@ struct LyricFileReader: View {
         saving = true
         Task {
             defer { saving = false }
-            do { filed = try await library.fileLyrics(file, with: entry.libraryTrack, archiveKey: entry.trackStableKey); error = nil }
+            do { filed = try await library.fileLyrics(file.viewing(language), with: entry.libraryTrack, archiveKey: entry.trackStableKey); error = nil }
             catch { self.error = error.localizedDescription }
         }
     }

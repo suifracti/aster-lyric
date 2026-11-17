@@ -62,11 +62,18 @@ public struct StoredTranslationVersion: Equatable, Sendable {
     public var isDraft: Bool { record.isDraft }
     public var isArchived: Bool { record.isArchived }
 
-    /// Embedded/legacy text has no trustworthy target-language metadata. Keep
-    /// it selectable without claiming it is an AI result for the active profile.
+    /// Source text may have an explicit language or an older unspecified tag.
+    /// It remains independently selectable alongside model and manual versions.
     public var isEmbeddedTranslation: Bool {
         record.engineID == "provider-embedded" || record.sourceKind == .providerEmbedded ||
             (record.sourceKind == .legacyImported && record.targetLanguage == "und")
+    }
+
+    static func preferredEmbedded(in versions: [Self], language: String) -> Self? {
+        versions.filter(\.isEmbeddedTranslation).min {
+            LyricSourceTranslation.preference($0.record.targetLanguage, for: language) <
+                LyricSourceTranslation.preference($1.record.targetLanguage, for: language)
+        }
     }
 
     public func with(record: DatabaseTranslationVersionRecord) -> StoredTranslationVersion {

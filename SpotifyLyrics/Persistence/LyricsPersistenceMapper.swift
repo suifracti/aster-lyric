@@ -332,19 +332,24 @@ public enum LyricsPersistenceMapper {
         source: String,
         providerSourceID: String
     ) -> String {
+        // Viewing the same multilingual source in another language is not an edit to the original.
+        let sourceLanguage = LyricSourceTranslation.languages(in: document.lines).first
         let payload = HashPayload(
             source: source,
             providerSourceID: providerSourceID,
             isSynced: document.isSynchronized,
             lines: document.lines.enumerated().map { index, line in
-                HashLine(
+                let translation: String?
+                if let sourceLanguage { translation = line.sourceTranslation(in: sourceLanguage) }
+                else { translation = line.translationText }
+                return HashLine(
                     index: index,
                     start: document.isSynchronized ? line.timestamp : nil,
                     end: document.isSynchronized ? line.endTime : nil,
                     original: line.originalText,
                     kana: line.kanaText,
                     romaji: line.romajiText,
-                    translation: line.translationText
+                    translation: translation
                 )
             }
         )

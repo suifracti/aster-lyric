@@ -722,10 +722,10 @@ private struct ExperienceFixtureRoot: View {
                         <tt xml:lang="ja" xmlns:ttm="urn:ttm" xmlns:amll="urn:amll"><head><metadata>
                         <amll:meta key="musicName" value="窗边的来信"/><amll:meta key="artists" value="自习室录音"/>
                         <amll:meta key="album" value="秋天手记"/></metadata></head><body><div>
-                        <p begin="1s"><span begin="1s" end="3s">窓辺に手紙を置いた</span><span ttm:role="x-translation">我把信放在窗边。</span><span ttm:role="x-roman">madobe ni tegami o oita</span></p>
-                        <p begin="5s">雨音が少し遠くなる<span ttm:role="x-translation">雨声渐渐远了。</span></p>
-                        <p begin="11s">宛名はまだ書かない<span ttm:role="x-translation">收信人的名字，我还留着没写。</span></p>
-                        <p begin="16s">明日の朝にしよう<span ttm:role="x-translation">等明早再写吧。</span></p>
+                        <p begin="1s"><span begin="1s" end="3s">窓辺に手紙を置いた</span><span ttm:role="x-translation" xml:lang="zh-Hans">我把信放在窗边。</span><span ttm:role="x-translation" xml:lang="en">I left a letter by the window.</span><span ttm:role="x-roman">madobe ni tegami o oita</span></p>
+                        <p begin="5s">雨音が少し遠くなる<span ttm:role="x-translation" xml:lang="zh-Hans">雨声渐渐远了。</span></p>
+                        <p begin="11s">宛名はまだ書かない<span ttm:role="x-translation" xml:lang="zh-Hans">收信人的名字，我还留着没写。</span></p>
+                        <p begin="16s">明日の朝にしよう<span ttm:role="x-translation" xml:lang="zh-Hans">等明早再写吧。</span></p>
                         </div></body></tt>
                         """
                         let file = try! LocalLyricsFile(data: Data(sample.utf8), kind: .ttml, preferredLanguage: "zh-Hans")

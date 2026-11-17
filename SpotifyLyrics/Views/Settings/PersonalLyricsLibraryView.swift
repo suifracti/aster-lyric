@@ -776,7 +776,9 @@ public struct PersonalLibraryTrackDetailView: View {
     private func translationVersionCard(_ tv: PersonalTranslationVersionItem, detail: PersonalLyricsLibraryTrackDetail) -> some View {
         let entry = detail.entry
         return LibraryVersionRow(kind: "translation", id: tv.id,
-            title: AITranslationSourceKind(rawValue: tv.sourceKind)?.displayName ?? "译文",
+            title: [AITranslationSourceKind(rawValue: tv.sourceKind)?.displayName ?? "译文",
+                    tv.targetLanguage == "und" ? nil : LyricSourceTranslation.displayName(tv.targetLanguage)]
+                .compactMap { $0 }.joined(separator: " · "),
             date: tv.updatedAt, lineCount: tv.lineCount,
             isCurrent: compact ? playback.selectedTranslation?.record.id == tv.id : tv.isCurrent,
             locked: tv.isLocked, archived: tv.isArchived, busy: service.revisionBusy,
@@ -1450,9 +1452,14 @@ private struct LibraryTranslationRevisionSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             LibraryEditorHeading(context: "TRANSLATION REVISION", title: "编辑译文为新版本")
-            Text("\(draft.track.title) · \(draft.track.artist) · \(draft.source.record.targetLanguage)")
-                .font(.headline)
-            Text("原译文会保留；保存后可在歌词库中选择要采用的版本。")
+            HStack {
+                Text([draft.track.title, draft.track.artist].filter { !$0.isEmpty }.joined(separator: " · ")).font(.headline)
+                Spacer()
+                Text("译文语言").font(.callout).foregroundStyle(.secondary)
+                TextField("语言标记", text: $draft.targetLanguage).frame(width: 90)
+                    .help("例如 zh-Hans、zh-Hant、en 或 ja").accessibilityLabel("新版本的译文语言")
+            }
+            Text("保存后可在歌曲档案选择采用这份新稿。")
                 .font(.callout).foregroundStyle(.secondary)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {

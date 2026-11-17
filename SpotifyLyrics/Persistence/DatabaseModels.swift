@@ -331,6 +331,9 @@ public struct DatabaseTranslationVersionRecord: Equatable, Sendable {
     /// Label saved provenance, never the currently selected service or a
     /// guessed provider inferred from the model's name.
     public var translationSourceTitle: String {
+        if sourceKind == .providerEmbedded && targetLanguage != "und" {
+            return sourceKind.displayName + " · " + LyricSourceTranslation.displayName(targetLanguage)
+        }
         if sourceKind != .ai { return sourceKind.displayName }
         let service: String
         switch TranslationEngineID(rawValue: engineID) {

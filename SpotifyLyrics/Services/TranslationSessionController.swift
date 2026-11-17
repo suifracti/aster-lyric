@@ -654,7 +654,7 @@ public final class TranslationSessionController: ObservableObject {
         // never labelled a cache hit for a new explicit request.
         return eligible.first(where: { matchesRequest($0, context: context) })
             ?? eligible.first(where: { !$0.isEmbeddedTranslation })
-            ?? eligible.first(where: { $0.isEmbeddedTranslation })
+            ?? StoredTranslationVersion.preferredEmbedded(in: eligible, language: context.configuration.targetLanguage)
     }
 
     private func matchesRequest(_ version: StoredTranslationVersion, context: TranslationContext) -> Bool {

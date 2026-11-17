@@ -571,15 +571,17 @@ public final class LyricsEditorSessionController: ObservableObject {
             do {
                 guard let loaded = try await repository.loadEditableVersion(versionID: versionID, track: track, identity: identity),
                       !Task.isCancelled else { return }
+                let language = self?.translationConfiguration.targetLanguage ?? "zh-Hans"
                 let translations = try await repository.loadTranslationVersions(
                     lyricsVersionID: loaded.record.id,
-                    targetLanguage: self?.translationConfiguration.targetLanguage ?? "zh-Hans",
+                    targetLanguage: language,
                     sourceContentHash: loaded.sourceContentHash
                 )
                 guard !Task.isCancelled else { return }
                 let selected = translations.first { $0.record.id == preferredTranslationID }
                     ?? translations.first(where: { $0.record.isLocked })
-                    ?? translations.first
+                    ?? translations.first(where: { !$0.isEmbeddedTranslation })
+                    ?? StoredTranslationVersion.preferredEmbedded(in: translations, language: language)
                 await MainActor.run { [weak self] in
                     guard let self, self.generation == requestGeneration else { return }
                     self.begin(
