@@ -13,8 +13,7 @@ enum CapsuleDebugAnchor: String, CaseIterable {
 /// Top-safe-area positioning for the capsule.  Unlike the floating lyrics
 /// window this stores no arbitrary frame: the three presentation sizes are
 /// fixed and only the horizontal offset from the target display's center is
-/// persisted.  The persisted screenID is only a recovery hint; it never
-/// replaces the live main-window screen selection.
+/// persisted. An explicit display choice takes priority over following the main window.
 @MainActor
 final class CapsuleLyricsWindowPersistence {
     static let shared = CapsuleLyricsWindowPersistence()
@@ -44,20 +43,11 @@ final class CapsuleLyricsWindowPersistence {
         return CapsuleDynamicIslandDarkV4.targetSize(for: state)
     }
 
-    func screenIdentifier(_ screen: NSScreen) -> String {
-        if let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
-            return "display-\(number.uint32Value)"
-        }
-        return "name-\(screen.localizedName)-\(NSStringFromRect(screen.frame))"
-    }
-
-    func screen(for identifier: String?) -> NSScreen? {
-        guard let identifier, !identifier.isEmpty else { return nil }
-        return NSScreen.screens.first { screenIdentifier($0) == identifier }
-    }
-
-    func targetScreen(mainWindow: NSWindow?) -> NSScreen? {
-        mainWindow?.screen ?? NSScreen.main ?? NSScreen.screens.first
+    func targetScreen(mainWindow: NSWindow?, settings: AppSettingsStore?) -> NSScreen? {
+        NSScreen.lyricsScreen(for: settings?.capsulePreferredDisplayID)
+            ?? mainWindow?.screen
+            ?? NSScreen.lyricsScreen(for: settings?.capsuleWindowScreenID)
+            ?? NSScreen.main ?? NSScreen.screens.first
     }
 
     func frame(
@@ -164,13 +154,7 @@ final class CapsuleLyricsWindowPersistence {
         settings: AppSettingsStore,
         mainWindow: NSWindow?
     ) -> NSRect {
-        // A live main-window screen always wins.  The saved screen ID is used
-        // only while the SwiftUI main window has not attached yet, followed by
-        // the documented NSScreen.main/first fallbacks.
-        let screen = mainWindow?.screen
-            ?? screen(for: settings.capsuleWindowScreenID)
-            ?? NSScreen.main
-            ?? NSScreen.screens.first
+        let screen = targetScreen(mainWindow: mainWindow, settings: settings)
         guard let screen else {
             return NSRect(origin: .zero, size: size(for: state))
         }
@@ -187,10 +171,7 @@ final class CapsuleLyricsWindowPersistence {
         mainWindow: NSWindow?,
         presentation: CapsuleLyricsPresentationVersion
     ) -> NSRect {
-        let screen = mainWindow?.screen
-            ?? screen(for: settings.capsuleWindowScreenID)
-            ?? NSScreen.main
-            ?? NSScreen.screens.first
+        let screen = targetScreen(mainWindow: mainWindow, settings: settings)
         guard let screen else {
             return NSRect(origin: .zero, size: size(for: state, presentation: presentation))
         }
@@ -209,10 +190,7 @@ final class CapsuleLyricsWindowPersistence {
         mainWindow: NSWindow?,
         debugAnchor: CapsuleDebugAnchor
     ) -> NSRect {
-        let screen = mainWindow?.screen
-            ?? screen(for: settings.capsuleWindowScreenID)
-            ?? NSScreen.main
-            ?? NSScreen.screens.first
+        let screen = targetScreen(mainWindow: mainWindow, settings: settings)
         guard let screen else {
             return NSRect(origin: .zero, size: size(for: state))
         }
@@ -231,10 +209,7 @@ final class CapsuleLyricsWindowPersistence {
         debugAnchor: CapsuleDebugAnchor,
         presentation: CapsuleLyricsPresentationVersion
     ) -> NSRect {
-        let screen = mainWindow?.screen
-            ?? screen(for: settings.capsuleWindowScreenID)
-            ?? NSScreen.main
-            ?? NSScreen.screens.first
+        let screen = targetScreen(mainWindow: mainWindow, settings: settings)
         guard let screen else {
             return NSRect(origin: .zero, size: size(for: state, presentation: presentation))
         }

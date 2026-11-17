@@ -69,6 +69,12 @@ public final class WindowManager: ObservableObject {
         floatingController?.dock(place)
     }
 
+    func moveFloatingLyrics(to displayID: String, state: PlaybackState) {
+        guard !fullScreenWindowIsVisible, let screen = NSScreen.lyricsScreen(for: displayID) else { return }
+        if !floatingWindowIsVisible { showFloatingLyrics(state: state) }
+        floatingController?.move(to: screen)
+    }
+
     public func toggleFloatingLyrics(state: PlaybackState) {
         guard fullScreenController?.isVisible != true else { return }
         if floatingController == nil {

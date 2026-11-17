@@ -65,6 +65,14 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
         saveFrame(panel)
     }
 
+    func move(to screen: NSScreen) {
+        guard let panel else { return }
+        let source = panel.screen?.visibleFrame ?? screen.visibleFrame
+        let frame = persistence.placing(panel.frame, from: source, on: screen.visibleFrame)
+        panel.setFrame(frame, display: true)
+        saveFrame(panel)
+    }
+
     deinit {
         if let screenChangeObserver {
             NotificationCenter.default.removeObserver(screenChangeObserver)
@@ -147,6 +155,7 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
         panel.orderFrontRegardless()
         isVisible = true
         playbackState?.showFloatingWindow = true
+        refreshContext()
     }
 
     func restoreInteractiveMode() {
@@ -305,6 +314,7 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
         panel.orderFrontRegardless()
         isVisible = true
         playbackState?.showFloatingWindow = true
+        refreshContext()
     }
 
     func hide() {
@@ -379,14 +389,14 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
     }
 
     private func refreshContext() {
-        guard let settings else { return }
+        guard isVisible, let settings else { return }
         let paused = settings.floatingHidesWhenPaused && playbackState?.isPlaying == false
-        let fullScreen = settings.floatingHidesOverFullScreen && Self.anotherAppIsFullScreen()
+        let fullScreen = settings.floatingHidesOverFullScreen && Self.anotherAppIsFullScreen(on: panel?.screen)
         pauseHideTask?.cancel()
         if paused && !fullScreen && !contextHidden {
             pauseHideTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
-                guard !Task.isCancelled, let self, self.playbackState?.isPlaying == false,
+                guard !Task.isCancelled, let self, self.isVisible, self.playbackState?.isPlaying == false,
                       self.settings?.floatingHidesWhenPaused == true else { return }
                 self.setContextHidden(true)
             }
@@ -402,16 +412,23 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
     }
 
     /// Another app's window covering the whole screen in the active space.
-    static func anotherAppIsFullScreen() -> Bool {
-        guard let screen = NSScreen.main?.frame,
+    static func anotherAppIsFullScreen(on screen: NSScreen?) -> Bool {
+        guard let display = screen?.lyricsDisplayNumber,
               let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return false }
+        let displayBounds = CGDisplayBounds(display)
         let ownPID = ProcessInfo.processInfo.processIdentifier
         return list.contains { info in
             guard (info[kCGWindowLayer as String] as? Int) == 0,
                   (info[kCGWindowOwnerPID as String] as? Int32) != ownPID,
-                  let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] else { return false }
-            return (bounds["Width"] ?? 0) >= screen.width && (bounds["Height"] ?? 0) >= screen.height
+                  (info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue != 0,
+                  let bounds = info[kCGWindowBounds as String] as? NSDictionary,
+                  let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return false }
+            return window(frame, covers: displayBounds)
         }
+    }
+
+    nonisolated static func window(_ window: CGRect, covers screen: CGRect) -> Bool {
+        !window.isEmpty && !screen.isEmpty && window.insetBy(dx: -0.5, dy: -0.5).contains(screen)
     }
 
     private func applyPresentation() {
@@ -437,6 +454,11 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
         if isStylePanelVisible, let stylePanel {
             positionStylePanel(stylePanel, relativeTo: panel)
         }
+    }
+
+    func windowDidChangeScreen(_ notification: Notification) {
+        guard let moved = notification.object as? NSWindow, moved === panel else { return }
+        refreshContext()
     }
 
     func windowDidResize(_ notification: Notification) {

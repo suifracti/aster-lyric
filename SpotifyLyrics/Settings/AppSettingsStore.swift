@@ -561,6 +561,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let floatingLyricsSurfaceStyle = "general.floatingLyricsSurfaceStyle"
         public static let capsuleWindowHorizontalOffset = "general.capsuleWindowHorizontalOffset"
         public static let capsuleWindowScreenID = "general.capsuleWindowScreenID"
+        public static let capsulePreferredDisplayID = "general.capsulePreferredDisplay.v1"
         public static let capsuleWindowWasVisible = "general.capsuleWindowWasVisible"
         public static let showOriginal = "display.showOriginal"
         public static let showTranslation = "display.showTranslation"
@@ -984,6 +985,14 @@ public final class AppSettingsStore: ObservableObject {
             } else {
                 defaults.removeObject(forKey: Key.capsuleWindowScreenID)
             }
+        }
+    }
+
+    /// Empty follows the main window. The older screen ID is still a frame-recovery hint.
+    @Published public var capsulePreferredDisplayID: String {
+        didSet {
+            if capsulePreferredDisplayID.isEmpty { defaults.removeObject(forKey: Key.capsulePreferredDisplayID) }
+            else { defaults.set(capsulePreferredDisplayID, forKey: Key.capsulePreferredDisplayID) }
         }
     }
 
@@ -1781,6 +1790,7 @@ public final class AppSettingsStore: ObservableObject {
             ?? FloatingLyricsSurfaceStyle.ultraTransparent.rawValue
         capsuleWindowHorizontalOffset = defaults.object(forKey: Key.capsuleWindowHorizontalOffset) as? Double ?? 0
         capsuleWindowScreenID = defaults.string(forKey: Key.capsuleWindowScreenID)
+        capsulePreferredDisplayID = defaults.string(forKey: Key.capsulePreferredDisplayID) ?? ""
         capsuleWindowWasVisible = defaults.object(forKey: Key.capsuleWindowWasVisible) as? Bool ?? false
         let initialDisplay = Self.loadDisplayPreferences(defaults: defaults, keepOnTop: keepOnTop)
         displayPreferences = initialDisplay
@@ -2174,6 +2184,7 @@ public final class AppSettingsStore: ObservableObject {
         floatingWindowWasVisible = false
         capsuleWindowHorizontalOffset = 0
         capsuleWindowScreenID = nil
+        capsulePreferredDisplayID = ""
         capsuleWindowWasVisible = false
         WindowStatePersistence.shared.resetWindowFrame()
     }

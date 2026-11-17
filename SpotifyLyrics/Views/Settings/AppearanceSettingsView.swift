@@ -34,8 +34,8 @@ enum AppearanceSurface: String, CaseIterable, Identifiable {
     func matches(_ query: String) -> Bool {
         let keywords: String = switch self {
         case .main: "封面 场景 环境光 模糊 羽化 置顶 小窗口 恢复 主界面 全屏歌词 第二块屏幕 外接显示器 副屏"
-        case .desktop: "悬浮歌词 悬浮窗 字号 描边 第二行 透明度 鼠标穿透 程序坞 暂停 全屏 截图 录屏"
-        case .island: "顶部胶囊 刘海 摄像头 定住这句 跟回演唱 截图 录屏"
+        case .desktop: "悬浮歌词 悬浮窗 字号 描边 第二行 透明度 鼠标穿透 程序坞 暂停 全屏 截图 录屏 显示器 副屏 外接屏"
+        case .island: "顶部胶囊 刘海 摄像头 定住这句 跟回演唱 截图 录屏 显示器 所在屏幕 副屏 外接屏 跟随主窗口"
         case .menuBar: "状态栏歌词 双行 原文 翻译 译文 假名 罗马音 拼音 注音 长句 固定宽度"
         }
         let words = query.split(whereSeparator: { $0.isWhitespace })
@@ -133,6 +133,7 @@ struct AppearanceSettingsView: View {
             Picker("交互方式", selection: $settings.floatingWindowInteractionMode) {
                 ForEach(FloatingLyricsInteractionMode.allCases, id: \.self) { Text($0.title).tag($0) }
             }
+            LyricsDisplayControls(forIsland: false)
             HStack {
                 Text("停靠位置")
                 Spacer()
@@ -279,6 +280,7 @@ private struct IslandAppearanceControls: View {
                 if shown { WindowManager.shared.showCapsule(state: playback) }
                 else { WindowManager.shared.hideCapsule() }
             })).disabled(playback.showFullScreen)
+            LyricsDisplayControls(forIsland: true)
             Picker("呈现方式", selection: Binding(get: { current }, set: { value in
                 _ = settings.applyPresentationSelection(category: .capsule, stableID: value)
             })) {
@@ -303,6 +305,59 @@ private struct IslandAppearanceControls: View {
                         .frame(width: width, height: 150).clipped().allowsHitTesting(false)
                 }.frame(height: 150).accessibilityLabel("所选灵动岛的示例歌词")
             }
+        }
+    }
+}
+
+private struct LyricsDisplayControls: View {
+    let forIsland: Bool
+    @EnvironmentObject private var settings: AppSettingsStore
+    @EnvironmentObject private var playback: PlaybackState
+    @State private var displays: [Choice] = []
+
+    private struct Choice: Identifiable {
+        let id: String
+        let name: String
+    }
+
+    var body: some View {
+        Group {
+            if forIsland {
+                Picker("所在屏幕", selection: $settings.capsulePreferredDisplayID) {
+                    Text("跟随主窗口").tag("")
+                    ForEach(displays) { display in Text(display.name).tag(display.id) }
+                    if !settings.capsulePreferredDisplayID.isEmpty,
+                       !displays.contains(where: { $0.id == settings.capsulePreferredDisplayID }) {
+                        Text("已选屏幕未连接 · 暂时跟随主窗口").tag(settings.capsulePreferredDisplayID)
+                    }
+                }
+            } else {
+                LabeledContent("显示器") {
+                    if displays.count > 1 {
+                        Menu("移动到…") {
+                            ForEach(displays) { display in
+                                Button(display.name) { WindowManager.shared.moveFloatingLyrics(to: display.id, state: playback) }
+                            }
+                        }.fixedSize().disabled(playback.showFullScreen)
+                    } else {
+                        Text(displays.first?.name ?? "当前屏幕").foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .onAppear(perform: reload)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in reload() }
+    }
+
+    private func reload() {
+        let screens = NSScreen.screens
+        let names = screens.map(\.localizedName)
+        let ids = screens.map(\.lyricsDisplayID)
+        displays = screens.indices.map { index in
+            let name = names[index]
+            let id = ids[index]
+            return Choice(id: ids.firstIndex(of: id) == ids.lastIndex(of: id) ? id : screens[index].lyricsFrameScreenID,
+                          name: names.firstIndex(of: name) == names.lastIndex(of: name) ? name : "\(name)（\(index + 1)）")
         }
     }
 }

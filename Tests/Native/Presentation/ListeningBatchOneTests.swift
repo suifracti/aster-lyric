@@ -499,6 +499,62 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(FloatingLyricsDock.origin(size: size, visibleFrame: visible, place: .bottom), CGPoint(x: 420, y: 88))
     }
 
+    func testFullScreenCoverBelongsToTheDisplayHoldingDesktopLyrics() {
+        let first = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let second = CGRect(x: -1440, y: -300, width: 1440, height: 900)
+        XCTAssertTrue(FloatingLyricsWindowController.window(second, covers: second))
+        XCTAssertFalse(FloatingLyricsWindowController.window(first, covers: second))
+        XCTAssertFalse(FloatingLyricsWindowController.window(second.offsetBy(dx: 250, dy: 0), covers: second))
+        XCTAssertFalse(FloatingLyricsWindowController.window(second.insetBy(dx: 0, dy: 15), covers: second))
+    }
+
+    @MainActor
+    func testClosingWindowRestoreIgnoresTheOldDesktopDisplay() throws {
+        let home = try XCTUnwrap(NSScreen.main)
+        guard let other = NSScreen.screens.first(where: { $0 != home }) else { throw XCTSkip("Two connected displays") }
+        let name = "lyrics-displays-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let settings = AppSettingsStore(defaults: defaults)
+        let persistence = FloatingLyricsWindowPersistence.shared
+        settings.saveFloatingWindowFrame(NSStringFromRect(other.visibleFrame.insetBy(dx: 80, dy: 80)),
+                                         screenID: other.lyricsFrameScreenID)
+        settings.restoreWindowState = false
+        XCTAssertEqual(persistence.restoreFrame(settings: settings), persistence.defaultFrame())
+    }
+
+    @MainActor
+    func testIslandDisplayChoiceAndMovingDesktopLyricsAcrossConnectedScreens() throws {
+        let home = try XCTUnwrap(NSScreen.main)
+        guard let other = NSScreen.screens.first(where: { $0 != home }) else { throw XCTSkip("Two connected displays") }
+        let name = "island-displays-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let settings = AppSettingsStore(defaults: defaults)
+        let window = NSWindow(contentRect: CGRect(x: home.visibleFrame.midX, y: home.visibleFrame.midY, width: 160, height: 90),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let island = CapsuleLyricsWindowPersistence.shared
+        XCTAssertEqual(island.targetScreen(mainWindow: window, settings: settings), home)
+        settings.capsulePreferredDisplayID = other.lyricsDisplayID
+        XCTAssertEqual(island.targetScreen(mainWindow: window, settings: settings), other)
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).capsulePreferredDisplayID, other.lyricsDisplayID)
+        settings.capsulePreferredDisplayID = "disconnected-fixture"
+        XCTAssertEqual(island.targetScreen(mainWindow: window, settings: settings), home)
+        XCTAssertEqual(settings.capsulePreferredDisplayID, "disconnected-fixture")
+        settings.capsulePreferredDisplayID = ""
+        window.setFrameOrigin(CGPoint(x: other.visibleFrame.midX, y: other.visibleFrame.midY))
+        XCTAssertEqual(island.targetScreen(mainWindow: window, settings: settings), other)
+        XCTAssertFalse(window.isVisible)
+
+        let source = CGRect(x: -1400, y: 80, width: 1400, height: 900)
+        let destination = CGRect(x: 0, y: 0, width: 1000, height: 700)
+        let frame = CGRect(x: source.midX - 300, y: source.minY, width: 600, height: 120)
+        let moved = FloatingLyricsWindowPersistence.shared.placing(frame, from: source, on: destination)
+        XCTAssertEqual(moved, CGRect(x: 200, y: 0, width: 600, height: 120))
+    }
+
     func testCreditOnlyLyricsAreNotLyrics() {
         XCTAssertTrue(LyricsCreditOnly.matches(["作词 : 某人", "作曲 : 某人", "编曲：某人"]))
         XCTAssertTrue(LyricsCreditOnly.matches(lrc: "[ti:歌]\n[00:00.00] 作词 : A\n[00:01.00] 作曲 : B\n"))

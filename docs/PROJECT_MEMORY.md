@@ -387,7 +387,7 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **本 App 的电脑操作被策略禁止**（`request_access` 返回 policyDenied），状态栏弹窗打不开做真窗口核对；只能用 `Scripts/ui-snapshots.sh <dir> menubar-light menubar-dark`。主窗口仍可用 `screencapture -l` 拍。
 - **换歌时封面闪一下占位图**：`ArtworkView` 原来先把图置空再加载。现在保留旧图，新图载入后从轻微模糊中显出，再移除旧图；新歌没有封面时照旧不保留旧图。任务键只用封面地址，同一张专辑换歌不再重播。
 - **暂停褪色**用一层灰色 `.blendMode(.saturation)`，只在暂停 1.5 秒后才插入。播放时不存在这层，不多一次全窗合成。跳转造成的短暂停顿不会触发。
-- **桌面歌词情境隐藏**：全屏判断用 CGWindowList 找别的进程在第 0 层、盖满主屏的窗口；隐藏期间 `ignoresMouseEvents` 必须同时尊重原来的鼠标穿透（枚举名是 `.passThrough`）。
+- **桌面歌词情境隐藏**：CGWindowList 的第 0 层窗口要在桌面歌词所在屏幕上覆盖全屏。只看宽高，会把另一块同分辨率的屏幕也判成全屏。用显卡的屏幕矩形与窗口矩形比较四条边，两者都以主屏左上角为原点。隐藏期间保留鼠标穿透设置。见 Apple 的 [CGDisplayBounds](https://developer.apple.com/documentation/coregraphics/cgdisplaybounds(_:)) 与 [kCGWindowBounds](https://developer.apple.com/documentation/coregraphics/kcgwindowbounds)。
 - **侧拉工具栏**：右缘 76 pt 内触发，竖列居中，从窗外滑入；悬停面板改为 `preferredEdge: .minX`，即向左打开（`V3ToolPopoverAnchor` 里按样式判断）。`v3_toolbar_model_contract` 断言了样式清单，加样式要一并更新。
 - **面板里多个独立开关排成一行时用 `V3ChipToggles`**，与分段控件同一底槽；不要再用三个 `V3InlineSwitch` 挤一行，会把标签折成两行。
 - **胶囊开合（G5）暂缓**：用户计划把胶囊做成灵动岛，单独设计。
@@ -452,7 +452,9 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **换气复用间奏三点的窗口**（`LyricsTimeline.vocalCountdownWindow`，空隙 4 秒以上）。只有窗口指向的那一行包一层 `TimelineView`，其他行不受影响。
 - **律动光的三个来源按顺序用**：Spotify 的节拍表、听到的低音、当前句逐字的起点。第三个由窗口在换行时写进 `V3VocalOnsets.current`，光层自己读，不经过背景视图的参数。
 - **判断“没听到声音”用 `silentSeconds`**，不是数据是否新鲜：Spotify 音量为 0 时采集仍在送全零的数据。
-- **全屏歌词选屏**是纯函数 `targetIndex(home:count:prefersOther:)`；这台机器只有一块屏，没法实测。
+- **全屏歌词选屏**是纯函数 `targetIndex(home:count:prefersOther:)`；11 月 13 日现场只有一块屏。
+
+- 2026-11-18 系统列出两块屏幕。用未显示的 AppKit 窗口跨两个实际显示区域，验证了灵动岛跟随主窗口、固定屏幕优先、指定屏缺席时回退并保留选择。另外复现并修好关闭窗口恢复后桌面歌词仍被旧屏幕编号挪走。桌面歌词外观可把窗口移到指定屏幕，按可用区域保留相对位置；灵动岛的固定选择单用显示器 UUID，旧屏幕编号继续用于恢复布局。这些检查没有拔插显示器或制造真实全屏切换。
 
 ## L-032 和声、流动、动音量前先看状态（2026-11-15）
 

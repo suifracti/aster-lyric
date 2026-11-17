@@ -61,7 +61,8 @@ require "$VIEW" 'state\.seek\(to: draftPosition' 'only completed slider interact
 }
 require "$PERSISTENCE" 'horizontalOffset' 'capsule persists horizontal position'
 require "$PERSISTENCE" 'visibleFrame' 'capsule clamps to visible screen frame'
-require "$PERSISTENCE" 'screenID' 'capsule persists target screen identity'
+require "$PERSISTENCE" 'capsulePreferredDisplayID' 'capsule resolves the chosen display'
+require "$CONTROLLER" 'capsuleWindowScreenID = screen.lyricsFrameScreenID' 'legacy capsule placement keeps its last screen'
 require "$SETTINGS" 'capsuleWindowHorizontalOffset' 'settings has a capsule-specific position key'
 require "$SETTINGS" 'capsuleWindowWasVisible' 'settings has capsule visibility recovery key'
 require "$MANAGER" 'CapsuleLyricsWindowController' 'WindowManager owns the dedicated controller'

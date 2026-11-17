@@ -55,6 +55,8 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
     private var settings: AppSettingsStore?
     private var selectionObserver: AnyCancellable?
     private var captureObserver: AnyCancellable?
+    private var preferredDisplayObserver: AnyCancellable?
+    private var mainWindowScreenObserver: AnyCancellable?
     private var outsideClickMonitor: Any?
     private var localClickMonitor: Any?
     private var globalMouseMonitor: Any?
@@ -86,6 +88,12 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
 
     override init() {
         super.init()
+        mainWindowScreenObserver = NotificationCenter.default.publisher(for: NSWindow.didChangeScreenNotification)
+            .receive(on: RunLoop.main).sink { [weak self] note in
+                guard let window = note.object as? NSWindow,
+                      window === WindowStatePersistence.shared.attachedMainWindow else { return }
+                self?.repositionForCurrentScreen()
+            }
         screenChangeObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
@@ -287,6 +295,10 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
     private func configure(state: PlaybackState, settings: AppSettingsStore) {
         playbackState = state
         self.settings = settings
+        if preferredDisplayObserver == nil {
+            preferredDisplayObserver = settings.$capsulePreferredDisplayID.removeDuplicates().dropFirst()
+                .receive(on: RunLoop.main).sink { [weak self] _ in self?.repositionForCurrentScreen() }
+        }
         if captureObserver == nil {
             captureObserver = settings.$floatingHiddenFromCapture
                 .receive(on: RunLoop.main)
@@ -429,14 +441,15 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
 
     private func topAttachedEnvelopeFrame() -> NSRect {
         let screen = persistence.targetScreen(
-            mainWindow: WindowStatePersistence.shared.attachedMainWindow
-        ) ?? NSScreen.main ?? NSScreen.screens.first
+            mainWindow: WindowStatePersistence.shared.attachedMainWindow, settings: settings
+        )
         guard let screen else {
             return NSRect(origin: .zero, size: CapsuleDynamicIslandDarkV4.debugEnvelopeSize)
         }
-        notchGeometry = CapsuleNotchGeometry(screenFrame: screen.frame,
+        let geometry = CapsuleNotchGeometry(screenFrame: screen.frame,
             safeTopInset: screen.safeAreaInsets.top,
             auxiliaryLeft: screen.auxiliaryTopLeftArea, auxiliaryRight: screen.auxiliaryTopRightArea)
+        if geometry != notchGeometry { notchGeometry = geometry }
         return CapsuleDynamicIslandDarkV4.topAttachedEnvelopeFrame(
             screenFrame: screen.frame
         )
@@ -538,7 +551,7 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         guard debugAnchor == .topCenter else { return }
 #endif
         let screen = panel.screen
-            ?? persistence.targetScreen(mainWindow: WindowStatePersistence.shared.attachedMainWindow)
+            ?? persistence.targetScreen(mainWindow: WindowStatePersistence.shared.attachedMainWindow, settings: settings)
         guard let screen else { return }
         let safe = persistence.clampTopFrame(panel.frame, screen: screen)
         if safe != panel.frame {
@@ -549,7 +562,7 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         settings.capsuleWindowHorizontalOffset = Double(
             persistence.horizontalOffset(for: safe, screen: screen)
         )
-        settings.capsuleWindowScreenID = persistence.screenIdentifier(screen)
+        settings.capsuleWindowScreenID = screen.lyricsFrameScreenID
     }
 
     private func repositionForCurrentScreen() {
