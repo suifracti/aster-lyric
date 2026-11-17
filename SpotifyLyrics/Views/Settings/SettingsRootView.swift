@@ -149,6 +149,12 @@ struct SettingsLocation: Equatable {
     let page: SettingsCategory
     var trackKey: String?
     var query: String
+    var passage: LibraryPassageTarget?
+
+    init(reading passage: LibraryPassageTarget) {
+        self.init(.library, trackKey: passage.trackKey)
+        self.passage = passage
+    }
 
     init(_ page: SettingsCategory, trackKey: String? = nil, query: String = "") {
         self.page = page
@@ -270,7 +276,7 @@ struct SettingsRootView: View {
                         .disabled(!history.canGoForward).keyboardShortcut("]", modifiers: .command)
                         .help("前进 (⌘])").accessibilityLabel("前进")
                     Divider().frame(height: 12).padding(.horizontal, 5)
-                    Text(history.current.query.isEmpty ? history.current.page.rawValue : "搜索本机资料")
+                    Text(history.current.query.isEmpty ? (history.current.passage == nil ? history.current.page.rawValue : "阅读歌词") : "搜索本机资料")
                         .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     Spacer()
                     Button { searchFocused = true } label: { Image(systemName: "magnifyingglass") }
@@ -280,7 +286,7 @@ struct SettingsRootView: View {
                 Divider()
                 if history.current.query.isEmpty {
                     SettingsDetailView(selection: Binding(get: { history.current.page }, set: { navigate(.init($0)) }),
-                                       trackKey: history.current.trackKey, library: library, navigate: navigate,
+                                       trackKey: history.current.trackKey, passage: history.current.passage, library: library, navigate: navigate,
                                        rememberSelection: { history.rememberLibrarySelection($0) })
                 } else {
                     SettingsLocalSearch(query: history.current.query, library: library, navigate: navigate)
@@ -330,6 +336,7 @@ private struct SettingsDetailView: View {
     @EnvironmentObject private var settings: AppSettingsStore
     @Binding var selection: SettingsCategory
     let trackKey: String?
+    let passage: LibraryPassageTarget?
     let library: PersonalLyricsLibraryService
     let navigate: (SettingsLocation) -> Void
     let rememberSelection: (String?) -> Void
@@ -354,12 +361,19 @@ private struct SettingsDetailView: View {
             case .advancedAndData:
                 AdvancedAndDataSettingsView(onOpenTool: { tool in selection = tool }).padding(24)
             case .library, .missingLyrics:
-                PersonalLyricsLibraryView(embeddedInSettings: true, initialTrackKey: trackKey,
-                                          showingMissing: selection == .missingLyrics, service: library,
-                                          onSelection: rememberSelection)
+                if let passage {
+                    LibraryPassageReader(target: passage, library: library,
+                                        openArchive: { navigate(.init(.library, trackKey: passage.trackKey)) })
+                        .id(passage)
+                } else {
+                    PersonalLyricsLibraryView(embeddedInSettings: true, initialTrackKey: trackKey,
+                                              showingMissing: selection == .missingLyrics, service: library,
+                                              onSelection: rememberSelection, readPassage: { navigate(.init(reading: $0)) })
+                }
             case .history: ListeningHistoryView(openTrack: { navigate(.init(.library, trackKey: $0)) })
             case .statistics: ListeningStatisticsView()
-            case .favorites: FavoriteLinesView(openTrack: { navigate(.init(.library, trackKey: $0)) })
+            case .favorites: FavoriteLinesView(openTrack: { navigate(.init(.library, trackKey: $0)) },
+                                              readPassage: { navigate(.init(reading: $0)) })
             case .experienceLibrary:
                 ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections).padding(24)
             }

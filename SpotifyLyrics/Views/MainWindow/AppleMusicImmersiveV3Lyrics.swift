@@ -344,8 +344,10 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                             let kept = V3FavoriteLines.shared.toggle(
                                 text: line.originalText, translation: line.translationText, title: track.title,
                                 artist: track.artist, trackKey: TrackIdentity(track: track).stableKey,
-                                artworkURL: track.artworkURL)
-                            state.showNotice(kept ? "已收藏，在歌词库的「金句」里" : "已取消收藏")
+                                artworkURL: track.artworkURL,
+                                lyricsVersionID: state.isShowingSearchPreview ? nil : state.liveLyricsVersionID,
+                                lineIndex: lines.firstIndex { $0.id == line.id })
+                            state.showNotice(V3FavoriteLines.shared.errorMessage ?? (kept ? "已收藏，在歌词库的「金句」里" : "已取消收藏"))
                         },
                         onShareLine: { line in
                             let track = documentTrack

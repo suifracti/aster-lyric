@@ -64,7 +64,8 @@ public struct MenuBarLyricsPopoverView: View {
                         if let key = snapshot.trackKey, let text = snapshot.currentLineText, !text.isEmpty {
                             KeepLyricButton(text: text, translation: snapshot.currentTranslationText, trackKey: key,
                                             title: snapshot.trackTitle ?? "", artist: snapshot.artistName ?? "",
-                                            artworkURL: snapshot.artworkURL)
+                                            artworkURL: snapshot.artworkURL, lyricsVersionID: snapshot.lyricsVersionID,
+                                            lineIndex: snapshot.currentLineIndex)
                         }
                     }
                     ScrollView {

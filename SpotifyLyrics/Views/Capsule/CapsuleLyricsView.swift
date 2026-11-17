@@ -58,6 +58,7 @@ struct CapsuleLyricsView: View {
         let line: LyricLine
         let trackKey: String
         let versionID: UUID?
+        let lineIndex: Int?
     }
 
     private var held: LyricLine? {
@@ -391,7 +392,8 @@ struct CapsuleLyricsView: View {
                 Spacer(minLength: 4)
                 if let line, let key = state.currentTrackIdentity?.stableKey {
                     Button {
-                        pinnedLine = held == nil ? PinnedLine(line: line, trackKey: key, versionID: state.liveLyricsVersionID) : nil
+                        pinnedLine = held == nil ? PinnedLine(line: line, trackKey: key, versionID: state.liveLyricsVersionID,
+                                                           lineIndex: state.liveCurrentLineIndex) : nil
                     } label: {
                         Label(held == nil ? "定住这句" : "跟回演唱", systemImage: held == nil ? "pin" : "arrow.uturn.backward")
                             .font(.system(size: 10, weight: .medium)).fixedSize()
@@ -399,7 +401,8 @@ struct CapsuleLyricsView: View {
                     .buttonStyle(.plain)
                     .help(held == nil ? "把眼前这句留在岛上，播放照常继续" : "回到正在唱的歌词")
                     KeepLyricButton(text: line.originalText, translation: line.translationText, trackKey: key,
-                                    title: state.currentTrack.title, artist: state.currentTrack.artist, artworkURL: state.currentTrack.artworkURL)
+                                    title: state.currentTrack.title, artist: state.currentTrack.artist, artworkURL: state.currentTrack.artworkURL,
+                                    lyricsVersionID: state.liveLyricsVersionID, lineIndex: held == nil ? state.liveCurrentLineIndex : pinnedLine?.lineIndex)
                 }
                 moreButton
                 Button { windowController.collapse() } label: {

@@ -63,39 +63,43 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         let id = UUID()
         let title: String
         let text: String
+        var passage: LibraryPassageTarget? = nil
     }
     @Published var versionPreview: VersionPreview?
     func previewVersion(lyricsID: UUID, entry: PersonalLyricsLibraryEntry,
                         translation: PersonalTranslationVersionItem? = nil,
                         reading: PersonalReadingVersionItem? = nil, timingID: UUID? = nil) {
+        guard let timingID else {
+            let target = LibraryPassageTarget(trackKey: entry.trackStableKey,
+                source: translation.map { .translation($0.id) } ?? reading.map { .reading($0.id) } ?? .original(lyricsID))
+            presentPassage(target)
+            return
+        }
         Task {
             do {
                 let track = libraryTrack(for: entry)
                 try await repository.prepare()
-                guard let source = try await repository.loadEditableVersion(versionID: lyricsID, track: track, identity: TrackIdentity(track: track)) else {
-                    throw LyricsEditingRepositoryError.sourceNotFound
-                }
-                var text = source.document.lines.map(\.originalText).joined(separator: "\n")
-                if let translation {
-                    let versions = try await repository.loadTranslationVersions(lyricsVersionID: lyricsID,
-                        targetLanguage: translation.targetLanguage, sourceContentHash: source.sourceContentHash)
-                    guard let version = versions.first(where: { $0.record.id == translation.id }) else { throw TranslationRepositoryError.versionNotFound }
-                    text = version.lines.map(\.translatedText).joined(separator: "\n")
-                } else if let reading {
-                    let versions = try await repository.loadReadingVersions(lyricsVersionID: lyricsID,
-                        representationID: reading.representationID, sourceContentHash: source.sourceContentHash)
-                    guard let version = versions.first(where: { $0.record.id == reading.id }) else { throw ReadingRepositoryError.versionNotFound }
-                    text = version.lines.map { $0.readingText ?? "" }.joined(separator: "\n")
-                } else if let timingID,
-                          let timing = try await repository.loadPersonalLibraryTimingVersion(id: timingID),
-                          let draft = LibraryTimingRevisionDraft(track: track, lyricsSource: source, source: timing) {
-                    text = draft.lines.map { line in
-                        line.spans.map { String(format: "%.2f–%.2f ", $0.startTime, $0.endTime) + $0.source.text }.joined(separator: " ")
-                    }.joined(separator: "\n")
-                }
+                guard let source = try await repository.loadEditableVersion(versionID: lyricsID, track: track, identity: TrackIdentity(track: track)),
+                      let timing = try await repository.loadPersonalLibraryTimingVersion(id: timingID),
+                      let draft = LibraryTimingRevisionDraft(track: track, lyricsSource: source, source: timing)
+                else { throw LyricsEditingRepositoryError.sourceNotFound }
+                let text = draft.lines.map { line in
+                    line.spans.map { String(format: "%.2f–%.2f ", $0.startTime, $0.endTime) + $0.source.text }.joined(separator: " ")
+                }.joined(separator: "\n")
                 versionPreview = VersionPreview(title: entry.title, text: text)
             } catch { statusMessage = "预览失败：" + error.localizedDescription }
         }
+    }
+
+    func presentPassage(_ target: LibraryPassageTarget) {
+        versionPreview = VersionPreview(title: "", text: "", passage: target)
+    }
+
+    func readPassage(_ target: LibraryPassageTarget) async throws -> LibraryPassagePage? {
+        let page = try await repository.readLibraryPassage(target)
+        try Task.checkCancellation()
+        if let page { rememberOpenedRecord(page.entry) }
+        return page
     }
 
     public func beginRevision(versionID: UUID, entry: PersonalLyricsLibraryEntry) {
@@ -294,8 +298,8 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         self.syncFolderURL = PersonalDataSyncStore.restoreFolderReference(defaults: defaults)
     }
 
-    func searchSavedEntries(matching query: String) async throws -> [PersonalLyricsLibraryEntry] {
-        try await repository.loadPersonalLibraryEntries(searchQuery: query)
+    func searchPassages(matching query: String) async throws -> [LibraryPassageHit] {
+        try await repository.searchLibraryPassages(query)
     }
 
     public func refresh() {

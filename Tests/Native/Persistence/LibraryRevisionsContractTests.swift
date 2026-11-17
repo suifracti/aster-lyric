@@ -167,6 +167,9 @@ final class LibraryRevisionsContractTests: XCTestCase {
         let retainedTranslation = try XCTUnwrap(translationVersions.first { $0.record.id == originalTranslation.record.id })
         XCTAssertTrue(retainedTranslation.record.isLocked)
         XCTAssertEqual(retainedTranslation.lines, originalTranslation.lines)
+        let reader = try await repo.readLibraryPassage(.init(trackKey: identity.stableKey, source: .translation(originalTranslation.record.id)))
+        XCTAssertEqual(reader?.lines.map(\.original), ["Original first", "Original second"])
+        XCTAssertEqual(reader?.lines.compactMap(\.translation), ["原译一", "原译二"], "Read the requested locked translation even after a revision")
         XCTAssertEqual(
             translationVersions.first { $0.record.id == translationChild.record.id }?.lines.map(\.translatedText),
             ["修订译一", "原译二"]

@@ -534,6 +534,11 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertFalse(reopened.toggle(text: "第二句", translation: nil, title: "歌", artist: "人", trackKey: "k1", artworkURL: nil),
                        "a second toggle removes it")
         XCTAssertEqual(V3FavoriteLines(fileURL: url).entries.count, 1)
+        let incomplete = Data("[{".utf8)
+        try incomplete.write(to: url)
+        let unreadable = V3FavoriteLines(fileURL: url)
+        XCTAssertFalse(unreadable.toggle(text: "不能覆盖旧收藏", translation: nil, title: "歌", artist: "人", trackKey: "k1", artworkURL: nil))
+        XCTAssertEqual(try Data(contentsOf: url), incomplete)
     }
 
     func testWholeLineTimingDropsOnlyTheWordTiming() {

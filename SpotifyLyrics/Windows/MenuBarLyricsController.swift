@@ -37,6 +37,7 @@ public struct MenuBarLyricsSnapshot: Equatable, Sendable {
     public var previousLineText: String? = nil
     public var currentLineIndex: Int? = nil
     var trackKey: String? = nil
+    var lyricsVersionID: UUID? = nil
 }
 
 /// Captured on the explicit read action, so selecting/copying text is stable
@@ -681,6 +682,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         var snapshot = deriveLyricsSnapshot(from: state)
         snapshot.canControlPlayback = state.canControlSpotify
         snapshot.trackKey = state.currentTrackIdentity?.stableKey
+        snapshot.lyricsVersionID = state.liveLyricsVersionID
         return snapshot
     }
 

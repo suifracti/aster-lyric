@@ -10,6 +10,7 @@ public struct PersonalLyricsLibraryView: View {
     private let embeddedInSettings: Bool
     private let requestedTrackKey: String?
     private let onSelection: ((String?) -> Void)?
+    private let readPassage: ((LibraryPassageTarget) -> Void)?
 
     private enum LibraryFilter: String, CaseIterable, Identifiable {
         case missing = "缺歌词", all = "全部", translations = "有译文", manual = "人工歌词 / 译文", locked = "锁定歌词 / 译文"
@@ -41,9 +42,11 @@ public struct PersonalLyricsLibraryView: View {
     public init() { self.init(embeddedInSettings: false) }
 
     init(embeddedInSettings: Bool, initialTrackKey: String? = nil, showingMissing: Bool = false,
-         service: PersonalLyricsLibraryService? = nil, onSelection: ((String?) -> Void)? = nil) {
+         service: PersonalLyricsLibraryService? = nil, onSelection: ((String?) -> Void)? = nil,
+         readPassage: ((LibraryPassageTarget) -> Void)? = nil) {
         self.embeddedInSettings = embeddedInSettings
         self.requestedTrackKey = initialTrackKey
+        self.readPassage = readPassage
         self.onSelection = onSelection
         _service = StateObject(wrappedValue: service ?? PersonalLyricsLibraryService())
         _selectedStableKey = State(initialValue: initialTrackKey)
@@ -191,7 +194,7 @@ public struct PersonalLyricsLibraryView: View {
     @ViewBuilder
     private var detailContent: some View {
         if let stableKey = selectedStableKey {
-            PersonalLibraryTrackDetailView(service: service, stableKey: stableKey)
+            PersonalLibraryTrackDetailView(service: service, stableKey: stableKey, readPassage: readPassage)
         } else {
             VStack(spacing: 12) {
                 RecordShelfMark()
@@ -481,6 +484,7 @@ public struct PersonalLibraryTrackDetailView: View {
     var showsActions = false
     var usesCurrentTrackDetail = false
     var beforePresentSheet: (() -> Void)?
+    var readPassage: ((LibraryPassageTarget) -> Void)? = nil
     @State private var selectedSection: VersionSection = .all
 
     private enum VersionSection: String, CaseIterable, Identifiable {
@@ -634,6 +638,15 @@ public struct PersonalLibraryTrackDetailView: View {
             }
 
             Spacer(minLength: 8)
+
+            if entry.lyricsVersionCount > 0 {
+                Button {
+                    let target = LibraryPassageTarget(trackKey: entry.trackStableKey)
+                    if let readPassage { readPassage(target) }
+                    else { beforePresentSheet?(); service.presentPassage(target) }
+                } label: { Label("读歌词", systemImage: "book") }
+                .controlSize(.small)
+            }
 
             Button {
                 service.exportPackage(for: entry.trackStableKey)
@@ -1066,6 +1079,8 @@ public struct PersonalDataImportPreviewSheet: View {
 public struct UnifiedLibraryHistoryWindowView: View {
     @EnvironmentObject private var playback: PlaybackState
     @State private var selectedLibraryKey: String?
+    @State private var reading: LibraryPassageTarget?
+    @State private var library = PersonalLyricsLibraryService()
 
     public init() {}
 
@@ -1078,6 +1093,10 @@ public struct UnifiedLibraryHistoryWindowView: View {
                     Divider()
                 }
             }
+        .sheet(item: $reading) { target in
+            LibraryPassageReader(target: target, library: library, close: { reading = nil })
+                .frame(width: 610, height: 540)
+        }
         .frame(minWidth: 880, minHeight: 560)
         .background(Color(nsColor: .windowBackgroundColor))
     }
@@ -1103,14 +1122,14 @@ public struct UnifiedLibraryHistoryWindowView: View {
     private var contentArea: some View {
         switch playback.selectedLibraryToolTab {
         case .library:
-            PersonalLyricsLibraryView(embeddedInSettings: false, initialTrackKey: selectedLibraryKey,
-                                      onSelection: { selectedLibraryKey = $0 })
+            PersonalLyricsLibraryView(embeddedInSettings: false, initialTrackKey: selectedLibraryKey, service: library,
+                                      onSelection: { selectedLibraryKey = $0 }, readPassage: { reading = $0 })
         case .history:
             ListeningHistoryView(openTrack: openTrack)
         case .statistics:
             ListeningStatisticsView()
         case .favorites:
-            FavoriteLinesView(openTrack: openTrack)
+            FavoriteLinesView(openTrack: openTrack, readPassage: { reading = $0 })
         }
     }
     private func openTrack(_ key: String) {
@@ -1565,10 +1584,15 @@ struct PersonalLibrarySheets: ViewModifier {
     func body(content: Content) -> some View {
         content
         .sheet(item: $service.versionPreview) { preview in
-            VStack(alignment: .leading, spacing: 12) {
-                HStack { Text(preview.title).font(.headline); Spacer(); Button("关闭") { service.versionPreview = nil } }
-                ScrollView { Text(preview.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
-            }.padding(20).frame(width: 540, height: 440)
+            if let target = preview.passage {
+                LibraryPassageReader(target: target, library: service, close: { service.versionPreview = nil })
+                    .frame(width: 610, height: 540)
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack { Text(preview.title).font(.headline); Spacer(); Button("关闭") { service.versionPreview = nil } }
+                    ScrollView { Text(preview.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+                }.padding(20).frame(width: 540, height: 440)
+            }
         }
         .sheet(item: $service.versionLabelDraft) { draft in
             LibraryVersionLabelEditSheet(draft: draft) { service.versionLabelDraft = nil }

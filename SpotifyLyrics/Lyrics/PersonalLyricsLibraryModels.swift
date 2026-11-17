@@ -866,3 +866,58 @@ public struct PersonalDataImportPreview: Equatable, Sendable, Codable {
         trackPreviews.reduce(0) { $0 + $1.totalNewAssets }
     }
 }
+
+enum LibraryPassageSource: Hashable, Sendable {
+    case selected
+    case original(UUID)
+    case translation(UUID)
+    case reading(UUID)
+
+    var label: String {
+        switch self {
+        case .selected: return "歌词"
+        case .original: return "原词"
+        case .translation: return "译文"
+        case .reading: return "读音"
+        }
+    }
+}
+
+struct LibraryPassageTarget: Hashable, Identifiable, Sendable {
+    let trackKey: String
+    var source: LibraryPassageSource = .selected
+    var find: String = ""
+    var lineIndex: Int? = nil
+    var id: Self { self }
+}
+
+struct LibraryPassageHit: Identifiable, Sendable {
+    let entry: PersonalLyricsLibraryEntry
+    let source: LibraryPassageSource?
+    let excerpt: String?
+    var id: String { entry.trackStableKey }
+}
+
+struct LibraryPassagePage: Sendable {
+    struct Line: Identifiable, Sendable {
+        let id: Int
+        let original: String
+        var translation: String?
+        var reading: String?
+
+        func matches(_ text: String) -> Bool {
+            guard !text.isEmpty else { return false }
+            let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]
+            if [original, translation, reading].compactMap({ $0 }).contains(where: { $0.range(of: text, options: options) != nil }) {
+                return true
+            }
+            guard let reading, text.unicodeScalars.contains(where: { $0.isASCII && CharacterSet.letters.contains($0) }) else { return false }
+            return JapaneseRomanizer.romanizeConfirmedKana(reading).range(of: text, options: options) != nil
+        }
+    }
+
+    let entry: PersonalLyricsLibraryEntry
+    let originalVersionID: UUID
+    let edition: String
+    let lines: [Line]
+}

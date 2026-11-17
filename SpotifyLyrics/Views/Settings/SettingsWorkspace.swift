@@ -95,7 +95,7 @@ struct WorkspaceShelfCard: View {
     var body: some View {
         let entry = favorites.entries.first
         return Button {
-            navigate(.init(.library, trackKey: entry?.trackKey))
+            if let entry { navigate(.init(reading: entry.passage)) } else { navigate(.init(.library)) }
         } label: {
             VStack(alignment: .leading, spacing: compact ? 8 : 13) {
                 HStack {
@@ -111,7 +111,7 @@ struct WorkspaceShelfCard: View {
                      ?? "浏览已保存的原词、译文和读音")
                     .font(.callout).foregroundStyle(.white.opacity(0.83)).lineLimit(2)
                 if entry != nil {
-                    Label("打开歌曲档案", systemImage: "music.note.list")
+                    Label("读这句的上下文", systemImage: "book")
                         .font(.caption.weight(.medium))
                 }
             }
@@ -132,7 +132,7 @@ struct SettingsLocalSearch: View {
     @ObservedObject private var favorites = V3FavoriteLines.shared
 
     private enum Songs {
-        case loading, found([PersonalLyricsLibraryEntry]), failed
+        case loading, found([LibraryPassageHit]), failed
     }
     @State private var songs: Songs = .loading
     @State private var resultQuery = ""
@@ -168,7 +168,7 @@ struct SettingsLocalSearch: View {
                         heading("收藏的金句")
                         ForEach(quotes) { quote in
                             result(quote.text, detail: "\(quote.title) · \(quote.artist)", icon: "quote.opening",
-                                   location: .init(.library, trackKey: quote.trackKey))
+                                   location: .init(reading: quote.passage))
                         }
                     }
                     heading("本机歌词库")
@@ -180,9 +180,15 @@ struct SettingsLocalSearch: View {
                         case .failed: Text("暂时读不到歌词库").foregroundStyle(.secondary)
                         case let .found(entries):
                             if entries.isEmpty { Text("没有找到匹配的歌曲或歌词").font(.callout).foregroundStyle(.secondary) }
-                            ForEach(entries) { entry in
-                                result(entry.title, detail: entry.artist, icon: "music.note",
-                                       location: .init(.library, trackKey: entry.trackStableKey))
+                            ForEach(entries) { hit in
+                                if let source = hit.source {
+                                    let target = LibraryPassageTarget(trackKey: hit.id, source: source, find: term)
+                                    result(hit.entry.title, detail: [source.label, hit.excerpt ?? hit.entry.artist].joined(separator: " · "),
+                                           icon: "text.quote", location: .init(reading: target))
+                                } else {
+                                    result(hit.entry.title, detail: hit.entry.artist, icon: "music.note",
+                                           location: .init(.library, trackKey: hit.id))
+                                }
                             }
                         }
                     }
@@ -196,7 +202,7 @@ struct SettingsLocalSearch: View {
             guard !requested.isEmpty else { return }
             do {
                 try await Task.sleep(for: .milliseconds(180))
-                let matches = try await library.searchSavedEntries(matching: requested)
+                let matches = try await library.searchPassages(matching: requested)
                 try Task.checkCancellation()
                 songs = .found(matches)
             } catch {

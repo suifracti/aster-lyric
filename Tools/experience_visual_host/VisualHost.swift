@@ -668,7 +668,7 @@ private struct ExperienceFixtureRoot: View {
                     try? await Task.sleep(for: .milliseconds(800))
                 }
                 var extraWindow: NSWindow?
-                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker", "favorites"].contains(ExperienceArguments.surface) {
+                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker", "favorites", "reader"].contains(ExperienceArguments.surface) {
                     MenuBarLyricsController.shared.bind(playbackState: playback)
                     let root: AnyView
                     if ExperienceArguments.surface == "playlist-picker" {
@@ -684,6 +684,11 @@ private struct ExperienceFixtureRoot: View {
                         root = AnyView(TranslationProviderControls(settings: settings)
                             .padding(16).frame(width: 360)
                             .background(Color(nsColor: .windowBackgroundColor)))
+                    } else if ExperienceArguments.surface == "reader" {
+                        let target = LibraryPassageTarget(trackKey: TrackIdentity(track: playback.currentTrack).stableKey,
+                                                          find: ExperienceArguments.value("--find-line", fallback: "朝へ"))
+                        root = AnyView(LibraryPassageReader(target: target, library: PersonalLyricsLibraryService(),
+                                                           openArchive: {}).frame(width: 610, height: 500))
                     } else if ExperienceArguments.surface == "favorites" {
                         root = AnyView(FavoriteLinesView().padding(16).frame(width: 520, height: 460)
                             .background(Color(nsColor: .windowBackgroundColor)))
@@ -694,6 +699,7 @@ private struct ExperienceFixtureRoot: View {
                     }
                     let hosting = NSHostingView(rootView: root.environment(\.colorScheme, ExperienceArguments.value("--appearance", fallback: "dark") == "light" ? .light : .dark))
                     let size = ExperienceArguments.surface == "search-full" ? CGSize(width: 440, height: 470)
+                        : ExperienceArguments.surface == "reader" ? CGSize(width: 610, height: 500)
                         : ExperienceArguments.surface == "favorites" ? CGSize(width: 520, height: 460)
                         : ExperienceArguments.surface == "playlist-picker" ? CGSize(width: 380, height: 480)
                         : ["models", "search-panel"].contains(ExperienceArguments.surface) ? CGSize(width: 360, height: 520)

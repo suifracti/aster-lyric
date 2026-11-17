@@ -41,6 +41,7 @@
 | AI 译文读起来像照日文断行切开、主语缺失、太书面、和我自己的译法不像 | L-042；`personalV2Instructions` full-audit-v3-r1、Codex 合同里的跨行条款 |
 | 缺歌词里同一首歌的重复记录（时长错、借用别首的 ID）、批量补全拿错时长去搜 | L-039；PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere、needsLyrics |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
+| 想找收藏那句的上下文、搜到旧译文却只打开版本列表、收藏文件损坏后变空 | L-046；LibraryPassageReader、searchLibraryPassages、V3FavoriteLines |
 | 灵动岛挡刘海、只剩歌名、想停在一句读、换歌拖错进度 | L-045；CapsuleNotchGeometry、CapsuleLyricsView、vocalCountdownWindow |
 | 状态栏双行词、收藏弹窗里正在唱的一句、没放歌时的菜单 | L-044；MenuBarTextFormatter.statusImage、WorkspaceShelfCard、KeepLyricButton |
 | 设置里找歌或歌词、从金句或封面墙回到歌、没放音乐时继续整理、历史录音一直转圈 | L-043；SettingsWorkspace、SettingsHistory、selectedDetail(for:) |
@@ -691,3 +692,10 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 刘海宽度取当前屏幕的辅助区域，深度取 safe area。在有摄像头的屏幕上，两边放封面与进度，歌词从深度线下开始，必须同时给 SwiftUI 布局和 AppKit 命中几何留出高度。平面屏幕直接在横条内读当句。展开后文字使用岛体的整行宽度，下一句与播放控件各占一行；全屏幕透明宿主、热区与鼠标穿透沿用现有控制器。
 
 「定住这句」仅在展开的岛上暂存用户看到的行和录音、原词版本。小字继续显示正在唱的行，收起或换歌会回到跟随。收藏取所显示的行；进度拖动沿开始时的录音键提交。进句提示只用真实时间轴标出的间奏，在下一句前三秒出现。原生宿主构建及离屏图覆盖播放、收起和无歌；刘海位置是几何用例，未实测实体刘海与多屏切换。
+
+
+## L-046 离线阅读按命中的版本和段落打开（2026-11-18）
+
+歌词库搜索缓存按录音和版本区分 metadata、lyrics、translation、reading。工作台保留命中项的类型与版本 UUID：歌名/歌手打开档案，原词、译文、读音打开对应的阅读页。阅读时先在当前录音的版本清单核对归属；即使另一录音同名也不能借用版本。原词哈希一致时按行号组合原词与所选译文。不一致的历史译文单独读，仍保留原有资产。
+
+收藏新增可选原词版本和行号，同一句重复时能跳回当时那一处。旧收藏沿录音和文字查找。查找光标、选中版本、收藏和实际播放器互相独立。版本菜单的预览也使用同一阅读页；时间轴保留原来的数值预览。真实回归另有一项：旧收藏文件若不能解码，先前会在下次收藏时被空列表覆盖。现在修改前读取文件，成功写盘才发布列表。

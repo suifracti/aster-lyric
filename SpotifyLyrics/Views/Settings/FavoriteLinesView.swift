@@ -7,12 +7,20 @@ struct FavoriteLinesView: View {
     @State private var copiedID: UUID?
 
     var openTrack: ((String) -> Void)? = nil
+    var readPassage: (LibraryPassageTarget) -> Void = { MenuBarLyricsController.shared.openSettings(at: .init(reading: $0)) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("收藏的金句").font(.system(size: 24, weight: .semibold, design: .serif))
                 .padding(.bottom, 14)
-            if store.entries.isEmpty {
+            if let error = store.errorMessage {
+                HStack {
+                    Text(error).font(.callout)
+                    Button("重新读取") { store.reload() }.buttonStyle(.borderless)
+                }
+                .padding(.bottom, 8)
+            }
+            if store.entries.isEmpty && store.errorMessage == nil {
                 VStack(spacing: 8) {
                     Spacer()
                     Image(systemName: "quote.opening").font(.system(size: 34)).foregroundStyle(.tertiary)
@@ -39,7 +47,13 @@ struct FavoriteLinesView: View {
         HStack(alignment: .top, spacing: 12) {
             ListeningArtwork(url: entry.artworkURL)
             VStack(alignment: .leading, spacing: 4) {
-                Text(entry.text).font(.system(size: 15, weight: .semibold)).textSelection(.enabled)
+                Button { readPassage(entry.passage) } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(entry.text).font(.system(size: 15, weight: .semibold)).multilineTextAlignment(.leading)
+                        Image(systemName: "arrow.up.right").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain).help("在原词里阅读这句")
                 if let translation = entry.translation {
                     Text(translation).font(.system(size: 12)).foregroundStyle(.secondary).textSelection(.enabled)
                 }
@@ -74,23 +88,30 @@ struct FavoriteLinesView: View {
 /// Captures the line and recording actually on screen when the listener saves it.
 struct KeepLyricButton: View {
     @ObservedObject private var store = V3FavoriteLines.shared
+    @State private var showsError = false
     let text: String
     let translation: String?
     let trackKey: String
     let title: String
     let artist: String
     let artworkURL: URL?
+    var lyricsVersionID: UUID? = nil
+    var lineIndex: Int? = nil
 
     var body: some View {
         let kept = store.contains(text: text, trackKey: trackKey)
         let action = kept ? "取消收藏这句" : "收藏这句"
         Button {
             store.toggle(text: text, translation: translation, title: title, artist: artist,
-                         trackKey: trackKey, artworkURL: artworkURL)
+                         trackKey: trackKey, artworkURL: artworkURL, lyricsVersionID: lyricsVersionID, lineIndex: lineIndex)
+            showsError = store.errorMessage != nil
         } label: {
             Image(systemName: kept ? "bookmark.fill" : "bookmark")
                 .frame(width: 25, height: 25).contentShape(Rectangle())
         }
         .buttonStyle(.plain).accessibilityLabel(action).help(action)
+        .popover(isPresented: $showsError) {
+            Text(store.errorMessage ?? "").font(.callout).padding(12)
+        }
     }
 }

@@ -3897,6 +3897,127 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         }
     }
 
+    /// Reuse the version index so opening a text match can identify its exact source.
+    func searchLibraryPassages(_ query: String) throws -> [LibraryPassageHit] {
+        try prepare()
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return [] }
+        try refreshLibrarySearchCache()
+        let needle = Data(Self.normalizedLibrarySearchText(term).utf8)
+        return librarySearchCache.values.compactMap { song in
+            if song.versions["metadata"]?.normalized.range(of: needle) != nil {
+                return LibraryPassageHit(entry: song.entry, source: nil, excerpt: nil)
+            }
+            guard let match = passageComponent(in: song, matching: needle) else { return nil }
+            let excerpt = match.text.original.split { $0 == "\0" || $0.isNewline }.first {
+                $0.range(of: term, options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]) != nil
+            }
+            return LibraryPassageHit(entry: song.entry, source: match.source, excerpt: excerpt.map(String.init))
+        }.sorted {
+            if $0.entry.lastModifiedAt != $1.entry.lastModifiedAt { return $0.entry.lastModifiedAt > $1.entry.lastModifiedAt }
+            return $0.id < $1.id
+        }
+    }
+
+    private func passageComponent(in song: SearchSong, matching needle: Data) -> (source: LibraryPassageSource, text: SearchVersionText)? {
+        var best: (rank: Int, key: String, source: LibraryPassageSource, text: SearchVersionText)?
+        for (key, text) in song.versions where text.normalized.range(of: needle) != nil {
+            let parts = key.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2, let id = UUID(uuidString: String(parts[1])) else { continue }
+            let rank: Int
+            let source: LibraryPassageSource
+            switch parts[0] {
+            case "lyrics":
+                source = .original(id)
+                rank = id == song.entry.activeLyricsVersionID ? 0 : 3
+            case "translation":
+                source = .translation(id)
+                rank = id == song.entry.activeTranslationVersionID ? 1 : 4
+            case "reading":
+                source = .reading(id)
+                rank = song.entry.activeReadingVersionIDs.values.contains(id) ? 2 : 5
+            default: continue
+            }
+            if let best, (best.rank, best.key) <= (rank, key) { continue }
+            best = (rank, key, source, text)
+        }
+        return best.map { ($0.source, $0.text) }
+    }
+
+    /// Reading a historical version never changes the adopted lyrics or playback.
+    func readLibraryPassage(_ target: LibraryPassageTarget) throws -> LibraryPassagePage? {
+        guard let detail = try loadPersonalLibraryTrackDetail(stableKey: target.trackKey) else { return nil }
+        let entry = detail.entry
+        var source = target.source
+        // Old kept lines have only the recording and text. Locate the stored
+        // version that contains the quote even if a newer version is adopted.
+        if source == .selected, !target.find.isEmpty {
+            try refreshLibrarySearchCache()
+            let needle = Data(Self.normalizedLibrarySearchText(target.find).utf8)
+            if let song = librarySearchCache[entry.trackStableKey], let match = passageComponent(in: song, matching: needle) {
+                source = match.source
+            }
+        }
+        var lyricsID: UUID?
+        var translation: PersonalTranslationVersionItem?
+        var reading: PersonalReadingVersionItem?
+        switch source {
+        case .selected:
+            lyricsID = entry.activeLyricsVersionID ?? detail.lyricsVersions.max(by: { $0.updatedAt < $1.updatedAt })?.id
+        case let .original(id): lyricsID = id
+        case let .translation(id):
+            translation = detail.translationVersions.first { $0.id == id }
+            lyricsID = translation?.lyricsVersionID
+        case let .reading(id):
+            reading = detail.readingVersions.first { $0.id == id }
+            lyricsID = reading?.lyricsVersionID
+        }
+        guard let lyricsID, let version = detail.lyricsVersions.first(where: { $0.id == lyricsID }) else { return nil }
+        let originals = try fetchLines(versionID: lyricsID)
+        guard !originals.isEmpty else { return nil }
+        let hash = LyricsSourceContentHasher.hash(isSynchronized: version.isSynced, lines: originals)
+        if translation == nil {
+            translation = detail.translationVersions.first { $0.lyricsVersionID == lyricsID && $0.id == entry.activeTranslationVersionID }
+        }
+        var translated: [Int: String] = [:]
+        var pronunciation: [Int: String] = [:]
+        var edition = version.isCurrent ? "当前原词" : "已保存的原词"
+        if let translation {
+            let valid = try loadTranslationVersions(lyricsVersionID: lyricsID, targetLanguage: translation.targetLanguage,
+                                                    sourceContentHash: hash).first { $0.record.id == translation.id }
+            if let valid {
+                for line in valid.lines { translated[line.lineIndex] = line.translatedText }
+                if case .translation = source { edition = "已保存的译文" }
+            } else if case .translation = source {
+                let lines = try fetchTranslationLines(versionID: translation.id).map {
+                    LibraryPassagePage.Line(id: $0.lineIndex, original: "", translation: $0.translatedText)
+                }
+                return LibraryPassagePage(entry: entry, originalVersionID: lyricsID, edition: "历史译文 · 单独阅读", lines: lines)
+            }
+        }
+        if let reading {
+            let rows = try fetchReadingLines(versionID: reading.id)
+            if try fetchReadingVersion(versionID: reading.id)?.sourceContentHash != hash {
+                let lines = rows.map { LibraryPassagePage.Line(id: $0.lineIndex, original: $0.originalText, reading: $0.readingText) }
+                return LibraryPassagePage(entry: entry, originalVersionID: lyricsID, edition: "历史读音 · 单独阅读", lines: lines)
+            }
+            for line in rows { pronunciation[line.lineIndex] = line.readingText }
+            edition = "已保存的读音"
+        } else {
+            for layer in try fetchReadingLayers(versionID: lyricsID) {
+                let text = [layer.kanaText, layer.romajiText].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                if !text.isEmpty { pronunciation[layer.lineIndex] = text }
+            }
+        }
+        let lines = originals.map { line in
+            let embedded = [line.kanaText, line.romajiText].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+            return LibraryPassagePage.Line(id: line.lineIndex, original: line.originalText,
+                     translation: translated[line.lineIndex] ?? line.translationText,
+                     reading: pronunciation[line.lineIndex] ?? (embedded.isEmpty ? nil : embedded))
+        }
+        return LibraryPassagePage(entry: entry, originalVersionID: lyricsID, edition: edition, lines: lines)
+    }
+
     /// SQLite's change counters include other repository connections. Only a
     /// changed song reloads its text; unchanged versions keep their normalization.
     private func refreshLibrarySearchCache() throws {
