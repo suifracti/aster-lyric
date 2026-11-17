@@ -167,6 +167,7 @@ public final class PlaybackState: ObservableObject {
         let translationVersionID: UUID?
         let translationSelectionIsEmpty: Bool
         let lyricsVersionID: UUID?
+        let timingVersionID: UUID?
         let sourceContentHash: String?
         let lineCount: Int
         let readingRevision: UInt64
@@ -3014,6 +3015,7 @@ public final class PlaybackState: ObservableObject {
             translationVersionID: translationSession.selectedVersion?.record.id,
             translationSelectionIsEmpty: translationSession.isNoSelection,
             lyricsVersionID: session.activeLyricsVersionID,
+            timingVersionID: session.activeDocument?.timingVersionID,
             sourceContentHash: session.activeSourceContentHash,
             lineCount: base.count,
             readingRevision: session === lyricsSession ? readingSession.currentRevision : 0,

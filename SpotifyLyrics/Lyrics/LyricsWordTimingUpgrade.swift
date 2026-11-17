@@ -35,21 +35,72 @@ public enum LyricsWordTimingUpgrade {
             && held.lines.contains(where: { !normalized($0.originalText).isEmpty })
     }
 
-    /// The upgrade has word timing and the same lines at the same moments.
     public static func isCompatible(held: LyricsDocument, upgrade: LyricsDocument) -> Bool {
-        guard wantsUpgrade(held), upgrade.isSynchronized, hasWordTiming(upgrade),
-              held.identity == upgrade.identity else { return false }
-        var byText: [String: [TimeInterval]] = [:]
-        for line in upgrade.lines {
-            let key = normalized(line.originalText)
+        addingTiming(from: upgrade, to: held) != nil
+    }
+
+    /// Keep the original rows and their timestamps. Only attach spans that can
+    /// light the corresponding characters in the listener's chosen text.
+    static func addingTiming(from upgrade: LyricsDocument, to held: LyricsDocument) -> LyricsDocument? {
+        guard wantsUpgrade(held), upgrade.isSynchronized, held.identity == upgrade.identity else { return nil }
+        var byText = Dictionary(grouping: upgrade.lines, by: { normalized($0.originalText) })
+        var lines = held.lines
+        var sung = 0, matched = 0, timed = 0
+        for index in lines.indices {
+            let original = lines[index]
+            let key = normalized(original.originalText)
             guard !key.isEmpty else { continue }
-            byText[key, default: []].append(line.timestamp)
+            sung += 1
+            guard let candidates = byText[key],
+                  let nearest = candidates.indices.min(by: {
+                      abs(candidates[$0].timestamp - original.timestamp) < abs(candidates[$1].timestamp - original.timestamp)
+                  }), abs(candidates[nearest].timestamp - original.timestamp) <= lineStartTolerance else { continue }
+            let donor = candidates[nearest]
+            byText[key]?.remove(at: nearest)
+            matched += 1
+            if let line = addingSpans(from: donor, to: original) {
+                lines[index] = line
+                timed += 1
+            }
         }
-        let sung = held.lines.filter { !normalized($0.originalText).isEmpty }
-        let matched = sung.filter { line in
-            byText[normalized(line.originalText)]?.contains { abs($0 - line.timestamp) <= lineStartTolerance } == true
+        guard Double(matched) >= Double(sung) * requiredCoverage, timed * 2 >= sung else { return nil }
+        return held.replacingLines(lines, timingVersionID: nil)
+    }
+
+    private static func addingSpans(from donor: LyricLine, to original: LyricLine) -> LyricLine? {
+        guard donor.hasValidTimedSpans(), let spans = donor.resolvedGraphemeSpans() else { return nil }
+        let text = original.originalText
+        let sameText = text.utf8.elementsEqual(donor.originalText.utf8)
+        var cursor = text.startIndex
+        var donorCursor = donor.originalText.startIndex
+        var mapped: [TimedTextSpan] = []
+        for span in spans {
+            let range: Range<String.Index>
+            if sameText {
+                range = span.range
+            } else if let found = text.range(of: span.text, options: .caseInsensitive, range: cursor..<text.endIndex),
+                      normalized(String(text[cursor..<found.lowerBound])) ==
+                        normalized(String(donor.originalText[donorCursor..<span.range.lowerBound])) {
+                range = found
+            } else {
+                return nil
+            }
+            let start = max(span.startTime, original.timestamp)
+            let end = min(span.endTime, original.endTime ?? span.endTime)
+            guard end >= start else { return nil }
+            let offsets = NSRange(range, in: text)
+            mapped.append(TimedTextSpan(id: span.id, text: String(text[range]),
+                trailingWhitespace: String(text[range.upperBound...].prefix(while: \.isWhitespace)),
+                startTime: start, endTime: end, utf16Start: offsets.location, utf16Length: offsets.length,
+                granularity: span.granularity))
+            cursor = range.upperBound
+            donorCursor = span.range.upperBound
         }
-        return Double(matched.count) >= Double(sung.count) * requiredCoverage
+        var line = original
+        line.timedSpans = mapped
+        line.performerID = original.performerID ?? donor.performerID
+        line.backgroundText = original.backgroundText ?? donor.backgroundText
+        return line.hasValidTimedSpans() ? line : nil
     }
 
     static func normalized(_ text: String) -> String {

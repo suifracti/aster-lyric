@@ -64,19 +64,22 @@ public struct StoredLyricsDocument: Equatable, Sendable {
     public let sourceContentHash: String?
     public let alignmentProvenanceAvailability: AlignmentProvenanceAvailability
     public let isUserProtected: Bool
+    public let isLockedOrEdited: Bool
 
     public init(
         document: LyricsDocument,
         versionID: UUID?,
         sourceContentHash: String?,
         alignmentProvenanceAvailability: AlignmentProvenanceAvailability = .unavailable,
-        isUserProtected: Bool = false
+        isUserProtected: Bool = false,
+        isLockedOrEdited: Bool = false
     ) {
         self.document = document
         self.versionID = versionID
         self.sourceContentHash = sourceContentHash
         self.alignmentProvenanceAvailability = alignmentProvenanceAvailability
         self.isUserProtected = isUserProtected
+        self.isLockedOrEdited = isLockedOrEdited
     }
 }
 
@@ -174,6 +177,8 @@ public protocol LyricsRepository: Sendable, LyricsOffsetScopeResolving {
     func revokeLyricsVersionSelection(trackStableKey: String, lyricsVersionID: UUID) async throws
     func loadBest(track: Track, identity: TrackIdentity) async throws -> LyricsDocument?
     func loadBestStored(track: Track, identity: TrackIdentity) async throws -> StoredLyricsDocument?
+    /// Adds timing to the still-selected original. Its text, version ID and children stay together.
+    func attachWordTiming(from candidate: LyricsDocument, to versionID: UUID, track: Track) async throws -> LyricsDocument?
     func upsertListeningHistory(_ entry: ListeningHistoryEntry) async throws
     func loadListeningHistory(limit: Int) async throws -> [ListeningHistoryEntry]
     func loadListeningStatistics(for timeRange: ListeningStatisticsTimeRange) async throws -> ListeningStatistics
@@ -208,6 +213,7 @@ public protocol LyricsRepository: Sendable, LyricsOffsetScopeResolving {
 }
 
 public extension LyricsRepository {
+    func attachWordTiming(from candidate: LyricsDocument, to versionID: UUID, track: Track) async throws -> LyricsDocument? { nil }
     func isLyricsSelectionRevoked(identity: TrackIdentity) async throws -> Bool { false }
     func revokeLyricsVersionSelection(trackStableKey: String, lyricsVersionID: UUID) async throws {
         throw LyricsRepositoryError.unavailable("当前仓库不支持持久取消采用")

@@ -1116,6 +1116,46 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertEqual(document.source, .kugouExperimental)
     }
 
+    func testStoredWordUpgradeKeepsTheLyricsVersionAndItsTranslation() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("word-upgrade-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("test.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await repo.prepare()
+        let (track, identity, lineTimed, wordTimed) = wordTimingFixture()
+        let original = lineTimed.makeDocument()
+        let saved = try await repo.save(track: track, identity: identity, document: original)
+        let id = try XCTUnwrap(saved.versionID)
+        let hash = try XCTUnwrap(saved.sourceContentHash)
+        let translation = try await repo.saveTranslation(lyricsVersionID: id, sourceContentHash: hash,
+            originalLines: original.lines.map(\.originalText),
+            draft: AITranslationDraft(lines: original.lines.indices.map { AITranslationLine(index: $0, translation: "译文 \($0)") },
+                targetLanguage: "zh-Hans", model: "fixture", baseURLHost: "", promptHash: "",
+                sourceContentHash: hash, sourceKind: .manualImport, isMachineGenerated: false, isManuallyEdited: true),
+            forceNewVersion: true)
+        try await repo.markTranslationLocked(versionID: translation.record.id, locked: true)
+        let provider = ProviderFailureDelayedLyricsProvider(name: "酷狗（实验）", delay: 100_000_000, result: .candidates([wordTimed]))
+        let session = LyricsSessionController(providers: [provider], repository: repo)
+        await session.loadForPreloading(track: track)
+        let visibleIDs = session.lyrics.map(\.id)
+        let deadline = Date().addingTimeInterval(4)
+        while session.lyrics.first?.hasTimedSpans != true, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(session.lyrics.allSatisfy(\.hasTimedSpans))
+        XCTAssertEqual(session.lyrics.map(\.id), visibleIDs, "scroll position, loops and in-flight translations refer to these lines")
+        XCTAssertEqual(session.activeLyricsVersionID, id)
+        let reopened = try await repo.loadBestStored(track: track, identity: identity)
+        let current = try XCTUnwrap(reopened)
+        XCTAssertNotNil(current.document.timingVersionID)
+        XCTAssertEqual(current.versionID, id)
+        XCTAssertEqual(current.document.source, .qqExperimental)
+        let translations = try await repo.loadTranslationVersions(lyricsVersionID: XCTUnwrap(current.versionID),
+            targetLanguage: "zh-Hans", sourceContentHash: XCTUnwrap(current.sourceContentHash))
+        XCTAssertEqual(translations.first?.record.id, translation.record.id)
+        XCTAssertEqual(translations.first?.record.isLocked, true)
+    }
+
     func testWordTimingUpgradeKeepsTheSameLinesAndProtectsManualVersions() {
         let (_, _, lineTimed, wordTimed) = wordTimingFixture()
         let held = lineTimed.makeDocument(), upgrade = wordTimed.makeDocument()

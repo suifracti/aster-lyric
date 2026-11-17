@@ -196,6 +196,10 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     }
 
     public func loadBestStored(track: Track, identity: TrackIdentity) async throws -> StoredLyricsDocument? {
+        try bestStored(track: track, identity: identity)
+    }
+
+    private func bestStored(track: Track, identity: TrackIdentity) throws -> StoredLyricsDocument? {
         try ensurePrepared()
         // Apple Music persistent IDs retain their existing metadata-refresh behaviour.
         // Spotify identity changes use the persisted redirect table instead.
@@ -269,6 +273,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         try bindText(version.id.uuidString, at: 1, to: preferenceQuery)
         guard sqlite3_step(preferenceQuery) == SQLITE_ROW else { throw lastError() }
         let isPreferred = sqlite3_column_int(preferenceQuery, 0) != 0
+        let lockedOrEdited = version.isLocked || version.isManuallyEdited
         return StoredLyricsDocument(
             document: document,
             versionID: version.id,
@@ -276,9 +281,24 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             alignmentProvenanceAvailability: version.source == DatabaseSourceIdentifier.identifier(for: .automaticAlignment)
                 ? alignmentProvenanceStore.availability(for: version.id)
                 : .unavailable,
-            isUserProtected: isPreferred || version.isLocked || version.isManuallyEdited
-                || ["local", "manual", "manualEdit", "manualImport", "manualCreate"].contains(version.source)
+            isUserProtected: isPreferred || lockedOrEdited
+                || ["local", "manual", "manualEdit", "manualImport", "manualCreate"].contains(version.source),
+            isLockedOrEdited: lockedOrEdited
         )
+    }
+
+    public func attachWordTiming(from candidate: LyricsDocument, to versionID: UUID, track: Track) async throws -> LyricsDocument? {
+        try ensurePrepared()
+        return try withTransaction {
+            guard !Task.isCancelled, try !hasRevokedLyricsSelection(stableKey: candidate.identity.stableKey),
+                  let held = try bestStored(track: track, identity: candidate.identity),
+                  held.versionID == versionID, !held.isLockedOrEdited, let hash = held.sourceContentHash,
+                  let timed = LyricsWordTimingUpgrade.addingTiming(from: candidate, to: held.document),
+                  let timingID = try attachTimingVersionIfNeeded(document: timed, lyricsVersionID: versionID,
+                      source: DatabaseSourceIdentifier.identifier(for: candidate.source), sourceContentHash: hash, now: Date())
+            else { return nil }
+            return timed.replacingLines(timed.lines, timingVersionID: timingID)
+        }
     }
 
     public func upsertListeningHistory(_ entry: ListeningHistoryEntry) async throws {
