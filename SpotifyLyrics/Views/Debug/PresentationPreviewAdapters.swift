@@ -514,93 +514,56 @@ private struct CapsuleDynamicIslandDarkPreview: View {
 
     private var stateSize: CGSize {
         switch context.capsuleState {
-        case .collapsed: return CGSize(width: 312, height: 40)
-        case .hover: return CGSize(width: 332, height: 44)
-        case .expanded: return CGSize(width: 560, height: 154)
+        case .collapsed: return CapsuleDynamicIslandDarkV4.collapsedSize
+        case .hover: return CapsuleDynamicIslandDarkV4.hoverSize
+        case .expanded: return CapsuleDynamicIslandDarkV4.expandedSize
         }
     }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            CapsuleV4ShellShape(
-                cornerRadius: context.capsuleState == .expanded ? 26 : 22,
-                topAttached: true,
-                topAttachedCornerRadius: context.capsuleState == .expanded ? 14 : 11
-            )
-            .fill(Color(red: 0.012, green: 0.014, blue: 0.019))
-            .overlay {
-                CapsuleV4ShellShape(
-                    cornerRadius: context.capsuleState == .expanded ? 26 : 22,
-                    topAttached: true,
-                    topAttachedCornerRadius: context.capsuleState == .expanded ? 14 : 11
-                )
-                .stroke(Color.white.opacity(0.12), lineWidth: 0.8)
+        let index = context.currentLineIndex
+        let current = index.flatMap { context.lyrics.indices.contains($0) ? context.lyrics[$0].originalText : nil }
+        let expanded = context.capsuleState == .expanded
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                PreviewArtwork(context: context, size: expanded ? 27 : 24)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(expanded ? context.track.title : (current ?? context.track.title))
+                        .font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                    if expanded || context.capsuleState == .hover {
+                        Text(expanded ? context.track.artist : context.track.title)
+                            .font(.system(size: 10)).foregroundStyle(.white.opacity(0.7))
+                    }
+                }
+                Spacer()
+                if expanded {
+                    Label("定住这句", systemImage: "pin").font(.caption2)
+                    Image(systemName: "bookmark")
+                }
+                Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.caption)
             }
-
-            if context.capsuleState == .expanded {
-                HStack(spacing: 16) {
-                    VStack(alignment: .leading, spacing: 9) {
-                        HStack(spacing: 8) {
-                            PreviewArtwork(context: context, size: 52)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(context.track.title)
-                                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                                    .lineLimit(1)
-                                Text(context.track.artist)
-                                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.white.opacity(0.68))
-                                    .lineLimit(1)
-                            }
-                        }
-                        Capsule().fill(Color.white.opacity(0.66)).frame(height: 3)
-                        HStack(spacing: 10) {
-                            Image(systemName: "backward.end.fill")
-                            Image(systemName: context.isPlaying ? "pause.fill" : "play.fill")
-                            Image(systemName: "forward.end.fill")
-                        }
-                        .font(.system(size: 13, weight: .bold))
-                    }
-                    .frame(width: 214, alignment: .leading)
-
-                    PreviewLyricBlock(
-                        context: context,
-                        titleSize: 22,
-                        includeKana: false,
-                        includeRomaji: false,
-                        includeTranslation: context.showTranslation,
-                        dimmed: false
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if expanded {
+                PreviewLyricBlock(context: context, titleSize: 22, includeKana: context.kanaDisplayMode != .hidden,
+                                  includeRomaji: context.showRomaji, includeTranslation: context.showTranslation, dimmed: false)
+                    .frame(maxHeight: .infinity, alignment: .leading)
+                if let index, context.lyrics.indices.contains(index + 1) {
+                    Text("下一句　" + context.lyrics[index + 1].originalText)
+                        .font(.caption).foregroundStyle(.white.opacity(0.72)).lineLimit(1)
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 23)
-                .padding(.bottom, 14)
-            } else {
-                HStack(spacing: 8) {
-                    PreviewArtwork(context: context, size: context.capsuleState == .collapsed ? 25 : 28)
-                    Text(context.track.title)
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .lineLimit(1)
-                    Spacer(minLength: 3)
-                    if context.capsuleState == .hover {
-                        HStack(spacing: 7) {
-                            Image(systemName: "backward.end.fill")
-                            Image(systemName: context.isPlaying ? "pause.fill" : "play.fill")
-                            Image(systemName: "forward.end.fill")
-                        }
-                        .font(.system(size: 11, weight: .bold))
-                    } else {
-                        Image(systemName: context.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 11, weight: .bold))
-                    }
+                HStack(spacing: 12) {
+                    Image(systemName: "backward.end.fill")
+                    Image(systemName: context.isPlaying ? "pause.fill" : "play.fill")
+                    Image(systemName: "forward.end.fill")
+                    Capsule().fill(.white.opacity(0.25)).frame(height: 3)
                 }
-                .padding(.horizontal, 14)
-                .frame(height: stateSize.height)
+                .font(.caption)
             }
         }
-        .foregroundStyle(.white.opacity(0.96))
-        .frame(width: stateSize.width, height: stateSize.height, alignment: .top)
-        .clipped()
+        .padding(.horizontal, 14).padding(.vertical, expanded ? 10 : 5)
+        .foregroundStyle(.white)
+        .frame(width: stateSize.width, height: stateSize.height)
+        .background(Color(white: 0.025), in: CapsuleV4ShellShape(cornerRadius: expanded ? 26 : 22,
+                         topAttached: true, topAttachedCornerRadius: expanded ? 14 : 11))
     }
 }
 

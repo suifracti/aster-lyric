@@ -67,8 +67,10 @@ struct CapsuleV4TopAttachedContract {
             auxiliaryRight: CGRect(x: 820, y: 868, width: 620, height: 32))
         precondition(notch.reservedWidth == 216)
         precondition(notch.expandedContentTop >= 40)
+        precondition(notch.size(for: .collapsed).height >= notch.depth + 22,
+                     "The compact lyric must fit completely below the physical camera")
         precondition(notch.size(for: .collapsed).width >= notch.reservedWidth + 88)
-        precondition(notch.size(for: .expanded).height >= notch.expandedContentTop + 168)
+        precondition(notch.size(for: .expanded).height >= notch.expandedContentTop + CapsuleDynamicIslandDarkV4.expandedSize.height)
         let external = CGRect(x: -1800, y: -300, width: 1800, height: 1000)
         let externalGeometry = CapsuleNotchGeometry(screenFrame: external, safeTopInset: 0)
         let externalEnvelope = CapsuleDynamicIslandDarkV4.topAttachedEnvelopeFrame(screenFrame: external)

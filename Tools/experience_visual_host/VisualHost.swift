@@ -780,7 +780,7 @@ private struct ExperienceFixtureRoot: View {
                     // Also capture tool windows (hover popover, pinned panel).
                     let base = (output as NSString).deletingPathExtension
                     var index = 0
-                    for window in NSApp.windows where window.isVisible && window !== primary
+                    for window in NSApp.windows where window.title != "Experience visual fixture" && window.isVisible && window !== primary
                         && window !== targetWindow && window.frame.width > 120 && window.frame.height > 120 {
                         index += 1
                         if let view = window.contentView {

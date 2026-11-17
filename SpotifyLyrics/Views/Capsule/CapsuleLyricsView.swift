@@ -51,6 +51,22 @@ struct CapsuleLyricsView: View {
     @State private var islandAccent: Color = .accentColor
     @State private var draftPosition: Double?
 
+    @State private var pinnedLine: PinnedLine?
+    @State private var seekingTrackKey: String?
+
+    private struct PinnedLine {
+        let line: LyricLine
+        let trackKey: String
+        let versionID: UUID?
+    }
+
+    private var held: LyricLine? {
+        guard let pinnedLine, pinnedLine.trackKey == state.currentTrackIdentity?.stableKey,
+              state.liveLyricsDocumentMatchesCurrentTrack, pinnedLine.versionID == state.liveLyricsVersionID
+        else { return nil }
+        return pinnedLine.line
+    }
+
     private var selection: CapsuleLyricsSelection {
         CapsuleLyricsPresentation.selection(
             lines: state.liveLyrics,
@@ -136,7 +152,16 @@ struct CapsuleLyricsView: View {
         )
         .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: state.liveLyrics))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("顶部胶囊")
+        .accessibilityLabel("顶部灵动岛")
+        .onChange(of: windowController.presentationState) { _, mode in
+            if mode == .collapsed { pinnedLine = nil }
+        }
+        .onChange(of: state.liveLyricsVersionID) { _, _ in pinnedLine = nil }
+        .onChange(of: state.currentTrackIdentity) { _, _ in
+            pinnedLine = nil
+            draftPosition = nil
+            windowController.setSeeking(false)
+        }
         .lyricIslandSongTint(artworkURL: state.currentTrack.artworkURL, accent: $islandAccent)
     }
 
@@ -184,7 +209,7 @@ struct CapsuleLyricsView: View {
 
             dynamicIslandDarkV4Content
                 .padding(.horizontal, v4ContentHorizontalPadding)
-                .padding(.vertical, windowController.presentationState == .expanded ? 12 : 6)
+                .padding(.vertical, windowController.presentationState == .expanded ? 10 : (windowController.notchGeometry.depth > 0 ? 0 : 5))
                 .padding(.top, windowController.presentationState == .expanded
                     ? windowController.notchGeometry.expandedContentTop : 0)
         }
@@ -209,9 +234,13 @@ struct CapsuleLyricsView: View {
                     shellShape
                         .stroke(Color.white.opacity(0.105), lineWidth: 0.75)
                 }
-                .overlay(alignment: .leading) {
-                    capsuleAccentRail
-                        .padding(.leading, max(8, shellCornerRadius * 0.55))
+                .overlay(alignment: .bottom) {
+                    if state.hasLiveTrack {
+                        LinearGradient(colors: [islandAccent.opacity(0), islandAccent.opacity(0.15)],
+                                       startPoint: .top, endPoint: .bottom)
+                            .frame(height: windowController.presentationState == .expanded ? 54 : 16)
+                            .allowsHitTesting(false)
+                    }
                 }
         } else {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -248,23 +277,22 @@ struct CapsuleLyricsView: View {
     @ViewBuilder
     private var dynamicIslandDarkV4Content: some View {
         let presentation = windowController.presentationState
-        Group {
+        return Group {
             if presentation == .expanded {
                 v4ExpandedContent
             } else if windowController.notchGeometry.reservedWidth > 0 {
-                HStack(spacing: 0) {
-                    v4Artwork(size: 24)
-                        .frame(maxWidth: .infinity)
-                    Color.clear.frame(width: windowController.notchGeometry.reservedWidth)
-                    Button { windowController.expand() } label: {
-                        Image(systemName: state.isPlaying ? "waveform" : "play.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 0) {
+                    HStack(spacing: 0) {
+                        v4Artwork(size: 22).frame(maxWidth: .infinity)
+                        Color.clear.frame(width: windowController.notchGeometry.reservedWidth)
+                        expandButton.frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.plain)
-                    .help("展开灵动岛")
-                    .accessibilityLabel("展开灵动岛")
+                    .frame(height: windowController.notchGeometry.depth)
+                    Text(compactCaption)
+                        .font(.system(size: presentation == .hover ? 12 : 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.92)).lineLimit(1)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.horizontal, 6).padding(.bottom, 3)
                 }
             } else if presentation == .hover {
                 v4HoverContent
@@ -277,148 +305,168 @@ struct CapsuleLyricsView: View {
             reduceMotion: accessibilityReduceMotion), value: presentation)
     }
 
-    /// Compact keeps one strong identity cue and one unambiguous playback
-    /// state. It intentionally does not become a horizontal notification row
-    /// full of secondary labels.
-    private var v4CollapsedContent: some View {
-        HStack(spacing: 8) {
-            v4Artwork(size: 26)
-
-            Text(state.hasLiveTrack ? state.currentTrack.title : "SpotifyLyrics")
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.96))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            Button { windowController.expand() } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.92))
-                    .frame(width: 24, height: 24)
-            }
-            .buttonStyle(.plain)
-            .help("展开灵动岛")
-            .accessibilityLabel("展开灵动岛")
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    private func preferredText(_ line: LyricLine?) -> String? {
+        guard let line else { return nil }
+        let preferences = state.preferences
+        let kana = preferences.showKana && LyricsLanguageGate.allowsJapaneseReadings(language: state.liveLyricsLanguage,
+                                                                                     text: line.originalText)
+        return [preferences.showOriginal ? (line.readingSurfaceText ?? line.originalText) : nil,
+                preferences.showTranslation ? line.translationText : nil,
+                kana ? line.kanaText.map(JapaneseRomanizer.displayKana) : nil,
+                preferences.showRomaji ? line.romajiText : nil]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty }
     }
 
-    /// Hover keeps the same island outline and reveals controls after the
-    /// identity block. The order is deliberately artwork → metadata →
-    /// transport, never transport → artwork.
+    /// Only call an instrumental gap when the recorded timings establish one.
+    private var upcomingCue: (line: LyricLine, seconds: Int)? {
+        let lines = state.liveLyrics
+        guard let gap = LyricsTimeline.vocalCountdownWindow(lines: lines, currentIndex: state.liveCurrentLineIndex,
+                                                            isSynchronized: state.liveLyricsAreSynchronized) else { return nil }
+        let time = state.presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
+        let remaining = gap.end - time
+        guard time >= gap.start, remaining > 0, remaining <= 3, lines.indices.contains(gap.lineIndex) else { return nil }
+        return (lines[gap.lineIndex], Int(ceil(remaining)))
+    }
+
+    private var compactCaption: String {
+        guard state.hasLiveTrack else { return "Aster · Lyric" }
+        if let cue = upcomingCue, let text = preferredText(cue.line) { return "\(cue.seconds) · \(text)" }
+        return preferredText(selection.current) ?? state.currentTrack.title
+    }
+
+    private var expandButton: some View {
+        Button { windowController.expand() } label: {
+            ZStack {
+                if state.hasLiveTrack, state.currentTrack.duration > 0 {
+                    Circle().stroke(.white.opacity(0.2), lineWidth: 1.5)
+                    Circle().trim(from: 0, to: min(1, max(0, state.currentTime / duration)))
+                        .stroke(islandAccent, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                }
+                Image(systemName: state.hasLiveTrack && !state.isPlaying ? "pause.fill" : "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+            }
+            .frame(width: 18, height: 18).foregroundStyle(.white)
+            .frame(width: 26, height: 24).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help("展开灵动岛").accessibilityLabel("展开灵动岛")
+    }
+
+    private var v4CollapsedContent: some View {
+        HStack(spacing: 10) {
+            v4Artwork(size: 24)
+            Text(compactCaption).font(.system(size: 12, weight: .semibold))
+                .lineLimit(1).truncationMode(.tail).frame(maxWidth: .infinity, alignment: .leading)
+            expandButton
+        }
+        .foregroundStyle(.white)
+    }
+
     private var v4HoverContent: some View {
         HStack(spacing: 10) {
-            v4Artwork(size: 28)
-
-            VStack(alignment: .leading, spacing: 0) {
-                Text(state.hasLiveTrack ? state.currentTrack.title : "等待 Spotify 播放")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.96))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                Text(state.hasLiveTrack ? state.currentTrack.artist : "Desktop")
-                    .font(.system(size: 9, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.72))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+            v4Artwork(size: 27)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(compactCaption).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                Text(state.hasLiveTrack ? state.currentTrack.title : "打开工作台与收藏")
+                    .font(.system(size: 10)).foregroundStyle(.white.opacity(0.70)).lineLimit(1)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            HStack(spacing: 4) {
-                v4TransportButton("backward.end.fill", help: "上一首") { state.previousTrack() }
-                v4TransportButton(
-                    state.isPlaying ? "pause.fill" : "play.fill",
-                    help: "播放/暂停"
-                ) { state.togglePlayPause() }
-                v4TransportButton("forward.end.fill", help: "下一首") { state.nextTrack() }
-            }
+            Spacer(minLength: 0)
+            expandButton
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .foregroundStyle(.white)
     }
 
-    /// Expanded is a single continuous island: controls and metadata stay on
-    /// the left while the live current lyric owns the right side. No following
-    /// row or text-heavy toolbar is rendered here.
     private var v4ExpandedContent: some View {
-        HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 9) {
-                    v4Artwork(size: 62)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(state.hasLiveTrack ? state.currentTrack.title : "等待 Spotify 播放")
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.white.opacity(0.98))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-
-                        Text(state.hasLiveTrack ? state.currentTrack.artist : "Spotify Desktop")
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.white.opacity(0.72))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
+        let live = selection
+        let line = held ?? live.current
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                v4Artwork(size: 27)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(state.hasLiveTrack ? state.currentTrack.title : "Aster · Lyric")
+                        .font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    Text(state.hasLiveTrack ? state.currentTrack.artist : "未在播放")
+                        .font(.system(size: 10)).foregroundStyle(.white.opacity(0.68)).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                if let line, let key = state.currentTrackIdentity?.stableKey {
+                    Button {
+                        pinnedLine = held == nil ? PinnedLine(line: line, trackKey: key, versionID: state.liveLyricsVersionID) : nil
+                    } label: {
+                        Label(held == nil ? "定住这句" : "跟回演唱", systemImage: held == nil ? "pin" : "arrow.uturn.backward")
+                            .font(.system(size: 10, weight: .medium)).fixedSize()
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .buttonStyle(.plain)
+                    .help(held == nil ? "把眼前这句留在岛上，播放照常继续" : "回到正在唱的歌词")
+                    KeepLyricButton(text: line.originalText, translation: line.translationText, trackKey: key,
+                                    title: state.currentTrack.title, artist: state.currentTrack.artist, artworkURL: state.currentTrack.artworkURL)
                 }
-
-                HStack(spacing: 8) {
-                    v4ProgressSlider
-
-                    Text("\(formatTime(draftPosition ?? state.currentTime)) / \(formatTime(duration))")
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color.white.opacity(0.68))
-                        .monospacedDigit()
-                        .fixedSize()
+                moreButton
+                Button { windowController.collapse() } label: {
+                    Image(systemName: "chevron.up").frame(width: 23, height: 24)
                 }
-
+                .buttonStyle(.plain).help("收起灵动岛").accessibilityLabel("收起灵动岛")
+            }
+            if state.hasLiveTrack {
+                v4LyricProjection(line: line, live: live)
                 HStack(spacing: 8) {
                     v4TransportButton("backward.end.fill", help: "上一首") { state.previousTrack() }
-                    v4TransportButton(
-                        state.isPlaying ? "pause.fill" : "play.fill",
-                        help: "播放/暂停"
-                    ) { state.togglePlayPause() }
+                    v4TransportButton(state.isPlaying ? "pause.fill" : "play.fill", help: state.isPlaying ? "暂停" : "播放") {
+                        state.togglePlayPause()
+                    }
                     v4TransportButton("forward.end.fill", help: "下一首") { state.nextTrack() }
-
-                    Button { windowController.setMenuPresented(true) } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.84))
-                            .frame(width: 24, height: 24)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("更多操作")
-                    .help("更多操作")
-                    .popover(isPresented: Binding(
-                        get: { windowController.menuIsPresented },
-                        set: { windowController.setMenuPresented($0) }
-                    ), arrowEdge: .bottom) {
-                        v4MoreActions
-                            .environment(\.colorScheme, .dark)
-                    }
-                    Spacer(minLength: 0)
-                    Button { windowController.collapse() } label: {
-                        Image(systemName: "chevron.up")
-                            .frame(width: 24, height: 24)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.white.opacity(0.8))
-                    .help("收起灵动岛")
+                    v4ProgressSlider
+                    Text("\(formatTime(draftPosition ?? state.currentTime)) / \(formatTime(duration))")
+                        .font(.system(size: 9)).monospacedDigit().foregroundStyle(.white.opacity(0.72)).fixedSize()
                 }
+            } else {
+                HStack(spacing: 8) {
+                    islandDestination("工作台", symbol: "square.grid.2x2", page: .workspace)
+                    islandDestination("我的歌词库", symbol: "books.vertical", page: .library)
+                    islandDestination("收藏的金句", symbol: "quote.opening", page: .favorites)
+                }
+                .frame(maxHeight: .infinity)
             }
-            .frame(width: 236, alignment: .leading)
-
-            v4LyricProjection
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .foregroundStyle(.white)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func islandDestination(_ title: String, symbol: String, page: SettingsCategory) -> some View {
+        Button {
+            windowController.collapse()
+            MenuBarLyricsController.shared.openSettings(at: .init(page))
+        } label: {
+            Label(title, systemImage: symbol).font(.callout.weight(.medium))
+                .frame(maxWidth: .infinity).padding(.vertical, 13)
+                .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var moreButton: some View {
+        Button { windowController.setMenuPresented(true) } label: {
+            Image(systemName: "ellipsis").frame(width: 24, height: 24).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).accessibilityLabel("更多操作").help("更多操作")
+        .popover(isPresented: Binding(get: { windowController.menuIsPresented },
+                                      set: { windowController.setMenuPresented($0) }), arrowEdge: .bottom) {
+            v4MoreActions.environment(\.colorScheme, .dark)
+        }
     }
 
     private var v4MoreActions: some View {
         VStack(alignment: .leading, spacing: 4) {
             moreAction("打开主窗口", symbol: "macwindow") {
                 MenuBarLyricsController.shared.openMainWindow()
+            }
+            moreAction("工作台", symbol: "square.grid.2x2") {
+                MenuBarLyricsController.shared.openSettings(at: .init(.workspace))
+            }
+            if let key = state.currentTrackIdentity?.stableKey {
+                moreAction("打开歌曲档案", symbol: "books.vertical") {
+                    MenuBarLyricsController.shared.openSettings(at: .init(.library, trackKey: key))
+                }
             }
             moreAction("显示/隐藏桌面歌词", symbol: "text.bubble") {
                 WindowManager.shared.toggleFloatingLyrics(state: state)
@@ -476,12 +524,18 @@ struct CapsuleLyricsView: View {
                 // legible against the near-black v4 island.
                 Slider(value: progressBinding, in: 0...duration, onEditingChanged: { editing in
                     windowController.setSeeking(editing)
-                    if !editing, let draftPosition {
-                        state.seek(to: draftPosition, source: "capsule-v4-slider")
+                    if editing {
+                        seekingTrackKey = state.currentTrackIdentity?.stableKey
+                    } else {
+                        if let seekingTrackKey, seekingTrackKey == state.currentTrackIdentity?.stableKey, let draftPosition {
+                            state.seek(to: draftPosition, source: "capsule-v4-slider")
+                        }
+                        seekingTrackKey = nil
                         self.draftPosition = nil
                     }
                 })
                 .controlSize(.mini)
+                .disabled(!state.canControlSpotify)
                 .opacity(0.02)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -491,45 +545,56 @@ struct CapsuleLyricsView: View {
     }
 
     @ViewBuilder
-    private var v4LyricProjection: some View {
-        if let current = selection.current {
-            CapsuleV4LyricRowView(
-                line: current,
-                preferences: state.preferences,
-                availableWidth: 318,
-                visibleLayerCount: visibleLayerCount,
-                language: state.liveLyricsLanguage
-            )
-            .frame(maxWidth: .infinity, minHeight: 72, maxHeight: 112, alignment: .center)
-        } else if let status = selection.status {
-            HStack(spacing: 8) {
-                Image(systemName: selection.isSynchronized ? "music.note" : "text.quote")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(islandAccent)
-                Text(v4StatusText(status))
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.78))
-                    .lineLimit(1)
+    private func v4LyricProjection(line: LyricLine?, live: CapsuleLyricsSelection) -> some View {
+        if let line, preferredText(line) != nil {
+            GeometryReader { proxy in
+                VStack(alignment: .leading, spacing: 3) {
+                    CapsuleV4LyricRowView(line: line, preferences: state.preferences, availableWidth: proxy.size.width,
+                                          visibleLayerCount: visibleLayerCount, language: state.liveLyricsLanguage)
+                        .frame(maxHeight: .infinity)
+                    if held != nil, line.id != live.current?.id, let now = preferredText(live.current) {
+                        referenceLine("正在唱", text: now)
+                    } else if held == nil, let cue = upcomingCue, let next = preferredText(cue.line) {
+                        referenceLine("\(cue.seconds) 秒后", text: next)
+                    } else if held == nil, let next = preferredText(live.following) {
+                        referenceLine("下一句", text: next)
+                    }
+                }
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, minHeight: 72, maxHeight: 112, alignment: .center)
+        } else if let cue = upcomingCue, let text = preferredText(cue.line) {
+            referenceLine("\(cue.seconds) 秒后", text: text).frame(maxHeight: .infinity, alignment: .center)
         } else {
-            Text("—")
-                .font(.system(size: 22, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.42))
-                .frame(maxWidth: .infinity, minHeight: 72, maxHeight: 112, alignment: .center)
+            HStack(spacing: 10) {
+                Image(systemName: "text.quote").foregroundStyle(islandAccent)
+                Text(live.status ?? "等待下一句").font(.callout).lineLimit(2)
+                Spacer()
+                Button("打开当前歌曲") { MenuBarLyricsController.shared.openCurrentLyrics() }
+                    .buttonStyle(.plain).font(.caption).underline()
+            }
+            .foregroundStyle(.white.opacity(0.78)).frame(maxHeight: .infinity)
         }
     }
 
-    private func v4StatusText(_ status: String) -> String {
-        switch status {
-        case "请回主窗口选择歌词", "未找到歌词", "未选择歌词", "等待歌词":
-            return "暂无歌词"
-        default:
-            return status
+    private func referenceLine(_ label: String, text: String) -> some View {
+        HStack(spacing: 7) {
+            Text(label).font(.system(size: 9, weight: .medium)).foregroundStyle(islandAccent)
+            Text(text).font(.system(size: 11)).foregroundStyle(.white.opacity(0.74)).lineLimit(1)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    @ViewBuilder
     private func v4Artwork(size: CGFloat) -> some View {
+        if !state.hasLiveTrack {
+            Image(systemName: "text.quote").font(.system(size: size * 0.48, weight: .medium))
+                .foregroundStyle(.white.opacity(0.85)).frame(width: size, height: size)
+        } else {
+            cover(size: size)
+        }
+    }
+
+    private func cover(size: CGFloat) -> some View {
         ArtworkView(
             track: state.currentTrack,
             size: size,
@@ -555,8 +620,8 @@ struct CapsuleLyricsView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!state.canInteractWithPlayback)
-        .help(help)
+        .disabled(!state.canControlSpotify)
+        .accessibilityLabel(help).help(help)
     }
 
     @ViewBuilder
@@ -987,17 +1052,6 @@ private struct CapsuleV4LyricRowView: View {
         return adjusted
     }
 
-    private var v4ContentScale: CGFloat {
-        let compactLength = max(
-            1,
-            line.originalText.filter { !$0.isWhitespace && !$0.isNewline }.count
-        )
-        // Ruby layouts are intentionally kept as one visual row in the
-        // expanded island. Scale only unusually long current lines, keeping
-        // ordinary lyric text at full size instead of shrinking every row.
-        return max(0.72, min(1, 13 / CGFloat(compactLength)))
-    }
-
     var body: some View {
         LyricLineView(
             line: line,
@@ -1011,8 +1065,7 @@ private struct CapsuleV4LyricRowView: View {
         )
         .lineLimit(1)
         .truncationMode(.tail)
-        .scaleEffect(v4ContentScale, anchor: .leading)
-        .frame(maxWidth: .infinity, maxHeight: 112, alignment: .center)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .clipped()
         .transaction { transaction in
             if accessibilityReduceMotion {

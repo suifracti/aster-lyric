@@ -6,7 +6,7 @@ struct CapsuleV4ShapeContract {
     static func main() {
         precondition(CapsuleDynamicIslandDarkV4.collapsedSize == CGSize(width: 312, height: 40))
         precondition(CapsuleDynamicIslandDarkV4.hoverSize == CGSize(width: 332, height: 44))
-        precondition(CapsuleDynamicIslandDarkV4.expandedSize == CGSize(width: 600, height: 168))
+        precondition(CapsuleDynamicIslandDarkV4.expandedSize == CGSize(width: 600, height: 188))
 
         let visible = CGRect(x: 0, y: 0, width: 1440, height: 900)
         let collapsed = CapsuleDynamicIslandDarkV4.topCenteredFrame(

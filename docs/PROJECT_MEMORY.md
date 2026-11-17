@@ -41,6 +41,7 @@
 | AI 译文读起来像照日文断行切开、主语缺失、太书面、和我自己的译法不像 | L-042；`personalV2Instructions` full-audit-v3-r1、Codex 合同里的跨行条款 |
 | 缺歌词里同一首歌的重复记录（时长错、借用别首的 ID）、批量补全拿错时长去搜 | L-039；PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere、needsLyrics |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
+| 灵动岛挡刘海、只剩歌名、想停在一句读、换歌拖错进度 | L-045；CapsuleNotchGeometry、CapsuleLyricsView、vocalCountdownWindow |
 | 状态栏双行词、收藏弹窗里正在唱的一句、没放歌时的菜单 | L-044；MenuBarTextFormatter.statusImage、WorkspaceShelfCard、KeepLyricButton |
 | 设置里找歌或歌词、从金句或封面墙回到歌、没放音乐时继续整理、历史录音一直转圈 | L-043；SettingsWorkspace、SettingsHistory、selectedDetail(for:) |
 
@@ -683,3 +684,10 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 系统菜单栏的宽度有上限，原文和译文选中时各给一行。只有当前句已选的文字进图；选择字上读音时优先使用现有 ruby 排版。外观页调用和真实状态栏相同的模板图绘制函数。歌词、演唱状态或外观改变时更新缓存，滚动沿用原有图层；换行和换歌不需要反复重开弹窗。
 
 弹窗收藏采用屏幕所示的歌词与录音键。停播时从本机金句或歌词库进入工作台。播放与空闲的离屏检查使用临时数据库，截图宿主退出即清走自己产生的封面和工作目录。
+
+
+## L-045 顶部灵动岛读句（2026-11-18）
+
+刘海宽度取当前屏幕的辅助区域，深度取 safe area。在有摄像头的屏幕上，两边放封面与进度，歌词从深度线下开始，必须同时给 SwiftUI 布局和 AppKit 命中几何留出高度。平面屏幕直接在横条内读当句。展开后文字使用岛体的整行宽度，下一句与播放控件各占一行；全屏幕透明宿主、热区与鼠标穿透沿用现有控制器。
+
+「定住这句」仅在展开的岛上暂存用户看到的行和录音、原词版本。小字继续显示正在唱的行，收起或换歌会回到跟随。收藏取所显示的行；进度拖动沿开始时的录音键提交。进句提示只用真实时间轴标出的间奏，在下一句前三秒出现。原生宿主构建及离屏图覆盖播放、收起和无歌；刘海位置是几何用例，未实测实体刘海与多屏切换。

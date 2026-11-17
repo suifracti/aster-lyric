@@ -23,18 +23,9 @@ grep -F 'pause.fill' "$VIEW" >/dev/null
 grep -F 'forward.end.fill' "$VIEW" >/dev/null
 grep -F 'backward.end.fill' "$VIEW" >/dev/null
 grep -F 'truncationMode(.tail)' "$VIEW" >/dev/null
-grep -F 'return "暂无歌词"' "$VIEW" >/dev/null
-grep -F '"等待歌词"' "$VIEW" >/dev/null
-grep -F 'Color.white.opacity(0.72)' "$VIEW" >/dev/null
-grep -F 'font(.system(size: 15, weight: .bold' "$VIEW" >/dev/null
-
-# v4 expanded content is a single current-row projection; it must not render
-# the archived following-row context.
-awk '
-  /private var v4ExpandedContent/ { in_v4 = 1 }
-  in_v4 && /private var controlFocusedContent/ { in_v4 = 0 }
-  in_v4 && /selection\.following/ { found = 1 }
-  END { exit(found ? 1 : 0) }
-' "$VIEW"
+# The live line can be held for reading while the next/current cue keeps following playback.
+for needle in 'state.liveLyrics' 'live.following' '正在唱' '定住这句' 'KeepLyricButton' 'windowController.notchGeometry.reservedWidth'; do
+  grep -F "$needle" "$VIEW" >/dev/null
+done
 
 echo "capsule v4 content contract passed"

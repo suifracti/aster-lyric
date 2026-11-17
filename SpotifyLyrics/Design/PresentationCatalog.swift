@@ -213,7 +213,7 @@ public struct PresentationCatalog: Sendable {
         // runtime renderer in the current source tree.
         entry("capsule.immersiveCompact.v3", "彩色沉浸胶囊（设计记录）", .capsule, "3", .classic, .designOnly, false, false, "仅保留设计身份；当前没有可运行 Preview Renderer。", [.capsule, .preview]),
         // The restored island is the default. Explicit v2 selections remain runnable.
-        entry("capsule.dynamicIslandDark.v4", "灵动岛", .capsule, "4", .current, .release, true, true, "近黑高对比岛体；Reduce Motion 下使用直接尺寸与透明度变化。", [.capsule, .preview]),
+        entry("capsule.dynamicIslandDark.v4", "灵动岛", .capsule, "4", .current, .release, true, true, "顶边读当句与下一句，展开可定住或收藏。摄像头下留出歌词位置。", [.capsule, .preview]),
 
         entry("floatingLyrics.legacyPanel.v1", "桌面歌词旧面板", .floatingLyrics, "1", .archived, .release, true, true, "锁定和鼠标穿透状态必须有外部恢复入口。", [.floatingLyrics, .preview]),
         entry("floatingLyrics.transparent.v2", "透明桌面歌词", .floatingLyrics, "2", .current, .release, true, true, "透明模式不依赖背景色；相邻行仍需保持可读。", [.floatingLyrics, .preview]),

@@ -30,7 +30,7 @@ public enum CapsuleLyricsPresentationVersion: String, CaseIterable, Sendable, Ca
 public enum CapsuleDynamicIslandDarkV4 {
     public static let collapsedSize = CGSize(width: 312, height: 40)
     public static let hoverSize = CGSize(width: 332, height: 44)
-    public static let expandedSize = CGSize(width: 600, height: 168)
+    public static let expandedSize = CGSize(width: 600, height: 188)
 
     /// Fixed production host envelope. The historic public name remains an
     /// API compatibility alias for verification tools.
@@ -155,8 +155,12 @@ public struct CapsuleNotchGeometry: Equatable, Sendable {
 
     public func size(for state: CapsulePresentationState) -> CGSize {
         let base = CapsuleDynamicIslandDarkV4.targetSize(for: state)
-        return CGSize(width: max(base.width, reservedWidth + (state == .expanded ? 120 : 100)),
-                      height: state == .expanded ? base.height + expandedContentTop : max(base.height, depth + 6))
+        if state == .expanded {
+            return CGSize(width: max(base.width, reservedWidth + 120), height: base.height + expandedContentTop)
+        }
+        let captionHeight: CGFloat = state == .hover ? 29 : 22
+        let height = depth > 0 ? max(base.height, depth + captionHeight) : base.height
+        return CGSize(width: max(base.width, reservedWidth + 100), height: height)
     }
 
     public func islandFrame(for state: CapsulePresentationState, envelopeSize: CGSize) -> CGRect {
