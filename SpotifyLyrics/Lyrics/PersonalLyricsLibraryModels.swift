@@ -894,6 +894,7 @@ struct LibraryPassageTarget: Hashable, Identifiable, Sendable {
     var source: LibraryPassageSource = .selected
     var find: String = ""
     var lineIndex: Int? = nil
+    var recallNextLine = false
     var id: Self { self }
 }
 
@@ -927,4 +928,45 @@ struct LibraryPassagePage: Sendable {
     let originalVersionID: UUID
     let edition: String
     let lines: [Line]
+
+    func originalOccurrence(of text: String, preferred: Int?) -> Int? {
+        let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return nil }
+        func same(_ line: Line) -> Bool {
+            line.original.trimmingCharacters(in: .whitespacesAndNewlines)
+                .compare(query, options: [.caseInsensitive, .widthInsensitive]) == .orderedSame
+        }
+        if let preferred, lines.contains(where: { $0.id == preferred && same($0) }) { return preferred }
+        return lines.first(where: same)?.id
+    }
+}
+
+/// An offline phrase at a time from a single saved edition, including repeated lines in their original order.
+struct LyricRecallSession {
+    private let originals: [LibraryPassagePage.Line]
+    private var position: Int
+    private var showsAnswer = false
+
+    init?(lines: [LibraryPassagePage.Line], anchor: Int? = nil) {
+        let originals = lines.filter { !$0.original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard originals.count > 1 else { return nil }
+        if let anchor {
+            guard let index = originals.firstIndex(where: { $0.id == anchor }), index < originals.count - 1 else { return nil }
+            position = index
+        } else { position = 0 }
+        self.originals = originals
+    }
+
+    var cue: LibraryPassagePage.Line { originals[position] }
+    var revealedAnswer: LibraryPassagePage.Line? { showsAnswer ? originals[position + 1] : nil }
+    var canAdvance: Bool { showsAnswer && position + 2 < originals.count }
+    var lineNumber: Int { position + 1 }
+    var lineCount: Int { originals.count }
+
+    mutating func reveal() { showsAnswer = true }
+    mutating func advance() {
+        guard canAdvance else { return }
+        position += 1
+        showsAnswer = false
+    }
 }

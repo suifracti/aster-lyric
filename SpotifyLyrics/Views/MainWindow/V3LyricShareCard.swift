@@ -12,16 +12,21 @@ enum V3LyricShareCard {
     /// Returns the saved file, or nil when the picture could not be made.
     static func make(line: LyricLine, track: Track) async -> URL? {
         let cover = await ArtworkImageLoader.shared.image(for: track.artworkURL)
-        let text = line.originalText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let translation = line.translationText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return make(text: line.originalText, translation: line.translationText, title: track.title,
+                    artist: track.artist, cover: cover)
+    }
+
+    static func make(text: String, translation: String?, title: String, artist: String, cover: NSImage?) -> URL? {
+        let original = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let translation = translation?.trimmingCharacters(in: .whitespacesAndNewlines)
         let renderer = ImageRenderer(content: V3LyricShareCardView(
-            line: text, translation: translation?.isEmpty == true ? nil : translation,
-            title: track.title, artist: track.artist, cover: cover,
+            line: original, translation: translation?.isEmpty == true ? nil : translation,
+            title: title, artist: artist, cover: cover,
             ground: cover.flatMap { thumbnail($0, side: 10) }))
         renderer.proposedSize = ProposedViewSize(size)
         renderer.scale = 1
         guard let image = renderer.nsImage else { return nil }
-        return deliver(image, name: track.title)
+        return deliver(image, name: title)
     }
 
     /// Copies the picture and saves it under ~/Pictures/Aster Lyric.

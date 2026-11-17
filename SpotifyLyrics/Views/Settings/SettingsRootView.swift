@@ -170,7 +170,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .aiTranslation: return "API Key Keychain Base URL Codex ChatGPT GPT 目标语言 自动翻译 提示词 Prompt 超时 Temperature 连接测试"
         case .workspace: return "首页 工作台 资料"
         case .library: return "档案 本地 原词 版本 导入 锁定"
-        case .favorites: return "收藏 摘录 喜欢的句子"
+        case .favorites: return "收藏 摘录 喜欢的句子 句册 翻阅 接下一句"
         case .missingLyrics: return "找词 补全 缺词 无歌词"
         case .history: return "封面墙 回顾卡"
         case .statistics, .experienceLibrary: return ""

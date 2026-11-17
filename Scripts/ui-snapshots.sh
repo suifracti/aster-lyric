@@ -197,6 +197,8 @@ declare -a CASES=(
   "menubar-light|--surface menubar --appearance light"
   "menubar-idle|--surface menubar --idle true --appearance dark"
   "library-reader|--surface reader --appearance light"
+  "library-recall|--surface reader --appearance dark --recall-next --find-line 'この夜を越えて、まだ見ぬ朝へ'"
+  "favorite-book|--surface favorites --sample-favorites --appearance light"
   "settings-light|--surface settings --appearance light"
   "settings-appearance|--surface settings --settings-page 外观 --appearance light"
   "settings-island|--surface settings --settings-page 外观 --settings-surface island --appearance dark --width 860 --height 580"

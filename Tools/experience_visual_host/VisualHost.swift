@@ -685,13 +685,22 @@ private struct ExperienceFixtureRoot: View {
                             .padding(16).frame(width: 360)
                             .background(Color(nsColor: .windowBackgroundColor)))
                     } else if ExperienceArguments.surface == "reader" {
+                        let recall = ProcessInfo.processInfo.arguments.contains("--recall-next")
                         let target = LibraryPassageTarget(trackKey: TrackIdentity(track: playback.currentTrack).stableKey,
-                                                          find: ExperienceArguments.value("--find-line", fallback: "朝へ"))
+                                                          find: ExperienceArguments.value("--find-line", fallback: "朝へ"),
+                                                          recallNextLine: recall)
                         root = AnyView(LibraryPassageReader(target: target, library: PersonalLyricsLibraryService(),
                                                            openArchive: {}).frame(width: 610, height: 500))
                     } else if ExperienceArguments.surface == "favorites" {
-                        root = AnyView(FavoriteLinesView().padding(16).frame(width: 520, height: 460)
-                            .background(Color(nsColor: .windowBackgroundColor)))
+                        if ProcessInfo.processInfo.arguments.contains("--sample-favorites"), V3FavoriteLines.shared.entries.isEmpty {
+                            let track = playback.currentTrack
+                            for (index, line) in playback.liveLyrics.prefix(3).enumerated() {
+                                V3FavoriteLines.shared.toggle(text: line.originalText, translation: line.translationText,
+                                    title: track.title, artist: track.artist, trackKey: TrackIdentity(track: track).stableKey,
+                                    artworkURL: track.artworkURL, lyricsVersionID: playback.liveLyricsVersionID, lineIndex: index)
+                            }
+                        }
+                        root = AnyView(FavoriteLinesView().frame(width: 520, height: 460))
                     } else if ExperienceArguments.surface == "menubar" {
                         root = AnyView(MenuBarLyricsPopoverView(controller: MenuBarLyricsController.shared))
                     } else {

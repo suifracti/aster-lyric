@@ -277,6 +277,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
         GeometryReader { geometry in
             ScrollViewReader { proxy in
                 let bigLine = settings.v3BigLineModeEnabled && synchronized
+                let savedVersion = isPreview ? nil : state.liveLyricsVersionID
                 let scrollAnchor = bigLine ? 0 : V3ResponsiveGeometry.lyricScrollAnchor(
                     viewportHeight: geometry.size.height,
                     stage: stage
@@ -297,6 +298,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                         synchronized: synchronized,
                         language: language,
                         trackStableKey: trackStableKey,
+                        savedVersion: savedVersion,
                         artistDisplay: artistDisplay,
                         title: documentTrack.title,
                         duration: documentTrack.duration,
@@ -345,7 +347,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                                 text: line.originalText, translation: line.translationText, title: track.title,
                                 artist: track.artist, trackKey: TrackIdentity(track: track).stableKey,
                                 artworkURL: track.artworkURL,
-                                lyricsVersionID: state.isShowingSearchPreview ? nil : state.liveLyricsVersionID,
+                                lyricsVersionID: savedVersion,
                                 lineIndex: lines.firstIndex { $0.id == line.id })
                             state.showNotice(V3FavoriteLines.shared.errorMessage ?? (kept ? "已收藏，在歌词库的「金句」里" : "已取消收藏"))
                         },
@@ -539,6 +541,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     let synchronized: Bool
     let language: String?
     let trackStableKey: String?
+    let savedVersion: UUID?
     let artistDisplay: String
     let title: String
     let duration: TimeInterval
@@ -569,6 +572,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             && lhs.synchronized == rhs.synchronized
             && lhs.language == rhs.language
             && lhs.trackStableKey == rhs.trackStableKey
+            && lhs.savedVersion == rhs.savedVersion
             && lhs.artistDisplay == rhs.artistDisplay
             && lhs.title == rhs.title
             && lhs.duration == rhs.duration
@@ -711,6 +715,13 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
                 Button("做成分享卡", systemImage: "photo.on.rectangle") { onShareLine(line) }
                 let kept = trackStableKey.map { V3FavoriteLines.shared.contains(text: line.originalText, trackKey: $0) } ?? false
                 Button(kept ? "取消收藏这句" : "收藏这句", systemImage: kept ? "star.slash" : "star") { onFavoriteLine(line) }
+                if let savedVersion, let trackStableKey, index < lines.count - 1 {
+                    Button("接下一句…", systemImage: "text.bubble") {
+                        let target = LibraryPassageTarget(trackKey: trackStableKey, source: .original(savedVersion),
+                                                          find: line.originalText, lineIndex: index, recallNextLine: true)
+                        MenuBarLyricsController.shared.openSettings(at: .init(reading: target))
+                    }
+                }
             }
             Button("复制整首歌词", systemImage: "doc.on.doc.fill") {
                 onCopyAll()

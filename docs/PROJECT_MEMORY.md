@@ -41,7 +41,7 @@
 | AI 译文读起来像照日文断行切开、主语缺失、太书面、和我自己的译法不像 | L-042；`personalV2Instructions` full-audit-v3-r1、Codex 合同里的跨行条款 |
 | 缺歌词里同一首歌的重复记录（时长错、借用别首的 ID）、批量补全拿错时长去搜 | L-039；PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere、needsLyrics |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
-| 想找收藏那句的上下文、搜到旧译文却只打开版本列表、收藏文件损坏后变空 | L-046；LibraryPassageReader、searchLibraryPassages、V3FavoriteLines |
+| 翻阅收藏、从副歌第二次出现的位置接下一句、搜到旧译文、收藏文件无法读取 | L-046 · LibraryPassageReader、LyricRecallSession、V3FavoriteLines |
 | 灵动岛挡刘海、只剩歌名、想停在一句读、换歌拖错进度 | L-045；CapsuleNotchGeometry、CapsuleLyricsView、vocalCountdownWindow |
 | 状态栏双行词、收藏弹窗里正在唱的一句、没放歌时的菜单 | L-044；MenuBarTextFormatter.statusImage、WorkspaceShelfCard、KeepLyricButton |
 | 桌面歌词、灵动岛、菜单栏分散难找，调整一个外观时另一个预览被采用 | L-043；AppearanceSettingsView、AppearanceSurface、PresentationSelectionStore.apply |
@@ -708,3 +708,5 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 收藏新增可选原词版本和行号，同一句重复时能跳回当时那一处。旧收藏沿录音和文字查找。查找光标、选中版本、收藏和实际播放器互相独立。版本菜单的预览也使用同一阅读页；时间轴保留原来的数值预览。真实回归另有一项：旧收藏文件若不能解码，先前会在下次收藏时被空列表覆盖。现在修改前读取文件，成功写盘才发布列表。
 
 离线读原词时，读音取档案中的对应版本，手工锁定的旧行保留优先；和声取同版原词选用的有效逐字时间轴，在句内查找也可命中。收听、编辑、阅读都能取到同一句的和声。
+
+收藏页有翻页和列表两种看法，原词、译文、歌名和歌手都可以找。离开再返回会记住查看方式和卡片。歌曲停播时也能从摘句生成分享卡。「接下一句」使用打开的本地原词版本，收藏中的行号区分重复副歌，旧收藏按完整原句定位。揭晓前后续歌词与它的译文、读音和和声一起收起。主窗口从正在显示的已存原词进入同一阅读页，搜索预览没有这个播放态入口。

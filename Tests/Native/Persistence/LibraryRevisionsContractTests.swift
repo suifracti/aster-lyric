@@ -4,6 +4,31 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class LibraryRevisionsContractTests: XCTestCase {
+    func testRecallStartsAtTheKeptOccurrenceAndRevealsOneFollowingOriginal() throws {
+        let lines = [
+            LibraryPassagePage.Line(id: 0, original: "副歌"),
+            .init(id: 1, original: "第一次"),
+            .init(id: 2, original: "副歌"),
+            .init(id: 3, original: " ", translation: "独立译文"),
+            .init(id: 4, original: "第二次", translation: "译文", reading: "读音", background: "和声"),
+            .init(id: 5, original: "结尾")
+        ]
+        var session = try XCTUnwrap(LyricRecallSession(lines: lines, anchor: 2))
+        XCTAssertEqual(session.cue.id, 2)
+        XCTAssertNil(session.revealedAnswer)
+        session.reveal()
+        XCTAssertEqual(session.revealedAnswer?.id, 4)
+        XCTAssertEqual(session.revealedAnswer?.translation, "译文")
+        session.advance()
+        XCTAssertEqual(session.cue.id, 4)
+        XCTAssertNil(session.revealedAnswer)
+        session.reveal()
+        XCTAssertFalse(session.canAdvance)
+        XCTAssertEqual(session.revealedAnswer?.id, 5)
+        XCTAssertNil(LyricRecallSession(lines: lines, anchor: 5))
+        XCTAssertNil(LyricRecallSession(lines: lines, anchor: 98))
+    }
+
     func testYouAndIdolNewDurationKeyRedirectsToSelectedLyrics() async throws {
         let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
         let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("identity.sqlite3"),

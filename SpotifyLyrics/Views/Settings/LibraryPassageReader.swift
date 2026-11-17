@@ -14,6 +14,9 @@ struct LibraryPassageReader: View {
     @State private var showsReading: Bool
     @State private var showsTranslation = true
     @State private var hoveredLine: Int?
+    @State private var recall: LyricRecallSession?
+    @State private var recallNotice: String?
+    @State private var returnedLine: Int?
 
     init(target: LibraryPassageTarget, library: PersonalLyricsLibraryService,
          openArchive: (() -> Void)? = nil, close: (() -> Void)? = nil) {
@@ -27,8 +30,23 @@ struct LibraryPassageReader: View {
     }
 
     private var currentMatch: Int? { matches.indices.contains(cursor) ? matches[cursor] : nil }
+    private var focusedLine: Int? { returnedLine ?? currentMatch }
 
     var body: some View {
+        Group {
+            if let page, let recall {
+                LyricRecallView(page: page, session: recall, showsTranslation: showsTranslation, showsReading: showsReading) { line in
+                    returnedLine = line
+                    self.recall = nil
+                }
+            } else { readingPage }
+        }
+        .background(WorkspacePalette.paper)
+        .onChange(of: find) { _, _ in returnedLine = nil; updateMatches() }
+        .task(id: target) { await load() }
+    }
+
+    private var readingPage: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 9) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -59,6 +77,10 @@ struct LibraryPassageReader: View {
             }
             .buttonStyle(.borderless).padding(.horizontal, 18).padding(.vertical, 10)
             Divider()
+            if let recallNotice {
+                Text(recallNotice).font(.callout).foregroundStyle(.secondary)
+                    .padding(.horizontal, 18).padding(.top, 8)
+            }
             if let page {
                 ScrollViewReader { scroll in
                     ScrollView {
@@ -67,7 +89,16 @@ struct LibraryPassageReader: View {
                                 Text(page.edition).font(.caption.weight(.semibold)).foregroundStyle(WorkspacePalette.ink)
                                 Text(page.entry.title).font(.system(size: 26, weight: .semibold, design: .serif))
                                     .textSelection(.enabled).accessibilityAddTraits(.isHeader)
-                                Text(page.entry.artist).font(.callout).foregroundStyle(.secondary)
+                                HStack {
+                                    Text(page.entry.artist).font(.callout).foregroundStyle(.secondary)
+                                    Spacer()
+                                    if page.lines.contains(where: { !$0.original.isEmpty }) {
+                                        Button { startRecall(page, anchor: focusedLine) } label: {
+                                            Label("接下一句", systemImage: "text.bubble")
+                                        }
+                                        .controlSize(.small)
+                                    }
+                                }
                             }
                             .padding(.horizontal, 10).padding(.bottom, 18)
                             ForEach(page.lines) { line in row(line, page: page).id(line.id) }
@@ -75,8 +106,8 @@ struct LibraryPassageReader: View {
                         .frame(maxWidth: 680, alignment: .leading)
                         .padding(.horizontal, 19).padding(.vertical, 22).frame(maxWidth: .infinity)
                     }
-                    .task(id: currentMatch) {
-                        guard let id = currentMatch else { return }
+                    .task(id: focusedLine) {
+                        guard let id = focusedLine else { return }
                         await Task.yield()
                         if !Task.isCancelled { scroll.scrollTo(id, anchor: .center) }
                     }
@@ -92,13 +123,10 @@ struct LibraryPassageReader: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(WorkspacePalette.paper)
-        .onChange(of: find) { _, _ in updateMatches() }
-        .task(id: target) { await load() }
     }
 
     private func row(_ line: LibraryPassagePage.Line, page: LibraryPassagePage) -> some View {
-        let selected = currentMatch == line.id
+        let selected = focusedLine == line.id
         return HStack(alignment: .top, spacing: 8) {
             VStack(alignment: .leading, spacing: 4) {
                 if !line.original.isEmpty {
@@ -131,22 +159,44 @@ struct LibraryPassageReader: View {
         .onHover { inside in
             if inside { hoveredLine = line.id } else if hoveredLine == line.id { hoveredLine = nil }
         }
+        .contextMenu {
+            if !line.original.isEmpty {
+                Button("从这句接下去", systemImage: "text.bubble") { startRecall(page, anchor: line.id) }
+            }
+        }
     }
 
     private func load() async {
         failure = nil
         page = nil
+        recall = nil
+        recallNotice = nil
+        returnedLine = nil
+        find = target.find
         do {
             let loaded = try await library.readPassage(target)
             try Task.checkCancellation()
             if let loaded, !loaded.lines.isEmpty {
                 page = loaded
                 updateMatches(preferred: target.lineIndex)
+                if target.recallNextLine {
+                    if let anchor = loaded.originalOccurrence(of: target.find, preferred: target.lineIndex) {
+                        startRecall(loaded, anchor: anchor)
+                    } else { recallNotice = "这份原词里找不到选中的那句。" }
+                }
             } else { failure = "本机已找不到这份歌词，可以回歌曲档案查看其他版本。" }
         } catch {
             guard !Task.isCancelled else { return }
             failure = "暂时读不到这份歌词。"
         }
+    }
+
+    private func startRecall(_ page: LibraryPassagePage, anchor: Int?) {
+        recall = LyricRecallSession(lines: page.lines, anchor: anchor)
+        if recall != nil { recallNotice = nil }
+        else if let anchor, page.lines.first(where: { $0.id == anchor })?.original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+            recallNotice = "这行只有译文，可以从另一句原词开始。"
+        } else { recallNotice = "这句后面已经没有原词了。" }
     }
 
     private func updateMatches(preferred: Int? = nil) {
@@ -157,6 +207,7 @@ struct LibraryPassageReader: View {
 
     private func move(_ offset: Int) {
         guard !matches.isEmpty else { return }
+        returnedLine = nil
         cursor = (cursor + offset + matches.count) % matches.count
     }
 }
