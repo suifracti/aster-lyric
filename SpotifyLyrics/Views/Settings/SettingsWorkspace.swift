@@ -21,13 +21,22 @@ enum WorkspacePalette {
 /// A local workspace. Opening any of its destinations works while every player is closed.
 struct SettingsWorkspace: View {
     @AppStorage(LastOpenedLyricsRecord.defaultsKey, store: .lyricsQ) private var lastOpenedData = Data()
+    @Environment(\.openDocument) private var openDocument
+    @State private var droppedOn = false
+    @State private var openingError: String?
     let navigate: (SettingsLocation) -> Void
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 19) {
-                Text("我的工作台").font(.system(size: 29, weight: .semibold, design: .serif))
-                    .accessibilityAddTraits(.isHeader)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("我的工作台").font(.system(size: 29, weight: .semibold, design: .serif))
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer()
+                    Button { openFiles(LyricFileDocument.choose(multiple: true)) } label: {
+                        Label("打开歌词…", systemImage: "doc.text")
+                    }.help("打开 TXT、LRC 或 TTML 文件，也可以从 Finder 拖到这里")
+                }
                 WorkspaceShelfCard(navigate: navigate)
                 if let record = try? JSONDecoder().decode(LastOpenedLyricsRecord.self, from: lastOpenedData) {
                     Button { navigate(.init(.library, trackKey: record.trackKey)) } label: {
@@ -83,8 +92,31 @@ struct SettingsWorkspace: View {
             .frame(maxWidth: .infinity)
         }
         .background(WorkspacePalette.paper)
+        .dropDestination(for: URL.self) { urls, _ in
+            let files = urls.filter { $0.isFileURL && LocalLyricsFileKind(rawValue: $0.pathExtension.lowercased()) != nil }
+            guard !files.isEmpty else { return false }
+            openFiles(files)
+            return true
+        } isTargeted: { droppedOn = $0 }
+        .overlay {
+            if droppedOn {
+                RoundedRectangle(cornerRadius: 10).strokeBorder(WorkspacePalette.ink, style: StrokeStyle(lineWidth: 2, dash: [6]))
+                    .padding(5).allowsHitTesting(false)
+            }
+        }
+        .alert("无法打开歌词文件", isPresented: Binding(get: { openingError != nil }, set: { if !$0 { openingError = nil } })) {
+            Button("好") { openingError = nil }
+        } message: { Text(openingError ?? "") }
     }
 
+    private func openFiles(_ urls: [URL]) {
+        Task {
+            for url in urls {
+                do { try await openDocument(at: url) }
+                catch { openingError = "\(url.lastPathComponent) · \(error.localizedDescription)" }
+            }
+        }
+    }
 }
 
 struct WorkspaceShelfCard: View {

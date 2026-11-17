@@ -128,24 +128,7 @@ struct LibraryPassageReader: View {
     private func row(_ line: LibraryPassagePage.Line, page: LibraryPassagePage) -> some View {
         let selected = focusedLine == line.id
         return HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 4) {
-                if !line.original.isEmpty {
-                    Text(line.original).font(.system(size: 17, weight: .medium, design: .serif))
-                }
-                if let backing = line.background, !backing.isEmpty {
-                    Label(backing, systemImage: "person.2").labelStyle(.titleAndIcon)
-                        .font(.callout.italic()).foregroundStyle(.secondary)
-                        .accessibilityLabel("和声，\(backing)")
-                }
-                if let translation = line.translation, !translation.isEmpty,
-                   showsTranslation || line.original.isEmpty || selected {
-                    Text(translation).font(.callout).foregroundStyle(.secondary)
-                }
-                if let reading = line.reading, !reading.isEmpty, showsReading || selected {
-                    Text(reading).font(.caption).foregroundStyle(WorkspacePalette.ink)
-                }
-            }
-            .textSelection(.enabled)
+            PassageLineText(line: line, showsTranslation: showsTranslation || selected, showsReading: showsReading || selected)
             Spacer(minLength: 8)
             if !line.original.isEmpty {
                 KeepLyricButton(text: line.original, translation: line.translation, trackKey: page.entry.trackStableKey,
@@ -209,5 +192,32 @@ struct LibraryPassageReader: View {
         guard !matches.isEmpty else { return }
         returnedLine = nil
         cursor = (cursor + offset + matches.count) % matches.count
+    }
+}
+
+struct PassageLineText: View {
+    let line: LibraryPassagePage.Line
+    let showsTranslation: Bool
+    let showsReading: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if !line.original.isEmpty {
+                Text(line.original).font(.system(size: 17, weight: .medium, design: .serif))
+            }
+            if let backing = line.background, !backing.isEmpty {
+                Label(backing, systemImage: "person.2").labelStyle(.titleAndIcon)
+                    .font(.callout.italic()).foregroundStyle(.secondary)
+                    .accessibilityLabel("和声，\(backing)")
+            }
+            if let translation = line.translation, !translation.isEmpty,
+               showsTranslation || line.original.isEmpty {
+                Text(translation).font(.callout).foregroundStyle(.secondary)
+            }
+            if let reading = line.reading, !reading.isEmpty, showsReading {
+                Text(reading).font(.caption).foregroundStyle(WorkspacePalette.ink)
+            }
+        }
+        .textSelection(.enabled)
     }
 }

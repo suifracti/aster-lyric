@@ -95,6 +95,11 @@ public struct TextLyricsImportResult: Equatable, Sendable {
 /// for the editor preview to let the user decide.
 public enum TextLyricsImportParser {
     public static func parse(_ data: Data) throws -> TextLyricsImportResult {
+        let decoded = try decode(data)
+        return try makeResult(text: decoded.text, encoding: decoded.encoding)
+    }
+
+    static func decode(_ data: Data) throws -> (text: String, encoding: TextLyricsEncoding) {
         let decoded: (String, TextLyricsEncoding)
 
         if data.starts(with: [0xEF, 0xBB, 0xBF]) {
@@ -122,7 +127,7 @@ public enum TextLyricsImportParser {
             throw TextLyricsImportError.unsupportedEncoding
         }
 
-        return try makeResult(text: decoded.0, encoding: decoded.1)
+        return decoded
     }
 
     public static func parse(_ text: String) throws -> TextLyricsImportResult {

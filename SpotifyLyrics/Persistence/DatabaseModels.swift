@@ -4,6 +4,12 @@ import CryptoKit
 /// Storage-shaped records. These types intentionally do not leak SQLite
 /// handles or SQL details into the playback and provider layers.
 public struct DatabaseTrackRecord: Equatable, Sendable {
+    var libraryTrack: Track {
+        Track(id: stableKey, title: title, artist: artistDisplay, album: album, duration: duration, isrc: isrc,
+              spotifyId: spotifyID, artworkURL: artworkURL.flatMap(URL.init(string:)),
+              spotifyURL: spotifyURI.flatMap(URL.init(string:)))
+    }
+
     public let stableKey: String
     public let spotifyID: String?
     public let spotifyURI: String?

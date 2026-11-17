@@ -289,6 +289,19 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         try await repository.searchLibraryPassages(query)
     }
 
+    func fileDestinations() async throws -> [DatabaseTrackRecord] {
+        try await repository.localRecordingChoices()
+    }
+
+    func fileLyrics(_ file: LocalLyricsFile, with track: Track, archiveKey: String? = nil) async throws -> LibraryPassageTarget {
+        let target = try await repository.importLyricFile(file, into: track, archiveKey: archiveKey)
+        if !entries.isEmpty || selectedTrackDetail != nil {
+            refreshTrackDetail(stableKey: target.trackKey)
+            refresh()
+        }
+        return target
+    }
+
     public func refresh() {
         let requestID = UUID()
         listRequestID = requestID

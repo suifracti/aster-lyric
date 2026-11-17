@@ -206,6 +206,7 @@ declare -a CASES=(
   "settings-lyrics|--surface settings --settings-page 歌词与翻译 --appearance light"
   "settings-ai|--surface settings --settings-page 'AI 翻译' --appearance light"
   "settings-storage|--surface settings --settings-page 高级与数据 --sample-backup --appearance light --width 880 --height 600"
+  "lyric-file|--surface lyric-file --appearance light --width 560 --height 530"
 )
 
 selected=("$@")

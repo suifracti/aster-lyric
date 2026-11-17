@@ -34,7 +34,8 @@ public struct LRCImportResult: Equatable, Sendable {
     }
 
     public func document(identity: TrackIdentity, track: Track, source: LyricsSource = .manualImport) -> LyricsDocument {
-        LyricsDocument(
+        let timedRows = Set(lines.indices.filter { lines[$0].startTime != nil })
+        return LyricsDocument(
             identity: identity,
             title: metadata.title ?? track.title,
             artist: metadata.artist ?? track.artist,
@@ -44,7 +45,9 @@ public struct LRCImportResult: Equatable, Sendable {
             isSynchronized: isSynchronized,
             source: source,
             confidence: 1,
-            providerSourceID: "manualImport"
+            providerSourceID: "manualImport",
+            language: metadata.language,
+            explicitlyTimedLineIndices: isSynchronized || timedRows.isEmpty ? nil : timedRows
         )
     }
 }
@@ -110,17 +113,13 @@ public enum LRCImportParser {
         }
 
         guard !lines.isEmpty, lines.contains(where: { !$0.originalText.isEmpty }) else { throw LRCImportError.empty }
-        if lines.contains(where: { $0.startTime != nil }) {
-            lines.sort {
-                switch ($0.startTime, $1.startTime) {
-                case let (left?, right?): return left < right
-                case (_?, nil): return true
-                default: return false
-                }
-            }
-        }
         let nonBlank = lines.filter { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         let isSynchronized = nonBlank.allSatisfy { $0.startTime != nil } && nonBlank.contains(where: { $0.startTime != nil })
+        if isSynchronized {
+            // Blank separators in a formatted file have no playback timestamp.
+            lines.removeAll { $0.startTime == nil }
+            lines.sort { ($0.startTime ?? 0) < ($1.startTime ?? 0) }
+        }
         return LRCImportResult(metadata: metadata, lines: lines, isSynchronized: isSynchronized, warnings: warnings)
     }
 
@@ -146,8 +145,10 @@ public enum LRCImportParser {
 
     private static func parseLength(_ value: String) -> TimeInterval? {
         let pieces = value.split(separator: ":")
-        guard pieces.count == 2, let minutes = Double(pieces[0]), let seconds = Double(pieces[1]) else { return nil }
-        return minutes * 60 + seconds
+        guard pieces.count == 2, let minutes = Double(pieces[0]), let seconds = Double(pieces[1]),
+              minutes >= 0, seconds >= 0 else { return nil }
+        let duration = minutes * 60 + seconds
+        return duration.isFinite && duration < Double(Int.max) / 1000 ? duration : nil
     }
 }
 
@@ -190,7 +191,8 @@ public enum LRCExporter {
         for (key, value) in metadata { output.append("[\(key):\(value)]") }
         for index in document.lines.indices {
             let body = text.indices.contains(index) ? text[index] : ""
-            if document.isSynchronized, let timestamp = document.lines[index].timestamp as TimeInterval? {
+            if document.lineHasExplicitTiming(index) {
+                let timestamp = document.lines[index].timestamp
                 output.append("[\(formatTimestamp(timestamp))]\(body)")
             } else {
                 output.append(body)

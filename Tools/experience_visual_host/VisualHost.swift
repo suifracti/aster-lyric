@@ -668,7 +668,7 @@ private struct ExperienceFixtureRoot: View {
                     try? await Task.sleep(for: .milliseconds(800))
                 }
                 var extraWindow: NSWindow?
-                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker", "favorites", "reader"].contains(ExperienceArguments.surface) {
+                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker", "favorites", "reader", "lyric-file"].contains(ExperienceArguments.surface) {
                     MenuBarLyricsController.shared.bind(playbackState: playback)
                     let root: AnyView
                     if ExperienceArguments.surface == "playlist-picker" {
@@ -684,6 +684,19 @@ private struct ExperienceFixtureRoot: View {
                         root = AnyView(TranslationProviderControls(settings: settings)
                             .padding(16).frame(width: 360)
                             .background(Color(nsColor: .windowBackgroundColor)))
+                    } else if ExperienceArguments.surface == "lyric-file" {
+                        let sample = """
+                        <tt xml:lang="ja" xmlns:ttm="urn:ttm" xmlns:amll="urn:amll"><head><metadata>
+                        <amll:meta key="musicName" value="窗边的来信"/><amll:meta key="artists" value="自习室录音"/>
+                        <amll:meta key="album" value="秋天手记"/></metadata></head><body><div>
+                        <p begin="1s"><span begin="1s" end="3s">窓辺に手紙を置いた</span><span ttm:role="x-translation">我把信放在窗边。</span><span ttm:role="x-roman">madobe ni tegami o oita</span></p>
+                        <p begin="5s">雨音が少し遠くなる<span ttm:role="x-translation">雨声渐渐远了。</span></p>
+                        <p begin="11s">宛名はまだ書かない<span ttm:role="x-translation">收信人的名字，我还留着没写。</span></p>
+                        <p begin="16s">明日の朝にしよう<span ttm:role="x-translation">等明早再写吧。</span></p>
+                        </div></body></tt>
+                        """
+                        let file = try! LocalLyricsFile(data: Data(sample.utf8), kind: .ttml, preferredLanguage: "zh-Hans")
+                        root = AnyView(LyricFileReader(file: file, name: "窗边的来信.ttml", library: PersonalLyricsLibraryService()))
                     } else if ExperienceArguments.surface == "reader" {
                         let recall = ProcessInfo.processInfo.arguments.contains("--recall-next")
                         let target = LibraryPassageTarget(trackKey: TrackIdentity(track: playback.currentTrack).stableKey,

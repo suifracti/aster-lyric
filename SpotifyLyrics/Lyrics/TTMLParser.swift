@@ -24,8 +24,16 @@ public enum TTMLParser {
         source: LyricsSource = .amll,
         preferredTranslationLanguage: String = "zh-Hans"
     ) -> LyricsDocument? {
-        guard let data = content.data(using: .utf8), !content.isEmpty else { return nil }
+        parse(data: Data(content.utf8), identity: identity, source: source, preferredTranslationLanguage: preferredTranslationLanguage)
+    }
 
+    public static func parse(
+        data: Data,
+        identity: TrackIdentity,
+        source: LyricsSource = .amll,
+        preferredTranslationLanguage: String = "zh-Hans"
+    ) -> LyricsDocument? {
+        guard !data.isEmpty else { return nil }
         let delegate = TTMLParserDelegate()
         let xmlParser = XMLParser(data: data)
         xmlParser.delegate = delegate
@@ -142,7 +150,8 @@ public enum TTMLParser {
 
     /// Parses timestamp string in formats: "00:01:23.456", "01:23.45", "12.34s", "1234ms", "12.34"
     public static func parseTimestamp(_ raw: String) -> TimeInterval? {
-        guard let seconds = seconds(from: raw), seconds.isFinite, seconds >= 0 else { return nil }
+        guard let seconds = seconds(from: raw), seconds.isFinite, seconds >= 0,
+              seconds < Double(Int.max) / 1000 else { return nil }
         return seconds
     }
 

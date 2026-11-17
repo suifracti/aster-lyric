@@ -10,6 +10,7 @@
 |---|---|
 | 改名、换界面、旧数据或人工歌词不能丢；改持久化/身份逻辑 | L-001 |
 | 清理缓存、查看备份占用、另一个窗口打开时也要备份最新歌词 | L-047 · SettingsDataController、writeDatabaseSnapshot、V3CanvasStore |
+| 从 Finder 打开歌词文件、给本机录音补稿、导入后已有版被换掉 | L-048 · LyricFileDocument、LocalLyricsFile、storeImportedFile |
 | 新包、截图、构建/签名、实际运行是哪份 | L-002；DEVELOPMENT_WORKFLOW.md |
 | 极简、减少按钮、保留旧功能 | L-003；TOOLBAR_BEHAVIOR.md |
 | 找回旧环境光、模糊/缩放参数、样式合并；改 renderer/偏好 | L-004；AppSettingsStore.swift 与 authenticAmbientArtworkLayers |
@@ -719,3 +720,11 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 设置的「本机空间」分别显示数据库及日志、手动与升级备份、封面与背景视频。可以在 Finder 定位备份，或把选中的一份移到废纸篓。缓存清理只清本应用的封面、生成文件名的 Canvas 和可重建的搜索索引。歌词原词、译文、读音、逐字与排轴来源文件都是用户资产。
 
 旧清理实现直接删除了原词版本，外键同时删除已锁定原词的译文。旧手动备份先执行 FULL checkpoint 再复制主文件，在另一个窗口持有 WAL 读快照时会漏掉新提交。临时库均已复现。手动与升级备份现在共用原有 SQLite 在线快照实现，临时文件关闭后才取得备份名。统计、备份和清缓存的异步方法明确实现仓库协议，设置更新操作后直接重新取用量。对应原生用例在 LibraryRevisionsContractTests 与 ListeningBatchOneTests。[SQLite 在线备份](https://sqlite.org/backup.html)
+
+## L-048 把歌词文件当文档打开（2026-11-18）
+
+TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、文件菜单和工作台拖放都能直接阅读。选了「存入」才关联到点选的录音，或用填写的歌名、歌手、专辑建立本机档案。歌曲档案里补词会先打开相同的预览，并记住具体录音。
+
+同一份文件重复存入同一录音，只保留一份。独立原词、文件自带的译文、读音和逐字沿歌词库原有版本路径保存，既有锁定和取消采用均有效。源文件不改写。TTML 按 XML 字节编码读取，LRC 的零秒时间和无时间行在导入、导出后仍可区分。
+
+已用独立 Bundle ID、临时数据库、停用 Keychain 和模型的 App 从 macOS 打开一个 LRC，经真实文档窗读取正文，点击存入并回读数据库。词库保护及 UTF-16 的证据在 LibraryRevisionsContractTests。

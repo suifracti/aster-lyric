@@ -169,6 +169,12 @@ struct SpotifyLyricsApp: App {
         .defaultSize(width: 1_100, height: 720)
 #endif
 
+        DocumentGroup(viewing: LyricFileDocument.self) { opened in
+            LyricDocumentWindow(document: opened.document, url: opened.fileURL)
+                .environmentObject(appSettings)
+        }
+        .defaultSize(width: 580, height: 630)
+
         Settings {
             SettingsRootView()
                 .environmentObject(appSettings)

@@ -4,6 +4,57 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class LibraryRevisionsContractTests: XCTestCase {
+    func testLocalFileReadsUTF16AndKeepsUntimedLRCLinesInPlace() throws {
+        let ttml = #"<?xml version="1.0" encoding="UTF-16"?><tt><body><div><p>纸上</p></div></body></tt>"#
+        let utf16 = Data([0xff, 0xfe]) + (try XCTUnwrap(ttml.data(using: .utf16LittleEndian)))
+        let xml = try LocalLyricsFile(data: utf16, kind: .ttml, preferredLanguage: "zh-Hans")
+        XCTAssertEqual(xml.lines.map(\.originalText), ["纸上"])
+
+        let lrc = "[ti:纸上]\n[language:zh]\n前言\n[00:00.00]第一行\n间记\n[00:12.50]后一行"
+        let file = try LocalLyricsFile(data: Data(lrc.utf8), kind: .lrc, preferredLanguage: "zh-Hans")
+        XCTAssertEqual(file.content.language, "zh")
+        XCTAssertEqual(file.lines.map(\.originalText), ["前言", "第一行", "间记", "后一行"])
+        XCTAssertEqual(file.content.explicitlyTimedLineIndices, [1, 3])
+        let exported = LRCExporter.original(document: file.content, source: "manualImport", locked: false)
+        let roundTrip = try LRCImportParser.parse(exported)
+        XCTAssertEqual(roundTrip.lines.map(\.startTime), [nil, 0, nil, 12.5])
+    }
+
+    func testLocalFileCanBeReadAndFiledBesideLockedLyricsWithoutPlaying() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("files.sqlite3"),
+                                         alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await repo.prepare()
+        let track = Track(title: "海岸", artist: "样例", album: "現場", duration: 90, spotifyId: "recordingA")
+        let identity = TrackIdentity(track: track)
+        let original = LyricsDocument(identity: identity, lines: [.init(timestamp: 1, originalText: "已有手稿")],
+                                      source: .manualEdit)
+        let saved = try await repo.save(track: track, identity: identity, document: original)
+        let locked = try XCTUnwrap(saved.versionID)
+        try await repo.markLocked(versionID: locked, locked: true)
+        let ttml = #"<tt xml:lang="ja" xmlns:ttm="urn:ttm"><body><div><p begin="1s"><span begin="1s" end="2s">海</span><span ttm:role="x-bg">声</span><span ttm:role="x-translation" xml:lang="zh">海边</span></p><p begin="4s">風</p></div></body></tt>"#
+        let file = try LocalLyricsFile(data: Data(ttml.utf8), kind: .ttml, preferredLanguage: "zh-Hans")
+        XCTAssertEqual(file.lines.map(\.originalText), ["海", "風"])
+        let choices = try await repo.localRecordingChoices()
+        let destination = try XCTUnwrap(choices.first { $0.stableKey == identity.stableKey })
+        let imported = try await repo.importLyricFile(file, into: destination.libraryTrack, archiveKey: destination.stableKey)
+        let duplicate = try await repo.importLyricFile(file, into: track)
+        XCTAssertEqual(duplicate, imported)
+        let page = try await repo.readLibraryPassage(imported)
+        XCTAssertEqual(page?.lines.first?.background, "声")
+        XCTAssertEqual(page?.lines.first?.translation, "海边")
+        let stored = try await repo.loadBestStored(track: track, identity: identity)
+        XCTAssertEqual(stored?.versionID, locked)
+        let detail = try await repo.loadPersonalLibraryTrackDetail(stableKey: identity.stableKey)
+        XCTAssertEqual(detail?.lyricsVersions.count, 2)
+        XCTAssertEqual(detail?.translationVersions.count, 1)
+        let localTrack = Track(title: "海岸", artist: "另一录音", album: "", duration: 0)
+        let local = try await repo.importLyricFile(file, into: localTrack)
+        XCTAssertNotEqual(imported.trackKey, local.trackKey)
+        let newRecording = try await repo.loadBestStored(track: localTrack, identity: TrackIdentity(track: localTrack))
+        XCTAssertEqual(newRecording?.document.lines.first?.originalText, "海")
+    }
+
     func testClearingCacheRetainsLockedLyricsAndTheirTranslation() async throws {
         let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
         let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("local.sqlite3"),

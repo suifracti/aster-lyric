@@ -540,7 +540,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         identity: TrackIdentity,
         document: LyricsDocument
     ) throws -> LyricsPersistenceSaveResult {
-        try saveValidated(track: track, identity: identity, document: document, automaticSelection: false)
+        try saveValidated(track: track, identity: identity, document: document, intent: .provider)
     }
 
     public func saveAutomaticallySelected(track: Track, identity: TrackIdentity, document: LyricsDocument, decision: LyricsAutomaticSelectionEvidence) async throws -> LyricsPersistenceSaveResult {
@@ -548,11 +548,31 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
               TrackIdentity(track: track) == identity, document.confidence.isFinite, (0...1).contains(document.confidence) else {
             return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("自动选择缺少有效匹配证据"))
         }
-        return try saveValidated(track: track, identity: identity, document: document, automaticSelection: true)
+        return try saveValidated(track: track, identity: identity, document: document, intent: .automaticSelection)
     }
 
-    private func saveValidated(track: Track, identity: TrackIdentity, document: LyricsDocument, automaticSelection: Bool) throws -> LyricsPersistenceSaveResult {
+    /// The user filed a particular lyric file with this recording. Keep its selected version and any revocation.
+    func storeImportedFile(track: Track, document: LyricsDocument, locked: Bool,
+                           archiveKey: String? = nil) throws -> LyricsPersistenceSaveResult {
+        try prepare()
+        guard document.source == .manualImport else { throw LyricsEditingRepositoryError.identityMismatch }
+        if let archiveKey {
+            guard let record = try fetchTrack(stableKey: resolvedCanonicalStableKey(archiveKey)),
+                  TrackIdentity(track: record.libraryTrack) == TrackIdentity(track: track) else {
+                throw LyricsEditingRepositoryError.identityMismatch
+            }
+        }
+        return try saveValidated(track: track, identity: TrackIdentity(track: track), document: document,
+                                 intent: .file(locked: locked), archiveKey: archiveKey)
+    }
+
+    private enum SaveIntent: Equatable { case provider, automaticSelection, file(locked: Bool) }
+
+    private func saveValidated(track: Track, identity: TrackIdentity, document: LyricsDocument, intent: SaveIntent,
+                               archiveKey: String? = nil) throws -> LyricsPersistenceSaveResult {
         try ensurePrepared()
+        let importedLock: Bool?
+        if case let .file(locked) = intent { importedLock = locked } else { importedLock = nil }
 
         guard document.identity == identity else {
             return LyricsPersistenceSaveResult(
@@ -569,16 +589,16 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         guard document.source != .mock else {
             return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("Mock 歌词不写入"))
         }
-        guard automaticSelection || LyricsMatcher.isHighConfidence(document.confidence) else {
+        guard intent == .automaticSelection || LyricsMatcher.isHighConfidence(document.confidence) else {
             return LyricsPersistenceSaveResult(
                 versionID: nil,
                 disposition: .rejected("低置信度歌词不写入")
             )
         }
 
-        let canonicalKey = try resolvedCanonicalStableKey(identity.stableKey)
-        guard !Task.isCancelled, !(try hasRevokedLyricsSelection(stableKey: canonicalKey)) else {
-            return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("已取消采用，不自动恢复歌词"))
+        let canonicalKey = try resolvedCanonicalStableKey(archiveKey ?? identity.stableKey)
+        guard !Task.isCancelled else {
+            return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("歌词保存已取消"))
         }
         let now = Date()
         let rawTrackRecord = LyricsPersistenceMapper.trackRecord(track: track, identity: identity, now: now)
@@ -588,7 +608,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             document: document,
             identity: identity,
             versionID: versionID,
-            now: now
+            now: now, isManuallyEdited: importedLock != nil, isLocked: importedLock == true
         )
         let versionRecord = canonicalVersionRecord(rawVersionRecord, stableKey: canonicalKey)
         let aliases = LyricsPersistenceMapper.aliasRecords(
@@ -604,6 +624,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         )
 
         return try withTransaction {
+            if importedLock == nil, try hasRevokedLyricsSelection(stableKey: canonicalKey) {
+                return LyricsPersistenceSaveResult(versionID: nil, disposition: .rejected("已取消采用，不自动恢复歌词"))
+            }
             try upsertTrack(trackRecord)
             for alias in aliases {
                 try insertAlias(alias)
@@ -629,12 +652,16 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 )
             }
 
-            if try hasLockedVersion(stableKey: canonicalKey) {
+            if importedLock != nil {
+                if let existing = try fetchBestVersion(stableKey: canonicalKey) {
+                    try setPreferredLyricsVersion(trackStableKey: canonicalKey, lyricsVersionID: existing.id)
+                }
+            } else if try hasLockedVersion(stableKey: canonicalKey) {
                 return LyricsPersistenceSaveResult(versionID: nil, disposition: .skippedLocked)
             }
 
             try insertVersion(versionRecord)
-            if automaticSelection && document.isSynchronized {
+            if intent == .automaticSelection && document.isSynchronized {
                 let prefer = try prepare("UPDATE lyrics_versions SET is_preferred = 1 WHERE id = ? AND NOT EXISTS (SELECT 1 FROM lyrics_versions WHERE track_stable_key = ? AND (is_preferred = 1 OR is_locked = 1 OR is_manually_edited = 1));")
                 defer { sqlite3_finalize(prefer) }
                 try bindText(versionID.uuidString, at: 1, to: prefer)
@@ -643,6 +670,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             }
             for line in lines {
                 try insertLine(line)
+            }
+            if importedLock != nil && lines.contains(where: { $0.translationText?.isEmpty == false }) {
+                try insertEmbeddedTranslationIfAvailable(lyricsVersionID: versionID, sourceContentHash: sourceContentHash)
             }
             try attachTimingVersionIfNeeded(
                 document: document,
@@ -1302,38 +1332,43 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     public func preserveEmbeddedTranslation(lyricsVersionID: UUID, sourceContentHash: String) async throws {
         try ensurePrepared()
         try withTransaction {
-            guard let source = try fetchSourceLyrics(versionID: lyricsVersionID),
-                  let version = try fetchLyricsVersion(versionID: lyricsVersionID) else {
-                throw TranslationRepositoryError.sourceLyricsNotFound
-            }
-            guard source.hash == sourceContentHash else { throw TranslationRepositoryError.sourceContentMismatch }
-            let existing = try loadTranslationVersions(lyricsVersionID: lyricsVersionID,
-                targetLanguage: "und", sourceContentHash: sourceContentHash)
-            guard !existing.contains(where: { $0.isEmbeddedTranslation }) else { return }
-            let lines = source.lines.map { AITranslationLine(index: $0.lineIndex, translation: $0.translationText ?? "") }
-            let manual = version.isManuallyEdited || [LyricsSource.manualEdit.rawValue,
-                LyricsSource.manualImport.rawValue, LyricsSource.manualCreate.rawValue].contains(version.source)
-            // Incomplete native text remains in lyric_lines; never manufacture
-            // missing translations. Source-provided text may be sparse, while
-            // manually authored source text still has to be complete.
-            guard lines.contains(where: { !$0.translation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
-                  source.lines.allSatisfy({ line in
-                      let originalBlank = line.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                      let text = line.translationText ?? ""
-                      let translationBlank = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                      let validTranslation = manual
-                          ? originalBlank == translationBlank
-                          : (originalBlank == translationBlank || (!originalBlank && text.isEmpty))
-                      return validTranslation && (!originalBlank || text.isEmpty) &&
-                          !text.contains("\n") && !text.contains("\r")
-                  }) else { return }
-            let draft = AITranslationDraft(lines: lines, targetLanguage: "und",
-                model: manual ? "人工已有译文" : "词源自带译文", baseURLHost: "", promptHash: "",
-                sourceContentHash: sourceContentHash, sourceKind: manual ? .manualImport : .providerEmbedded,
-                isMachineGenerated: false, isManuallyEdited: manual, engineID: "provider-embedded")
-            _ = try insertValidatedTranslation(versionID: UUID(), lyricsVersionID: lyricsVersionID,
-                sourceContentHash: sourceContentHash, originalLines: source.lines.map(\.originalText), draft: draft)
+            try insertEmbeddedTranslationIfAvailable(lyricsVersionID: lyricsVersionID, sourceContentHash: sourceContentHash)
         }
+    }
+
+    private func insertEmbeddedTranslationIfAvailable(lyricsVersionID: UUID, sourceContentHash: String) throws {
+        guard let source = try fetchSourceLyrics(versionID: lyricsVersionID),
+              let version = try fetchLyricsVersion(versionID: lyricsVersionID) else {
+            throw TranslationRepositoryError.sourceLyricsNotFound
+        }
+        guard source.hash == sourceContentHash else { throw TranslationRepositoryError.sourceContentMismatch }
+        let existing = try loadTranslationVersions(lyricsVersionID: lyricsVersionID,
+            targetLanguage: "und", sourceContentHash: sourceContentHash)
+        guard !existing.contains(where: { $0.isEmbeddedTranslation }) else { return }
+        let lines = source.lines.map { AITranslationLine(index: $0.lineIndex, translation: $0.translationText ?? "") }
+        let fromFile = version.providerSourceID.hasPrefix(LyricsPersistenceMapper.lyricFileSourcePrefix)
+        let manual = !fromFile && (version.isManuallyEdited || [LyricsSource.manualEdit.rawValue,
+            LyricsSource.manualImport.rawValue, LyricsSource.manualCreate.rawValue].contains(version.source))
+        // Incomplete native text remains in lyric_lines; never manufacture
+        // missing translations. Source-provided text may be sparse, while
+        // manually authored source text still has to be complete.
+        guard lines.contains(where: { !$0.translation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              source.lines.allSatisfy({ line in
+                  let originalBlank = line.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                  let text = line.translationText ?? ""
+                  let translationBlank = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                  let validTranslation = manual
+                      ? originalBlank == translationBlank
+                      : (originalBlank == translationBlank || (!originalBlank && text.isEmpty))
+                  return validTranslation && (!originalBlank || text.isEmpty) &&
+                      !text.contains("\n") && !text.contains("\r")
+              }) else { return }
+        let draft = AITranslationDraft(lines: lines, targetLanguage: "und",
+            model: manual ? "人工已有译文" : "词源自带译文", baseURLHost: "", promptHash: "",
+            sourceContentHash: sourceContentHash, sourceKind: manual ? .manualImport : .providerEmbedded,
+            isMachineGenerated: false, isManuallyEdited: manual, engineID: "provider-embedded")
+        _ = try insertValidatedTranslation(versionID: UUID(), lyricsVersionID: lyricsVersionID,
+            sourceContentHash: sourceContentHash, originalLines: source.lines.map(\.originalText), draft: draft)
     }
 
     public func loadTranslationVersions(
@@ -3321,6 +3356,28 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         defer { sqlite3_finalize(statement) }
         try bindText(stableKey, at: 1, to: statement)
         guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        return try trackRecord(from: statement)
+    }
+
+    /// Metadata only. Choosing where to file a lyric does not load every song's version history.
+    func localRecordingChoices() throws -> [DatabaseTrackRecord] {
+        try prepare()
+        let statement = try prepare("""
+            SELECT stable_key, spotify_id, spotify_uri, isrc, title, artist_display,
+                   album, duration, artwork_url, created_at, updated_at
+            FROM tracks AS t
+            WHERE NOT EXISTS (SELECT 1 FROM track_identity_redirects AS r WHERE r.source_stable_key = t.stable_key)
+            ORDER BY updated_at DESC, stable_key;
+            """)
+        defer { sqlite3_finalize(statement) }
+        var recordings: [DatabaseTrackRecord] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            recordings.append(try trackRecord(from: statement))
+        }
+        return recordings
+    }
+
+    private func trackRecord(from statement: OpaquePointer) throws -> DatabaseTrackRecord {
         guard let key = columnText(statement, index: 0),
               let title = columnText(statement, index: 4),
               let artist = columnText(statement, index: 5),

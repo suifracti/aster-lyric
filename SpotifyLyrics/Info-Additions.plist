@@ -2,6 +2,35 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key><string>歌词文件</string>
+			<key>CFBundleTypeRole</key><string>Viewer</string>
+			<key>LSHandlerRank</key><string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array><string>com.suifracti.aster-lyric.lrc</string><string>com.suifracti.aster-lyric.ttml</string><string>public.plain-text</string></array>
+		</dict>
+	</array>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key><string>com.suifracti.aster-lyric.lrc</string>
+			<key>UTTypeDescription</key><string>LRC 歌词</string>
+			<key>UTTypeConformsTo</key><array><string>public.plain-text</string></array>
+			<key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>lrc</string></array></dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>com.suifracti.aster-lyric.ttml</string>
+			<key>UTTypeDescription</key><string>TTML 歌词</string>
+			<key>UTTypeConformsTo</key><array><string>public.xml</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>ttml</string></array>
+				<key>public.mime-type</key><string>application/ttml+xml</string>
+			</dict>
+		</dict>
+	</array>
 	<key>CFBundleIconFile</key>
 	<string>SpotifyLyrics.icns</string>
 	<key>NSScreenCaptureUsageDescription</key>

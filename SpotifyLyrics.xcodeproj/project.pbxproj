@@ -274,6 +274,8 @@
 		B660A889C6718EFEB6451CB7 /* LyricsDisplayPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA28E56C08C48EF0454D5566 /* LyricsDisplayPlacement.swift */; };
 		4D7C7204CB61BC984163EAD7 /* LyricRecallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F57414EF02B03B082F419D79 /* LyricRecallView.swift */; };
 		311E64C965DA010EA4EE0E08 /* LibraryStorageSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D878152D0CF1CEB3707B44BF /* LibraryStorageSettingsView.swift */; };
+		76742E4922C17A4F57B4463F /* LocalLyricsFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C969ACC8BEA0FCFAB31779E /* LocalLyricsFile.swift */; };
+		1F08C11A54AD54A4C45E749C /* LyricFileReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4E11A2DEDE70F2E0F48ECB /* LyricFileReader.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -550,6 +552,8 @@
 		BA28E56C08C48EF0454D5566 /* LyricsDisplayPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Windows/LyricsDisplayPlacement.swift; sourceTree = "<group>"; };
 		F57414EF02B03B082F419D79 /* LyricRecallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricRecallView.swift; sourceTree = "<group>"; };
 		D878152D0CF1CEB3707B44BF /* LibraryStorageSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryStorageSettingsView.swift; sourceTree = "<group>"; };
+		7C969ACC8BEA0FCFAB31779E /* LocalLyricsFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalLyricsFile.swift; sourceTree = "<group>"; };
+		6E4E11A2DEDE70F2E0F48ECB /* LyricFileReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricFileReader.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -672,6 +676,7 @@
 				1100006F2D83400100000000 /* LyricsTimelineValidator.swift */,
 				110000702D83400100000000 /* LRCImportExport.swift */,
 				110000712D83400100000000 /* TextLyricsImport.swift */,
+				7C969ACC8BEA0FCFAB31779E /* LocalLyricsFile.swift */,
 			);
 			path = Editor;
 			sourceTree = "<group>";
@@ -710,6 +715,7 @@
 				110000612D83400100000000 /* SettingsRootView.swift */,
 				0342EF8892AAF6BD5E1F5E79 /* AppearanceSettingsView.swift */,
 				E64E1B146BA70DF96667E71D /* LibraryPassageReader.swift */,
+				6E4E11A2DEDE70F2E0F48ECB /* LyricFileReader.swift */,
 				D878152D0CF1CEB3707B44BF /* LibraryStorageSettingsView.swift */,
 				F57414EF02B03B082F419D79 /* LyricRecallView.swift */,
 				65306960D44D11ACCB0D8792 /* SettingsWorkspace.swift */,
@@ -1248,6 +1254,7 @@
 				110000612D83400100000001 /* SettingsRootView.swift in Sources */,
 				09C1CD83C63842207A3EF955 /* AppearanceSettingsView.swift in Sources */,
 				96DB0441CC165D2F07AC0C11 /* LibraryPassageReader.swift in Sources */,
+				1F08C11A54AD54A4C45E749C /* LyricFileReader.swift in Sources */,
 				311E64C965DA010EA4EE0E08 /* LibraryStorageSettingsView.swift in Sources */,
 				4D7C7204CB61BC984163EAD7 /* LyricRecallView.swift in Sources */,
 				8382063FD9B58CD5BA37F60F /* SettingsWorkspace.swift in Sources */,
@@ -1269,6 +1276,7 @@
 				1100006F2D83400100000001 /* LyricsTimelineValidator.swift in Sources */,
 				110000702D83400100000001 /* LRCImportExport.swift in Sources */,
 				110000712D83400100000001 /* TextLyricsImport.swift in Sources */,
+				76742E4922C17A4F57B4463F /* LocalLyricsFile.swift in Sources */,
 				110000722D83400100000001 /* ManualLyricsActionsView.swift in Sources */,
 				110000E22D83400100000001 /* AlignmentProvenanceStore.swift in Sources */,
 				110000E32D83400100000001 /* AlignmentSessionGuard.swift in Sources */,

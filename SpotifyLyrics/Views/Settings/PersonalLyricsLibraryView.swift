@@ -477,6 +477,7 @@ private struct RecordShelfMark: View {
 // MARK: - Track Detail View
 
 public struct PersonalLibraryTrackDetailView: View {
+    @EnvironmentObject private var settings: AppSettingsStore
     @EnvironmentObject private var playback: PlaybackState
     @ObservedObject var service: PersonalLyricsLibraryService
     let stableKey: String
@@ -486,6 +487,15 @@ public struct PersonalLibraryTrackDetailView: View {
     var beforePresentSheet: (() -> Void)?
     var readPassage: ((LibraryPassageTarget) -> Void)? = nil
     @State private var selectedSection: VersionSection = .all
+    @State private var incomingFile: IncomingFile?
+    @State private var fileIssue: String?
+
+    private struct IncomingFile: Identifiable {
+        let id = UUID()
+        let file: LocalLyricsFile
+        let name: String
+        let destination: PersonalLyricsLibraryEntry
+    }
 
     private enum VersionSection: String, CaseIterable, Identifiable {
         case all = "全部", lyrics = "原词", translations = "译文", readings = "读音", timing = "时间轴"
@@ -534,6 +544,9 @@ public struct PersonalLibraryTrackDetailView: View {
                             versionSection(title: "原词", count: lyricsVersions.count, icon: "text.quote") {
                                 if lyricsVersions.isEmpty {
                                     emptyPlaceholder("暂无保存的歌词版本")
+                                    if !compact {
+                                        Button("从本机文件补上…", systemImage: "doc.badge.plus") { attachFile(to: detail.entry) }
+                                    }
                                 } else {
                                     ForEach(lyricsVersions) { lv in
                                         lyricsVersionCard(lv, entry: detail.entry, versions: lyricsVersions)
@@ -605,6 +618,31 @@ public struct PersonalLibraryTrackDetailView: View {
         .task(id: stableKey) {
             if !usesCurrentTrackDetail { service.selectTrack(stableKey: stableKey) }
         }
+        .sheet(item: $incomingFile) { incoming in
+            LyricFileReader(file: incoming.file, name: incoming.name, library: service, destination: incoming.destination,
+                            close: { incomingFile = nil })
+                .frame(minWidth: 460, idealWidth: 540, minHeight: 390, idealHeight: 530)
+        }
+        .alert("无法打开歌词文件", isPresented: Binding(get: { fileIssue != nil }, set: { if !$0 { fileIssue = nil } })) {
+            Button("好") { fileIssue = nil }
+        } message: { Text(fileIssue ?? "") }
+    }
+
+    private func attachFile(to entry: PersonalLyricsLibraryEntry) {
+        guard let url = LyricFileDocument.choose(multiple: false).first else { return }
+        let language = settings.aiTranslationConfiguration.targetLanguage
+        Task {
+            do {
+                let file = try await Task.detached(priority: .userInitiated) {
+                    let accessing = url.startAccessingSecurityScopedResource()
+                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                    let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                    return try LocalLyricsFile(data: data, kind: LocalLyricsFileKind(rawValue: url.pathExtension.lowercased()) ?? .txt,
+                                               preferredLanguage: language)
+                }.value
+                incomingFile = IncomingFile(file: file, name: url.lastPathComponent, destination: entry)
+            } catch { fileIssue = error.localizedDescription }
+        }
     }
 
     private func trackHeader(_ entry: PersonalLyricsLibraryEntry) -> some View {
@@ -648,13 +686,11 @@ public struct PersonalLibraryTrackDetailView: View {
                 .controlSize(.small)
             }
 
-            Button {
-                service.exportPackage(for: entry.trackStableKey)
-            } label: {
-                Label("导出资产包", systemImage: "square.and.arrow.up")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
+            Menu {
+                Button("从文件添加歌词…", systemImage: "doc.badge.plus") { attachFile(to: entry) }
+                Button("导出资产包", systemImage: "square.and.arrow.up") { service.exportPackage(for: entry.trackStableKey) }
+            } label: { Image(systemName: "ellipsis.circle") }
+            .menuIndicator(.hidden).fixedSize().accessibilityLabel("档案操作")
         }
         .padding(.bottom, 4)
     }

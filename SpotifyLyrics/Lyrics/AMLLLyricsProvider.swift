@@ -144,8 +144,7 @@ public final class AMLLLyricsProvider: LyricsProvider, @unchecked Sendable {
             guard !Task.isCancelled,
                   let httpResponse = response as? HTTPURLResponse,
                   (200..<300).contains(httpResponse.statusCode),
-                  let content = String(data: data, encoding: .utf8),
-                  let parsed = TTMLParser.parse(content, identity: identity, source: .amll, preferredTranslationLanguage: language),
+                  let parsed = TTMLParser.parse(data: data, identity: identity, source: .amll, preferredTranslationLanguage: language),
                   !parsed.lines.isEmpty else {
                 return nil
             }

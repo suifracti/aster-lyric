@@ -97,6 +97,7 @@ public enum DatabaseSourceIdentifier {
 }
 
 public enum LyricsPersistenceMapper {
+    static let lyricFileSourcePrefix = "lyric-file:"
     public static func trackRecord(
         track: Track,
         identity: TrackIdentity,
@@ -198,7 +199,9 @@ public enum LyricsPersistenceMapper {
         document: LyricsDocument,
         identity: TrackIdentity,
         versionID: UUID,
-        now: Date
+        now: Date,
+        isManuallyEdited: Bool = false,
+        isLocked: Bool = false
     ) -> DatabaseLyricsVersionRecord {
         let source = DatabaseSourceIdentifier.identifier(for: document.source)
         let providerSourceID = document.providerSourceID?.isEmpty == false
@@ -217,8 +220,8 @@ public enum LyricsPersistenceMapper {
             createdAt: now,
             updatedAt: now,
             isMachineGenerated: document.source == .asrMachineGenerated || document.source == .automaticAlignment,
-            isManuallyEdited: false,
-            isLocked: false,
+            isManuallyEdited: isManuallyEdited,
+            isLocked: isLocked,
             confidence: document.confidence
         )
     }
