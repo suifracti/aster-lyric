@@ -4,25 +4,34 @@ struct LibraryVersionCompareView: View {
     let request: LibraryCompareRequest
     let library: PersonalLyricsLibraryService
     let edit: (LibraryTranslationRevisionDraft) -> Void
+    let adopt: ((UUID) -> Void)?
     @Environment(\.dismiss) private var dismiss
+    @State private var baseID: UUID
     @State private var peerID: UUID
+    private struct Pair: Hashable { let base: UUID; let peer: UUID }
     @State private var comparison: LibraryVersionComparison?
     @State private var issue: String?
     @State private var onlyDifferences = true
     @State private var focusedRow: Int?
-    @State private var picks: [UUID: Set<Int>] = [:]
+    @State private var picks: [Pair: Set<Int>] = [:]
     @State private var preparing = false
 
-    init(request: LibraryCompareRequest, library: PersonalLyricsLibraryService, edit: @escaping (LibraryTranslationRevisionDraft) -> Void) {
+    init(request: LibraryCompareRequest, library: PersonalLyricsLibraryService, adopt: ((UUID) -> Void)? = nil,
+         edit: @escaping (LibraryTranslationRevisionDraft) -> Void) {
         self.request = request
         self.library = library
         self.edit = edit
+        self.adopt = adopt
+        _baseID = State(initialValue: request.base.id)
         _peerID = State(initialValue: request.firstReference)
     }
 
-    private var reference: LibraryCompareVersion? { request.references.first { $0.id == peerID } }
-    private var translations: Bool { request.base.translation != nil }
-    private var selected: Set<Int> { picks[peerID] ?? [] }
+    private var versions: [LibraryCompareVersion] { [request.base] + request.references }
+    private var base: LibraryCompareVersion { versions.first { $0.id == baseID } ?? request.base }
+    private var reference: LibraryCompareVersion? { versions.first { $0.id == peerID } }
+    private var translations: Bool { base.translation != nil }
+    private var pair: Pair { Pair(base: baseID, peer: peerID) }
+    private var selected: Set<Int> { picks[pair] ?? [] }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -35,24 +44,17 @@ struct LibraryVersionCompareView: View {
                 }
                 Text(request.entry.title).font(.system(size: 25, weight: .semibold, design: .serif)).textSelection(.enabled)
                 HStack(alignment: .top, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("底稿").font(.caption).foregroundStyle(.secondary)
-                        Text(request.base.title).font(.headline).lineLimit(2)
-                        Text(metadata(request.base)).font(.caption).foregroundStyle(.secondary)
-                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    versionPicker("底稿", version: base, selection: Binding(get: { baseID }, set: { newID in
+                        if newID == peerID { peerID = baseID }
+                        baseID = newID
+                    }))
                     Divider()
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("参照稿").font(.caption).foregroundStyle(.secondary)
-                        Menu {
-                            Picker("参照稿", selection: $peerID) {
-                                ForEach(request.references) { version in
-                                    Text("\(version.title) · \(metadata(version))").tag(version.id)
-                                }
-                            }.pickerStyle(.inline)
-                        } label: { Text(reference?.title ?? "选择版本").font(.headline).lineLimit(2) }
-                        .menuStyle(.borderlessButton).fixedSize(horizontal: false, vertical: true).disabled(preparing)
-                        if let reference { Text(metadata(reference)).font(.caption).foregroundStyle(.secondary) }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    if let reference {
+                        versionPicker("参照稿", version: reference, selection: Binding(get: { peerID }, set: { newID in
+                            if newID == baseID { baseID = peerID }
+                            peerID = newID
+                        }))
+                    }
                 }.fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 20).padding(.vertical, 14)
@@ -73,18 +75,35 @@ struct LibraryVersionCompareView: View {
         }
         .frame(minWidth: 450, idealWidth: 730, minHeight: 390, idealHeight: 560)
         .background(WorkspacePalette.paper)
-        .task(id: peerID) {
+        .task(id: pair) {
             comparison = nil
             issue = nil
             focusedRow = nil
             guard let reference else { return }
             do {
-                let loaded = try await library.compare(request, with: reference)
+                let loaded = try await library.compare(trackKey: request.entry.trackStableKey, base: base, with: reference)
                 try Task.checkCancellation()
                 comparison = loaded
             } catch where !Task.isCancelled { issue = error.localizedDescription }
             catch { }
         }
+    }
+
+    private func versionPicker(_ role: String, version: LibraryCompareVersion, selection: Binding<UUID>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(role).font(.caption).foregroundStyle(.secondary)
+            Menu {
+                Picker(role, selection: selection) {
+                    ForEach(versions) { item in Text("\(item.title) · \(metadata(item))").tag(item.id) }
+                }.pickerStyle(.inline)
+            } label: { Text(version.title).font(.headline).lineLimit(2) }
+            .menuStyle(.borderlessButton).fixedSize(horizontal: false, vertical: true).disabled(preparing)
+            .accessibilityLabel("选择" + role)
+            Text(metadata(version)).font(.caption).foregroundStyle(.secondary)
+            if let playing = request.playing, let adopt, playing.adoptable.contains(version.id), !version.isCurrent {
+                Button("采用" + role) { adopt(version.id) }.controlSize(.small).disabled(preparing)
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func pages(_ comparison: LibraryVersionComparison) -> some View {
@@ -130,8 +149,8 @@ struct LibraryVersionCompareView: View {
                 if canPick, let base = row.base, let reference = row.reference,
                    (base.translation ?? "") != (reference.translation ?? "") {
                     Button {
-                        if selected.contains(base.id) { picks[peerID, default: []].remove(base.id) }
-                        else { picks[peerID, default: []].insert(base.id) }
+                        if selected.contains(base.id) { picks[pair, default: []].remove(base.id) }
+                        else { picks[pair, default: []].insert(base.id) }
                     } label: {
                         Label(selected.contains(base.id) ? "已选这句" : "选这句",
                               systemImage: selected.contains(base.id) ? "checkmark.circle.fill" : "arrow.left.circle")
@@ -208,7 +227,9 @@ struct LibraryVersionCompareView: View {
     private func metadata(_ version: LibraryCompareVersion) -> String {
         let tag = version.translation?.targetLanguage
         let language = tag.flatMap { $0 == "und" ? nil : Locale(identifier: "zh_CN").localizedString(forIdentifier: $0) ?? $0 }
-        return [version.isCurrent ? "使用中" : nil, language, v3ShortDateText(version.updatedAt)].compactMap { $0 }.joined(separator: " · ")
+        let state = version.translation
+        return [version.isCurrent ? "使用中" : nil, state?.isLocked == true ? "已锁定" : nil,
+                state?.isArchived == true ? "已归档" : nil, language, v3ShortDateText(version.updatedAt)].compactMap { $0 }.joined(separator: " · ")
     }
 
     private func jump(_ step: Int, _ differences: [LibraryVersionComparison.Row], _ proxy: ScrollViewProxy) {
@@ -220,7 +241,7 @@ struct LibraryVersionCompareView: View {
     }
 
     private func prepareDraft() {
-        guard !preparing, let base = request.base.translation, let reference = reference?.translation else { return }
+        guard !preparing, let base = base.translation, let reference = reference?.translation else { return }
         let indices = selected
         preparing = true
         Task {

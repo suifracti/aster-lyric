@@ -1314,7 +1314,7 @@ public struct LyricSourceTranslation: Hashable, Sendable {
 }
 
 public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
-    public let id: UUID
+    public private(set) var id: UUID
     public var timestamp: TimeInterval
     public var endTime: TimeInterval?
     public var originalText: String
@@ -1376,21 +1376,9 @@ public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
 
     /// Copies this line while preserving every current model field.
     public func replacingID(_ id: UUID) -> LyricLine {
-        LyricLine(
-            id: id,
-            timestamp: timestamp,
-            originalText: originalText,
-            endTime: endTime,
-            translationText: translationText,
-            romajiText: romajiText,
-            kanaText: kanaText,
-            rubyTokens: rubyTokens,
-            performerID: performerID,
-            timedSpans: timedSpans,
-            readingRepresentationID: readingRepresentationID,
-            readingSurfaceText: readingSurfaceText,
-            backgroundText: backgroundText
-        )
+        var copy = self
+        copy.id = id
+        return copy
     }
 
     public var hasTimedSpans: Bool {

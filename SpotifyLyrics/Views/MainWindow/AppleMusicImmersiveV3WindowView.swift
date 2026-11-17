@@ -190,7 +190,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var showsAIReadingControls = false
     private var displaysAIReadingControls: Bool { showsAIReadingControls }
     @State private var confirmsAIReadingRequest = false
-    @State private var isTranslationComparisonPresented = false
+    @State private var openingTranslationComparison = false
     @State private var isVersionPickerPresented = false
     @State private var pinchStartFontSize: CGFloat?
     @State private var coverAccent: Color?
@@ -707,25 +707,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 AlignmentPreviewView(report: report)
             }
         }
-        .sheet(isPresented: $isTranslationComparisonPresented) {
-            V3TranslationComparisonSheet(
-                sourceLines: state.originalLiveLyrics,
-                versions: state.translationVersions,
-                selectedVersionID: state.selectedTranslation?.record.id
-            ) { versionID in
-                guard !state.isShowingSearchPreview,
-                      state.liveLyricsDocumentMatchesCurrentTrack,
-                      state.translationVersions.contains(where: { $0.record.id == versionID })
-                else { return }
-                state.selectTranslation(versionID: versionID)
-            }
-        }
-        // Close the comparison rather than showing a former song's versions.
-        .onChange(of: state.currentTrackIdentity) { _, _ in
-            isTranslationComparisonPresented = false
-        }
+        .onChange(of: state.currentTrackIdentity) { _, _ in closeStalePlayingComparison() }
+        .onChange(of: state.isShowingSearchPreview) { _, _ in closeStalePlayingComparison() }
         .onChange(of: state.liveLyricsVersionID) { _, _ in
-            isTranslationComparisonPresented = false
+            closeStalePlayingComparison()
             library.prefetchCurrentTrack(stableKey: state.liveTrackIdentity?.stableKey, force: true)
         }
         .onChange(of: state.translationVersions.map { $0.record.id }) { _, _ in
@@ -1810,14 +1795,34 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
     private var compareTranslationsButton: some View {
         Button {
-            isTranslationComparisonPresented = true
+            guard !openingTranslationComparison, !state.isShowingSearchPreview, state.liveLyricsDocumentMatchesCurrentTrack,
+                  let identity = state.liveTrackIdentity, let sourceID = state.liveLyricsVersionID else { return }
+            openingTranslationComparison = true
+            Task { @MainActor in
+                defer { openingTranslationComparison = false }
+                do {
+                    let request = try await library.playingComparison(identity: identity, lyricsID: sourceID,
+                        selected: state.selectedTranslation?.record.id, versions: state.translationVersions)
+                    guard state.liveTrackIdentity == identity, state.liveLyricsVersionID == sourceID, !state.isShowingSearchPreview else { return }
+                    guard let request else { state.showNotice("这版原词还没有两份可对读的译文"); return }
+                    dismissPinnedToolbarPanel()
+                    library.comparison = request
+                } catch { state.showNotice("暂时读不到这两份译文") }
+            }
         } label: {
-            Image(systemName: "rectangle.split.2x1")
+            Label("逐句对读", systemImage: "rectangle.split.2x1")
         }
         .buttonStyle(.borderless)
-        .disabled(state.translationVersions.count < 2 || state.originalLiveLyrics.isEmpty)
-        .help("并排对比已保存译文；采用时才改变当前显示，不调用翻译 AI")
-        .accessibilityLabel("并排对比已保存译文")
+        .disabled(openingTranslationComparison || state.isShowingSearchPreview || !state.liveLyricsDocumentMatchesCurrentTrack ||
+                  state.liveLyricsVersionID == nil || state.translationVersions.count < 2)
+        .help("对读已存译文、挑句修订或采用一稿")
+    }
+
+    private func closeStalePlayingComparison() {
+        if let playing = library.comparison?.playing,
+           !playing.matches(identity: state.liveTrackIdentity, lyricsID: state.liveLyricsVersionID, preview: state.isShowingSearchPreview) {
+            library.comparison = nil
+        }
     }
 
     private func translationVersionTitle(_ version: StoredTranslationVersion) -> String {

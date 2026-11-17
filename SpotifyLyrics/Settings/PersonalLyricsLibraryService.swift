@@ -68,6 +68,25 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     @Published var comparison: LibraryCompareRequest?
 
     func presentComparison(_ source: LibraryPassageSource, detail: PersonalLyricsLibraryTrackDetail) {
+        comparison = makeComparison(source, detail: detail)
+    }
+
+    func playingComparison(identity: TrackIdentity, lyricsID: UUID, selected: UUID?,
+                           versions: [StoredTranslationVersion]) async throws -> LibraryCompareRequest? {
+        let matching = versions.filter { $0.record.lyricsVersionID == lyricsID }
+        guard matching.count > 1,
+              let detail = try await repository.loadPersonalLibraryTrackDetail(stableKey: identity.stableKey),
+              detail.lyricsVersions.contains(where: { $0.id == lyricsID }) else { return nil }
+        let base = matching.first(where: { $0.record.id == selected }) ?? matching[0]
+        let allowed = matching.filter { $0.isComplete && !$0.isDraft && !$0.isArchived }.map { $0.record.id }
+        let playing = LibraryCompareRequest.Playing(identity: identity, lyricsID: lyricsID, selectedID: selected, adoptable: Set(allowed))
+        return makeComparison(.translation(base.record.id), detail: detail, playing: playing,
+                              available: Dictionary(uniqueKeysWithValues: matching.map { ($0.record.id, $0) }))
+    }
+
+    private func makeComparison(_ source: LibraryPassageSource, detail: PersonalLyricsLibraryTrackDetail,
+                                playing: LibraryCompareRequest.Playing? = nil,
+                                available: [UUID: StoredTranslationVersion]? = nil) -> LibraryCompareRequest? {
         let choices: [LibraryCompareVersion], selected: UUID
         func title(_ kind: String, _ id: UUID, _ fallback: String) -> String {
             let custom = defaults.string(forKey: VersionLabelDraft.key(kind, id) + ".title") ?? ""
@@ -82,23 +101,26 @@ public final class PersonalLyricsLibraryService: ObservableObject {
             }
         case let .translation(id):
             selected = id
-            choices = detail.translationVersions.map {
-                let name = AITranslationSourceKind(rawValue: $0.sourceKind)?.displayName ?? "译文"
-                return .init(id: $0.id, title: title("translation", $0.id, name), updatedAt: $0.updatedAt,
-                             isCurrent: $0.isCurrent, parentID: $0.parentVersionID, translation: $0)
+            choices = detail.translationVersions.compactMap { item in
+                let stored = available?[item.id]
+                if available != nil && stored == nil { return nil }
+                let name = stored?.record.translationSourceTitle ?? AITranslationSourceKind(rawValue: item.sourceKind)?.displayName ?? "译文"
+                let current = playing.map { $0.selectedID == item.id } ?? item.isCurrent
+                return .init(id: item.id, title: title("translation", item.id, name), updatedAt: item.updatedAt,
+                             isCurrent: current, parentID: item.parentVersionID, translation: item)
             }
-        default: return
+        default: return nil
         }
-        comparison = .init(entry: detail.entry, baseID: selected, versions: choices)
+        return .init(entry: detail.entry, baseID: selected, versions: choices, playing: playing)
     }
 
-    func compare(_ request: LibraryCompareRequest, with reference: LibraryCompareVersion) async throws -> LibraryVersionComparison {
-        guard let pair = try await repository.readPassagePair(trackKey: request.entry.trackStableKey, base: request.base.source,
+    func compare(trackKey: String, base: LibraryCompareVersion, with reference: LibraryCompareVersion) async throws -> LibraryVersionComparison {
+        guard let pair = try await repository.readPassagePair(trackKey: trackKey, base: base.source,
                                                               reference: reference.source) else {
             throw LyricsEditingRepositoryError.sourceNotFound
         }
         try Task.checkCancellation()
-        let translations = request.base.translation != nil
+        let translations = base.translation != nil
         return await Task.detached(priority: .userInitiated) {
             LibraryVersionComparison(base: pair.0, reference: pair.1, translations: translations)
         }.value

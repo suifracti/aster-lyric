@@ -16,13 +16,26 @@ struct LibraryCompareRequest: Identifiable, Sendable {
     let base: LibraryCompareVersion
     let references: [LibraryCompareVersion]
     let firstReference: UUID
+    let playing: Playing?
 
-    init?(entry: PersonalLyricsLibraryEntry, baseID: UUID, versions: [LibraryCompareVersion]) {
+    struct Playing: Sendable {
+        let identity: TrackIdentity
+        let lyricsID: UUID
+        let selectedID: UUID?
+        let adoptable: Set<UUID>
+
+        func matches(identity: TrackIdentity?, lyricsID: UUID?, preview: Bool) -> Bool {
+            !preview && self.identity == identity && self.lyricsID == lyricsID
+        }
+    }
+
+    init?(entry: PersonalLyricsLibraryEntry, baseID: UUID, versions: [LibraryCompareVersion], playing: Playing? = nil) {
         guard let base = versions.first(where: { $0.id == baseID }) else { return nil }
         let references = versions.filter { $0.id != baseID }.sorted { $0.updatedAt > $1.updatedAt }
         guard let initial = references.first(where: { $0.id == base.parentID })
                 ?? references.first(where: \.isCurrent) ?? references.first else { return nil }
         self.entry = entry
+        self.playing = playing
         self.base = base
         self.references = references
         firstReference = initial.id

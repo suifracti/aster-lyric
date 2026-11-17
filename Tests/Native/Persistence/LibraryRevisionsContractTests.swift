@@ -38,6 +38,7 @@ final class LibraryRevisionsContractTests: XCTestCase {
         let chinese = try LocalLyricsFile(data: data, kind: .ttml, preferredLanguage: "zh-TW")
         XCTAssertEqual(english.lines.map(\.translationText), ["dream", nil])
         XCTAssertEqual(chinese.lines.map(\.translationText), ["第一個夢", nil])
+        XCTAssertEqual(english.lines[0].replacingID(UUID()).sourceTranslations, english.lines[0].sourceTranslations)
         XCTAssertEqual(english.viewing("zh-Hans").lines.map(\.translationText), ["第一个梦", "风"])
         let first = try await repo.importLyricFile(english, into: track)
         let second = try await repo.importLyricFile(chinese, into: track)
@@ -400,6 +401,20 @@ final class LibraryRevisionsContractTests: XCTestCase {
             ["改过的已有译文", ""],
             "A sparse manual child remains visible after reloading the library"
         )
+        let browser = PersonalLyricsLibraryService(repository: repo, defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)))
+        let compared = try await browser.playingComparison(identity: identity, lyricsID: source.record.id,
+            selected: sparseTranslation.record.id, versions: [sparseTranslation, sparseChild])
+        let live = try XCTUnwrap(compared)
+        XCTAssertEqual(live.base.id, sparseTranslation.record.id)
+        XCTAssertEqual(live.references.map(\.id), [sparseChild.record.id])
+        let scope = try XCTUnwrap(live.playing)
+        XCTAssertEqual(scope.adoptable, Set([sparseTranslation.record.id, sparseChild.record.id]))
+        XCTAssertTrue(scope.matches(identity: identity, lyricsID: source.record.id, preview: false))
+        XCTAssertFalse(scope.matches(identity: identity, lyricsID: source.record.id, preview: true))
+        XCTAssertFalse(scope.matches(identity: identity, lyricsID: UUID(), preview: false))
+        let pair = try await browser.compare(trackKey: live.entry.trackStableKey, base: live.references[0], with: live.base)
+        XCTAssertTrue(pair.canPickTranslationLines)
+        XCTAssertEqual(pair.rows.filter { $0.change != .same }.count, 1)
         let sparseParentAfter = sparseVersions.first { $0.record.id == sparseTranslation.record.id }
         XCTAssertEqual(sparseParentAfter?.lines, sparseTranslation.lines, "Editing the child must retain the sparse parent")
 

@@ -1663,7 +1663,15 @@ struct PersonalLibrarySheets: ViewModifier {
                 service.translationRevisionDraft = draft
             }
         }) { request in
-            LibraryVersionCompareView(request: request, library: service) { draft in
+            LibraryVersionCompareView(request: request, library: service, adopt: { id in
+                guard let playing = request.playing,
+                      playing.matches(identity: playback.liveTrackIdentity, lyricsID: playback.liveLyricsVersionID, preview: playback.isShowingSearchPreview),
+                      playback.liveLyricsDocumentMatchesCurrentTrack,
+                      let version = playback.translationVersions.first(where: { $0.record.id == id && $0.record.lyricsVersionID == playing.lyricsID }),
+                      version.isComplete, !version.isArchived, !version.isDraft else { return }
+                playback.selectTranslation(versionID: id)
+                service.comparison = nil
+            }) { draft in
                 pickedDraft = draft
                 service.comparison = nil
             }
