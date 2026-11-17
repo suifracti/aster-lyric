@@ -165,7 +165,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .lyricsAndText: return "显示翻译 显示原文 字号 字体 透明度 繁简 转换 自动搜索 提前加载 预加载 下一首 自动排轴 时间轴"
         case .appearance: return "布局 背景 模糊 环境光 封面舞台 经典放大 柔光羽化 纯净歌词 封面海报 菜单栏 置顶 悬浮 透明 颜色 窗口状态 桌面歌词 停靠 程序坞 全屏歌词 第二块屏幕 外接显示器 暂停时隐藏 全屏 截图 录屏"
         case .reading: return "日语 中文 注音 Ruby 声调 本地引擎 自动生成 人工词典 优先级 读音候选"
-        case .advancedAndData: return "数据库 存储 索引 重置 日志 导出 清除"
+        case .advancedAndData: return "数据库 存储 空间 硬盘 磁盘 备份 缓存 清理 索引 重置 日志 导出 清除"
         case .servicesAndSources: return "Provider 免费 实验 LRCLIB 本地 Uta-Net UtaTime AWA"
         case .aiTranslation: return "API Key Keychain Base URL Codex ChatGPT GPT 目标语言 自动翻译 提示词 Prompt 超时 Temperature 连接测试"
         case .workspace: return "首页 工作台 资料"
@@ -442,6 +442,7 @@ private struct SettingsDetailView: View {
         }
         .id(selection)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(WorkspacePalette.paper)
     }
 }
 
@@ -1907,7 +1908,6 @@ private struct AdvancedAndDataSettingsView: View {
     @EnvironmentObject private var data: SettingsDataController
     let onOpenTool: (SettingsCategory) -> Void
 
-    @State private var showClearConfirmation = false
     @State private var isExperienceExpanded = false
 
     private var appVersion: String {
@@ -1923,47 +1923,25 @@ private struct AdvancedAndDataSettingsView: View {
                 detail: "数据库维护、系统诊断、窗口状态与实用工具。"
             )
 
-            Section("数据与存储") {
-                LabeledContent("数据库位置", value: data.statistics?.databaseURL.path ?? "尚未读取")
-                    .textSelection(.enabled)
-                LabeledContent("数据格式版本", value: data.statistics.map { "v\($0.schemaVersion)" } ?? "尚未读取")
-                LabeledContent("歌曲", value: data.statistics.map { String($0.trackCount) } ?? "尚未读取")
-                LabeledContent("歌词版本", value: data.statistics.map { String($0.lyricsVersionCount) } ?? "尚未读取")
-                LabeledContent("歌词行", value: data.statistics.map { String($0.lyricLineCount) } ?? "尚未读取")
-                LabeledContent("数据库大小", value: data.statistics.map { ByteCountFormatter.string(fromByteCount: $0.fileSize, countStyle: .file) } ?? "未知")
-                HStack {
-                    Button("刷新统计") { data.refreshStatistics() }
-                    Button("在 Finder 中显示") { data.revealDatabase() }
-                    Button("创建备份") { data.createBackup() }
-                }
-                .disabled(data.isBusy)
-
-                Button("重建本地歌词索引") { data.rebuildLocalIndex() }
-                Text("只扫描 ~/Music/SpotifyLyrics/Lyrics、应用支持目录和 Debug 兼容目录，不写入或修改用户文件。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            LibraryStorageSettingsView(data: data)
 
             Section("诊断") {
                 LabeledContent("应用版本", value: appVersion)
                 LabeledContent("支持的数据格式", value: "v\(DatabaseMigrator.currentVersion)")
-                Button("打开日志目录") {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: "/tmp"))
+                Button("在 Finder 中显示日志") {
+                    let url = LyricsE2ELog.fileURL
+                    if FileManager.default.fileExists(atPath: url.path) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                    else { NSWorkspace.shared.open(url.deletingLastPathComponent()) }
                 }
                 Button("导出脱敏诊断摘要") { data.exportDiagnostics() }
             }
 
-            Section("重置与危险操作") {
+            Section("窗口") {
                 Button("重置窗口状态") { settings.resetWindowState() }
                 Text("会删除保存的窗口位置，下次打开使用系统默认位置。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Button("清除所有歌词缓存", role: .destructive) { showClearConfirmation = true }
-                    .disabled(data.isBusy)
-                Text("只删除 SQLite 中的歌词版本和行，保留歌曲元数据；操作前应先创建备份。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             Section("实用工具") {
@@ -2055,21 +2033,23 @@ private struct AdvancedAndDataSettingsView: View {
                 }
             }
 
-            if !data.statusMessage.isEmpty {
-                Text(data.statusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
         }
         .formStyle(.grouped)
         .onAppear { data.refreshStatistics() }
-        .confirmationDialog("清除所有歌词缓存？", isPresented: $showClearConfirmation, titleVisibility: .visible) {
-            Button("创建备份并清除", role: .destructive) {
-                data.backupAndClearLyricsCache()
+        .scrollContentBackground(.hidden)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !data.statusMessage.isEmpty {
+                HStack {
+                    if data.isBusy { ProgressView().controlSize(.small) }
+                    Text(data.statusMessage).font(.callout).textSelection(.enabled)
+                    Spacer()
+                    if !data.isBusy {
+                        Button { data.dismissNotice() } label: { Image(systemName: "xmark") }
+                            .buttonStyle(.borderless).accessibilityLabel("收起提示")
+                    }
+                }
+                .padding(.horizontal, 18).padding(.vertical, 8).background(.bar)
             }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("这会删除 SQLite 中的 LyricsVersion 和 LyricLine，不会修改本地 LRC 文件。")
         }
     }
 

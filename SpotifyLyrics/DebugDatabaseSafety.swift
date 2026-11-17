@@ -15,6 +15,17 @@ extension UserDefaults {
 }
 
 public enum LyricsQStorage {
+    static var isolatedMediaCacheDirectory: URL? {
+#if DEBUG
+        if NativeTestRuntime.isEnabled { return NativeTestRuntime.root.appendingPathComponent("media-cache") }
+        if DebugAcceptanceDataIsolation.isRequested { return DebugAcceptanceDataIsolation.configuration.root.appendingPathComponent("media-cache") }
+        if let path = ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DATABASE_PATH"], path.hasPrefix("/") {
+            return URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent("media-cache")
+        }
+#endif
+        return nil
+    }
+
     public static var homeDirectory: URL {
 #if DEBUG
         if NativeTestRuntime.isEnabled { return NativeTestRuntime.root }

@@ -14,6 +14,8 @@ actor V3CanvasStore {
 
     private var inFlight: [URL: Task<URL?, Never>] = [:]
     private var failedUntil: [URL: Date] = [:]
+    private var generation: UInt = 0
+    private let directory: URL
     private let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15
@@ -23,10 +25,10 @@ actor V3CanvasStore {
         return URLSession(configuration: configuration)
     }()
 
-    private var directory: URL {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        return caches.appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.spotifylyrics.app", isDirectory: true)
-            .appendingPathComponent("Canvas", isDirectory: true)
+    init(directory: URL? = nil) {
+        let caches = LyricsQStorage.isolatedMediaCacheDirectory ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.spotifylyrics.app", isDirectory: true)
+        self.directory = directory ?? caches.appendingPathComponent("Canvas", isDirectory: true)
     }
 
     /// The clip's address for this track, read from the Spotify cache.
@@ -41,12 +43,17 @@ actor V3CanvasStore {
             return target
         }
         if let until = failedUntil[remote], until > Date() { return nil }
-        if let running = inFlight[remote] { return await running.value }
+        let currentGeneration = generation
+        if let running = inFlight[remote] {
+            let result = await running.value
+            return currentGeneration == generation ? result : nil
+        }
         let task = Task<URL?, Never> { [session, directory] in
             do {
                 let (data, response) = try await session.data(from: remote)
                 guard (response as? HTTPURLResponse)?.statusCode == 200, data.count > 1024, data.count < 40 << 20,
                       data.count > 8, Array(data[4..<8]) == Array("ftyp".utf8) else { return nil }
+                try Task.checkCancellation()
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 try data.write(to: target, options: .atomic)
                 return target
@@ -56,6 +63,7 @@ actor V3CanvasStore {
         }
         inFlight[remote] = task
         let result = await task.value
+        guard generation == currentGeneration else { return nil }
         inFlight[remote] = nil
         if result == nil { failedUntil[remote] = Date().addingTimeInterval(600) } else { prune() }
         return result
@@ -66,13 +74,31 @@ actor V3CanvasStore {
         return directory.appendingPathComponent(String(digest.prefix(32)) + ".mp4")
     }
 
-    private func prune() {
-        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
-        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys) else { return }
-        var entries = files.compactMap { url -> (URL, Int64, Date)? in
-            guard let values = try? url.resourceValues(forKeys: Set(keys)) else { return nil }
+    private func cachedClips() throws -> [(URL, Int64, Date)] {
+        guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
+        let keys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey, .isSymbolicLinkKey]
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: Array(keys), options: .skipsHiddenFiles)
+        return files.compactMap { url in
+            let name = url.deletingPathExtension().lastPathComponent
+            guard url.pathExtension == "mp4", name.utf8.count == 32, name.allSatisfy(\.isHexDigit),
+                  let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true,
+                  values.isSymbolicLink != true else { return nil }
             return (url, Int64(values.fileSize ?? 0), values.contentModificationDate ?? .distantPast)
         }
+    }
+
+    func diskBytes() throws -> Int64 { try cachedClips().reduce(0) { $0 + $1.1 } }
+
+    func clearCache() throws {
+        generation &+= 1
+        inFlight.values.forEach { $0.cancel() }
+        inFlight.removeAll()
+        failedUntil.removeAll()
+        for (url, _, _) in try cachedClips() { try FileManager.default.removeItem(at: url) }
+    }
+
+    private func prune() {
+        guard var entries = try? cachedClips() else { return }
         var total = entries.reduce(0) { $0 + $1.1 }
         entries.sort { $0.2 < $1.2 }
         for entry in entries where total > Self.diskBudget {

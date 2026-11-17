@@ -4,6 +4,62 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class LibraryRevisionsContractTests: XCTestCase {
+    func testClearingCacheRetainsLockedLyricsAndTheirTranslation() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("local.sqlite3"),
+                                         alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await repo.prepare()
+        let track = Track(title: "本地手稿", artist: "Fixture", album: "", duration: 100)
+        let identity = TrackIdentity(track: track)
+        let document = LyricsDocument(identity: identity, title: track.title, artist: track.artist, duration: 100,
+            lines: [.init(timestamp: 1, originalText: "保留这句")], isSynchronized: true, source: .manualCreate, confidence: 1)
+        let saved = try await repo.save(track: track, identity: identity, document: document)
+        let version = try XCTUnwrap(saved.versionID), hash = try XCTUnwrap(saved.sourceContentHash)
+        try await repo.adoptLyricsVersion(trackStableKey: identity.stableKey, lyricsVersionID: version)
+        try await repo.markLocked(versionID: version, locked: true)
+        let translation = try await repo.saveTranslation(lyricsVersionID: version, sourceContentHash: hash,
+            originalLines: ["保留这句"], draft: .init(lines: [.init(index: 0, translation: "A saved line")],
+                targetLanguage: "en", model: "", baseURLHost: "", promptHash: "", sourceContentHash: hash,
+                sourceKind: .manualImport, isMachineGenerated: false, isManuallyEdited: true), forceNewVersion: false)
+        let maintenance: any LyricsRepository = repo
+        try await maintenance.clearLyricsCache()
+        let restored = try await repo.loadBestStored(track: track, identity: identity)
+        let translations = try await repo.loadTranslationVersions(lyricsVersionID: version, targetLanguage: "en", sourceContentHash: hash)
+        XCTAssertEqual(restored?.versionID, version)
+        XCTAssertEqual(restored?.document.lines.first?.originalText, "保留这句")
+        XCTAssertEqual(translations.first?.record.id, translation.record.id)
+    }
+
+    func testManualBackupIncludesWALWritesWhileAnotherWindowReads() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let url = root.appendingPathComponent("live.sqlite3")
+        let repo = SQLiteLyricsRepository(databaseURL: url, alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await repo.prepare()
+        var reader: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(url.path, &reader, SQLITE_OPEN_READWRITE, nil), SQLITE_OK)
+        defer { sqlite3_close(reader) }
+        XCTAssertEqual(sqlite3_exec(reader, "PRAGMA journal_mode=WAL; BEGIN; SELECT count(*) FROM tracks;", nil, nil, nil), SQLITE_OK)
+        defer { sqlite3_exec(reader, "ROLLBACK;", nil, nil, nil) }
+        let track = Track(title: "刚保存的歌词", artist: "Fixture", album: "", duration: 120)
+        let identity = TrackIdentity(track: track)
+        let document = LyricsDocument(identity: identity, title: track.title, artist: track.artist, duration: 120,
+            lines: [.init(timestamp: 0, originalText: "newly committed")], isSynchronized: true, source: .local, confidence: 1)
+        let live = try await repo.save(track: track, identity: identity, document: document)
+        let version = try XCTUnwrap(live.versionID)
+        let maintenance: any LyricsRepository = repo
+        let backup = try await maintenance.createBackup()
+        try Data("keep".utf8).write(to: root.appendingPathComponent("live.backup-not-a-snapshot.sqlite3"))
+        let stats = try await maintenance.statistics()
+        XCTAssertEqual(stats.backups.map { $0.url.resolvingSymlinksInPath().path }, [backup.resolvingSymlinksInPath().path])
+        XCTAssertGreaterThan(stats.backups.first?.bytes ?? 0, 0)
+        XCTAssertGreaterThan(stats.journalBytes, 0)
+        let copy = SQLiteLyricsRepository(databaseURL: backup, alignmentProvenanceDirectory: root.appendingPathComponent("copied-provenance"))
+        try await copy.prepare()
+        let recovered = try await copy.loadBestStored(track: track, identity: identity)
+        XCTAssertEqual(recovered?.versionID, version)
+        XCTAssertEqual(recovered?.document.lines.first?.originalText, "newly committed")
+    }
+
     func testRecallStartsAtTheKeptOccurrenceAndRevealsOneFollowingOriginal() throws {
         let lines = [
             LibraryPassagePage.Line(id: 0, original: "副歌"),

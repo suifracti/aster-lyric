@@ -704,6 +704,12 @@ private struct ExperienceFixtureRoot: View {
                     } else if ExperienceArguments.surface == "menubar" {
                         root = AnyView(MenuBarLyricsPopoverView(controller: MenuBarLyricsController.shared))
                     } else {
+                        if ProcessInfo.processInfo.arguments.contains("--sample-backup") {
+                            let repo = SQLiteLyricsRepository(databaseURL: ExperienceArguments.databaseURL,
+                                alignmentProvenanceDirectory: ExperienceArguments.root.appendingPathComponent("provenance"))
+                            do { _ = try await repo.createBackup() }
+                            catch { print("[VisualHost] fixture backup failed: \(error)") }
+                        }
                         root = AnyView(SettingsRootView(initialPage: ExperienceArguments.value("--settings-page", fallback: "工作台"), initialSurface: AppearanceSurface(rawValue: ExperienceArguments.value("--settings-surface", fallback: "main")) ?? .main).environmentObject(settings).environmentObject(playback).environmentObject(SettingsDataController()))
                     }
                     let hosting = NSHostingView(rootView: root.environment(\.colorScheme, ExperienceArguments.value("--appearance", fallback: "dark") == "light" ? .light : .dark))

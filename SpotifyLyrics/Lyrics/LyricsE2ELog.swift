@@ -2,6 +2,7 @@ import Foundation
 
 /// Lightweight acceptance trace logger. Writes to /tmp/spotifylyrics-e2e.log
 enum LyricsE2ELog {
+    static var fileURL: URL { URL(fileURLWithPath: path) }
     private static var path: String {
 #if DEBUG
         if NativeTestRuntime.isEnabled {
@@ -36,7 +37,7 @@ enum LyricsE2ELog {
         let ts = ISO8601DateFormatter().string(from: Date())
         let line = "[\(ts)] \(message)\n"
         guard let data = line.data(using: .utf8) else { return }
-        let url = URL(fileURLWithPath: path)
+        let url = fileURL
         if FileManager.default.fileExists(atPath: path),
            let handle = try? FileHandle(forWritingTo: url) {
             defer { try? handle.close() }

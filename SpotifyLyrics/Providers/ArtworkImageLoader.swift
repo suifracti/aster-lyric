@@ -7,6 +7,7 @@ public final class ArtworkImageLoader {
 
     private let cache = NSCache<NSURL, NSImage>()
     private var inFlightTasks: [URL: Task<NSImage?, Never>] = [:]
+    private var generation: UInt = 0
 
     private let session: URLSession
 
@@ -16,13 +17,22 @@ public final class ArtworkImageLoader {
         config.timeoutIntervalForRequest = 15.0
         config.timeoutIntervalForResource = 30.0
         config.requestCachePolicy = .useProtocolCachePolicy
-        let urlCache = URLCache(
-            memoryCapacity: 50 * 1024 * 1024,
-            diskCapacity: 200 * 1024 * 1024,
-            diskPath: "spotify_lyrics_artwork_cache"
-        )
-        config.urlCache = urlCache
+        if let directory = LyricsQStorage.isolatedMediaCacheDirectory {
+            config.urlCache = URLCache(memoryCapacity: 50 << 20, diskCapacity: 200 << 20, directory: directory.appendingPathComponent("Artwork"))
+        } else {
+            config.urlCache = URLCache(memoryCapacity: 50 << 20, diskCapacity: 200 << 20, diskPath: "spotify_lyrics_artwork_cache")
+        }
         self.session = URLSession(configuration: config)
+    }
+
+    var diskBytes: Int64 { Int64(session.configuration.urlCache?.currentDiskUsage ?? 0) }
+
+    func clearCache() {
+        generation &+= 1
+        inFlightTasks.values.forEach { $0.cancel() }
+        inFlightTasks.removeAll()
+        cache.removeAllObjects()
+        session.configuration.urlCache?.removeAllCachedResponses()
     }
 
     public func cachedImage(for url: URL?) -> NSImage? {
@@ -45,28 +55,17 @@ public final class ArtworkImageLoader {
             return cached
         }
 
+        let currentGeneration = generation
         if let existingTask = inFlightTasks[url] {
-            return await existingTask.value
+            let result = await existingTask.value
+            return generation == currentGeneration ? result : nil
         }
 
-        if url.isFileURL {
-            let task = Task<NSImage?, Never>.detached { [cache] in
-                guard let data = try? Data(contentsOf: url),
-                      let image = NSImage(data: data) else {
-                    return nil
-                }
-                await MainActor.run {
-                    cache.setObject(image, forKey: key)
-                }
-                return image
+        let task = Task<NSImage?, Never>.detached { [session] in
+            if url.isFileURL {
+                guard let data = try? Data(contentsOf: url) else { return nil }
+                return NSImage(data: data)
             }
-            inFlightTasks[url] = task
-            let image = await task.value
-            inFlightTasks.removeValue(forKey: url)
-            return image
-        }
-
-        let task = Task<NSImage?, Never>.detached { [session, cache] in
             do {
                 let (data, response) = try await session.data(from: url)
                 guard let httpResponse = response as? HTTPURLResponse,
@@ -74,9 +73,6 @@ public final class ArtworkImageLoader {
                       let image = NSImage(data: data) else {
                     LyricsE2ELog.log("ARTWORK image rejected host=\(url.host ?? "local") status=\((response as? HTTPURLResponse)?.statusCode ?? 0) bytes=\(data.count)")
                     return nil
-                }
-                await MainActor.run {
-                    cache.setObject(image, forKey: key)
                 }
                 return image
             } catch {
@@ -87,6 +83,8 @@ public final class ArtworkImageLoader {
 
         inFlightTasks[url] = task
         let image = await task.value
+        guard currentGeneration == generation else { return nil }
+        if let image { cache.setObject(image, forKey: key) }
         inFlightTasks.removeValue(forKey: url)
         return image
     }

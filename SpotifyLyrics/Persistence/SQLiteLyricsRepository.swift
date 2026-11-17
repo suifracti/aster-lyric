@@ -112,7 +112,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             // Existing user databases follow the same forward migration path as
             // fresh installs. A consistent snapshot is required before any upgrade.
             if databaseAlreadyExisted, existingVersion < DatabaseMigrator.currentVersion {
-                try createMigrationBackup(label: "pre-v\(DatabaseMigrator.currentVersion)")
+                _ = try writeDatabaseSnapshot(label: "pre-v\(DatabaseMigrator.currentVersion)")
             }
             try DatabaseMigrator.migrate(handle)
             guard try scalarInt("PRAGMA user_version;") == DatabaseMigrator.currentVersion else {
@@ -1115,7 +1115,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         return false
     }
 
-    public func statistics() throws -> LyricsDatabaseStats {
+    public func statistics() async throws -> LyricsDatabaseStats {
         try prepare()
         let trackCount = try scalarInt("SELECT COUNT(*) FROM tracks;")
         let lyricsVersionCount = try scalarInt("SELECT COUNT(*) FROM lyrics_versions;")
@@ -1127,53 +1127,33 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 SELECT updated_at FROM lyrics_versions
             );
             """)
-        let attributes = try? FileManager.default.attributesOfItem(atPath: databaseURL.path)
-        let fileSize = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+        func bytes(at path: String) -> Int64 {
+            let attributes = try? FileManager.default.attributesOfItem(atPath: path)
+            return (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+        }
         return LyricsDatabaseStats(
             databaseURL: databaseURL,
             schemaVersion: try schemaVersion(),
             trackCount: trackCount,
             lyricsVersionCount: lyricsVersionCount,
             lyricLineCount: lyricLineCount,
-            fileSize: fileSize,
-            lastUpdated: lastUpdatedSeconds.map(Date.init(timeIntervalSince1970:))
+            fileSize: bytes(at: databaseURL.path),
+            lastUpdated: lastUpdatedSeconds.map(Date.init(timeIntervalSince1970:)),
+            journalBytes: ["-wal", "-shm", "-journal"].reduce(0) { $0 + bytes(at: databaseURL.path + $1) },
+            backups: try LyricsDatabaseBackup.files(beside: databaseURL)
         )
     }
 
-    public func createBackup() throws -> URL {
+    public func createBackup() async throws -> URL {
         try prepare()
-        // Checkpoint before copying so a usable backup does not depend on a
-        // separate -wal sidecar file.
-        try execute("PRAGMA wal_checkpoint(FULL);")
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        let baseName = databaseURL.deletingPathExtension().lastPathComponent
-        var backupURL = databaseURL.deletingLastPathComponent()
-            .appendingPathComponent("\(baseName).backup-\(formatter.string(from: Date())).sqlite3")
-        if FileManager.default.fileExists(atPath: backupURL.path) {
-            backupURL.deleteLastPathComponent()
-            backupURL = databaseURL.deletingLastPathComponent()
-                .appendingPathComponent("\(baseName).backup-\(formatter.string(from: Date()))-\(UUID().uuidString.prefix(8)).sqlite3")
-        }
-        do {
-            try FileManager.default.copyItem(at: databaseURL, to: backupURL)
-        } catch {
-            throw LyricsRepositoryError.unavailable("数据库备份失败：\(error.localizedDescription)")
-        }
-        return backupURL
+        return try writeDatabaseSnapshot(label: "backup")
     }
 
-    public func clearLyricsCache() throws {
-        try prepare()
-        let versionIDs = try fetchAllVersionIDs()
-        try withTransaction {
-            try execute("DELETE FROM lyric_lines;")
-            try execute("DELETE FROM lyrics_versions;")
-        }
-        for versionID in versionIDs {
-            try? alignmentProvenanceStore.remove(versionID: versionID)
-        }
+    public func clearLyricsCache() async throws {
+        // Saved versions, adopted selections, requests and alignment files belong to the library.
+        librarySearchCache.removeAll()
+        librarySearchDataVersion = -1
+        librarySearchTotalChanges = -1
     }
 
     // MARK: - TranslationRepository
@@ -2851,17 +2831,15 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         try stepDone(statement)
     }
 
-    private func createMigrationBackup(label: String) throws {
+    private func writeDatabaseSnapshot(label: String) throws -> URL {
         guard let database else { throw LyricsRepositoryError.unavailable("SQLite handle 已关闭") }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         let directory = databaseURL.deletingLastPathComponent()
         let base = databaseURL.deletingPathExtension().lastPathComponent
-        var destination = directory.appendingPathComponent("\(base).\(label)-\(formatter.string(from: Date())).sqlite3")
-        if FileManager.default.fileExists(atPath: destination.path) {
-            destination = directory.appendingPathComponent("\(base).\(label)-\(UUID().uuidString.prefix(8)).sqlite3")
-        }
+        let filename = "\(base).\(label)-\(formatter.string(from: Date()))-\(UUID().uuidString.prefix(8)).sqlite3"
+        let destination = directory.appendingPathComponent(filename)
         // SQLite's online backup includes committed WAL pages even while a
         // reader holds a snapshot. Copying only the main file can lose them.
         let temporary = destination.appendingPathExtension("\(UUID().uuidString).partial")
@@ -2875,26 +2853,27 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             guard sqlite3_open_v2(temporary.path, &backupDatabase, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) == SQLITE_OK,
                   let backupDatabase else {
                 if let backupDatabase { sqlite3_close(backupDatabase) }
-                throw LyricsRepositoryError.unavailable("migration \(label) 备份无法创建")
+                throw LyricsRepositoryError.unavailable("数据库备份无法创建")
             }
             defer { sqlite3_close(backupDatabase) }
             guard let backup = sqlite3_backup_init(backupDatabase, "main", database, "main") else {
-                throw LyricsRepositoryError.unavailable("migration \(label) 备份初始化失败")
+                throw LyricsRepositoryError.unavailable("数据库备份初始化失败")
             }
             let step = sqlite3_backup_step(backup, -1)
             let finish = sqlite3_backup_finish(backup)
             guard step == SQLITE_DONE, finish == SQLITE_OK else {
                 // Preserve the source and abort; never migrate after a failed backup.
-                throw LyricsRepositoryError.unavailable("migration \(label) 备份失败 (\(step)/\(finish))")
+                throw LyricsRepositoryError.unavailable("数据库备份失败 (\(step)/\(finish))")
             }
             // Make the snapshot a standalone read-only recovery file, even
             // when the source database uses WAL journaling.
             guard sqlite3_exec(backupDatabase, "PRAGMA journal_mode=DELETE;", nil, nil, nil) == SQLITE_OK else {
-                throw LyricsRepositoryError.unavailable("migration \(label) 备份日志整理失败")
+                throw LyricsRepositoryError.unavailable("数据库备份日志整理失败")
             }
         }
         // Only a completed, closed snapshot receives the recovery filename.
         try FileManager.default.moveItem(at: temporary, to: destination)
+        return destination
     }
 
     private func ensurePrepared() throws {
@@ -3276,20 +3255,6 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         guard sqlite3_changes(database) > 0 else {
             throw LyricsRepositoryError.invalidData("找不到歌词版本 \(versionID.uuidString)")
         }
-    }
-
-    private func fetchAllVersionIDs() throws -> [UUID] {
-        let statement = try prepare("SELECT id FROM lyrics_versions;")
-        defer { sqlite3_finalize(statement) }
-        var result: [UUID] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
-            guard let text = columnText(statement, index: 0),
-                  let id = UUID(uuidString: text) else {
-                throw LyricsRepositoryError.invalidData("歌词版本 UUID 无效")
-            }
-            result.append(id)
-        }
-        return result
     }
 
     private func findVersionID(

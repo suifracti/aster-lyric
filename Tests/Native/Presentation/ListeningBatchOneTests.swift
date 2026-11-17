@@ -8,6 +8,21 @@ import XCTest
 /// tempo-timed line follow, censored words, lyric-end evidence, seek snap
 /// and seek hold.
 final class ListeningBatchOneTests: XCTestCase {
+    func testCleaningCanvasRemovesOnlyDownloadedClips() async throws {
+        let dir = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let clip = dir.appendingPathComponent(String(repeating: "b", count: 32) + ".mp4")
+        let kept = dir.appendingPathComponent("my-video.mp4")
+        try Data(repeating: 1, count: 64).write(to: clip)
+        try Data(repeating: 2, count: 32).write(to: kept)
+        let store = V3CanvasStore(directory: dir)
+        let before = try await store.diskBytes()
+        XCTAssertEqual(before, 64)
+        try await store.clearCache()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: clip.path))
+        XCTAssertEqual(try Data(contentsOf: kept).count, 32)
+    }
+
     // MARK: Spotify cache
 
     func testSnappyLiteralAndOverlappingCopy() {

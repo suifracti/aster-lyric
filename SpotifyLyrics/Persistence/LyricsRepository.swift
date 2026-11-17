@@ -114,6 +114,32 @@ public struct AlignmentPersistenceRequest: Sendable {
     }
 }
 
+public struct LyricsDatabaseBackup: Identifiable, Equatable, Sendable {
+    public let url: URL
+    public let bytes: Int64
+    public let date: Date
+    public let beforeUpgrade: Bool
+    public var id: URL { url }
+
+    static func files(beside database: URL) throws -> [Self] {
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
+        let directory = database.deletingLastPathComponent()
+        let prefix = database.deletingPathExtension().lastPathComponent + "."
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: Array(keys), options: .skipsHiddenFiles)
+        return files.compactMap { url -> Self? in
+            let name = url.deletingPathExtension().lastPathComponent
+            guard url.pathExtension == "sqlite3", name.hasPrefix(prefix) else { return nil }
+            let suffix = String(name.dropFirst(prefix.count))
+            let pattern = #"^(backup|pre-v[0-9]+)-([0-9]{8}-[0-9]{6}(-[0-9A-Fa-f]{8})?|[0-9A-Fa-f]{8})$"#
+            guard suffix.range(of: pattern, options: .regularExpression) != nil,
+                  let values = try? url.resourceValues(forKeys: keys),
+                  values.isRegularFile == true, values.isSymbolicLink != true else { return nil }
+            return Self(url: url, bytes: Int64(values.fileSize ?? 0), date: values.contentModificationDate ?? .distantPast,
+                        beforeUpgrade: suffix.hasPrefix("pre-v"))
+        }.sorted { $0.date != $1.date ? $0.date > $1.date : $0.url.lastPathComponent < $1.url.lastPathComponent }
+    }
+}
+
 public struct LyricsDatabaseStats: Equatable, Sendable {
     public let databaseURL: URL
     public let schemaVersion: Int
@@ -122,6 +148,8 @@ public struct LyricsDatabaseStats: Equatable, Sendable {
     public let lyricLineCount: Int
     public let fileSize: Int64
     public let lastUpdated: Date?
+    public let journalBytes: Int64
+    public let backups: [LyricsDatabaseBackup]
 
     public init(
         databaseURL: URL,
@@ -130,7 +158,9 @@ public struct LyricsDatabaseStats: Equatable, Sendable {
         lyricsVersionCount: Int,
         lyricLineCount: Int,
         fileSize: Int64,
-        lastUpdated: Date?
+        lastUpdated: Date?,
+        journalBytes: Int64 = 0,
+        backups: [LyricsDatabaseBackup] = []
     ) {
         self.databaseURL = databaseURL
         self.schemaVersion = schemaVersion
@@ -139,6 +169,8 @@ public struct LyricsDatabaseStats: Equatable, Sendable {
         self.lyricLineCount = lyricLineCount
         self.fileSize = fileSize
         self.lastUpdated = lastUpdated
+        self.journalBytes = journalBytes
+        self.backups = backups
     }
 }
 

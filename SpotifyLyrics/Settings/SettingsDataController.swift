@@ -8,6 +8,9 @@ public final class SettingsDataController: ObservableObject {
     @Published public private(set) var statusMessage = ""
     @Published public private(set) var isBusy = false
 
+    @Published private(set) var artworkBytes: Int64 = 0
+    @Published private(set) var canvasBytes: Int64 = 0
+
     private let repository: any LyricsRepository
     private let localIndex: LocalLyricsIndex
 
@@ -20,52 +23,37 @@ public final class SettingsDataController: ObservableObject {
     }
 
     public func refreshStatistics() {
-        run("正在读取数据库统计…") { repository in
-            try await repository.statistics()
-        } onSuccess: { [weak self] stats in
-            self?.statistics = stats
-            self?.statusMessage = "数据库统计已更新"
-        }
+        run("正在读取本机空间…") { "" }
     }
 
     public func createBackup() {
-        run("正在创建数据库备份…") { repository in
-            try await repository.createBackup()
-        } onSuccess: { [weak self] url in
-            self?.statusMessage = "备份已创建：\(url.lastPathComponent)"
+        run("正在备份歌词数据库…") { [repository] in
+            let url = try await repository.createBackup()
+            return "已创建备份 " + url.lastPathComponent
         }
     }
 
     public func clearLyricsCache() {
-        run("正在清除歌词缓存…") { repository in
+        run("正在清理封面与背景视频…") { [repository] in
             try await repository.clearLyricsCache()
-            return ()
-        } onSuccess: { [weak self] _ in
-            self?.statusMessage = "歌词缓存已清除，歌曲元数据仍保留"
-            self?.refreshStatistics()
+            try await V3CanvasStore.shared.clearCache()
+            ArtworkImageLoader.shared.clearCache()
+            return "已清理封面与背景视频缓存。"
         }
     }
 
-    /// Creates the safety backup and clears the cache as one serialized operation.
-    /// Keeping both SQL operations in one task avoids the UI triggering the second
-    /// operation while the repository controller is still busy with the backup.
-    public func backupAndClearLyricsCache() {
-        guard !isBusy else { return }
-        isBusy = true
-        statusMessage = "正在创建备份并清除歌词缓存…"
-        let repository = self.repository
-        Task { @MainActor [weak self] in
-            defer { self?.isBusy = false }
-            do {
-                let backupURL = try await repository.createBackup()
-                try await repository.clearLyricsCache()
-                self?.statusMessage = "备份已创建并清除歌词缓存：\(backupURL.lastPathComponent)"
-                self?.refreshStatistics()
-            } catch {
-                self?.statusMessage = error.localizedDescription
+    func trashBackup(_ backup: LyricsDatabaseBackup) {
+        guard let stats = statistics, stats.backups.contains(backup) else { return }
+        run("正在整理备份…") {
+            guard try LyricsDatabaseBackup.files(beside: stats.databaseURL).contains(backup) else {
+                return "这份备份已移动，列表已更新。"
             }
+            try FileManager.default.trashItem(at: backup.url, resultingItemURL: nil)
+            return backup.url.lastPathComponent + " 已移到废纸篓。"
         }
     }
+
+    func dismissNotice() { statusMessage = "" }
 
     public func rebuildLocalIndex() {
         let count = localIndex.rebuild()
@@ -86,7 +74,7 @@ public final class SettingsDataController: ObservableObject {
         let lines = [
             "SpotifyLyrics 脱敏诊断摘要",
             "生成时间：\(ISO8601DateFormatter().string(from: Date()))",
-            "数据库路径：\(stats?.databaseURL.path ?? SQLiteLyricsRepository.defaultDatabaseURL.path)",
+            "数据库文件：\(stats?.databaseURL.lastPathComponent ?? SQLiteLyricsRepository.defaultDatabaseURL.lastPathComponent)",
             "Schema：v\(stats?.schemaVersion ?? DatabaseMigrator.currentVersion)",
             "Track 数量：\(stats?.trackCount ?? 0)",
             "LyricsVersion 数量：\(stats?.lyricsVersionCount ?? 0)",
@@ -106,22 +94,21 @@ public final class SettingsDataController: ObservableObject {
         }
     }
 
-    private func run<T: Sendable>(
-        _ message: String,
-        operation: @escaping @Sendable (any LyricsRepository) async throws -> T,
-        onSuccess: @escaping @MainActor (T) -> Void
-    ) {
+    private func run(_ message: String, operation: @escaping @MainActor () async throws -> String) {
         guard !isBusy else { return }
         isBusy = true
         statusMessage = message
-        let repository = self.repository
-        Task { @MainActor [weak self] in
-            defer { self?.isBusy = false }
+        Task {
+            defer { isBusy = false }
+            var result = ""
             do {
-                let value = try await operation(repository)
-                onSuccess(value)
+                result = try await operation()
+                statistics = try await repository.statistics()
+                artworkBytes = ArtworkImageLoader.shared.diskBytes
+                canvasBytes = try await V3CanvasStore.shared.diskBytes()
+                statusMessage = result
             } catch {
-                self?.statusMessage = error.localizedDescription
+                statusMessage = [result, error.localizedDescription].filter { !$0.isEmpty }.joined(separator: " ")
             }
         }
     }
