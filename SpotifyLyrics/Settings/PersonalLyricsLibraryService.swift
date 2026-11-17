@@ -49,7 +49,14 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         let title: String
         let note: String
         var id: String { "\(kind).\(versionID.uuidString)" }
-        var storageKey: String { "personalLibrary.versionLabel.\(id)" }
+        static func key(_ kind: String, _ id: UUID) -> String { "personalLibrary.versionLabel.\(kind).\(id.uuidString)" }
+        var storageKey: String { Self.key(kind, versionID) }
+        static func stored(kind: String, versionID: UUID, originalTitle: String) -> Self {
+            let key = key(kind, versionID)
+            return Self(kind: kind, versionID: versionID, originalTitle: originalTitle,
+                        title: UserDefaults.lyricsQ.string(forKey: key + ".title") ?? "",
+                        note: UserDefaults.lyricsQ.string(forKey: key + ".note") ?? "")
+        }
     }
     struct TranslationDeletion: Identifiable {
         let version: PersonalTranslationVersionItem
@@ -58,6 +65,44 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     }
     @Published var versionLabelDraft: VersionLabelDraft?
     @Published var translationDeletionCandidate: TranslationDeletion?
+    @Published var comparison: LibraryCompareRequest?
+
+    func presentComparison(_ source: LibraryPassageSource, detail: PersonalLyricsLibraryTrackDetail) {
+        let choices: [LibraryCompareVersion], selected: UUID
+        func title(_ kind: String, _ id: UUID, _ fallback: String) -> String {
+            let custom = defaults.string(forKey: VersionLabelDraft.key(kind, id) + ".title") ?? ""
+            return custom.isEmpty ? fallback : custom
+        }
+        switch source {
+        case let .original(id):
+            selected = id
+            choices = detail.lyricsVersions.map {
+                .init(id: $0.id, title: title("lyrics", $0.id, DatabaseSourceIdentifier.displayName(for: $0.source)),
+                      updatedAt: $0.updatedAt, isCurrent: $0.isCurrent, parentID: $0.parentVersionID)
+            }
+        case let .translation(id):
+            selected = id
+            choices = detail.translationVersions.map {
+                let name = AITranslationSourceKind(rawValue: $0.sourceKind)?.displayName ?? "译文"
+                return .init(id: $0.id, title: title("translation", $0.id, name), updatedAt: $0.updatedAt,
+                             isCurrent: $0.isCurrent, parentID: $0.parentVersionID, translation: $0)
+            }
+        default: return
+        }
+        comparison = .init(entry: detail.entry, baseID: selected, versions: choices)
+    }
+
+    func compare(_ request: LibraryCompareRequest, with reference: LibraryCompareVersion) async throws -> LibraryVersionComparison {
+        guard let pair = try await repository.readPassagePair(trackKey: request.entry.trackStableKey, base: request.base.source,
+                                                              reference: reference.source) else {
+            throw LyricsEditingRepositoryError.sourceNotFound
+        }
+        try Task.checkCancellation()
+        let translations = request.base.translation != nil
+        return await Task.detached(priority: .userInitiated) {
+            LibraryVersionComparison(base: pair.0, reference: pair.1, translations: translations)
+        }.value
+    }
 
     struct VersionPreview: Identifiable {
         let id = UUID()
@@ -148,27 +193,31 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         Task {
             defer { revisionBusy = false }
             do {
-                let track = entry.libraryTrack
-                let identity = TrackIdentity(track: track)
-                try await repository.prepare()
-                guard let lyricsSource = try await repository.loadEditableVersion(
-                    versionID: version.lyricsVersionID, track: track, identity: identity
-                ) else { throw LyricsEditingRepositoryError.sourceNotFound }
-                let versions = try await repository.loadTranslationVersions(
-                    lyricsVersionID: version.lyricsVersionID,
-                    targetLanguage: version.targetLanguage,
-                    sourceContentHash: lyricsSource.sourceContentHash
-                )
-                guard let source = versions.first(where: { $0.record.id == version.id }) else {
-                    throw TranslationRepositoryError.versionNotFound
-                }
-                translationRevisionDraft = LibraryTranslationRevisionDraft(
-                    track: track, lyricsSource: lyricsSource, source: source
-                )
+                translationRevisionDraft = try await translationDraft(for: version, entry: entry)
             } catch {
                 statusMessage = "打开译文编辑失败：\(error.localizedDescription)"
             }
         }
+    }
+
+    func translationDraft(for version: PersonalTranslationVersionItem, entry: PersonalLyricsLibraryEntry,
+                          picking indices: Set<Int> = [], from reference: PersonalTranslationVersionItem? = nil) async throws -> LibraryTranslationRevisionDraft {
+        let track = entry.libraryTrack
+        try await repository.prepare()
+        guard let lyrics = try await repository.loadEditableVersion(versionID: version.lyricsVersionID, track: track,
+                                                                    identity: TrackIdentity(track: track)) else {
+            throw LyricsEditingRepositoryError.sourceNotFound
+        }
+        func stored(_ item: PersonalTranslationVersionItem) async throws -> StoredTranslationVersion {
+            guard item.lyricsVersionID == lyrics.record.id else { throw LyricsEditingRepositoryError.sourceContentMismatch }
+            let versions = try await repository.loadTranslationVersions(lyricsVersionID: item.lyricsVersionID,
+                targetLanguage: item.targetLanguage, sourceContentHash: lyrics.sourceContentHash)
+            guard let match = versions.first(where: { $0.record.id == item.id }) else { throw TranslationRepositoryError.versionNotFound }
+            return match
+        }
+        var draft = LibraryTranslationRevisionDraft(track: track, lyricsSource: lyrics, source: try await stored(version))
+        if let reference { try draft.takeLines(indices, from: await stored(reference)) }
+        return draft
     }
 
     public func saveTranslationRevision(_ draft: LibraryTranslationRevisionDraft) {

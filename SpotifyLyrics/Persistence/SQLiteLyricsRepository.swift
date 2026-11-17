@@ -3913,6 +3913,17 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     /// Reading a historical version never changes the adopted lyrics or playback.
     func readLibraryPassage(_ target: LibraryPassageTarget) throws -> LibraryPassagePage? {
         guard let detail = try loadPersonalLibraryTrackDetail(stableKey: target.trackKey) else { return nil }
+        return try readLibraryPassage(target, from: detail)
+    }
+
+    func readPassagePair(trackKey: String, base: LibraryPassageSource, reference: LibraryPassageSource) throws -> (LibraryPassagePage, LibraryPassagePage)? {
+        guard let detail = try loadPersonalLibraryTrackDetail(stableKey: trackKey),
+              let first = try readLibraryPassage(.init(trackKey: trackKey, source: base), from: detail),
+              let second = try readLibraryPassage(.init(trackKey: trackKey, source: reference), from: detail) else { return nil }
+        return (first, second)
+    }
+
+    private func readLibraryPassage(_ target: LibraryPassageTarget, from detail: PersonalLyricsLibraryTrackDetail) throws -> LibraryPassagePage? {
         let entry = detail.entry
         var source = target.source
         // Old kept lines have only the recording and text. Locate the stored
@@ -3946,26 +3957,30 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             translation = detail.translationVersions.first { $0.lyricsVersionID == lyricsID && $0.id == entry.activeTranslationVersionID }
         }
         var translated: [Int: String] = [:]
+        var hasStoredTranslation = false
         var pronunciation: [Int: String] = [:]
         var edition = version.isCurrent ? "当前原词" : "已保存的原词"
         if let translation {
             let valid = try loadTranslationVersions(lyricsVersionID: lyricsID, targetLanguage: translation.targetLanguage,
                                                     sourceContentHash: hash).first { $0.record.id == translation.id }
             if let valid {
+                hasStoredTranslation = true
                 for line in valid.lines { translated[line.lineIndex] = line.translatedText }
                 if case .translation = source { edition = "已保存的译文" }
             } else if case .translation = source {
                 let lines = try fetchTranslationLines(versionID: translation.id).map {
                     LibraryPassagePage.Line(id: $0.lineIndex, original: "", translation: $0.translatedText)
                 }
-                return LibraryPassagePage(entry: entry, originalVersionID: lyricsID, edition: "历史译文 · 单独阅读", lines: lines)
+                return LibraryPassagePage(entry: entry, originalVersionID: lyricsID, edition: "历史译文 · 单独阅读", lines: lines,
+                                          matchesOriginalVersion: false)
             }
         }
         if let reading {
             let rows = try fetchReadingLines(versionID: reading.id)
             if try fetchReadingVersion(versionID: reading.id)?.sourceContentHash != hash {
                 let lines = rows.map { LibraryPassagePage.Line(id: $0.lineIndex, original: $0.originalText, reading: $0.readingText) }
-                return LibraryPassagePage(entry: entry, originalVersionID: lyricsID, edition: "历史读音 · 单独阅读", lines: lines)
+                return LibraryPassagePage(entry: entry, originalVersionID: lyricsID, edition: "历史读音 · 单独阅读", lines: lines,
+                                          matchesOriginalVersion: false)
             }
             for line in rows { pronunciation[line.lineIndex] = line.readingText }
             edition = "已保存的读音"
@@ -3996,20 +4011,20 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 pronunciation[index] = values.joined(separator: " · ")
             }
         }
-        var backing: [Int: String] = [:]
+        var timing: [Int: LineTimingPayload] = [:]
         if detail.timingVersions.contains(where: { $0.lyricsVersionID == lyricsID }),
            let stored = try fetchLyricsVersion(versionID: lyricsID) {
             let track = entry.libraryTrack
             let base = Self.documentForTimingValidation(identity: TrackIdentity(track: track), track: track, version: stored, lines: originals)
-            backing = try fetchBestTimingVersion(lyricsVersionID: lyricsID, sourceContentHash: hash, document: base)?
-                .rows.compactMapValues(\.backgroundText) ?? [:]
+            timing = try fetchBestTimingVersion(lyricsVersionID: lyricsID, sourceContentHash: hash, document: base)?.rows ?? [:]
         }
         let lines = originals.map { line in
             let embedded = [line.kanaText, line.romajiText].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
             return LibraryPassagePage.Line(id: line.lineIndex, original: line.originalText,
-                     translation: translated[line.lineIndex] ?? line.translationText,
+                     translation: hasStoredTranslation ? translated[line.lineIndex] : line.translationText,
                      reading: pronunciation[line.lineIndex] ?? (embedded.isEmpty ? nil : embedded),
-                     background: backing[line.lineIndex])
+                     background: timing[line.lineIndex]?.backgroundText, startTime: line.startTime,
+                     endTime: line.endTime, timedSpans: timing[line.lineIndex]?.spans)
         }
         return LibraryPassagePage(entry: entry, originalVersionID: lyricsID, edition: edition, lines: lines)
     }

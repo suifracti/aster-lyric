@@ -276,6 +276,8 @@
 		311E64C965DA010EA4EE0E08 /* LibraryStorageSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D878152D0CF1CEB3707B44BF /* LibraryStorageSettingsView.swift */; };
 		76742E4922C17A4F57B4463F /* LocalLyricsFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C969ACC8BEA0FCFAB31779E /* LocalLyricsFile.swift */; };
 		1F08C11A54AD54A4C45E749C /* LyricFileReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4E11A2DEDE70F2E0F48ECB /* LyricFileReader.swift */; };
+		9332236A1CE572A54740C8CE /* LibraryVersionComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = B52B6C92006CB595EE440048 /* LibraryVersionComparison.swift */; };
+		C0EAD72A39DBF51001F1F0D5 /* LibraryVersionCompareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB7897AB0B3E2046F4D44B7D /* LibraryVersionCompareView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -554,6 +556,8 @@
 		D878152D0CF1CEB3707B44BF /* LibraryStorageSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryStorageSettingsView.swift; sourceTree = "<group>"; };
 		7C969ACC8BEA0FCFAB31779E /* LocalLyricsFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalLyricsFile.swift; sourceTree = "<group>"; };
 		6E4E11A2DEDE70F2E0F48ECB /* LyricFileReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricFileReader.swift; sourceTree = "<group>"; };
+		B52B6C92006CB595EE440048 /* LibraryVersionComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lyrics/LibraryVersionComparison.swift; sourceTree = "<group>"; };
+		DB7897AB0B3E2046F4D44B7D /* LibraryVersionCompareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryVersionCompareView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -622,6 +626,7 @@
 				110005002D83400100000000 /* MenuBarLyricsController.swift */,
 				110005012D83400100000000 /* MenuBarLyricsPopoverView.swift */,
 				110006002D83400100000000 /* PersonalLyricsLibraryModels.swift */,
+				B52B6C92006CB595EE440048 /* LibraryVersionComparison.swift */,
 				110006012D83400100000000 /* PersonalLyricsLibraryService.swift */,
 				110006022D83400100000000 /* PersonalLyricsLibraryView.swift */,
 				110006032D83400100000000 /* ListeningHistoryModels.swift */,
@@ -715,6 +720,7 @@
 				110000612D83400100000000 /* SettingsRootView.swift */,
 				0342EF8892AAF6BD5E1F5E79 /* AppearanceSettingsView.swift */,
 				E64E1B146BA70DF96667E71D /* LibraryPassageReader.swift */,
+				DB7897AB0B3E2046F4D44B7D /* LibraryVersionCompareView.swift */,
 				6E4E11A2DEDE70F2E0F48ECB /* LyricFileReader.swift */,
 				D878152D0CF1CEB3707B44BF /* LibraryStorageSettingsView.swift */,
 				F57414EF02B03B082F419D79 /* LyricRecallView.swift */,
@@ -1254,6 +1260,7 @@
 				110000612D83400100000001 /* SettingsRootView.swift in Sources */,
 				09C1CD83C63842207A3EF955 /* AppearanceSettingsView.swift in Sources */,
 				96DB0441CC165D2F07AC0C11 /* LibraryPassageReader.swift in Sources */,
+				C0EAD72A39DBF51001F1F0D5 /* LibraryVersionCompareView.swift in Sources */,
 				1F08C11A54AD54A4C45E749C /* LyricFileReader.swift in Sources */,
 				311E64C965DA010EA4EE0E08 /* LibraryStorageSettingsView.swift in Sources */,
 				4D7C7204CB61BC984163EAD7 /* LyricRecallView.swift in Sources */,
@@ -1301,6 +1308,7 @@
 				110005002D83400100000001 /* MenuBarLyricsController.swift in Sources */,
 				110005012D83400100000001 /* MenuBarLyricsPopoverView.swift in Sources */,
 				110006002D83400100000001 /* PersonalLyricsLibraryModels.swift in Sources */,
+				9332236A1CE572A54740C8CE /* LibraryVersionComparison.swift in Sources */,
 				110006012D83400100000001 /* PersonalLyricsLibraryService.swift in Sources */,
 				110006022D83400100000001 /* PersonalLyricsLibraryView.swift in Sources */,
 				110006032D83400100000001 /* ListeningHistoryModels.swift in Sources */,

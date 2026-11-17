@@ -906,12 +906,15 @@ struct LibraryPassageHit: Identifiable, Sendable {
 }
 
 struct LibraryPassagePage: Sendable {
-    struct Line: Identifiable, Sendable {
+    struct Line: Identifiable, Equatable, Sendable {
         let id: Int
         let original: String
         var translation: String?
         var reading: String?
         var background: String?
+        var startTime: TimeInterval?
+        var endTime: TimeInterval?
+        var timedSpans: [TimedTextSpan]?
 
         func matches(_ text: String) -> Bool {
             guard !text.isEmpty else { return false }
@@ -928,6 +931,7 @@ struct LibraryPassagePage: Sendable {
     let originalVersionID: UUID
     let edition: String
     let lines: [Line]
+    var matchesOriginalVersion = true
 
     func originalOccurrence(of text: String, preferred: Int?) -> Int? {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)

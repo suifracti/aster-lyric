@@ -3,6 +3,36 @@
 import SQLite3
 import ScreenCaptureKit
 
+@MainActor
+private func comparisonFixture() async throws -> (PersonalLyricsLibraryService, LibraryCompareRequest) {
+    let repo = SQLiteLyricsRepository(databaseURL: ExperienceArguments.databaseURL,
+        alignmentProvenanceDirectory: ExperienceArguments.root.appendingPathComponent("provenance"))
+    try await repo.prepare()
+    let track = Track(title: "窗边的来信", artist: "自习室录音", album: "秋天手记", duration: 30)
+    let identity = TrackIdentity(track: track)
+    let originals = ["窓辺に手紙を置いた", "雨音が少し遠くなる", "宛名はまだ書かない", "明日の朝にしよう"]
+    let doc = LyricsDocument(identity: identity, lines: originals.enumerated().map {
+        LyricLine(timestamp: Double($0.offset * 5), originalText: $0.element)
+    }, source: .manualImport)
+    let saved = try await repo.save(track: track, identity: identity, document: doc)
+    guard let id = saved.versionID, let hash = saved.sourceContentHash else { throw LyricsEditingRepositoryError.sourceNotFound }
+    let variants = [["我把信搁在窗边。", "雨声渐渐远了。", "还没有写收信人的名字。", "就等明早吧。"],
+                    ["我把信放在窗边。", "雨声渐渐远了。", "信封上，我还留着一处空白。", "明早再写吧。"]]
+    var last = UUID()
+    for (number, variant) in variants.enumerated() {
+        let draft = AITranslationDraft(lines: variant.enumerated().map { .init(index: $0.offset, translation: $0.element) },
+            targetLanguage: "zh-Hans", model: "", baseURLHost: "", promptHash: "", sourceContentHash: hash,
+            sourceKind: number == 0 ? .providerEmbedded : .manualEdit, isMachineGenerated: false, isManuallyEdited: number == 1)
+        last = try await repo.saveTranslation(lyricsVersionID: id, sourceContentHash: hash, originalLines: originals,
+                                              draft: draft, forceNewVersion: true).record.id
+    }
+    let library = PersonalLyricsLibraryService(repository: repo)
+    guard let detail = try await repo.loadPersonalLibraryTrackDetail(stableKey: identity.stableKey) else { throw LyricsEditingRepositoryError.sourceNotFound }
+    library.presentComparison(.translation(last), detail: detail)
+    guard let request = library.comparison else { throw LyricsEditingRepositoryError.sourceNotFound }
+    return (library, request)
+}
+
 private enum ExperienceArguments {
     static func value(_ key: String, fallback: String) -> String {
         let args = ProcessInfo.processInfo.arguments
@@ -668,7 +698,7 @@ private struct ExperienceFixtureRoot: View {
                     try? await Task.sleep(for: .milliseconds(800))
                 }
                 var extraWindow: NSWindow?
-                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker", "favorites", "reader", "lyric-file"].contains(ExperienceArguments.surface) {
+                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker", "favorites", "reader", "lyric-file", "compare"].contains(ExperienceArguments.surface) {
                     MenuBarLyricsController.shared.bind(playbackState: playback)
                     let root: AnyView
                     if ExperienceArguments.surface == "playlist-picker" {
@@ -684,6 +714,9 @@ private struct ExperienceFixtureRoot: View {
                         root = AnyView(TranslationProviderControls(settings: settings)
                             .padding(16).frame(width: 360)
                             .background(Color(nsColor: .windowBackgroundColor)))
+                    } else if ExperienceArguments.surface == "compare" {
+                        let (library, request) = try! await comparisonFixture()
+                        root = AnyView(LibraryVersionCompareView(request: request, library: library, edit: { _ in }))
                     } else if ExperienceArguments.surface == "lyric-file" {
                         let sample = """
                         <tt xml:lang="ja" xmlns:ttm="urn:ttm" xmlns:amll="urn:amll"><head><metadata>

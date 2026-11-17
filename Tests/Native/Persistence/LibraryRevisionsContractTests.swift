@@ -328,6 +328,12 @@ final class LibraryRevisionsContractTests: XCTestCase {
         XCTAssertEqual(sparseChild.record.lyricsVersionID, source.record.id)
         XCTAssertEqual(sparseChild.record.sourceContentHash, source.sourceContentHash)
         XCTAssertEqual(sparseChild.lines.map(\.translatedText), ["改过的已有译文", ""])
+        var assembled = LibraryTranslationRevisionDraft(track: track, lyricsSource: source, source: originalTranslation)
+        try assembled.takeLines([0], from: sparseChild)
+        let picked = try XCTUnwrap(try assembled.saveRequest().translation)
+        XCTAssertEqual(picked.lines, ["改过的已有译文", "原译二"])
+        XCTAssertEqual(picked.parentVersionID, originalTranslation.record.id)
+        XCTAssertEqual(originalTranslation.lines.first?.translatedText, "原译一")
         let sparseVersions = try await repo.loadTranslationVersions(
             lyricsVersionID: source.record.id, targetLanguage: "zh-Hans", sourceContentHash: source.sourceContentHash
         )

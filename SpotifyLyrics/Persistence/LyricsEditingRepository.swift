@@ -278,9 +278,20 @@ public struct LibraryTranslationRevisionDraft: Identifiable {
         self.track = track
         self.lyricsSource = lyricsSource
         self.source = source
-        let lines = source.lines.sorted { $0.lineIndex < $1.lineIndex }.map(\.translatedText)
+        var lines = Array(repeating: "", count: lyricsSource.lines.count)
+        for row in source.lines where lines.indices.contains(row.lineIndex) { lines[row.lineIndex] = row.translatedText }
         self.lines = lines
         self.originalLines = lines
+    }
+
+    mutating func takeLines(_ indices: Set<Int>, from reference: StoredTranslationVersion) throws {
+        guard reference.record.lyricsVersionID == lyricsSource.record.id,
+              reference.record.sourceContentHash == lyricsSource.sourceContentHash else {
+            throw LyricsEditingRepositoryError.sourceContentMismatch
+        }
+        guard indices.allSatisfy(lines.indices.contains) else { throw LyricsEditingRepositoryError.invalidTranslation("这句已不在原稿中") }
+        let byLine = Dictionary(uniqueKeysWithValues: reference.lines.map { ($0.lineIndex, $0.translatedText) })
+        for index in indices { lines[index] = byLine[index] ?? "" }
     }
 
     public var hasChanges: Bool { lines != originalLines }

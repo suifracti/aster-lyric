@@ -4,6 +4,27 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class LibraryIdentitySearchContractTests: XCTestCase {
+    func testVersionComparisonKeepsTheSecondChorusAfterAnInsertionAndFindsTimingChanges() {
+        func line(_ id: Int, _ text: String, _ time: Double) -> LibraryPassagePage.Line {
+            .init(id: id, original: text, startTime: time)
+        }
+        let left = [line(0, "门", 1), line(1, "回声", 4), line(2, "雪", 7), line(3, "回声", 12)]
+        let right = [line(0, "门", 1), line(1, "回声", 4), line(2, "灯", 5), line(3, "雪", 7), line(4, "回声", 13)]
+        let rows = LibraryVersionComparison.align(left, right, translations: false, sameOriginal: false)
+        XCTAssertEqual(rows.map(\.change), [.same, .same, .onlyReference, .same, .timing])
+        XCTAssertEqual(rows.last?.base?.id, 3)
+        XCTAssertEqual(rows.last?.reference?.id, 4)
+
+        let first = [LibraryPassagePage.Line(id: 0, original: "回声", translation: "先"),
+                     .init(id: 1, original: "回声", translation: "后")]
+        let second = [LibraryPassagePage.Line(id: 0, original: "回声", translation: "先"),
+                      .init(id: 1, original: "回声", translation: "末")]
+        let compared = LibraryVersionComparison.align(first, second, translations: true, sameOriginal: true)
+        XCTAssertEqual(compared.map(\.change), [.same, .text])
+        XCTAssertEqual(compared.last?.reference?.translation, "末")
+        XCTAssertEqual(LibraryVersionComparison.changedCharacters(in: "👩🏽‍🎨把信搁在窗边。", comparedWith: "👩🏽‍🎨把信放在窗边。"), [3])
+    }
+
     func testIdentityGroupingSearchExportAndCrossKeySelection() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("library-identity-search-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

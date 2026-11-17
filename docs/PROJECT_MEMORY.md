@@ -10,6 +10,7 @@
 |---|---|
 | 改名、换界面、旧数据或人工歌词不能丢；改持久化/身份逻辑 | L-001 |
 | 清理缓存、查看备份占用、另一个窗口打开时也要备份最新歌词 | L-047 · SettingsDataController、writeDatabaseSnapshot、V3CanvasStore |
+| 两份稿逐句对照、改译时借用另一版的句子、重复副歌错位 | L-049 · LibraryVersionComparison、LibraryTranslationRevisionDraft |
 | 从 Finder 打开歌词文件、给本机录音补稿、导入后已有版被换掉 | L-048 · LyricFileDocument、LocalLyricsFile、storeImportedFile |
 | 新包、截图、构建/签名、实际运行是哪份 | L-002；DEVELOPMENT_WORKFLOW.md |
 | 极简、减少按钮、保留旧功能 | L-003；TOOLBAR_BEHAVIOR.md |
@@ -728,3 +729,9 @@ TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、
 同一份文件重复存入同一录音，只保留一份。独立原词、文件自带的译文、读音和逐字沿歌词库原有版本路径保存，既有锁定和取消采用均有效。源文件不改写。TTML 按 XML 字节编码读取，LRC 的零秒时间和无时间行在导入、导出后仍可区分。
 
 已用独立 Bundle ID、临时数据库、停用 Keychain 和模型的 App 从 macOS 打开一个 LRC，经真实文档窗读取正文，点击存入并回读数据库。词库保护及 UTF-16 的证据在 LibraryRevisionsContractTests。
+
+## L-049 两份原词或译文逐句对读（2026-11-18）
+
+对读从档案当前稿或指定版本进入。读取时校验录音与原词哈希。同源行按真实行号对齐，稀疏译文缺行留空；不同原词按保序的相同正文定位，重复副歌前插句不会把后面整段错配。原词还能比对附文、时间与逐字区间。
+
+只有同一原词版本且哈希一致的两份译文可以挑句。选句记录只存在对读窗口里，按参照稿分别保留；进入编辑器后，沿用底稿的父子关系与人工保存路径。键盘和辅助功能可以直接访问档案和版本行操作。覆盖见 LibraryIdentitySearchContractTests 与 LibraryRevisionsContractTests。

@@ -524,7 +524,7 @@ public struct PersonalLibraryTrackDetailView: View {
                 Group {
                     VStack(alignment: .leading, spacing: 20) {
                         if !compact {
-                        trackHeader(detail.entry)
+                        trackHeader(detail)
 
                         Picker("版本类型", selection: $selectedSection) {
                             ForEach(VersionSection.allCases) { section in
@@ -549,7 +549,7 @@ public struct PersonalLibraryTrackDetailView: View {
                                     }
                                 } else {
                                     ForEach(lyricsVersions) { lv in
-                                        lyricsVersionCard(lv, entry: detail.entry, versions: lyricsVersions)
+                                        lyricsVersionCard(lv, detail: detail)
                                     }
                                 }
                             }
@@ -562,7 +562,7 @@ public struct PersonalLibraryTrackDetailView: View {
                                     emptyPlaceholder("暂无保存的翻译版本")
                                 } else {
                                     ForEach(translationVersions) { tv in
-                                        translationVersionCard(tv, entry: detail.entry)
+                                        translationVersionCard(tv, detail: detail)
                                     }
                                 }
                             }
@@ -645,8 +645,9 @@ public struct PersonalLibraryTrackDetailView: View {
         }
     }
 
-    private func trackHeader(_ entry: PersonalLyricsLibraryEntry) -> some View {
-        HStack(alignment: .center, spacing: 18) {
+    private func trackHeader(_ detail: PersonalLyricsLibraryTrackDetail) -> some View {
+        let entry = detail.entry
+        return HStack(alignment: .top, spacing: 14) {
             AsyncImage(url: entry.artworkURL) { phase in
                 switch phase {
                 case .success(let image):
@@ -654,45 +655,61 @@ public struct PersonalLibraryTrackDetailView: View {
                 default:
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color.secondary.opacity(0.12))
-                        .overlay(Image(systemName: "music.note").font(.system(size: 28)).foregroundStyle(.secondary))
+                        .overlay(Image(systemName: "music.note").font(.title2).foregroundStyle(.secondary))
                 }
             }
-            .frame(width: 96, height: 96)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+            .frame(width: compact ? 56 : 72, height: compact ? 56 : 72)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(entry.title)
-                    .font(.system(size: 27, weight: .semibold, design: .serif))
+                    .font(.system(size: compact ? 21 : 25, weight: .semibold, design: .serif))
                     .fixedSize(horizontal: false, vertical: true)
-                Text(entry.artist)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
-                if let album = entry.album, !album.isEmpty {
-                    Text(album)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            if entry.lyricsVersionCount > 0 {
-                Button {
-                    let target = LibraryPassageTarget(trackKey: entry.trackStableKey)
-                    if let readPassage { readPassage(target) }
-                    else { beforePresentSheet?(); service.presentPassage(target) }
-                } label: { Label("读歌词", systemImage: "book") }
-                .controlSize(.small)
-            }
-
-            Menu {
-                Button("从文件添加歌词…", systemImage: "doc.badge.plus") { attachFile(to: entry) }
-                Button("导出资产包", systemImage: "square.and.arrow.up") { service.exportPackage(for: entry.trackStableKey) }
-            } label: { Image(systemName: "ellipsis.circle") }
-            .menuIndicator(.hidden).fixedSize().accessibilityLabel("档案操作")
+                Text([entry.artist, entry.album].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                HStack(spacing: 8) {
+                    if entry.lyricsVersionCount > 0 {
+                        Button("读歌词", systemImage: "book") {
+                            let target = LibraryPassageTarget(trackKey: entry.trackStableKey)
+                            if let readPassage { readPassage(target) }
+                            else { beforePresentSheet?(); service.presentPassage(target) }
+                        }
+                    }
+                    compareAction(detail)
+                    Menu("更多") {
+                        Button("从文件添加歌词…", systemImage: "doc.badge.plus") { attachFile(to: entry) }
+                        Button("导出资产包", systemImage: "square.and.arrow.up") { service.exportPackage(for: entry.trackStableKey) }
+                    }.fixedSize()
+                }.controlSize(.small)
+                    .padding(.top, 3)
+            }.frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.bottom, 4)
+    }
+
+    @ViewBuilder
+    private func compareAction(_ detail: PersonalLyricsLibraryTrackDetail) -> some View {
+        let original = detail.lyricsVersions.count > 1 ? (detail.entry.activeLyricsVersionID ?? detail.lyricsVersions.first?.id) : nil
+        let translation = detail.translationVersions.count > 1 ? (detail.entry.activeTranslationVersionID ?? detail.translationVersions.first?.id) : nil
+        if let original, let translation {
+            Menu("逐句对读") {
+                compareOriginal(original, detail)
+                compareTranslation(translation, detail)
+            }.fixedSize()
+        } else if let translation { compareTranslation(translation, detail) }
+        else if let original { compareOriginal(original, detail) }
+    }
+
+    private func compareOriginal(_ id: UUID, _ detail: PersonalLyricsLibraryTrackDetail) -> some View {
+        Button("对读原词", systemImage: "rectangle.split.2x1") {
+            presentSheet { service.presentComparison(.original(id), detail: detail) }
+        }
+    }
+
+    private func compareTranslation(_ id: UUID, _ detail: PersonalLyricsLibraryTrackDetail) -> some View {
+        Button("对读译文", systemImage: "rectangle.split.2x1") {
+            presentSheet { service.presentComparison(.translation(id), detail: detail) }
+        }
     }
 
     @ViewBuilder
@@ -731,9 +748,10 @@ public struct PersonalLibraryTrackDetailView: View {
         DatabaseSourceIdentifier.source(for: source) == .unknown ? "未知来源" : DatabaseSourceIdentifier.displayName(for: source)
     }
 
-    private func lyricsVersionCard(_ lv: PersonalLyricsVersionItem, entry: PersonalLyricsLibraryEntry, versions: [PersonalLyricsVersionItem]) -> some View {
+    private func lyricsVersionCard(_ lv: PersonalLyricsVersionItem, detail: PersonalLyricsLibraryTrackDetail) -> some View {
+        let entry = detail.entry
         let provenance = DatabaseSourceIdentifier.provenanceDescription(source: lv.source, parentVersionID: lv.parentVersionID) { id in
-            guard let parent = versions.first(where: { $0.id == id }) else { return nil }
+            guard let parent = detail.lyricsVersions.first(where: { $0.id == id }) else { return nil }
             return (parent.source, parent.parentVersionID)
         }
         return LibraryVersionRow(kind: "lyrics", id: lv.id,
@@ -744,14 +762,20 @@ public struct PersonalLibraryTrackDetailView: View {
             edit: { presentSheet { service.beginRevision(versionID: lv.id, entry: entry) } },
             rename: { draft in presentSheet { service.versionLabelDraft = draft } },
             adopt: { adoptLyrics(lv, entry: entry) }) {
+                if detail.lyricsVersions.count > 1 {
+                    Button("逐句对读…", systemImage: "rectangle.split.2x1") {
+                        presentSheet { service.presentComparison(.original(lv.id), detail: detail) }
+                    }
+                }
                 Button(lv.isLocked ? "解锁" : "锁定") {
                     service.toggleLyricsLock(versionID: lv.id, currentLocked: lv.isLocked, trackStableKey: entry.trackStableKey)
                 }
             }.help(provenance + " · " + lv.language + (lv.isManuallyEdited ? " · 人工编辑" : ""))
     }
 
-    private func translationVersionCard(_ tv: PersonalTranslationVersionItem, entry: PersonalLyricsLibraryEntry) -> some View {
-        LibraryVersionRow(kind: "translation", id: tv.id,
+    private func translationVersionCard(_ tv: PersonalTranslationVersionItem, detail: PersonalLyricsLibraryTrackDetail) -> some View {
+        let entry = detail.entry
+        return LibraryVersionRow(kind: "translation", id: tv.id,
             title: AITranslationSourceKind(rawValue: tv.sourceKind)?.displayName ?? "译文",
             date: tv.updatedAt, lineCount: tv.lineCount,
             isCurrent: compact ? playback.selectedTranslation?.record.id == tv.id : tv.isCurrent,
@@ -760,6 +784,11 @@ public struct PersonalLibraryTrackDetailView: View {
             edit: { presentSheet { service.beginTranslationRevision(version: tv, entry: entry) } },
             rename: { draft in presentSheet { service.versionLabelDraft = draft } },
             adopt: { adoptTranslation(tv, entry: entry) }) {
+                if detail.translationVersions.count > 1 {
+                    Button("逐句对读…", systemImage: "rectangle.split.2x1") {
+                        presentSheet { service.presentComparison(.translation(tv.id), detail: detail) }
+                    }
+                }
                 Button(tv.isLocked ? "解锁" : "锁定") {
                     service.toggleTranslationLock(versionID: tv.id, currentLocked: tv.isLocked, trackStableKey: entry.trackStableKey)
                 }
@@ -892,17 +921,18 @@ private struct LibraryVersionRow<Actions: View>: View {
             Spacer(minLength: 4)
             if isCurrent { Text("已采用").font(.caption).foregroundStyle(.secondary) }
             if hovered {
-                HStack(spacing: 6) {
-                    Button("预览", action: preview)
-                    Button("编辑", action: edit).disabled(busy)
-                    if !isCurrent { Button("采用", action: adopt).disabled(archived) }
-                    if hasMenu {
-                        Menu { actions() } label: { Image(systemName: "ellipsis") }
-                            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                            .accessibilityLabel("更多版本操作")
-                    }
-                }.buttonStyle(.borderless).font(.caption).tint(.primary)
+                Button("预览", action: preview).buttonStyle(.borderless).font(.caption)
             }
+            Menu("操作") {
+                Button("预览", action: preview)
+                Button("编辑", action: edit).disabled(busy)
+                if !isCurrent { Button("采用", action: adopt).disabled(archived) }
+                Button("名称与备注…") {
+                    rename(.stored(kind: kind, versionID: id, originalTitle: title))
+                }
+                if hasMenu { Divider(); actions() }
+            }
+            .menuStyle(.borderlessButton).fixedSize().font(.caption)
         }
         .padding(.horizontal, 8).frame(minHeight: 48)
         .background(isCurrent ? Color.primary.opacity(0.08) : hovered ? Color.primary.opacity(0.04) : .clear,
@@ -1197,7 +1227,7 @@ struct LibraryVersionLabel: View {
         self.onEdit = onEdit
         self.compact = compact
         self.showsEdit = showsEdit
-        let key = "personalLibrary.versionLabel.\(kind).\(id.uuidString)"
+        let key = PersonalLyricsLibraryService.VersionLabelDraft.key(kind, id)
         _customTitle = AppStorage(wrappedValue: "", key + ".title", store: UserDefaults.lyricsQ)
         _note = AppStorage(wrappedValue: "", key + ".note", store: UserDefaults.lyricsQ)
     }
@@ -1617,8 +1647,20 @@ private struct LibraryDetailScrolling: ViewModifier {
 struct PersonalLibrarySheets: ViewModifier {
     @ObservedObject var service: PersonalLyricsLibraryService
     @EnvironmentObject private var playback: PlaybackState
+    @State private var pickedDraft: LibraryTranslationRevisionDraft?
     func body(content: Content) -> some View {
         content
+        .sheet(item: $service.comparison, onDismiss: {
+            if let draft = pickedDraft {
+                pickedDraft = nil
+                service.translationRevisionDraft = draft
+            }
+        }) { request in
+            LibraryVersionCompareView(request: request, library: service) { draft in
+                pickedDraft = draft
+                service.comparison = nil
+            }
+        }
         .sheet(item: $service.versionPreview) { preview in
             if let target = preview.passage {
                 LibraryPassageReader(target: target, library: service, close: { service.versionPreview = nil })
