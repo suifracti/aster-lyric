@@ -3,6 +3,22 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class ExperienceLibraryPresentationTests: XCTestCase {
+    @MainActor
+    func testChangingDesktopAppearancePreservesTheIslandBeingPreviewed() throws {
+        let name = "appearance-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let settings = AppSettingsStore(defaults: defaults)
+        let choices = settings.presentationSelections
+        let island = choices.currentStableID(for: .capsule)
+        XCTAssertTrue(choices.beginPreview(category: .capsule, stableID: "capsule.controlFocused.v2"))
+        settings.floatingLyricsPresentation = .legacyPanel
+        XCTAssertEqual(choices.currentStableID(for: .floatingLyrics), FloatingLyricsPresentationVersion.legacyPanel.rawValue)
+        XCTAssertEqual(choices.currentStableID(for: .capsule), island)
+        XCTAssertEqual(choices.transientPreviewStableID(for: .capsule), "capsule.controlFocused.v2")
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).floatingLyricsPresentation, .legacyPanel)
+    }
+
     func testCatalogPreviewAndSelectionBehavior() {
         let catalog = PresentationCatalog.shared
         let registry = PresentationPreviewRendererRegistry.shared

@@ -403,7 +403,7 @@ struct CurrentSongOperationsView: View {
     }
 
     private var languageSection: some View {
-        ToolbarPanelLink(title: "显示开关与注音排版在 工具栏 → 文字", panel: .text)
+        ToolbarPanelLink(title: "调整歌词显示与注音排版", panel: .text)
     }
 
     private var translationSection: some View {

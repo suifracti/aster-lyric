@@ -1963,7 +1963,7 @@ public final class AppSettingsStore: ObservableObject {
             FloatingLyricsPresentationVersion(rawValue: floatingLyricsPresentationRawValue)
                 ?? .current
         }
-        set { floatingLyricsPresentationRawValue = newValue.rawValue }
+        set { _ = applyPresentationSelection(category: .floatingLyrics, stableID: newValue.rawValue) }
     }
 
     public var floatingLyricsSurfaceStyle: FloatingLyricsSurfaceStyle {

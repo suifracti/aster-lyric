@@ -18,7 +18,6 @@ private final class FloatingLyricsStylePanel: NSPanel {
 /// just above the Dock. The window keeps its size.
 enum FloatingLyricsDock: String {
     case top, bottom
-    static let requested = Notification.Name("FloatingLyricsDockRequested")
     static let margin: CGFloat = 8
 
     static func origin(size: CGSize, visibleFrame: CGRect, place: FloatingLyricsDock) -> CGPoint {
@@ -51,16 +50,9 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
     private var pauseHideTask: Task<Void, Never>?
     private var didRestore = false
 
-    private var dockObserver: NSObjectProtocol?
-
     override init() {
         super.init()
         observeScreenChanges()
-        dockObserver = NotificationCenter.default.addObserver(forName: FloatingLyricsDock.requested, object: nil,
-                                                              queue: .main) { [weak self] note in
-            guard let place = (note.object as? String).flatMap(FloatingLyricsDock.init(rawValue:)) else { return }
-            MainActor.assumeIsolated { self?.dock(place) }
-        }
     }
 
     /// Moves the desktop lyrics to the top or bottom centre of its screen and remembers it.
@@ -77,7 +69,6 @@ final class FloatingLyricsWindowController: NSObject, ObservableObject, NSWindow
         if let screenChangeObserver {
             NotificationCenter.default.removeObserver(screenChangeObserver)
         }
-        if let dockObserver { NotificationCenter.default.removeObserver(dockObserver) }
         settingsCancellables.forEach { $0.cancel() }
     }
 

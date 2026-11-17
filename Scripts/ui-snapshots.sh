@@ -199,6 +199,8 @@ declare -a CASES=(
   "library-reader|--surface reader --appearance light"
   "settings-light|--surface settings --appearance light"
   "settings-appearance|--surface settings --settings-page 外观 --appearance light"
+  "settings-island|--surface settings --settings-page 外观 --settings-surface island --appearance dark --width 860 --height 580"
+  "settings-menubar|--surface settings --settings-page 外观 --settings-surface menuBar --appearance light --width 780 --height 520"
   "settings-lyrics|--surface settings --settings-page 歌词与翻译 --appearance light"
   "settings-ai|--surface settings --settings-page 'AI 翻译' --appearance light"
 )

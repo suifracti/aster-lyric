@@ -466,6 +466,9 @@ struct CapsuleLyricsView: View {
             moreAction("工作台", symbol: "square.grid.2x2") {
                 MenuBarLyricsController.shared.openSettings(at: .init(.workspace))
             }
+            moreAction("灵动岛外观", symbol: "slider.horizontal.3") {
+                MenuBarLyricsController.shared.openSettings(at: .init(appearance: .island))
+            }
             if let key = state.currentTrackIdentity?.stableKey {
                 moreAction("打开歌曲档案", symbol: "books.vertical") {
                     MenuBarLyricsController.shared.openSettings(at: .init(.library, trackKey: key))
@@ -787,7 +790,7 @@ struct CapsuleLyricsView: View {
                 Button {
                     WindowManager.shared.toggleFloatingLyrics(state: state)
                 } label: {
-                    Label("悬浮歌词", systemImage: "text.bubble")
+                    Label("桌面歌词", systemImage: "text.bubble")
                 }
                 if state.canOpenLyricsEditor {
                     Button {
@@ -804,7 +807,7 @@ struct CapsuleLyricsView: View {
                     Image(systemName: "chevron.up")
                 }
                 .buttonStyle(.plain)
-                .help("收起顶部胶囊")
+                .help("收起灵动岛")
             }
             .font(.system(size: 10, weight: .medium, design: .rounded))
             .buttonStyle(.borderless)
@@ -901,7 +904,7 @@ struct CapsuleLyricsView: View {
 
             HStack(spacing: 8) {
                 Button("主窗口") { NSApp.activate(ignoringOtherApps: true) }
-                Button("悬浮歌词") { WindowManager.shared.toggleFloatingLyrics(state: state) }
+                Button("桌面歌词") { WindowManager.shared.toggleFloatingLyrics(state: state) }
                 if state.canOpenLyricsEditor {
                     Button("编辑歌词") {
                         state.prepareLyricsEditor()
@@ -915,7 +918,7 @@ struct CapsuleLyricsView: View {
                     Image(systemName: "chevron.up")
                 }
                 .buttonStyle(.plain)
-                .help("收起顶部胶囊")
+                .help("收起灵动岛")
             }
             .font(.system(size: 10, weight: .medium, design: .rounded))
             .buttonStyle(.borderless)

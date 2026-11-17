@@ -235,35 +235,14 @@ public struct MenuBarLyricsPopoverView: View {
             Text("状态栏文字").font(.headline)
             Text(settings.menuBarLyricsEnabled ? "所有文字层共用同一占用宽度。" : "目前已关闭显示，仍可配置下次启用时的外观。")
                 .font(.caption).foregroundStyle(.secondary)
-            let preview = MenuBarTextFormatter.statusImage(snapshot: previewSnapshot, appearance: .init(
-                showsOriginal: settings.menuBarLyricsShowsOriginal, showsTranslation: settings.menuBarLyricsShowsTranslation,
-                showsKana: settings.menuBarLyricsShowsKana, showsRomaji: settings.menuBarLyricsShowsRomaji,
-                fontSize: settings.menuBarLyricsFontSize, readingsAbove: settings.menuBarLyricsReadingsAbove,
-                width: settings.menuBarWidth))
-            HStack(spacing: 8) {
-                if controller.currentSnapshot.currentLineText?.isEmpty != false {
-                    Text("示例").font(.caption2).foregroundStyle(.secondary)
-                }
-                Image(nsImage: preview).renderingMode(.template).frame(height: 22)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading).clipped().padding(9)
-            .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
-            .accessibilityLabel("菜单栏文字预览")
+            MenuBarAppearancePreview(settings: settings, controller: controller)
+            Button("在外观设置中打开") { controller.openSettings(at: .init(appearance: .menuBar)) }
+                .buttonStyle(.link)
             ScrollView {
                 MenuBarLyricsAppearanceControls(settings: settings)
                     .padding(.vertical, 4)
             }.frame(height: min(410, max(260, (NSScreen.main?.visibleFrame.height ?? 800) - 320)))
         }.padding(16).frame(width: 340)
-    }
-
-    private var previewSnapshot: MenuBarLyricsSnapshot {
-        let current = controller.currentSnapshot
-        if current.currentLineText?.isEmpty == false { return current }
-        return MenuBarLyricsSnapshot(state: .synchronized(current: "星が光る", next: nil),
-                                     statusText: "", trackTitle: nil, artistName: nil, currentLineText: "星が光る",
-                                     nextLineText: nil, isPlaying: false, hasLiveTrack: false, artworkURL: nil,
-                                     currentTranslationText: "星光亮起", currentKanaText: "ほしがひかる",
-                                     currentRomajiText: "hoshi ga hikaru")
     }
 
     private func fullLyricsPage(_ lyrics: MenuBarFullLyricsSnapshot) -> some View {
@@ -453,6 +432,38 @@ public struct MenuBarLyricsPopoverView: View {
             .frame(width: 48, height: 48)
             .background(islandAccent.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+}
+
+struct MenuBarAppearancePreview: View {
+    @ObservedObject var settings: AppSettingsStore
+    @ObservedObject var controller: MenuBarLyricsController
+    private var snapshot: MenuBarLyricsSnapshot { controller.currentSnapshot }
+
+    var body: some View {
+        let preview = MenuBarTextFormatter.statusImage(snapshot: previewSnapshot, appearance: .init(
+            showsOriginal: settings.menuBarLyricsShowsOriginal, showsTranslation: settings.menuBarLyricsShowsTranslation,
+            showsKana: settings.menuBarLyricsShowsKana, showsRomaji: settings.menuBarLyricsShowsRomaji,
+            fontSize: settings.menuBarLyricsFontSize, readingsAbove: settings.menuBarLyricsReadingsAbove,
+            width: settings.menuBarWidth))
+        HStack(spacing: 8) {
+            if snapshot.currentLineText?.isEmpty != false {
+                Text("示例").font(.caption2).foregroundStyle(.secondary)
+            }
+            Image(nsImage: preview).renderingMode(.template).frame(height: 22)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).clipped().padding(9)
+        .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityLabel("菜单栏文字预览")
+    }
+
+    private var previewSnapshot: MenuBarLyricsSnapshot {
+        if snapshot.currentLineText?.isEmpty == false { return snapshot }
+        return MenuBarLyricsSnapshot(state: .synchronized(current: "星が光る", next: nil),
+                                     statusText: "", trackTitle: nil, artistName: nil, currentLineText: "星が光る",
+                                     nextLineText: nil, isPlaying: false, hasLiveTrack: false, artworkURL: nil,
+                                     currentTranslationText: "星光亮起", currentKanaText: "ほしがひかる",
+                                     currentRomajiText: "hoshi ga hikaru")
     }
 }
 

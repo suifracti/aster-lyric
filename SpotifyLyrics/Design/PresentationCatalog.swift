@@ -20,7 +20,7 @@ public enum PresentationCategory: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .mainWindow: return "主窗口"
         case .fullscreen: return "全屏歌词"
-        case .capsule: return "顶部胶囊"
+        case .capsule: return "灵动岛"
         case .floatingLyrics: return "桌面歌词"
         case .backdrop: return "背景"
         case .lyricsTransition: return "歌词过渡"
@@ -78,7 +78,7 @@ public enum PresentationSurface: String, CaseIterable, Hashable, Identifiable, S
         switch self {
         case .mainWindow: return "主窗口"
         case .fullscreen: return "全屏歌词"
-        case .capsule: return "顶部胶囊"
+        case .capsule: return "灵动岛"
         case .floatingLyrics: return "桌面歌词"
         case .preview: return "预览"
         }

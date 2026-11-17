@@ -458,6 +458,17 @@ final class PresentationSourceContractTests: XCTestCase {
         history.search("")
         XCTAssertEqual(history.current, .init(.workspace))
         XCTAssertFalse(history.canGoBack)
+
+        history.search("刘海")
+        XCTAssertEqual(AppearanceSurface.allCases.filter { $0.matches(history.current.query) }, [.island])
+        XCTAssertEqual(AppearanceSurface.allCases.filter { $0.matches("状态栏宽度") }, [.menuBar])
+        XCTAssertEqual(AppearanceSurface.allCases.filter { $0.matches("桌面歌词字号") }, [.desktop])
+        history.open(.init(appearance: .island))
+        history.open(.init(appearance: .menuBar))
+        history.back()
+        XCTAssertEqual(history.current, .init(appearance: .island))
+        history.back()
+        XCTAssertEqual(history.current.query, "刘海")
     }
 
     func testExperienceLibraryRouteAndPreviewAdaptersStayPresentationOnly() throws {

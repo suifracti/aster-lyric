@@ -158,9 +158,13 @@ struct SettingsLocalSearch: View {
                 if term.isEmpty {
                     Text("输入歌曲名、歌词片段或设置名称").foregroundStyle(.secondary)
                 } else {
-                    if !pages.isEmpty {
+                    let surfaces = AppearanceSurface.allCases.filter { $0.matches(term) }
+                    if !pages.isEmpty || !surfaces.isEmpty {
                         heading("设置与工具")
-                        ForEach(pages) { page in
+                        ForEach(surfaces) { surface in
+                            result(surface.title, detail: surface.detail, icon: surface.symbol, location: .init(appearance: surface))
+                        }
+                        ForEach(pages.filter { $0 != .appearance || surfaces.isEmpty }) { page in
                             result(page.rawValue, detail: page.detail, icon: page.systemImage, location: .init(page))
                         }
                     }

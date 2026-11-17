@@ -26,8 +26,8 @@ struct LyricsAndTextSettingsView: View {
             }
 
             Section("显示与阅读") {
-                ToolbarPanelLink(title: "显示开关、字号与阅读外观在 工具栏 → 文字", panel: .text)
-                ToolbarPanelLink(title: "新歌词自动翻译在 工具栏 → 译文", panel: .translation)
+                ToolbarPanelLink(title: "调整歌词显示、字号与阅读外观", panel: .text)
+                ToolbarPanelLink(title: "调整新歌词自动翻译", panel: .translation)
                 SettingsDestinationRow(title: "读音与人工词典", detail: "本地读音生成与词条配置", systemImage: "character.phonetic", action: onOpenReading)
             }
 
@@ -83,7 +83,7 @@ struct ReadingSettingsView: View {
             )
 
             Section("读音配置") {
-                ToolbarPanelLink(title: "读音显示、注音排版与假名替换在 工具栏 → 文字", panel: .text)
+                ToolbarPanelLink(title: "调整读音显示与注音排版", panel: .text)
                 Picker("默认读音层", selection: readingBinding(\.japaneseRepresentationID)) {
                     Text("假名").tag(ReadingRepresentationID.kana.rawValue)
                     Text("罗马音").tag(ReadingRepresentationID.romaji.rawValue)

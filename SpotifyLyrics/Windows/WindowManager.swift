@@ -63,6 +63,12 @@ public final class WindowManager: ObservableObject {
         floatingController?.hide()
     }
 
+    func dockFloatingLyrics(_ place: FloatingLyricsDock, state: PlaybackState) {
+        guard !fullScreenWindowIsVisible else { return }
+        if !floatingWindowIsVisible { showFloatingLyrics(state: state) }
+        floatingController?.dock(place)
+    }
+
     public func toggleFloatingLyrics(state: PlaybackState) {
         guard fullScreenController?.isVisible != true else { return }
         if floatingController == nil {

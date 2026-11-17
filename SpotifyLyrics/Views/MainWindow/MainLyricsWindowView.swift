@@ -459,10 +459,10 @@ struct MainLyricsWindowView: View {
                 state.currentMode = .mainWindow
             }
             Divider()
-            Button("悬浮歌词", systemImage: "rectangle.on.rectangle") {
+            Button("桌面歌词", systemImage: "rectangle.on.rectangle") {
                 WindowManager.shared.toggleFloatingLyrics(state: state)
             }
-            Menu("悬浮歌词交互") {
+            Menu("桌面歌词交互") {
                 Button("可编辑 / 可拖动") {
                     WindowManager.shared.setFloatingInteractionMode(.interactive, state: state)
                 }
@@ -477,7 +477,7 @@ struct MainLyricsWindowView: View {
                     WindowManager.shared.restoreFloatingInteractiveMode(state: state)
                 }
             }
-            Button("顶部胶囊", systemImage: "capsule") {
+            Button("灵动岛", systemImage: "capsule") {
                 WindowManager.shared.toggleCapsule(state: state)
             }
             Button("全屏歌词", systemImage: "arrow.up.left.and.arrow.down.right") {
@@ -497,7 +497,7 @@ struct MainLyricsWindowView: View {
         }
         .menuStyle(.borderlessButton)
         .buttonStyle(.plain)
-        .help("窗口模式：主窗口、悬浮歌词、顶部胶囊或全屏歌词")
+        .help("窗口模式：主窗口、桌面歌词、灵动岛或全屏歌词")
         .accessibilityLabel("窗口模式")
     }
 }

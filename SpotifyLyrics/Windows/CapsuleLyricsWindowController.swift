@@ -294,6 +294,8 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
         }
         if selectionObserver == nil {
             selectionObserver = settings.presentationSelections.$persistedSelections
+                .map { $0[PresentationCategory.capsule.rawValue] }
+                .removeDuplicates()
                 .dropFirst().sink { [weak self] _ in
                     Task { @MainActor [weak self] in
                         guard let self, let settings = self.settings else { return }

@@ -44,6 +44,7 @@
 | 想找收藏那句的上下文、搜到旧译文却只打开版本列表、收藏文件损坏后变空 | L-046；LibraryPassageReader、searchLibraryPassages、V3FavoriteLines |
 | 灵动岛挡刘海、只剩歌名、想停在一句读、换歌拖错进度 | L-045；CapsuleNotchGeometry、CapsuleLyricsView、vocalCountdownWindow |
 | 状态栏双行词、收藏弹窗里正在唱的一句、没放歌时的菜单 | L-044；MenuBarTextFormatter.statusImage、WorkspaceShelfCard、KeepLyricButton |
+| 桌面歌词、灵动岛、菜单栏分散难找，调整一个外观时另一个预览被采用 | L-043；AppearanceSettingsView、AppearanceSurface、PresentationSelectionStore.apply |
 | 设置里找歌或歌词、从金句或封面墙回到歌、没放音乐时继续整理、历史录音一直转圈 | L-043；SettingsWorkspace、SettingsHistory、selectedDetail(for:) |
 
 ## 默认自动执行：不等用户提醒
@@ -434,7 +435,7 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 ## L-029 第五批的做法与坑（2026-11-13）
 
 - **`@MainActor` 写在类声明上一行**，往它和类之间插入别的类型会让类失去主线程隔离，报一串 “main actor-isolated … from a nonisolated context”。新类型插在 `@MainActor` 之前。
-- **设置页拿不到桌面歌词控制器**（控制器由 `WindowManager` 持有）。停靠用通知 `FloatingLyricsDock.requested` 传给控制器。
+- **设置页的停靠**由持有歌词窗口的 `WindowManager.dockFloatingLyrics` 处理。2026-11-18 替换了只对已开窗口生效的通知入口，现在关闭时点停靠也会显示并移到所选位置。
 - **跟着低音的效果共用 `V3BassFollower`**：瞬时升、0.22 秒回落，数据过期（0.5 秒没更新）当作 0。视图用 `TimelineView` 每秒 30 次读一次，状态放在一个不发布变化的盒子里。
 - **封面呼吸挂在 `v3ReportsForegroundCover` 里**，所有前景封面都有；上报的封面位置仍是静止时的。
 - **显示层不能改歌词行的长度**：逐字时间、注音、译文对齐都按字符位置。星号还原因为长度不变才安全；隐藏括号内容（I10）因此没做。
@@ -678,6 +679,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 工作台可以直接用已收藏的金句、上次打开的档案和本机搜索。歌曲、歌词、译文走歌词库既有的搜索缓存；设置页与金句在各自已有的数据里匹配。工作台、独立歌词库和最近播放的封面墙都按歌曲 stableKey 打开，选中和预取仍走两条路径。
 
 入口一多，固定写成“返回高级与数据”会把人带错。设置历史保留搜索词和歌曲选择；重新输入搜索词只更新本次搜索。歌词库按发起请求的键接收详情，SQLite 返回的规范键可以与入口携带的旧键不同。档案确实不存在或暂时读不到时要结束加载态。上次打开的档案只在浏览成功时记入偏好，播放预取与后台刷新不占这个位置。
+
+外观按主窗口、桌面歌词、灵动岛和菜单栏四处切换，搜索和后退都能回到其中一处。可视地图只导航；显示开关和停靠按钮调用现有窗口控制器。改桌面歌词版本时曾把另一处尚在试看的灵动岛一起保存。现在 `apply(category:stableID:)` 只提交用户选中的位置，灵动岛也只在自己的呈现选择改变时收起。经典布局与实验工作台的文字和翻译入口在原处展开，沿用相同设置值。
 
 
 ## L-044 状态栏跟随歌曲，也能回到自己的资料（2026-11-18）

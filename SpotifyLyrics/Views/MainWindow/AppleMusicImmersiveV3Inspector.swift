@@ -724,30 +724,62 @@ struct V3VisualControls {
             Toggle("确认纯音乐时使用简洁画面", isOn: $settings.v3InstrumentalPureImmersion)
                 .help("仅对已确认纯音乐生效；找不到歌词不代表纯音乐。")
             V3PanelRow(title: "旧版布局", help: "早期主窗口布局，仅为兼容保留") {
-                Picker("主窗口布局", selection: $settings.mainWindowLayoutStyleRawValue) {
-                    ForEach(MainWindowLayoutStyle.userSelectableCases) { style in Text(style.title).tag(style.rawValue) }
-                }.pickerStyle(.menu).labelsHidden().fixedSize()
+                AppearanceLayoutPicker(settings: settings).pickerStyle(.menu).labelsHidden().fixedSize()
             }
+        }
+    }
+
+    @ViewBuilder private var layerControls: some View {
+        Text("当前：\((settings.activeReadingLanguage ?? .other).title)设置")
+            .font(.system(size: 11)).foregroundStyle(.secondary)
+            .help("读音与显示开关按歌词语言分别记住")
+        V3SegmentedPicker("显示", selection: displayBinding(\.listeningLayerPreset),
+            options: DisplayPreferences.ListeningLayerPreset.allCases.filter {
+                $0 != .custom || settings.displayPreferences.listeningLayerPreset == .custom
+            }.map { ($0.title, $0) })
+        // Under the 显示 choice, aligned with it: the three switches it sets.
+        V3ChipToggles("", items: [("原文", displayBinding(\.showOriginal)),
+                                  ("译文", displayBinding(\.showTranslation)),
+                                  ("读音", displayBinding(\.showKana))])
+    }
+
+    @ViewBuilder private var mainLyricSize: some View {
+        V3NumericSlider("字号", value: displayDoubleBinding(\.fontSize), in: 14...42, step: 1, unit: "pt")
+            .help("原文与译文字号；在歌词上双指捏合也可调整")
+    }
+
+    @ViewBuilder private var readingTypeControls: some View {
+        V3ChipToggles("辅助读音", items: [("罗马音", displayBinding(\.showRomaji)),
+                                        ("拼音", displayBinding(\.showPinyin))])
+        V3PanelRow(title: "注音排版") {
+            Picker("注音排版", selection: displayBinding(\.kanaDisplayMode)) {
+                Text("汉字上方").tag(KanaDisplayMode.inlineRuby)
+                Text("独立一行").tag(KanaDisplayMode.independentLine)
+                Text("替换汉字").tag(KanaDisplayMode.kanaReplacement)
+                Text("隐藏").tag(KanaDisplayMode.hidden)
+            }
+            .pickerStyle(.menu).labelsHidden().fixedSize()
+            .accessibilityIdentifier("v3.display.kanaMode")
+        }
+        V3NumericSlider("读音字号", value: displayDoubleBinding(\.assistantFontSize), in: 10...24, step: 1, unit: "pt")
+            .help("读音、罗马音与辅助字")
+        V3NumericSlider("假名字号", value: displayDoubleBinding(\.rubyFontSize), in: 8...18, step: 1, unit: "pt")
+    }
+
+    var sharedTextControls: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            layerControls
+            mainLyricSize
+            readingTypeControls
         }
     }
 
     /// 文字: what is shown and how big first; reading details fold.
     var textPage: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("当前：\((settings.activeReadingLanguage ?? .other).title)设置")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-                .help("读音与显示开关按歌词语言分别记住")
-            V3SegmentedPicker("显示", selection: displayBinding(\.listeningLayerPreset),
-                options: DisplayPreferences.ListeningLayerPreset.allCases.filter {
-                    $0 != .custom || settings.displayPreferences.listeningLayerPreset == .custom
-                }.map { ($0.title, $0) })
-            // Under the 显示 choice, aligned with it: the three switches it sets.
-            V3ChipToggles("", items: [("原文", displayBinding(\.showOriginal)),
-                                      ("译文", displayBinding(\.showTranslation)),
-                                      ("读音", displayBinding(\.showKana))])
+            layerControls
             lyricStyleControls
-            V3NumericSlider("字号", value: displayDoubleBinding(\.fontSize), in: 14...42, step: 1, unit: "pt")
-                .help("原文与译文字号；在歌词上双指捏合也可调整")
+            mainLyricSize
             V3ChipToggles("歌词行", items: [("大字", $settings.v3BigLineModeEnabled),
                                           ("副歌加强", $settings.v3ChorusEmphasis),
                                           ("换气", $settings.v3BreathIn)])
@@ -764,21 +796,7 @@ struct V3VisualControls {
             Toggle("亮封面自动加阴影", isOn: $settings.v3BrightCoverShadowEnabled)
                 .help("封面、舞台遇亮封面且清晰度为关闭时自动加文字阴影；关闭后「关闭」保持完全不加。")
             V3DisclosureRow(title: "读音与更多", isExpanded: $settings.v3TextAdvancedExpanded) {
-                V3ChipToggles("辅助读音", items: [("罗马音", displayBinding(\.showRomaji)),
-                                                ("拼音", displayBinding(\.showPinyin))])
-                V3PanelRow(title: "注音排版") {
-                    Picker("注音排版", selection: displayBinding(\.kanaDisplayMode)) {
-                        Text("汉字上方").tag(KanaDisplayMode.inlineRuby)
-                        Text("独立一行").tag(KanaDisplayMode.independentLine)
-                        Text("替换汉字").tag(KanaDisplayMode.kanaReplacement)
-                        Text("隐藏").tag(KanaDisplayMode.hidden)
-                    }
-                    .pickerStyle(.menu).labelsHidden().fixedSize()
-                    .accessibilityIdentifier("v3.display.kanaMode")
-                }
-                V3NumericSlider("读音字号", value: displayDoubleBinding(\.assistantFontSize), in: 10...24, step: 1, unit: "pt")
-                    .help("读音、罗马音与辅助字")
-                V3NumericSlider("假名字号", value: displayDoubleBinding(\.rubyFontSize), in: 8...18, step: 1, unit: "pt")
+                readingTypeControls
                 V3NumericSlider("当前句光", value: $settings.v3CurrentLineGlow, in: 0...1, step: 0.01, unit: "%", displayScale: 100)
                     .help("当前句发光强度")
                 textAdvancedControls

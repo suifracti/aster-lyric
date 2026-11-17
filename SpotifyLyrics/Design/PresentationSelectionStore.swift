@@ -20,7 +20,6 @@ public final class PresentationSelectionStore: ObservableObject {
     @Published public private(set) var transientPreviewSelections: [String: String] = [:]
 
     private let defaults: UserDefaults
-    private var previewBaseline: [String: String]?
 
     public init(
         defaults: UserDefaults = .lyricsQ,
@@ -101,9 +100,6 @@ public final class PresentationSelectionStore: ObservableObject {
     @discardableResult
     public func beginPreview(category: PresentationCategory, stableID: String) -> Bool {
         guard isPreviewable(stableID, category: category) else { return false }
-        if previewBaseline == nil {
-            previewBaseline = persistedSelections
-        }
         transientPreviewSelections[category.rawValue] = stableID
         debugLog(
             "event=preview category=\(category.rawValue) stableID=\(stableID) "
@@ -134,21 +130,18 @@ public final class PresentationSelectionStore: ObservableObject {
         }
         persistIfNeeded()
         transientPreviewSelections.removeAll()
-        previewBaseline = nil
         debugLog("event=apply-after persisted=\(persistedSelections)")
         objectWillChange.send()
         return true
     }
 
-    /// Applies one runnable entry through the same explicit transaction used
-    /// by the Release Experience Library.
+    /// Choosing one surface must leave other surfaces' unconfirmed previews in place.
     @discardableResult
     public func apply(category: PresentationCategory, stableID: String) -> Bool {
-        guard beginPreview(category: category, stableID: stableID) else { return false }
-        guard applyPreview() else {
-            cancelPreview()
-            return false
-        }
+        guard isPreviewable(stableID, category: category), isRunnable(stableID, category: category) else { return false }
+        persistedSelections[category.rawValue] = stableID
+        transientPreviewSelections.removeValue(forKey: category.rawValue)
+        persistIfNeeded()
         return true
     }
 
@@ -158,7 +151,6 @@ public final class PresentationSelectionStore: ObservableObject {
     public func cancelPreview() {
         debugLog("event=cancel-before transient=\(transientPreviewSelections) persisted=\(persistedSelections)")
         transientPreviewSelections.removeAll()
-        previewBaseline = nil
         objectWillChange.send()
     }
 

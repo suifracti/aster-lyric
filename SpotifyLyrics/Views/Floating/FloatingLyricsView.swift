@@ -52,7 +52,7 @@ struct FloatingLyricsView: View {
         .preferredColorScheme(.dark)
         .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: state.liveLyrics))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("悬浮歌词")
+        .accessibilityLabel("桌面歌词")
         .lyricIslandSongTint(artworkURL: state.currentTrack.artworkURL, accent: $islandAccent)
     }
 
@@ -103,8 +103,8 @@ struct FloatingLyricsView: View {
                         Image(systemName: windowController.interactionMode == .locked ? "lock.open" : "lock")
                             .frame(width: 26, height: 26)
                     }
-                    .help(windowController.interactionMode == .locked ? "解锁悬浮歌词" : "锁定悬浮歌词")
-                    .accessibilityLabel(windowController.interactionMode == .locked ? "解锁悬浮歌词" : "锁定悬浮歌词")
+                    .help(windowController.interactionMode == .locked ? "解锁桌面歌词" : "锁定桌面歌词")
+                    .accessibilityLabel(windowController.interactionMode == .locked ? "解锁桌面歌词" : "锁定桌面歌词")
                     Button {
                         windowController.setInteractionMode(.passThrough)
                     } label: {
@@ -115,8 +115,8 @@ struct FloatingLyricsView: View {
                     Button { windowController.close() } label: {
                         Image(systemName: "xmark").frame(width: 26, height: 26)
                     }
-                    .help("隐藏悬浮歌词")
-                    .accessibilityLabel("隐藏悬浮歌词")
+                    .help("隐藏桌面歌词")
+                    .accessibilityLabel("隐藏桌面歌词")
                 }
             }
         }
@@ -565,7 +565,13 @@ struct FloatingLyricsStylePanelView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                IslandSectionHeader(title: "外观")
+                HStack {
+                    IslandSectionHeader(title: "外观")
+                    Spacer()
+                    Button("桌面歌词设置") {
+                        MenuBarLyricsController.shared.openSettings(at: .init(appearance: .desktop))
+                    }.buttonStyle(.link)
+                }
                 Picker("行数", selection: $settings.floatingDesktopLineMode) {
                     ForEach(FloatingDesktopLineMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
                 }
@@ -578,11 +584,7 @@ struct FloatingLyricsStylePanelView: View {
                 FloatingDesktopColorControls(settings: settings)
                 Divider()
                 IslandSectionHeader(title: "第二行")
-                Picker("第二行", selection: $settings.floatingDesktopCompanion) {
-                    Text("译文 / 下一句").tag("translation")
-                    Text("假名").tag("kana")
-                    Text("罗马音 / 拼音").tag("reading")
-                }
+                FloatingDesktopCompanionPicker(settings: settings)
                 Text("第二行按此处选择显示；无译文时默认显示下一句。")
                     .font(.caption).foregroundStyle(.secondary)
                 Divider()
@@ -845,6 +847,18 @@ struct FloatingDesktopPalette {
         translation = Self.color(settings.floatingDesktopTranslationColorHex, fallback: "FFFFFF")
         outline = Self.color(settings.floatingDesktopOutlineColorHex, fallback: "10131A")
         outlineWidth = FloatingDesktopTypography.outlineWidth(settings.floatingDesktopOutlineWidth)
+    }
+}
+
+struct FloatingDesktopCompanionPicker: View {
+    @ObservedObject var settings: AppSettingsStore
+
+    var body: some View {
+        Picker("第二行", selection: $settings.floatingDesktopCompanion) {
+            Text("译文 / 下一句").tag("translation")
+            Text("假名").tag("kana")
+            Text("罗马音 / 拼音").tag("reading")
+        }
     }
 }
 

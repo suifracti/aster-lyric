@@ -604,7 +604,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 dismissPinnedToolbarPanel()
             }
             .onChange(of: settingsRoute.requestedToolbarPanel, initial: true) { _, panel in
-                guard let panel else { return }
+                guard !liveOnly, let panel else { return }
                 isFocusMode = false
                 toolsVisible = true
                 if pinnedToolbarPanel != panel { clickToolbarPanel(panel) }
@@ -1718,11 +1718,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private var allowsTranslationRequests: Bool { usesSystemTranslation || allowsModelRequests }
 
     private var allowsAutomaticTranslation: Bool {
-        if usesSystemTranslation { return true }
-#if DEBUG
-        if DebugAcceptanceDataIsolation.isRequested && !DebugAcceptanceDataIsolation.isDailyUse { return false }
-#endif
-        return allowsModelRequests
+        TranslationAutomationToggle.isAllowed(settings.aiTranslationConfiguration)
     }
 
     private func translationControls(compact: Bool) -> some View {
@@ -1754,15 +1750,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             if displaysAIReadingControls {
                 aiReadingControls(compact: compact)
             } else {
-            Toggle("新歌词自动翻译", isOn: Binding(
-                get: { settings.aiTranslationConfiguration.autoTranslateNewLyrics },
-                set: { enabled in
-                    var next = settings.aiTranslationConfiguration
-                    next.autoTranslateNewLyrics = enabled
-                    settings.aiTranslationConfiguration = next
-                }
-            ))
-            .disabled(!allowsAutomaticTranslation || !settings.aiTranslationConfiguration.isConfigured)
+            TranslationAutomationToggle(settings: settings)
             V3PanelSection(title: "这首歌")
             if case .loading = state.translationState {
                 V3PanelRow(title: "翻译中…") {
@@ -2272,7 +2260,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 Toggle("桌面歌词", isOn: Binding(get: { state.showFloatingWindow }, set: { _ in
                     WindowManager.shared.toggleFloatingLyrics(state: state)
                 }))
-                Toggle("顶部胶囊", isOn: Binding(get: { state.showCapsulePlayer }, set: { _ in
+                Toggle("灵动岛", isOn: Binding(get: { state.showCapsulePlayer }, set: { _ in
                     WindowManager.shared.toggleCapsule(state: state)
                 }))
                 Toggle("菜单栏歌词", isOn: $settings.menuBarLyricsEnabled)

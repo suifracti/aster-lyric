@@ -270,6 +270,7 @@
 		F4B70A21BD013856C07514DA /* LyricsWordTimingUpgrade.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82F6E63ACED1AB7AF40C07E2 /* LyricsWordTimingUpgrade.swift */; };
 		8382063FD9B58CD5BA37F60F /* SettingsWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65306960D44D11ACCB0D8792 /* SettingsWorkspace.swift */; };
 		96DB0441CC165D2F07AC0C11 /* LibraryPassageReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = E64E1B146BA70DF96667E71D /* LibraryPassageReader.swift */; };
+		09C1CD83C63842207A3EF955 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0342EF8892AAF6BD5E1F5E79 /* AppearanceSettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -542,6 +543,7 @@
 		82F6E63ACED1AB7AF40C07E2 /* LyricsWordTimingUpgrade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsWordTimingUpgrade.swift; sourceTree = "<group>"; };
 		65306960D44D11ACCB0D8792 /* SettingsWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWorkspace.swift; sourceTree = "<group>"; };
 		E64E1B146BA70DF96667E71D /* LibraryPassageReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryPassageReader.swift; sourceTree = "<group>"; };
+		0342EF8892AAF6BD5E1F5E79 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -699,6 +701,7 @@
 			isa = PBXGroup;
 			children = (
 				110000612D83400100000000 /* SettingsRootView.swift */,
+				0342EF8892AAF6BD5E1F5E79 /* AppearanceSettingsView.swift */,
 				E64E1B146BA70DF96667E71D /* LibraryPassageReader.swift */,
 				65306960D44D11ACCB0D8792 /* SettingsWorkspace.swift */,
 				110000F82D83400100000000 /* ExperienceLibrarySettingsView.swift */,
@@ -1234,6 +1237,7 @@
 				1100005F2D83400100000001 /* WindowStatePersistence.swift in Sources */,
 				110000602D83400100000001 /* SettingsDataController.swift in Sources */,
 				110000612D83400100000001 /* SettingsRootView.swift in Sources */,
+				09C1CD83C63842207A3EF955 /* AppearanceSettingsView.swift in Sources */,
 				96DB0441CC165D2F07AC0C11 /* LibraryPassageReader.swift in Sources */,
 				8382063FD9B58CD5BA37F60F /* SettingsWorkspace.swift in Sources */,
 				110000A82D83400100000001 /* ReadingSettingsView.swift in Sources */,

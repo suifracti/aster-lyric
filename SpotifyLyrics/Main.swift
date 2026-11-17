@@ -210,11 +210,11 @@ struct SpotifyLyricsApp: App {
 
             Divider()
 
-            Button("显示/隐藏悬浮歌词") {
+            Button("显示/隐藏桌面歌词") {
                 WindowManager.shared.toggleFloatingLyrics(state: playbackState)
             }
 
-            Button("显示/隐藏顶部胶囊") {
+            Button("显示/隐藏灵动岛") {
                 WindowManager.shared.toggleCapsule(state: playbackState)
             }
 
@@ -222,27 +222,27 @@ struct SpotifyLyricsApp: App {
                 WindowManager.shared.toggleFullScreen(state: playbackState)
             }
 
-            Button("收起顶部胶囊") {
+            Button("收起灵动岛") {
                 WindowManager.shared.collapseCapsulePlayer()
             }
-            Button("展开顶部胶囊") {
+            Button("展开灵动岛") {
                 WindowManager.shared.expandCapsulePlayer()
             }
 
-            Button("解除悬浮歌词鼠标穿透") {
+            Button("解除桌面歌词鼠标穿透") {
                 WindowManager.shared.restoreFloatingInteractiveMode(state: playbackState)
             }
-            .help("即使悬浮歌词已鼠标穿透，也可用此命令直接恢复交互")
+            .help("即使桌面歌词已鼠标穿透，也可用此命令直接恢复交互")
 
             Divider()
 
-            Button("锁定悬浮歌词") {
+            Button("锁定桌面歌词") {
                 WindowManager.shared.setFloatingInteractionMode(.locked, state: playbackState)
             }
-            Button("启用悬浮歌词鼠标穿透") {
+            Button("启用桌面歌词鼠标穿透") {
                 WindowManager.shared.setFloatingInteractionMode(.passThrough, state: playbackState)
             }
-            Button("恢复悬浮歌词可编辑") {
+            Button("恢复桌面歌词可编辑") {
                 WindowManager.shared.setFloatingInteractionMode(.interactive, state: playbackState)
             }
         }

@@ -33,22 +33,62 @@ final class SettingsNavigationRoute: ObservableObject {
 }
 
 struct ToolbarPanelLink: View {
+    enum Target {
+        case text, translation, picture
+
+        var panel: V3ToolbarModel.Panel {
+            switch self {
+            case .text: .text
+            case .translation: .translation
+            case .picture: .picture
+            }
+        }
+    }
+
     let title: String
-    let panel: V3ToolbarModel.Panel
+    let panel: Target
+    @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.openWindow) private var openWindow
+    @State private var showControls = false
 
     var body: some View {
         Button {
-            SettingsNavigationRoute.shared.requestedToolbarPanel = panel
-            openWindow(id: "main-window")
+            if settings.mainWindowLayoutStyle == .appleMusicImmersiveV3 {
+                SettingsNavigationRoute.shared.requestedToolbarPanel = panel.panel
+                openWindow(id: "main-window")
+            } else {
+                showControls = true
+            }
         } label: {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+            HStack {
+                Text(title)
+                Spacer(minLength: 6)
+                Image(systemName: "arrow.up.right").font(.caption)
+            }
+            .foregroundStyle(WorkspacePalette.ink).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .popover(isPresented: $showControls) {
+            VStack(alignment: .leading, spacing: 9) {
+                switch panel {
+                case .text:
+                    V3VisualControls(settings: settings).sharedTextControls
+                case .translation:
+                    TranslationServicePanelRows(settings: settings) {
+                        showControls = false
+                        MenuBarLyricsController.shared.openSettings(at: .init(.aiTranslation))
+                    }
+                    TranslationAutomationToggle(settings: settings)
+                case .picture:
+                    AppearanceLayoutPicker(settings: settings)
+                    if settings.mainWindowLayoutStyle == .immersiveSplit {
+                        Picker("经典伴随布局", selection: $settings.classicCompanionPresentationRawValue) {
+                            ForEach(ClassicCompanionPresentation.allCases) { Text($0.title).tag($0.rawValue) }
+                        }
+                    }
+                }
+            }.padding(16).frame(width: 340)
+        }
     }
 }
 
@@ -150,6 +190,19 @@ struct SettingsLocation: Equatable {
     var trackKey: String?
     var query: String
     var passage: LibraryPassageTarget?
+    var appearanceSurface: AppearanceSurface = .main
+
+    var navigationTitle: String {
+        if !query.isEmpty { return "搜索本机资料" }
+        if passage != nil { return "阅读歌词" }
+        if page == .appearance { return "\(page.rawValue) › \(appearanceSurface.title)" }
+        return page.rawValue
+    }
+
+    init(appearance surface: AppearanceSurface) {
+        self.init(.appearance)
+        appearanceSurface = surface
+    }
 
     init(reading passage: LibraryPassageTarget) {
         self.init(.library, trackKey: passage.trackKey)
@@ -168,7 +221,9 @@ struct SettingsHistory {
     private var earlier: [SettingsLocation] = []
     private var later: [SettingsLocation] = []
 
-    init(_ page: SettingsCategory = .workspace) { current = SettingsLocation(page) }
+    init(_ page: SettingsCategory = .workspace, surface: AppearanceSurface = .main) {
+        current = page == .appearance ? SettingsLocation(appearance: surface) : SettingsLocation(page)
+    }
     var canGoBack: Bool { !earlier.isEmpty }
     var canGoForward: Bool { !later.isEmpty }
 
@@ -215,8 +270,9 @@ struct SettingsRootView: View {
     @State private var library = PersonalLyricsLibraryService()
     @FocusState private var searchFocused: Bool
 
-    init(initialPage: String? = nil) {
-        _history = State(initialValue: SettingsHistory(initialPage.flatMap(SettingsCategory.init(rawValue:)) ?? .workspace))
+    init(initialPage: String? = nil, initialSurface: AppearanceSurface = .main) {
+        _history = State(initialValue: SettingsHistory(initialPage.flatMap(SettingsCategory.init(rawValue:)) ?? .workspace,
+                                                      surface: initialSurface))
     }
 
     private func navigate(_ destination: SettingsLocation) {
@@ -228,7 +284,7 @@ struct SettingsRootView: View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    Image(systemName: "magnifyingglass").foregroundStyle(WorkspacePalette.ink)
                     TextField("搜索设置、歌曲、歌词", text: Binding(
                         get: { history.current.query },
                         set: { history.search($0) }
@@ -276,17 +332,19 @@ struct SettingsRootView: View {
                         .disabled(!history.canGoForward).keyboardShortcut("]", modifiers: .command)
                         .help("前进 (⌘])").accessibilityLabel("前进")
                     Divider().frame(height: 12).padding(.horizontal, 5)
-                    Text(history.current.query.isEmpty ? (history.current.passage == nil ? history.current.page.rawValue : "阅读歌词") : "搜索本机资料")
+                    Text(history.current.navigationTitle)
                         .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     Spacer()
                     Button { searchFocused = true } label: { Image(systemName: "magnifyingglass") }
                         .keyboardShortcut("f", modifiers: .command).help("搜索 (⌘F)").accessibilityLabel("搜索")
                 }
                 .buttonStyle(.borderless).padding(.horizontal, 18).frame(height: 36)
+                .background(WorkspacePalette.paper)
                 Divider()
                 if history.current.query.isEmpty {
                     SettingsDetailView(selection: Binding(get: { history.current.page }, set: { navigate(.init($0)) }),
-                                       trackKey: history.current.trackKey, passage: history.current.passage, library: library, navigate: navigate,
+                                       trackKey: history.current.trackKey, passage: history.current.passage,
+                                       appearanceSurface: history.current.appearanceSurface, library: library, navigate: navigate,
                                        rememberSelection: { history.rememberLibrarySelection($0) })
                 } else {
                     SettingsLocalSearch(query: history.current.query, library: library, navigate: navigate)
@@ -310,7 +368,8 @@ struct SettingsRootView: View {
         return Button { navigate(.init(category)) } label: {
             HStack(spacing: 10) {
                 Image(systemName: category.systemImage)
-                    .font(.system(size: 14, weight: .medium)).frame(width: 20)
+                    .renderingMode(.template).symbolRenderingMode(.monochrome)
+                    .font(.system(size: 14, weight: .medium)).foregroundStyle(WorkspacePalette.ink).frame(width: 20)
                 Text(category.rawValue).font(.system(size: 13, weight: selected ? .semibold : .regular))
                 Spacer(minLength: 0)
             }
@@ -337,6 +396,7 @@ private struct SettingsDetailView: View {
     @Binding var selection: SettingsCategory
     let trackKey: String?
     let passage: LibraryPassageTarget?
+    let appearanceSurface: AppearanceSurface
     let library: PersonalLyricsLibraryService
     let navigate: (SettingsLocation) -> Void
     let rememberSelection: (String?) -> Void
@@ -354,7 +414,9 @@ private struct SettingsDetailView: View {
                     onOpenTranslation: { selection = .aiTranslation },
                     onOpenReading: { selection = .reading }
                 ).padding(16)
-            case .appearance: AppearanceSettingsView().padding(16)
+            case .appearance:
+                AppearanceSettingsView(surface: appearanceSurface, select: { navigate(.init(appearance: $0)) },
+                                       openVersions: { navigate(.init(.experienceLibrary)) })
             case .reading: ReadingSettingsView().padding(16)
             case .servicesAndSources: ServicesAndSourcesSettingsView(scope: .lyrics).padding(16)
             case .aiTranslation: AISettingsView().padding(16)
@@ -472,115 +534,6 @@ struct LyricsSearchSettingsSections: View {
             }
         }
     }
-}
-
-private struct AppearanceSettingsView: View {
-    @EnvironmentObject private var playback: PlaybackState
-    @EnvironmentObject private var settings: AppSettingsStore
-
-    var body: some View {
-        Form {
-            SettingsPageHeader(title: "外观", detail: "选择适合自己的歌词画面，并调整主窗口、桌面歌词和菜单栏。")
-
-            Section("主窗口") {
-                ToolbarPanelLink(title: "主窗口布局、场景与播放呈现在 工具栏 → 画面", panel: .picture)
-                ToolbarPanelLink(title: "文字外观在 工具栏 → 文字", panel: .text)
-                DisclosureGroup("经典伴随布局") {
-                    Picker("经典伴随呈现", selection: $settings.classicCompanionPresentationRawValue) {
-                        ForEach(ClassicCompanionPresentation.allCases) { presentation in
-                            Text(presentation.title).tag(presentation.rawValue)
-                        }
-                    }
-                    Text("经典伴随 V1 可按窗口宽度自适应，也可固定为沉浸分栏或歌词专注。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Toggle("小窗口自动进入歌词专注", isOn: $settings.automaticCompactLyricsFocus)
-                Text("仅在 V3 主窗口达到保守的小窗口阈值时临时隐藏封面与次要信息；恢复窗口尺寸后自动返回原布局。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Toggle("启动时恢复上次窗口状态", isOn: $settings.restoreWindowState)
-                Toggle("主窗口保持置顶", isOn: $settings.keepMainWindowOnTop)
-            }
-
-            Section("悬浮歌词") {
-                Picker("默认呈现", selection: $settings.floatingLyricsPresentationRawValue) {
-                    ForEach(FloatingLyricsPresentationVersion.allCases, id: \.rawValue) { version in
-                        Text(version.title).tag(version.rawValue)
-                    }
-                }
-                DisclosureGroup("桌面歌词样式与交互") {
-                    Picker("透明样式", selection: $settings.floatingLyricsSurfaceStyleRawValue) {
-                        ForEach(FloatingLyricsSurfaceStyle.allCases, id: \.rawValue) { style in
-                            Text(style.title).tag(style.rawValue)
-                        }
-                    }
-                    Picker("桌面歌词行数", selection: $settings.floatingDesktopLineMode) {
-                        ForEach(FloatingDesktopLineMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("桌面歌词字号")
-                        V3NumericSlider(value: $settings.floatingDesktopFontSize, in: 22...64, step: 1, unit: "pt")
-                            .accessibilityLabel("桌面歌词字号")
-                    }
-                    FloatingDesktopColorControls(settings: settings)
-                    Toggle("悬浮歌词保持置顶", isOn: $settings.floatingWindowAlwaysOnTop)
-                    Toggle("暂停时隐藏", isOn: $settings.floatingHidesWhenPaused)
-                        .help("暂停 3 秒后淡出，继续播放时回来；跳转或短暂停顿不会闪。")
-                    Toggle("有全屏应用时隐藏", isOn: $settings.floatingHidesOverFullScreen)
-                        .help("别的 App 全屏（看视频、演示）时淡出，离开全屏后回来。")
-                    Toggle("全屏歌词开在另一块屏幕", isOn: $settings.fullScreenPrefersOtherScreen)
-                        .help("接了第二块屏幕时，全屏歌词开在主窗口所在屏幕的下一块上，主窗口留在原处；只有一块屏幕时不变。")
-                    Toggle("截图和录屏时隐藏", isOn: $settings.floatingHiddenFromCapture)
-                        .help("桌面歌词和顶部胶囊不出现在截图、录屏和屏幕共享里；屏幕上照常显示。")
-                    HStack(spacing: 8) {
-                        Text("停靠")
-                        Spacer()
-                        Button("屏幕顶部居中") {
-                            NotificationCenter.default.post(name: FloatingLyricsDock.requested, object: FloatingLyricsDock.top.rawValue)
-                        }
-                        Button("程序坞上方居中") {
-                            NotificationCenter.default.post(name: FloatingLyricsDock.requested, object: FloatingLyricsDock.bottom.rawValue)
-                        }
-                    }
-                    .help("把桌面歌词移到所在屏幕的顶部或底部正中，大小不变；之后仍可拖到别处。桌面歌词没打开时不动。")
-                    Picker("默认交互状态", selection: floatingModeBinding) {
-                        ForEach(FloatingLyricsInteractionMode.allCases, id: \.self) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(settings.floatingLyricsPresentation == .transparentV2 && settings.floatingDesktopKeepsTextOpaque ? "背景不透明度" : "整个悬浮窗透明度")
-                        V3NumericSlider(value: $settings.floatingWindowOpacity, in: 0.45...1, step: 0.01, unit: "%", displayScale: 100)
-                            .accessibilityLabel("桌面歌词透明度")
-                    }
-                }
-                Text("悬浮歌词复用主播放状态和歌词显示设置；关闭后不会退出 App。启用“启动时恢复上次窗口状态”时，会恢复上次可见的悬浮窗位置和尺寸。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section("菜单栏") {
-                ToolbarPanelLink(title: "菜单栏歌词开关在 工具栏 → 更多", panel: .more)
-                MenuBarLyricsAppearanceControls(settings: settings)
-                Text("关闭后仅显示播放状态图标，点击图标仍可打开歌词与播放控制。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-        }
-        .formStyle(.grouped)
-    }
-
-    private var floatingModeBinding: Binding<FloatingLyricsInteractionMode> {
-        Binding(
-            get: { settings.floatingWindowInteractionMode },
-            set: { settings.floatingWindowInteractionMode = $0 }
-        )
-    }
-
-
 }
 
 private struct ServicesAndSourcesSettingsView: View {
@@ -948,6 +901,25 @@ struct TranslationServicePanelRows: View {
         // can never keep showing the previous choice.
         .id([settings.aiTranslationConfiguration.engineID, settings.aiTranslationConfiguration.model,
              TranslationReasoningPolicy.value(settings.aiTranslationConfiguration)].joined(separator: "|"))
+    }
+}
+
+struct TranslationAutomationToggle: View {
+    @ObservedObject var settings: AppSettingsStore
+
+    static func isAllowed(_ configuration: AITranslationConfiguration) -> Bool {
+        if configuration.engineID == TranslationEngineID.appleSystem.rawValue { return true }
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested {
+            return DebugAcceptanceDataIsolation.isDailyUse && DebugAcceptanceDataIsolation.allowsExplicitTranslation
+        }
+#endif
+        return true
+    }
+
+    var body: some View {
+        Toggle("新歌词自动翻译", isOn: $settings.aiTranslationConfiguration.autoTranslateNewLyrics)
+            .disabled(!Self.isAllowed(settings.aiTranslationConfiguration) || !settings.aiTranslationConfiguration.isConfigured)
     }
 }
 
@@ -1480,12 +1452,12 @@ private struct AISettingsView: View {
                         }
                     }
                 }
-                ToolbarPanelLink(title: "新歌词自动翻译在 工具栏 → 译文", panel: .translation)
+                ToolbarPanelLink(title: "调整新歌词自动翻译", panel: .translation)
             }
 
             Section("翻译服务") {
                 TranslationProviderControls(settings: settings)
-                ToolbarPanelLink(title: "AI 模型与思考强度在 工具栏 → 译文", panel: .translation)
+                ToolbarPanelLink(title: "调整模型与思考强度", panel: .translation)
                 let selectedEngine = TranslationEngineRegistry.make(stableID: settings.aiTranslationConfiguration.engineID).metadata
                 Text(engineAvailabilityText(selectedEngine))
                     .font(.caption)

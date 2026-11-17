@@ -32,13 +32,13 @@ struct LyricsPreferencesPopover: View {
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(LyricsDesignTokens.mutedText)
 
-                modeButton("悬浮歌词", systemImage: "rectangle.on.rectangle", isActive: playbackState.showFloatingWindow) {
+                modeButton("桌面歌词", systemImage: "rectangle.on.rectangle", isActive: playbackState.showFloatingWindow) {
                     WindowManager.shared.toggleFloatingLyrics(state: playbackState)
                 }
-                modeButton("顶部胶囊", systemImage: "capsule", isActive: playbackState.showCapsulePlayer) {
+                modeButton("灵动岛", systemImage: "capsule", isActive: playbackState.showCapsulePlayer) {
                     WindowManager.shared.toggleCapsule(state: playbackState)
                 }
-                Text("顶部胶囊为实验显示方式，与主窗口共享当前播放状态。")
+                Text("展开灵动岛可以定住当前句，继续读歌词。")
                     .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(LyricsDesignTokens.mutedText)
                 modeButton("全屏歌词", systemImage: "arrow.up.left.and.arrow.down.right", isActive: playbackState.showFullScreen) {
