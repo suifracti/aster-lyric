@@ -36,6 +36,7 @@ public struct MenuBarLyricsSnapshot: Equatable, Sendable {
     /// popover can scroll its three lines instead of swapping text.
     public var previousLineText: String? = nil
     public var currentLineIndex: Int? = nil
+    var trackKey: String? = nil
 }
 
 /// Captured on the explicit read action, so selecting/copying text is stable
@@ -153,6 +154,51 @@ public enum MenuBarTextFormatter {
             }
             NSGraphicsContext.restoreGraphicsState()
             if truncated { ("…" as NSString).draw(at: NSPoint(x: rect.width - 12, y: 0), withAttributes: baseAttributes) }
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    /// One native menu-bar item showing the original and its selected translation.
+    /// Each row has its own width budget, including when overflow uses a marquee.
+    @MainActor static func bilingualImage(snapshot: MenuBarLyricsSnapshot,
+                                          appearance: MenuBarLyricsAppearance) -> NSImage? {
+        guard appearance.showsOriginal, appearance.showsTranslation,
+              let original = snapshot.currentLineText?.split(whereSeparator: \.isNewline).joined(separator: " "),
+              let translation = snapshot.currentTranslationText?.split(whereSeparator: \.isNewline).joined(separator: " "),
+              !original.isEmpty, !translation.isEmpty, original != translation else { return nil }
+        let readings = [appearance.showsKana ? snapshot.currentKanaText : nil,
+                        appearance.showsRomaji ? snapshot.currentRomajiText : nil]
+            .compactMap { $0 }.filter { !$0.isEmpty }
+        let primaryFont = NSFont.systemFont(ofSize: min(11, appearance.effectiveFontSize), weight: .medium)
+        let detailFont = NSFont.systemFont(ofSize: min(9, appearance.effectiveFontSize * 0.75))
+        let label = ([translation] + readings).joined(separator: " · ")
+        let budget = appearance.showsFullLine ? 4096 : appearance.contentWidth
+        let rows = [(original, primaryFont), (label, detailFont)].map { text, font in
+            NSAttributedString(string: truncateToFit(text, maxWidth: budget, font: font),
+                               attributes: [.font: font, .foregroundColor: NSColor.black])
+        }
+        let width = min(budget, max(1, ceil(max(rows[0].size().width, rows[1].size().width))))
+        let image = NSImage(size: NSSize(width: width, height: 22), flipped: false) { rect in
+            rows[0].draw(at: NSPoint(x: 0, y: rect.height - rows[0].size().height + 1))
+            rows[1].draw(at: NSPoint(x: 0, y: -1))
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    @MainActor static func statusImage(snapshot: MenuBarLyricsSnapshot, appearance: MenuBarLyricsAppearance) -> NSImage {
+        if let ruby = readingImage(snapshot: snapshot, appearance: appearance) { return ruby }
+        if let pair = bilingualImage(snapshot: snapshot, appearance: appearance) { return pair }
+
+        let font = NSFont.systemFont(ofSize: appearance.effectiveFontSize)
+        let title = statusItemTitle(snapshot: snapshot, lyricsEnabled: true, appearance: appearance)
+        let text = NSAttributedString(string: title, attributes: [.font: font, .foregroundColor: NSColor.black])
+        let size = NSSize(width: max(1, min(4096, ceil(text.size().width))), height: 22)
+        let image = NSImage(size: size, flipped: false) { rect in
+            text.draw(at: NSPoint(x: 0, y: (rect.height - text.size().height) / 2))
             return true
         }
         image.isTemplate = true
@@ -588,27 +634,13 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         renderAppearance.showsFullLine = scrollRequested
         // The key changes on lyric/appearance changes, not on playback time.
         let tokenKey = currentSnapshot.currentRubyTokens?.map { "\($0.surface):\($0.ruby ?? ""): \($0.romaji ?? "")" }.joined(separator: "|") ?? ""
-        let key = [fullTitle, tokenKey, String(appearance.fontSize), String(appearance.showsKana),
+        let key = [fullTitle, tokenKey, MenuBarTextFormatter.statusItemSymbol(snapshot: currentSnapshot), String(appearance.fontSize), String(appearance.showsKana),
                    String(appearance.showsRomaji), String(appearance.readingsAbove),
                    String(appearance.showsTranslation), String(appearance.showsOriginal), String(appearance.width), appearance.overflow].joined(separator: "\u{1F}")
         let image: NSImage
         if key == lastStatusImageKey, let cached = lastStatusImage { image = cached }
         else {
-            if let ruby = MenuBarTextFormatter.readingImage(snapshot: currentSnapshot, appearance: renderAppearance) {
-                image = ruby
-            } else {
-                let font = NSFont.systemFont(ofSize: appearance.effectiveFontSize)
-                let text = scrollRequested ? fullTitle : MenuBarTextFormatter.truncateToFit(
-                    fullTitle, maxWidth: appearance.contentWidth, font: font)
-                let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.black]
-                let natural = (text as NSString).size(withAttributes: attrs)
-                let imageSize = NSSize(width: max(1, min(4096, ceil(natural.width))), height: 22)
-                image = NSImage(size: imageSize, flipped: false) { rect in
-                    (text as NSString).draw(at: NSPoint(x: 0, y: max(0, (22 - natural.height) / 2)), withAttributes: attrs)
-                    return true
-                }
-                image.isTemplate = true
-            }
+            image = MenuBarTextFormatter.statusImage(snapshot: currentSnapshot, appearance: renderAppearance)
             lastStatusImageKey = key; lastStatusImage = image
         }
         let requested = CGFloat(appearance.width.isFinite ? min(480, max(120, appearance.width)) : 240)
@@ -648,6 +680,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     public static func deriveSnapshot(from state: PlaybackState) -> MenuBarLyricsSnapshot {
         var snapshot = deriveLyricsSnapshot(from: state)
         snapshot.canControlPlayback = state.canControlSpotify
+        snapshot.trackKey = state.currentTrackIdentity?.stableKey
         return snapshot
     }
 

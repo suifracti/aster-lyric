@@ -51,129 +51,113 @@ public struct MenuBarLyricsPopoverView: View {
 
     private var playbackPage: some View {
         let snapshot = controller.currentSnapshot
-        let artist = snapshot.artistName ?? ""
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                artworkView(snapshot.artworkURL)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(snapshot.trackTitle ?? "等待播放音乐")
-                        .font(.system(size: 15, weight: .semibold))
-                        .lineLimit(1)
-                    Text(artist.isEmpty ? "当前播放" : artist)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+        return VStack(alignment: .leading, spacing: 0) {
+            if snapshot.hasLiveTrack {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 11) {
+                        artworkView(snapshot.artworkURL)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(snapshot.trackTitle ?? "当前歌曲").font(.headline).lineLimit(1)
+                            Text(snapshot.artistName ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        Spacer()
+                        if let key = snapshot.trackKey, let text = snapshot.currentLineText, !text.isEmpty {
+                            KeepLyricButton(text: text, translation: snapshot.currentTranslationText, trackKey: key,
+                                            title: snapshot.trackTitle ?? "", artist: snapshot.artistName ?? "",
+                                            artworkURL: snapshot.artworkURL)
+                        }
+                    }
+                    ScrollView {
+                        lyricsContent(snapshot)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .id(snapshot.currentLineIndex ?? -1)
+                            .transition(reduceMotion ? .identity : .asymmetric(
+                                insertion: .move(edge: .bottom).combined(with: .opacity),
+                                removal: .move(edge: .top).combined(with: .opacity)))
+                    }
+                    .frame(height: readingHeight).clipped()
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.35), value: snapshot.currentLineIndex)
+                    .accessibilityElement(children: .contain)
+                    if let state = controller.livePlaybackState, state.currentTrack.duration > 0 {
+                        MenuBarProgressRail(state: state, accent: islandAccent,
+                            synchronized: { if case .synchronized = snapshot.state { return true }; return false }())
+                    }
+                    HStack(spacing: 14) {
+                        transportButton("backward.fill", title: "上一首", enabled: snapshot.canControlPlayback) {
+                            controller.previousTrack()
+                        }
+                        transportButton(snapshot.isPlaying ? "pause.fill" : "play.fill",
+                                        title: snapshot.isPlaying ? "暂停" : "播放",
+                                        enabled: snapshot.canControlPlayback, prominent: true) {
+                            controller.togglePlayPause()
+                        }
+                        transportButton("forward.fill", title: "下一首", enabled: snapshot.canControlPlayback) {
+                            controller.nextTrack()
+                        }
+                        Spacer(minLength: 4)
+                        switch snapshot.state {
+                        case .synchronized, .unsynchronized:
+                            Button { controller.showFullLyrics() } label: {
+                                Label("完整歌词", systemImage: "text.alignleft")
+                            }
+                            .buttonStyle(.borderless).font(.caption.weight(.medium))
+                        default: EmptyView()
+                        }
+                    }
+                    if !snapshot.canControlPlayback {
+                        Button("检查播放连接") { controller.openSettings(at: .init(.general)) }
+                            .buttonStyle(.borderless).font(.caption)
+                    }
                 }
-                Spacer(minLength: 4)
-                if snapshot.hasLiveTrack {
-                    Image(systemName: snapshot.isPlaying ? "waveform" : "pause.fill")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel(snapshot.isPlaying ? "正在播放" : "已暂停")
+                .padding(16)
+                .background(alignment: .top) { coverWash }
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Aster · Lyric").font(.system(size: 18, weight: .semibold, design: .serif))
+                        Spacer()
+                        Text("未在播放").font(.caption).foregroundStyle(.secondary)
+                    }
+                    WorkspaceShelfCard(compact: true) { controller.openSettings(at: $0) }
+                    Button { controller.openSettings(at: .init(.general)) } label: {
+                        Label("播放来源与连接", systemImage: "cable.connector")
+                    }
+                    .font(.caption).buttonStyle(.borderless)
                 }
+                .padding(15)
             }
-
-            HStack(alignment: .top, spacing: 10) {
-                ScrollView {
-                    lyricsContent(snapshot)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .id(snapshot.currentLineIndex ?? -1)
-                        .transition(reduceMotion ? .opacity : .asymmetric(
-                            insertion: .move(edge: .bottom).combined(with: .opacity),
-                            removal: .move(edge: .top).combined(with: .opacity)))
-                }
-                .frame(height: readingHeight)
-                .clipped()
-                .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.88),
-                           value: snapshot.currentLineIndex)
-                .accessibilityElement(children: .contain)
-            }
-
-            if snapshot.hasLiveTrack, let state = controller.livePlaybackState, state.currentTrack.duration > 0 {
-                MenuBarProgressRail(state: state, accent: islandAccent,
-                                    synchronized: { if case .synchronized = snapshot.state { return true } else { return false } }())
-            }
-
-            // Keep the complete-song action reachable even when one lyric
-            // fills the scrollable preview above.
-            switch snapshot.state {
-            case .synchronized, .unsynchronized:
-                Button("查看完整歌词") { controller.showFullLyrics() }
-                    .buttonStyle(.borderless)
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            default:
-                EmptyView()
-            }
-
-            HStack(spacing: 22) {
-                Spacer()
-                transportButton("backward.fill", title: "上一首", enabled: snapshot.canControlPlayback) {
-                    controller.previousTrack()
-                }
-                transportButton(snapshot.isPlaying ? "pause.fill" : "play.fill",
-                                title: snapshot.isPlaying ? "暂停" : "播放",
-                                enabled: snapshot.canControlPlayback, prominent: true) {
-                    controller.togglePlayPause()
-                }
-                transportButton("forward.fill", title: "下一首", enabled: snapshot.canControlPlayback) {
-                    controller.nextTrack()
-                }
-                Spacer()
-            }
-            .padding(.vertical, 6)
-            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            if snapshot.hasLiveTrack && !snapshot.canControlPlayback {
-                Text("播放连接暂不可用，可在主窗口查看连接状态。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
             Divider()
-
-            Grid(horizontalSpacing: 4, verticalSpacing: 4) {
-                GridRow {
-                    shortcut("主窗口", icon: "macwindow") { controller.openMainWindow() }
-                    shortcut("歌词库", icon: "books.vertical") { controller.openLibrary() }
-                    shortcut("设置", icon: "gearshape") { controller.openSettings() }
-                }
-                GridRow {
-                    shortcut("桌面歌词", icon: "text.bubble") { controller.toggleFloatingLyrics() }
-                    shortcut("顶部胶囊", icon: "capsule") { controller.toggleCapsule() }
-                    shortcut("恢复拖动", icon: "hand.draw") { controller.restoreFloatingInteraction() }
-                        .help("解除桌面歌词的锁定或鼠标穿透，让窗口恢复拖动")
-                }
+            HStack(spacing: 3) {
+                shortcut("工作台", icon: "square.grid.2x2") { controller.openSettings(at: .init(.workspace)) }
+                shortcut("歌词库", icon: "books.vertical") { controller.openLibrary() }
+                shortcut("主窗口", icon: "macwindow") { controller.openMainWindow() }
             }
-
-            HStack(spacing: 12) {
-                Toggle("菜单栏显示歌词", isOn: $settings.menuBarLyricsEnabled)
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .font(.system(size: 11))
-                .help("关闭后保留播放状态图标，点击图标仍可打开此菜单")
-                Spacer(minLength: 0)
+            .padding(.horizontal, 9).padding(.vertical, 5)
+            Divider()
+            HStack(spacing: 8) {
+                Toggle("菜单栏歌词", isOn: $settings.menuBarLyricsEnabled)
+                    .toggleStyle(.switch).controlSize(.small).font(.caption)
+                    .help("在系统菜单栏显示当前歌词")
                 Button { isAppearanceExpanded = true } label: {
-                    Image(systemName: "textformat.size").frame(width: 24, height: 24).contentShape(Rectangle())
+                    Image(systemName: "textformat.size").frame(width: 22, height: 22)
                 }
-                .buttonStyle(.borderless)
-                .help("状态栏文字外观")
-                .accessibilityLabel("状态栏文字外观")
+                .buttonStyle(.borderless).help("状态栏文字外观").accessibilityLabel("状态栏文字外观")
+                Spacer()
                 Menu {
+                    Button("桌面歌词") { controller.toggleFloatingLyrics() }
+                    Button("顶部灵动岛") { controller.toggleCapsule() }
+                    Button("恢复桌面歌词拖动") { controller.restoreFloatingInteraction() }
+                    Divider()
+                    Button("设置") { controller.openSettings() }
                     Button("退出 Aster · Lyric") { controller.quit() }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .frame(width: 24, height: 24)
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .help("更多操作")
-                .accessibilityLabel("更多操作")
+                } label: { Image(systemName: "ellipsis.circle") }
+                .menuStyle(.borderlessButton).fixedSize()
+                .help("窗口与更多操作").accessibilityLabel("窗口与更多操作")
             }
-
+            .padding(.horizontal, 14).padding(.vertical, 6)
         }
-        .padding(14)
         .frame(width: 340)
-        .background(alignment: .top) { coverWash }
+        .background(WorkspacePalette.paper)
     }
 
     /// The song's cover, blurred into the top of the popover and fading out
@@ -245,27 +229,40 @@ public struct MenuBarLyricsPopoverView: View {
     private var appearancePage: some View {
         VStack(alignment: .leading, spacing: 14) {
             Button { isAppearanceExpanded = false } label: {
-                Label("返回播放", systemImage: "chevron.left")
+                Label("返回菜单", systemImage: "chevron.left")
             }.buttonStyle(.borderless).keyboardShortcut(.escape, modifiers: [])
             Text("状态栏文字").font(.headline)
             Text(settings.menuBarLyricsEnabled ? "所有文字层共用同一占用宽度。" : "目前已关闭显示，仍可配置下次启用时的外观。")
                 .font(.caption).foregroundStyle(.secondary)
-            let preview = MenuBarTextFormatter.statusItemTitle(snapshot: controller.currentSnapshot,
-                lyricsEnabled: true, appearance: MenuBarLyricsAppearance(
-                    showsFullLine: true, showsOriginal: settings.menuBarLyricsShowsOriginal,
-                    showsTranslation: settings.menuBarLyricsShowsTranslation,
-                    showsKana: settings.menuBarLyricsShowsKana, showsRomaji: settings.menuBarLyricsShowsRomaji,
-                    fontSize: settings.menuBarLyricsFontSize, readingsAbove: settings.menuBarLyricsReadingsAbove))
-            Text(preview.isEmpty ? "♪ Aster · Lyric" : preview)
-                .font(.system(size: CGFloat(settings.menuBarLyricsFontSize)))
-                .lineLimit(2).padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
-                .accessibilityLabel("文字内容预览；实际菜单栏超长显示遵循下方设置")
+            let preview = MenuBarTextFormatter.statusImage(snapshot: previewSnapshot, appearance: .init(
+                showsOriginal: settings.menuBarLyricsShowsOriginal, showsTranslation: settings.menuBarLyricsShowsTranslation,
+                showsKana: settings.menuBarLyricsShowsKana, showsRomaji: settings.menuBarLyricsShowsRomaji,
+                fontSize: settings.menuBarLyricsFontSize, readingsAbove: settings.menuBarLyricsReadingsAbove,
+                width: settings.menuBarWidth))
+            HStack(spacing: 8) {
+                if controller.currentSnapshot.currentLineText?.isEmpty != false {
+                    Text("示例").font(.caption2).foregroundStyle(.secondary)
+                }
+                Image(nsImage: preview).renderingMode(.template).frame(height: 22)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading).clipped().padding(9)
+            .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+            .accessibilityLabel("菜单栏文字预览")
             ScrollView {
                 MenuBarLyricsAppearanceControls(settings: settings)
                     .padding(.vertical, 4)
             }.frame(height: min(410, max(260, (NSScreen.main?.visibleFrame.height ?? 800) - 320)))
         }.padding(16).frame(width: 340)
+    }
+
+    private var previewSnapshot: MenuBarLyricsSnapshot {
+        let current = controller.currentSnapshot
+        if current.currentLineText?.isEmpty == false { return current }
+        return MenuBarLyricsSnapshot(state: .synchronized(current: "星が光る", next: nil),
+                                     statusText: "", trackTitle: nil, artistName: nil, currentLineText: "星が光る",
+                                     nextLineText: nil, isPlaying: false, hasLiveTrack: false, artworkURL: nil,
+                                     currentTranslationText: "星光亮起", currentKanaText: "ほしがひかる",
+                                     currentRomajiText: "hoshi ga hikaru")
     }
 
     private func fullLyricsPage(_ lyrics: MenuBarFullLyricsSnapshot) -> some View {
@@ -436,15 +433,6 @@ public struct MenuBarLyricsPopoverView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(HoverRowButtonStyle())
-    }
-
-    private var pairedLineMark: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Capsule().frame(width: 10, height: 1.5)
-            Capsule().frame(width: 7, height: 1.5)
-        }
-        .foregroundStyle(islandAccent)
-        .accessibilityHidden(true)
     }
 
     @ViewBuilder

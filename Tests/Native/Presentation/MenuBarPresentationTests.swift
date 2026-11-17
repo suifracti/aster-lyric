@@ -232,6 +232,17 @@ final class MenuBarPresentationTests: XCTestCase {
         var inline = appearance
         inline.readingsAbove = false
         XCTAssertNil(MenuBarTextFormatter.readingImage(snapshot: snapshot, appearance: inline))
+
+        snapshot.currentTranslationText = "天空"
+        var bilingual = MenuBarLyricsAppearance(showsTranslation: true, width: 120)
+        let paired = MenuBarTextFormatter.bilingualImage(snapshot: snapshot, appearance: bilingual)
+        XCTAssertEqual(paired?.size.height, 22)
+        XCTAssertEqual(paired?.isTemplate, true)
+        XCTAssertLessThanOrEqual(paired?.size.width ?? .infinity, bilingual.contentWidth)
+        bilingual.showsOriginal = false
+        XCTAssertNil(MenuBarTextFormatter.bilingualImage(snapshot: snapshot, appearance: bilingual))
+        snapshot.currentTranslationText = nil
+        XCTAssertNil(MenuBarTextFormatter.bilingualImage(snapshot: snapshot, appearance: .init(showsTranslation: true)))
     }
 
     private func makeDefaults() throws -> (UserDefaults, String) {

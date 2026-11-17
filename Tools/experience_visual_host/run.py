@@ -43,7 +43,9 @@ env['SPOTIFYLYRICS_DATABASE_PATH']=str(database_path)
 env['VISUAL_ARTWORK_BASE_URL']=f'http://127.0.0.1:{server.server_port}'
 app=ROOT/'DerivedData/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics'
 try:
-    raise SystemExit(subprocess.run([str(app),*with_values(sys.argv[1:])],env=env).returncode)
+    with tempfile.TemporaryDirectory(prefix="run-", dir=fixtures) as fixture_root:
+        env["VISUAL_FIXTURE_ROOT"] = fixture_root
+        raise SystemExit(subprocess.run([str(app),*with_values(sys.argv[1:])],env=env).returncode)
 finally:
     server.shutdown();server.server_close()
     shutil.rmtree(database_root)

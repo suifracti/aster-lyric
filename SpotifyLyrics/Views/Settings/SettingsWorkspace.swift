@@ -20,7 +20,6 @@ enum WorkspacePalette {
 
 /// A local workspace. Opening any of its destinations works while every player is closed.
 struct SettingsWorkspace: View {
-    @ObservedObject private var favorites = V3FavoriteLines.shared
     @AppStorage(LastOpenedLyricsRecord.defaultsKey, store: .lyricsQ) private var lastOpenedData = Data()
     let navigate: (SettingsLocation) -> Void
 
@@ -29,7 +28,7 @@ struct SettingsWorkspace: View {
             VStack(alignment: .leading, spacing: 19) {
                 Text("我的工作台").font(.system(size: 29, weight: .semibold, design: .serif))
                     .accessibilityAddTraits(.isHeader)
-                shelfCard
+                WorkspaceShelfCard(navigate: navigate)
                 if let record = try? JSONDecoder().decode(LastOpenedLyricsRecord.self, from: lastOpenedData) {
                     Button { navigate(.init(.library, trackKey: record.trackKey)) } label: {
                         HStack(spacing: 12) {
@@ -86,12 +85,19 @@ struct SettingsWorkspace: View {
         .background(WorkspacePalette.paper)
     }
 
-    private var shelfCard: some View {
+}
+
+struct WorkspaceShelfCard: View {
+    @ObservedObject private var favorites = V3FavoriteLines.shared
+    var compact = false
+    let navigate: (SettingsLocation) -> Void
+
+    var body: some View {
         let entry = favorites.entries.first
         return Button {
             navigate(.init(.library, trackKey: entry?.trackKey))
         } label: {
-            VStack(alignment: .leading, spacing: 13) {
+            VStack(alignment: .leading, spacing: compact ? 8 : 13) {
                 HStack {
                     Label(entry == nil ? "歌词档案" : "最近收藏", systemImage: entry == nil ? "books.vertical" : "quote.opening")
                         .font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.80))
@@ -99,7 +105,7 @@ struct SettingsWorkspace: View {
                     Image(systemName: "arrow.up.right").font(.body.weight(.medium))
                 }
                 Text(entry?.text ?? "我的歌词库")
-                    .font(.system(size: entry == nil ? 30 : 24, weight: .medium, design: .serif))
+                    .font(.system(size: compact ? 19 : (entry == nil ? 30 : 24), weight: .medium, design: .serif))
                     .lineLimit(3).multilineTextAlignment(.leading)
                 Text(entry.map { [$0.title, $0.artist].filter { !$0.isEmpty }.joined(separator: " · ") }
                      ?? "浏览已保存的原词、译文和读音")
@@ -110,8 +116,8 @@ struct SettingsWorkspace: View {
                 }
             }
             .foregroundStyle(.white)
-            .padding(22)
-            .frame(maxWidth: .infinity, minHeight: 140, alignment: .leading)
+            .padding(compact ? 14 : 22)
+            .frame(maxWidth: .infinity, minHeight: compact ? 98 : 140, alignment: .leading)
             .background(WorkspacePalette.sleeve, in: RoundedRectangle(cornerRadius: 13))
             .contentShape(Rectangle())
         }

@@ -9,7 +9,8 @@ private enum ExperienceArguments {
         guard let index = args.firstIndex(of: key), args.indices.contains(index + 1) else { return fallback }
         return args[index + 1]
     }
-    static let root = URL(fileURLWithPath: "/tmp/lyrics-experience-visual-host/fixtures/run-\(UUID().uuidString)", isDirectory: true)
+    static let root = ProcessInfo.processInfo.environment["VISUAL_FIXTURE_ROOT"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+        ?? URL(fileURLWithPath: "/tmp/lyrics-experience-visual-host/fixtures/run-\(UUID().uuidString)", isDirectory: true)
     static var databaseURL: URL {
         URL(fileURLWithPath: ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DATABASE_PATH"]
             ?? root.appendingPathComponent("fixture.sqlite3").path)
@@ -101,7 +102,10 @@ private final class ExperiencePlaybackProvider: PlaybackProvider {
             track = ProviderTrack(id: "spotify:track:visualfixture", title: "夜を越えて · After the rain", artist: "Visual Fixture", album: "Native rendering study", duration: 240, artworkURL: artwork)
         }
     }
-    func refresh() async -> PlaybackSnapshot { PlaybackSnapshot(status: .ready, track: track, position: position, isPlaying: playing) }
+    func refresh() async -> PlaybackSnapshot {
+        if ExperienceArguments.value("--idle", fallback: "false") == "true" { return PlaybackSnapshot(status: .ready) }
+        return PlaybackSnapshot(status: .ready, track: track, position: position, isPlaying: playing)
+    }
     func play() async throws { playing = true }
     func pause() async throws { playing = false }
     func previous() async throws { position = 8 }
@@ -693,7 +697,7 @@ private struct ExperienceFixtureRoot: View {
                         : ExperienceArguments.surface == "favorites" ? CGSize(width: 520, height: 460)
                         : ExperienceArguments.surface == "playlist-picker" ? CGSize(width: 380, height: 480)
                         : ["models", "search-panel"].contains(ExperienceArguments.surface) ? CGSize(width: 360, height: 520)
-                        : ExperienceArguments.surface == "menubar" ? CGSize(width: 340, height: 560) : ExperienceArguments.size
+                        : ExperienceArguments.surface == "menubar" ? hosting.fittingSize : ExperienceArguments.size
                     let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: ExperienceArguments.surface == "playlist-picker" ? [.borderless] : [.titled], backing: .buffered, defer: false)
                     window.title = "Experience extra surface"
                     if ExperienceArguments.surface == "playlist-picker" {

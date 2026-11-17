@@ -192,6 +192,7 @@ declare -a CASES=(
   "playback-soundprint|--playback-presentation soundprint --toolbar faint --appearance dark"
   "menubar-dark|--surface menubar --appearance dark"
   "menubar-light|--surface menubar --appearance light"
+  "menubar-idle|--surface menubar --idle true --appearance dark"
   "settings-light|--surface settings --appearance light"
   "settings-appearance|--surface settings --settings-page 外观 --appearance light"
   "settings-lyrics|--surface settings --settings-page 歌词与翻译 --appearance light"

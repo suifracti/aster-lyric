@@ -69,3 +69,28 @@ struct FavoriteLinesView: View {
         .padding(.vertical, 11)
     }
 }
+
+
+/// Captures the line and recording actually on screen when the listener saves it.
+struct KeepLyricButton: View {
+    @ObservedObject private var store = V3FavoriteLines.shared
+    let text: String
+    let translation: String?
+    let trackKey: String
+    let title: String
+    let artist: String
+    let artworkURL: URL?
+
+    var body: some View {
+        let kept = store.contains(text: text, trackKey: trackKey)
+        let action = kept ? "取消收藏这句" : "收藏这句"
+        Button {
+            store.toggle(text: text, translation: translation, title: title, artist: artist,
+                         trackKey: trackKey, artworkURL: artworkURL)
+        } label: {
+            Image(systemName: kept ? "bookmark.fill" : "bookmark")
+                .frame(width: 25, height: 25).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).accessibilityLabel(action).help(action)
+    }
+}
