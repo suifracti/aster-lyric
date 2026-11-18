@@ -28,6 +28,7 @@ public final class WindowManager: ObservableObject {
 
     private var floatingController: FloatingLyricsWindowController?
     private var capsuleController: CapsuleLyricsWindowController?
+    private var listeningLyricsWindow: NSWindow?
     private var returnToMainAfterFullScreen = false
     private var fullScreenController: FullScreenLyricsWindowController?
     private var fullScreenAuxiliaryVisibilitySnapshot: FullScreenAuxiliaryVisibilitySnapshot?
@@ -62,6 +63,30 @@ public final class WindowManager: ObservableObject {
 
     public func hideFloatingLyrics() {
         floatingController?.hide()
+    }
+
+    func showListeningLyrics(_ lyrics: ListeningLyricsSnapshot) {
+        let window: NSWindow
+        if let listeningLyricsWindow {
+            window = listeningLyricsWindow
+        } else {
+            window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 520),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+            window.title = "完整歌词"
+            window.identifier = .init("listening-lyrics-reader")
+            window.minSize = NSSize(width: 360, height: 360)
+            window.isReleasedWhenClosed = false
+            window.center()
+            listeningLyricsWindow = window
+        }
+        window.contentView = NSHostingView(rootView: ListeningLyricsReader(
+            lyrics: lyrics, closeTitle: "关闭阅读", closeSymbol: "xmark",
+            openArchive: { MenuBarLyricsController.shared.openSettings(at: .init(reading: $0)) },
+            close: { [weak window] in window?.close() }
+        ))
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func dockFloatingLyrics(_ place: FloatingLyricsDock, state: PlaybackState) {

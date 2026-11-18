@@ -53,7 +53,7 @@ public struct MenuBarLyricsSnapshot: Equatable, Sendable {
 
 /// Captured on the explicit read action, so selecting/copying text is stable
 /// while playback advances. This never changes the main window's preview.
-public struct MenuBarFullLyricsSnapshot: Equatable, Sendable {
+public struct ListeningLyricsSnapshot: Equatable, Sendable {
     struct Row: Identifiable, Equatable, Sendable {
         let text: LibraryPassagePage.Line
         let voiceLabel: String?
@@ -66,6 +66,40 @@ public struct MenuBarFullLyricsSnapshot: Equatable, Sendable {
     let focusedLine: Int?
     let showsReading: Bool
     let passage: LibraryPassageTarget?
+
+    @MainActor
+    static func capture(from state: PlaybackState, held: (line: LyricLine, quote: V3FavoriteLines.Entry)? = nil) -> Self? {
+        guard state.hasLiveTrack, !state.isMockPreviewMode, state.liveLyricsDocumentMatchesCurrentTrack else { return nil }
+        var lines = state.liveLyrics
+        let synchronized = state.liveLyricsAreSynchronized
+        let originalID = state.liveLyricsVersionID
+        let trackKey = state.liveTrackIdentity?.stableKey
+        var focus = synchronized ? state.liveCurrentLineIndex : nil
+        var passage: LibraryPassageTarget?
+        if let held {
+            guard held.quote.trackKey == trackKey, held.quote.lyricsVersionID == originalID,
+                  let index = held.quote.lineIndex, lines.indices.contains(index),
+                  lines[index].originalText == held.line.originalText,
+                  lines[index].timestamp == held.line.timestamp else { return nil }
+            lines[index] = held.line
+            focus = index
+            if originalID != nil { passage = held.quote.passage }
+        } else if let trackKey, let originalID {
+            let translation = state.selectedTranslation
+            let source: LibraryPassageSource
+            if let translation, translation.isComplete, translation.record.lyricsVersionID == originalID,
+               translation.record.sourceContentHash == state.lyricsSession.activeSourceContentHash {
+                source = .translation(translation.record.id)
+            } else {
+                source = .original(originalID)
+            }
+            passage = .init(trackKey: trackKey, source: source)
+        }
+        let preferences = state.preferences
+        return .init(track: state.currentTrack, lines: lines, currentIndex: focus, synchronized: synchronized,
+                     showsReading: preferences.showKana || preferences.showsRomajiLayer || preferences.showsPinyinLayer,
+                     passage: passage)
+    }
 
     init?(track: Track, lines: [LyricLine], currentIndex: Int?, synchronized: Bool,
           showsReading: Bool = false, passage: LibraryPassageTarget? = nil) {
@@ -110,6 +144,8 @@ public struct MenuBarFullLyricsSnapshot: Equatable, Sendable {
         [trackTitle, artistName, lyricsText].filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
 }
+
+public typealias MenuBarFullLyricsSnapshot = ListeningLyricsSnapshot
 
 public struct MenuBarLyricsAppearance: Equatable, Sendable {
     public var showsFullLine: Bool
@@ -771,27 +807,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     }
 
     public static func deriveFullLyricsSnapshot(from state: PlaybackState) -> MenuBarFullLyricsSnapshot? {
-        guard state.hasLiveTrack, !state.isMockPreviewMode,
-              state.liveLyricsDocumentMatchesCurrentTrack else { return nil }
-        var passage: LibraryPassageTarget?
-        if let trackKey = state.liveTrackIdentity?.stableKey, let originalID = state.liveLyricsVersionID {
-            let source: LibraryPassageSource
-            if let translation = state.selectedTranslation, translation.isComplete,
-               translation.record.lyricsVersionID == originalID,
-               translation.record.sourceContentHash == state.lyricsSession.activeSourceContentHash {
-                source = .translation(translation.record.id)
-            } else {
-                source = .original(originalID)
-            }
-            passage = LibraryPassageTarget(trackKey: trackKey, source: source)
-        }
-        let preferences = state.preferences
-        return MenuBarFullLyricsSnapshot(
-            track: state.currentTrack, lines: state.liveLyrics, currentIndex: state.liveCurrentLineIndex,
-            synchronized: state.liveLyricsAreSynchronized,
-            showsReading: preferences.showKana || preferences.showsRomajiLayer || preferences.showsPinyinLayer,
-            passage: passage
-        )
+        ListeningLyricsSnapshot.capture(from: state)
     }
 
     public static func deriveSnapshot(from state: PlaybackState) -> MenuBarLyricsSnapshot {

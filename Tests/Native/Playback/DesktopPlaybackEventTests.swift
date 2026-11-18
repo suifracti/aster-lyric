@@ -75,6 +75,39 @@ private struct EventOfflineLyrics: LyricsProvider {
 
 @MainActor
 final class DesktopPlaybackEventTests: XCTestCase {
+    func testReadingSnapshotKeepsTheHeldOccurrenceAfterPlaybackMoves() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("reading.sqlite3"))
+        let (state, provider, _, center) = fixture(repository: repository)
+        let providerTrack = try XCTUnwrap(provider.snapshot.track)
+        let track = Track(providerTrack: providerTrack)
+        let file = try LocalLyricsFile(data: Data("[00:02.00]回声\n[00:12.00]渡口\n[00:24.00]回声".utf8),
+                                      kind: .lrc, preferredLanguage: "zh")
+        let stored = try await repository.importLyricFile(file, into: track)
+        provider.snapshot = .init(status: .ready, track: providerTrack, position: 14,
+                                  isPlaying: false, sourceIdentity: .spotifyDesktop)
+        state.startProvider(connectSpotify: false)
+        try await wait { state.liveLyrics.count == 3 && state.liveCurrentLineIndex == 1 }
+
+        var held = state.liveLyrics[0]
+        held.translationText = "定住时的译文"
+        let quote = V3FavoriteLines.Entry(line: held, track: state.currentTrack, trackKey: stored.trackKey,
+                                          originalVersion: state.liveLyricsVersionID, index: 0, translationVersion: nil)
+        let reading = try XCTUnwrap(ListeningLyricsSnapshot.capture(from: state, held: (held, quote)))
+        XCTAssertEqual(reading.focusedLine, 0)
+        XCTAssertEqual(reading.rows.first?.text.translation, "定住时的译文")
+        XCTAssertEqual(reading.passage?.readingPosition?.lineIndex, 0)
+        XCTAssertEqual(reading.passage?.source, stored.source)
+        XCTAssertEqual(ListeningLyricsSnapshot.capture(from: state)?.focusedLine, 1)
+        XCTAssertTrue(provider.seeks.isEmpty)
+
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: payload())
+        try await wait { state.currentTrack.title == "Event B" }
+        XCTAssertNil(ListeningLyricsSnapshot.capture(from: state, held: (held, quote)))
+        XCTAssertEqual(reading.trackTitle, track.title)
+        XCTAssertEqual(reading.rows.count, 3)
+    }
+
     func testEditorKeepsTheExactLineAndDraftAndOnlyAuditionsItsRecording() async throws {
         let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
         let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("editor.sqlite3"))

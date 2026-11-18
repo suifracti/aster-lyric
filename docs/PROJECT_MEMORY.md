@@ -65,6 +65,7 @@
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
 | 翻阅收藏、从副歌第二次出现的位置接下一句、搜到旧译文、继续阅读丢位置或被档案覆盖 | L-046 · LibraryPassageReader、RecentLyricsReadings、V3FavoriteLines |
 | 灵动岛挡刘海、只剩歌名、想停在一句读、换歌拖错进度 | L-045；CapsuleNotchGeometry、CapsuleLyricsView、vocalCountdownWindow |
+| 从灵动岛、桌面歌词或状态栏读全文，保持定住的那一处 | L-045；ListeningLyricsSnapshot、ListeningLyricsReader |
 | 状态栏双行词、日英混排少半句、收藏当前句、完整歌词与版本档案、没放歌时的菜单 | L-044；MenuBarTextFormatter.statusImage、MenuBarFullLyricsSnapshot、WorkspaceShelfCard、KeepLyricButton |
 | 全屏歌词按 Esc 没反应，退出后留下大窗 | L-031；FullScreenLyricsWindowController、handleExitCommand |
 | 桌面歌词、灵动岛、菜单栏分散难找，调整一个外观时另一个预览被采用 | L-043；AppearanceSettingsView、AppearanceSurface、PresentationSelectionStore.apply |
@@ -848,6 +849,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 「定住这句」仅在展开的岛上暂存用户看到的行和录音、原词版本。小字继续显示正在唱的行，收起或换歌会回到跟随。收藏取所显示的行；进度拖动沿开始时的录音键提交。进句提示只用真实时间轴标出的间奏，在下一句前三秒出现。原生宿主构建及离屏图覆盖播放、收起和无歌；刘海位置是几何用例，未实测实体刘海与多屏切换。
 
 2026-11-19：状态栏进度条和三种顶部胶囊使用同一个进度草稿。换歌立即清掉可见草稿并使旧手势失效，松手时即使播放器又回到同一首也不会执行旧跳转。实际隔离灵动岛通过辅助功能调到 73 秒，提供方收到一次跳转，收起后重开仍是 73 秒。定向用例覆盖跨录音、返回原录音和同一次拖动只提交一次。
+
+同日接通全文阅读。三种展开灵动岛和桌面歌词的悬停工具栏与状态栏共用 `ListeningLyricsSnapshot` 和 `ListeningLyricsReader`。桌面歌词与灵动岛使用同一个可独立关闭的普通窗口。定住后读取时核对录音、版本和原行，保留该句的译文快照；没有存稿时仍可读全文，有存稿才提供回歌词库。隔离灵动岛在 3 秒定住第一遍副歌，跳到 26 秒后打开全文，焦点与译文仍在第一遍。实际 Esc 关闭阅读窗口，播放器保持 26 秒。桌面歌词验证显示第二遍，自动化未触发其悬停栏。43 项定向原生通过，覆盖播放前进、换歌拒绝旧的定住行及保留已打开内容。
 
 
 ## L-046 离线阅读按命中的版本和段落打开（2026-11-18）

@@ -428,12 +428,8 @@ struct CapsuleLyricsView: View {
                     .buttonStyle(.plain)
                     .help(held == nil ? "把眼前这句留在岛上，播放照常继续" : "回到正在唱的歌词")
                     KeepLyricButton(entry: entry)
-                    Button {
-                        windowController.collapse()
-                        MenuBarLyricsController.shared.openSettings(at: .init(reading: entry.passage))
-                    } label: { Image(systemName: "book").frame(width: 22, height: 24) }
-                    .buttonStyle(.plain).help("读这句上下文").accessibilityLabel("读这句上下文")
                 }
+                readLyricsButton
                 moreButton
                 Button { windowController.collapse() } label: {
                     Image(systemName: "chevron.up").frame(width: 23, height: 24)
@@ -770,6 +766,7 @@ struct CapsuleLyricsView: View {
                 }
                 Spacer()
                 lineLoopButton(for: selection.current)
+                readLyricsButton
                 transportButton("backward.end.fill", help: "上一首") { state.previousTrack() }
                 transportButton(state.isPlaying ? "pause.fill" : "play.fill", help: "播放/暂停") {
                     state.togglePlayPause()
@@ -867,6 +864,7 @@ struct CapsuleLyricsView: View {
                 }
                 Spacer()
                 lineLoopButton(for: selection.current)
+                readLyricsButton
                 transportButton("backward.end.fill", help: "上一首") { state.previousTrack() }
                 transportButton(state.isPlaying ? "pause.fill" : "play.fill", help: "播放/暂停") {
                     state.togglePlayPause()
@@ -933,6 +931,21 @@ struct CapsuleLyricsView: View {
             }
             .font(.system(size: 10, weight: .medium, design: .rounded))
             .buttonStyle(.borderless)
+        }
+    }
+
+    @ViewBuilder
+    private var readLyricsButton: some View {
+        if !state.liveLyrics.isEmpty {
+            Button {
+                let heldContext = held.flatMap { line in pinnedLine.map { (line, $0.entry) } }
+                guard let lyrics = ListeningLyricsSnapshot.capture(from: state, held: heldContext) else { return }
+                windowController.collapse()
+                WindowManager.shared.showListeningLyrics(lyrics)
+            } label: {
+                Image(systemName: "book").frame(width: 22, height: 24)
+            }
+            .buttonStyle(.plain).help("阅读完整歌词").accessibilityLabel("完整歌词")
         }
     }
 

@@ -83,6 +83,16 @@ struct FloatingLyricsView: View {
                             state.useLyricLineLoopControl(loop)
                         }
                     }
+                    if !state.liveLyrics.isEmpty {
+                        Button {
+                            if let lyrics = ListeningLyricsSnapshot.capture(from: state) {
+                                WindowManager.shared.showListeningLyrics(lyrics)
+                            }
+                        } label: {
+                            Image(systemName: "book").frame(width: 24, height: 26)
+                        }
+                        .help("阅读完整歌词").accessibilityLabel("完整歌词")
+                    }
                     HStack(spacing: 5) {
                         Image(systemName: windowController.interactionMode == .locked ? "lock.fill" : "line.3.horizontal")
                         Text(windowController.interactionMode == .locked ? "已锁定 · 解锁后可拖动" : "拖动移动")
