@@ -252,6 +252,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var toolbarDismissTask: Task<Void, Never>?
     private var activeToolbarPopover: ToolbarPopover? { toolbar.hoverPanel }
     private var pinnedToolbarPanel: ToolbarPopover? { toolbar.pinnedPanel }
+    private var toolbarStyle: V3ToolbarStyle {
+        let saved = settings.v3ToolbarStyle
+        return liveOnly && saved == .outside ? .standard : saved
+    }
     // Keep listening unobstructed. Tools reveal at the top edge and stay
     // available while their popover is open.
     @State private var toolsVisible = false
@@ -511,7 +515,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
 
-                let toolbarStyle = settings.v3ToolbarStyle
                 if toolbarStyle == .outside {
                     // 窗外: the bar lives in its own small window above this
                     // one; nothing of it is drawn over the listening view.
@@ -554,22 +557,28 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 .padding(.top, toolbarStyle == .titleBar ? 3 : toolbarStyle == .radial ? 10 : 18)
                 }
 
-                // Hover shows the temporary panel inside the app; a click pins
-                // it as a separate tool window to the right of the main window.
                 if let pinned = pinnedToolbarPanel {
-                    V3PinnedInspectorPanelHost(
-                        isPresented: Binding(
-                            get: { pinnedToolbarPanel != nil },
-                            set: { presented in
-                                if !presented {
-                                    dismissPinnedToolbarPanel()
+                    if liveOnly {
+                        let side = toolbarStyle == .sidePull
+                        inspectorSurface(for: pinned, style: .hoverGlass)
+                            .modifier(V3SystemAppearanceModifier())
+                            .padding(.top, side ? 0 : toolbarBounds.maxY + 8)
+                            .padding(.trailing, side ? toolbarBounds.width + 24 : 24)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity,
+                                   alignment: side ? .trailing : .topTrailing)
+                    } else {
+                        V3PinnedInspectorPanelHost(
+                            isPresented: Binding(
+                                get: { pinnedToolbarPanel != nil },
+                                set: { presented in
+                                    if !presented { dismissPinnedToolbarPanel() }
                                 }
-                            }
-                        ),
-                        title: pinned.title,
-                        content: inspectorSurface(for: pinned, style: .pinnedGlass)
-                    )
-                    .frame(width: 0, height: 0)
+                            ),
+                            title: pinned.title,
+                            content: inspectorSurface(for: pinned, style: .pinnedGlass)
+                        )
+                        .frame(width: 0, height: 0)
+                    }
                 }
 
             }
@@ -607,7 +616,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         isPointerInsidePlaybackRegion = pointerInRegion
                     }
                     // 侧拉 opens from the right edge; every other style from the top.
-                    let inToolbar = settings.v3ToolbarStyle == .sidePull
+                    let inToolbar = toolbarStyle == .sidePull
                         ? location.x >= geometry.size.width - MainWindowResponsiveThresholds.sideToolbarRevealWidth
                         : location.y <= MainWindowResponsiveThresholds.toolbarRevealHeight
                     if isPointerInToolbarRegion != inToolbar {
@@ -2017,7 +2026,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         let value = isFocusMode ? 0 : toolbar.opacity(pointerInside: isPointerInsideCanvas && !liveOnly, nearTop: toolsVisible,
                         otherPanelOpen: toolbarPanelIsPresented)
         // 下拉: nothing at all until the pointer reaches the top edge.
-        let hidesUntilEdge = settings.v3ToolbarStyle == .pullDown || settings.v3ToolbarStyle == .sidePull
+        let hidesUntilEdge = toolbarStyle == .pullDown || toolbarStyle == .sidePull
         return hidesUntilEdge && value < 1 ? 0 : value
     }
 
@@ -2081,7 +2090,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private func toolbarTriggerHover(_ panel: ToolbarPopover, inside: Bool) {
         // 窗外 opens panels on a click, pinned beside the window, so nothing
         // hovers over the listening view.
-        guard !librarySearch.isPresented, settings.v3ToolbarStyle != .outside else { return }
+        guard !librarySearch.isPresented, toolbarStyle != .outside else { return }
         apply(toolbar.pointerOnTrigger(panel, inside: inside))
     }
 
@@ -2130,7 +2139,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     }
 
     private func toolBar(for size: CGSize) -> some View {
-        let style = settings.v3ToolbarStyle
+        let style = toolbarStyle
         return Group {
             switch style {
             case .grouped:
@@ -2161,7 +2170,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     }
 
     private func toolbarGroup(_ panels: [ToolbarPopover], showsSettings: Bool) -> some View {
-        let vertical = settings.v3ToolbarStyle == .sidePull
+        let vertical = toolbarStyle == .sidePull
         let layout = vertical ? AnyLayout(VStackLayout(spacing: 3)) : AnyLayout(HStackLayout(spacing: 3))
         return layout {
             ForEach(panels, id: \.rawValue) { panel in
@@ -2176,7 +2185,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 settingsToolbarButton
             }
         }
-        .padding(settings.v3ToolbarStyle == .titleBar ? 2 : 5)
+        .padding(toolbarStyle == .titleBar ? 2 : 5)
         .modifier(V3ControlBarSurface())
     }
 
@@ -2319,7 +2328,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(Color.primary.opacity(0.94))
             .padding(.horizontal, 10)
-            .frame(height: settings.v3ToolbarStyle == .titleBar ? 26 : 36)
+            .frame(height: toolbarStyle == .titleBar ? 26 : 36)
             // The open tool wears the same cover colour as the sung line; the label stays
             // primary so it reads on both the light and the dark bar.
             .background(selected ? (uiAccent.map { $0.opacity(0.34) } ?? Color.primary.opacity(0.14)) : .clear, in: Capsule())
@@ -2367,6 +2376,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             V3PanelRow(title: "全屏歌词") {
                 Button(liveOnly ? "退出" : "打开") {
                     if liveOnly {
+                        dismissPinnedToolbarPanel()
                         WindowManager.shared.hideFullScreen()
                     } else {
                         WindowManager.shared.showFullScreen(state: state, settings: settings)
@@ -2374,6 +2384,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     isWindowMenuPresented = false
                 }
                 .controlSize(.small)
+                .accessibilityLabel(liveOnly ? "退出全屏歌词" : "打开全屏歌词")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
