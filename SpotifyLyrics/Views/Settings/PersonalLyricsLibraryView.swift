@@ -1230,7 +1230,6 @@ public struct PersonalDataImportPreviewSheet: View {
 
 public struct UnifiedLibraryHistoryWindowView: View {
     @EnvironmentObject private var playback: PlaybackState
-    @State private var selectedLibraryKey: String?
     @State private var reading: LibraryPassageTarget?
     @State private var library = PersonalLyricsLibraryService()
 
@@ -1274,8 +1273,8 @@ public struct UnifiedLibraryHistoryWindowView: View {
     private var contentArea: some View {
         switch playback.selectedLibraryToolTab {
         case .library:
-            PersonalLyricsLibraryView(embeddedInSettings: false, initialTrackKey: selectedLibraryKey, service: library,
-                                      onSelection: { selectedLibraryKey = $0 }, readPassage: { reading = $0 })
+            PersonalLyricsLibraryView(embeddedInSettings: false, initialTrackKey: playback.selectedLibraryToolTrackKey, service: library,
+                                      onSelection: { playback.selectedLibraryToolTrackKey = $0 }, readPassage: { reading = $0 })
         case .history:
             ListeningHistoryView(openTrack: openTrack)
         case .statistics:
@@ -1285,8 +1284,7 @@ public struct UnifiedLibraryHistoryWindowView: View {
         }
     }
     private func openTrack(_ key: String) {
-        selectedLibraryKey = key
-        playback.selectedLibraryToolTab = .library
+        playback.openLibraryTool(trackKey: key)
     }
 
 }

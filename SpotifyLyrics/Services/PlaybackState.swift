@@ -69,6 +69,7 @@ public final class PlaybackState: ObservableObject {
     @Published public private(set) var listeningHistoryError: String?
     @Published public private(set) var listeningStatisticsError: String?
     @Published public var selectedLibraryToolTab: LibraryToolTab = .library
+    @Published var selectedLibraryToolTrackKey: String?
 
     // Auxiliary display states remain available to the existing window manager.
     @Published public var showFloatingWindow = false
@@ -838,7 +839,8 @@ public final class PlaybackState: ObservableObject {
         return true
     }
 
-    public func openLibraryTool(tab: LibraryToolTab = .library) {
+    public func openLibraryTool(tab: LibraryToolTab = .library, trackKey: String? = nil) {
+        if let trackKey { selectedLibraryToolTrackKey = trackKey }
         selectedLibraryToolTab = tab
     }
 

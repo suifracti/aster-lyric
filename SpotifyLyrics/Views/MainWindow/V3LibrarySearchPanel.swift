@@ -32,6 +32,7 @@ struct V3LibrarySearchPanel: View {
     @ObservedObject var library: PersonalLyricsLibraryService
     @StateObject private var batch = LyricsBatchCompletion()
     @State private var selectedKey: String?
+    @State private var historyTrackKey: String?
     @State private var queries: [V3LibrarySearchPresentation.Tab: String] = [:]
     private var query: String {
         get { queries[presentation.tab ?? .library] ?? "" }
@@ -74,7 +75,11 @@ struct V3LibrarySearchPanel: View {
                         ), options: V3LibrarySearchPresentation.Tab.allCases.map { ($0.title, $0) },
                            showsLabel: false, height: 28)
                         .frame(width: 360)
-                        if presentation.tab?.isListening == true {
+                        if presentation.tab == .history, historyTrackKey != nil {
+                            Button("返回最近播放", systemImage: "chevron.left") { historyTrackKey = nil }
+                                .buttonStyle(.borderless)
+                            Spacer(minLength: 0)
+                        } else if presentation.tab?.isListening == true {
                             Spacer(minLength: 0)
                             Button {
                                 if presentation.tab == .history { state.refreshListeningHistory() }
@@ -87,14 +92,7 @@ struct V3LibrarySearchPanel: View {
                                 .onSubmit { updateSearch() }
                             managementMenu
                         }
-                        Button("在新窗口打开") {
-                            let tab = presentation.tab
-                            presentation.dismiss()
-                            if tab == .history { state.selectedLibraryToolTab = .history }
-                            else if tab == .statistics { state.selectedLibraryToolTab = .statistics }
-                            else if tab == .library { state.selectedLibraryToolTab = .library }
-                            openWindow(id: tab == .search ? "song-search" : tab == .playlists ? "playlist-browser" : "personal-library-activity")
-                        }
+                        Button("在新窗口打开", action: openInNewWindow)
                         .font(.caption).buttonStyle(.borderless)
                         Button { presentation.dismiss() } label: { Image(systemName: "xmark") }
                             .buttonStyle(.plain).accessibilityLabel("关闭歌词库与搜索")
@@ -107,7 +105,7 @@ struct V3LibrarySearchPanel: View {
                         } else if presentation.tab == .search {
                             V3SearchPanel(state: state, search: state.songSearchManager)
                         } else if presentation.tab == .history {
-                            ListeningHistoryView()
+                            recentPlaybackContent
                         } else if presentation.tab == .statistics {
                             ListeningStatisticsView()
                         } else {
@@ -145,6 +143,33 @@ struct V3LibrarySearchPanel: View {
             .onDisappear { batch.stop() }
         }
     }
+    private var recentPlaybackContent: some View {
+        ZStack {
+            ListeningHistoryView(openTrack: { historyTrackKey = $0 })
+                .opacity(historyTrackKey == nil ? 1 : 0)
+                .allowsHitTesting(historyTrackKey == nil)
+                .accessibilityHidden(historyTrackKey != nil)
+            if let historyTrackKey {
+                PersonalLibraryTrackDetailView(service: library, stableKey: historyTrackKey)
+                    .id(historyTrackKey)
+            }
+        }
+    }
+
+    private func openInNewWindow() {
+        let tab = presentation.tab
+        presentation.dismiss()
+        switch tab {
+        case .search: openWindow(id: "song-search")
+        case .playlists: openWindow(id: "playlist-browser")
+        case .library, .history, .statistics, nil:
+            if tab == .history, historyTrackKey == nil { state.openLibraryTool(tab: .history) }
+            else if tab == .statistics { state.openLibraryTool(tab: .statistics) }
+            else { state.openLibraryTool(trackKey: tab == .history ? historyTrackKey : selectedKey) }
+            openWindow(id: "personal-library-activity")
+        }
+    }
+
     private func updateSearch() {
         if presentation.tab == .search {
             state.songSearchManager.search(query: SongSearchQuery(text: query), debounceNanoseconds: 250_000_000)

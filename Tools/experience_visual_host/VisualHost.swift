@@ -511,6 +511,15 @@ private struct ExperienceFixtureRoot: View {
                         let saved = try! await repository.save(track: track, identity: identity, document: document)
                         try! await repository.setPersonalLibraryActiveLyrics(trackStableKey: identity.stableKey,
                                                                              lyricsVersionID: saved.versionID!)
+                        if ProcessInfo.processInfo.arguments.contains("--history-fixture") {
+                            let now = Date()
+                            try! await repository.upsertListeningHistory(ListeningHistoryEntry(
+                                sessionID: UUID(), stableKey: identity.stableKey, title: track.title,
+                                artist: track.artist, album: track.album, startedAt: now.addingTimeInterval(-54),
+                                lastObservedAt: now, observedPlaybackDuration: 54,
+                                trackDuration: track.duration, completionRatio: 0.225, artworkURL: track.artworkURL
+                            ))
+                        }
                         let source = try! await repository.loadEditableVersion(versionID: saved.versionID!, track: track, identity: identity)!
                         for label in ["译文一", "译文二"] {
                             _ = try! await repository.saveTranslation(lyricsVersionID: source.record.id,

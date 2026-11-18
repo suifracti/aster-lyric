@@ -186,7 +186,7 @@ struct MainLyricsWindowView: View {
     }
 
     private func openWorkbenchLocation(_ location: SettingsLocation) {
-        if location.passage == nil, location.trackKey == nil {
+        if location.passage == nil, location.archiveSource == nil, location.query.isEmpty, location.resultID == nil {
             let tab: LibraryToolTab? = switch location.page {
             case .library: .library
             case .history: .history
@@ -195,7 +195,7 @@ struct MainLyricsWindowView: View {
             default: nil
             }
             if let tab {
-                state.selectedLibraryToolTab = tab
+                state.openLibraryTool(tab: tab, trackKey: location.trackKey)
                 openWindow(id: "personal-library-activity")
                 return
             }
