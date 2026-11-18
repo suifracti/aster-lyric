@@ -43,6 +43,7 @@
 | 逐字上浮/长音发光动画跳回开头、状态栏弹窗改版、封面闪占位图或露出方形底板、暂停褪色、桌面歌词情境隐藏 | L-024；LyricLineView animateLift、MenuBarLyricsPopoverView、ArtworkView、v3PauseFadesColor、FloatingLyricsWindowController.observeContext |
 | 情境一开旧画面切不过去、光色不走封面色、同一首对唱在不同窗口不一样 | L-052；V3ListeningPresentation、V3RoomOverrides、LyricsTimeline.presentedLyrics |
 | 合唱被标成某个人独唱、桌面歌词或灵动岛看不出谁在唱 | L-052；LyricsTimeline.VoicePresentation |
+| 听歌有对唱，但阅读、文件或印本漏掉声部，合唱在档案里重复 | L-051；PassageVoicePresentation、LyricBook.Chapter.readingRows |
 | 单句循环只在主窗口有、切窗口找不到取消、拖进度被拉回 | L-052；PlaybackState.lyricLineLoopControl |
 | 「只看译文」仍出现罗马音 / 拼音、隐藏原文后拼音消失 | L-052；LyricTextLayers、DisplayPreferences.usesInlinePinyin |
 | 粒子（雨雪雾、歌词意象）不显示、VU 表指针手感、新呈现一行放不下、分享卡排版跑偏、封面墙离屏图空白、声纹圈、频谱 | L-025；V3GlassWeather、V3ParticleHostView、V3VUMeter、V3LyricShareCard、ListeningCoverWall、V3Soundprint、V3SpectrumOverlay |
@@ -920,6 +921,8 @@ TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、
 隔离真窗从 Finder 打开歌本，调整两首顺序，在收录窗口加入带出处的金句，经系统「存储」读回。系统面板导出 13 页 A5 PDF，抽查封面、目录、正文与末页。原生测试覆盖重复摘句、版本出处、PDF 跳转和跨页末句，明暗色离屏图覆盖封面与章节页。
 
 2026-11-18 补：⌘K 读到的那一句原先只能右键「收录这句」，找不到。现在阅读页里选中或悬停的行在书签旁直接显示歌本按钮，带版本 UUID 与行号。加入已打开的歌本后，按钮约 1.8 秒显示「已收进《书名》」并发辅助功能播报。返回按钮写出原查询词，Esc 回到原结果和选中项。离屏图 `library-reader` 核过按钮位置；真实窗口未点验。
+
+2026-11-19。歌词库、文件、接句、状态栏全文与歌本沿用播放的声部名称和合唱判定。阅读投影只折叠同一时段、同文且没有额外附文的后续行。后续独有译文、读音和和声保留。原行号仍用于收藏、摘句、导出和对读；打开已收藏的合唱行会定位到可见行。对读保留两份原稿的行序，原词比较可识别声部差异。歌本和 PDF 共用收录时的阅读行。新歌本只新增可选显示数据，旧歌本沿用保留的声部字段并显示可读名称。定向检查使用含合唱、独有和声和再次演唱的 TTML，经过存入、读回、对读、歌本与 PDF。
 
 
 ## L-052 画面、情境和歌词显示共用当前配置（2026-11-18）

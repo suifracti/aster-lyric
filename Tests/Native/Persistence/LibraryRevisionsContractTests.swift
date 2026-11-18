@@ -308,6 +308,55 @@ final class LibraryRevisionsContractTests: XCTestCase {
         XCTAssertEqual(voices?.document.lines.first?.backgroundText, "回声")
     }
 
+    func testOfflineDuetKeepsItsSourceRowsAndSingsTheRepriseAgain() async throws {
+        let ttml = """
+        <tt xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div>
+        <p begin="1s" end="2s" ttm:agent="v1">海边的信</p>
+        <p begin="3s" end="4s" ttm:agent="v2">读到这里</p>
+        <p begin="6s" end="8s" ttm:agent="v1">等风来</p>
+        <p begin="6.05s" end="8s" ttm:agent="v2">等风来</p>
+        <p begin="6.10s" end="8s" ttm:agent="v1">等风来<span ttm:role="x-bg">（风声）</span></p>
+        <p begin="12s" end="14s" ttm:agent="v2">等风来</p>
+        </div></body></tt>
+        """
+        let file = try LocalLyricsFile(data: Data(ttml.utf8), kind: .ttml, preferredLanguage: "zh-Hans")
+        let track = Track(title: "两个人的信", artist: "合声", album: "", duration: 16)
+        let repo = SQLiteLyricsRepository(databaseURL: NativeTestRuntime.root.appendingPathComponent("\(UUID()).sqlite3"))
+        let target = try await repo.importLyricFile(file, into: track)
+        let stored = try await repo.readLibraryPassage(target)
+        let page = try XCTUnwrap(stored)
+        let voice = PassageVoicePresentation(lines: page.lines)
+        XCTAssertEqual(page.lines.map(\.performerID), ["v1", "v2", "v1", "v2", "v1", "v2"])
+        XCTAssertEqual(voice.visibleID(for: 3), 2)
+        XCTAssertEqual(voice.visibleLines(in: page.lines).map(\.id), [0, 1, 2, 4, 5])
+        XCTAssertEqual(page.lines.indices.map(voice.label(for:)), ["声部 1", "声部 2", "合唱", "合唱", "合唱", "声部 2"])
+        XCTAssertEqual(page.lines[4].background, "风声")
+        let untimed = page.lines.map { row in
+            var row = row
+            row.startTime = nil
+            return row
+        }
+        XCTAssertTrue(PassageVoicePresentation(lines: untimed).aliases.isEmpty)
+
+        var book = LyricBook(title: "留在纸上的合声")
+        book.add(.init(page: page, source: target.source))
+        book.add(.init(page: page, source: target.source, excerpt: page.lines[3]))
+        let restored = try LyricBook(data: book.encoded())
+        XCTAssertEqual(restored.chapters[0].readingRows.map(\.id), [0, 1, 2, 4, 5])
+        XCTAssertEqual(restored.chapters[1].readingRows.first?.voice, "合唱")
+        XCTAssertEqual(restored.chapters[1].origin.lineIndex, 3)
+        let pdf = try XCTUnwrap(PDFDocument(data: try LyricBookPrint.data(for: restored)))
+        let printed = (0..<pdf.pageCount).compactMap { pdf.page(at: $0)?.string }.joined(separator: "\n")
+        for word in ["声部", "合唱", "风声"] { XCTAssertTrue(printed.contains(word), word) }
+
+        var switched = page.lines
+        switched[5].performerID = "v1"
+        let comparison = LibraryVersionComparison.align(page.lines, switched, translations: false, sameOriginal: false)
+        XCTAssertEqual(comparison.last?.change, .voice)
+        XCTAssertEqual(comparison.last?.baseVoice, "声部 2")
+        XCTAssertEqual(comparison.last?.referenceVoice, "声部 1")
+    }
+
     func testLocalFileReadsUTF16AndKeepsUntimedLRCLinesInPlace() throws {
         let ttml = #"<?xml version="1.0" encoding="UTF-16"?><tt><body><div><p>纸上</p></div></body></tt>"#
         let utf16 = Data([0xff, 0xfe]) + (try XCTUnwrap(ttml.data(using: .utf16LittleEndian)))

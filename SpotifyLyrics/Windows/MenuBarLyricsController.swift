@@ -69,9 +69,7 @@ public struct MenuBarFullLyricsSnapshot: Equatable, Sendable {
 
     init?(track: Track, lines: [LyricLine], currentIndex: Int?, synchronized: Bool,
           showsReading: Bool = false, passage: LibraryPassageTarget? = nil) {
-        let voices = LyricsTimeline.VoicePresentation(in: lines, isSynchronized: synchronized)
-        let rows = lines.enumerated().compactMap { index, line -> Row? in
-            guard voices.duplicates[index] == nil else { return nil }
+        let text = lines.enumerated().map { index, line -> LibraryPassagePage.Line in
             func nonempty(_ text: String?) -> String? {
                 let text = text?.trimmingCharacters(in: .whitespacesAndNewlines)
                 return text?.isEmpty == false ? text : nil
@@ -79,14 +77,17 @@ public struct MenuBarFullLyricsSnapshot: Equatable, Sendable {
             let original = nonempty(line.originalText) ?? ""
             let translation = nonempty(line.translationText)
             let background = nonempty(line.backgroundText)
-            guard !original.isEmpty || translation != nil || background != nil else { return nil }
             let readings = [nonempty(line.kanaText), nonempty(line.romajiText)].compactMap { $0 }
-            return Row(text: .init(id: index, original: original, translation: translation,
-                                   reading: readings.isEmpty ? nil : readings.joined(separator: " · "), background: background),
-                       voiceLabel: voices.labelAtChange(index))
+            return .init(id: index, original: original, translation: translation,
+                         reading: readings.isEmpty ? nil : readings.joined(separator: " · "), background: background,
+                         startTime: synchronized ? line.timestamp : nil, endTime: line.endTime, performerID: line.performerID)
         }
+        let voices = PassageVoicePresentation(lines: text)
+        let visible = voices.visibleLines(in: text).filter { !$0.original.isEmpty || $0.translation != nil || $0.background != nil }
+        let labels = voices.labelsAtChanges(in: visible.map(\.id))
+        let rows = visible.map { Row(text: $0, voiceLabel: labels[$0.id]) }
         guard !rows.isEmpty else { return nil }
-        let index = currentIndex.map { voices.duplicates[$0] ?? $0 }
+        let index = currentIndex.map { voices.visibleID(for: $0) }
         let focusedLine = index.flatMap { index in rows.contains { $0.id == index } ? index : nil }
         var destination = passage
         destination?.readingPosition = .init(find: "", lineIndex: focusedLine)

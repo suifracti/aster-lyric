@@ -3,6 +3,7 @@ import SwiftUI
 struct LyricRecallView: View {
     let page: LibraryPassagePage
     @State var session: LyricRecallSession
+    let voices: PassageVoicePresentation
     let showsTranslation: Bool
     let showsReading: Bool
     let returnToLine: (Int) -> Void
@@ -72,6 +73,7 @@ struct LyricRecallView: View {
 
     private func block(_ line: LibraryPassagePage.Line, isAnswer: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
+            if let voice = voices.label(for: line.id) { PassageVoiceLabel(text: voice) }
             Text(line.original)
                 .font(.system(size: isAnswer ? 26 : 23, weight: .medium, design: .serif))
                 .foregroundStyle(isAnswer ? WorkspacePalette.ink : .primary)

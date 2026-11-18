@@ -46,6 +46,7 @@ struct LibraryVersionComparison: Sendable {
     typealias Line = LibraryPassagePage.Line
     enum Change: String, Sendable {
         case same = "相同", text = "文字不同", layer = "附文不同", timing = "时间不同"
+        case voice = "声部不同"
         case onlyBase = "底稿独有", onlyReference = "参照稿独有"
     }
 
@@ -54,6 +55,8 @@ struct LibraryVersionComparison: Sendable {
         let base: Line?
         let reference: Line?
         let change: Change
+        let baseVoice: String?
+        let referenceVoice: String?
     }
 
     let rows: [Row]
@@ -86,8 +89,12 @@ struct LibraryVersionComparison: Sendable {
     /// Equal original lines anchor two different editions in order. On the same
     /// source, row indices distinguish identical choruses even when a translation is blank.
     static func align(_ base: [Line], _ reference: [Line], translations: Bool, sameOriginal: Bool) -> [Row] {
+        let baseVoices = PassageVoicePresentation(lines: base)
+        let referenceVoices = PassageVoicePresentation(lines: reference)
         var rows: [Row] = []
         func append(_ a: Line?, _ b: Line?) {
+            let baseVoice = a.flatMap { baseVoices.label(for: $0.id) }
+            let referenceVoice = b.flatMap { referenceVoices.label(for: $0.id) }
             let change: Change
             switch (a, b) {
             case (nil, _): change = .onlyReference
@@ -96,9 +103,11 @@ struct LibraryVersionComparison: Sendable {
                 if a.original != b.original || (translations && (a.translation ?? "") != (b.translation ?? "")) { change = .text }
                 else if !translations && (a.background != b.background || a.reading != b.reading || a.translation != b.translation) { change = .layer }
                 else if !translations && (a.startTime != b.startTime || a.endTime != b.endTime || a.timedSpans != b.timedSpans) { change = .timing }
+                else if !translations && baseVoice != referenceVoice { change = .voice }
                 else { change = .same }
             }
-            rows.append(Row(id: rows.count, base: a, reference: b, change: change))
+            rows.append(Row(id: rows.count, base: a, reference: b, change: change,
+                            baseVoice: baseVoice, referenceVoice: referenceVoice))
         }
 
         if sameOriginal {

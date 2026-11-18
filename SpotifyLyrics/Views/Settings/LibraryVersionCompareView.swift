@@ -160,8 +160,10 @@ struct LibraryVersionCompareView: View {
             }
             let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 18)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             layout {
-                column(row.base, comparedWith: row.reference, title: "底稿", label: !wide, showOriginal: !sameOriginalText, change: row.change)
-                column(row.reference, comparedWith: row.base, title: "参照", label: !wide, showOriginal: !sameOriginalText, change: row.change)
+                column(row.base, comparedWith: row.reference, title: "底稿", label: !wide,
+                       showOriginal: !sameOriginalText, change: row.change, voice: row.baseVoice)
+                column(row.reference, comparedWith: row.base, title: "参照", label: !wide,
+                       showOriginal: !sameOriginalText, change: row.change, voice: row.referenceVoice)
             }
         }
         .padding(.vertical, 11).padding(.horizontal, 20)
@@ -169,11 +171,12 @@ struct LibraryVersionCompareView: View {
     }
 
     private func column(_ line: LibraryPassagePage.Line?, comparedWith other: LibraryPassagePage.Line?, title: String, label: Bool, showOriginal: Bool,
-                        change: LibraryVersionComparison.Change) -> some View {
+                        change: LibraryVersionComparison.Change, voice: String?) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             if label { Text(title).font(.caption).foregroundStyle(.secondary).frame(width: 28, alignment: .leading) }
             VStack(alignment: .leading, spacing: 4) {
                 if let line {
+                    if let voice { PassageVoiceLabel(text: voice) }
                     if translations {
                         if showOriginal, !line.original.isEmpty { Text(line.original).font(.caption).foregroundStyle(.secondary) }
                         if let text = line.translation, !text.isEmpty {

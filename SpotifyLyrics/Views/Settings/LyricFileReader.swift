@@ -118,13 +118,12 @@ struct LyricFileReader: View {
         return file.content.explicitlyTimedLineIndices == nil ? "自由阅读" : "部分有时间"
     }
 
-    private var matches: [Int] {
-        guard !find.isEmpty else { return [] }
-        return file.lines.indices.filter { passageLine($0).matches(find) }
-    }
-
     var body: some View {
-        ScrollViewReader { proxy in
+        let rows = file.lines.indices.map(passageLine)
+        let voices = PassageVoicePresentation(lines: rows)
+        let visible = voices.visibleLines(in: rows)
+        let matches = find.isEmpty ? [] : visible.filter { $0.matches(find) }.map(\.id)
+        return ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
                     Image(systemName: "doc.text").foregroundStyle(WorkspacePalette.ink)
@@ -162,12 +161,12 @@ struct LyricFileReader: View {
                 if finding {
                     HStack {
                         TextField("在原词、翻译和读音中查找", text: $find).textFieldStyle(.plain).focused($focusedFind)
-                            .onSubmit { moveMatch(1, proxy) }
+                            .onSubmit { moveMatch(1, proxy, matches: matches) }
                         Text(find.isEmpty ? "" : matches.isEmpty ? "无匹配" : "\(matchIndex + 1)/\(matches.count)")
                             .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                        Button { moveMatch(-1, proxy) } label: { Image(systemName: "chevron.up") }
+                        Button { moveMatch(-1, proxy, matches: matches) } label: { Image(systemName: "chevron.up") }
                             .accessibilityLabel("上一处").disabled(matches.isEmpty)
-                        Button { moveMatch(1, proxy) } label: { Image(systemName: "chevron.down") }
+                        Button { moveMatch(1, proxy, matches: matches) } label: { Image(systemName: "chevron.down") }
                             .accessibilityLabel("下一处").disabled(matches.isEmpty)
                     }
                     .buttonStyle(.borderless).padding(.horizontal, 22).padding(.bottom, 8)
@@ -185,15 +184,16 @@ struct LyricFileReader: View {
                         let results = finding ? matches : []
                         let current = results.indices.contains(matchIndex) ? results[matchIndex] : nil
                         LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(file.lines.indices, id: \.self) { index in
+                            ForEach(visible) { row in
+                                let index = row.id
                                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                                     if file.content.isSynchronized || file.content.explicitlyTimedLineIndices != nil {
                                         Text(file.content.lineHasExplicitTiming(index) ? v3EdgeTimeText(file.lines[index].timestamp) : "")
                                             .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                                             .frame(minWidth: 30, alignment: .trailing)
                                     }
-                                    PassageLineText(line: passageLine(index), showsTranslation: showsTranslation || index == current,
-                                                    showsReading: showsReading || index == current)
+                                    PassageLineText(line: row, showsTranslation: showsTranslation || index == current,
+                                                    showsReading: showsReading || index == current, voiceLabel: voices.label(for: index))
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
                                 .background(index == current ? WorkspacePalette.selection : .clear)
@@ -210,7 +210,7 @@ struct LyricFileReader: View {
                 }
                 Divider()
                 HStack(spacing: 12) {
-                    Text(error ?? "\(file.lines.filter { !$0.originalText.isEmpty }.count) 行歌词")
+                    Text(error ?? "\(visible.filter { !$0.original.isEmpty }.count) 行歌词")
                         .font(.caption).foregroundStyle(error == nil ? Color.secondary : .red)
                     Spacer(minLength: 0)
                     PortableLyricsExportMenu(sourceURL: sourceURL) {
@@ -253,14 +253,15 @@ struct LyricFileReader: View {
         if let language { translation = line.sourceTranslation(in: language) }
         else { translation = line.translationText }
         return .init(id: index, original: line.originalText, translation: translation,
-                     reading: reading.isEmpty ? nil : reading, background: line.backgroundText)
+                     reading: reading.isEmpty ? nil : reading, background: line.backgroundText,
+                     startTime: file.content.lineHasExplicitTiming(index) ? line.timestamp : nil,
+                     endTime: line.endTime, performerID: line.performerID)
     }
 
-    private func moveMatch(_ delta: Int, _ proxy: ScrollViewProxy) {
-        let options = matches
-        guard !options.isEmpty else { return }
-        matchIndex = (matchIndex + delta + options.count) % options.count
-        proxy.scrollTo(options[matchIndex], anchor: .center)
+    private func moveMatch(_ delta: Int, _ proxy: ScrollViewProxy, matches: [Int]) {
+        guard !matches.isEmpty else { return }
+        matchIndex = (matchIndex + delta + matches.count) % matches.count
+        proxy.scrollTo(matches[matchIndex], anchor: .center)
     }
 
     private func fileWith(_ entry: PersonalLyricsLibraryEntry) {

@@ -213,8 +213,7 @@ struct LyricBookDesk: View {
     }
 
     private func page(_ chapter: LyricBook.Chapter) -> some View {
-        let multipleVoices = Set(chapter.lines.compactMap(\.performer)).count > 1
-        return VStack(alignment: .leading, spacing: 17) {
+        VStack(alignment: .leading, spacing: 17) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(chapter.edition).font(.caption.weight(.medium)).foregroundStyle(WorkspacePalette.ink)
                 Text(chapter.title).font(.system(size: 31, weight: .semibold, design: .serif)).accessibilityAddTraits(.isHeader)
@@ -228,12 +227,11 @@ struct LyricBookDesk: View {
             }
             Divider()
             LazyVStack(alignment: .leading, spacing: chapter.kind == .quote ? 13 : 10) {
-                ForEach(chapter.lines.indices, id: \.self) { index in
-                    let line = chapter.lines[index].text(for: book)
+                ForEach(chapter.readingRows) { row in
+                    let line = row.line.text(for: book)
                     VStack(alignment: .leading, spacing: 4) {
-                        if multipleVoices, let voice = chapter.lines[index].performer,
-                           index == 0 || chapter.lines[index - 1].performer != voice {
-                            Text("声部 \(voice)").font(.caption).foregroundStyle(WorkspacePalette.ink)
+                        if let voice = row.voice {
+                            PassageVoiceLabel(text: voice)
                         }
                         if let reading = line.reading { Text(reading).font(.caption).foregroundStyle(WorkspacePalette.ink) }
                         Text(line.main).font(.system(size: chapter.kind == .quote ? 27 : 17, design: .serif))

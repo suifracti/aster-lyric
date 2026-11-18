@@ -313,12 +313,8 @@ public struct MenuBarLyricsPopoverView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
                         ForEach(lyrics.rows) { row in
-                            VStack(alignment: .leading, spacing: 4) {
-                                if let voice = row.voiceLabel {
-                                    Text(voice).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                                }
-                                PassageLineText(line: row.text, showsTranslation: true, showsReading: lyrics.showsReading)
-                            }
+                            PassageLineText(line: row.text, showsTranslation: true, showsReading: lyrics.showsReading,
+                                            voiceLabel: row.voiceLabel)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 8).padding(.vertical, 6)
                             .background(row.id == lyrics.focusedLine ? islandAccent.opacity(0.13) : .clear,

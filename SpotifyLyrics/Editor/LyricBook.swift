@@ -30,6 +30,13 @@ struct LyricBook: FileDocument, Codable, Equatable, Sendable {
 
     struct Chapter: Identifiable, Codable, Equatable, Sendable {
         enum Kind: String, Codable, Sendable { case song, quote }
+
+        struct ReadingRow: Identifiable {
+            let id: Int
+            let line: Line
+            let voice: String?
+        }
+
         var id = UUID()
         let kind: Kind
         let title: String
@@ -38,6 +45,7 @@ struct LyricBook: FileDocument, Codable, Equatable, Sendable {
         let edition: String
         let origin: LibraryPassageTarget
         var lines: [Line]
+        fileprivate(set) var voices: PassageVoicePresentation?
         var note = ""
 
         init(page: LibraryPassagePage, source: LibraryPassageSource, excerpt: LibraryPassagePage.Line? = nil) {
@@ -48,6 +56,17 @@ struct LyricBook: FileDocument, Codable, Equatable, Sendable {
             lines = rows.map {
                 Line(original: $0.original, translation: $0.translation, reading: $0.reading,
                      background: $0.background, romanization: $0.romanization, performer: $0.performerID)
+            }
+            if let excerpt {
+                let context = PassageVoicePresentation(lines: page.lines)
+                if let label = context.label(for: excerpt.id) { voices = .init(excerptLabel: label) }
+            } else {
+                let context = PassageVoicePresentation(lines: rows.enumerated().map { index, row in
+                    .init(id: index, original: row.original, translation: row.translation, reading: row.reading,
+                          background: row.background, startTime: row.startTime, endTime: row.endTime,
+                          performerID: row.performerID, romanization: row.romanization)
+                })
+                if !context.labels.isEmpty { voices = context }
             }
             let resolved = page.resolvedSource ?? source
             let exact: LibraryPassageSource
@@ -68,6 +87,15 @@ struct LyricBook: FileDocument, Codable, Equatable, Sendable {
             kind = .quote; title = quote.title; artist = quote.artist; album = ""; edition = "摘句"
             origin = quote.passage
             lines = [Line(original: quote.text, translation: quote.translation)]
+        }
+
+        var readingRows: [ReadingRow] {
+            let presentation = voices ?? PassageVoicePresentation(lines: lines.enumerated().map { index, line in
+                .init(id: index, original: line.original, performerID: line.performer)
+            })
+            let visible = lines.indices.filter { presentation.visibleID(for: $0) == $0 }
+            let labels = presentation.labelsAtChanges(in: visible)
+            return visible.map { ReadingRow(id: $0, line: lines[$0], voice: labels[$0]) }
         }
 
         var titleInContents: String {
@@ -98,7 +126,10 @@ struct LyricBook: FileDocument, Codable, Equatable, Sendable {
 
     @discardableResult
     mutating func add(_ chapter: Chapter) -> UUID {
-        if let existing = chapters.first(where: { $0.kind == chapter.kind && $0.origin == chapter.origin && $0.lines == chapter.lines }) { return existing.id }
+        if let index = chapters.firstIndex(where: { $0.kind == chapter.kind && $0.origin == chapter.origin && $0.lines == chapter.lines }) {
+            if chapters[index].voices == nil { chapters[index].voices = chapter.voices }
+            return chapters[index].id
+        }
         chapters.append(chapter)
         return chapter.id
     }

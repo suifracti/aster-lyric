@@ -64,14 +64,11 @@ enum LyricBookPrint {
                     type(chapter.byline, size: 12, color: green), type(chapter.edition, size: 9, color: muted)]), after: 18, keepNext: true))
             }
             if chapter.kind == .song, !chapter.note.isEmpty { blocks.append(Block(text: type(chapter.note, size: 11, color: green), after: 15)) }
-            let multipleVoices = Set(chapter.lines.compactMap(\.performer)).count > 1
-            var lastVoice: String?
-            for line in chapter.lines {
-                if multipleVoices, let voice = line.performer, voice != lastVoice {
-                    blocks.append(Block(text: type("声部 \(voice)", size: 9, color: green), after: 3, keepNext: true))
+            for row in chapter.readingRows {
+                if let voice = row.voice {
+                    blocks.append(Block(text: type(voice, size: 9, color: green), after: 3, keepNext: true))
                 }
-                lastVoice = line.performer
-                let text = lineText(line, book: book, quote: chapter.kind == .quote)
+                let text = lineText(row.line, book: book, quote: chapter.kind == .quote)
                 blocks.append(Block(text: text, after: chapter.kind == .song ? 7 : 9))
             }
             if chapter.kind == .quote {

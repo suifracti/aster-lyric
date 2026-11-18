@@ -1001,6 +1001,16 @@ struct LibraryPassagePage: Sendable {
         var performerID: String?
         var romanization: String?
 
+        var lyricLine: LyricLine {
+            LyricLine(timestamp: startTime ?? 0, originalText: original, endTime: endTime,
+                      translationText: translation, romajiText: romanization, performerID: performerID,
+                      timedSpans: timedSpans, backgroundText: background)
+        }
+
+        fileprivate var companions: [String] {
+            [translation, reading, background, romanization].map { $0 ?? "" }
+        }
+
         func matches(_ text: String) -> Bool {
             guard !text.isEmpty else { return false }
             let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]
@@ -1046,6 +1056,51 @@ struct LibraryPassagePage: Sendable {
         }
         if let preferred, lines.contains(where: { $0.id == preferred && same($0) }) { return preferred }
         return lines.first(where: same)?.id
+    }
+}
+
+/// Voice labels and visible row aliases in the original edition's line IDs.
+struct PassageVoicePresentation: Codable, Equatable, Sendable {
+    private(set) var labels: [Int: String] = [:]
+    private(set) var aliases: [Int: Int] = [:]
+
+    init(lines: [LibraryPassagePage.Line]) {
+        let voices = LyricsTimeline.VoicePresentation(in: lines.map { line in
+            var lyric = line.lyricLine
+            if line.startTime == nil { lyric.endTime = nil }
+            return lyric
+        })
+        for index in lines.indices {
+            let line = lines[index]
+            labels[line.id] = voices.label(at: index)
+            // A co-sung row can still carry its own translation, reading or backing.
+            if let first = voices.duplicates[index],
+               zip(lines[first].companions, line.companions).allSatisfy({ $1.isEmpty || $0 == $1 }) {
+                aliases[line.id] = lines[first].id
+            }
+        }
+    }
+
+    init(excerptLabel: String?) {
+        labels[0] = excerptLabel
+    }
+
+    func label(for id: Int) -> String? { labels[id] }
+    func visibleID(for id: Int) -> Int { aliases[id] ?? id }
+
+    func labelsAtChanges(in ids: [Int]) -> [Int: String] {
+        var previous: String?
+        var changes: [Int: String] = [:]
+        for id in ids {
+            let label = label(for: id)
+            if label != previous { changes[id] = label }
+            previous = label
+        }
+        return changes
+    }
+
+    func visibleLines(in lines: [LibraryPassagePage.Line]) -> [LibraryPassagePage.Line] {
+        lines.filter { aliases[$0.id] == nil }
     }
 }
 

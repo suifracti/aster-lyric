@@ -170,11 +170,8 @@ extension LibraryPassagePage {
         let timed = Set(lines.indices.filter { lines[$0].startTime != nil })
         let document = LyricsDocument(identity: TrackIdentity(track: track), title: entry.title, artist: entry.artist,
             album: entry.album, duration: entry.duration > 0 ? entry.duration : nil,
-            lines: lines.map { line in
-                LyricLine(timestamp: line.startTime ?? 0, originalText: line.original, endTime: line.endTime,
-                          translationText: line.translation, romajiText: line.romanization, performerID: line.performerID,
-                          timedSpans: line.timedSpans, backgroundText: line.background)
-            }, isSynchronized: !lines.isEmpty && timed.count == lines.count, source: .manualImport, language: language,
+            lines: lines.map(\.lyricLine), isSynchronized: !lines.isEmpty && timed.count == lines.count,
+            source: .manualImport, language: language,
             explicitlyTimedLineIndices: timed.isEmpty ? nil : timed)
         return PortableLyricsEdition(document: document, title: entry.title, originalSource: originalSource, originalLocked: originalLocked,
             translationLanguage: translationLanguage, translationSource: translationSource, translationLocked: translationLocked,

@@ -8,6 +8,7 @@ struct LibraryPassageReader: View {
     var close: (() -> Void)?
     @Environment(\.newDocument) private var newDocument
     @State private var page: LibraryPassagePage?
+    @State private var voices = PassageVoicePresentation(lines: [])
     @State private var failure: String?
     @State private var find: String
     @State private var matches: [Int] = []
@@ -32,6 +33,7 @@ struct LibraryPassageReader: View {
 
     private var currentMatch: Int? { matches.indices.contains(cursor) ? matches[cursor] : nil }
     private var focusedLine: Int? { returnedLine ?? currentMatch }
+    private var visibleFocus: Int? { focusedLine.map { voices.visibleID(for: $0) } }
 
     private var archiveTarget: LibraryPassageTarget {
         guard let page else { return .init(trackKey: target.trackKey) }
@@ -41,7 +43,8 @@ struct LibraryPassageReader: View {
     var body: some View {
         Group {
             if let page, let recall {
-                LyricRecallView(page: page, session: recall, showsTranslation: showsTranslation, showsReading: showsReading) { line in
+                LyricRecallView(page: page, session: recall, voices: voices,
+                                showsTranslation: showsTranslation, showsReading: showsReading) { line in
                     updateMatches(preferred: line)
                     returnedLine = line
                     self.recall = nil
@@ -122,13 +125,13 @@ struct LibraryPassageReader: View {
                                 }
                             }
                             .padding(.horizontal, 10).padding(.bottom, 18)
-                            ForEach(page.lines) { line in row(line, page: page).id(line.id) }
+                            ForEach(voices.visibleLines(in: page.lines)) { line in row(line, page: page).id(line.id) }
                         }
                         .frame(maxWidth: 680, alignment: .leading)
                         .padding(.horizontal, 19).padding(.vertical, 22).frame(maxWidth: .infinity)
                     }
-                    .task(id: focusedLine) {
-                        guard let id = focusedLine else { return }
+                    .task(id: visibleFocus) {
+                        guard let id = visibleFocus else { return }
                         await Task.yield()
                         if !Task.isCancelled { scroll.scrollTo(id, anchor: .center) }
                     }
@@ -147,18 +150,21 @@ struct LibraryPassageReader: View {
     }
 
     private func row(_ line: LibraryPassagePage.Line, page: LibraryPassagePage) -> some View {
-        let selected = focusedLine == line.id
+        let selected = visibleFocus == line.id
+        let sourceLine = selected && focusedLine != line.id
+            ? page.lines.first(where: { $0.id == focusedLine }) ?? line : line
         return HStack(alignment: .top, spacing: 8) {
-            PassageLineText(line: line, showsTranslation: showsTranslation || selected, showsReading: showsReading || selected)
+            PassageLineText(line: line, showsTranslation: showsTranslation || selected, showsReading: showsReading || selected,
+                            voiceLabel: voices.label(for: line.id))
             Spacer(minLength: 8)
             if !line.original.isEmpty {
-                KeepLyricButton(entry: page.quote(line))
+                KeepLyricButton(entry: page.quote(sourceLine))
                     .opacity(hoveredLine == line.id || selected ? 1 : 0.45)
             }
             if [line.original, line.translation, line.reading, line.background].compactMap({ $0 }).contains(where: { !$0.isEmpty }) {
                 // The found line can go straight into a songbook, keeping its version and line number.
                 LyricBookOffer(label: "收录这句", title: page.entry.title, compact: true) {
-                    [.init(page: page, source: target.source, excerpt: line)]
+                    [.init(page: page, source: target.source, excerpt: sourceLine)]
                 }
                 .buttonStyle(.plain).menuStyle(.borderlessButton).fixedSize()
                 .opacity(hoveredLine == line.id || selected ? 1 : 0)
@@ -175,7 +181,7 @@ struct LibraryPassageReader: View {
                 Button("从这句接下去", systemImage: "text.bubble") { startRecall(page, anchor: line.id) }
             }
             if [line.original, line.translation, line.reading, line.background].compactMap({ $0 }).contains(where: { !$0.isEmpty }) {
-                LyricBookOffer(label: "收录这句", title: page.entry.title) { [.init(page: page, source: target.source, excerpt: line)] }
+                LyricBookOffer(label: "收录这句", title: page.entry.title) { [.init(page: page, source: target.source, excerpt: sourceLine)] }
             }
         }
     }
@@ -193,6 +199,7 @@ struct LibraryPassageReader: View {
             let loaded = try await library.readPassage(target, recordOpening: false)
             try Task.checkCancellation()
             if let loaded, !loaded.lines.isEmpty {
+                voices = PassageVoicePresentation(lines: loaded.lines)
                 page = loaded
                 let savedPosition = target.savedQuote?.originalVersionID == loaded.originalVersionID
                     && loaded.matchesOriginalVersion ? target.lineIndex : nil
@@ -216,7 +223,8 @@ struct LibraryPassageReader: View {
     }
 
     private func startRecall(_ page: LibraryPassagePage, anchor: Int?) {
-        recall = LyricRecallSession(lines: page.lines, anchor: anchor)
+        recall = LyricRecallSession(lines: voices.visibleLines(in: page.lines),
+                                    anchor: anchor.map { voices.visibleID(for: $0) })
         if recall != nil { recallNotice = nil }
         else if let anchor, page.lines.first(where: { $0.id == anchor })?.original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
             recallNotice = "这行只有译文，可以从另一句原词开始。"
@@ -225,8 +233,8 @@ struct LibraryPassageReader: View {
 
     private func updateMatches(preferred: Int? = nil) {
         let term = find.trimmingCharacters(in: .whitespacesAndNewlines)
-        matches = term.isEmpty ? [] : page?.lines.filter { $0.matches(term) }.map(\.id) ?? []
-        cursor = preferred.flatMap { matches.firstIndex(of: $0) } ?? 0
+        matches = term.isEmpty ? [] : page.map { voices.visibleLines(in: $0.lines).filter { $0.matches(term) }.map(\.id) } ?? []
+        cursor = preferred.flatMap { matches.firstIndex(of: voices.visibleID(for: $0)) } ?? 0
     }
 
     private func changeFind(_ text: String) {
@@ -253,9 +261,11 @@ struct PassageLineText: View {
     let line: LibraryPassagePage.Line
     let showsTranslation: Bool
     let showsReading: Bool
+    var voiceLabel: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
+            if let voiceLabel { PassageVoiceLabel(text: voiceLabel) }
             if !line.original.isEmpty {
                 Text(line.original).font(.system(size: 17, weight: .medium, design: .serif))
             }
@@ -273,5 +283,13 @@ struct PassageLineText: View {
             }
         }
         .textSelection(.enabled)
+    }
+}
+
+struct PassageVoiceLabel: View {
+    let text: String
+
+    var body: some View {
+        Text(text).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
     }
 }
