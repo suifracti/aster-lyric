@@ -694,22 +694,40 @@ final class V3SceneLayerTests: XCTestCase {
         let settings = AppSettingsStore(defaults: defaults)
         settings.v3LyricStyle = .karaoke
         settings.v3PlaybackPresentation = .standard
+        settings.selectV3Room(.stars)
 
-        let look = V3Room.stars.look(accent: .white)
-        settings.applySceneLayer(lyricStyle: look.lyricStyle, playback: look.playback, progress: look.progress)
-        XCTAssertEqual(settings.v3LyricStyle, .lightColor)
-        XCTAssertEqual(settings.v3PlaybackPresentation, .windowEdge)
-        XCTAssertEqual(AppSettingsStore(defaults: defaults).v3LyricStyle, .karaoke, "the scene's style is not saved")
+        let stars = V3ListeningPresentation(settings: settings, room: .stars)
+        XCTAssertEqual(stars.scene, .focusedLyrics)
+        XCTAssertEqual(stars.lyricStyle, .lightColor)
+        XCTAssertEqual(stars.playback, .windowEdge)
+        XCTAssertEqual(stars.lyricWidth, 1.35)
+        let otherWindow = V3ListeningPresentation(settings: settings, room: .off)
+        XCTAssertEqual(otherWindow.lyricStyle, .karaoke)
+        XCTAssertEqual(otherWindow.playback, .standard)
+        XCTAssertEqual(otherWindow.lyricWidth, 1)
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).v3LyricStyle, .karaoke)
 
-        settings.applySceneLayer(lyricStyle: nil, playback: nil, progress: nil)
-        XCTAssertEqual(settings.v3LyricStyle, .karaoke)
-        XCTAssertEqual(settings.v3PlaybackPresentation, .standard)
+        let preview = V3ListeningPresentation(settings: settings, room: .stars, artworkPreview: .classicGaussian)
+        XCTAssertNil(preview.scene)
+        XCTAssertEqual(preview.renderer, .classicGaussian)
+        XCTAssertEqual(V3ListeningPresentation(settings: settings, room: .stars).scene, .focusedLyrics)
 
-        // A choice made while a scene shows is the user's and survives the scene.
-        settings.applySceneLayer(lyricStyle: .depth, playback: nil, progress: nil)
+        settings.selectLegacyV3Presentation(.classicGaussian)
+        settings.customizeV3Room(.lyricStyle)
         settings.v3LyricStyle = .typewriter
-        settings.applySceneLayer(lyricStyle: nil, playback: nil, progress: nil)
-        XCTAssertEqual(settings.v3LyricStyle, .typewriter)
-        XCTAssertEqual(AppSettingsStore(defaults: defaults).v3LyricStyle, .typewriter)
+        let reopened = AppSettingsStore(defaults: defaults)
+        let customized = V3ListeningPresentation(settings: reopened, room: .stars)
+        XCTAssertNil(customized.scene)
+        XCTAssertEqual(customized.renderer, .classicGaussian)
+        XCTAssertEqual(customized.lyricStyle, .typewriter)
+        XCTAssertEqual(customized.playback, .windowEdge)
+        XCTAssertNotNil(customized.chrome)
+
+        let otherRoomPreview = V3ListeningPresentation(settings: reopened, room: .rain, usesSavedRoomChoices: false)
+        XCTAssertEqual(otherRoomPreview.scene, .originalAmbient)
+        XCTAssertEqual(otherRoomPreview.lyricStyle, .depth)
+        reopened.selectV3Room(.stars)
+        XCTAssertEqual(V3ListeningPresentation(settings: reopened, room: .stars).lyricStyle, .lightColor)
+        XCTAssertEqual(V3ListeningPresentation(settings: reopened, room: .off).lyricStyle, .typewriter)
     }
 }

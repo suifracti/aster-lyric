@@ -1496,6 +1496,13 @@ public struct LyricAgentPresentationMap: Equatable, Sendable {
         return value
     }
 
+    func singerChangeLabel(for performerID: String?, after previousID: String?) -> String? {
+        guard isActive, let performerID, let id = normalizedID(performerID),
+              let index = agentIDs.firstIndex(of: id),
+              previousID.flatMap(normalizedID) != id else { return nil }
+        return Self.displayName(id) ?? "声部 \(index + 1)"
+    }
+
     /// Returns a small visual offset while keeping every line's layout and
     /// timing geometry unchanged. The offset is capped for documents with
     /// more than three distinct opaque IDs.

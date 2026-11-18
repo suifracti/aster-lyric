@@ -193,8 +193,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var openingTranslationComparison = false
     @State private var isVersionPickerPresented = false
     @State private var pinchStartFontSize: CGFloat?
-    @State private var coverAccent: Color?
-    @State private var coverLuminance: Double = 0
+    @State private var coverColors: (url: URL, accent: Color?, luminance: Double)?
+    private var coverAccent: Color? { coverColors?.url == compositionTrack.artworkURL ? coverColors?.accent : nil }
+    private var coverLuminance: Double { coverColors?.url == compositionTrack.artworkURL ? coverColors?.luminance ?? 0 : 0 }
     @State private var coverSubject: V3ArtworkSubject.Analysis?
     @State private var showsListeningKeys = false
     @State private var isFocusMode = false
@@ -211,35 +212,28 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var previewAutomaticSelection: LyricsAutomaticSelection?
     @State private var hoveredStyle: V3ArtworkPresentation?
     @State private var hoveredScene: V3ListeningScene?
-    private var compositionScene: V3ListeningScene? {
-        hoveredStyle == nil ? (sceneLook.listeningScene ?? settings.v3ListeningScene) : hoveredScene
+    private var presentation: V3ListeningPresentation { resolvedPresentation() }
+
+    private func resolvedPresentation(includeArtworkPreview: Bool = true) -> V3ListeningPresentation {
+        V3ListeningPresentation(settings: settings, room: activeScene, accent: coverAccent ?? .white,
+                                usesSavedRoomChoices: scenePreview == nil || scenePreview == settings.v3Room,
+                                artworkPreview: includeArtworkPreview ? hoveredStyle : nil, previewScene: hoveredScene)
     }
-    /// 行宽: the scene's when it has one, else the user's.
-    private var lyricWidthScale: CGFloat { CGFloat(sceneLook.lyricWidth ?? settings.v3LyricWidth) }
-    /// The whole look of the 情境 on show, when the user lets it restyle the window.
-    private var sceneLook: V3SceneLook {
-        guard settings.v3RoomRestyles, activeScene != .off else { return V3SceneLook() }
-        return activeScene.look(accent: coverAccent ?? .white)
-    }
-    /// A scene that changes the layout uses that layout's own renderer, unless it is the user's layout.
-    private var sceneRenderer: V3ArtworkPresentation? {
-        guard let scene = sceneLook.listeningScene, scene != settings.v3ListeningScene else { return nil }
-        return scene.defaultRenderer
-    }
+    private var compositionScene: V3ListeningScene? { presentation.scene }
+    private var compositionStyle: V3ArtworkPresentation { presentation.renderer }
+    private var compositionPlayback: V3PlaybackPresentation { presentation.playback }
+    private var scenePlayerHidden: Bool { compositionPlayback.hidesScenePlayer }
+    private var lyricWidthScale: CGFloat { CGFloat(presentation.lyricWidth) }
+    private var compositionLyricsPosition: String { presentation.lyricsPosition }
     /// 环境光's two scenes, where 光随歌曲 applies.
     private var usesAmbientLight: Bool {
         compositionScene == .originalAmbient || (compositionScene == .flowingField && compositionStyle == .ambientFeathered)
     }
     private var compositionShowsCover: Bool {
-        !settings.v3PlaybackPresentation.replacesSceneCover
+        !compositionPlayback.replacesSceneCover
             && settings.v3ShowsForegroundArtwork(scene: compositionScene, renderer: compositionStyle)
     }
-    private var compositionStyle: V3ArtworkPresentation { hoveredStyle ?? sceneRenderer ?? settings.v3ArtworkPresentation }
     private var compositionArtworkPosition: String { settings.v3PreviewPosition(for: compositionStyle, scene: compositionScene) }
-    private var compositionLyricsPosition: String {
-        (hoveredStyle == nil ? sceneLook.lyricsPosition : nil)
-            ?? settings.v3PreviewLyricsPosition(for: compositionStyle, scene: compositionScene)
-    }
     private var usesArtworkSubjectPlacement: Bool {
         compositionScene == .coverPhoto || (compositionScene == nil && compositionStyle == .stage)
     }
@@ -275,9 +269,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var lastWindowExitPoint: CGPoint?
 
     private var playbackDetailsVisible: Bool {
-        guard !settings.v3ScenePlayerHidden else { return false }
+        guard !scenePlayerHidden else { return false }
         return V3ResponsiveGeometry.playbackDetailsVisible(
-            hoverOnly: settings.v3PlaybackDetailsOnHover,
+            hoverOnly: compositionPlayback == .onHover,
             pointerInRegion: pointerRevealsPlayback,
             interacting: isPlaybackInteracting,
             panelPresented: false
@@ -297,7 +291,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     }
 
     private var playbackVisibility: V3PlaybackVisibility {
-        V3PlaybackVisibility(visible: playbackDetailsVisible, reduceMotion: reduceMotion)
+        V3PlaybackVisibility(visible: isCompositionPreview || playbackDetailsVisible, reduceMotion: reduceMotion)
     }
 
     private var expandsHiddenArtwork: Bool {
@@ -351,12 +345,17 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         }
     }
 
-    private var usesDocumentComposition: Bool {
-        compositionScene != nil || compositionStyle == .lyricsOnly || compositionStyle == .albumPoster
-    }
-
     private var compositionTrack: Track { liveOnly ? state.currentTrack : state.displayedTrack }
     private var isCompositionPreview: Bool { !liveOnly && state.isShowingSearchPreview }
+    private var compositionLyrics: [LyricLine] { liveOnly ? state.liveLyrics : state.lyrics }
+    private var compositionIndex: Int? { liveOnly ? state.liveCurrentLineIndex : state.currentLineIndex }
+    private var compositionSynchronized: Bool { liveOnly ? state.liveLyricsAreSynchronized : state.lyricsAreSynchronized }
+
+    private var liveVocalOnsets: [TimeInterval] {
+        guard !liveOnly, settings.v3MusicMotionEnabled, state.liveLyricsAreSynchronized,
+              let index = state.liveCurrentLineIndex, state.liveLyrics.indices.contains(index) else { return [] }
+        return V3VocalOnsets.onsets(of: state.liveLyrics[index])
+    }
 
     private var compositionPreviewLabel: some View {
         Label("歌词预览", systemImage: "doc.text.magnifyingglass")
@@ -371,15 +370,17 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             // Tools never alter the artwork or lyric measurement canvas.
             let canvasWidth = max(1, geometry.size.width)
             ZStack(alignment: .topTrailing) {
-                let isInst = !state.isShowingSearchPreview && state.liveTrackIsMarkedInstrumental
+                let isInst = !isCompositionPreview && state.liveTrackIsMarkedInstrumental
                 AppleMusicImmersiveV3BackdropView(
-                    track: usesDocumentComposition ? compositionTrack : state.currentTrack,
-                    identity: usesDocumentComposition && isCompositionPreview ? nil : state.currentTrackIdentity,
+                    track: compositionTrack,
+                    identity: isCompositionPreview ? nil : state.currentTrackIdentity,
                     isInstrumental: isInst,
                     isPlaying: state.isPlaying,
                     settings: settings,
-                    presentationOverride: hoveredStyle ?? sceneRenderer,
-                    sceneOverride: compositionScene,
+                    artworkPresentation: compositionStyle,
+                    listeningScene: compositionScene,
+                    isArtworkPreview: hoveredStyle != nil,
+                    isDocumentPreview: isCompositionPreview,
                     clock: state.presentationClock,
                     inChorus: settings.v3ChorusEmphasis && chorusNow,
                     chorusSwapsMaterial: settings.v3ChorusSwapsMaterial && chorusNow
@@ -392,7 +393,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                                              dayTint: settings.v3DayTint))
                 .blur(radius: librarySearch.isPresented ? 5 : 0)
 
-                if settings.v3AmbientLyricMotion != .off, usesAmbientLight, !isFocusMode {
+                if settings.v3AmbientLyricMotion != .off, usesAmbientLight, !isFocusMode, !isCompositionPreview {
                     V3AmbientMotionLayer(state: state, motion: settings.v3AmbientLyricMotion,
                                          artworkURL: compositionTrack.artworkURL)
                         .frame(width: geometry.size.width, height: geometry.size.height)
@@ -417,7 +418,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .blur(radius: librarySearch.isPresented ? 5 : 0)
                 }
-                if settings.v3PlaybackPresentation == .vinyl, !isFocusMode, let cover = foregroundCover, cover.isLargeEnough {
+                if compositionPlayback == .vinyl, !isFocusMode, let cover = foregroundCover, cover.isLargeEnough {
                     V3VinylDiscLayer(state: state, cover: cover.frame, accent: coverAccent ?? .white)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .blur(radius: librarySearch.isPresented ? 5 : 0)
@@ -445,11 +446,11 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 .blur(radius: librarySearch.isPresented ? 5 : 0)
                 .allowsHitTesting(!librarySearch.isPresented)
 
-                if V3PlaybackPresentation.additions.contains(settings.v3PlaybackPresentation),
+                if V3PlaybackPresentation.additions.contains(compositionPlayback),
                    !isFocusMode, !librarySearch.isPresented, !isCompositionPreview {
                     V3PlaybackStyleOverlay(state: state, settings: settings,
-                                           presentation: settings.v3PlaybackPresentation,
-                                           cover: foregroundCover, accent: coverAccent)
+                                           presentation: compositionPlayback,
+                                           cover: foregroundCover, accent: uiAccent)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
 
@@ -460,9 +461,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
                 if settings.v3CoverCaption, hoveredStyle == nil, !librarySearch.isPresented,
                    let cover = foregroundCover, cover.isLargeEnough {
-                    let index = state.liveLyricsAreSynchronized && !state.isShowingSearchPreview ? state.currentLineIndex : nil
+                    let index = compositionSynchronized ? compositionIndex : nil
                     V3CoverCaption(cover: cover,
-                                   text: index.flatMap { state.lyrics.indices.contains($0) ? state.lyrics[$0].originalText : nil },
+                                   text: index.flatMap { compositionLyrics.indices.contains($0) ? compositionLyrics[$0].originalText : nil },
                                    lineIndex: index)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
@@ -481,19 +482,20 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     .transition(.opacity.animation(.easeInOut(duration: 0.8)))
                 }
 
-                if settings.v3PlayerProgressOnCover, !settings.v3ScenePlayerHidden, !isFocusMode,
+                if settings.v3PlayerProgressOnCover, !scenePlayerHidden, !isFocusMode, !isCompositionPreview,
                    let cover = foregroundCover, cover.isLargeEnough {
-                    V3CoverEdgeProgress(state: state, cover: cover, accent: coverAccent ?? .white)
+                    V3CoverEdgeProgress(state: state, cover: cover, accent: uiAccent ?? .white)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .blur(radius: librarySearch.isPresented ? 5 : 0)
                 }
 
-                if settings.v3EdgeProgressEnabled && !isFocusMode && !librarySearch.isPresented {
+                if compositionPlayback == .windowEdge && !isFocusMode && !librarySearch.isPresented && !isCompositionPreview {
                     V3WindowEdgePlaybackOverlay(
                         state: state,
                         colorHex: settings.v3EdgeProgressColorHex,
                         colorMode: settings.v3EdgeProgressColorMode,
                         coverLuminance: coverLuminance,
+                        coverAccent: coverAccent ?? .white,
                         exitPoint: lastWindowExitPoint,
                         pointerInsideWindow: isPointerInsideCanvas,
                         // Priority: an open panel, then the toolbar, then the edge.
@@ -638,16 +640,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
             }
             .modifier(V3SceneDriver(scene: settings.v3Room, context: roomContext, bpm: $sceneBPM))
-            .environment(\.v3SceneChrome, sceneLook.chrome)
-            // The scene's lyric style and player, shown without saving over the user's own.
-            .onChange(of: sceneLook, initial: true) { _, look in
-                settings.applySceneLayer(lyricStyle: look.lyricStyle, playback: look.playback, progress: look.progress)
-            }
-            .onChange(of: state.currentLineIndex, initial: true) { _, index in
-                // 人声包络: the light can follow these word starts when no sound is heard.
-                V3VocalOnsets.current = settings.v3MusicMotionEnabled && state.liveLyricsAreSynchronized
-                    ? V3VocalOnsets.onsets(of: index.flatMap { state.lyrics.indices.contains($0) ? state.lyrics[$0] : nil })
-                    : []
+            .environment(\.v3SceneChrome, presentation.chrome)
+            .onChange(of: liveVocalOnsets, initial: true) { _, onsets in
+                if !liveOnly { V3VocalOnsets.current = onsets }
             }
             .onChange(of: toolbarPanelIsPresented) { _, presented in
                 if !presented && !isPointerInToolbarRegion { toolsVisible = false }
@@ -725,12 +720,11 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             library.prefetchCurrentTrack(stableKey: state.liveTrackIdentity?.stableKey)
         }
         .task(id: compositionTrack.artworkURL) {
-            guard let url = compositionTrack.artworkURL else { coverAccent = nil; coverLuminance = 0; return }
+            guard let url = compositionTrack.artworkURL else { coverColors = nil; return }
             let palette = await LyricIslandArtworkColors.palette(for: url)
             guard !Task.isCancelled else { return }
-            coverAccent = LyricIslandArtworkColors.listeningAccent(palette)
-            coverLuminance = palette.luminance
-            if !isCompositionPreview {
+            coverColors = (url, LyricIslandArtworkColors.listeningAccent(palette), palette.luminance)
+            if !isCompositionPreview && !liveOnly {
                 let detail = await V3CoverDetail.detail(for: url) ?? 0
                 guard !Task.isCancelled else { return }
                 V3SceneFamily.applyAutomaticAmbient(settings: settings, palette: palette, detail: detail)
@@ -743,11 +737,11 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             guard !Task.isCancelled else { return }
             coverSubject = subject
         }
-        .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: liveOnly ? state.liveLyrics : state.lyrics))
+        .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: compositionLyrics))
         .environment(\.v3PlaybackInteractionChanged, playbackInteractionRelay)
         .environment(\.lyricIslandScene, compositionScene)
         .environment(\.v3PlayerBarOptions, V3PlayerBarOptions(
-            progress: settings.v3ProgressStyle, buttonsOnHover: settings.v3PlayerButtonsOnHover,
+            progress: presentation.progress, buttonsOnHover: settings.v3PlayerButtonsOnHover,
             titleMarquee: settings.v3PlayerTitleMarquee,
             progressOnCover: settings.v3PlayerProgressOnCover && foregroundCover?.isLargeEnough == true))
         .environment(\.v3TitleMarquee, settings.v3PlayerTitleMarquee)
@@ -811,7 +805,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     // Only the selected branch is constructed: there are no five hidden lyric trees.
     private func fieldReadingLayout(in geometry: GeometryProxy) -> some View {
         let width = min(820, max(1, geometry.size.width - (geometry.size.width < 760 ? 48 : 80)))
-        let footerHeight: CGFloat = isCompositionPreview || !settings.v3ScenePlayerHidden ? 44 : 0
+        let footerHeight: CGFloat = isCompositionPreview || !scenePlayerHidden ? 44 : 0
         let height = LyricIslandSceneBudget.fieldReadingHeight(canvasHeight: geometry.size.height,
                                                                footerHeight: footerHeight)
         return VStack(alignment: .leading, spacing: 16) {
@@ -858,7 +852,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         let compact = geometry.size.width < 760
         let placement = photographicReadingPlacement(canvas: geometry.size)
         let readingWidth = min(760 * lyricWidthScale, max(1, geometry.size.width * (compact ? 0.90 : min(0.94, placement.widthFraction * lyricWidthScale))))
-        let playerHeight: CGFloat = settings.v3ScenePlayerHidden ? 0 : 44
+        let playerHeight: CGFloat = scenePlayerHidden ? 0 : 44
         let readingHeight = max(1, min(geometry.size.height * 0.66 - 56,
             geometry.size.height - 76 - 32 - playerHeight - 12))
         let alignment: Alignment = placement.position == "left" ? .bottomLeading
@@ -923,7 +917,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         // cover, or in a small window, the name is a heading above a rule.
         let headingInColumn = !compact && compositionShowsCover
         let headerHeight: CGFloat = headingInColumn ? 0 : compact ? 104 : 80
-        let footerHeight: CGFloat = isCompositionPreview || !settings.v3ScenePlayerHidden ? 44 : 0
+        let footerHeight: CGFloat = isCompositionPreview || !scenePlayerHidden ? 44 : 0
         let readingHeight = LyricIslandSceneBudget.linerReadingHeight(
             canvasHeight: geometry.size.height, headerHeight: headerHeight, footerHeight: footerHeight)
         let heading = VStack(alignment: .leading, spacing: 6) {
@@ -976,12 +970,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private func sceneTransport(width: CGFloat) -> some View {
         Group {
             if isCompositionPreview { compositionPreviewLabel }
-            else if !settings.v3ScenePlayerHidden {
+            else if !scenePlayerHidden {
                 AppleMusicImmersiveV3FocusTransportControls(state: state, reduceMotion: reduceMotion)
                     .reportsV3PlaybackRegion()
                     .modifier(playbackVisibility)
             }
-        }.frame(width: max(1, width), height: isCompositionPreview || !settings.v3ScenePlayerHidden ? 44 : 0)
+        }.frame(width: max(1, width), height: isCompositionPreview || !scenePlayerHidden ? 44 : 0)
     }
 
     @ViewBuilder
@@ -992,7 +986,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             } else if V3ResponsiveGeometry.foregroundLayout(
                 canvasSize: geometry.size, automaticLyricsFocus: false
             ) == .portrait {
-                portraitLayout(in: geometry, usesDisplayedTrack: true)
+                portraitLayout(in: geometry)
             } else {
                 albumPosterLayout(in: geometry)
             }
@@ -1076,7 +1070,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         let compact = isCompact(for: geometry.size)
         let readingWidth = min((compositionScene == .focusedLyrics ? 760 : 940) * lyricWidthScale, max(1, geometry.size.width - (compact ? 56 : 112)))
         let headerHeight: CGFloat = hidesArtwork ? (compact ? 48 : 56) : (compact ? 64 : 76)
-        let footerHeight: CGFloat = settings.v3ScenePlayerHidden && !isCompositionPreview ? 0 : 68
+        let footerHeight: CGFloat = scenePlayerHidden && !isCompositionPreview ? 0 : 68
         let lyricHeight = max(1, geometry.size.height - 100 - headerHeight - footerHeight - 28)
 
         return VStack(spacing: 14) {
@@ -1136,7 +1130,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
             trackPlaybackDetails(width: max(1, metrics.artworkWidth - cardInset * 2),
                                  titleSize: compact ? 22 : 28, alignment: .leading,
-                                 progressDensity: compact ? .small : .medium, usesDisplayedTrack: true)
+                                 progressDensity: compact ? .small : .medium)
                 .modifier(V3PlaybackVisibility(visible: isCompositionPreview || playbackDetailsVisible, reduceMotion: reduceMotion))
         }
         .padding(cardInset)
@@ -1162,12 +1156,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .padding(.bottom, metrics.verticalPadding)
     }
 
-    private func portraitLayout(in geometry: GeometryProxy, usesDisplayedTrack: Bool = false) -> some View {
+    private func portraitLayout(in geometry: GeometryProxy) -> some View {
         let metrics = V3ResponsiveGeometry.portraitMetrics(
             canvasSize: geometry.size, artworkScale: foregroundArtworkScale
         )
         let cover = ArtworkView(
-            track: usesDisplayedTrack ? compositionTrack : state.currentTrack, size: metrics.coverSize,
+            track: compositionTrack, size: metrics.coverSize,
             showsAlbumLabel: false, cornerRadiusRatio: foregroundArtworkCornerRadiusRatio,
             preservesCompleteArtwork: true
         )
@@ -1185,9 +1179,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .frame(width: metrics.coverColumnWidth, height: metrics.headerHeight - metrics.headerInset * 2)
         let details = trackPlaybackDetails(
             width: metrics.metadataWidth, titleSize: 26,
-            alignment: .leading, progressDensity: .medium, usesDisplayedTrack: usesDisplayedTrack
+            alignment: .leading, progressDensity: .medium
         )
-        .modifier(V3PlaybackVisibility(visible: (usesDisplayedTrack && isCompositionPreview) || playbackDetailsVisible, reduceMotion: reduceMotion))
+        .modifier(V3PlaybackVisibility(visible: isCompositionPreview || playbackDetailsVisible, reduceMotion: reduceMotion))
 
         return VStack(spacing: metrics.gap) {
             HStack(spacing: metrics.headerGap) {
@@ -1216,19 +1210,19 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private func trackPlaybackDetails(
         width: CGFloat, titleSize: CGFloat, alignment: HorizontalAlignment,
         progressDensity: AppleMusicImmersiveV3ProgressDensity,
-        usesDisplayedTrack: Bool = false
+        progressMaxWidth: CGFloat? = nil
     ) -> some View {
         VStack(alignment: alignment, spacing: 10) {
             TrackMetadataView(
-                track: usesDisplayedTrack ? compositionTrack : state.currentTrack, titleSize: titleSize,
+                track: compositionTrack, titleSize: titleSize,
                 alignment: alignment, presentation: .v3Immersive
             )
-            if usesDisplayedTrack && isCompositionPreview {
+            if isCompositionPreview {
                 compositionPreviewLabel
             } else {
                 AppleMusicImmersiveV3TransportControls(
                     state: state, alignment: alignment,
-                    progressDensity: progressDensity, progressMaxWidth: nil
+                    progressDensity: progressDensity, progressMaxWidth: progressMaxWidth
                 )
             }
         }
@@ -1531,7 +1525,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         return VStack(alignment: .center, spacing: 0) {
             if showsForegroundArtwork {
                 ArtworkView(
-                    track: state.currentTrack,
+                    track: compositionTrack,
                     size: coverSize,
                     showsAlbumLabel: false,
                     cornerRadiusRatio: 0.06,
@@ -1565,23 +1559,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             } else {
                 Spacer(minLength: 0)
 
-                VStack(alignment: textAlignment, spacing: compact ? 10 : 14) {
-                    TrackMetadataView(
-                        track: state.currentTrack,
-                        titleSize: compact ? 22 : 26,
-                        alignment: textAlignment,
-                        presentation: .v3Immersive
-                    )
-
-                    AppleMusicImmersiveV3TransportControls(
-                        state: state,
-                        alignment: textAlignment,
-                        progressDensity: progressDensity,
-                        progressMaxWidth: progressDensity == .small
-                            ? min(width, LyricsDesignTokens.Progress.smallMaxWidth)
-                            : nil
-                    )
-                }
+                trackPlaybackDetails(width: width, titleSize: compact ? 22 : 26, alignment: textAlignment,
+                                     progressDensity: progressDensity, progressMaxWidth: progressDensity == .small
+                                        ? min(width, LyricsDesignTokens.Progress.smallMaxWidth) : nil)
                 .padding(.horizontal, compact ? 14 : 16)
                 .padding(.vertical, compact ? 12 : 14)
                 .frame(maxWidth: width, alignment: columnAlignment)
@@ -1612,7 +1592,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         stage: Bool = false
     ) -> some View {
         // Rows read 行宽 when they lay out; set it before they do, and rebuild them when it changes.
-        let _ = { V3LyricWidth.scale = lyricWidthScale }()
         return VStack(spacing: 8) {
         AppleMusicImmersiveV3LyricsViewport(
             state: state,
@@ -1624,9 +1603,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             stage: stage
         )
         .equatable()
-        .id(lyricWidthScale)
+        .environment(\.v3LyricWidthScale, lyricWidthScale)
+        .environment(\.v3LyricStyle, presentation.lyricStyle)
         .environmentObject(settings)
-        .environment(\.v3PreviewPresentation, hoveredStyle)
+        .environment(\.v3PreviewPresentation, compositionStyle)
         .environment(\.lyricIslandScene, compositionScene)
         .simultaneousGesture(MagnifyGesture()
             .onChanged { value in
@@ -1702,11 +1682,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         case .resetOffset:
             _ = settings.lyricsOffsetStore.resetActiveValue(); showLyricNotice("偏移归零")
         case .blurFine(let delta):
-            settings.v3BackdropBlurRadius = min(100, max(0, settings.v3BackdropBlurRadius + delta))
-            showLyricNotice("模糊 \(Int(settings.v3BackdropBlurRadius))%")
+            let blur = visualControls.blur
+            blur.wrappedValue = min(100, max(0, blur.wrappedValue + delta))
+            showLyricNotice("模糊 \(Int(blur.wrappedValue))%")
         case .blurCycle:
-            settings.v3BackdropBlurRadius = V3LyricActions.nextBlurPreset(after: settings.v3BackdropBlurRadius)
-            showLyricNotice("模糊 \(Int(settings.v3BackdropBlurRadius))%")
+            let blur = visualControls.blur
+            blur.wrappedValue = V3LyricActions.nextBlurPreset(after: blur.wrappedValue)
+            showLyricNotice("模糊 \(Int(blur.wrappedValue))%")
         case .focus:
             isFocusMode.toggle(); dismissPinnedToolbarPanel()
             showLyricNotice(isFocusMode ? "专注模式" : "退出专注模式")
@@ -1991,38 +1973,37 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     /// What the 情境 scene needs from the song; built only while one is chosen.
     private var roomContext: V3RoomContext {
         guard settings.v3Room != .off || scenePreview != nil else { return V3RoomContext() }
-        let synced = state.lyricsAreSynchronized
-        let index = synced ? state.currentLineIndex : nil
-        let text = index.flatMap { state.lyrics.indices.contains($0) ? state.lyrics[$0].originalText : nil } ?? ""
-        return V3RoomContext(chorus: chorusNow, lineIndex: index, lineCount: state.lyrics.count,
-                             stanza: activeScene == .book ? V3RoomContext.stanza(of: index, in: state.lyrics) : 0,
+        let index = compositionSynchronized ? compositionIndex : nil
+        let text = index.flatMap { compositionLyrics.indices.contains($0) ? compositionLyrics[$0].originalText : nil } ?? ""
+        return V3RoomContext(chorus: chorusNow, lineIndex: index, lineCount: compositionLyrics.count,
+                             stanza: activeScene == .book ? V3RoomContext.stanza(of: index, in: compositionLyrics) : 0,
                              currentLine: activeScene == .polaroid ? text : "",
-                             trackKey: TrackIdentity(track: state.currentTrack).stableKey,
-                             spotifyTrackID: state.currentTrack.spotifyId.flatMap(SpotifyPublicArtwork.trackID(from:)),
+                             trackKey: TrackIdentity(track: compositionTrack).stableKey,
+                             spotifyTrackID: compositionTrack.spotifyId.flatMap(SpotifyPublicArtwork.trackID(from:)),
                              opensOnChorus: settings.v3RoomOpensOnChorus,
                              accent: coverAccent ?? .white, luminance: coverLuminance,
-                             artworkURL: state.currentTrack.artworkURL,
-                             song: [.polaroid, .stars].contains(settings.v3Room) ? roomSong : nil)
+                             artworkURL: compositionTrack.artworkURL,
+                             song: [.polaroid, .stars].contains(activeScene) ? roomSong : nil)
     }
 
     private var roomSong: V3RoomContext.Song {
-        let track = state.currentTrack
-        let hook = V3RoomContext.hook(in: state.lyrics)
+        let track = compositionTrack
+        let hook = V3RoomContext.hook(in: compositionLyrics)
         return V3RoomContext.Song(trackKey: TrackIdentity(track: track).stableKey, title: track.title, artist: track.artist,
-                                  artworkURL: track.artworkURL, lineCount: state.lyrics.count,
+                                  artworkURL: track.artworkURL, lineCount: compositionLyrics.count,
                                   hookLine: hook?.originalText ?? "", hookTranslation: hook?.translationText)
     }
 
     /// The line being sung is in a chorus (repeated lyrics).
     private var chorusNow: Bool {
-        state.lyricsAreSynchronized
-            && LyricsChorus.contains(state.currentLineIndex, lines: state.lyrics, duration: state.currentTrack.duration)
+        compositionSynchronized
+            && LyricsChorus.contains(compositionIndex, lines: compositionLyrics, duration: compositionTrack.duration)
     }
 
     /// 歌词意象 for the line being sung (original and translation).
     private var currentLyricImagery: V3LyricImagery? {
-        guard state.lyricsAreSynchronized, let index = state.currentLineIndex, state.lyrics.indices.contains(index) else { return nil }
-        let line = state.lyrics[index]
+        guard compositionSynchronized, let index = compositionIndex, compositionLyrics.indices.contains(index) else { return nil }
+        let line = compositionLyrics[index]
         return V3LyricImagery.detect([line.originalText, line.translationText])
     }
 
@@ -2295,12 +2276,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             case .translation: translationControls(compact: true)
             case .text: visualControls.textPage
             case .picture:
-                V3ThemeSelectorView(settings: settings, artworkURL: state.currentTrack.artworkURL,
+                V3ThemeSelectorView(settings: settings, artworkURL: compositionTrack.artworkURL,
+                    displayedPresentation: resolvedPresentation(includeArtworkPreview: false),
                     preview: $hoveredStyle, previewScene: $hoveredScene,
                     onConfirm: {}, compact: true)
                 visualControls.blurControls
-                Toggle(settings.v3ListeningScene == .focusedLyrics || settings.v3ListeningScene == .coverPhoto
-                       ? "显示歌曲缩略图" : "显示前景封面", isOn: $settings.v3ShowForegroundArtwork)
+                visualControls.foregroundArtworkControl
                 visualControls.playbackPresentationControls
                 visualControls.backgroundMotionControls
                 V3DisclosureRow(title: "更多画面选项", isExpanded: $settings.v3PictureAdvancedExpanded) {
@@ -2321,7 +2302,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         }
     }
 
-    private var visualControls: V3VisualControls { V3VisualControls(settings: settings) }
+    private var visualControls: V3VisualControls { V3VisualControls(settings: settings, displayedPresentation: presentation) }
 
     /// The cover colour for text and controls, or nil when the user keeps them white.
     private var uiAccent: Color? { settings.v3FollowCoverColor ? coverAccent : nil }

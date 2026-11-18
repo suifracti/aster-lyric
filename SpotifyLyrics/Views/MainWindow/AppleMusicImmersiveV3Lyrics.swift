@@ -49,6 +49,7 @@ private struct V3LyricsCopyRequest: Identifiable {
 
 struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
     @Environment(\.lyricTextAlignment) private var textAlignment
+    @Environment(\.v3LyricWidthScale) private var lyricWidthScale
     let state: PlaybackState
     @State private var renderedSignature: RenderSignature?
     @State private var refreshQueue = RefreshQueue()
@@ -120,7 +121,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
 
     private var isPreview: Bool { !liveOnly && state.isShowingSearchPreview }
     private var hasExplicitInstrumentalMark: Bool {
-        !state.isShowingSearchPreview && state.liveTrackIsMarkedInstrumental
+        !isPreview && state.liveTrackIsMarkedInstrumental
     }
     private var documentLines: [LyricLine] { liveOnly ? state.liveLyrics : state.lyrics }
     private var documentState: LyricsLoadState { liveOnly ? state.liveLyricsState : state.lyricsState }
@@ -471,6 +472,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
         let width = availableWidth
         let isComp = compact
         let scale = presentationScale
+        let lineWidthScale = lyricWidthScale
         let prefs = state.preferences
         let conversion = settings.readingPreferences.scriptConversion
         let userEntries = settings.readingUserDictionary.load()
@@ -485,6 +487,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                     availableWidth: width,
                     compact: isComp,
                     presentationScale: scale,
+                    lyricWidthScale: lineWidthScale,
                     preferences: prefs,
                     language: language,
                     userEntries: userEntries,
@@ -647,11 +650,9 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     }
 
     private func singerChange(at index: Int) -> String? {
-        guard lines.indices.contains(index), voices.voiceIndex(for: lines[index].performerID) != nil,
-              let name = LyricAgentPresentationMap.displayName(lines[index].performerID) else { return nil }
-        if let previous = (0..<index).last(where: { !hiddenDuetRows.contains($0) }),
-           lines[previous].performerID == lines[index].performerID { return nil }
-        return name
+        let previous = (0..<index).last(where: { !hiddenDuetRows.contains($0) })
+        return voices.singerChangeLabel(for: lines[index].performerID,
+                                       after: previous.flatMap { lines[$0].performerID })
     }
 
     private func isParagraphStart(_ index: Int) -> Bool {
@@ -691,7 +692,6 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
         .modifier(V3WaveLag(trigger: currentIndex ?? -1, steps: index - (currentIndex ?? index),
                             enabled: synchronized && bigLineAvailableHeight == nil && readingScene != .linerNotes))
         .environmentObject(settings)
-        .environment(\.v3LyricStyle, settings.v3LyricStyle)
         .environment(\.rubyCorrectionAction, onRuby == nil ? nil : rubyActionRelay)
         .overlay(alignment: .trailing) {
             if loopedLineID == line.id {
@@ -1147,6 +1147,7 @@ enum V3LayoutPrewarmer {
         availableWidth: CGFloat,
         compact: Bool,
         presentationScale: CGFloat,
+        lyricWidthScale: CGFloat,
         preferences: DisplayPreferences,
         language: String?,
         userEntries: [ReadingDictionaryEntry],
@@ -1175,7 +1176,7 @@ enum V3LayoutPrewarmer {
         let lowerBound: CGFloat = compact ? 22 : 28
         let layerPenalty = CGFloat(max(0, layerCount - 2)) * 1.7
         let activeBaseSize = max(lowerBound, CGFloat(upperBound) - layerPenalty) * presentationScale
-        let readableLineWidth = min(max(240, availableWidth), LyricsDesignTokens.readableLyricLineMaxWidth * presentationScale * V3LyricWidth.scale)
+        let readableLineWidth = min(max(240, availableWidth), LyricsDesignTokens.readableLyricLineMaxWidth * presentationScale * lyricWidthScale)
 
         let effectiveText = presentation.originalText
         let hasRuby = preferences.showOriginal && presentation.hasRuby && (isPinyin ? preferences.showPinyin : true) && preferences.kanaDisplayMode == .inlineRuby
@@ -1329,7 +1330,7 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
         )
     }
 
-    private var lyricStyle: V3LyricStyle { settings.v3LyricStyle }
+    @Environment(\.v3LyricStyle) private var lyricStyle
 
     private var rowOpacity: Double {
         guard isSynchronized else { return 1 }
@@ -1405,8 +1406,7 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
             bigLineAvailableHeight: bigLineAvailableHeight
         )
         .equatable()
-        // 光色: the current line is white light with the cover's colour around it.
-        .environment(\.v3CoverAccent, lyricStyle == .lightColor && isActive ? Color.white : coverAccent)
+        // 光色 adds a halo using the same accent as the active line.
         .shadow(color: lyricStyle == .lightColor && isActive ? coverAccent.opacity(0.95) : .clear, radius: 14)
         .shadow(color: lyricStyle == .lightColor && isActive ? coverAccent.opacity(0.6) : .clear, radius: 30)
         .modifier(V3TypewriterReveal(active: lyricStyle == .typewriter && isActive && isSynchronized
@@ -1440,6 +1440,8 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
 private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
     @ObservedObject private var readingCache = V3JapaneseReadingCache.shared
     @Environment(\.v3CoverAccent) private var coverAccent
+    @Environment(\.v3LyricStyle) private var lyricStyle
+    @Environment(\.v3LyricWidthScale) private var lyricWidthScale
     @Environment(\.v3PreviewPresentation) private var previewPresentation
     @Environment(\.v3ExplicitInstrumentalMark) private var hasExplicitInstrumentalMark
     let line: LyricLine
@@ -1611,7 +1613,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
 
     private var readableLineWidth: CGFloat {
         min(bigLineAvailableHeight == nil ? max(240, availableWidth) : max(1, availableWidth),
-            LyricsDesignTokens.readableLyricLineMaxWidth * presentationScale * V3LyricWidth.scale)
+            LyricsDesignTokens.readableLyricLineMaxWidth * presentationScale * lyricWidthScale)
     }
 
     fileprivate static let balancedTextCache: NSCache<NSString, NSString> = {
@@ -1720,7 +1722,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
     }
 
     private var inlineTranslation: String? {
-        guard settings.v3LyricStyle == .inlineTranslation, preferences.showTranslation,
+        guard lyricStyle == .inlineTranslation, preferences.showTranslation,
               let text = line.translationText, !text.isEmpty, !isInstrumentalLine else { return nil }
         return text
     }
@@ -2216,9 +2218,15 @@ private struct V3TypewriterReveal: ViewModifier {
     }
 }
 
+private struct V3LyricWidthScaleKey: EnvironmentKey { static let defaultValue: CGFloat = 1 }
 private struct V3LyricStyleKey: EnvironmentKey { static let defaultValue = V3LyricStyle.standard }
 extension EnvironmentValues {
-    /// Read by views that cannot see the settings store.
+    var v3LyricWidthScale: CGFloat {
+        get { self[V3LyricWidthScaleKey.self] }
+        set { self[V3LyricWidthScaleKey.self] = newValue }
+    }
+
+    /// Resolved for the current window.
     var v3LyricStyle: V3LyricStyle {
         get { self[V3LyricStyleKey.self] }
         set { self[V3LyricStyleKey.self] = newValue }

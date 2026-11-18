@@ -53,7 +53,6 @@ struct LyricLineView: View {
     let visibleLayerCount: Int
     let language: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.lyricAgentPresentationMap) private var agentPresentationMap
     @Environment(\.rubyCorrectionAction) private var correctRuby
 
     init(
@@ -328,7 +327,6 @@ struct LyricLineView: View {
             // still receives the short opacity/layout transition below.
             .blur(radius: reduceMotion ? 0 : emphasis.blurRadius)
             .fixedSize(horizontal: false, vertical: true)
-            .offset(x: CGFloat(agentPresentationMap.horizontalOffset(for: line.performerID)))
             .animation(transitionAnimation, value: isActive)
             .animation(transitionAnimation, value: layoutSignature)
         }

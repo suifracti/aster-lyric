@@ -67,26 +67,12 @@ public enum FloatingLyricsPresentationHelper {
             )
         }
 
-        // Before the first timed line there is no current lyric yet. Keep a
-        // small leading projection instead of expanding to the full document;
-        // the floating window must remain bounded even during an intro.
-        guard let currentIndex, lines.indices.contains(currentIndex) else {
-            let upper = min(lines.count - 1, max(0, followingCount))
-            return FloatingLyricsSelection(
-                visibleIndices: Array(0...upper),
-                currentIndex: nil,
-                autoScroll: false
-            )
-        }
-
-        let lower = max(0, currentIndex - max(0, precedingCount))
-        let upper = min(lines.count - 1, currentIndex + max(0, followingCount))
+        let projection = LyricsTimeline.presentedLyrics(in: lines, currentIndex: currentIndex,
+                                                        before: precedingCount, after: followingCount)
         return FloatingLyricsSelection(
-            visibleIndices: Array(lower...upper),
-            currentIndex: currentIndex,
-            // A paused player still needs the current line to remain in view;
-            // the helper never advances time and only describes the target.
-            autoScroll: true
+            visibleIndices: projection.visible,
+            currentIndex: projection.current,
+            autoScroll: projection.current != nil
         )
     }
 

@@ -193,7 +193,9 @@ struct FloatingLyricsView: View {
 
     private func desktopVerse(_ rows: [LyricLine], width: CGFloat, height: CGFloat, synchronized: Bool = true) -> some View {
         let activeIndex = synchronized ? state.liveCurrentLineIndex : nil
-        let index = activeIndex.flatMap { rows.indices.contains($0) ? $0 : nil } ?? 0
+        let projection = LyricsTimeline.presentedLyrics(in: rows, currentIndex: activeIndex)
+        let index = projection.current ?? 0
+        let nextIndex = projection.visible.first { $0 > index }
         let line = rows[index]
         let preferences = state.preferences
         let palette = FloatingDesktopPalette(settings: settings)
@@ -250,7 +252,7 @@ struct FloatingLyricsView: View {
         let primaryIsOriginal = preferences.showOriginal && primary == original
         let showRuby = (japanese && preferences.showKana) || (isPinyin && preferences.showPinyin)
         let hasRuby = primaryIsOriginal && showRuby && presentation.hasRuby
-        let next = preferences.showOriginal && rows.indices.contains(index + 1) ? rows[index + 1].originalText : nil
+        let next = preferences.showOriginal ? nextIndex.map { rows[$0].originalText } : nil
         let chosen: String? = {
             switch settings.floatingDesktopCompanion {
             case "next": return next
@@ -302,7 +304,7 @@ struct FloatingLyricsView: View {
         }()
         let allowsCompanionMotion = effectiveCompanion != nil && fontSize <= minFontSize + 0.01 && companionWidth > Double(width)
 
-        let end = line.endTime ?? (rows.indices.contains(index + 1) ? rows[index + 1].timestamp : state.currentTrack.duration)
+        let end = line.endTime ?? nextIndex.map { rows[$0].timestamp } ?? state.currentTrack.duration
         let duration = max(1, end - line.timestamp)
         let effectiveSpans = ReadingScriptConverter.convertSpans(
             line.timedSpans ?? [],

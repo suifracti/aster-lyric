@@ -665,6 +665,16 @@ final class ListeningBatchOneTests: XCTestCase {
         ]
         XCTAssertEqual(LyricsTimeline.duetUnisonDuplicates(in: lines), [3: 2])
         XCTAssertEqual(lines[3].performerID, "v1")
+        let voices = LyricAgentPresentationMap(lines: lines)
+        XCTAssertEqual(voices.singerChangeLabel(for: "v1", after: "v2"), "声部 2")
+        XCTAssertNil(voices.singerChangeLabel(for: "v1", after: "v1"))
+        let projection = LyricsTimeline.presentedLyrics(in: lines, currentIndex: 3, before: 2)
+        XCTAssertEqual(projection.current, 2)
+        XCTAssertEqual(projection.visible, [0, 1, 2, 4])
+        let desktop = FloatingLyricsPresentationHelper.selection(lines: lines, currentIndex: 3,
+                                                                 isSynchronized: true, isPlaying: true)
+        XCTAssertEqual(desktop.currentIndex, 2)
+        XCTAssertEqual(desktop.visibleIndices, [2, 4])
     }
 
     // MARK: 和声

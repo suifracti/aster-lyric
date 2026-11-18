@@ -59,8 +59,10 @@ struct AppleMusicImmersiveV3BackdropView: View {
     var isInstrumental: Bool = false
     var isPlaying: Bool = true
     @ObservedObject var settings: AppSettingsStore
-    var presentationOverride: V3ArtworkPresentation? = nil
-    var sceneOverride: V3ListeningScene? = nil
+    let artworkPresentation: V3ArtworkPresentation
+    let listeningScene: V3ListeningScene?
+    var isArtworkPreview = false
+    var isDocumentPreview = false
     /// Playback time, for lights that follow Spotify's beat grid.
     var clock: LyricsPresentationClock? = nil
     /// 副歌加强: the chorus is playing.
@@ -68,7 +70,6 @@ struct AppleMusicImmersiveV3BackdropView: View {
     /// 副歌时换素材: the chorus is playing and the switch is on. A temporary
     /// override of the clip layer only; the saved material never changes.
     var chorusSwapsMaterial: Bool = false
-    private var listeningScene: V3ListeningScene? { presentationOverride == nil ? settings.v3ListeningScene : sceneOverride }
 
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var artworkImage: NSImage?
@@ -79,6 +80,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
     @State private var palette = BackdropPalette.neutral
     @State private var accessibilityDisplayRevision = 0
     @State private var isWindowVisible = false
+    @State private var musicListener = UUID()
     /// The picture the backdrop is made from: the cover, or the artist's photo.
     @State private var backdropImageURL: URL?
     /// The song's Spotify Canvas on disk, once found.
@@ -87,7 +89,6 @@ struct AppleMusicImmersiveV3BackdropView: View {
     /// 暂停褪色, set a moment after pausing so a seek never flickers.
     @State private var pausedFade = false
 
-    private var artworkPresentation: V3ArtworkPresentation { presentationOverride ?? settings.v3ArtworkPresentation }
     private var backdropBlurRadius: Double { settings.v3PreviewBlur(for: artworkPresentation, scene: listeningScene) }
     private var artworkPosition: String { settings.v3PreviewPosition(for: artworkPresentation, scene: listeningScene) }
     private var artworkSizeScale: Double { settings.v3PreviewBackdropScale(for: artworkPresentation, scene: listeningScene) }
@@ -131,7 +132,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 if artworkPresentation != .stage { Color.black.opacity(readabilityVeilOpacity) }
             }
             // 副歌: the picture a step brighter while the chorus plays.
-            Color.white.opacity(inChorus && presentationOverride == nil ? 0.07 : 0)
+            Color.white.opacity(inChorus && !isArtworkPreview ? 0.07 : 0)
                 .blendMode(.screen)
                 .animation(accessibilityReduceMotion ? nil : .easeInOut(duration: 0.9), value: inChorus)
             if pausedFade {
@@ -139,7 +140,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 Color.gray.blendMode(.saturation).opacity(0.78)
                     .transition(.opacity)
             }
-            if settings.v3MusicMotionEnabled && presentationOverride == nil {
+            if settings.v3MusicMotionEnabled && !isArtworkPreview && !isDocumentPreview {
                 V3MusicPulseLight(color: (palette.identity ?? palette.glow).nsColor, center: coverLightCenter,
                                   active: pulseWanted, clock: clock)
             }
@@ -156,22 +157,21 @@ struct AppleMusicImmersiveV3BackdropView: View {
         .animation(accessibilityReduceMotion ? .easeInOut(duration: 0.2) : .easeInOut(duration: 1.2), value: canvasShownNow)
         .animation(accessibilityReduceMotion ? .easeInOut(duration: 0.2)
                    : pausedFade ? .easeInOut(duration: 2.4) : .easeOut(duration: 0.5), value: pausedFade)
-        .task(id: "\(isPlaying)|\(settings.v3PauseFadesColor)|\(presentationOverride == nil)") {
-            guard !isPlaying, settings.v3PauseFadesColor, presentationOverride == nil else { pausedFade = false; return }
+        .task(id: "\(isPlaying)|\(settings.v3PauseFadesColor)|\(!isArtworkPreview)") {
+            guard !isPlaying, settings.v3PauseFadesColor, !isArtworkPreview else { pausedFade = false; return }
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard !Task.isCancelled else { return }
             pausedFade = true
         }
         .task(id: canvasTaskKey) { await findCanvas() }
         .onChange(of: pulseWanted, initial: true) { _, wanted in
-            guard presentationOverride == nil else { return }
-            V3MusicPulse.shared.setWanted(wanted)
+            V3MusicPulse.shared.setWanted(wanted, from: musicListener)
         }
-        .onChange(of: "\(spotifyTrackID ?? "-")|\(settings.v3MusicMotionEnabled)", initial: true) { _, _ in
-            guard presentationOverride == nil else { return }
+        .onChange(of: "\(spotifyTrackID ?? "-")|\(settings.v3MusicMotionEnabled)|\(isArtworkPreview)|\(isDocumentPreview)", initial: true) { _, _ in
+            guard !isArtworkPreview, !isDocumentPreview else { return }
             V3MusicPulse.shared.setTrack(spotifyTrackID, enabled: settings.v3MusicMotionEnabled)
         }
-        .onDisappear { if presentationOverride == nil { V3MusicPulse.shared.setWanted(false) } }
+        .onDisappear { V3MusicPulse.shared.setWanted(false, from: musicListener) }
         .task(id: requestKey) {
             await loadSnapshot(for: requestKey)
         }
@@ -192,7 +192,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
     /// Scene cards and hover previews draw this view too; only the real
     /// backdrop plays a clip.
     private var showsCanvas: Bool {
-        presentationOverride == nil && (settings.v3BackdropSource == .video || settings.v3ChorusSwapsMaterial)
+        !isArtworkPreview && !isDocumentPreview && (settings.v3BackdropSource == .video || settings.v3ChorusSwapsMaterial)
     }
 
     /// The clip is on screen: the saved material is video, flipped while
@@ -209,7 +209,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
     /// Listening runs only while it can be seen and heard.
     private var pulseWanted: Bool {
-        settings.v3MusicMotionEnabled && presentationOverride == nil && isPlaying && isWindowVisible
+        settings.v3MusicMotionEnabled && !isArtworkPreview && !isDocumentPreview && isPlaying && isWindowVisible
     }
 
     private var canvasTaskKey: String { "\(spotifyTrackID ?? "-")|\(showsCanvas)" }
@@ -381,10 +381,10 @@ struct AppleMusicImmersiveV3BackdropView: View {
     @ViewBuilder
     private func artworkLayers(image: NSImage, ambientImage: NSImage?) -> some View {
         switch artworkPresentation {
-        case .authenticAmbient where listeningScene == .originalAmbient && presentationOverride == nil
+        case .authenticAmbient where listeningScene == .originalAmbient && !isArtworkPreview
                 && settings.v3AmbientTreatment == .duotone:
             duotoneArtworkLayers(image: image)
-        case .authenticAmbient where listeningScene == .originalAmbient && presentationOverride == nil
+        case .authenticAmbient where listeningScene == .originalAmbient && !isArtworkPreview
                 && settings.v3AmbientTreatment == .windowLight:
             authenticAmbientArtworkLayers(image: image, ambientImage: ambientImage)
             windowLightShafts

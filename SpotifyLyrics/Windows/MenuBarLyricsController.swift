@@ -830,11 +830,13 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             let lines = state.liveLyrics
             let isSync = state.liveLyricsAreSynchronized
 
-            if isSync, let currentIndex = state.liveCurrentLineIndex, currentIndex >= 0, currentIndex < lines.count {
+            let projection = isSync
+                ? LyricsTimeline.presentedLyrics(in: lines, currentIndex: state.liveCurrentLineIndex, before: 1)
+                : (current: nil, visible: [])
+            if let currentIndex = projection.current {
                 let currentLine = lines[currentIndex].originalText.trimmingCharacters(in: .whitespacesAndNewlines)
-                let nextLine: String? = (currentIndex + 1 < lines.count)
-                    ? lines[currentIndex + 1].originalText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    : nil
+                let nextLine = projection.visible.last(where: { $0 > currentIndex })
+                    .map { lines[$0].originalText.trimmingCharacters(in: .whitespacesAndNewlines) }
 
                 let statusText = currentLine.isEmpty ? "♪ \(title)" : "♪ \(currentLine)"
                 var snapshot = MenuBarLyricsSnapshot(
@@ -857,8 +859,8 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 snapshot.currentKanaText = lines[currentIndex].kanaText
                 snapshot.currentRomajiText = lines[currentIndex].romajiText
                 snapshot.currentLineIndex = currentIndex
-                if currentIndex > 0 {
-                    let previous = lines[currentIndex - 1].originalText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let previousIndex = projection.visible.first(where: { $0 < currentIndex }) {
+                    let previous = lines[previousIndex].originalText.trimmingCharacters(in: .whitespacesAndNewlines)
                     snapshot.previousLineText = previous.isEmpty ? nil : previous
                 }
                 return snapshot

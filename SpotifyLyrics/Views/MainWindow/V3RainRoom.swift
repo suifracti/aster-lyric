@@ -280,7 +280,7 @@ private struct V3PassingLights: View {
 private struct V3Frost: View {
     let size: CGSize
     var body: some View {
-        let reach = min(size.width, size.height) * 0.42
+        let reach = max(1, min(size.width, size.height) * 0.42)
         ZStack {
             ForEach(Array([UnitPoint.topLeading, .topTrailing, .bottomLeading, .bottomTrailing].enumerated()), id: \.offset) { _, corner in
                 RadialGradient(colors: [Color.white.opacity(0.42), Color.white.opacity(0.12), .clear],
@@ -292,13 +292,13 @@ private struct V3Frost: View {
                 var generator = SeededRandom(seed: 23)
                 for _ in 0..<900 {
                     let corner = Int(generator.next() * 4)
-                    let angle = generator.next() * .pi / 2
-                    let distance = pow(generator.next(), 2.2) * reach
+                    let angle = CGFloat(generator.next()) * .pi / 2
+                    let distance = CGFloat(pow(generator.next(), 2.2)) * reach
                     let cx = corner % 2 == 0 ? distance * cos(angle) : canvas.width - distance * cos(angle)
                     let cy = corner < 2 ? distance * sin(angle) : canvas.height - distance * sin(angle)
-                    let r = 0.6 + 2.2 * generator.next() * (1 - distance / reach)
+                    let r = 0.6 + 2.2 * CGFloat(generator.next()) * (1 - distance / reach)
                     context.fill(Path(ellipseIn: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2)),
-                                 with: .color(.white.opacity(0.10 + 0.22 * (1 - distance / reach))))
+                                 with: .color(.white.opacity(0.10 + 0.22 * Double(1 - distance / reach))))
                 }
             }
             .blur(radius: 1.2)
@@ -1174,7 +1174,7 @@ struct V3ScenePicker: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
                 Toggle("整套换装", isOn: $settings.v3RoomRestyles)
-                    .help("开：情境同时换上自己的版式、歌词位置与效果、播放栏和控件质感。关：只加情境本身，版式保持你自己的设置。你的设置不会被改写。")
+                    .help("开：情境同时换上自己的版式、歌词位置与效果、播放栏和控件质感。关：只加情境本身，版式保持你自己的设置。画面或文字手动调整后立即生效，重新选择情境可恢复整套搭配。")
                 Toggle("副歌时刻", isOn: $settings.v3RoomOpensOnChorus)
                     .help("唱到副歌时，情境有自己的变化：雨更大、开上桥、划过流星、按下快门……")
             }
@@ -1190,7 +1190,7 @@ struct V3ScenePicker: View {
 
     private func card(_ scene: V3Room) -> some View {
         let selected = settings.v3Room == scene
-        return Button { settings.v3Room = scene; preview = nil } label: {
+        return Button { settings.selectV3Room(scene); preview = nil } label: {
             HStack(spacing: 9) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Self.swatch(scene))
@@ -1511,6 +1511,55 @@ struct V3SceneLook: Equatable {
     var lyricWidth: Double?
 }
 
+struct V3RoomOverrides: OptionSet {
+    let rawValue: Int
+
+    static let layout = Self(rawValue: 1 << 0)
+    static let lyricsPosition = Self(rawValue: 1 << 1)
+    static let lyricStyle = Self(rawValue: 1 << 2)
+    static let playback = Self(rawValue: 1 << 3)
+    static let progress = Self(rawValue: 1 << 4)
+    static let lyricWidth = Self(rawValue: 1 << 5)
+}
+
+/// Resolved by each listening surface. Reading or previewing a room never changes preferences.
+struct V3ListeningPresentation {
+    let scene: V3ListeningScene?
+    let renderer: V3ArtworkPresentation
+    let lyricsPosition: String
+    let lyricStyle: V3LyricStyle
+    let playback: V3PlaybackPresentation
+    let progress: V3ProgressStyle
+    let chrome: V3SceneChrome?
+    let lyricWidth: Double
+
+    @MainActor
+    init(settings: AppSettingsStore, room: V3Room, accent: Color = .white,
+         usesSavedRoomChoices: Bool = true,
+         artworkPreview: V3ArtworkPresentation? = nil, previewScene: V3ListeningScene? = nil) {
+        let look = settings.v3RoomRestyles ? room.look(accent: accent) : V3SceneLook()
+        let overrides = usesSavedRoomChoices ? settings.v3RoomOverrides : []
+        let roomScene = overrides.contains(.layout) ? nil : look.listeningScene
+        let baseScene = settings.v3ListeningScene
+        scene = artworkPreview == nil ? (roomScene ?? baseScene) : previewScene
+        if let artworkPreview {
+            renderer = artworkPreview
+        } else if let roomScene, roomScene != baseScene {
+            renderer = settings.v3Renderer(for: roomScene)
+        } else {
+            renderer = settings.v3ArtworkPresentation
+        }
+        let roomPosition = artworkPreview == nil && !overrides.contains(.layout)
+            && !overrides.contains(.lyricsPosition) ? look.lyricsPosition : nil
+        lyricsPosition = roomPosition ?? settings.v3PreviewLyricsPosition(for: renderer, scene: scene)
+        lyricStyle = (overrides.contains(.lyricStyle) ? nil : look.lyricStyle) ?? settings.v3LyricStyle
+        playback = (overrides.contains(.playback) ? nil : look.playback) ?? settings.v3PlaybackPresentation
+        progress = (overrides.contains(.progress) ? nil : look.progress) ?? settings.v3ProgressStyle
+        lyricWidth = (overrides.contains(.lyricWidth) ? nil : look.lyricWidth) ?? settings.v3LyricWidth
+        chrome = look.chrome
+    }
+}
+
 extension V3Room {
     /// Chosen so each scene reads as one picture: where the lyrics sit, how the
     /// sung line is drawn, how the player shows, and what the controls are made of.
@@ -1559,7 +1608,6 @@ extension V3Room {
 /// 行宽: how far a lyric line may run before it wraps. 1 is the established
 /// 680 pt reading measure; 情境 and the 文字 panel can open it up.
 enum V3LyricWidth {
-    nonisolated(unsafe) static var scale: CGFloat = 1
     static let options: [(String, Double)] = [("标准", 1), ("宽", 1.35), ("满幅", 1.9)]
 }
 

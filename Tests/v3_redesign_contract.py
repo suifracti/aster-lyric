@@ -101,7 +101,8 @@ assert 'content: inspectorSurface(for: pinned, style: .pinnedGlass)' in window, 
 assert 'hoverTrackedPanel(panel) { inspectorSurface(for: panel, style: .hoverGlass) }' in normalized_window, 'hover panels must share the glass surface'
 assert 'isProjectingScene = true' in settings and 'selectLegacyV3Presentation' in settings
 assert 'scenePresets[Self.sceneKey(scene, renderer)]' in settings
-assert 'sceneOverride: compositionScene' in window
+assert 'artworkPresentation: compositionStyle' in window and 'listeningScene: compositionScene' in window,     'the backdrop and lyric layout must use the same resolved artwork scene'
+assert 'isArtworkPreview: hoveredStyle != nil' in window,     'a saved room scene must keep the live backdrop effects used by the underlying picture'
 assert '.onChange(of: timeline.date)' not in backdrop[backdrop.index('struct V3AtmosphereFieldView'):]
 assert 'Timer.' not in controls and 'URLSession' not in controls
 assert '.activeAlways' in (ROOT/'SpotifyLyrics/Views/MainWindow/V3WindowEdgePlaybackOverlay.swift').read_text()

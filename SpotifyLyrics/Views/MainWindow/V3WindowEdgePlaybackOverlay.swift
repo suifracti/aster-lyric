@@ -9,6 +9,7 @@ struct V3WindowEdgePlaybackOverlay: View {
     let colorHex: String
     let colorMode: String
     let coverLuminance: Double
+    let coverAccent: Color
     let exitPoint: CGPoint?
     let pointerInsideWindow: Bool
     /// The toolbar or an open panel owns the pointer; only the rail stays.
@@ -33,7 +34,6 @@ struct V3WindowEdgePlaybackOverlay: View {
     @State private var draftFraction: Double?
     @State private var dragTrackKey: String?
     @State private var windowVisible = false
-    @State private var coverAccent = Color.accentColor
     @State private var colorElapsed: TimeInterval = 0
     @State private var colorStartedAt: Date?
 
@@ -177,12 +177,6 @@ struct V3WindowEdgePlaybackOverlay: View {
                 draftFraction = nil
                 interactionChanged(false)
             }
-        }
-        .task(id: "\(state.currentTrack.artworkURL?.absoluteString ?? "none")|\(colorMode == "artwork")") {
-            guard colorMode == "artwork" else { return }
-            let palette = await LyricIslandArtworkColors.palette(for: state.currentTrack.artworkURL)
-            guard !Task.isCancelled else { return }
-            coverAccent = LyricIslandArtworkColors.listeningAccent(palette) ?? .white
         }
         .onChange(of: animatesColor) { _, active in
             if let colorStartedAt { colorElapsed += max(0, Date().timeIntervalSince(colorStartedAt)) }

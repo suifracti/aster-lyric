@@ -723,7 +723,10 @@ public final class AppSettingsStore: ObservableObject {
     }
     private func updateScenePreset(_ change: (inout V3ScenePreset) -> Void) {
         guard !isProjectingScene, let scene = v3ListeningScene else { return }
-        let renderer = v3ArtworkPresentation
+        updateScenePreset(scene, renderer: v3ArtworkPresentation, change)
+    }
+    private func updateScenePreset(_ scene: V3ListeningScene, renderer: V3ArtworkPresentation,
+                                   _ change: (inout V3ScenePreset) -> Void) {
         var preset = v3Preset(for: scene, renderer: renderer)
         change(&preset)
         let key = Self.sceneKey(scene, renderer)
@@ -731,6 +734,10 @@ public final class AppSettingsStore: ObservableObject {
         if scenePresets[key] != next { scenePresets[key] = next }
     }
     public func selectV3Scene(_ scene: V3ListeningScene, renderer: V3ArtworkPresentation? = nil) {
+        customizeV3Room(.layout)
+        applyV3Scene(scene, renderer: renderer)
+    }
+    func applyV3Scene(_ scene: V3ListeningScene, renderer: V3ArtworkPresentation? = nil) {
         let renderer = renderer.flatMap { scene.renderers.contains($0) ? $0 : nil } ?? v3Renderer(for: scene)
         sceneRenderers[scene.rawValue] = renderer.rawValue
         defaults.set(sceneRenderers, forKey: Key.v3SceneRenderers)
@@ -748,6 +755,10 @@ public final class AppSettingsStore: ObservableObject {
         if v3ShowForegroundArtwork != p.foregroundVisible { v3ShowForegroundArtwork = p.foregroundVisible }
     }
     public func selectLegacyV3Presentation(_ renderer: V3ArtworkPresentation) {
+        customizeV3Room(.layout)
+        applyLegacyV3Presentation(renderer)
+    }
+    private func applyLegacyV3Presentation(_ renderer: V3ArtworkPresentation) {
         // Restore original proxy values WITHOUT writing the active new scene into old keys.
         isProjectingScene = true
         v3ListeningSceneRawValue = ""
@@ -1086,8 +1097,7 @@ public final class AppSettingsStore: ObservableObject {
     public var v3ScenePlayerHidden: Bool { v3PlaybackPresentation.hidesScenePlayer }
 
     @Published public var v3PlaybackStyleRawValue: String = "" {
-        didSet { guard sceneLayerCommit(\.playbackStyle, v3PlaybackStyleRawValue) else { return }
-                 defaults.set(v3PlaybackStyleRawValue, forKey: "v3.playbackStyle.v1") }
+        didSet { defaults.set(v3PlaybackStyleRawValue, forKey: "v3.playbackStyle.v1") }
     }
     /// 角落: which corner the small card sits in (topLeading, topTrailing, bottomLeading, bottomTrailing).
     @Published public var v3CornerCardCorner: String = "bottomTrailing" {
@@ -1100,58 +1110,26 @@ public final class AppSettingsStore: ObservableObject {
         didSet { defaults.set(v3ToolbarStyle.rawValue, forKey: "v3.toolbarStyle.v1") }
     }
     @Published public var v3LyricStyle: V3LyricStyle = .standard {
-        didSet { guard sceneLayerCommit(\.lyricStyle, v3LyricStyle) else { return }
-                 defaults.set(v3LyricStyle.rawValue, forKey: "v3.lyricStyle.v1") }
+        didSet { defaults.set(v3LyricStyle.rawValue, forKey: "v3.lyricStyle.v1") }
     }
     @Published public var v3ProgressStyle: V3ProgressStyle = .standard {
-        didSet { guard sceneLayerCommit(\.progress, v3ProgressStyle) else { return }
-                 defaults.set(v3ProgressStyle.rawValue, forKey: "v3.playerBar.progress.v1") }
+        didSet { defaults.set(v3ProgressStyle.rawValue, forKey: "v3.playerBar.progress.v1") }
     }
 
-    // MARK: 情境 layer
-    /// The user's own values while a 情境 shows its own lyric and player style.
-    struct SceneLayerSaved: Equatable {
-        var lyricStyle: V3LyricStyle
-        var progress: V3ProgressStyle
-        var playbackStyle: String
-        var edge: Bool
-        var hover: Bool
-    }
-    private var sceneLayerSaved: SceneLayerSaved?
-    private var applyingSceneLayer = false
-
-    /// Shows a scene's lyric style, player and progress without saving them. Passing
-    /// nils puts the user's own values back.
-    func applySceneLayer(lyricStyle: V3LyricStyle?, playback: V3PlaybackPresentation?, progress: V3ProgressStyle?) {
-        let wanted = lyricStyle != nil || playback != nil || progress != nil
-        if wanted, sceneLayerSaved == nil {
-            sceneLayerSaved = SceneLayerSaved(lyricStyle: v3LyricStyle, progress: v3ProgressStyle, playbackStyle: v3PlaybackStyleRawValue,
-                                              edge: v3EdgeProgressEnabled, hover: v3PlaybackDetailsOnHover)
-        }
-        guard let saved = sceneLayerSaved else { return }
-        applyingSceneLayer = true
-        defer { applyingSceneLayer = false }
-        let style = lyricStyle ?? saved.lyricStyle
-        if v3LyricStyle != style { v3LyricStyle = style }
-        let bar = progress ?? saved.progress
-        if v3ProgressStyle != bar { v3ProgressStyle = bar }
-        if let playback {
-            if v3PlaybackPresentation != playback { v3PlaybackPresentation = playback }
-        } else {
-            if v3PlaybackStyleRawValue != saved.playbackStyle { v3PlaybackStyleRawValue = saved.playbackStyle }
-            if v3EdgeProgressEnabled != saved.edge { v3EdgeProgressEnabled = saved.edge }
-            if v3PlaybackDetailsOnHover != saved.hover { v3PlaybackDetailsOnHover = saved.hover }
-        }
-        if !wanted { sceneLayerSaved = nil }
+    @Published private(set) var v3RoomOverrides: V3RoomOverrides = [] {
+        didSet { defaults.set(v3RoomOverrides.rawValue, forKey: "v3.roomOverrides.v1") }
     }
 
-    /// Whether a change should be saved. A scene's own change is not; a change the
-    /// user makes while a scene is showing is saved and becomes their value.
-    private func sceneLayerCommit<Value>(_ field: WritableKeyPath<SceneLayerSaved, Value>, _ value: Value) -> Bool {
-        if applyingSceneLayer { return false }
-        sceneLayerSaved?[keyPath: field] = value
-        return true
+    func customizeV3Room(_ field: V3RoomOverrides) {
+        guard v3Room != .off, v3RoomRestyles, !v3RoomOverrides.contains(field) else { return }
+        v3RoomOverrides.insert(field)
     }
+
+    func selectV3Room(_ room: V3Room) {
+        if room == v3Room { v3RoomOverrides = [] }
+        else { v3Room = room }
+    }
+
     /// 播放栏: the time row and buttons appear only while the pointer is on the card.
     @Published public var v3PlayerButtonsOnHover = false {
         didSet { defaults.set(v3PlayerButtonsOnHover, forKey: "v3.playerBar.buttonsOnHover.v1") }
@@ -1193,7 +1171,10 @@ public final class AppSettingsStore: ObservableObject {
     /// 情境: a room around the listening view (雨夜窗边、夜行列车、雪夜小屋) or a material
     /// it is shown on (老电影). Replaces the 雨夜房间 switch; `v3.rainRoom.v1` is still read once.
     @Published var v3Room: V3Room = .off {
-        didSet { defaults.set(v3Room.rawValue, forKey: "v3.room.v1") }
+        didSet {
+            if v3Room != oldValue { v3RoomOverrides = [] }
+            defaults.set(v3Room.rawValue, forKey: "v3.room.v1")
+        }
     }
     /// 行宽: 1 standard, 1.35 wide, 1.9 the full window.
     @Published public var v3LyricWidth: Double = 1 {
@@ -1201,7 +1182,10 @@ public final class AppSettingsStore: ObservableObject {
     }
     /// 整套换装: a 情境 also brings its layout, lyric style, player and controls.
     @Published var v3RoomRestyles = true {
-        didSet { defaults.set(v3RoomRestyles, forKey: "v3.roomRestyles.v1") }
+        didSet {
+            if v3RoomRestyles != oldValue { v3RoomOverrides = [] }
+            defaults.set(v3RoomRestyles, forKey: "v3.roomRestyles.v1")
+        }
     }
     /// 副歌时开窗: a window scene opens to the full view during a chorus.
     @Published var v3RoomOpensOnChorus = true {
@@ -1295,8 +1279,7 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     @Published public var v3PlaybackDetailsOnHover: Bool {
-        didSet { guard sceneLayerCommit(\.hover, v3PlaybackDetailsOnHover) else { return }
-                 defaults.set(v3PlaybackDetailsOnHover, forKey: Key.v3PlaybackDetailsOnHover) }
+        didSet { defaults.set(v3PlaybackDetailsOnHover, forKey: Key.v3PlaybackDetailsOnHover) }
     }
 
     @Published public var v3ExpandArtworkWhenDetailsHidden: Bool {
@@ -1312,8 +1295,7 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     @Published public var v3EdgeProgressEnabled: Bool {
-        didSet { guard sceneLayerCommit(\.edge, v3EdgeProgressEnabled) else { return }
-                 defaults.set(v3EdgeProgressEnabled, forKey: Key.v3EdgeProgressEnabled) }
+        didSet { defaults.set(v3EdgeProgressEnabled, forKey: Key.v3EdgeProgressEnabled) }
     }
 
     @Published public var v3EdgeProgressColorHex: String {
@@ -1450,6 +1432,39 @@ public final class AppSettingsStore: ObservableObject {
         return v3BlurByPresentation[style] ?? V3BlurCurve.fromV1(36)
     }
 
+    func setV3Blur(_ value: Double, renderer: V3ArtworkPresentation, scene: V3ListeningScene?) {
+        let value = min(100, max(0, value))
+        if scene == v3ListeningScene, renderer == v3ArtworkPresentation {
+            v3BackdropBlurRadius = value
+        } else if let scene {
+            updateScenePreset(scene, renderer: renderer) { $0.blur = value }
+        }
+    }
+
+    func setV3ForegroundVisible(_ visible: Bool, renderer: V3ArtworkPresentation, scene: V3ListeningScene?) {
+        if scene == v3ListeningScene, renderer == v3ArtworkPresentation {
+            v3ShowForegroundArtwork = visible
+        } else if let scene {
+            updateScenePreset(scene, renderer: renderer) { $0.foregroundVisible = visible }
+        }
+    }
+
+    func setV3ForegroundScale(_ scale: Double, renderer: V3ArtworkPresentation, scene: V3ListeningScene?) {
+        if scene == v3ListeningScene, renderer == v3ArtworkPresentation {
+            v3ArtworkSizeScale = scale
+        } else if let scene {
+            updateScenePreset(scene, renderer: renderer) { $0.foregroundScale = scale }
+        }
+    }
+
+    func setV3ForegroundPosition(_ position: String, renderer: V3ArtworkPresentation, scene: V3ListeningScene?) {
+        if scene == v3ListeningScene, renderer == v3ArtworkPresentation {
+            v3ArtworkPosition = position
+        } else if let scene {
+            updateScenePreset(scene, renderer: renderer) { $0.foregroundPosition = position }
+        }
+    }
+
     public func v3PreviewPosition(for style: V3ArtworkPresentation) -> String {
         v3PreviewPosition(for: style, scene: v3ListeningScene)
     }
@@ -1539,14 +1554,25 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     public func setV3BackgroundBrightness(_ value: Double, for presentation: V3ArtworkPresentation) {
-        guard v3ListeningScene != nil else { return }
+        setV3BackgroundBrightness(value, for: presentation, scene: v3ListeningScene)
+    }
+
+    func setV3BackgroundBrightness(_ value: Double, for presentation: V3ArtworkPresentation, scene: V3ListeningScene?) {
+        guard let scene else { return }
         let next = value.isFinite ? min(1.4, max(0.6, value)) : 1
-        updateScenePreset { $0.backgroundBrightness = next }
+        updateScenePreset(scene, renderer: presentation) { $0.backgroundBrightness = next }
     }
 
     public func setV3AtmosphereLevel(_ level: Int, for presentation: V3ArtworkPresentation) {
+        setV3AtmosphereLevel(level, for: presentation, scene: v3ListeningScene)
+    }
+
+    func setV3AtmosphereLevel(_ level: Int, for presentation: V3ArtworkPresentation, scene: V3ListeningScene?) {
         let storedLevel = min(2, max(0, level))
-        if v3ListeningScene != nil { updateScenePreset { $0.atmosphere = storedLevel }; return }
+        if let scene {
+            updateScenePreset(scene, renderer: presentation) { $0.atmosphere = storedLevel }
+            return
+        }
         guard v3AtmosphereLevels[presentation.rawValue] != storedLevel else { return }
         v3AtmosphereLevels[presentation.rawValue] = storedLevel
     }
@@ -1554,10 +1580,15 @@ public final class AppSettingsStore: ObservableObject {
     /// Reading placement is remembered per composition, independently of artwork.
     public var v3LyricsPosition: String {
         get { v3PreviewLyricsPosition(for: v3ArtworkPresentation) }
-        set {
-            let value = ["automatic", "left", "center", "right"].contains(newValue) ? newValue : "automatic"
-            if v3ListeningScene != nil { updateScenePreset { $0.lyricsPosition = value }; return }
-            v3LyricsPositions[v3ArtworkPresentation.rawValue] = value
+        set { setV3LyricsPosition(newValue, for: v3ArtworkPresentation, scene: v3ListeningScene) }
+    }
+
+    func setV3LyricsPosition(_ position: String, for renderer: V3ArtworkPresentation, scene: V3ListeningScene?) {
+        let value = ["automatic", "left", "center", "right"].contains(position) ? position : "automatic"
+        if let scene {
+            updateScenePreset(scene, renderer: renderer) { $0.lyricsPosition = value }
+        } else {
+            v3LyricsPositions[renderer.rawValue] = value
             defaults.set(v3LyricsPositions, forKey: Key.v3LyricsPositions)
         }
     }
@@ -1725,6 +1756,7 @@ public final class AppSettingsStore: ObservableObject {
             ?? ((defaults.object(forKey: "v3.rainRoom.v1") as? Bool ?? false) ? .rain : .off)
         self.v3RoomOpensOnChorus = defaults.object(forKey: "v3.roomOpensOnChorus.v1") as? Bool ?? true
         self.v3RoomRestyles = defaults.object(forKey: "v3.roomRestyles.v1") as? Bool ?? true
+        self.v3RoomOverrides = V3RoomOverrides(rawValue: defaults.integer(forKey: "v3.roomOverrides.v1"))
         self.v3LyricWidth = defaults.object(forKey: "v3.lyricWidth.v1") as? Double ?? 1
         self.v3ChorusSwapsMaterial = defaults.object(forKey: "v3.chorusSwapsMaterial.v1") as? Bool ?? false
         self.v3SpectrumStyle = V3SpectrumStyle(rawValue: defaults.string(forKey: "v3.spectrumStyle.v1") ?? "") ?? .off
@@ -1951,7 +1983,7 @@ public final class AppSettingsStore: ObservableObject {
             adoptMergedEntry(scene: .focusedLyrics, renderer: .lyricsOnly, legacy: legacy)
         case .classicGaussian:
             copyLegacyParameters(from: .classicGaussian, to: .classic)
-            selectLegacyV3Presentation(.classic)
+            applyLegacyV3Presentation(.classic)
         case .classic, .albumPoster:
             break
         }
@@ -1971,7 +2003,7 @@ public final class AppSettingsStore: ObservableObject {
         preset.lyricsPosition = v3PreviewLyricsPosition(for: legacy, scene: nil)
         preset.atmosphere = v3AtmosphereLevel(for: legacy, scene: nil)
         scenePresets[Self.sceneKey(scene, renderer)] = preset.normalized()
-        selectV3Scene(scene, renderer: renderer)
+        applyV3Scene(scene, renderer: renderer)
     }
 
     private func copyLegacyParameters(from source: V3ArtworkPresentation, to target: V3ArtworkPresentation) {

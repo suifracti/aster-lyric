@@ -580,12 +580,11 @@ public enum LyricsTimeline {
         for index in lines.indices.dropFirst() {
             let first = lines[index - 1]
             let second = lines[index]
-            let text = first.originalText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard let firstSinger = first.performerID, let secondSinger = second.performerID,
-                  firstSinger != secondSinger, !text.isEmpty,
-                  text == second.originalText.trimmingCharacters(in: .whitespacesAndNewlines),
-                  abs(first.timestamp - second.timestamp) <= 0.15,
+                  firstSinger != secondSinger, abs(first.timestamp - second.timestamp) <= 0.15,
                   let firstEnd = first.endTime, let secondEnd = second.endTime else { continue }
+            let text = first.originalText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty, text == second.originalText.trimmingCharacters(in: .whitespacesAndNewlines) else { continue }
             let overlap = min(firstEnd, secondEnd) - max(first.timestamp, second.timestamp)
             let shortest = min(firstEnd - first.timestamp, secondEnd - second.timestamp)
             if shortest > 0, overlap >= shortest * 0.8 {
@@ -593,6 +592,19 @@ public enum LyricsTimeline {
             }
         }
         return duplicates
+    }
+
+    /// A compact window around the actual sung line, in original document indices.
+    static func presentedLyrics(in lines: [LyricLine], currentIndex: Int?,
+                                before: Int = 0, after: Int = 1) -> (current: Int?, visible: [Int]) {
+        let duplicates = duetUnisonDuplicates(in: lines)
+        guard let index = currentIndex, lines.indices.contains(index) else {
+            return (nil, Array(lines.indices.lazy.filter { duplicates[$0] == nil }.prefix(1 + max(0, after))))
+        }
+        let current = duplicates[index] ?? index
+        let previous = lines.indices[..<current].reversed().lazy.filter { duplicates[$0] == nil }.prefix(max(0, before))
+        let following = lines.indices.dropFirst(current + 1).lazy.filter { duplicates[$0] == nil }.prefix(max(0, after))
+        return (current, Array(previous.reversed()) + [current] + Array(following))
     }
 
     struct VocalCountdownWindow: Equatable {

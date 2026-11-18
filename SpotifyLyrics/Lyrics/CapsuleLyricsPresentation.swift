@@ -230,6 +230,7 @@ public enum CapsulePresentationState: Equatable, Sendable {
 /// active control-focused presentation renders only `current` when expanded.
 public struct CapsuleLyricsSelection: Equatable, Sendable {
     public let current: LyricLine?
+    let currentIndex: Int?
     public let following: LyricLine?
     public let isSynchronized: Bool
     public let status: String?
@@ -238,9 +239,11 @@ public struct CapsuleLyricsSelection: Equatable, Sendable {
         current: LyricLine?,
         following: LyricLine?,
         isSynchronized: Bool,
-        status: String?
+        status: String?,
+        currentIndex: Int? = nil
     ) {
         self.current = current
+        self.currentIndex = currentIndex
         self.following = following
         self.isSynchronized = isSynchronized
         self.status = status
@@ -295,7 +298,8 @@ public enum CapsuleLyricsPresentation {
             )
         }
 
-        guard let currentIndex, lines.indices.contains(currentIndex) else {
+        let projection = LyricsTimeline.presentedLyrics(in: lines, currentIndex: currentIndex)
+        guard let currentIndex = projection.current else {
             return CapsuleLyricsSelection(
                 current: nil,
                 following: nil,
@@ -304,12 +308,12 @@ public enum CapsuleLyricsPresentation {
             )
         }
 
-        let followingIndex = currentIndex + 1
         return CapsuleLyricsSelection(
             current: lines[currentIndex],
-            following: lines.indices.contains(followingIndex) ? lines[followingIndex] : nil,
+            following: projection.visible.dropFirst().first.map { lines[$0] },
             isSynchronized: true,
-            status: nil
+            status: nil,
+            currentIndex: currentIndex
         )
     }
 

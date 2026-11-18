@@ -249,6 +249,10 @@ struct LyricsCanvasView: View {
         .accessibilityLabel("手动修改歌词搜索词")
     }
 
+    private var duetDuplicates: [Int: Int] {
+        state.lyricsAreSynchronized ? LyricsTimeline.duetUnisonDuplicates(in: state.lyrics) : [:]
+    }
+
     private var lyricsScroll: some View {
         let seekDocumentTrack = state.displayedTrack
         let seekDocumentIdentity = TrackIdentity(track: seekDocumentTrack)
@@ -256,6 +260,10 @@ struct LyricsCanvasView: View {
         let seekDocumentSource: PlaybackState.LyricsSeekDocumentSource = state.isShowingSearchPreview ? .searchPreview : .live
         let seekLines = state.lyrics
         let seekIsSynchronized = state.lyricsAreSynchronized
+        let duplicates = duetDuplicates
+        let rows = seekLines.enumerated().filter { duplicates[$0.offset] == nil }
+        let currentIndex = state.currentLineIndex.map { duplicates[$0] ?? $0 }
+        let voices = LyricAgentPresentationMap(lines: seekLines)
         return VStack(alignment: .leading, spacing: 6) {
             lyricsScopeControls
             GeometryReader { geometry in
@@ -271,7 +279,13 @@ struct LyricsCanvasView: View {
                                 visibleLayerCount: visibleLayerCount
                             )
                         ) {
-                            ForEach(Array(seekLines.enumerated()), id: \.element.id) { index, line in
+                            ForEach(rows, id: \.element.id) { index, line in
+                                if let previous = (0..<index).last(where: { duplicates[$0] == nil }),
+                                   let label = voices.singerChangeLabel(for: line.performerID, after: seekLines[previous].performerID) {
+                                    singerLabel(label)
+                                } else if index == 0, let label = voices.singerChangeLabel(for: line.performerID, after: nil) {
+                                    singerLabel(label)
+                                }
                                 if let seekTimestamp = LyricsTimeline.validSeekTimestamp(
                                     for: line,
                                     isSynchronized: seekIsSynchronized,
@@ -289,6 +303,7 @@ struct LyricsCanvasView: View {
                                         lyricLineView(
                                             line: line,
                                             index: index,
+                                            currentIndex: currentIndex,
                                             availableWidth: geometry.size.width
                                         )
                                     }
@@ -302,6 +317,7 @@ struct LyricsCanvasView: View {
                                     lyricLineView(
                                         line: line,
                                         index: index,
+                                        currentIndex: currentIndex,
                                         availableWidth: geometry.size.width
                                     )
                                 }
@@ -559,24 +575,25 @@ struct LyricsCanvasView: View {
         .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 4)
     }
 
-    private func distance(from index: Int) -> Int {
-        LyricsTimeline.presentationDistance(
-            index: index,
-            currentIndex: state.currentLineIndex,
-            isSynchronized: state.lyricsAreSynchronized
-        )
+    private func singerLabel(_ label: String) -> some View {
+        Text(label)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("演唱：\(label)")
     }
 
     @ViewBuilder
     private func lyricLineView(
         line: LyricLine,
         index: Int,
+        currentIndex: Int?,
         availableWidth: CGFloat
     ) -> some View {
         LyricLineView(
             line: line,
-            isActive: state.currentLineIndex == index,
-            distance: distance(from: index),
+            isActive: currentIndex == index,
+            distance: LyricsTimeline.presentationDistance(index: index, currentIndex: currentIndex,
+                                                          isSynchronized: state.lyricsAreSynchronized),
             isSynchronized: state.lyricsAreSynchronized,
             preferences: state.preferences,
             availableWidth: availableWidth,
@@ -593,7 +610,8 @@ struct LyricsCanvasView: View {
         animated: Bool,
         force: Bool = false
     ) {
-        guard let currentIndex = state.currentLineIndex,
+        let duplicates = duetDuplicates
+        guard let currentIndex = state.currentLineIndex.map({ duplicates[$0] ?? $0 }),
               state.lyrics.indices.contains(currentIndex),
               force || lastScrolledLineIndex != currentIndex else { return }
 

@@ -37,6 +37,7 @@
 | 视频背景（Canvas）、歌手照片背景、按封面配色、随音乐律动、拖进度吸附、跳转回弹、脏词显示 | L-022；SpotifyLocalCache、V3BackdropMedia、CoverColorRoute、V3MusicPulse、LyricCensorRestorer |
 | 不同画面背景大小不一样、取景切了没效果、繁体歌名对不上简体来源、别人有逐字/对唱我们没有 | L-023；V3BackdropArtworkGeometry、v3SharedBackdropComplete、TrackTextNormalizer.normalize、KRCParser、QRCParser |
 | 逐字上浮/长音发光动画跳回开头、状态栏弹窗改版、换歌封面闪占位图、暂停褪色、桌面歌词情境隐藏 | L-024；LyricLineView animateLift、MenuBarLyricsPopoverView、ArtworkView、v3PauseFadesColor、FloatingLyricsWindowController.observeContext |
+| 情境一开旧画面切不过去、光色不走封面色、同一首对唱在不同窗口不一样 | L-052；V3ListeningPresentation、V3RoomOverrides、LyricsTimeline.presentedLyrics |
 | 粒子（雨雪雾、歌词意象）不显示、VU 表指针手感、新呈现一行放不下、分享卡排版跑偏、封面墙离屏图空白、声纹圈、频谱 | L-025；V3GlassWeather、V3ParticleHostView、V3VUMeter、V3LyricShareCard、ListeningCoverWall、V3Soundprint、V3SpectrumOverlay |
 | QQ 来源突然全部 http(500)、别人有词我们“暂无歌词正文” | L-026；QQExperimentalLyricsProvider.searchBases |
 | 某个来源一段时间连着超时/503、每首新歌都卡几秒、来源顺序要不要按统计调 | L-035；LyricsSourceHealth、LyricsSearchManager supplements |
@@ -835,3 +836,14 @@ TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、
 隔离真窗从 Finder 打开歌本，调整两首顺序，在收录窗口加入带出处的金句，经系统「存储」读回。系统面板导出 13 页 A5 PDF，抽查封面、目录、正文与末页。原生测试覆盖重复摘句、版本出处、PDF 跳转和跨页末句，明暗色离屏图覆盖封面与章节页。
 
 2026-11-18 补：⌘K 读到的那一句原先只能右键「收录这句」，找不到。现在阅读页里选中或悬停的行在书签旁直接显示歌本按钮，带版本 UUID 与行号。加入已打开的歌本后，按钮约 1.8 秒显示「已收进《书名》」并发辅助功能播报。返回按钮写出原查询词，Esc 回到原结果和选中项。离屏图 `library-reader` 核过按钮位置；真实窗口未点验。
+
+
+## L-052 画面、情境和歌词显示共用当前配置（2026-11-18）
+
+情境是一层效果，“整套换装”才带入版式、歌词样式、行宽、播放栏和控件材质。主窗口、全屏与画面面板统一用 `V3ListeningPresentation` 解析。试听歌曲、悬停试画面或试情境只影响当前窗口。之前的 `applySceneLayer` 直接写共享设置，打开另一窗口会相互覆盖，还会让情境默认版式挡住手动选择。再次点同一情境恢复它的推荐搭配；手动选择画面或样式只覆盖对应项，现有 rawID 和画面参数照旧保存，当前情境内用户自选记到 `v3.roomOverrides.v1`。背景和前景的调节即读写当前画面对应参数，预览状态有独立标记，套用情境仍可使用 Canvas、双色、窗光、暂停褪色等原画面效果。
+
+听歌界面按实际显示的封面 URL 取同一颜色，换歌等待封面时先用白色。光色歌词保留外发光，当前字、读音、译文与进度/播放控件用接口给来的颜色；明确选择不同颜色模式的边缘线继续按其自己的设置。背景和情境仍有自己的材质与色彩。律动采集由各可见的听歌窗口表达当前需要，一个窗口退出或进入预览不会关闭另一窗口仍在使用的采集。
+
+旧画面和新情境使用相同的 V3 行渲染。早期兼容布局共享歌手/声部标签和同唱合并规则，保持行首对齐。状态栏、桌面和顶部胶囊使用 `LyricsTimeline.presentedLyrics` 取同一套当句与相邻行，保留真实隔开重唱与不同的声部句子，索引仍指向原文档，收藏、时间轴、歌词库与人工版本无需迁移。雪角 Metal 画布的 Swift 计算显式区分 `CGFloat` 与 `Double`，兼容 Xcode 16.4 的类型推断。
+
+本机 Xcode Debug 通过 6 项相关原生检查，涵盖多窗口情境解析、旧画面选择与读回、对唱及桌面歌词、真实词间时间断句、封面回补、错过通知时的切歌补读。对比 Claude 末尾 `c6c1104` 的 15 个可独立运行 Python 合同，7 个旧脚本在两边都失败；本轮更新现行场景合同的接线断言，现行原生用例验证行为。两个调用 Xcode 的包装脚本和一个需要测试参数的数据库矩阵未计入这次比较。

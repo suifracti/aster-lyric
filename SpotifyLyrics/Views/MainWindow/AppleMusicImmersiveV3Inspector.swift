@@ -105,6 +105,7 @@ private struct V3LyricsTimePopover: View {
 struct V3ThemeSelectorView: View {
     @ObservedObject var settings: AppSettingsStore
     let artworkURL: URL?
+    let displayedPresentation: V3ListeningPresentation
     @Binding var preview: V3ArtworkPresentation?
     @Binding var previewScene: V3ListeningScene?
     var onConfirm: () -> Void
@@ -138,12 +139,13 @@ struct V3ThemeSelectorView: View {
     }
 
     private func isCurrent(_ entry: V3SceneFamily.Entry) -> Bool {
-        V3SceneFamily.inUse(entry, settings: settings)
+        V3SceneFamily.inUse(entry, scene: displayedPresentation.scene,
+                            renderer: displayedPresentation.renderer, treatment: settings.v3AmbientTreatment)
     }
 
     /// The renderer a click adopts. 封面 keeps the side of 静止 / 流动 last used.
     private func renderer(for entry: V3SceneFamily.Entry) -> V3ArtworkPresentation {
-        if isCurrent(entry) { return settings.v3ArtworkPresentation }
+        if isCurrent(entry) { return displayedPresentation.renderer }
         if let scene = entry.scene, entry.isCoverPair {
             let stored = settings.v3Renderer(for: scene)
             if entry.renderers.contains(stored) { return stored }
@@ -217,7 +219,10 @@ struct V3ThemeSelectorView: View {
             get: { card.automatic && ambientAutomatic ? -1 : current },
             set: { choice in
                 if card.automatic { ambientAutomatic = choice < 0 }
-                if choice < 0 { applyAutomaticAmbient() } else { adopt(card.entries[choice]) }
+                if choice < 0 {
+                    adopt(entry(of: card))
+                    applyAutomaticAmbient()
+                } else { adopt(card.entries[choice]) }
             })
         let details = card.entries.map { $0.title + "：" + ($0.detail ?? "") }.joined(separator: "\n")
         return V3SegmentedPicker(card.rowTitle, selection: selection, options: options)
@@ -408,10 +413,14 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
     /// the light drawn over it.
     @MainActor
     static func inUse(_ entry: Entry, settings: AppSettingsStore) -> Bool {
-        guard settings.v3ListeningScene == entry.scene,
-              entry.renderers.contains(settings.v3ArtworkPresentation) else { return false }
-        if entry.scene == .originalAmbient { return settings.v3AmbientTreatment == entry.treatment }
-        return true
+        inUse(entry, scene: settings.v3ListeningScene, renderer: settings.v3ArtworkPresentation,
+              treatment: settings.v3AmbientTreatment)
+    }
+
+    static func inUse(_ entry: Entry, scene: V3ListeningScene?, renderer: V3ArtworkPresentation,
+                      treatment: V3AmbientTreatment) -> Bool {
+        guard scene == entry.scene, entry.renderers.contains(renderer) else { return false }
+        return scene != .originalAmbient || treatment == entry.treatment
     }
 
     /// Moves between 环境光's lights for a new cover. It acts only while 环境光
@@ -425,7 +434,7 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
         let target = automaticAmbient(luminance: palette.luminance, detail: detail, route: palette.route)
         guard !inUse(target, settings: settings), let scene = target.scene else { return }
         if scene == .originalAmbient { settings.v3AmbientTreatment = target.treatment }
-        settings.selectV3Scene(scene, renderer: target.renderer)
+        settings.applyV3Scene(scene, renderer: target.renderer)
     }
 
     static func shortTitle(_ entry: Entry) -> String {
@@ -517,9 +526,45 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
 /// Shared settings controls used by the toolbar panel and the settings window.
 struct V3VisualControls {
     @ObservedObject var settings: AppSettingsStore
+    var displayedPresentation: V3ListeningPresentation?
+    @ObservedObject private var weather = V3WeatherWatcher.shared
+
+    private var presentation: V3ListeningPresentation {
+        displayedPresentation ?? V3ListeningPresentation(settings: settings, room: settings.v3Room.resolved(weather))
+    }
+    private var renderer: V3ArtworkPresentation { presentation.renderer }
+    private var scene: V3ListeningScene? { presentation.scene }
+
+    private func roomBinding<Value>(_ resolved: KeyPath<V3ListeningPresentation, Value>,
+                                    _ preference: ReferenceWritableKeyPath<AppSettingsStore, Value>,
+                                    _ choice: V3RoomOverrides) -> Binding<Value> {
+        Binding(get: { presentation[keyPath: resolved] }, set: {
+            settings.customizeV3Room(choice)
+            settings[keyPath: preference] = $0
+        })
+    }
+
+    var blur: Binding<Double> {
+        Binding(get: { settings.v3PreviewBlur(for: renderer, scene: scene) }, set: {
+            settings.setV3Blur($0, renderer: renderer, scene: scene)
+        })
+    }
+
+    private var foregroundScale: Binding<Double> {
+        Binding(get: { settings.v3PreviewScale(for: renderer, scene: scene) }, set: {
+            settings.setV3ForegroundScale($0, renderer: renderer, scene: scene)
+        })
+    }
+
+    var foregroundArtworkControl: some View {
+        Toggle(scene == .focusedLyrics || scene == .coverPhoto ? "显示歌曲缩略图" : "显示前景封面",
+               isOn: Binding(get: { settings.v3ShowsForegroundArtwork(scene: scene, renderer: renderer) }, set: {
+                   settings.setV3ForegroundVisible($0, renderer: renderer, scene: scene)
+               }))
+    }
 
     private var blurPresetName: String {
-        let r = settings.v3BackdropBlurRadius
+        let r = blur.wrappedValue
         if r <= 5 { return "清晰" }
         if r <= 35 { return "轻柔" }
         if r <= 75 { return "柔和" }
@@ -527,7 +572,7 @@ struct V3VisualControls {
     }
 
     private var sizePresetName: String {
-        let value = settings.v3ArtworkSizeScale
+        let value = foregroundScale.wrappedValue
         if abs(value - 0.8) < 0.001 { return "精巧" }
         if abs(value - 1.0) < 0.001 { return "标准" }
         if abs(value - 1.2) < 0.001 { return "大图" }
@@ -536,7 +581,7 @@ struct V3VisualControls {
     }
 
     private var backdropScalePresetName: String {
-        let value = settings.v3BackdropScale(for: settings.v3ArtworkPresentation)
+        let value = settings.v3PreviewBackdropScale(for: renderer, scene: scene)
         if abs(value - 0.8) < 0.001 { return "精巧" }
         if abs(value - 1.0) < 0.001 { return "标准" }
         if abs(value - 1.2) < 0.001 { return "大图" }
@@ -546,18 +591,18 @@ struct V3VisualControls {
 
 
     @ViewBuilder var blurControls: some View {
-        if settings.v3ArtworkPresentation != .stage || settings.v3BackgroundShowsCompleteArtwork(for: .stage) {
+        if renderer != .stage || settings.v3BackgroundShowsCompleteArtwork(for: .stage, scene: scene) {
         // The / key steps through 0 · 25 · 50 · 75 · 100; the slider covers the rest.
-        V3NumericSlider("背景模糊", value: $settings.v3BackdropBlurRadius, in: 0...100, step: 1, unit: "%")
-            .accessibilityLabel(settings.v3ArtworkPresentation.blurControlTitle)
+        V3NumericSlider("背景模糊", value: blur, in: 0...100, step: 1, unit: "%")
+            .accessibilityLabel(renderer.blurControlTitle)
             .help("按 / 在 0 · 25 · 50 · 75 · 100 之间切换，, 和 . 每次 ±5")
         }
     }
 
     private var backdropScaleControls: some View {
         V3NumericSlider("背景缩放", value: Binding(
-            get: { settings.v3BackdropScale(for: settings.v3ArtworkPresentation) },
-            set: { settings.setV3BackdropScale($0, for: settings.v3ArtworkPresentation) }
+            get: { settings.v3PreviewBackdropScale(for: renderer, scene: scene) },
+            set: { settings.setV3BackdropScale($0, for: renderer) }
         ), in: 0.8...1.4, step: 0.05, unit: "%", displayScale: 100)
             .accessibilityLabel("背景缩放")
             .accessibilityIdentifier("v3.classic.backgroundScale")
@@ -569,21 +614,21 @@ struct V3VisualControls {
 
     var playbackPresentationControls: some View {
         VStack(spacing: 2) {
-            V3SegmentedPicker("播放呈现", selection: $settings.v3PlaybackPresentation,
+            V3SegmentedPicker("播放呈现", selection: roomBinding(\.playback, \.v3PlaybackPresentation, .playback),
                               options: V3PlaybackPresentation.established.map { ($0.title, $0) })
             // The later presentations continue under the same label, like the
             // second row of 歌词呈现: one setting reads as one group.
             let additions = V3PlaybackPresentation.additions
             VStack(spacing: 2) {
-                V3SegmentedPicker("", selection: $settings.v3PlaybackPresentation,
+                V3SegmentedPicker("", selection: roomBinding(\.playback, \.v3PlaybackPresentation, .playback),
                                   options: additions.prefix(4).map { ($0.title, $0) })
-                V3SegmentedPicker("", selection: $settings.v3PlaybackPresentation,
+                V3SegmentedPicker("", selection: roomBinding(\.playback, \.v3PlaybackPresentation, .playback),
                                   options: additions.dropFirst(4).map { ($0.title, $0) })
             }
             .help(additions.map { $0.title + "：" + $0.detail }.joined(separator: "\n"))
             // The player card's own options, while the scene shows its card.
-            if !settings.v3ScenePlayerHidden {
-                V3SegmentedPicker("进度条", selection: $settings.v3ProgressStyle,
+            if !presentation.playback.hidesScenePlayer {
+                V3SegmentedPicker("进度条", selection: roomBinding(\.progress, \.v3ProgressStyle, .progress),
                                   options: V3ProgressStyle.allCases.map { ($0.title, $0) })
                     .help("歌词刻度：每句歌词的位置，悬停看那句。波形：按歌词疏密画出的起伏，Spotify 不提供音频数据。")
                 V3ChipToggles("", items: [("悬停出按钮", $settings.v3PlayerButtonsOnHover),
@@ -600,8 +645,8 @@ struct V3VisualControls {
         let first = Array(V3LyricStyle.allCases.prefix(4)), second = Array(V3LyricStyle.allCases.dropFirst(4))
         // 4 + 4: 雾窗 joins the second row.
         return VStack(spacing: 2) {
-            V3SegmentedPicker("歌词呈现", selection: $settings.v3LyricStyle, options: first.map { ($0.title, $0) })
-            V3SegmentedPicker("", selection: $settings.v3LyricStyle, options: second.map { ($0.title, $0) })
+            V3SegmentedPicker("歌词呈现", selection: roomBinding(\.lyricStyle, \.v3LyricStyle, .lyricStyle), options: first.map { ($0.title, $0) })
+            V3SegmentedPicker("", selection: roomBinding(\.lyricStyle, \.v3LyricStyle, .lyricStyle), options: second.map { ($0.title, $0) })
         }
         .help(V3LyricStyle.allCases.map { $0.title + "：" + $0.detail }.joined(separator: "\n"))
     }
@@ -621,25 +666,24 @@ struct V3VisualControls {
     /// and 封面柔焦 the moving one. 背景动态 chooses between them, so there is
     /// no separate 静止 / 流动 switch.
     @ViewBuilder var backgroundMotionControls: some View {
-        let renderer = settings.v3ArtworkPresentation
-        if settings.v3ListeningScene == .coverPhoto, renderer == .ambient || renderer == .classicGaussian {
+        if scene == .coverPhoto, renderer == .ambient || renderer == .classicGaussian {
             V3SegmentedPicker("背景动态", selection: Binding(
-                get: { renderer == .classicGaussian ? 0 : settings.v3AtmosphereLevel(for: .ambient) },
+                get: { renderer == .classicGaussian ? 0 : settings.v3AtmosphereLevel(for: .ambient, scene: scene) },
                 set: { level in
                     if level == 0 {
                         settings.selectV3Scene(.coverPhoto, renderer: .classicGaussian)
                     } else {
                         settings.selectV3Scene(.coverPhoto, renderer: .ambient)
-                        settings.setV3AtmosphereLevel(level, for: .ambient)
+                        settings.setV3AtmosphereLevel(level, for: .ambient, scene: .coverPhoto)
                     }
                 }
             ), options: [("关闭", 0), ("轻柔", 1), ("鲜明", 2)])
             .accessibilityIdentifier("v3.cover.motion")
             .help("关闭为静止的封面；轻柔和鲜明让背景缓慢流动。暂停、窗口隐藏或系统减少动态效果时停止。")
-        } else if settings.v3ListeningScene != .focusedLyrics && renderer != .classicGaussian {
+        } else if scene != .focusedLyrics && renderer != .classicGaussian {
             V3SegmentedPicker("背景动态", selection: Binding(
-                get: { settings.v3AtmosphereLevel(for: settings.v3ArtworkPresentation) },
-                set: { settings.setV3AtmosphereLevel($0, for: settings.v3ArtworkPresentation) }
+                get: { settings.v3AtmosphereLevel(for: renderer, scene: scene) },
+                set: { settings.setV3AtmosphereLevel($0, for: renderer, scene: scene) }
             ), options: [("关闭", 0), ("轻柔", 1), ("鲜明", 2)])
             .help("暂停、窗口隐藏或系统减少动态效果时停止装饰运动。")
         }
@@ -649,13 +693,11 @@ struct V3VisualControls {
         VStack(alignment: .leading, spacing: 2) {
             Toggle("夜间柔和", isOn: $settings.v3NightGentleEnabled)
                 .help("20:00–07:00 降低亮度15%，背景动态最高为轻柔。")
-            let renderer = settings.v3ArtworkPresentation
-            let scene = settings.v3ListeningScene
             if scene != .focusedLyrics && scene != .linerNotes {
                 V3PanelSection(title: "背景")
                 if !(scene == .flowingField && renderer == .classic) {
                     V3SegmentedPicker("取景", selection: Binding(
-                        get: { settings.v3BackgroundShowsCompleteArtwork(for: renderer) },
+                        get: { settings.v3BackgroundShowsCompleteArtwork(for: renderer, scene: scene) },
                         set: { settings.setV3BackgroundShowsCompleteArtwork($0, for: renderer) }
                     ), options: [("铺满", false), ("尽量完整", true)])
                     .help("背景取景不改变前景封面；可铺满裁切或保留完整内容。")
@@ -670,7 +712,7 @@ struct V3VisualControls {
                 if scene == .originalAmbient && renderer == .authenticAmbient {
                     V3NumericSlider("背景明暗", value: Binding(
                         get: { settings.v3BackgroundBrightness(for: renderer, scene: scene) },
-                        set: { settings.setV3BackgroundBrightness($0, for: renderer) }
+                        set: { settings.setV3BackgroundBrightness($0, for: renderer, scene: scene) }
                     ), in: 0.6...1.4, step: 0.05, unit: "%", displayScale: 100)
                         .accessibilityLabel("背景明暗")
                         .accessibilityIdentifier("v3.backgroundBrightness")
@@ -702,13 +744,15 @@ struct V3VisualControls {
                 .help("像隔着一扇窗：雨丝和挂在玻璃上的水珠、慢慢飘的雪、缓缓流动的雾。暂停时停下，减少动态效果时不显示。")
             Toggle("歌词意象", isOn: $settings.v3LyricImagery)
                 .help("唱到雨、雪、星、花（中日韩英关键词）时，那一句飘一阵对应的粒子。")
-            if scene != .focusedLyrics && scene != .coverPhoto && settings.v3ShowForegroundArtwork {
+            if scene != .focusedLyrics && scene != .coverPhoto && settings.v3ShowsForegroundArtwork(scene: scene, renderer: renderer) {
                 V3PanelSection(title: "前景封面")
-                V3NumericSlider("尺寸", value: $settings.v3ArtworkSizeScale, in: 0.8...1.4, step: 0.05,
+                V3NumericSlider("尺寸", value: foregroundScale, in: 0.8...1.4, step: 0.05,
                                 unit: "%", displayScale: 100)
                     .accessibilityLabel("前景封面尺寸")
                 if scene != .linerNotes {
-                    V3SegmentedPicker("位置", selection: $settings.v3ArtworkPosition,
+                    V3SegmentedPicker("位置", selection: Binding(get: { settings.v3PreviewPosition(for: renderer, scene: scene) }, set: {
+                        settings.setV3ForegroundPosition($0, renderer: renderer, scene: scene)
+                    }),
                                       options: [("居左", "left"), ("居中", "center"), ("居右", "right")])
                 }
                 if scene == nil && renderer != .albumPoster && renderer != .stage && renderer != .lyricsOnly {
@@ -717,7 +761,7 @@ struct V3VisualControls {
                 }
             }
             V3PanelSection(title: "播放")
-            if settings.v3EdgeProgressEnabled {
+            if presentation.playback == .windowEdge {
                 V3WindowEdgeProgressSettings(enabled: $settings.v3EdgeProgressEnabled,
                     colorHex: $settings.v3EdgeProgressColorHex,
                     colorMode: $settings.v3EdgeProgressColorMode, showsModeToggle: false,
@@ -789,11 +833,14 @@ struct V3VisualControls {
             V3ChipToggles("", items: [("只看前方", $settings.v3HidesSungLines),
                                       ("整句亮", $settings.v3WholeLineTiming)])
                 .help("只看前方：唱过的歌词隐去，只留当前句和后面的；只对带时间的歌词有效。\n整句亮：有逐字时间的歌词也按整句显示，不逐字填色。")
-            V3SegmentedPicker("行宽", selection: $settings.v3LyricWidth, options: V3LyricWidth.options)
+            V3SegmentedPicker("行宽", selection: roomBinding(\.lyricWidth, \.v3LyricWidth, .lyricWidth), options: V3LyricWidth.options)
                 .help("标准：保持适合阅读的行长。宽：一行能放更多字。满幅：歌词可以铺满窗口宽度（情境也可能带上自己的行宽）。")
-            V3SegmentedPicker("对齐", selection: $settings.v3LyricsPosition,
+            V3SegmentedPicker("对齐", selection: Binding(get: { presentation.lyricsPosition }, set: {
+                settings.customizeV3Room(.lyricsPosition)
+                settings.setV3LyricsPosition($0, for: renderer, scene: scene)
+            }),
                               options: [("跟随场景", "automatic"), ("左", "left"), ("居中", "center"), ("右", "right")])
-                .help("跟随场景：当前使用" + (settings.v3ListeningScene == .coverPhoto ? "右侧阅读区" : settings.v3ArtworkPresentation == .stage ? "居中阅读区" : "左对齐"))
+                .help("跟随场景：当前使用" + (scene == .coverPhoto ? "右侧阅读区" : renderer == .stage ? "居中阅读区" : "左对齐"))
             V3SegmentedPicker("清晰度", selection: $settings.v3ReadingProtection,
                               options: V3ReadingProtection.allCases.map { ($0.title, $0) })
                 .help("文字阴影只作用于歌词；柔和光晕随封面明暗调整。")
@@ -831,9 +878,9 @@ struct V3VisualControls {
     }
 
     func atmosphereButton(_ title: String, level: Int) -> some View {
-        let selected = settings.v3AtmosphereLevel(for: settings.v3ArtworkPresentation) == level
+        let selected = settings.v3AtmosphereLevel(for: renderer, scene: scene) == level
         return Button {
-            settings.setV3AtmosphereLevel(level, for: settings.v3ArtworkPresentation)
+            settings.setV3AtmosphereLevel(level, for: renderer, scene: scene)
         } label: {
             Text(title)
                 .font(.system(size: 11, weight: selected ? .semibold : .regular))
@@ -876,11 +923,11 @@ struct V3VisualControls {
     @ViewBuilder
     private func blurPresetButton(_ title: String, val: Double) -> some View {
         Button {
-            settings.v3BackdropBlurRadius = val
+            blur.wrappedValue = val
         } label: {
             Text(title)
-                .font(.system(size: 11, weight: abs(settings.v3BackdropBlurRadius - val) < 5 ? .bold : .regular))
-                .foregroundStyle(abs(settings.v3BackdropBlurRadius - val) < 5 ? Color.blue : Color.secondary)
+                .font(.system(size: 11, weight: abs(blur.wrappedValue - val) < 5 ? .bold : .regular))
+                .foregroundStyle(abs(blur.wrappedValue - val) < 5 ? Color.blue : Color.secondary)
                 .frame(minWidth: 40, minHeight: 28)
                 .contentShape(Rectangle())
         }
@@ -890,11 +937,11 @@ struct V3VisualControls {
     @ViewBuilder
     private func sizePresetButton(_ title: String, val: Double) -> some View {
         Button {
-            settings.v3ArtworkSizeScale = val
+            foregroundScale.wrappedValue = val
         } label: {
             Text(title)
-                .font(.system(size: 11, weight: abs(settings.v3ArtworkSizeScale - val) < 0.04 ? .bold : .regular))
-                .foregroundStyle(abs(settings.v3ArtworkSizeScale - val) < 0.04 ? Color.blue : Color.secondary)
+                .font(.system(size: 11, weight: abs(foregroundScale.wrappedValue - val) < 0.04 ? .bold : .regular))
+                .foregroundStyle(abs(foregroundScale.wrappedValue - val) < 0.04 ? Color.blue : Color.secondary)
                 .frame(minWidth: 40, minHeight: 28)
                 .contentShape(Rectangle())
         }
@@ -903,9 +950,9 @@ struct V3VisualControls {
 
     @ViewBuilder
     private func backdropScalePresetButton(_ title: String, val: Double) -> some View {
-        let currentScale = settings.v3BackdropScale(for: settings.v3ArtworkPresentation)
+        let currentScale = settings.v3PreviewBackdropScale(for: renderer, scene: scene)
         Button {
-            settings.setV3BackdropScale(val, for: settings.v3ArtworkPresentation)
+            settings.setV3BackdropScale(val, for: renderer)
         } label: {
             Text(title)
                 .font(.system(size: 11, weight: abs(currentScale - val) < 0.04 ? .bold : .regular))

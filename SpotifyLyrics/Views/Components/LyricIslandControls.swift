@@ -322,9 +322,12 @@ enum LyricIslandArtworkColors {
         inFlight[url] = task
         let value = await task.value
         inFlight[url] = nil
-        palettes[url] = value
-        order.removeAll { $0 == url }; order.append(url)
-        if order.count > 48 { palettes[order.removeFirst()] = nil }
+        if value != .neutral {
+            palettes[url] = value
+            order.removeAll { $0 == url }
+            order.append(url)
+            if order.count > 48 { palettes[order.removeFirst()] = nil }
+        }
         return value
     }
 

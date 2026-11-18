@@ -95,13 +95,16 @@ final class V3MusicPulse: NSObject, ObservableObject {
 
     private var stream: SCStream?
     private var stopTask: Task<Void, Never>?
+    private var listeners: Set<UUID> = []
     private let queue = DispatchQueue(label: "com.spotifylyrics.music-pulse", qos: .userInitiated)
     nonisolated(unsafe) private var analyzer = PulseAnalyzer()
 
     /// Turns listening on or off. Stopping waits a moment so a short pause
     /// or a window switch does not restart the stream.
-    func setWanted(_ wanted: Bool) {
-        if wanted {
+    func setWanted(_ wanted: Bool, from listener: UUID) {
+        if wanted { listeners.insert(listener) }
+        else { listeners.remove(listener) }
+        if !listeners.isEmpty {
             stopTask?.cancel(); stopTask = nil
             guard stream == nil, status != .starting else { return }
             Task { await start() }
