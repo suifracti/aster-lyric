@@ -3150,8 +3150,9 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
-    private func synchronize(with snapshot: PlaybackSnapshot, observedAtMonotonic: TimeInterval? = nil) {
+    private func synchronize(with incoming: PlaybackSnapshot, observedAtMonotonic: TimeInterval? = nil) {
         guard !isMockPreviewMode else { return }
+        let snapshot = incoming.retainingArtwork(from: desktopSnapshots[incoming.sourceIdentity])
         noteConnection(for: snapshot.sourceIdentity, status: snapshot.status)
         defer { updatePlaybackScheduling() }
         if snapshot.status.isReady, snapshot.track != nil {

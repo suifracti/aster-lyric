@@ -466,10 +466,11 @@ final class DesktopPlaybackEventTests: XCTestCase {
         }
         provider.snapshot = PlaybackSnapshot(status: .ready,
             track: ProviderTrack(id: id, title: "Light source", artist: "kyiku refreshed",
-                album: "Even if it was a small prayer", duration: 246.49, artworkURL: artwork),
+                album: "Even if it was a small prayer", duration: 246.49),
             position: 20, isPlaying: true, sourceIdentity: .spotifyDesktop)
         await state.calibratePlaybackPositionIfNeeded()
         XCTAssertEqual(state.currentTime, 20, accuracy: 0.2)
+        XCTAssertEqual(state.currentTrack.artworkURL, artwork, "a same-recording position read can omit artwork already resolved by the notification path")
         XCTAssertEqual(state.liveLyricsVersionID, versionID)
         // The observed key must still resolve the adopted asset for editor/offset/version actions.
         let observed = TrackIdentity(title: "Light source", artist: "kyiku", album: "Even if it was a small prayer", duration: 246.49, spotifyTrackID: id)

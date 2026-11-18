@@ -19,6 +19,19 @@ extension ProviderTrack {
     }
 }
 
+extension PlaybackSnapshot {
+    /// Position and metadata reads may omit an artwork URL already fetched
+    /// for this recording. A new recording must resolve its own cover.
+    func retainingArtwork(from previous: PlaybackSnapshot?) -> Self {
+        guard status.isReady, let track, track.artworkURL == nil,
+              let previous, previous.sourceIdentity == sourceIdentity,
+              let priorTrack = previous.track, priorTrack.desktopRecordingKey == track.desktopRecordingKey,
+              let artwork = priorTrack.artworkURL else { return self }
+        return Self(status: status, track: track.withArtworkURL(artwork), position: position,
+                    isPlaying: isPlaying, sourceIdentity: sourceIdentity)
+    }
+}
+
 /// Metadata comes from desktop-player broadcasts. Position-only corrections
 /// cannot introduce a different recording or undo a newer broadcast.
 struct DesktopPlaybackUpdate: Sendable {

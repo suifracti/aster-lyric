@@ -338,6 +338,7 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **自己估速度的坑**：150 BPM 一拍是 37.5 帧，不是整数，37、38 两个间隔各只对上一半的拍，两拍（75 帧）反而最齐，于是估成一半；先把起音曲线平滑两次即可。80–160 BPM 之外的“差一倍”是固有歧义，不再硬调。
 - **背景素材合并成一个选择。** 第一版“背景素材”和“有视频时用视频”分开，选了歌手照片还得关视频才看得到；现为 视频 / 封面 / 歌手照片 一个选择（`v3.backdrop.source.v2`，从两个旧键迁移）。
 - **Spotify 有时给不出封面地址**（`ARTWORK desktop … found=false`），前景封面变成占位图；现在改从公开 oEmbed 取同一首歌的 640 px 封面。
+- **封面先显示随后又没了（2026-11-18）。** 《Uta o Oshietekureta Anata e》的日志有封面成功、图片地址进背景、同一录音又收到空地址三个连续事件；Spotify CDN 返回 200。播放事件已保留封面，定时校准走另一入口把它覆盖了。`PlaybackState.synchronize` 统一用 `retainingArtwork`，只在同来源同录音缺地址时沿用已经解析的封面。原生用例复现空地址校准前后保留封面，同时继续更新时间、歌词身份和版本。
 - **跳转保持与单句循环冲突。** 循环靠 Spotify 报告的位置判断句尾，保持会把它挡住（`testLyricLineRepeatsUntilCancelledAndStopsOnTrackChange` 抓到）；来源 `lyric-line-loop` 不保持。
 - **脏词还原只做等长替换。** 走 `ReadingProjection` 的显示投影（和繁简转换同一处），逐字片段按原 UTF-16 范围重取文字；投影缓存键加上这个开关。
 - **顺带修正**：`testPinnedPlacement` 还在要求“永远不放左侧”，与 Round 14 的“右侧放不下就放左侧”冲突，已按现行为更新。
