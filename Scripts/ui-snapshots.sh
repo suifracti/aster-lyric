@@ -209,6 +209,8 @@ declare -a CASES=(
   "quick-find|--surface quick-find --lookup 信 --appearance light --width 565 --height 425"
   "quick-find-tools|--surface quick-find --lookup 歌词 --appearance dark --width 445 --height 360"
   "lyric-file|--surface lyric-file --appearance light --width 560 --height 530"
+  "manuscript|--surface manuscript --appearance light --width 650 --height 570"
+  "manuscript-stanzas|--surface stanzas --appearance dark --width 470 --height 530"
   "compare-translations|--surface compare --appearance light --width 710 --height 530"
   "compare-translations-narrow|--surface compare --appearance dark --width 480 --height 540"
 )

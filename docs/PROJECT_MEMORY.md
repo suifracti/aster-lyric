@@ -13,6 +13,7 @@
 | 从其他应用选字查歌词、⌘K 找回一句、搜到副歌却只打开歌曲档案 | L-043、L-046 · WorkspaceQuickFind、searchLibraryPassages |
 | 两份稿逐句对照、改译时借用另一版的句子、重复副歌错位 | L-049 · LibraryVersionComparison、LibraryTranslationRevisionDraft |
 | 从 Finder 打开歌词文件、给本机录音补稿、导出手里的版本、入库后合声消失 | L-032、L-048 · LyricFileDocument、LocalLyricsFile、PortableLyricsEdition |
+| 没放歌时写手稿、调整段落或接着修上一稿 | L-050 · LyricManuscript、LyricWritingDesk、ManuscriptStanzas |
 | 新包、截图、构建/签名、实际运行是哪份 | L-002；DEVELOPMENT_WORKFLOW.md |
 | 极简、减少按钮、保留旧功能 | L-003；TOOLBAR_BEHAVIOR.md |
 | 找回旧环境光、模糊/缩放参数、样式合并；改 renderer/偏好 | L-004；AppSettingsStore.swift 与 authenticAmbientArtworkLayers |
@@ -747,3 +748,11 @@ TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、
 只有同一原词版本且哈希一致的两份译文可以挑句。选句记录只存在对读窗口里，按参照稿分别保留；进入编辑器后，沿用底稿的父子关系与人工保存路径。键盘和辅助功能可以直接访问档案和版本行操作。覆盖见 LibraryIdentitySearchContractTests 与 LibraryRevisionsContractTests。
 
 播放面板的「逐句对读」和档案使用同一个窗口，可更换两边的稿或交换底稿。收听入口仅取播放器当前原词下已经载入的版本；点击「采用」时再次匹配实时录音、原词 UUID 和译文状态。切歌、切原词或进入搜索试听时收起跟随播放的对读窗口，离线档案仍可独立修订原稿。
+
+## L-050 写手稿、编排段落和存人工版本（2026-11-18）
+
+手稿使用 macOS 可编辑文档。文件为 UTF-8，头部记录标题、手稿身份及上次明确存入的录音和版本，正文保留空行。移动段落时只换正文内容，两段之间原有的换行和留白照旧。在结尾复用同一段会生成独立的文字，后续可以各自修改。纯文字和粘贴来的 LRC 共用已有解析和阅读入口。
+
+归档以录音、手稿 ID 和正文指纹去重，局部时间也计入指纹。同一手稿再次归档时关联到它在这份录音中引用的父稿，其他录音不能借用。外部 TXT、LRC 和 TTML 继续用独立的阅读窗口；手稿 UTI 属于 `public.text`，这样系统不会把它交给通用纯文本阅读器。
+
+真实窗口验收在私有目录打开一份手稿，重复第二段，经文件菜单保存并回读正文，移动首段再存入同一录音。两版之间的父稿和原有采用选择均已读回。从已存稿打开阅读页后，通过启用的 ⌘N 菜单项新建了空白手稿。

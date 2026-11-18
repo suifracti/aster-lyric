@@ -22,6 +22,7 @@ enum WorkspacePalette {
 struct SettingsWorkspace: View {
     @AppStorage(LastOpenedLyricsRecord.defaultsKey, store: .lyricsQ) private var lastOpenedData = Data()
     @Environment(\.openDocument) private var openDocument
+    @Environment(\.newDocument) private var newDocument
     @State private var droppedOn = false
     @State private var openingError: String?
     let navigate: (SettingsLocation) -> Void
@@ -33,6 +34,9 @@ struct SettingsWorkspace: View {
                     Text("我的工作台").font(.system(size: 29, weight: .semibold, design: .serif))
                         .accessibilityAddTraits(.isHeader)
                     Spacer()
+                    Button { newDocument(LyricManuscript()) } label: {
+                        Label("写手稿", systemImage: "square.and.pencil")
+                    }.help("新建歌词手稿")
                     Button { openFiles(LyricFileDocument.choose(multiple: true)) } label: {
                         Label("打开歌词…", systemImage: "doc.text")
                     }.help("打开 TXT、LRC 或 TTML 文件，也可以从 Finder 拖到这里")

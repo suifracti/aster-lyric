@@ -192,6 +192,12 @@ struct SpotifyLyricsApp: App {
         .defaultSize(width: 565, height: 430)
         .defaultPosition(.center)
 
+        DocumentGroup(newDocument: LyricManuscript()) { opened in
+            LyricWritingDesk(draft: opened.$document, fileURL: opened.fileURL)
+        }
+        .defaultSize(width: 650, height: 610)
+        .keyboardShortcut("n", modifiers: .command)
+
         DocumentGroup(viewing: LyricFileDocument.self) { opened in
             LyricDocumentWindow(document: opened.document, url: opened.fileURL)
                 .environmentObject(appSettings)

@@ -477,6 +477,7 @@ private struct RecordShelfMark: View {
 // MARK: - Track Detail View
 
 public struct PersonalLibraryTrackDetailView: View {
+    @Environment(\.newDocument) private var newDocument
     @EnvironmentObject private var settings: AppSettingsStore
     @EnvironmentObject private var playback: PlaybackState
     @ObservedObject var service: PersonalLyricsLibraryService
@@ -545,7 +546,10 @@ public struct PersonalLibraryTrackDetailView: View {
                                 if lyricsVersions.isEmpty {
                                     emptyPlaceholder("暂无保存的歌词版本")
                                     if !compact {
-                                        Button("从本机文件补上…", systemImage: "doc.badge.plus") { attachFile(to: detail.entry) }
+                                        HStack {
+                                            Button("写一份手稿…", systemImage: "square.and.pencil") { writeManuscript(for: detail.entry) }
+                                            Button("从本机文件补上…", systemImage: "doc.badge.plus") { attachFile(to: detail.entry) }
+                                        }
                                     }
                                 } else {
                                     ForEach(lyricsVersions) { lv in
@@ -628,6 +632,11 @@ public struct PersonalLibraryTrackDetailView: View {
         } message: { Text(fileIssue ?? "") }
     }
 
+    private func writeManuscript(for entry: PersonalLyricsLibraryEntry) {
+        let manuscript = LyricManuscript(title: entry.title, artist: entry.artist, album: entry.album ?? "", recordingKey: entry.trackStableKey)
+        newDocument(manuscript)
+    }
+
     private func attachFile(to entry: PersonalLyricsLibraryEntry) {
         guard let url = LyricFileDocument.choose(multiple: false).first else { return }
         let language = settings.aiTranslationConfiguration.targetLanguage
@@ -677,6 +686,7 @@ public struct PersonalLibraryTrackDetailView: View {
                     }
                     compareAction(detail)
                     Menu("更多") {
+                        Button("为这首歌写手稿…", systemImage: "square.and.pencil") { writeManuscript(for: entry) }
                         Button("从文件添加歌词…", systemImage: "doc.badge.plus") { attachFile(to: entry) }
                         Button("导出资产包", systemImage: "square.and.arrow.up") { service.exportPackage(for: entry.trackStableKey) }
                     }.fixedSize()

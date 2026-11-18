@@ -3,6 +3,7 @@ import Foundation
 
 enum LocalLyricsFileKind: String, CaseIterable, Sendable {
     case txt, lrc, ttml
+    case manuscript = "asterdraft"
 }
 
 /// A file can be read before the user chooses any recording or opens the library.
@@ -13,14 +14,17 @@ struct LocalLyricsFile: Sendable {
     let translationLanguages: [String]
     private(set) var initialTranslationLanguage: String?
     private let fingerprint: String
+    private(set) var manuscriptID: UUID?
+    private(set) var manuscriptParentID: UUID?
     var lines: [LyricLine] { content.lines }
 
     init(data: Data, kind: LocalLyricsFileKind, preferredLanguage: String) throws {
-        self.kind = kind
-        fingerprint = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         let emptyTrack = Track(title: "", artist: "", album: "", duration: 0)
         let identity = TrackIdentity(track: emptyTrack)
         switch kind {
+        case .manuscript:
+            self = try LyricManuscript(data: data).lyricFile()
+            return
         case .txt:
             let text = try TextLyricsImportParser.parse(data)
             content = text.document(identity: identity, track: emptyTrack)
@@ -38,8 +42,25 @@ struct LocalLyricsFile: Sendable {
             content = document
             locked = false
         }
+        self.kind = kind
+        fingerprint = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         translationLanguages = LyricSourceTranslation.languages(in: content.lines)
         initialTranslationLanguage = LyricSourceTranslation.preferred(translationLanguages, for: preferredLanguage)
+    }
+
+    init(manuscript: LyricManuscript) throws {
+        let lrc = try? LRCImportParser.parse(manuscript.text)
+        let usesLRC = lrc.map { result in
+            result.metadata != LRCMetadata() || result.lines.contains { $0.startTime != nil }
+        } ?? false
+        try self.init(data: Data(manuscript.text.utf8), kind: usesLRC ? .lrc : .txt, preferredLanguage: "und")
+        manuscriptID = manuscript.id
+        manuscriptParentID = manuscript.filedVersionID
+        let parsed = content
+        content = LyricsDocument(identity: parsed.identity, title: manuscript.title.isEmpty ? parsed.title : manuscript.title,
+            artist: manuscript.artist.isEmpty ? parsed.artist : manuscript.artist, album: manuscript.album.isEmpty ? parsed.album : manuscript.album,
+            duration: parsed.duration, lines: parsed.lines, isSynchronized: parsed.isSynchronized, source: .manualCreate,
+            language: parsed.language, explicitlyTimedLineIndices: parsed.explicitlyTimedLineIndices)
     }
 
     func viewing(_ language: String?) -> Self {
@@ -55,10 +76,11 @@ struct LocalLyricsFile: Sendable {
     }
 
     func document(for track: Track) -> LyricsDocument {
-        LyricsDocument(identity: TrackIdentity(track: track), title: track.title, artist: track.artist,
+        let prefix = manuscriptID.map(LyricManuscript.sourcePrefix) ?? LyricsPersistenceMapper.lyricFileSourcePrefix
+        return LyricsDocument(identity: TrackIdentity(track: track), title: track.title, artist: track.artist,
                        album: track.album, duration: track.duration > 0 ? track.duration : content.duration,
-                       lines: lines, isSynchronized: content.isSynchronized, source: .manualImport,
-                       providerSourceID: LyricsPersistenceMapper.lyricFileSourcePrefix + fingerprint, language: content.language,
+                       lines: lines, isSynchronized: content.isSynchronized, source: manuscriptID == nil ? .manualImport : .manualCreate,
+                       providerSourceID: prefix + fingerprint, language: content.language,
                        explicitlyTimedLineIndices: content.explicitlyTimedLineIndices)
     }
 }
@@ -66,7 +88,8 @@ struct LocalLyricsFile: Sendable {
 extension SQLiteLyricsRepository {
     func importLyricFile(_ file: LocalLyricsFile, into track: Track, archiveKey: String? = nil) throws -> LibraryPassageTarget {
         let document = file.document(for: track)
-        let result = try storeImportedFile(track: track, document: document, locked: file.locked, archiveKey: archiveKey)
+        let result = try storeImportedFile(track: track, document: document, locked: file.locked,
+                                           archiveKey: archiveKey, manuscriptID: file.manuscriptID, manuscriptParentID: file.manuscriptParentID)
         guard let id = result.versionID else {
             if case let .rejected(reason) = result.disposition { throw LyricsEditingRepositoryError.invalidDocument(reason) }
             throw LyricsEditingRepositoryError.sourceNotFound

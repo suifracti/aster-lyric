@@ -280,6 +280,8 @@
 		C0EAD72A39DBF51001F1F0D5 /* LibraryVersionCompareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB7897AB0B3E2046F4D44B7D /* LibraryVersionCompareView.swift */; };
 		AB9EAD42EB5CC5DEAFD10F91 /* WorkspaceQuickFind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C63E37EC5A1E94BBBE28F6 /* WorkspaceQuickFind.swift */; };
 		83E5437AF1A14EDB1F1A703B /* PortableLyricsEdition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D7BB930725D9BFC4E334E0 /* PortableLyricsEdition.swift */; };
+		B18B610D474328FCC8E0FDDE /* LyricManuscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0209A18F3B89D1B941B7E245 /* LyricManuscript.swift */; };
+		0D1F9D3CFAD240DF3C2C48A0 /* LyricWritingDesk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5463A2BA9B7B55AA5A4C422D /* LyricWritingDesk.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -562,6 +564,8 @@
 		DB7897AB0B3E2046F4D44B7D /* LibraryVersionCompareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryVersionCompareView.swift; sourceTree = "<group>"; };
 		56C63E37EC5A1E94BBBE28F6 /* WorkspaceQuickFind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceQuickFind.swift; sourceTree = "<group>"; };
 		18D7BB930725D9BFC4E334E0 /* PortableLyricsEdition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortableLyricsEdition.swift; sourceTree = "<group>"; };
+		0209A18F3B89D1B941B7E245 /* LyricManuscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricManuscript.swift; sourceTree = "<group>"; };
+		5463A2BA9B7B55AA5A4C422D /* LyricWritingDesk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricWritingDesk.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -686,6 +690,7 @@
 				110000702D83400100000000 /* LRCImportExport.swift */,
 				110000712D83400100000000 /* TextLyricsImport.swift */,
 				7C969ACC8BEA0FCFAB31779E /* LocalLyricsFile.swift */,
+				0209A18F3B89D1B941B7E245 /* LyricManuscript.swift */,
 				18D7BB930725D9BFC4E334E0 /* PortableLyricsEdition.swift */,
 			);
 			path = Editor;
@@ -715,6 +720,7 @@
 			isa = PBXGroup;
 			children = (
 				1100006D2D83400100000000 /* LyricsEditorWindowView.swift */,
+				5463A2BA9B7B55AA5A4C422D /* LyricWritingDesk.swift */,
 			);
 			path = Editor;
 			sourceTree = "<group>";
@@ -1286,11 +1292,13 @@
 				1100006B2D83400100000001 /* LyricsEditingRepository.swift in Sources */,
 				1100006C2D83400100000001 /* LyricsEditorSessionController.swift in Sources */,
 				1100006D2D83400100000001 /* LyricsEditorWindowView.swift in Sources */,
+				0D1F9D3CFAD240DF3C2C48A0 /* LyricWritingDesk.swift in Sources */,
 				1100006E2D83400100000001 /* LyricsEditorModels.swift in Sources */,
 				1100006F2D83400100000001 /* LyricsTimelineValidator.swift in Sources */,
 				110000702D83400100000001 /* LRCImportExport.swift in Sources */,
 				110000712D83400100000001 /* TextLyricsImport.swift in Sources */,
 				76742E4922C17A4F57B4463F /* LocalLyricsFile.swift in Sources */,
+				B18B610D474328FCC8E0FDDE /* LyricManuscript.swift in Sources */,
 				83E5437AF1A14EDB1F1A703B /* PortableLyricsEdition.swift in Sources */,
 				110000722D83400100000001 /* ManualLyricsActionsView.swift in Sources */,
 				110000E22D83400100000001 /* AlignmentProvenanceStore.swift in Sources */,

@@ -4,6 +4,58 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class LibraryRevisionsContractTests: XCTestCase {
+    func testMovingAndRepeatingStanzasKeepsBlankSpaceAndTimingLabels() throws {
+        let text = "\r\n[00:01.00]第一段🌿\r\n下一行\r\n \t\r\n回来\r\n\r\n回来\r\n"
+        let draft = LyricManuscript(text: text)
+        XCTAssertEqual(try LyricManuscript(data: draft.data), draft)
+        let arrangement = ManuscriptStanzas(text)
+        XCTAssertEqual(arrangement.stanzas.map(\.firstOccurrence), [0, 1, 1])
+        let moved = try XCTUnwrap(arrangement.moving(0, by: 1))
+        XCTAssertEqual(moved, "\r\n回来\r\n \t\r\n[00:01.00]第一段🌿\r\n下一行\r\n\r\n回来\r\n")
+        XCTAssertEqual(ManuscriptStanzas(moved).moving(1, by: -1), text)
+        XCTAssertEqual(arrangement.repeatingAtEnd(1), text + "\r\n回来\r\n")
+    }
+
+    func testWritingAnOfflineManuscriptKeepsTheDraftAndItsVersionHistory() async throws {
+        var draft = LyricManuscript(title: "留在纸上", artist: "本机", album: "书桌", text: "\n第一句\n\n还有一句\n")
+        let parsed = try LyricManuscript(data: draft.data)
+        XCTAssertEqual(parsed, draft)
+        let file = try LocalLyricsFile(data: draft.data, kind: .manuscript, preferredLanguage: "zh")
+        XCTAssertEqual(file.lines.map(\.originalText), ["第一句", "", "还有一句"])
+        XCTAssertEqual(file.content.title, "留在纸上")
+        let track = Track(title: draft.title, artist: draft.artist, album: draft.album, duration: 0)
+        let repo = SQLiteLyricsRepository(databaseURL: NativeTestRuntime.root.appendingPathComponent("\(UUID()).sqlite3"))
+        let first = try await repo.importLyricFile(file, into: track)
+        draft.text = "[00:00.00]第一句\n第二句"
+        let nextFile = try draft.lyricFile()
+        let second = try await repo.importLyricFile(nextFile, into: track)
+        let duplicate = try await repo.importLyricFile(nextFile, into: track)
+        XCTAssertEqual(duplicate, second)
+        draft.text = "[00:02.30]第一句\n第二句"
+        let third = try await repo.importLyricFile(draft.lyricFile(), into: track)
+        let detail = try await repo.loadPersonalLibraryTrackDetail(stableKey: first.trackKey)
+        guard case let .original(parentID) = first.source, case let .original(childID) = second.source,
+              case let .original(lastID) = third.source else { return XCTFail("需要三版手写原词") }
+        XCTAssertEqual(detail?.lyricsVersions.count, 3)
+        XCTAssertEqual(detail?.lyricsVersions.first { $0.id == childID }?.parentVersionID, parentID)
+        XCTAssertEqual(detail?.lyricsVersions.first { $0.id == lastID }?.parentVersionID, childID)
+        XCTAssertEqual(detail?.entry.activeLyricsVersionID, parentID)
+        XCTAssertEqual(detail?.lyricsVersions.first?.source, "manualCreate")
+        let last = try await repo.readLibraryPassage(third)
+        XCTAssertEqual(last?.lines.map(\.startTime), [2.3, nil])
+        draft.recordingKey = first.trackKey
+        draft.filedVersionID = parentID
+        draft.text = "从第一稿另写的结尾"
+        let fork = try await repo.importLyricFile(draft.lyricFile(), into: track)
+        guard case let .original(forkID) = fork.source else { return XCTFail("应当创建分稿") }
+        let revised = try await repo.loadPersonalLibraryTrackDetail(stableKey: first.trackKey)
+        XCTAssertEqual(revised?.lyricsVersions.first { $0.id == forkID }?.parentVersionID, parentID)
+        let other = Track(title: draft.title, artist: "另一位", album: "", duration: 0)
+        let unrelated = try await repo.importLyricFile(draft.lyricFile(), into: other)
+        let separate = try await repo.loadPersonalLibraryTrackDetail(stableKey: unrelated.trackKey)
+        XCTAssertNil(separate?.lyricsVersions.first?.parentVersionID)
+    }
+
     func testPortableTTMLPreservesSourceLanguagesAndExportsTheExactArchivedTranslation() async throws {
         let text = """
         <tt xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xml:lang="ja"><body><div>

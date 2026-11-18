@@ -27,7 +27,7 @@ struct LyricFileDocument: FileDocument {
     @MainActor static func choose(multiple: Bool) -> [URL] {
         let panel = NSOpenPanel()
         panel.message = "打开本地歌词"
-        panel.allowedContentTypes = readableContentTypes
+        panel.allowedContentTypes = readableContentTypes + [LyricManuscript.manuscriptType]
         panel.allowsMultipleSelection = multiple
         panel.canChooseDirectories = false
         return panel.runModal() == .OK ? panel.urls : []
@@ -84,6 +84,8 @@ struct LyricFileReader: View {
     var sourceURL: URL?
     var destination: PersonalLyricsLibraryEntry?
     var close: (() -> Void)?
+    var preferredRecording: String?
+    var onFiled: ((LibraryPassageTarget) -> Void)?
     @Environment(\.openSettings) private var openSettings
     @State private var filing = false
     @State private var filed: LibraryPassageTarget?
@@ -123,7 +125,7 @@ struct LyricFileReader: View {
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
                     Image(systemName: "doc.text").foregroundStyle(WorkspacePalette.ink)
-                    Text(file.kind.rawValue.uppercased()).font(.caption.monospaced().weight(.semibold))
+                    Text(file.manuscriptID == nil ? file.kind.rawValue.uppercased() : "手稿").font(.caption.monospaced().weight(.semibold))
                     Text(timing).font(.caption).foregroundStyle(.secondary)
                     Spacer(minLength: 4)
                     Button { finding.toggle(); focusedFind = finding } label: { Image(systemName: "magnifyingglass") }
@@ -233,11 +235,12 @@ struct LyricFileReader: View {
         }
         .background(WorkspacePalette.paper)
         .sheet(isPresented: $filing) {
-            LyricFileFilingSheet(file: file.viewing(language), title: title, library: library) { target in
+            LyricFileFilingSheet(file: file.viewing(language), title: title, library: library, preferredRecording: preferredRecording) { target in
                 filed = target
                 filing = false
             }
         }
+        .onChange(of: filed) { _, target in if let target { onFiled?(target) } }
     }
 
     private func passageLine(_ index: Int) -> LibraryPassagePage.Line {
@@ -314,10 +317,11 @@ struct PortableLyricsExportItems: View {
     }
 }
 
-private struct LyricFileFilingSheet: View {
+struct LyricFileFilingSheet: View {
     let file: LocalLyricsFile
     let library: PersonalLyricsLibraryService
     let finished: (LibraryPassageTarget) -> Void
+    let preferredRecording: String?
     @Environment(\.dismiss) private var dismiss
     @State private var records: [DatabaseTrackRecord] = []
     @State private var query: String
@@ -330,11 +334,12 @@ private struct LyricFileFilingSheet: View {
     @State private var saving = false
     @State private var error: String?
 
-    init(file: LocalLyricsFile, title: String, library: PersonalLyricsLibraryService,
+    init(file: LocalLyricsFile, title: String, library: PersonalLyricsLibraryService, preferredRecording: String? = nil,
          finished: @escaping (LibraryPassageTarget) -> Void) {
         self.file = file
         self.library = library
         self.finished = finished
+        self.preferredRecording = preferredRecording
         _title = State(initialValue: title)
         _query = State(initialValue: title)
         _artist = State(initialValue: file.content.artist ?? "")
@@ -435,7 +440,10 @@ private struct LyricFileFilingSheet: View {
         .task {
             do {
                 records = try await library.fileDestinations()
-                if records.isEmpty { newRecord = true }
+                if let record = records.first(where: { $0.stableKey == preferredRecording }) {
+                    chosen = record.stableKey
+                    query = record.title
+                } else if records.isEmpty || (file.manuscriptID != nil && results.isEmpty) { newRecord = true }
             } catch { self.error = error.localizedDescription }
             loading = false
         }

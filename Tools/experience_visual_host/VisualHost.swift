@@ -698,7 +698,7 @@ private struct ExperienceFixtureRoot: View {
                     try? await Task.sleep(for: .milliseconds(800))
                 }
                 var extraWindow: NSWindow?
-                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker", "favorites", "reader", "lyric-file", "compare", "quick-find"].contains(ExperienceArguments.surface) {
+                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker", "favorites", "reader", "lyric-file", "compare", "quick-find", "manuscript", "stanzas"].contains(ExperienceArguments.surface) {
                     MenuBarLyricsController.shared.bind(playbackState: playback)
                     let root: AnyView
                     if ExperienceArguments.surface == "playlist-picker" {
@@ -722,6 +722,13 @@ private struct ExperienceFixtureRoot: View {
                     } else if ExperienceArguments.surface == "compare" {
                         let (library, request) = try! await comparisonFixture()
                         root = AnyView(LibraryVersionCompareView(request: request, library: library, edit: { _ in }))
+                    } else if ["manuscript", "stanzas"].contains(ExperienceArguments.surface) {
+                        let words = "潮声过后，纸上还留着风\n我把没写完的信折成一盏灯\n\n若你经过那座桥\n请替我看一眼海\n\n屋檐的雨落了一整夜\n落款还是空白\n\n若你经过那座桥\n请替我看一眼海"
+                        if ExperienceArguments.surface == "stanzas" {
+                            root = AnyView(ManuscriptArrangementView(text: .constant(words)).background(WorkspacePalette.paper))
+                        } else {
+                            root = AnyView(LyricWritingDesk(draft: .constant(LyricManuscript(title: "未寄出的信", artist: "自习室录音", album: "纸上手记", text: words))))
+                        }
                     } else if ExperienceArguments.surface == "lyric-file" {
                         let sample = """
                         <tt xml:lang="ja" xmlns:ttm="urn:ttm" xmlns:amll="urn:amll"><head><metadata>

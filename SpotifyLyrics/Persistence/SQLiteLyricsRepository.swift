@@ -553,9 +553,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     /// The user filed a particular lyric file with this recording. Keep its selected version and any revocation.
     func storeImportedFile(track: Track, document: LyricsDocument, locked: Bool,
-                           archiveKey: String? = nil) throws -> LyricsPersistenceSaveResult {
+                           archiveKey: String? = nil, manuscriptID: UUID? = nil, manuscriptParentID: UUID? = nil) throws -> LyricsPersistenceSaveResult {
         try prepare()
-        guard document.source == .manualImport else { throw LyricsEditingRepositoryError.identityMismatch }
+        guard document.source == (manuscriptID == nil ? .manualImport : .manualCreate) else { throw LyricsEditingRepositoryError.identityMismatch }
         if let archiveKey {
             guard let record = try fetchTrack(stableKey: resolvedCanonicalStableKey(archiveKey)),
                   TrackIdentity(track: record.libraryTrack) == TrackIdentity(track: track) else {
@@ -563,13 +563,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             }
         }
         return try saveValidated(track: track, identity: TrackIdentity(track: track), document: document,
-                                 intent: .file(locked: locked), archiveKey: archiveKey)
+                                 intent: .file(locked: locked), archiveKey: archiveKey, manuscriptID: manuscriptID, manuscriptParentID: manuscriptParentID)
     }
 
     private enum SaveIntent: Equatable { case provider, automaticSelection, file(locked: Bool) }
 
     private func saveValidated(track: Track, identity: TrackIdentity, document: LyricsDocument, intent: SaveIntent,
-                               archiveKey: String? = nil) throws -> LyricsPersistenceSaveResult {
+                               archiveKey: String? = nil, manuscriptID: UUID? = nil, manuscriptParentID: UUID? = nil) throws -> LyricsPersistenceSaveResult {
         try ensurePrepared()
         let importedLock: Bool?
         if case let .file(locked) = intent { importedLock = locked } else { importedLock = nil }
@@ -663,7 +663,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 return LyricsPersistenceSaveResult(versionID: nil, disposition: .skippedLocked)
             }
 
-            try insertVersion(versionRecord)
+            let parent = try manuscriptID.flatMap { try manuscriptParent($0, trackKey: canonicalKey, preferred: manuscriptParentID) }
+            try insertVersion(canonicalVersionRecord(versionRecord, stableKey: canonicalKey, parentVersionID: parent))
             if intent == .automaticSelection && document.isSynchronized {
                 let prefer = try prepare("UPDATE lyrics_versions SET is_preferred = 1 WHERE id = ? AND NOT EXISTS (SELECT 1 FROM lyrics_versions WHERE track_stable_key = ? AND (is_preferred = 1 OR is_locked = 1 OR is_manually_edited = 1));")
                 defer { sqlite3_finalize(prefer) }
@@ -3185,12 +3186,12 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         )
     }
 
-    private func canonicalVersionRecord(_ record: DatabaseLyricsVersionRecord, stableKey: String) -> DatabaseLyricsVersionRecord {
-        guard record.trackStableKey != stableKey else { return record }
+    private func canonicalVersionRecord(_ record: DatabaseLyricsVersionRecord, stableKey: String, parentVersionID: UUID? = nil) -> DatabaseLyricsVersionRecord {
+        guard record.trackStableKey != stableKey || parentVersionID != nil else { return record }
         return DatabaseLyricsVersionRecord(
             id: record.id,
             trackStableKey: stableKey,
-            parentVersionID: record.parentVersionID,
+            parentVersionID: parentVersionID ?? record.parentVersionID,
             source: record.source,
             providerSourceID: record.providerSourceID,
             language: record.language,
@@ -3324,6 +3325,28 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             try bindInt(index, at: 4, to: statement)
             try bindText(line.originalText, at: 5, to: statement)
             try stepDone(statement)
+        }
+    }
+
+    private func manuscriptParent(_ manuscript: UUID, trackKey: String, preferred: UUID?) throws -> UUID? {
+        let family = try resolvedIdentityFamily(stableKey: trackKey)
+        let statement = try prepare("""
+            SELECT id FROM lyrics_versions WHERE track_stable_key IN (\(placeholders(count: family.count)))
+              AND source = 'manualCreate' AND provider_source_id GLOB ?
+            ORDER BY (id = ?) DESC, created_at DESC, rowid DESC LIMIT 1;
+            """)
+        defer { sqlite3_finalize(statement) }
+        for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: statement) }
+        try bindText(LyricManuscript.sourcePrefix(manuscript) + "*", at: Int32(family.count + 1), to: statement)
+        try bindText(preferred?.uuidString, at: Int32(family.count + 2), to: statement)
+        switch sqlite3_step(statement) {
+        case SQLITE_DONE: return nil
+        case SQLITE_ROW:
+            guard let id = columnText(statement, index: 0).flatMap(UUID.init(uuidString:)) else {
+                throw LyricsRepositoryError.invalidData("手稿原词版本 UUID 无效")
+            }
+            return id
+        default: throw lastError()
         }
     }
 

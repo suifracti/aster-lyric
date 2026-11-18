@@ -14,11 +14,26 @@
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
+			<key>CFBundleTypeName</key><string>歌词手稿</string>
+			<key>CFBundleTypeRole</key><string>Editor</string>
+			<key>LSHandlerRank</key><string>Owner</string>
+			<key>LSItemContentTypes</key><array><string>com.suifracti.aster-lyric.manuscript</string></array>
+		</dict>
+		<dict>
 			<key>CFBundleTypeName</key><string>歌词文件</string>
 			<key>CFBundleTypeRole</key><string>Viewer</string>
 			<key>LSHandlerRank</key><string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array><string>com.suifracti.aster-lyric.lrc</string><string>com.suifracti.aster-lyric.ttml</string><string>public.plain-text</string></array>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key><string>com.suifracti.aster-lyric.manuscript</string>
+			<key>UTTypeDescription</key><string>歌词手稿</string>
+			<key>UTTypeConformsTo</key><array><string>public.text</string></array>
+			<key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>asterdraft</string></array></dict>
 		</dict>
 	</array>
 	<key>UTImportedTypeDeclarations</key>
