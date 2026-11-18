@@ -142,15 +142,23 @@ final class V3WeatherWatcher: NSObject, ObservableObject, CLLocationManagerDeleg
     static let shared = V3WeatherWatcher()
     @Published private(set) var room: V3Room = .rain
     private var manager: CLLocationManager?
-    private var active = false
+    private var visibleWindows: Set<UUID> = []
+    private var active: Bool { !visibleWindows.isEmpty }
     private var lastFetch: Date?
     private var refresh: Task<Void, Never>?
+    private var fetchTask: Task<Void, Never>?
 
-    func setActive(_ value: Bool) {
-        guard value != active else { return }
-        active = value
+    func setWanted(_ wanted: Bool, from window: UUID) {
+        let wasActive = active
+        if wanted { visibleWindows.insert(window) } else { visibleWindows.remove(window) }
+        guard wasActive != active else { return }
         refresh?.cancel()
-        guard value else { manager?.stopUpdatingLocation(); return }
+        guard active else {
+            fetchTask?.cancel()
+            fetchTask = nil
+            manager?.stopUpdatingLocation()
+            return
+        }
         let manager = self.manager ?? CLLocationManager()
         self.manager = manager
         manager.delegate = self
@@ -170,7 +178,13 @@ final class V3WeatherWatcher: NSObject, ObservableObject, CLLocationManagerDeleg
         guard let location = locations.last else { return }
         let lat = (location.coordinate.latitude * 10).rounded() / 10
         let lon = (location.coordinate.longitude * 10).rounded() / 10
-        Task { @MainActor in await self.fetch(latitude: lat, longitude: lon) }
+        Task { @MainActor in
+            guard self.active, self.fetchTask == nil else { return }
+            self.fetchTask = Task { [weak self] in
+                await self?.fetch(latitude: lat, longitude: lon)
+                if !Task.isCancelled { self?.fetchTask = nil }
+            }
+        }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
@@ -190,7 +204,7 @@ final class V3WeatherWatcher: NSObject, ObservableObject, CLLocationManagerDeleg
         guard let url = parts.url else { return }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8)
         request.httpShouldHandleCookies = false
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await URLSession.shared.data(for: request), !Task.isCancelled, active,
               (response as? HTTPURLResponse)?.statusCode == 200,
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let current = object["current"] as? [String: Any],
@@ -214,10 +228,10 @@ final class V3WeatherWatcher: NSObject, ObservableObject, CLLocationManagerDeleg
 /// The fire is out of view below the window; only its moving light is seen.
 private struct V3Firelight: View {
     let size: CGSize
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let running: Bool
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 12.0, paused: reduceMotion)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 12.0, paused: !running)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
             let flicker = 0.42 + 0.08 * sin(t * 7.1) + 0.06 * sin(t * 12.7 + 1.3) + 0.04 * sin(t * 3.3)
             RadialGradient(colors: [Color(red: 1, green: 0.55, blue: 0.22).opacity(flicker), .clear],
@@ -737,9 +751,9 @@ struct V3SceneBackLayer: View {
     let playing: Bool
     var speed: Double = 1
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Scenes keep breathing while paused, so the picture never looks frozen;
-    /// only Reduce Motion stops them.
-    private var moving: Bool { !reduceMotion }
+    @Environment(\.v3WindowVisible) private var visible
+    /// A visible scene keeps moving while music is paused.
+    private var moving: Bool { visible && !reduceMotion }
     private var chorus: Bool { context.chorus && context.opensOnChorus && playing }
     private var light: Double { v3SceneLight(context.luminance) }
     @State private var linePulse = 0.0
@@ -782,7 +796,7 @@ struct V3SceneBackLayer: View {
                     }
                 case .snow:
                     tone(Color(red: 0.55, green: 0.65, blue: 0.85)).opacity(0.10).blendMode(.screen)
-                    V3Firelight(size: size)
+                    V3Firelight(size: size, running: moving)
                 case .book:
                     // Old paper under a lamp: sepia, grain, warm light from the upper left.
                     tone(Color(red: 0.62, green: 0.48, blue: 0.30), 0.3).opacity(0.30).blendMode(.multiply)
@@ -809,7 +823,7 @@ struct V3SceneBackLayer: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
         .onChange(of: context.lineIndex) { _, index in
-            guard index != nil, scene == .aurora, !reduceMotion else { return }
+            guard index != nil, scene == .aurora, moving else { return }
             linePulse = 1
             withAnimation(.easeOut(duration: 2.4)) { linePulse = 0 }
         }
@@ -824,6 +838,8 @@ struct V3SceneCoverLayer: View {
     let cover: CGRect?
     /// The player card, which the polaroid's strip must not cover.
     var player: CGRect = .null
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.v3WindowVisible) private var visible
     @State private var shutterAt: Date?
 
     var body: some View {
@@ -855,7 +871,7 @@ struct V3SceneCoverLayer: View {
             .frame(width: size.width, height: size.height, alignment: .topLeading)
         }
         .onChange(of: context.chorus && context.opensOnChorus) { _, now in
-            if now, scene == .polaroid { shutterAt = Date() }
+            if now, scene == .polaroid, visible, !reduceMotion { shutterAt = Date() }
         }
     }
 }
@@ -868,9 +884,10 @@ struct V3SceneGlassLayer: View {
     /// The foreground cover: the glass thins out over it so the cover stays itself.
     var cover: CGRect? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.v3WindowVisible) private var visible
     @State private var turnedAt: Date?
     @State private var flareAt: Date?
-    private var moving: Bool { !reduceMotion }
+    private var moving: Bool { visible && !reduceMotion }
     private var chorus: Bool { context.chorus && context.opensOnChorus && playing }
     private var light: Double { v3SceneLight(context.luminance) }
     @State private var canvasSize = CGSize.zero
@@ -910,9 +927,8 @@ struct V3SceneGlassLayer: View {
                             .blendMode(.screen).transition(.opacity)
                     }
                     if let turnedAt {
-                        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
-                            let progress = min(1, timeline.date.timeIntervalSince(turnedAt) / 0.9)
-                            V3PageSweep(progress: progress).opacity(progress >= 1 ? 0 : 1)
+                        V3SceneTransition(started: turnedAt, duration: 0.9) { progress in
+                            V3PageSweep(progress: progress).opacity(progress < 1 ? 1 : 0)
                         }
                     }
                 case .off, .weather, .polaroid, .stars, .aurora:
@@ -942,7 +958,7 @@ struct V3SceneGlassLayer: View {
         .accessibilityHidden(true)
         .onChange(of: context.lineIndex) { _, index in
             // 水面: each new line drops into the water near the lyrics.
-            guard scene == .water, index != nil, !reduceMotion else { return }
+            guard scene == .water, index != nil, moving else { return }
             V3SceneInput.shared.ripple(at: CGPoint(x: canvasSize.width * CGFloat.random(in: 0.55...0.75),
                                                    y: canvasSize.height * CGFloat.random(in: 0.42...0.56)))
         }
@@ -950,7 +966,7 @@ struct V3SceneGlassLayer: View {
             if scene == .book, moving, new > old { turnedAt = Date() }
         }
         .onChange(of: chorus) { _, now in
-            if now, scene == .film { flareAt = Date() }
+            if now, scene == .film, moving { flareAt = Date() }
         }
     }
 }
@@ -960,12 +976,17 @@ struct V3SceneGlassLayer: View {
 struct V3SceneDriver: ViewModifier {
     let scene: V3Room
     let context: V3RoomContext
+    let weatherVisible: Bool
     @Binding var bpm: Double?
     @State private var reached = (key: "", line: -1)
+    @State private var weatherOwner = UUID()
 
     func body(content: Content) -> some View {
         content
-            .onChange(of: scene, initial: true) { _, next in V3WeatherWatcher.shared.setActive(next == .weather) }
+            .onChange(of: scene == .weather && weatherVisible, initial: true) { _, wanted in
+                V3WeatherWatcher.shared.setWanted(wanted, from: weatherOwner)
+            }
+            .onDisappear { V3WeatherWatcher.shared.setWanted(false, from: weatherOwner) }
             .task(id: scene == .train ? context.spotifyTrackID : nil) {
                 bpm = nil
                 guard scene == .train, let id = context.spotifyTrackID else { return }
@@ -1056,9 +1077,32 @@ private struct V3Flash: View {
     let peak: Double
     let duration: Double
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: Date().timeIntervalSince(at) > duration)) { timeline in
-            let progress = timeline.date.timeIntervalSince(at) / duration
-            color.opacity(progress < 1 ? peak * (1 - progress) * (1 - progress) : 0).blendMode(.screen)
+        V3SceneTransition(started: at, duration: duration) { progress in
+            color.opacity(peak * (1 - progress) * (1 - progress)).blendMode(.screen)
+        }
+    }
+}
+
+private struct V3SceneTransition<Content: View>: View {
+    let started: Date
+    let duration: TimeInterval
+    @ViewBuilder let content: (Double) -> Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.v3WindowVisible) private var visible
+    @State private var finished: Date?
+
+    var body: some View {
+        if visible, !reduceMotion, finished != started, Date().timeIntervalSince(started) < duration {
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
+                content(min(1, max(0, timeline.date.timeIntervalSince(started) / duration)))
+            }
+            .task(id: started) {
+                let remaining = max(0, duration - Date().timeIntervalSince(started))
+                do {
+                    try await Task.sleep(for: .seconds(remaining))
+                    finished = started
+                } catch {}
+            }
         }
     }
 }
@@ -1640,6 +1684,8 @@ private struct V3CoverBlend: View {
     let cover: CGRect
     let accent: Color
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.v3WindowVisible) private var visible
+    private var moving: Bool { visible && !reduceMotion }
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -1654,9 +1700,9 @@ private struct V3CoverBlend: View {
             case .fog:
                 V3MistedEdges(size: cover.size, strength: 0.22)
             case .water:
-                V3WaterCaustics(size: cover.size, accent: accent, strength: 0.35, running: !reduceMotion, origin: cover.origin)
+                V3WaterCaustics(size: cover.size, accent: accent, strength: 0.35, running: moving, origin: cover.origin)
             case .train:
-                V3PassingReflection(running: !reduceMotion)
+                V3PassingReflection(running: moving)
             case .aurora:
                 LinearGradient(colors: V3Aurora.palette(accent).map { $0.opacity(0.22) }, startPoint: .top, endPoint: .bottom)
                     .blendMode(.screen)

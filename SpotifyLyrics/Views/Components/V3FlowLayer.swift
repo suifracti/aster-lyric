@@ -53,7 +53,11 @@ struct V3FlowLayer: NSViewRepresentable {
             web.evaluateJavaScript("window.asterFeed && window.asterFeed('\(Data(bytes).base64EncodedString())')", completionHandler: nil)
         }
 
-        func stop() { timer?.invalidate(); timer = nil }
+        func stop() {
+            running = false
+            timer?.invalidate()
+            timer = nil
+        }
     }
 
     static let silence = [UInt8](repeating: 128, count: 1024)
@@ -86,6 +90,7 @@ struct V3FlowLayer: NSViewRepresentable {
 
     static func dismantleNSView(_ web: WKWebView, coordinator: Coordinator) {
         coordinator.stop()
+        web.navigationDelegate = nil
         web.evaluateJavaScript("window.asterRun && window.asterRun(false)", completionHandler: nil)
     }
 }

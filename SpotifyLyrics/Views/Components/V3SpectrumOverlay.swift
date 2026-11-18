@@ -34,12 +34,12 @@ struct V3SpectrumOverlay: View {
     let accent: Color
     let cover: CGRect?
     @State private var smoother = V3SpectrumSmoother()
-    @State private var visible = false
+    @Environment(\.v3WindowVisible) private var visible
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if style == .flow, !reduceMotion {
-            V3FlowLayer(running: running)
+            V3FlowLayer(running: running && visible)
                 .opacity(0.5)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
@@ -47,7 +47,7 @@ struct V3SpectrumOverlay: View {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !running || !visible)) { context in
                 Canvas { ctx, size in
                     let levels = V3MusicPulse.levels
-                    let fresh = running && ProcessInfo.processInfo.systemUptime - levels.updatedAt < 1
+                    let fresh = running && visible && ProcessInfo.processInfo.systemUptime - levels.updatedAt < 1
                     let target = fresh ? levels.spectrum : levels.spectrum.map { _ in 0 }
                     let values = smoother.step(target.isEmpty ? Array(repeating: 0, count: 24) : target,
                                                now: context.date.timeIntervalSinceReferenceDate)
@@ -60,9 +60,6 @@ struct V3SpectrumOverlay: View {
             }
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-            .background(alignment: .topLeading) {
-                V3WindowVisibilityProbe(isVisible: $visible).frame(width: 0, height: 0)
-            }
         }
     }
 

@@ -9,10 +9,11 @@ struct V3VUMeterPresentation: View {
     let state: PlaybackState
     @ObservedObject var settings: AppSettingsStore
     let accent: Color
+    @Environment(\.v3WindowVisible) private var visible
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            V3VUMeterFace(running: state.isPlaying && settings.v3MusicMotionEnabled, accent: accent)
+            V3VUMeterFace(running: state.isPlaying && settings.v3MusicMotionEnabled && visible, accent: accent)
                 .frame(height: 92)
             HStack(spacing: 10) {
                 V3MiniCoverForVU(track: state.currentTrack)

@@ -46,6 +46,7 @@
 | 单句循环只在主窗口有、切窗口找不到取消、拖进度被拉回 | L-052；PlaybackState.lyricLineLoopControl |
 | 「只看译文」仍出现罗马音 / 拼音、隐藏原文后拼音消失 | L-052；LyricTextLayers、DisplayPreferences.usesInlinePinyin |
 | 粒子（雨雪雾、歌词意象）不显示、VU 表指针手感、新呈现一行放不下、分享卡排版跑偏、封面墙离屏图空白、声纹圈、频谱 | L-025；V3GlassWeather、V3ParticleHostView、V3VUMeter、V3LyricShareCard、ListeningCoverWall、V3Soundprint、V3SpectrumOverlay |
+| 最小化后画面还在刷新、一个窗口关闭却让另一个不再获取天气、书页翻完还占用 | L-025；V3WindowVisibilityProbe、V3FlowLayer、V3SceneTransition、V3WeatherWatcher |
 | QQ 来源突然全部 http(500)、别人有词我们“暂无歌词正文” | L-026；QQExperimentalLyricsProvider.searchBases |
 | 某个来源一段时间连着超时/503、每首新歌都卡几秒、来源顺序要不要按统计调 | L-035；LyricsSourceHealth、LyricsSearchManager supplements |
 | 在窗口边缘拖进度会变成缩放窗口、进度线靠近时下移不好看、胶囊和工具栏像两套控件、画面面板底部被截断 | L-015；V3EdgePillScrubber、V3ControlBarSurface、V3ThemeSelectorView |
@@ -103,6 +104,8 @@
 搜索接续修复 `bfc2913` 的 [完整 CI](https://github.com/suifracti/aster-lyric/actions/runs/42892375192) 随后通过，附件源码身份一致，原生仍为 128 通过、1 跳过、0 失败，五组合同通过。另一次本机隔离启动检查使用 `880315e` 与 `bfc2913`、Xcode 26.6 Debug `-Onone` 和同源缓存副本。窗口、场景及指针条件一致，但两版均在 Spotify Apple Events 超时后处于无歌曲状态，因此未采 CPU/RSS。终端中相同生产脚本在普通和私有 home 环境都能约 0.2 秒返回 9 字段。随后系统 TCC 日志确认，隔离身份的 Apple Events 授权提示等待 120 秒后返回 timeout=true/result=false。日用身份已获准，其排在后面的请求在该等待结束后返回 result=true，但 App 的 3 秒读取早已结束。系统队列清空后后台重启日用 Debug，重新读到缓存歌词。独立测试身份须先完成 macOS 的自动化确认，再接续自然播放下的资源对照。
 
 现场还发现一份旧 Downloads 预览包与 Debug 版同时运行，共写全局日志。旧实例退出前未单独取证其数据库路径。结束旧实例、后台重启当前 Debug 后，当前版本正确加载缓存的 51 行歌词。隔离 App 随后的单次复核仍超时。以后按实际可执行路径核歌词 App 进程，包名可能带 preview 后缀，不能只匹配 `SpotifyLyrics.app`，也不能将共用日志里的所有错误归给一个 PID。终端只读观察进程后来以超时错误退出，旧 PID 文件不代表仍在等待。
+
+2026-11-19：同一台 Mac 顺序运行 `774ad81` 与本轮的隔离 Debug 宿主，合成曲《夜を越えて · After the rain》处于播放、水面情境、1024×640 主窗，两个版本均用临时库和同一封面样例。用 `top -stats pid,cpu,rsize` 每 5 秒采一次，弃首帧，随后 30 秒平均 CPU 为 28.9% 与 23.6%，RSS 中位数为 249.5 与 245.5 MiB。这个短样本用于可见状态的回归筛查。屏外窗口的可见信号另由原生窗口测试核对，隐藏态 CPU、全屏资源和真实 Spotify 播放没有采样。
 
 ## L-003 极简是保留能力、折叠入口
 
@@ -505,6 +508,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
   - 工具链：Xcode 26 需要另外执行 `xcodebuild -downloadComponent MetalToolchain`（本机已装 17F109）。CI 在原生构建前加了一步：缺编译器才下载。离屏宿主走同一个工程，会一起编出 `default.metallib`。
   - Canvas 版的 `V3RainBeads` 和光纹贴图已删，`V3WaterLight` 只保留取色。
 - **换包前不要紧接在测试后复制 App。** `test-native.sh` 会把 SpotifyLyricsTests.xctest 放进 App 的 PlugIns 目录，签名校验因此失败。应先删掉产物，单独重新构建，校验通过后再复制。
+
+2026-11-19：V3 听歌区安装一个 `V3WindowVisibilityProbe`，主窗和全屏各自读 AppKit 可见区域。旧实现各自跟踪 Canvas、天气粒子和频谱，WebKit 流动分支和情境玻璃绕过这层。现在情境、封面和播放样式都使用各自窗口的同一个可见状态。可见的雨雪仍可以在暂停时移动。书页的翻页与胶片亮光结束后撤下动画时钟。跟随天气只在至少一个可见窗口需要时查位置，关闭最后一个窗口时取消正在进行的请求。原生测试移出并恢复 AppKit 窗口，读到可见、不可见、再可见，相关测试 33 通过、1 项跳过；隔离真窗核对水面仍正常呈现。资源对照见 L-002。
 
 ## L-026 QQ 搜索主机失效（2026-11-13）
 

@@ -11,9 +11,10 @@ struct V3PlaybackFractionReader<Content: View>: View {
     let state: PlaybackState
     var interval: TimeInterval = 0.5
     @ViewBuilder let content: (Double) -> Content
+    @Environment(\.v3WindowVisible) private var visible
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: interval, paused: !state.isPlaying)) { _ in
+        TimelineView(.animation(minimumInterval: interval, paused: !state.isPlaying || !visible)) { _ in
             content(Self.fraction(state))
         }
     }
@@ -91,6 +92,7 @@ struct V3AmbientMotionLayer: View {
     let motion: V3AmbientLyricMotion
     let artworkURL: URL?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.v3WindowVisible) private var visible
     @State private var palette = BackdropPalette.neutral
     @State private var flash = 0.0
     @State private var flashTask: Task<Void, Never>?
@@ -120,13 +122,19 @@ struct V3AmbientMotionLayer: View {
             palette = next
         }
         .onReceive(state.$liveCurrentLineIndex.removeDuplicates().dropFirst()) { _ in
-            guard motion == .pulse, state.isPlaying, !reduceMotion else { return }
+            guard motion == .pulse, state.isPlaying, visible, !reduceMotion else { return }
             flashTask?.cancel()
             withAnimation(.easeIn(duration: 0.18)) { flash = 1 }
             flashTask = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(200))
                 guard !Task.isCancelled else { return }
                 withAnimation(.easeOut(duration: 1.2)) { flash = 0 }
+            }
+        }
+        .onChange(of: visible) { _, visible in
+            if !visible {
+                flashTask?.cancel()
+                flash = 0
             }
         }
         .onDisappear { flashTask?.cancel() }
@@ -519,6 +527,7 @@ struct V3VinylDiscLayer: View {
     let cover: CGRect
     let accent: Color
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.v3WindowVisible) private var visible
 
     static func discFrame(for cover: CGRect) -> CGRect {
         let diameter = cover.height * 0.94
@@ -528,7 +537,7 @@ struct V3VinylDiscLayer: View {
 
     var body: some View {
         let disc = Self.discFrame(for: cover)
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !state.isPlaying || reduceMotion)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !state.isPlaying || reduceMotion || !visible)) { context in
             let angle = Angle.degrees((context.date.timeIntervalSinceReferenceDate * 48).truncatingRemainder(dividingBy: 360))
             ZStack {
                 Circle().fill(RadialGradient(colors: [Color(white: 0.16), Color(white: 0.05)],

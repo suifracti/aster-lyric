@@ -80,7 +80,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
     @State private var noiseImage: NSImage?
     @State private var palette = BackdropPalette.neutral
     @State private var accessibilityDisplayRevision = 0
-    @State private var isWindowVisible = false
+    @Environment(\.v3WindowVisible) private var isWindowVisible
     @State private var musicListener = UUID()
     /// The picture the backdrop is made from: the cover, or the artist's photo.
     @State private var backdropImageURL: URL?
@@ -150,10 +150,6 @@ struct AppleMusicImmersiveV3BackdropView: View {
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .background(alignment: .topLeading) {
-            V3WindowVisibilityProbe(isVisible: $isWindowVisible)
-                .frame(width: 0, height: 0)
-        }
         .animation(.easeInOut(duration: 0.8), value: canvasReady)
         .animation(accessibilityReduceMotion ? .easeInOut(duration: 0.2) : .easeInOut(duration: 1.2), value: canvasShownNow)
         .animation(accessibilityReduceMotion ? .easeInOut(duration: 0.2)
@@ -1396,6 +1392,17 @@ final class V3LightFieldView: NSView {
     }
 }
 
+private struct V3WindowVisibleKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var v3WindowVisible: Bool {
+        get { self[V3WindowVisibleKey.self] }
+        set { self[V3WindowVisibleKey.self] = newValue }
+    }
+}
+
 struct V3WindowVisibilityProbe: NSViewRepresentable {
     @Binding var isVisible: Bool
 
@@ -1463,17 +1470,19 @@ final class V3WindowVisibilityTrackingView: NSView {
         })
     }
 
-    private func reportVisibility() {
-        let visible = window.map {
-            $0.isVisible && $0.occlusionState.contains(.visible) && !NSApp.isHidden
+    private var isWindowVisible: Bool {
+        window.map {
+            $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible) && !NSApp.isHidden
         } ?? false
+    }
+
+    private func reportVisibility() {
+        let visible = isWindowVisible
         guard lastReportedVisibility != visible else { return }
         lastReportedVisibility = visible
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let current = self.window.map {
-                $0.isVisible && $0.occlusionState.contains(.visible) && !NSApp.isHidden
-            } ?? false
+            let current = self.isWindowVisible
             guard current == visible else {
                 self.reportVisibility()
                 return

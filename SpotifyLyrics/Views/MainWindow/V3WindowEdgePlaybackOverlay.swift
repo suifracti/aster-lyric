@@ -33,7 +33,7 @@ struct V3WindowEdgePlaybackOverlay: View {
     @State private var lastCanvasSize = CGSize.zero
     @State private var seekDraft = PlaybackSeekDraft()
     private var draftFraction: Double? { seekDraft.position(for: state.seekRecording) }
-    @State private var windowVisible = false
+    @Environment(\.v3WindowVisible) private var windowVisible
     @State private var colorElapsed: TimeInterval = 0
     @State private var colorStartedAt: Date?
 
@@ -144,9 +144,6 @@ struct V3WindowEdgePlaybackOverlay: View {
             .background(V3WindowEdgePointerTracker { point in
                 updatePointer(point, size: size, dragging: draftFraction != nil)
             })
-            .background(alignment: .topLeading) {
-                V3WindowVisibilityProbe(isVisible: $windowVisible).frame(width: 0, height: 0)
-            }
         }
         .onChange(of: pointerInsideWindow) { _, inside in
             // The local activeAlways tracker is authoritative for non-key windows.

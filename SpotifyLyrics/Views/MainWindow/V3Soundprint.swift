@@ -59,12 +59,12 @@ struct V3SoundprintRing: View {
     @ObservedObject var settings: AppSettingsStore
     let cover: CGRect
     let accent: Color
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.v3WindowVisible) private var visible
 
     private var key: String { state.currentTrackIdentity?.stableKey ?? state.currentTrack.id }
 
     var body: some View {
-        let listening = settings.v3MusicMotionEnabled && state.isPlaying
+        let listening = settings.v3MusicMotionEnabled && state.isPlaying && visible
         TimelineView(.animation(minimumInterval: 0.1, paused: !listening)) { _ in
             Canvas { ctx, _ in
                 let duration = max(1, state.currentTrack.duration)
@@ -82,7 +82,7 @@ struct V3SoundprintRing: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
         .onChange(of: key) { _, _ in V3SoundprintStore.shared.save() }
-        .onChange(of: state.isPlaying) { _, playing in if !playing { V3SoundprintStore.shared.save() } }
+        .onChange(of: listening) { _, listening in if !listening { V3SoundprintStore.shared.save() } }
         .onDisappear { V3SoundprintStore.shared.save() }
     }
 

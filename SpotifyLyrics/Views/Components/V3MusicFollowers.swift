@@ -159,6 +159,7 @@ struct V3BreathIn: ViewModifier {
     let window: LyricsTimeline.VocalCountdownWindow?
     let clock: LyricsPresentationClock
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.v3WindowVisible) private var visible
 
     static let lead: TimeInterval = 2
 
@@ -172,7 +173,7 @@ struct V3BreathIn: ViewModifier {
 
     func body(content: Content) -> some View {
         if let window, !reduceMotion {
-            TimelineView(.animation(minimumInterval: 1.0 / 20, paused: !clock.isPlaying)) { _ in
+            TimelineView(.animation(minimumInterval: 1.0 / 20, paused: !clock.isPlaying || !visible)) { _ in
                 let level = Self.level(time: clock.presentationTime(at: ProcessInfo.processInfo.systemUptime), end: window.end)
                 content
                     .shadow(color: .white.opacity(0.7 * level), radius: 10)

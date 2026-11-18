@@ -48,7 +48,7 @@ struct V3GlassWeatherLayer: View {
     let imagery: V3LyricImagery?
     let playing: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var visible = false
+    @Environment(\.v3WindowVisible) private var visible
 
     var body: some View {
         if !reduceMotion, weather != .off || imagery != nil {
@@ -64,9 +64,6 @@ struct V3GlassWeatherLayer: View {
             }
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-            .background(alignment: .topLeading) {
-                V3WindowVisibilityProbe(isVisible: $visible).frame(width: 0, height: 0)
-            }
         }
     }
 }

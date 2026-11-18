@@ -206,6 +206,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private var coverLuminance: Double { displayedCoverColors?.luminance ?? 0 }
     @State private var coverSubject: V3ArtworkSubject.Analysis?
     @State private var showsListeningKeys = false
+    @State private var windowVisible = false
     @State private var isFocusMode = false
     @State private var librarySearch = V3LibrarySearchPresentation()
     @State private var toolbarBounds = CGRect.zero
@@ -421,7 +422,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         .blur(radius: librarySearch.isPresented ? 5 : 0)
                 }
                 if settings.v3EdgeLights, settings.v3MusicMotionEnabled, hoveredStyle == nil, !reduceMotion {
-                    V3EdgeLights(accent: coverAccent ?? .white, running: state.isPlaying)
+                    V3EdgeLights(accent: coverAccent ?? .white, running: state.isPlaying && windowVisible)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
                 if settings.v3SpectrumStyle != .off, hoveredStyle == nil, !isFocusMode {
@@ -470,7 +471,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
                 if settings.v3CoverRimLight, settings.v3MusicMotionEnabled, hoveredStyle == nil, !reduceMotion,
                    let cover = foregroundCover, cover.isLargeEnough {
-                    V3CoverRimLight(cover: cover, accent: coverAccent ?? .white, running: state.isPlaying)
+                    V3CoverRimLight(cover: cover, accent: coverAccent ?? .white, running: state.isPlaying && windowVisible)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
                 if settings.v3CoverCaption, hoveredStyle == nil, !librarySearch.isPresented,
@@ -659,7 +660,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     }
                 }
             }
-            .modifier(V3SceneDriver(scene: settings.v3Room, context: roomContext, bpm: $sceneBPM))
+            .modifier(V3SceneDriver(scene: settings.v3Room, context: roomContext,
+                                    weatherVisible: windowVisible && !isFocusMode && !isCompositionPreview,
+                                    bpm: $sceneBPM))
+            .environment(\.v3WindowVisible, windowVisible)
             .environment(\.v3SceneChrome, presentation.chrome)
             .onChange(of: liveVocalOnsets, initial: true) { _, onsets in
                 if !liveOnly { V3VocalOnsets.current = onsets }
@@ -699,6 +703,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 V3CanvasSceneSwipe(enabled: !toolbarPanelIsPresented, onKey: handleListeningKey) { direction in
                     showLyricNotice(V3LyricActions(settings: settings).scene(direction))
                 }
+            }
+            .background(alignment: .topLeading) {
+                V3WindowVisibilityProbe(isVisible: $windowVisible).frame(width: 0, height: 0)
             }
             .overlayPreferenceValue(V3PlaybackRegionAnchorPreferenceKey.self) { anchor in
                 GeometryReader { proxy in

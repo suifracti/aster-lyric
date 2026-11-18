@@ -677,6 +677,38 @@ final class PresentationSourceContractTests: XCTestCase {
 /// 情境 (2026-11-18): the listening view stays large, stanzas and weather map as described.
 final class V3RoomSceneTests: XCTestCase {
     @MainActor
+    func testListeningWindowReportsOrderOutAndRestoration() async throws {
+        guard let screen = NSScreen.main, !NSApp.isHidden else {
+            throw XCTSkip("需要可见的原生窗口")
+        }
+        let frame = NSRect(x: screen.visibleFrame.midX - 100, y: screen.visibleFrame.midY,
+                           width: 200, height: 100)
+        let window = NSWindow(contentRect: frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let view = V3WindowVisibilityTrackingView(frame: .zero)
+        var reported = [Bool]()
+        view.onVisibilityChange = { reported.append($0) }
+        window.contentView = view
+        defer { view.stopObserving(); window.close() }
+
+        func wait(for wanted: Bool) async throws {
+            for _ in 0..<24 {
+                if reported.last == wanted { return }
+                try await Task.sleep(for: .milliseconds(25))
+            }
+        }
+        window.orderFrontRegardless()
+        try await wait(for: true)
+        guard reported.last == true else { throw XCTSkip("测试窗口未获得可见区域") }
+        window.orderOut(nil)
+        try await wait(for: false)
+        XCTAssertEqual(reported.last, false)
+        window.orderFrontRegardless()
+        try await wait(for: true)
+        XCTAssertEqual(reported.last, true)
+    }
+
+    @MainActor
     func testScenesNeverShrinkTheViewAndWeatherResolvesToAWindow() throws {
         // The scene is drawn in layers around the full-size view; the old shrinking modifier is gone.
         let source = try String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()

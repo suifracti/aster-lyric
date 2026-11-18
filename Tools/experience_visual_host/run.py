@@ -45,7 +45,8 @@ if source_database:
     shutil.copyfile(source_database,database_path)
 env['SPOTIFYLYRICS_DATABASE_PATH']=str(database_path)
 env['VISUAL_ARTWORK_BASE_URL']=f'http://127.0.0.1:{server.server_port}'
-app=ROOT/'DerivedData/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics'
+default_app=ROOT/'DerivedData/Build/Products/Debug/SpotifyLyrics.app/Contents/MacOS/SpotifyLyrics'
+app=Path(os.environ.get("VISUAL_HOST_EXECUTABLE", default_app))
 try:
     with tempfile.TemporaryDirectory(prefix="run-", dir=fixtures) as fixture_root:
         env["VISUAL_FIXTURE_ROOT"] = fixture_root
