@@ -8,10 +8,20 @@ public struct MenuBarLyricsPopoverView: View {
     @State private var didCopyFullLyrics = false
     @State private var isAppearanceExpanded = false
     @State private var readingHeight: CGFloat = 72
-    @State private var cachedArtwork: NSImage?
-    @State private var washArtwork: NSImage?
+    @State private var cachedArtwork: Cover?
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private struct Cover {
+        let url: URL
+        let image: NSImage
+        let thumbnail: NSImage?
+    }
+
+    private var currentCover: Cover? {
+        guard let cachedArtwork, cachedArtwork.url == controller.currentSnapshot.artworkURL else { return nil }
+        return cachedArtwork
+    }
 
     public init(controller: MenuBarLyricsController) {
         self.controller = controller
@@ -40,11 +50,14 @@ public struct MenuBarLyricsPopoverView: View {
         .onChange(of: contentPhase) { _, _ in captureReadingHeight() }
         .onChange(of: controller.currentSnapshot.trackTitle) { _, _ in captureReadingHeight() }
         .onAppear { captureReadingHeight() }
-        .task(id: controller.currentSnapshot.artworkURL) {
-            let image = await ArtworkImageLoader.shared.image(for: controller.currentSnapshot.artworkURL)
+        .task(id: controller.currentSnapshot.artworkURL) { [url = controller.currentSnapshot.artworkURL] in
+            let image = await ArtworkImageLoader.shared.image(for: url)
             guard !Task.isCancelled else { return }
-            cachedArtwork = image
-            washArtwork = image.flatMap { Self.thumbnail($0, side: 12) }
+            if let url, let image {
+                cachedArtwork = Cover(url: url, image: image, thumbnail: Self.thumbnail(image, side: 12))
+            } else {
+                cachedArtwork = nil
+            }
         }
         .lyricIslandSongTint(artworkURL: controller.currentSnapshot.artworkURL, accent: $islandAccent)
     }
@@ -55,7 +68,7 @@ public struct MenuBarLyricsPopoverView: View {
             if snapshot.hasLiveTrack {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 11) {
-                        artworkView(snapshot.artworkURL)
+                        artworkView
                         VStack(alignment: .leading, spacing: 3) {
                             Text(snapshot.trackTitle ?? "当前歌曲").font(.headline).lineLimit(1)
                             Text(snapshot.artistName ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -81,6 +94,8 @@ public struct MenuBarLyricsPopoverView: View {
                     }
                     .frame(height: readingHeight).clipped()
                     .animation(reduceMotion ? nil : .easeOut(duration: 0.35), value: snapshot.currentLineIndex)
+                    .id(snapshot.trackKey)
+                    .id(contentPhase)
                     .accessibilityElement(children: .contain)
                     if let state = controller.livePlaybackState, state.currentTrack.duration > 0 {
                         MenuBarProgressRail(state: state, accent: islandAccent,
@@ -114,7 +129,7 @@ public struct MenuBarLyricsPopoverView: View {
                     }
                 }
                 .padding(16)
-                .background(alignment: .top) { coverWash }
+                .background(alignment: .top) { coverWash.id(snapshot.artworkURL) }
             } else {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -168,7 +183,8 @@ public struct MenuBarLyricsPopoverView: View {
     /// The song's cover, blurred into the top of the popover and fading out
     /// before the controls, so each song tints its own panel.
     private var coverWash: some View {
-        ZStack {
+        let washArtwork = currentCover?.thumbnail
+        return ZStack {
             // A 12-pixel thumbnail stretched up is already a soft colour
             // field: no blur pass, and the cover's text can never show through.
             if let image = washArtwork {
@@ -420,8 +436,8 @@ public struct MenuBarLyricsPopoverView: View {
     }
 
     @ViewBuilder
-    private func artworkView(_ url: URL?) -> some View {
-        if let image = cachedArtwork {
+    private var artworkView: some View {
+        if let image = currentCover?.image {
             Image(nsImage: image).resizable().scaledToFit()
                 .frame(width: 48, height: 48)
                 .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))

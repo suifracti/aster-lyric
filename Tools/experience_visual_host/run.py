@@ -2,7 +2,7 @@
 from functools import partial
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
-import os, subprocess, sys, threading, tempfile, shutil
+import os, subprocess, sys, threading, tempfile, shutil, time
 ROOT=Path('/tmp/lyrics-experience-visual-host')
 
 
@@ -29,6 +29,10 @@ def with_values(argv):
 fixtures=ROOT/'fixtures';fixtures.mkdir(parents=True,exist_ok=True)
 class QuietHandler(SimpleHTTPRequestHandler):
     def log_message(self,*args): pass
+    def do_GET(self):
+        if self.path.endswith("?fixture-delay=6"):
+            time.sleep(6)
+        super().do_GET()
 server=ThreadingHTTPServer(('127.0.0.1',0),partial(QuietHandler,directory=str(fixtures)))
 threading.Thread(target=server.serve_forever,daemon=True).start()
 env=os.environ.copy()

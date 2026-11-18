@@ -49,11 +49,14 @@ private enum ExperienceArguments {
     static let size = CGSize(width: Double(value("--width", fallback: "1152")) ?? 1152, height: Double(value("--height", fallback: "720")) ?? 720)
     /// Optional real-song fixture exported read-only from the production
     /// database. Without it the host keeps its generated song and lyrics.
-    static let fixture: ExperienceFixture? = {
-        let path = value("--fixture-json", fallback: "")
+    static let fixture = loadFixture("--fixture-json")
+    static let nextFixture = loadFixture("--next-fixture-json")
+
+    private static func loadFixture(_ flag: String) -> ExperienceFixture? {
+        let path = value(flag, fallback: "")
         guard !path.isEmpty, let data = FileManager.default.contents(atPath: path) else { return nil }
         return try? JSONDecoder().decode(ExperienceFixture.self, from: data)
-    }()
+    }
 }
 
 private struct ExperienceFixture: Decodable {
@@ -71,12 +74,19 @@ private struct ExperienceFixture: Decodable {
         let kana: String?
         let romaji: String?
         let translation: String?
+        let performer: String?
         /// 和声 (backing vocals) shown as their own small line.
         let background: String?
     }
     let track: Track
     let language: String?
     let lines: [Line]
+
+    func playbackTrack(artwork: URL?) -> ProviderTrack {
+        let spotifyID = track.spotifyID.map { $0.hasPrefix("spotify:") ? $0 : "spotify:track:\($0)" }
+        return ProviderTrack(id: spotifyID, title: track.title, artist: track.artist, album: track.album,
+                             duration: track.duration, artworkURL: artwork)
+    }
 }
 
 @MainActor
@@ -120,16 +130,16 @@ private final class ExperiencePlaybackProvider: PlaybackProvider {
     var position: TimeInterval = Double(ExperienceArguments.value("--time", fallback: "18")) ?? 18
     var playing = ExperienceArguments.value("--playing", fallback: "false") == "true"
     var track: ProviderTrack
+    private let firstTrack: ProviderTrack
+    private let nextTrack: ProviderTrack?
     init(artwork: URL?) {
-        if let fixture = ExperienceArguments.fixture {
-            let spotifyID = fixture.track.spotifyID.map {
-                $0.hasPrefix("spotify:") ? $0 : "spotify:track:\($0)"
-            }
-            track = ProviderTrack(id: spotifyID, title: fixture.track.title, artist: fixture.track.artist,
-                                  album: fixture.track.album, duration: fixture.track.duration,
-                                  artworkURL: artwork)
-        } else {
-            track = ProviderTrack(id: "spotify:track:visualfixture", title: "夜を越えて · After the rain", artist: "Visual Fixture", album: "Native rendering study", duration: 240, artworkURL: artwork)
+        firstTrack = ExperienceArguments.fixture?.playbackTrack(artwork: artwork)
+            ?? ProviderTrack(id: "spotify:track:visualfixture", title: "夜を越えて · After the rain", artist: "Visual Fixture", album: "Native rendering study", duration: 240, artworkURL: artwork)
+        track = firstTrack
+        nextTrack = ExperienceArguments.nextFixture.map {
+            let image = ExperienceArtwork.make(kindOverride: "bright")
+            let delayedCover = image.flatMap { URL(string: $0.absoluteString + "?fixture-delay=6") }
+            return $0.playbackTrack(artwork: delayedCover)
         }
     }
     func refresh() async -> PlaybackSnapshot {
@@ -138,22 +148,26 @@ private final class ExperiencePlaybackProvider: PlaybackProvider {
     }
     func play() async throws { playing = true }
     func pause() async throws { playing = false }
-    func previous() async throws { position = 8 }
-    func next() async throws { position = 28 }
+    func previous() async throws { track = firstTrack; position = 8 }
+    func next() async throws {
+        if let nextTrack { track = nextTrack }
+        position = Double(ExperienceArguments.value("--next-time", fallback: "28")) ?? 28
+    }
     func seek(to position: TimeInterval) async throws { self.position = position; print("VISUAL_SEEK", position); fflush(stdout) }
 }
 private struct ExperienceLyricsProvider: LyricsProvider {
     let name = "Generated fixture lyrics"
     func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult {
-        if let fixture = ExperienceArguments.fixture {
+        let next = ExperienceArguments.nextFixture.flatMap { $0.track.title == track.title ? $0 : nil }
+        if let fixture = next ?? ExperienceArguments.fixture {
             let lines = fixture.lines.map {
                 LyricLine(timestamp: $0.start, originalText: $0.original, endTime: $0.end,
                           translationText: $0.translation, romajiText: $0.romaji, kanaText: $0.kana,
-                          backgroundText: $0.background)
+                          performerID: $0.performer, backgroundText: $0.background)
             }
             return .match(LyricsDocument(identity: identity, title: track.title, artist: track.artist,
                                          album: track.album, duration: track.duration, lines: lines,
-                                         isSynchronized: true, source: .local, confidence: 1,
+                                         isSynchronized: true, source: .lrclib, confidence: 1,
                                          language: fixture.language ?? "ja"))
         }
         let rows = [
@@ -208,8 +222,8 @@ private struct ExperienceLyricsProvider: LyricsProvider {
 
 @MainActor
 private enum ExperienceArtwork {
-    static func make() -> URL? {
-        let artworkPath = ExperienceArguments.value("--artwork-path", fallback: "")
+    static func make(kindOverride: String? = nil) -> URL? {
+        let artworkPath = kindOverride == nil ? ExperienceArguments.value("--artwork-path", fallback: "") : ""
         if !artworkPath.isEmpty {
             let source = URL(fileURLWithPath: artworkPath)
             let ext = source.pathExtension.isEmpty ? "jpg" : source.pathExtension
@@ -218,7 +232,7 @@ private enum ExperienceArtwork {
             guard let base = ProcessInfo.processInfo.environment["VISUAL_ARTWORK_BASE_URL"] else { return nil }
             return URL(string: base + "/" + ExperienceArguments.root.lastPathComponent + "/" + destination.lastPathComponent)
         }
-        let kind = ExperienceArguments.value("--artwork", fallback: "square")
+        let kind = kindOverride ?? ExperienceArguments.value("--artwork", fallback: "square")
         guard kind != "none" else { return nil }
         let size: CGSize = kind == "panorama" ? CGSize(width: 1800, height: 360) : kind == "portrait" ? CGSize(width: 600, height: 900) : kind == "landscape" ? CGSize(width: 900, height: 540) : CGSize(width: 800, height: 800)
         let image = NSImage(size: size)
@@ -417,6 +431,10 @@ struct ExperienceVisualHostApp: App {
         Window("歌词编辑", id: "lyrics-editor") {
             LyricsEditorWindowView().environmentObject(playback).environmentObject(settings)
         }
+        Window("找回一句", id: "quick-find") {
+            WorkspaceQuickFind()
+        }
+        .defaultSize(width: 565, height: 430)
         Settings { SettingsRootView().environmentObject(settings).environmentObject(playback).environmentObject(SettingsDataController()) }
         DocumentGroup(newDocument: LyricBook()) { opened in
             LyricBookDesk(book: opened.$document, fileURL: opened.fileURL)
@@ -466,6 +484,10 @@ private struct ExperienceFixtureRoot: View {
                 MenuBarLyricsController.shared.setOpenEditorHandler { openWindow(id: "lyrics-editor") }
                 MenuBarLyricsController.shared.setOpenSettingsHandler { openSettings() }
                 MenuBarLyricsController.shared.setOpenMainWindowHandler { openWindow(id: "fixture-main") }
+                QuickFindLauncher.shared.connect {
+                    openWindow(id: "quick-find")
+                    NSApp.activate(ignoringOtherApps: true)
+                }
                 if ExperienceArguments.surface == "workbench", ProcessInfo.processInfo.arguments.contains("--workbench-quote") {
                     MainWindowWorkspaceMode.shared.show(.workbench)
                     _ = V3FavoriteLines.shared.toggle(text: "在晨光里打开那封信", translation: "I opened the letter at dawn.",
