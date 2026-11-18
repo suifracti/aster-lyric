@@ -859,6 +859,7 @@ public final class PlaybackState: ObservableObject {
     }
 
     public func prepareLyricsEditorForOpening() {
+        if lyricsEditorSession.keepDraftWhenOpening() { return }
         guard hasLiveTrack else {
             lyricsEditorSession.beginDetached()
             return
@@ -871,14 +872,31 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
-    public func prepareLyricsEditor() {
+    @discardableResult
+    public func prepareLyricsEditor() -> Bool { prepareLyricsEditor(focusingLine: nil) }
+
+    func prepareLyricsEditor(fromDisplayedLine index: Int, identity: TrackIdentity,
+                             versionID: UUID, revision: UInt64) -> Bool {
+        guard !isShowingSearchPreview, liveTrackIdentity == identity,
+              liveLyricsVersionID == versionID, liveLyricsSessionRevision == revision,
+              lyricsSession.activeDocument?.lines.indices.contains(index) == true else { return false }
+        return prepareLyricsEditor(focusingLine: index)
+    }
+
+    private func prepareLyricsEditor(focusingLine index: Int?) -> Bool {
+        if lyricsEditorSession.keepDraftWhenOpening() {
+            if let index, canUseLyricsEditorPlayback, lyricsEditorSession.currentSourceVersionID == liveLyricsVersionID {
+                lyricsEditorSession.revealSourceLine(at: index)
+            }
+            return true
+        }
         guard canOpenLyricsEditor,
               let identity = lyricsSession.activeIdentity,
               let document = lyricsSession.activeDocument,
               let versionID = lyricsSession.activeLyricsVersionID,
               let sourceHash = lyricsSession.activeSourceContentHash else {
             songSearchSelectionMessage = "当前歌词版本还未完成保存，稍后再打开编辑器"
-            return
+            return false
         }
         lyricsEditorSession.begin(
             track: currentTrack,
@@ -889,12 +907,53 @@ public final class PlaybackState: ObservableObject {
             revision: lyricsSession.revision,
             translations: translationSession.availableVersions,
             selectedTranslation: translationSession.selectedVersion,
-            configuration: settingsStore.aiTranslationConfiguration
+            configuration: settingsStore.aiTranslationConfiguration,
+            initialLineIndex: index ?? liveCurrentLineIndex
         )
+        return true
+    }
+
+    var canUseLyricsEditorPlayback: Bool {
+        canControlSpotify && !isShowingSearchPreview && !lyricsEditorSession.isStale
+            && lyricsEditorSession.state != .saving && lyricsEditorSession.isStillCurrent?() == true
+    }
+
+    var currentEditorSourceLineIndex: Int? {
+        guard canUseLyricsEditorPlayback, lyricsEditorSession.currentSourceVersionID == liveLyricsVersionID else { return nil }
+        return liveCurrentLineIndex
+    }
+
+    @discardableResult
+    func auditionLyricsEditorLine(_ id: UUID) -> Bool {
+        guard canUseLyricsEditorPlayback,
+              let start = lyricsEditorSession.draft?.lines.first(where: { $0.id == id })?.startTime,
+              start.isFinite, start >= 0, start <= currentTrack.duration else { return false }
+        seek(to: start, source: "lyrics-editor-row")
+        return true
+    }
+
+    func markLyricsEditorLine(_ id: UUID, advance: Bool) {
+        guard canUseLyricsEditorPlayback, lyricsEditorSession.focusLine(id) else { return }
+        let next = lyricsEditorSession.markLineAtPlayback(lineID: id, position: playbackPositionNow, advance: advance)
+        if let next { lyricsEditorSession.focusLine(next, reveal: true) }
+    }
+
+    func seekWithinLyricsEditor(by seconds: TimeInterval) {
+        guard canUseLyricsEditorPlayback else { return }
+        seek(to: min(max(0, playbackPositionNow + seconds), currentTrack.duration), source: "lyrics-editor")
+    }
+
+    func toggleLyricsEditorPlayback() {
+        guard canUseLyricsEditorPlayback else { return }
+        togglePlayPause()
     }
 
     @discardableResult
     public func prepareBlankLyricsEditor() -> Bool {
+        if lyricsEditorSession.keepDraftWhenOpening() {
+            songSearchSelectionMessage = "编辑器已有未保存的稿件"
+            return false
+        }
         guard canCreateManualLyrics,
               let identity = lyricsSession.activeIdentity else {
             songSearchSelectionMessage = "当前歌曲仍有可用歌词版本，或尚未确认当前歌曲"
@@ -1585,7 +1644,7 @@ public final class PlaybackState: ObservableObject {
     /// Acceptance harness: strip all line times and save as plain/unsynced child version
     /// so Assist can run when only a synced provider document is loaded (sample B).
     private func acceptanceAssistMakePlain() {
-        prepareLyricsEditor()
+        guard !lyricsEditorSession.keepDraftWhenOpening(), prepareLyricsEditor() else { return }
         guard let lines = lyricsEditorSession.draft?.lines, !lines.isEmpty else {
             LyricsE2ELog.log("ACCEPTANCE assist_make_plain skipped no draft")
             return
@@ -2394,7 +2453,10 @@ public final class PlaybackState: ObservableObject {
             songSearchSelectionMessage = "还没有可编辑的时间建议"
             return
         }
-        prepareLyricsEditor()
+        guard !lyricsEditorSession.keepDraftWhenOpening(), prepareLyricsEditor() else {
+            songSearchSelectionMessage = "请先处理编辑器中未保存的稿件"
+            return
+        }
         lyricsEditorSession.applyAssistedDraft(draft)
         assistEditorOpenToken &+= 1
         // Best-effort focus if the window is already open.

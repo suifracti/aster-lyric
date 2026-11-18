@@ -13,6 +13,7 @@
 | 数据包导入一半报错、版本串到别首歌、确认旧的同步文件 | L-047 · previewTrackImport、importPersonalDataPackage、PersonalDataSyncStore |
 | 从其他应用选字查歌词、⌘K 找回一句、搜到副歌却只打开歌曲档案 | L-043、L-046 · WorkspaceQuickFind、searchLibraryPassages |
 | 两份稿逐句对照、改译时借用另一版的句子、重复副歌错位 | L-049 · LibraryVersionComparison、LibraryTranslationRevisionDraft |
+| 编辑器打开停在开头、重开丢草稿、试听跳到别首歌 | L-049 · prepareLyricsEditor、focusLine、auditionLyricsEditorLine |
 | 从 Finder 打开歌词文件、给本机录音补稿、导出手里的版本、入库后合声消失 | L-032、L-048 · LyricFileDocument、LocalLyricsFile、PortableLyricsEdition |
 | 没放歌时写手稿、调整段落或接着修上一稿 | L-050 · LyricManuscript、LyricWritingDesk、ManuscriptStanzas |
 | 从原词、译文或金句编歌本、保存原出处、导出带目录的 PDF | L-051 · LyricBook、LyricBookDesk、LyricBookPrint |
@@ -862,6 +863,10 @@ TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、
 播放面板的「逐句对读」和档案使用同一个窗口，可更换两边的稿或交换底稿。收听入口仅取播放器当前原词下已经载入的版本；点击「采用」时再次匹配实时录音、原词 UUID 和译文状态。切歌、切原词或进入搜索试听时收起跟随播放的对读窗口，离线档案仍可独立修订原稿。
 
 档案或对读保存的人工修订共用 `is_draft` 标记，保存后显示「待采用」。档案的默认译文和收听的自动选稿会跳过这类稿件，直接打开指定版本仍可阅读、对比或收录。属于当前原词的同语种新稿会立即补进收听面板，点「采用」后才会变更播放选择。原有的锁定和父稿关系照常保留。
+
+2026-11-19：播放入口按采用的原词版本和原始行序定位编辑器。V3 右键「编辑这一句」可跳到任意可见原词行，同文副歌仍按行区分。编辑稿记住所选行，重开会保留未保存稿，切到另一首前可明确选择放弃。试听、播放及打点核对编辑稿所属录音和会话，试听按稿里原始时间，标记用实时录音时钟。隔离原生从 34 行的样例右键第二次副歌，选中第 28 行，试听读回 162 秒。播放器桩核了同句多次出现、重开、标记不自动前进与切歌后试听被拒。
+
+两个 V3 歌词滚动与布局合约原先仍在拆分后的窗口文件找视图。现对准 `AppleMusicImmersiveV3Lyrics.swift`，检查按折叠后的可见行序滚动，保留对普通 `VStack` 和读取行序的位置断言。
 
 ## L-050 写手稿、编排段落和存人工版本（2026-11-18）
 

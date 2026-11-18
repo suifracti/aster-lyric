@@ -804,6 +804,7 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 
 **D. Small items.**
 - Dragging a progress bar (card, edge pill, cover progress) lands on the start of the nearest sung line within 1.5 s. Keyboard and editor seeks stay exact.
+- Opening the editor from playback selects the current saved lyric line. V3 can open any visible source line from its right-click menu. Reopening keeps the unsaved draft. The editor only sends timing and audition actions to the recording it was opened for.
 - After a seek, a position Spotify reports from before the seek is ignored for up to 2.2 s (Kaset). The line loop's own seeks are not held.
 - 设置 › 桌面歌词: **截图和录屏时隐藏** keeps desktop lyrics and the capsule out of screenshots, recordings and screen sharing.
 - Matching: the last sung line against the song's length. Ending within a quarter of the song is a little extra evidence; ending more than 5 s after the song is over keeps the lyrics from being adopted on their own.

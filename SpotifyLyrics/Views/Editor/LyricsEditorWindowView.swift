@@ -6,10 +6,10 @@ struct LyricsEditorWindowView: View {
     @EnvironmentObject private var state: PlaybackState
     @EnvironmentObject private var settings: AppSettingsStore
     @Environment(\.dismiss) private var dismiss
-    @State private var focusedLineID: UUID?
     @State private var isShowingLyricsOffset = false
 
     private var editor: LyricsEditorSessionController { state.lyricsEditor }
+    private var focusedLineID: UUID? { editor.focusedLineID }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -113,6 +113,11 @@ struct LyricsEditorWindowView: View {
                     .lineLimit(1)
             }
             Spacer()
+            if (editor.isStale || editor.currentIdentity != state.liveTrackIdentity),
+               state.canOpenLyricsEditor || state.canCreateManualLyrics {
+                Button("切到当前歌曲", action: editCurrentTrack)
+                    .disabled(editor.state == .saving)
+            }
             versionPicker
             translationPicker
             Button {
@@ -197,7 +202,22 @@ struct LyricsEditorWindowView: View {
             guard alert.runModal() == .alertSecondButtonReturn else { return }
         }
         editor.selectLyricsVersion(versionID: versionID)
-        focusedLineID = nil
+    }
+
+    private func editCurrentTrack() {
+        guard editor.state != .saving,
+              state.canOpenLyricsEditor || state.canCreateManualLyrics else { return }
+        if editor.hasUnsavedChanges {
+            let alert = NSAlert()
+            alert.messageText = "切换到正在播放的歌曲？"
+            alert.informativeText = "切换会丢弃这份稿件未保存的修改。"
+            alert.addButton(withTitle: "保留草稿")
+            alert.addButton(withTitle: "放弃并切换")
+            guard alert.runModal() == .alertSecondButtonReturn else { return }
+        }
+        guard state.canOpenLyricsEditor || state.canCreateManualLyrics else { return }
+        editor.close()
+        state.prepareLyricsEditorForOpening()
     }
 
     private var translationPicker: some View {
@@ -236,21 +256,28 @@ struct LyricsEditorWindowView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
-            ScrollView {
-                LazyVStack(spacing: 4) {
-                    ForEach(Array(draft.lines.enumerated()), id: \.element.id) { index, line in
-                        lineRow(index: index, line: line, total: draft.lines.count)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 4) {
+                        ForEach(Array(draft.lines.enumerated()), id: \.element.id) { index, line in
+                            lineRow(index: index, line: line, total: draft.lines.count).id(line.id)
+                        }
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .onChange(of: editor.lineRevealToken, initial: true) { _, _ in
+                    if let focusedLineID { proxy.scrollTo(focusedLineID, anchor: .center) }
+                }
+                .onChange(of: draft.sourceVersionID) { _, _ in
+                    if focusedLineID == nil, let first = draft.lines.first { proxy.scrollTo(first.id, anchor: .top) }
+                }
             }
         }
     }
 
     private var canUsePlaybackTiming: Bool {
-        state.canControlSpotify && !state.isShowingSearchPreview && !editor.isStale
-            && editor.currentIdentity == state.liveTrackIdentity
+        state.canUseLyricsEditorPlayback
     }
 
     private var toolbar: some View {
@@ -286,19 +313,21 @@ struct LyricsEditorWindowView: View {
                     HStack(spacing: 12) {
                         HStack(spacing: 12) {
                             Button("后退 2 秒", systemImage: "gobackward.2") {
-                                state.seek(to: max(0, state.currentTime - 2), source: "lyrics-editor")
+                                state.seekWithinLyricsEditor(by: -2)
                             }
                             Button(state.isPlaying ? "暂停" : "播放", systemImage: state.isPlaying ? "pause.fill" : "play.fill") {
-                                state.togglePlayPause()
+                                state.toggleLyricsEditorPlayback()
                             }
                             Button("前进 2 秒", systemImage: "goforward.2") {
-                                state.seek(to: min(state.currentTrack.duration, state.currentTime + 2), source: "lyrics-editor")
+                                state.seekWithinLyricsEditor(by: 2)
                             }
                         }
                         .disabled(!canUsePlaybackTiming)
-                        Text(Self.formatTime(state.currentTime) + " / " + Self.formatTime(state.currentTrack.duration))
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                        if canUsePlaybackTiming {
+                            Text(Self.formatTime(state.currentTime) + " / " + Self.formatTime(state.currentTrack.duration))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
                         Spacer()
                         Toggle("标记后自动前进", isOn: Binding(
                             get: { editor.assistAutoAdvance },
@@ -318,6 +347,11 @@ struct LyricsEditorWindowView: View {
                         .disabled(!canUsePlaybackTiming)
                         Button("下一条未排", systemImage: "arrow.down.circle") {
                             jumpToNextUntimed()
+                        }
+                        if state.currentEditorSourceLineIndex != nil {
+                            Button("回到当前句", systemImage: "scope") {
+                                if let index = state.currentEditorSourceLineIndex { editor.revealSourceLine(at: index) }
+                            }
                         }
                         Spacer()
                         Text(canUsePlaybackTiming ? "空格：标记时间 · N：下一条未排" : "播放此编辑稿对应的歌曲后可标记时间")
@@ -357,6 +391,8 @@ struct LyricsEditorWindowView: View {
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                         .frame(width: 28, alignment: .trailing)
+                        .accessibilityLabel("第 \(index + 1) 行")
+                        .accessibilityAddTraits(isFocused ? .isSelected : [])
                     if isSuggested {
                         Text("建议")
                             .font(.caption2.weight(.semibold))
@@ -385,7 +421,7 @@ struct LyricsEditorWindowView: View {
             TextField("原文", text: textBinding(lineID: line.id, key: .original))
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: .infinity)
-                .onTapGesture { focusedLineID = line.id }
+                .onTapGesture { editor.focusLine(line.id) }
             VStack(alignment: .leading, spacing: 4) {
                 TextField("翻译", text: textBinding(lineID: line.id, key: .translation))
                     .textFieldStyle(.roundedBorder)
@@ -396,11 +432,9 @@ struct LyricsEditorWindowView: View {
                         .lineLimit(1)
                     Spacer()
                     Button("试听") {
-                        focusedLineID = line.id
-                        if let startTime = line.startTime {
-                            state.seek(to: startTime, source: "lyrics-editor-row")
-                        }
+                        if state.auditionLyricsEditorLine(line.id) { editor.focusLine(line.id) }
                     }
+                    .disabled(!canUsePlaybackTiming || line.startTime == nil)
                     Button("读音") { editor.regenerateReading(for: line.id) }
                     Button(editor.isReadingLocked(lineID: line.id) ? "已锁" : "锁读音") {
                         editor.toggleReadingLock(lineID: line.id)
@@ -435,7 +469,7 @@ struct LyricsEditorWindowView: View {
         )
         .overlay(alignment: .bottom) { Divider().opacity(0.65) }
         .contentShape(Rectangle())
-        .onTapGesture { focusedLineID = line.id }
+        .onTapGesture { editor.focusLine(line.id) }
     }
 
     private enum TextFieldKey { case original, translation }
@@ -474,7 +508,7 @@ struct LyricsEditorWindowView: View {
     }
 
     private func markFocusedLineAtCurrentTime(advance: Bool) {
-        guard canUsePlaybackTiming, editor.state != .saving else { return }
+        guard canUsePlaybackTiming else { return }
         let targetID = focusedLineID
             ?? editor.draft?.lines.first(where: {
                 $0.startTime == nil
@@ -482,26 +516,12 @@ struct LyricsEditorWindowView: View {
             })?.id
             ?? editor.draft?.lines.first?.id
         guard let targetID else { return }
-        focusedLineID = targetID
-        let now = min(max(0, state.currentTime), max(0, state.currentTrack.duration))
-#if DEBUG
-        if let next = editor.markLineAtPlayback(lineID: targetID, position: now, advance: advance) {
-            focusedLineID = next
-            return
-        }
-#endif
-        editor.updateLine(targetID) { line in
-            line.startTime = now
-            if let end = line.endTime, end < now { line.endTime = nil }
-        }
-        guard advance || editor.assistAutoAdvance,
-              let next = editor.draft?.nextUntimedLineID(after: targetID) else { return }
-        focusedLineID = next
+        state.markLyricsEditorLine(targetID, advance: advance)
     }
 
     private func jumpToNextUntimed() {
         if let next = editor.draft?.nextUntimedLineID(after: focusedLineID) {
-            focusedLineID = next
+            editor.focusLine(next, reveal: true)
         }
     }
 
@@ -509,9 +529,9 @@ struct LyricsEditorWindowView: View {
         guard let lines = editor.draft?.lines, !lines.isEmpty else { return }
         if let focusedLineID, let index = lines.firstIndex(where: { $0.id == focusedLineID }) {
             let next = min(max(0, index + delta), lines.count - 1)
-            self.focusedLineID = lines[next].id
-        } else {
-            focusedLineID = delta >= 0 ? lines.first?.id : lines.last?.id
+            editor.focusLine(lines[next].id, reveal: true)
+        } else if let next = delta >= 0 ? lines.first : lines.last {
+            editor.focusLine(next.id, reveal: true)
         }
     }
 

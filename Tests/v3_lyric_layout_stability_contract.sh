@@ -2,9 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VIEW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"
+VIEW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3Lyrics.swift"
 
-test -f "$VIEW" || { echo "FAIL: missing V3 window" >&2; exit 1; }
+test -f "$VIEW" || { echo "FAIL: missing V3 lyrics view" >&2; exit 1; }
 
 row="$({
   sed -n '/private struct AppleMusicImmersiveV3LyricRowContent/,/^private struct AppleMusicImmersiveV3TimedRowView/p' "$VIEW"
@@ -53,7 +53,7 @@ grep -q 'showsFill: isActive' "$VIEW" || {
 }
 
 viewport="$({
-  sed -n '/private struct AppleMusicImmersiveV3LyricsViewport/,/enum V3JapaneseReadingCache/p' "$VIEW"
+  sed -n '/^struct AppleMusicImmersiveV3LyricsViewport:/,/^private struct AppleMusicImmersiveV3LyricsDocumentView:/p' "$VIEW"
 } || true)"
 
 grep -q 'AppleMusicImmersiveV3LyricsDocumentView' <<<"$viewport" || {

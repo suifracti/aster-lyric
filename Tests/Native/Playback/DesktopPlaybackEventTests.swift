@@ -75,6 +75,51 @@ private struct EventOfflineLyrics: LyricsProvider {
 
 @MainActor
 final class DesktopPlaybackEventTests: XCTestCase {
+    func testEditorKeepsTheExactLineAndDraftAndOnlyAuditionsItsRecording() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("editor.sqlite3"))
+        let (state, provider, _, center) = fixture(repository: repository)
+        let providerTrack = try XCTUnwrap(provider.snapshot.track)
+        provider.snapshot = .init(status: .ready, track: providerTrack, position: 28,
+                                  isPlaying: false, sourceIdentity: .spotifyDesktop)
+        let file = try LocalLyricsFile(data: Data("[00:02.00]回声\n[00:12.00]渡口\n[00:24.00]回声".utf8),
+                                      kind: .lrc, preferredLanguage: "zh")
+        _ = try await repository.importLyricFile(file, into: Track(providerTrack: providerTrack))
+        state.startProvider(connectSpotify: false)
+        try await wait { state.canOpenLyricsEditor && state.liveCurrentLineIndex == 2 }
+
+        state.prepareLyricsEditor()
+        let last = try XCTUnwrap(state.lyricsEditor.draft?.lines.last)
+        let first = try XCTUnwrap(state.lyricsEditor.draft?.lines.first)
+        XCTAssertEqual(state.lyricsEditor.focusedLineID, last.id, "Pick the second occurrence of the chorus")
+        state.lyricsEditor.updateLine(last.id) { $0.originalText = "还没保存的回声" }
+        state.prepareLyricsEditorForOpening()
+        XCTAssertEqual(state.lyricsEditor.draft?.lines.last?.originalText, "还没保存的回声")
+        XCTAssertTrue(state.lyricsEditor.hasUnsavedChanges)
+        XCTAssertEqual(state.lyricsEditor.focusedLineID, last.id)
+
+        let identity = try XCTUnwrap(state.liveTrackIdentity)
+        let version = try XCTUnwrap(state.liveLyricsVersionID)
+        let revision = state.liveLyricsSessionRevision
+        XCTAssertTrue(state.prepareLyricsEditor(fromDisplayedLine: 0, identity: identity, versionID: version, revision: revision))
+        XCTAssertEqual(state.lyricsEditor.focusedLineID, first.id)
+        XCTAssertEqual(state.lyricsEditor.draft?.lines.last?.originalText, "还没保存的回声")
+
+        state.lyricsEditor.updateLine(first.id) { $0.startTime = nil }
+        state.lyricsEditor.assistAutoAdvance = true
+        state.markLyricsEditorLine(last.id, advance: false)
+        XCTAssertEqual(state.lyricsEditor.focusedLineID, last.id)
+        XCTAssertEqual(state.lyricsEditor.draft?.lines.last?.startTime, 28)
+        XCTAssertTrue(state.auditionLyricsEditorLine(last.id))
+        try await wait { provider.seeks == [28] }
+
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: payload())
+        try await wait { state.currentTrack.title == "Event B" }
+        XCTAssertFalse(state.auditionLyricsEditorLine(last.id))
+        XCTAssertFalse(state.prepareLyricsEditor(fromDisplayedLine: 2, identity: identity, versionID: version, revision: revision))
+        XCTAssertEqual(provider.seeks, [28])
+    }
+
     func testAdoptingAPreviewCandidateLeavesThePlayingSongUntouched() async throws {
         let (state, _, _, _) = fixture()
         state.startProvider(connectSpotify: false)

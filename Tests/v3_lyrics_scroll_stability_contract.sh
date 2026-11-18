@@ -2,12 +2,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-V3="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"
+V3="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3Lyrics.swift"
 
-test -f "$V3" || { echo "FAIL: missing V3 window" >&2; exit 1; }
+test -f "$V3" || { echo "FAIL: missing V3 lyrics view" >&2; exit 1; }
 
 viewport="$({
-  sed -n '/private struct AppleMusicImmersiveV3LyricsViewport/,/enum V3JapaneseReadingCache/p' "$V3"
+  sed -n '/^struct AppleMusicImmersiveV3LyricsViewport:/,/^private struct AppleMusicImmersiveV3LyricsDocumentView:/p' "$V3"
 } || true)"
 
 # The V3 rows change height when the active line and auxiliary layers change.
@@ -29,7 +29,7 @@ grep -Eq 'VStack\(alignment: .*spacing: rowSpacing\)' "$V3" || {
   exit 1
 }
 
-grep -q 'onChange(of: currentIndex)' <<<"$viewport" || {
+grep -q 'onChange(of: displayedIndex)' <<<"$viewport" || {
   echo 'FAIL: V3 scrolling must be driven by line changes, not playback ticks' >&2
   exit 1
 }
@@ -52,9 +52,12 @@ grep -q 'trackStableKey: trackStableKey' <<<"$viewport" || {
   exit 1
 }
 
-live_index_count="$(grep -c 'state.liveCurrentLineIndex' <<<"$viewport" || true)"
-if [[ "$live_index_count" -ne 1 ]]; then
-  echo 'FAIL: V3 viewport must read liveCurrentLineIndex only at the shared currentIndex boundary' >&2
+body="$(sed -n '/^    var body: some View/,/^    private var focusEmptyState:/p' <<<"$viewport")"
+signature="$(sed -n '/^    private var renderSignature:/,/^    private func scheduleContentRefresh()/p' <<<"$viewport")"
+if [[ "$(grep -c 'state.liveCurrentLineIndex' <<<"$body" || true)" -ne 1 \
+   || "$(grep -c 'state.liveCurrentLineIndex' <<<"$signature" || true)" -ne 1 \
+   || "$(grep -c 'state.liveCurrentLineIndex' <<<"$viewport" || true)" -ne 2 ]]; then
+  echo 'FAIL: V3 must read the active index only in the render signature and viewport body' >&2
   exit 1
 fi
 

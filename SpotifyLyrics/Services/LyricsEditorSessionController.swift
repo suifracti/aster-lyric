@@ -21,7 +21,7 @@ public enum LyricsEditorSessionState: Equatable, Sendable {
         case .importPreview: return "请确认 LRC 导入预览"
         case .saving: return "正在保存人工版本…"
         case .saved: return "已保存人工版本"
-        case .stale: return "当前 Spotify 已切歌，编辑会话仍绑定原歌曲"
+        case .stale: return "播放内容已变化，编辑稿仍属于原录音"
         case .failed(let message): return "保存失败：\(message)"
         }
     }
@@ -49,6 +49,8 @@ public struct LyricsEditorImportPreview: Equatable, Sendable {
 public final class LyricsEditorSessionController: ObservableObject {
     @Published public private(set) var state: LyricsEditorSessionState = .idle
     @Published public private(set) var draft: LyricsEditorDraft?
+    @Published private(set) var focusedLineID: UUID?
+    @Published private(set) var lineRevealToken: UInt64 = 0
     @Published public private(set) var availableVersions: [StoredEditableLyricsVersion] = []
     @Published public private(set) var resolvedPersistentLyricsOffsetScope: LyricsOffsetScope?
     @Published public private(set) var isResolvingLyricsOffsetScope = false
@@ -107,7 +109,29 @@ public final class LyricsEditorSessionController: ObservableObject {
     }
 
     public var hasUnsavedChanges: Bool {
-        draft?.isDirty == true || pendingImport != nil || pendingTextImport != nil || pendingTranslationPaste != nil
+        draft?.isDirty == true || lockedReadingIDs != baseLockedReadingIDs
+            || pendingImport != nil || pendingTextImport != nil || pendingTranslationPaste != nil
+    }
+
+    @discardableResult
+    func focusLine(_ id: UUID, reveal: Bool = false) -> Bool {
+        guard draft?.lines.contains(where: { $0.id == id }) == true else { return false }
+        if focusedLineID != id { focusedLineID = id }
+        if reveal { lineRevealToken &+= 1 }
+        return true
+    }
+
+    @discardableResult
+    func revealSourceLine(at index: Int) -> Bool {
+        guard baseLyricsLines.indices.contains(index) else { return false }
+        return focusLine(baseLyricsLines[index].id, reveal: true)
+    }
+
+    func keepDraftWhenOpening() -> Bool {
+        if state == .saving { return true }
+        guard hasUnsavedChanges else { return false }
+        message = "已保留未保存的编辑稿"
+        return true
     }
 
     var portableEdition: PortableLyricsEdition? {
@@ -191,7 +215,8 @@ public final class LyricsEditorSessionController: ObservableObject {
         revision: UInt64,
         translations: [StoredTranslationVersion],
         selectedTranslation: StoredTranslationVersion?,
-        configuration: AITranslationConfiguration
+        configuration: AITranslationConfiguration,
+        initialLineIndex: Int? = nil
     ) {
         generation &+= 1
         loadTask?.cancel()
@@ -226,6 +251,8 @@ public final class LyricsEditorSessionController: ObservableObject {
         )
         self.draft = newDraft
         self.baseLyricsLines = newDraft.lines.map(Self.lyricsProjection)
+        self.focusedLineID = nil
+        if let initialLineIndex { revealSourceLine(at: initialLineIndex) }
         self.baseTranslationLines = newDraft.lines.map(Self.translationText)
         self.lockedReadingIDs = []
         self.baseLockedReadingIDs = []
@@ -326,6 +353,7 @@ public final class LyricsEditorSessionController: ObservableObject {
         )
         self.sourceContentHash = LyricsPersistenceMapper.sourceContentHash(document: enriched)
         self.draft = newDraft
+        self.focusedLineID = nil
         self.baseLyricsLines = newDraft.lines.map(Self.lyricsProjection)
         self.baseTranslationLines = newDraft.lines.map(Self.translationText)
         self.lockedReadingIDs = []
@@ -357,6 +385,7 @@ public final class LyricsEditorSessionController: ObservableObject {
         self.pendingTextImportSource = .manualCreate
         let newDraft = LyricsEditorDraft(lines: lines)
         self.draft = newDraft
+        self.focusedLineID = nil
         self.baseLyricsLines = newDraft.lines.map(Self.lyricsProjection)
         self.baseTranslationLines = newDraft.lines.map(Self.translationText)
         self.lockedReadingIDs = []
@@ -374,6 +403,7 @@ public final class LyricsEditorSessionController: ObservableObject {
         pendingTextImport = nil
         pendingTranslationPaste = nil
         draft = nil
+        focusedLineID = nil
         availableVersions = []
         availableTranslations = []
         selectedTranslation = nil
@@ -440,19 +470,20 @@ public final class LyricsEditorSessionController: ObservableObject {
     public func clearAssistSuggestions() {
         assistSuggestedLineIDs = []
     }
+#endif
 
     /// Mark line at playback position; returns next focus line id if auto-advance.
     public func markLineAtPlayback(lineID: UUID, position: TimeInterval, advance: Bool) -> UUID? {
-        guard !isStale else { return nil }
+        guard !isStale, state != .saving, position.isFinite, position >= 0,
+              draft?.lines.contains(where: { $0.id == lineID }) == true else { return nil }
         updateLine(lineID) { line in
             line.startTime = position
             if let end = line.endTime, end < position { line.endTime = nil }
         }
         assistSuggestedLineIDs.remove(lineID)
-        guard advance || assistAutoAdvance else { return nil }
+        guard advance else { return nil }
         return draft?.nextUntimedLineID(after: lineID)
     }
-#endif
 
     public func updateLine(_ lineID: UUID, _ change: (inout LyricsEditorLineDraft) -> Void) {
         guard !isStale, var draft else { return }
@@ -1033,6 +1064,9 @@ public final class LyricsEditorSessionController: ObservableObject {
     }
 
     private func validate(_ draft: LyricsEditorDraft) {
+        if let focusedLineID, !draft.lines.contains(where: { $0.id == focusedLineID }) {
+            self.focusedLineID = nil
+        }
         validation = LyricsTimelineValidator.validate(lines: draft.lines, duration: draft.duration)
         if state == .saved { return }
         if state != .stale && state != .saving && state != .importPreview {

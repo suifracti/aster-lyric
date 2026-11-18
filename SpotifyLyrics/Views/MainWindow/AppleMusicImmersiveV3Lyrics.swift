@@ -69,6 +69,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
         let wordClock: LyricsPresentationClock?
         let loopedLineID: UUID?
         let translationVersionID: UUID?
+        let editableVersionID: UUID?
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -89,7 +90,8 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
             preview: isPreview, instrumental: hasExplicitInstrumentalMark,
             wordClock: usesWordClock || LyricsTimeline.vocalCountdownWindow(lines: lines, currentIndex: index, isSynchronized: sync) != nil
                 ? state.presentationClock : nil,
-            loopedLineID: state.loopedLyricLineID, translationVersionID: isPreview ? nil : state.selectedTranslation?.record.id)
+            loopedLineID: state.loopedLyricLineID, translationVersionID: isPreview ? nil : state.selectedTranslation?.record.id,
+            editableVersionID: editableVersionID)
     }
 
     private func scheduleContentRefresh() {
@@ -121,6 +123,9 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
     }
 
     private var isPreview: Bool { !liveOnly && state.isShowingSearchPreview }
+    private var editableVersionID: UUID? {
+        !state.isShowingSearchPreview && state.canOpenLyricsEditor ? state.liveLyricsVersionID : nil
+    }
     private var hasExplicitInstrumentalMark: Bool {
         !isPreview && state.liveTrackIsMarkedInstrumental
     }
@@ -129,6 +134,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
     private var documentRevision: UInt64 { liveOnly ? state.liveLyricsSessionRevision : state.lyricsSessionRevision }
     private var documentTrack: Track { liveOnly ? state.currentTrack : state.displayedTrack }
     @EnvironmentObject private var settings: AppSettingsStore
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.lyricPresentationScale) private var presentationScale
 
@@ -282,6 +288,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
             ScrollViewReader { proxy in
                 let bigLine = settings.v3BigLineModeEnabled && synchronized
                 let savedVersion = isPreview ? nil : state.liveLyricsVersionID
+                let editorIdentity = editableVersionID != nil ? state.liveTrackIdentity : nil
                 let translation = isPreview ? nil : state.selectedTranslation
                 let track = documentTrack
                 let scrollAnchor = bigLine ? 0 : V3ResponsiveGeometry.lyricScrollAnchor(
@@ -346,6 +353,13 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                                     readingVersionID: state.selectedReadingVersion?.record.id,
                                     lines: state.liveLyrics
                                 )
+                            }
+                        },
+                        onEditLine: editorIdentity.map { identity in
+                            { index in
+                                guard let savedVersion, state.prepareLyricsEditor(fromDisplayedLine: index,
+                                    identity: identity, versionID: savedVersion, revision: seekDocumentRevision) else { return }
+                                openWindow(id: "lyrics-editor")
                             }
                         },
                         onCopyLine: { LyricsCopyText.copy($0) },
@@ -568,6 +582,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     let onToggleLoop: (UUID) -> Void
     let onSeek: (TimeInterval) -> Void
     let onRuby: ((String, String) -> Void)?
+    let onEditLine: ((Int) -> Void)?
     let onCopyLine: (String) -> Void
     let quote: (LyricLine, Int) -> V3FavoriteLines.Entry?
     let onFavoriteLine: (V3FavoriteLines.Entry) -> Void
@@ -599,6 +614,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             && lhs.bigLineAvailableHeight == rhs.bigLineAvailableHeight
             && lhs.isPreview == rhs.isPreview
             && lhs.loopedLineID == rhs.loopedLineID
+            && (lhs.onEditLine != nil) == (rhs.onEditLine != nil)
     }
 
     private var needsWordClock: Bool {
@@ -706,6 +722,9 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             }
         }
         .contextMenu {
+            if let onEditLine {
+                Button("编辑这一句", systemImage: "square.and.pencil") { onEditLine(index) }
+            }
             if !isPreview, LyricsTimeline.validSeekTimestamp(for: line, isSynchronized: synchronized, duration: duration) != nil {
                 Button(loopedLineID == line.id ? "取消循环" : "循环这一句", systemImage: "repeat") { onToggleLoop(line.id) }
                 Divider()
