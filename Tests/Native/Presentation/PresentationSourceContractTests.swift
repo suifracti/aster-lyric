@@ -687,6 +687,41 @@ final class V3KeepsakeTests: XCTestCase {
 
 final class V3SceneLayerTests: XCTestCase {
     @MainActor
+    func testAutomaticAmbientKeepsTheStoredLookIndependentOfEachCover() throws {
+        let suite = "automatic-ambient-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        settings.selectV3Scene(.originalAmbient, renderer: .authenticAmbient)
+        settings.v3AmbientTreatment = .windowLight
+        let twoColors = V3SceneFamily.automaticAmbient(luminance: 0.3, route: .duet)
+        let dark = V3SceneFamily.automaticAmbient(luminance: 0.2)
+
+        let main = V3ListeningPresentation(settings: settings, room: .off, automaticAmbient: twoColors)
+        let otherWindow = V3ListeningPresentation(settings: settings, room: .off, automaticAmbient: dark)
+        XCTAssertTrue(main.usesAutomaticAmbient)
+        XCTAssertEqual(main.ambientTreatment, .duotone)
+        XCTAssertEqual(otherWindow.renderer, .ambientFeathered)
+        XCTAssertEqual(otherWindow.scene, .flowingField)
+
+        let room = V3ListeningPresentation(settings: settings, room: .rain, automaticAmbient: dark)
+        XCTAssertFalse(room.usesAutomaticAmbient)
+        XCTAssertEqual(room.scene, .originalAmbient)
+        let preview = V3ListeningPresentation(settings: settings, room: .off, artworkPreview: .classicGaussian,
+                                              automaticAmbient: dark)
+        XCTAssertEqual(preview.renderer, .classicGaussian)
+        XCTAssertEqual(settings.v3AmbientTreatment, .windowLight)
+        XCTAssertEqual(settings.v3ListeningScene, .originalAmbient)
+
+        settings.v3AmbientAutomatic = false
+        let reopened = AppSettingsStore(defaults: defaults)
+        let manual = V3ListeningPresentation(settings: reopened, room: .off, automaticAmbient: dark)
+        XCTAssertFalse(manual.usesAutomaticAmbient)
+        XCTAssertEqual(manual.ambientTreatment, .windowLight)
+        XCTAssertEqual(manual.renderer, .authenticAmbient)
+    }
+
+    @MainActor
     func testSceneStylesAreShownButNeverSavedAndUserChangesWin() throws {
         let suite = "scene-layer-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

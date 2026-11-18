@@ -61,6 +61,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
     @ObservedObject var settings: AppSettingsStore
     let artworkPresentation: V3ArtworkPresentation
     let listeningScene: V3ListeningScene?
+    let ambientTreatment: V3AmbientTreatment
     var isArtworkPreview = false
     var isDocumentPreview = false
     /// Playback time, for lights that follow Spotify's beat grid.
@@ -382,10 +383,10 @@ struct AppleMusicImmersiveV3BackdropView: View {
     private func artworkLayers(image: NSImage, ambientImage: NSImage?) -> some View {
         switch artworkPresentation {
         case .authenticAmbient where listeningScene == .originalAmbient && !isArtworkPreview
-                && settings.v3AmbientTreatment == .duotone:
+                && ambientTreatment == .duotone:
             duotoneArtworkLayers(image: image)
         case .authenticAmbient where listeningScene == .originalAmbient && !isArtworkPreview
-                && settings.v3AmbientTreatment == .windowLight:
+                && ambientTreatment == .windowLight:
             authenticAmbientArtworkLayers(image: image, ambientImage: ambientImage)
             windowLightShafts
         case .authenticAmbient:

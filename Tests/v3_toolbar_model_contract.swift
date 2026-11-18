@@ -342,21 +342,11 @@ final class V3ToolbarPresentationTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = AppSettingsStore(defaults: defaults)
-        let dark = BackdropPalette(primary: .init(red: 0.1, green: 0.1, blue: 0.2), secondary: .init(red: 0.1, green: 0.1, blue: 0.2),
-                                   glow: .init(red: 0.2, green: 0.2, blue: 0.4), luminance: 0.2, saturation: 0.5,
-                                   readabilityVeilOpacity: 0.3, textureOpacity: 0.2)
-        settings.selectV3Scene(.originalAmbient, renderer: .authenticAmbient)
-        V3SceneFamily.applyAutomaticAmbient(settings: settings, palette: dark, defaults: defaults)
-        XCTAssertEqual(settings.v3ArtworkPresentation, .ambientFeathered)
-        XCTAssertEqual(settings.v3ListeningScene, .flowingField)
-        defaults.set(false, forKey: V3SceneFamily.ambientAutomaticKey)
-        settings.selectV3Scene(.originalAmbient, renderer: .authenticAmbient)
-        V3SceneFamily.applyAutomaticAmbient(settings: settings, palette: dark, defaults: defaults)
-        XCTAssertEqual(settings.v3ArtworkPresentation, .authenticAmbient, "an explicit choice stays")
-        defaults.removeObject(forKey: V3SceneFamily.ambientAutomaticKey)
         settings.selectV3Scene(.focusedLyrics, renderer: .lyricsOnly)
-        V3SceneFamily.applyAutomaticAmbient(settings: settings, palette: dark, defaults: defaults)
-        XCTAssertEqual(settings.v3ListeningScene, .focusedLyrics, "other scenes are left alone")
+        let dark = V3SceneFamily.automaticAmbient(luminance: 0.2)
+        let displayed = V3ListeningPresentation(settings: settings, room: .off, automaticAmbient: dark)
+        XCTAssertEqual(displayed.scene, .focusedLyrics, "other scenes are left alone")
+        XCTAssertEqual(displayed.renderer, .lyricsOnly)
     }
 
     /// Equal slider quarters are equal visible steps (constant ratio), and

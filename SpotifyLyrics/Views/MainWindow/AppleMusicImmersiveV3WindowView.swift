@@ -193,9 +193,16 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var openingTranslationComparison = false
     @State private var isVersionPickerPresented = false
     @State private var pinchStartFontSize: CGFloat?
-    @State private var coverColors: (url: URL, accent: Color?, luminance: Double)?
-    private var coverAccent: Color? { coverColors?.url == compositionTrack.artworkURL ? coverColors?.accent : nil }
-    private var coverLuminance: Double { coverColors?.url == compositionTrack.artworkURL ? coverColors?.luminance ?? 0 : 0 }
+    private struct CoverColors {
+        let url: URL
+        let accent: Color?
+        let luminance: Double
+        var automaticAmbient: V3SceneFamily.Entry?
+    }
+    @State private var coverColors: CoverColors?
+    private var displayedCoverColors: CoverColors? { coverColors?.url == compositionTrack.artworkURL ? coverColors : nil }
+    private var coverAccent: Color? { displayedCoverColors?.accent }
+    private var coverLuminance: Double { displayedCoverColors?.luminance ?? 0 }
     @State private var coverSubject: V3ArtworkSubject.Analysis?
     @State private var showsListeningKeys = false
     @State private var isFocusMode = false
@@ -217,7 +224,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private func resolvedPresentation(includeArtworkPreview: Bool = true) -> V3ListeningPresentation {
         V3ListeningPresentation(settings: settings, room: activeScene, accent: coverAccent ?? .white,
                                 usesSavedRoomChoices: scenePreview == nil || scenePreview == settings.v3Room,
-                                artworkPreview: includeArtworkPreview ? hoveredStyle : nil, previewScene: hoveredScene)
+                                artworkPreview: includeArtworkPreview ? hoveredStyle : nil, previewScene: hoveredScene,
+                                automaticAmbient: displayedCoverColors?.automaticAmbient)
     }
     private var compositionScene: V3ListeningScene? { presentation.scene }
     private var compositionStyle: V3ArtworkPresentation { presentation.renderer }
@@ -383,6 +391,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     settings: settings,
                     artworkPresentation: compositionStyle,
                     listeningScene: compositionScene,
+                    ambientTreatment: presentation.ambientTreatment,
                     isArtworkPreview: hoveredStyle != nil,
                     isDocumentPreview: isCompositionPreview,
                     clock: state.presentationClock,
@@ -732,12 +741,11 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             guard let url = compositionTrack.artworkURL else { coverColors = nil; return }
             let palette = await LyricIslandArtworkColors.palette(for: url)
             guard !Task.isCancelled else { return }
-            coverColors = (url, LyricIslandArtworkColors.listeningAccent(palette), palette.luminance)
-            if !isCompositionPreview && !liveOnly {
-                let detail = await V3CoverDetail.detail(for: url) ?? 0
-                guard !Task.isCancelled else { return }
-                V3SceneFamily.applyAutomaticAmbient(settings: settings, palette: palette, detail: detail)
-            }
+            coverColors = CoverColors(url: url, accent: LyricIslandArtworkColors.listeningAccent(palette), luminance: palette.luminance)
+            guard palette != .neutral else { return }
+            let detail = await V3CoverDetail.detail(for: url) ?? 0
+            guard !Task.isCancelled, coverColors?.url == url else { return }
+            coverColors?.automaticAmbient = V3SceneFamily.automaticAmbient(luminance: palette.luminance, detail: detail, route: palette.route)
         }
         .task(id: "\(usesArtworkSubjectPlacement)|\(compositionTrack.artworkURL?.absoluteString ?? "none")") {
             coverSubject = nil

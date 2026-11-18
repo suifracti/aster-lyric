@@ -1526,6 +1526,8 @@ struct V3RoomOverrides: OptionSet {
 struct V3ListeningPresentation {
     let scene: V3ListeningScene?
     let renderer: V3ArtworkPresentation
+    let ambientTreatment: V3AmbientTreatment
+    let usesAutomaticAmbient: Bool
     let lyricsPosition: String
     let lyricStyle: V3LyricStyle
     let playback: V3PlaybackPresentation
@@ -1536,14 +1538,21 @@ struct V3ListeningPresentation {
     @MainActor
     init(settings: AppSettingsStore, room: V3Room, accent: Color = .white,
          usesSavedRoomChoices: Bool = true,
-         artworkPreview: V3ArtworkPresentation? = nil, previewScene: V3ListeningScene? = nil) {
+         artworkPreview: V3ArtworkPresentation? = nil, previewScene: V3ListeningScene? = nil,
+         automaticAmbient: V3SceneFamily.Entry? = nil) {
         let look = settings.v3RoomRestyles ? room.look(accent: accent) : V3SceneLook()
         let overrides = usesSavedRoomChoices ? settings.v3RoomOverrides : []
         let roomScene = overrides.contains(.layout) ? nil : look.listeningScene
         let baseScene = settings.v3ListeningScene
-        scene = artworkPreview == nil ? (roomScene ?? baseScene) : previewScene
+        usesAutomaticAmbient = settings.v3AmbientAutomatic && artworkPreview == nil && roomScene == nil
+            && V3SceneFamily.cards[0].entries.contains(where: { V3SceneFamily.inUse($0, settings: settings) })
+        let coverLook = usesAutomaticAmbient ? automaticAmbient : nil
+        scene = artworkPreview == nil ? (roomScene ?? coverLook?.scene ?? baseScene) : previewScene
+        ambientTreatment = coverLook?.treatment ?? settings.v3AmbientTreatment
         if let artworkPreview {
             renderer = artworkPreview
+        } else if let coverLook {
+            renderer = coverLook.renderer
         } else if let roomScene, roomScene != baseScene {
             renderer = settings.v3Renderer(for: roomScene)
         } else {

@@ -626,6 +626,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let v3EnlargedVariant = "v3.enlargedVariant.v1"
         public static let v3ZoomBackdropSizeScale = "v3.zoomBackdropScale.v1"
         public static let v3AmbientVariant = "v3.ambientVariant.v1"
+        public static let v3AmbientAutomatic = "v3.ambient.automatic.v1"
         public static let v3ArtworkPresentation = "v3.artworkPresentation.v1"
         /// Legacy migration input. Do not use as the current presentation state.
         public static let v3AmbientBackdropEnabled = "v3.ambientBackdropEnabled"
@@ -1105,6 +1106,9 @@ public final class AppSettingsStore: ObservableObject {
     }
     @Published public var v3AmbientTreatment: V3AmbientTreatment = .none {
         didSet { defaults.set(v3AmbientTreatment.rawValue, forKey: "v3.ambient.treatment.v1") }
+    }
+    @Published var v3AmbientAutomatic = true {
+        didSet { defaults.set(v3AmbientAutomatic, forKey: Key.v3AmbientAutomatic) }
     }
     @Published public var v3ToolbarStyle: V3ToolbarStyle = .standard {
         didSet { defaults.set(v3ToolbarStyle.rawValue, forKey: "v3.toolbarStyle.v1") }
@@ -1724,6 +1728,7 @@ public final class AppSettingsStore: ObservableObject {
         self.v3PlaybackStyleRawValue = defaults.string(forKey: "v3.playbackStyle.v1") ?? ""
         self.v3CornerCardCorner = defaults.string(forKey: "v3.cornerCard.corner.v1") ?? "bottomTrailing"
         self.v3AmbientTreatment = V3AmbientTreatment(rawValue: defaults.string(forKey: "v3.ambient.treatment.v1") ?? "") ?? .none
+        self.v3AmbientAutomatic = defaults.object(forKey: Key.v3AmbientAutomatic) as? Bool ?? true
         self.v3ToolbarStyle = V3ToolbarStyle(rawValue: defaults.string(forKey: "v3.toolbarStyle.v1") ?? "") ?? .standard
         self.v3LyricStyle = V3LyricStyle(rawValue: defaults.string(forKey: "v3.lyricStyle.v1") ?? "") ?? .standard
         self.v3ProgressStyle = V3ProgressStyle(rawValue: defaults.string(forKey: "v3.playerBar.progress.v1") ?? "") ?? .standard
