@@ -82,10 +82,13 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
             let script = """
             if application "Spotify" is not running then return ""
             tell application "Spotify"
-                return (player state as text) & (character id 30) & (player position as text) & (character id 30) & (id of current track as text)
+                set stateText to (player state as text)
+                if stateText is "stopped" then return stateText
+                return stateText & (character id 30) & (player position as text) & (character id 30) & (id of current track as text)
             end tell
             """
             let fields = (try await execute(script: script) ?? "").components(separatedBy: fieldSeparator)
+            if fields[0].lowercased() == "stopped" { return .desktopStopped(source: .spotifyDesktop) }
             guard fields.count == 3, let observedID = TrackIdentity.spotifyRequestTrackID(fields[2]),
                   let position = Self.parseNumber(fields[1]), position.isFinite else {
                 return PlaybackSnapshot(status: .unavailable("等待 Spotify 歌曲通知"), track: nil, position: 0, isPlaying: false, sourceIdentity: .spotifyDesktop)
@@ -202,6 +205,7 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
         """
         tell application "Spotify"
             set stateText to (player state as text)
+            if stateText is "stopped" then return stateText
             set separator to character id 30
             try
                 set currentTrack to current track
@@ -226,6 +230,8 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
 
     private func parseSnapshot(_ value: String) -> PlaybackSnapshot {
         let fields = value.components(separatedBy: fieldSeparator)
+        let state = fields[0].lowercased()
+        if state == "stopped" { return .desktopStopped(source: .spotifyDesktop) }
         guard fields.count >= 9 else {
             return PlaybackSnapshot(
                 status: .unavailable("Spotify 返回的数据格式无法识别"),
@@ -236,7 +242,6 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
             )
         }
 
-        let state = fields[0].lowercased()
         let position = Self.parseNumber(fields[1]) ?? 0
         let title = fields[2].trimmingCharacters(in: .whitespacesAndNewlines)
         let artist = fields[3].trimmingCharacters(in: .whitespacesAndNewlines)
@@ -267,9 +272,8 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
         )
 
         let isPlaying = state == "playing"
-        let status: PlaybackProviderState = state == "stopped" && title.isEmpty ? .noTrack : .ready
         return PlaybackSnapshot(
-            status: status,
+            status: .ready,
             track: track,
             position: min(max(0, position), duration),
             isPlaying: isPlaying,

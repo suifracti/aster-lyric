@@ -191,6 +191,8 @@ public struct PlaybackSnapshot: Equatable, Sendable {
     public let sourceIdentity: PlaybackSourceIdentity
     /// A position read saw a new recording ID and has no metadata for it yet.
     var needsDesktopMetadata = false
+    /// The player reported "stopped", independently of whether a track is still available.
+    var isConfirmedDesktopStop = false
 
     public init(
         status: PlaybackProviderState,

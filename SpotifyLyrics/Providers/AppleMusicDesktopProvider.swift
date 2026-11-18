@@ -75,10 +75,13 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
             let script = """
             if application "Music" is not running then return ""
             tell application "Music"
-                return (player state as text) & (character id 30) & (player position as text) & (character id 30) & (persistent ID of current track as text)
+                set stateText to (player state as text)
+                if stateText is "stopped" then return stateText
+                return stateText & (character id 30) & (player position as text) & (character id 30) & (persistent ID of current track as text)
             end tell
             """
             let fields = (try await execute(script: script) ?? "").components(separatedBy: fieldSeparator)
+            if fields[0].lowercased() == "stopped" { return .desktopStopped(source: .appleMusic) }
             guard fields.count == 3,
                   let position = Self.parseNumber(fields[1]), position.isFinite else {
                 return PlaybackSnapshot(status: .unavailable("等待 Apple Music 歌曲通知"), track: nil, position: 0, isPlaying: false, sourceIdentity: .appleMusic)
@@ -194,6 +197,7 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
         """
         tell application "Music"
             set stateText to (player state as text)
+            if stateText is "stopped" then return stateText
             set separator to character id 30
             try
                 set currentTrack to current track
@@ -253,6 +257,8 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
 
     private func parseSnapshot(_ value: String) async -> PlaybackSnapshot {
         let fields = value.components(separatedBy: fieldSeparator)
+        let state = fields[0].lowercased()
+        if state == "stopped" { return .desktopStopped(source: .appleMusic) }
         guard fields.count >= 8 else {
             return PlaybackSnapshot(
                 status: .unavailable("Apple Music 返回的数据格式无法识别"),
@@ -263,7 +269,6 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
             )
         }
 
-        let state = fields[0].lowercased()
         let position = Self.parseNumber(fields[1]) ?? 0
         let title = fields[2].trimmingCharacters(in: .whitespacesAndNewlines)
         let artist = fields[3].trimmingCharacters(in: .whitespacesAndNewlines)
@@ -296,9 +301,8 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
         )
 
         let isPlaying = state == "playing"
-        let status: PlaybackProviderState = state == "stopped" && title.isEmpty ? .noTrack : .ready
         return PlaybackSnapshot(
-            status: status,
+            status: .ready,
             track: track,
             position: min(max(0, position), duration),
             isPlaying: isPlaying,

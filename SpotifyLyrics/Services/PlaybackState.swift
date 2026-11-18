@@ -1405,19 +1405,25 @@ public final class PlaybackState: ObservableObject {
         }
         guard let snapshot = update.snapshot(previous: desktopSnapshots[update.source],
             estimatedPosition: update.source == lastObservedDesktopSource ? playbackPositionNow : (desktopSnapshots[update.source]?.position ?? 0)) else { return }
-        if update.isStopped {
-            desktopSnapshots[update.source] = nil
-            noteConnection(for: update.source, status: .noTrack)
-            guard !hasLiveTrack || update.source == lastObservedDesktopSource else { return }
+        if snapshot.isConfirmedDesktopStop {
+            acceptDesktopPlaybackEnd(snapshot)
+            return
         }
         providerRefreshGeneration &+= 1
         refreshRequestedWhileBusy = false
-        if update.isStopped {
-            providerStatus = .noTrack
-            clearLiveTrackIfNeeded()
-        } else {
-            synchronize(with: snapshot, canRetryArtwork: true)
-        }
+        synchronize(with: snapshot, canRetryArtwork: true)
+    }
+
+    private func acceptDesktopPlaybackEnd(_ snapshot: PlaybackSnapshot) {
+        let source = snapshot.sourceIdentity
+        desktopSnapshots[source] = nil
+        noteConnection(for: source, status: snapshot.status)
+        guard source == lastObservedDesktopSource || (!hasLiveTrack && snapshot.isConfirmedDesktopStop) else { return }
+        providerRefreshGeneration &+= 1
+        refreshRequestedWhileBusy = false
+        cacheAcceptedDesktopSnapshot(snapshot)
+        providerStatus = snapshot.status
+        clearLiveTrackIfNeeded()
     }
 
     private func updateDesktopArtwork(for snapshot: PlaybackSnapshot, canRetry: Bool) {
@@ -1465,14 +1471,7 @@ public final class PlaybackState: ObservableObject {
     private func desktopApplicationChanged(source: PlaybackSourceIdentity, isRunning: Bool) {
         guard isProviderStarted, !isMockPreviewMode else { return }
         if !isRunning {
-            desktopSnapshots[source] = nil
-            noteConnection(for: source, status: .notRunning)
-            if lastObservedDesktopSource == source {
-                providerRefreshGeneration &+= 1
-                refreshRequestedWhileBusy = false
-                providerStatus = .notRunning
-                clearLiveTrackIfNeeded()
-            }
+            acceptDesktopPlaybackEnd(.init(status: .notRunning, sourceIdentity: source))
         } else if canRefreshSelectedProvider {
             let selected = settingsStore.playbackSourceMode
             guard selected == .auto || (selected == .spotify && source == .spotifyDesktop)
@@ -1490,6 +1489,11 @@ public final class PlaybackState: ObservableObject {
         updatePlaybackScheduling()
     }
 
+    private var canCalibratePlayback: Bool {
+        !isMockPreviewMode && isPlaying && canRefreshSelectedProvider
+            && (desktopEvents == nil || lastObservedDesktopSource == .spotifyDesktop || lastObservedDesktopSource == .appleMusic)
+    }
+
     private func updatePlaybackScheduling() {
         guard isProviderStarted else { return }
         if isPlaying && lyricsWindowsVisible() {
@@ -1498,9 +1502,7 @@ public final class PlaybackState: ObservableObject {
             timer?.invalidate()
             timer = nil
         }
-        let canCalibrate = !isMockPreviewMode && isPlaying && canRefreshSelectedProvider
-            && (desktopEvents?.isRunning(lastObservedDesktopSource) ?? true)
-        if canCalibrate {
+        if canCalibratePlayback {
             if calibrationTimer == nil {
                 calibrationTimer = Timer.scheduledTimer(withTimeInterval: calibrationInterval, repeats: true) { [weak self] _ in
                     Task { @MainActor [weak self] in await self?.calibratePlaybackPositionIfNeeded() }
@@ -1517,8 +1519,12 @@ public final class PlaybackState: ObservableObject {
     }
 
     func calibratePlaybackPositionIfNeeded() async {
-        guard isProviderStarted, !isMockPreviewMode, isPlaying, canRefreshSelectedProvider,
-              desktopEvents?.isRunning(lastObservedDesktopSource) ?? true else { return }
+        guard isProviderStarted, canCalibratePlayback else { return }
+        let source = lastObservedDesktopSource
+        if desktopEvents?.isRunning(source) == false {
+            acceptDesktopPlaybackEnd(.init(status: .notRunning, sourceIdentity: source))
+            return
+        }
         await refreshProvider(calibrationOnly: true)
     }
 
@@ -3279,12 +3285,11 @@ public final class PlaybackState: ObservableObject {
             generation == providerRefreshGeneration &&
             !isMockPreviewMode &&
             canRefreshSelectedProvider
-        // Position calibration can correct the current song, but a failed read
-        // is not evidence that the player stopped or cleared its current song.
-        let calibrationMatches = !calibrationOnly || (snapshot.status.isReady
-            && snapshot.sourceIdentity == lastObservedDesktopSource
-            && (recoveringRecording || snapshot.track?.desktopRecordingKey == desktopSnapshots[lastObservedDesktopSource]?.track?.desktopRecordingKey))
-        if shouldApply && calibrationMatches {
+        let sameSource = snapshot.sourceIdentity == lastObservedDesktopSource
+        let sameRecording = snapshot.track?.desktopRecordingKey == desktopSnapshots[lastObservedDesktopSource]?.track?.desktopRecordingKey
+        if shouldApply && calibrationOnly && sameSource && (snapshot.isConfirmedDesktopStop || snapshot.status == .notRunning) {
+            acceptDesktopPlaybackEnd(snapshot)
+        } else if shouldApply && (!calibrationOnly || (sameSource && snapshot.status.isReady && (recoveringRecording || sameRecording))) {
             synchronize(with: snapshot, observedAtMonotonic: latencyCompensatedMonotonic)
         } else if let accepted = desktopSnapshots[lastObservedDesktopSource] {
             // A provider's own asynchronous read can have updated its cache or
@@ -3304,6 +3309,11 @@ public final class PlaybackState: ObservableObject {
     private func synchronize(with incoming: PlaybackSnapshot, observedAtMonotonic: TimeInterval? = nil,
                              canRetryArtwork: Bool = false) {
         guard !isMockPreviewMode else { return }
+        if incoming.isConfirmedDesktopStop {
+            acceptDesktopPlaybackEnd(incoming)
+            if let active = desktopSnapshots[lastObservedDesktopSource] { cacheAcceptedDesktopSnapshot(active) }
+            return
+        }
         let snapshot = incoming.retainingArtwork(from: desktopSnapshots[incoming.sourceIdentity])
         noteConnection(for: snapshot.sourceIdentity, status: snapshot.status)
         defer { updatePlaybackScheduling() }

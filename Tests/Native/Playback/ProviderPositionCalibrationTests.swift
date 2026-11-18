@@ -70,11 +70,19 @@ final class ProviderPositionCalibrationTests: XCTestCase {
         let changed = await provider.calibratePosition()
         XCTAssertTrue(changed.needsDesktopMetadata)
         XCTAssertNil(changed.track)
+        await scripts.set("stopped")
+        let confirmedStop = await provider.calibratePosition()
+        XCTAssertTrue(confirmedStop.isConfirmedDesktopStop)
+        XCTAssertEqual(confirmedStop.status, .noTrack)
+        let fullStop = await provider.refresh()
+        XCTAssertTrue(fullStop.isConfirmedDesktopStop)
+        XCTAssertNil(fullStop.track)
         running = false
         let stopped = await provider.calibratePosition()
         XCTAssertEqual(stopped.status, .notRunning)
         let after = await scripts.history()
-        XCTAssertEqual(after.count, 2)
+        XCTAssertEqual(after.count, 4)
+        XCTAssertTrue(after[2].contains("if stateText is \"stopped\" then return stateText"))
     }
 
     func testMusicPausedCacheDoesNotPollAndAChangedRecordingCannotReceiveOldPosition() async throws {
@@ -94,10 +102,18 @@ final class ProviderPositionCalibrationTests: XCTestCase {
         await scripts.set("playing\u{1e}61\u{1e}01000000000000AB")
         let newRecording = await provider.calibratePosition()
         XCTAssertTrue(newRecording.needsDesktopMetadata)
+        await scripts.set("stopped")
+        let confirmedStop = await provider.calibratePosition()
+        XCTAssertTrue(confirmedStop.isConfirmedDesktopStop)
+        XCTAssertEqual(confirmedStop.sourceIdentity, .appleMusic)
+        let fullStop = await provider.refresh()
+        XCTAssertTrue(fullStop.isConfirmedDesktopStop)
+        XCTAssertNil(fullStop.track)
         let reads = await scripts.history()
-        XCTAssertEqual(reads.count, 2)
+        XCTAssertEqual(reads.count, 4)
         XCTAssertFalse(reads[0].contains("artwork"))
         XCTAssertFalse(reads[0].contains("trackName"))
+        XCTAssertTrue(reads[2].contains("if stateText is \"stopped\" then return stateText"))
     }
 
     func testShortSpotifyTrackUsesTheSameMillisecondDurationAsItsNotification() async {

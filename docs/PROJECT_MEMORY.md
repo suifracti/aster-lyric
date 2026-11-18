@@ -27,6 +27,7 @@
 | 队列不更新、循环列表被裁掉、隐藏后点第三首多跳、Apple Music 歌单串到 Spotify | L-008；PlaylistBrowserModel、AppleMusicPlaylistCatalog、V3PlaylistQueuePreview |
 | 播放 App 的运行、连接与在线曲库授权容易混淆 | L-008；PlaybackConnectionCards、PlaybackState、SettingsLocation |
 | 别的播放器停止让当前歌词消失、切换来源误暂停或串掉播放模式 | L-008；PlaybackState.receiveDesktopUpdate、runProviderCommand、playbackSourceRevision |
+| 停播或退出后旧歌词还挂着，位置校准拿不到歌曲 | L-008；PlaybackSnapshot.desktopStopped、PlaybackState.acceptDesktopPlaybackEnd |
 | 版本弹窗挂在悬浮窗、关后黑着、大歌词库关闭或丢选择 | L-009；PersonalLyricsLibraryService、PersonalLibrarySheets |
 | 有歌词源译文却不显示、部分行没有译文、重复补存 | L-010；TranslationSessionController.synchronize 与 chooseVersion |
 | TTML 自带翻译或罗马音却没显示、无时间轴的文件被当成同步歌词 | L-032、L-048 · TTMLParser、AMLLLyricsProvider |
@@ -192,6 +193,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 同一曲出现两次时，完整队列和悬停预览的「跳过这首」都把所点行的原始 offset 和歌曲 ID 交给 `PlaylistBrowserModel`。正常换歌会移掉经过的前缀并平移标记。队列刷新重排且无法辨认重复项时，撤销该标记，避免跳错。原生桩验证了 A–B–A 队列、末尾新增、两次 A 分别播放与跳过。连续相同 ID 的播放边界仍无法仅从现有换歌事件判断。
 
 2026-11-19：自动跟随时，非当前播放器的停止通知只更新它自己的连接状态。播放、暂停、前后切、进度与播放模式按最后接受的来源派发；切换来源后，旧命令迟到的错误或模式结果不再改写当前显示，旧队列跳转也不会续跑。「本曲结束后」仍能在同一播放器换歌时暂停，换到另一播放器时取消。原生定向测试 37 项通过，覆盖后台停止、迟到的暂停错误、新来源在旧写入期间切换模式、同源和跨源的定时；真实账户播放未参与验证。
+
+2026-11-19 补停播校准。Spotify 和 Apple Music 的脚本先读当前播放状态，明确停播时不需要再取进度或歌曲 ID。通知、校准与退出走同一处清理当前录音的逻辑。校准检查已观测来源的进程，退出后不再发 Apple Event。空结果、未知来源和迟到响应仍按原有来源与代次判断。播放器桩确认漏通知时状态栏回到空闲，新播放通知正常接续；没有用真实账户切歌或停播。
 
 2026-11-19：歌单面板和独立歌单窗口共用所选位置、搜索框和筛选。独立窗可刷新；关键词匹配歌单名、歌名、艺人和专辑。筛选只隐藏不匹配的行，没有重新编号。歌单页顶的「播放首个结果」从可见第一首的原始位置开始。队列点击继续验证原始项和位置。
 

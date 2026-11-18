@@ -478,6 +478,45 @@ final class DesktopPlaybackEventTests: XCTestCase {
         XCTAssertEqual(state.currentTime, 61, accuracy: 0.2)
     }
 
+    func testPositionReadClearsOnlyAConfirmedStopFromTheCurrentPlayer() async throws {
+        let (state, provider, _, center) = fixture()
+        state.startProvider()
+        try await wait { state.hasLiveTrack && state.isPlaying }
+
+        provider.calibration = .init(status: .noTrack, sourceIdentity: .spotifyDesktop)
+        await state.calibratePlaybackPositionIfNeeded()
+        XCTAssertEqual(state.currentTrack.title, "Initial")
+        provider.calibration = .desktopStopped(source: .appleMusic)
+        await state.calibratePlaybackPositionIfNeeded()
+        XCTAssertEqual(state.currentTrack.title, "Initial")
+
+        provider.calibration = nil
+        provider.holdNext = true
+        let delayedRead = Task { await state.calibratePlaybackPositionIfNeeded() }
+        try await wait { provider.pending != nil }
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: payload())
+        try await wait { state.currentTrack.title == "Event B" && state.isPlaying }
+        provider.pending?.resume(returning: .desktopStopped(source: .spotifyDesktop))
+        provider.pending = nil
+        await delayedRead.value
+        XCTAssertEqual(state.currentTrack.title, "Event B")
+
+        provider.calibration = .desktopStopped(source: .spotifyDesktop)
+        await state.calibratePlaybackPositionIfNeeded()
+        XCTAssertEqual(state.providerStatus, .noTrack)
+        XCTAssertEqual(state.desktopConnectionStatus[.spotifyDesktop], .noTrack)
+        XCTAssertFalse(state.hasLiveTrack)
+        XCTAssertFalse(state.isPlaying)
+        XCTAssertNil(state.seekRecording)
+        XCTAssertNil(state.calibrationTimer)
+        XCTAssertEqual(MenuBarLyricsController.deriveSnapshot(from: state).state, .idle)
+        XCTAssertNil(MenuBarLyricsController.deriveFullLyricsSnapshot(from: state))
+
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: payload("再次播放", position: 12))
+        try await wait { state.currentTrack.title == "再次播放" && state.isPlaying }
+        XCTAssertNotNil(state.calibrationTimer)
+    }
+
     func testSleepAtTrackEndPausesWhenTheNextSongArrives() async throws {
         let (state, provider, _, center) = fixture()
         state.startProvider(connectSpotify: false)
@@ -945,7 +984,7 @@ final class DesktopPlaybackEventTests: XCTestCase {
         XCTAssertNil(state.timer)
     }
 
-    func testStoppedPlayerDoesNotCalibrateAndTerminationClearsImmediately() async throws {
+    func testMissedTerminationClearsWithoutSendingAnotherAppleEvent() async throws {
         var running = true
         let (state, provider, events, _) = fixture(running: { _ in running })
         state.startProvider()
@@ -953,11 +992,12 @@ final class DesktopPlaybackEventTests: XCTestCase {
         running = false
         await state.calibratePlaybackPositionIfNeeded()
         XCTAssertEqual(provider.refreshes, 1)
-        events.applicationChanged(source: .spotifyDesktop, isRunning: false)
         XCTAssertFalse(state.hasLiveTrack)
         XCTAssertEqual(state.providerStatus, .notRunning)
         XCTAssertNil(state.timer)
         XCTAssertNil(state.calibrationTimer)
+        events.applicationChanged(source: .spotifyDesktop, isRunning: false)
+        XCTAssertEqual(state.providerStatus, .notRunning)
     }
 
     func testNewNotificationWinsOverAnInflightOldPoll() async throws {

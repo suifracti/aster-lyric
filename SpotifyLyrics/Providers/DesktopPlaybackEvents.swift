@@ -20,6 +20,12 @@ extension ProviderTrack {
 }
 
 extension PlaybackSnapshot {
+    static func desktopStopped(source: PlaybackSourceIdentity) -> Self {
+        var snapshot = Self(status: .noTrack, sourceIdentity: source)
+        snapshot.isConfirmedDesktopStop = true
+        return snapshot
+    }
+
     static func desktopRecordingChanged(source: PlaybackSourceIdentity) -> Self {
         var snapshot = Self(status: .connecting, sourceIdentity: source)
         snapshot.needsDesktopMetadata = true
@@ -92,7 +98,7 @@ struct DesktopPlaybackUpdate: Sendable {
 
     func snapshot(previous: PlaybackSnapshot?, estimatedPosition: TimeInterval) -> PlaybackSnapshot? {
         if isStopped {
-            return PlaybackSnapshot(status: .noTrack, track: nil, position: 0, isPlaying: false, sourceIdentity: source)
+            return .desktopStopped(source: source)
         }
         let prior = previous?.sourceIdentity == source ? previous?.track : nil
         let next: ProviderTrack
