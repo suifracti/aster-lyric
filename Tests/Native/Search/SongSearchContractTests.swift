@@ -85,6 +85,32 @@ private final class SongSearchFixedPlaybackProvider: PlaybackProvider {
 
 @MainActor
 final class SongSearchContractTests: XCTestCase {
+    func testMusicLibrarySearchKeepsTwoPerformancesAndCanOpenExactlyOneWithoutPlaying() async throws {
+        let a = "ABCDEF0000000001", b = "ABCDEF0000000002"
+        let music = AppleMusicPlaylistCatalog { script, _ in
+            XCTAssertTrue(script.contains("search library playlist 1"))
+            XCTAssertTrue(script.contains(#"\"夜\""#))
+            await MainActor.run {
+                var error: NSDictionary?
+                XCTAssertTrue(NSAppleScript(source: script)?.compileAndReturnError(&error) == true, error?.description ?? "")
+            }
+            return "0\u{1e}\(a)\u{1e}夜\u{1e}南窗\u{1e}原版\u{1e}180\u{1f}1\u{1e}\(b)\u{1e}夜\u{1e}南窗\u{1e}现场\u{1e}224"
+        }
+        let spotify = SongSearchFixedTrackProvider(name: "Spotify", results: [
+            TrackSearchResult(id: "unexpected", source: .spotifyCatalog, track: Track(title: "其他", artist: "", album: "", duration: 100), confidence: 1)
+        ])
+        let provider = PlayerCatalogSearchProvider(spotify: spotify, music: music, source: { .appleMusic })
+        let hits = try await provider.search(query: SongSearchQuery(text: #""夜""#)).map { $0.asSongSearchResult() }
+        XCTAssertEqual(hits.map(\.source), [.appleMusicLibrary, .appleMusicLibrary])
+        XCTAssertEqual(SongSearchResultGroup.uniqueSongs(hits).map(\.track.album), ["原版", "现场"])
+        XCTAssertEqual(SongSearchResultGroup.panelGroups(hits).map(\.title), ["音乐资料库"])
+        let original = try XCTUnwrap(hits.first?.track)
+        XCTAssertEqual(V3SearchPanel.otherSongs(hits, current: original).map(\.track.album), ["现场"])
+        let live = CurrentTrackResolver(current: { (original, .appleMusic) })
+        let current = try await live.search(query: SongSearchQuery(text: "夜"))
+        XCTAssertEqual(current.first?.source, .appleMusicCurrentTrack)
+    }
+
     func testSameSongAppearsOnceWithSavedResultPreferred() {
         let localTrack = Track(title: "Light source", artist: "kyiku", album: "Single", duration: 246,
             spotifyId: "spotify:track:4yqIha5lZw4ymk8ZxrP3kA")
@@ -106,8 +132,9 @@ final class SongSearchContractTests: XCTestCase {
             timingVersionCount: 0, hasLockedLyrics: false, hasLockedTranslation: false, hasManualLyrics: false,
             hasManualTranslation: true, hasReading: true, hasFineTiming: false, lastModifiedAt: Date(),
             activeLyricsVersionID: UUID(), activeTranslationVersionID: UUID())
+        let passage = LibraryPassageTarget(trackKey: entry.trackStableKey, source: .translation(UUID()), find: "旧译独有")
         let manager = TrackSearchManager(providers: [SongSearchFixedTrackProvider(name: "metadata", results: [
-            TrackSearchResult(id: "saved", source: .local, track: track, confidence: 0.6, savedLibraryEntry: entry),
+            TrackSearchResult(id: "saved", source: .local, track: track, confidence: 0.6, savedLibraryEntry: entry, savedPassage: passage),
             TrackSearchResult(id: "online", source: .spotifyCatalog, track: track, confidence: 1)
         ])])
         await manager.search(query: SongSearchQuery(text: "Saved"))?.value
@@ -117,6 +144,8 @@ final class SongSearchContractTests: XCTestCase {
         XCTAssertEqual(hit.savedLayerLabels, ["词", "译", "读"])
         XCTAssertTrue(hit.isSavedLocally)
         XCTAssertEqual(hit.asTrackSearchResult().savedLibraryEntry, entry)
+        XCTAssertEqual(hit.primaryReadingTarget(hasLiveTrack: true), passage)
+        XCTAssertEqual(hit.primaryReadingTarget(hasLiveTrack: false), passage)
         let many = (0..<6).flatMap { index in
             [SongSearchResult(id: "local-\(index)", source: .local, track: Track(title: "Saved \(index)", artist: "Local", album: "", duration: 180), confidence: 1),
              SongSearchResult(id: "online-\(index)", source: .spotifyCatalog, track: Track(title: "Online \(index)", artist: "Online", album: "", duration: 180), confidence: 1)]

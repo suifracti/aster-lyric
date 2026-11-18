@@ -198,6 +198,15 @@ public final class AppleMusicPlaylistCatalog: PlaylistCataloging {
             set chosenTrack to track \(item.offset + 1) of sourcePlaylist
             """
         }
+        try await playVerified(trackID: trackID, selection: selection)
+    }
+
+    func playFromLibrary(_ track: Track) async throws {
+        guard let id = track.spotifyId.flatMap(Self.persistentTrackID) else { throw AppleMusicPlaylistError.failed }
+        try await playVerified(trackID: id, selection: #"set chosenTrack to first track of library playlist 1 whose persistent ID is "\#(id)""#)
+    }
+
+    private func playVerified(trackID: String, selection: String) async throws {
         let script = """
         if application "Music" is not running then error "音乐未运行"
         tell application "Music"
@@ -208,6 +217,41 @@ public final class AppleMusicPlaylistCatalog: PlaylistCataloging {
         end tell
         """
         guard try await run(script, timeout: 6) == "1" else { throw AppleMusicPlaylistError.failed }
+    }
+
+    func searchLibrary(_ query: TrackSearchQuery) async throws -> [Track] {
+        let term = [query.text, query.title, query.artist, query.album].compactMap { $0 }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty }
+        guard let term else { return [] }
+        let script = """
+        if application "Music" is not running then return ""
+        tell application "Music"
+            set hits to search library playlist 1 for "\(Self.appleScriptString(term))"
+            if hits is missing value then return ""
+            if class of hits is not list then set hits to {hits}
+            set hitCount to count hits
+            if hitCount > 30 then set hitCount to 30
+            set packedRows to {}
+            set fieldSep to character id 30
+            repeat with n from 1 to hitCount
+                try
+                    set info to properties of item n of hits
+                    set rowArtist to artist of info
+                    set rowAlbum to album of info
+                    set rowDuration to duration of info
+                    if rowArtist is missing value then set rowArtist to ""
+                    if rowAlbum is missing value then set rowAlbum to ""
+                    if rowDuration is missing value then set rowDuration to 0
+                    set end of packedRows to ((n - 1) as text) & fieldSep & (persistent ID of info as text) & fieldSep & (name of info as text) & fieldSep & rowArtist & fieldSep & rowAlbum & fieldSep & (rowDuration as text)
+                on error number -1728
+                    -- The library may change between the search and reading a result.
+                end try
+            end repeat
+            set AppleScript's text item delimiters to character id 31
+            return packedRows as text
+        end tell
+        """
+        return Self.parseTracks(try await run(script, timeout: 8) ?? "").map(\.track)
     }
 
     // Fetch whole columns in Music, then join rows locally. The original ordinal

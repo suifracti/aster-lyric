@@ -108,6 +108,8 @@ public enum SongSearchSource: String, CaseIterable, Identifiable {
     case local
     case spotifyCurrentTrack
     case spotifyCatalog
+    case appleMusicCurrentTrack
+    case appleMusicLibrary
     case lrclib
 
     public var id: String { rawValue }
@@ -117,6 +119,8 @@ public enum SongSearchSource: String, CaseIterable, Identifiable {
         case .local: return "本地歌词"
         case .spotifyCurrentTrack: return "Spotify 当前歌曲"
         case .spotifyCatalog: return "Spotify 在线曲库"
+        case .appleMusicCurrentTrack: return "Apple Music 当前歌曲"
+        case .appleMusicLibrary: return "音乐资料库"
         case .lrclib: return "LRCLIB"
         }
     }
@@ -133,6 +137,7 @@ public struct SongSearchResult: Identifiable, Equatable {
     public let artworkURL: URL?
     public let catalogMetadata: TrackSearchMetadata?
     public let savedLibraryEntry: PersonalLyricsLibraryEntry?
+    public let savedPassage: LibraryPassageTarget?
 
     public init(
         id: String,
@@ -142,7 +147,8 @@ public struct SongSearchResult: Identifiable, Equatable {
         lyrics: LyricsDocument? = nil,
         artworkURL: URL? = nil,
         catalogMetadata: TrackSearchMetadata? = nil,
-        savedLibraryEntry: PersonalLyricsLibraryEntry? = nil
+        savedLibraryEntry: PersonalLyricsLibraryEntry? = nil,
+        savedPassage: LibraryPassageTarget? = nil
     ) {
         self.id = id
         self.source = source
@@ -152,6 +158,7 @@ public struct SongSearchResult: Identifiable, Equatable {
         self.artworkURL = artworkURL
         self.catalogMetadata = catalogMetadata
         self.savedLibraryEntry = savedLibraryEntry
+        self.savedPassage = savedPassage
     }
 
     public var searchMergeKey: String {
@@ -166,7 +173,7 @@ public struct SongSearchResult: Identifiable, Equatable {
             confidence: confidence,
             artworkURL: artworkURL,
             catalogMetadata: catalogMetadata,
-            savedLibraryEntry: savedLibraryEntry
+            savedLibraryEntry: savedLibraryEntry, savedPassage: savedPassage
         )
     }
 }

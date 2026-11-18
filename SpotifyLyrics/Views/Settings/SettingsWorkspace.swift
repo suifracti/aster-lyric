@@ -197,7 +197,7 @@ struct WorkspaceLookupRow: Identifiable {
         for hit in songs {
             let title = hit.entry.title, artist = hit.entry.artist
             if let source = hit.source {
-                let target = LibraryPassageTarget(trackKey: hit.id, source: source, find: term)
+                let target = hit.readingTarget(for: term)
                 rows.append(Self(id: "passage." + hit.id, group: .songs, title: hit.excerpt ?? title,
                                  detail: [title, artist, source.label].filter { !$0.isEmpty }.joined(separator: " · "),
                                  icon: "text.quote", location: .init(reading: target)))

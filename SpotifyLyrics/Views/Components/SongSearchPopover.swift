@@ -66,11 +66,10 @@ struct SongSearchPopover: View {
                 }
             }
 
-            Text("保存的歌词与本地文件可直接搜索；连接 Spotify 后也能查在线曲库。")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-
-            spotifyAuthorizationSection
+            if playbackState.playlistBrowser.source == .appleMusic {
+                Label("搜索已存歌词与这台 Mac 的音乐资料库", systemImage: "music.note.house")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if playbackState.playlistBrowser.source == .spotifyDesktop { spotifyAuthorizationSection }
             if playbackState.isShowingSearchPreview, playbackState.hasLiveTrack {
                 searchPreviewActionBanner
             }
@@ -92,6 +91,7 @@ struct SongSearchPopover: View {
             let next = SongSearchQuery(text: value)
             manager.search(query: next, debounceNanoseconds: 300_000_000)
         }
+        .onChange(of: playbackState.playlistBrowser.source) { _, _ in if !query.isEmpty { search() } }
     }
 
     private var spotifyAuthorizationSection: some View {
@@ -144,7 +144,8 @@ struct SongSearchPopover: View {
             emptyState(
                 icon: "books.vertical",
                 title: "没有找到歌曲",
-                detail: playbackState.spotifyAuthorizationManager.state.isAuthorized
+                detail: playbackState.playlistBrowser.source == .appleMusic ? "试试歌名、艺人、专辑，或已存歌词中的一句。"
+                    : playbackState.spotifyAuthorizationManager.state.isAuthorized
                     ? "换个标题、艺人名或 Spotify 链接再试。"
                     : "已搜索保存的歌词、本地文件和当前歌曲。换个关键词，或连接 Spotify 扩展搜索。",
                 actionTitle: "重新搜索",
@@ -329,13 +330,14 @@ private struct SearchRecordMark: View {
 struct SongSearchResultRow: View {
     let result: SongSearchResult
     @V3ContentPlaybackState var state: PlaybackState
+    @Environment(\.openSettings) private var openSettings
     @State private var hovered = false
     var showsSeparator = true
     var isSelected = false
     var onViewLyrics: (() -> Void)? = nil
 
     private var matchesDisplayedTrack: Bool {
-        TrackIdentity(track: result.track) == TrackIdentity(track: state.displayedTrack)
+        TrackIdentity.samePlaybackRecording(result.track, state.displayedTrack)
             || (!state.isShowingSearchPreview && state.liveLyricsVersionID != nil
                 && state.liveLyricsVersionID == result.savedLibraryEntry?.activeLyricsVersionID)
     }
@@ -344,7 +346,13 @@ struct SongSearchResultRow: View {
         if case .loading = state.lyricsState { return matchesDisplayedTrack }
         return false
     }
-    private var isAdopted: Bool { matchesDisplayedTrack && !state.lyrics.isEmpty && !isLoading }
+    private var isAdopted: Bool {
+        state.hasLiveTrack && !state.isShowingSearchPreview && state.liveLyricsVersionID != nil && matchesDisplayedTrack && !isLoading
+    }
+    private var actionTitle: String {
+        if let target = result.primaryReadingTarget(hasLiveTrack: state.hasLiveTrack) { return target.find.isEmpty ? "阅读" : "读这句" }
+        return isLoading ? "搜索中…" : "查看歌词"
+    }
 
     private var details: String {
         var parts = [result.track.title, result.track.artist, result.track.album]
@@ -354,8 +362,7 @@ struct SongSearchResultRow: View {
     }
 
     private func viewLyrics() {
-        onViewLyrics?()
-        state.loadSearchResult(result)
+        result.open(in: state, settings: openSettings, beforePreview: onViewLyrics)
     }
 
     var body: some View {
@@ -368,7 +375,7 @@ struct SongSearchResultRow: View {
                         .background(Color.secondary.opacity(0.1))
                 }
                 .frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 6))
-            }.buttonStyle(.plain)
+            }.buttonStyle(.plain).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 6) {
                 Button(action: viewLyrics) {
                     (Text(result.track.title).fontWeight(.semibold)
@@ -376,6 +383,9 @@ struct SongSearchResultRow: View {
                         .font(.system(size: 13)).foregroundStyle(.primary).lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                 }.buttonStyle(.plain)
+                    .accessibilityLabel("\(result.track.title)，\(result.track.artist)")
+                    .accessibilityHint(actionTitle)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                 HStack(spacing: 5) {
                     Text(result.isSavedLocally ? "本地已存" : result.source.displayName).lineLimit(1)
                     Text(formatDuration(result.catalogMetadata?.duration ?? result.track.duration)).monospacedDigit()
@@ -384,13 +394,13 @@ struct SongSearchResultRow: View {
                             .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
                     }
                     Spacer(minLength: 0)
-                    if isAdopted { Image(systemName: "checkmark.circle.fill").foregroundStyle(.primary) }
-                    Button(isLoading ? "搜索中…" : "查看歌词", action: viewLyrics)
+                    if isAdopted { Image(systemName: "checkmark.circle.fill").foregroundStyle(.primary).accessibilityLabel("当前采用的歌词") }
+                    Button(actionTitle, action: viewLyrics)
                         .buttonStyle(.plain).foregroundStyle(.primary).fixedSize()
-                    if state.playlistBrowser.supportsQueueEdits, TrackIdentity.spotifyRequestTrackID(result.track.spotifyId ?? result.track.spotifyURL?.absoluteString) != nil {
+                    if let playTitle = state.searchPlaybackTitle(for: result.track) {
                         V3QueueInsertButton(browser: state.playlistBrowser, track: result.track, hovered: hovered)
                         Button { state.playSearchTrack(result.track) } label: { Image(systemName: "play.fill") }
-                            .buttonStyle(.plain).help("在 Spotify 播放").opacity(hovered ? 1 : 0)
+                            .buttonStyle(.plain).help(playTitle).accessibilityLabel(playTitle).opacity(hovered ? 1 : 0)
                     }
                 }.font(.system(size: 10)).foregroundStyle(.secondary)
             }
@@ -400,11 +410,17 @@ struct SongSearchResultRow: View {
         .background(isSelected ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
         .overlay(alignment: .bottom) { if showsSeparator { Divider() } }
         .onHover { hovered = $0 }
+        .contextMenu {
+            if let entry = result.savedLibraryEntry {
+                Button("打开歌曲档案") {
+                    SettingsNavigationRoute.shared.requestedLocation = .init(.library, trackKey: entry.trackStableKey)
+                    openSettings()
+                }
+                Button("在歌词窗口预览") { onViewLyrics?(); state.loadSearchResult(result) }
+            }
+        }
         .help(details)
-        .accessibilityLabel("歌曲结果：\(result.track.title)，\(result.track.artist)")
-        .accessibilityHint("查看这首歌的歌词")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityValue(isSelected ? "已选中" : isAdopted ? "已采用" : "查看歌词")
+        .accessibilityElement(children: .contain)
     }
 
     private func formatDuration(_ value: TimeInterval) -> String {
@@ -422,27 +438,43 @@ struct SongSearchResultGroup: Identifiable {
     static func uniqueSongs(_ results: [SongSearchResult]) -> [SongSearchResult] {
         var unique: [SongSearchResult] = []
         for result in results.filter(\.isSavedLocally) + results.filter({ !$0.isSavedLocally }) {
-            guard !unique.contains(where: { sameSong($0.track, result.track) }) else { continue }
+            guard !unique.contains(where: { previous in
+                if let a = previous.savedLibraryEntry, let b = result.savedLibraryEntry { return a.trackStableKey == b.trackStableKey }
+                return TrackIdentity.sameSearchRecording(previous.track, result.track)
+            }) else { continue }
             unique.append(result)
         }
         return unique
     }
-    private static func sameSong(_ lhs: Track, _ rhs: Track) -> Bool {
-        let left = TrackIdentity(track: lhs), right = TrackIdentity(track: rhs)
-        if let a = left.spotifyTrackID, let b = right.spotifyTrackID { return a == b }
-        return TrackTextNormalizer.normalize(lhs.title) == TrackTextNormalizer.normalize(rhs.title)
-            && TrackTextNormalizer.normalizeArtistToken(lhs.artist) == TrackTextNormalizer.normalizeArtistToken(rhs.artist)
-    }
-
     static func panelGroups(_ results: [SongSearchResult]) -> [Self] {
         let unique = uniqueSongs(results)
+        let unsaved = unique.filter { !$0.isSavedLocally }
         return [Self(title: "本地已存", results: Array(unique.filter(\.isSavedLocally).prefix(5))),
-         Self(title: "在线", results: Array(unique.filter { !$0.isSavedLocally }.prefix(5)))]
+                Self(title: "当前播放", results: Array(unsaved.filter { $0.source == .spotifyCurrentTrack || $0.source == .appleMusicCurrentTrack }.prefix(1))),
+                Self(title: "音乐资料库", results: Array(unsaved.filter { $0.source == .appleMusicLibrary }.prefix(5))),
+                Self(title: "在线", results: Array(unsaved.filter { $0.source == .spotifyCatalog || $0.source == .lrclib }.prefix(5)))]
             .filter { !$0.results.isEmpty }
     }
 }
 
 extension SongSearchResult {
+    func primaryReadingTarget(hasLiveTrack: Bool) -> LibraryPassageTarget? {
+        guard let entry = savedLibraryEntry, entry.lyricsVersionCount > 0 else { return nil }
+        let target = savedPassage ?? LibraryPassageTarget(trackKey: entry.trackStableKey)
+        return !target.find.isEmpty || !hasLiveTrack ? target : nil
+    }
+
+    @MainActor
+    func open(in state: PlaybackState, settings: OpenSettingsAction, beforePreview: (() -> Void)? = nil) {
+        if let target = primaryReadingTarget(hasLiveTrack: state.hasLiveTrack) {
+            SettingsNavigationRoute.shared.requestedLocation = .init(reading: target)
+            settings()
+        } else {
+            beforePreview?()
+            state.loadSearchResult(self)
+        }
+    }
+
     var isSavedLocally: Bool { savedLibraryEntry != nil || source == .local }
     var savedLayerLabels: [String] {
         guard let entry = savedLibraryEntry else { return source == .local ? ["词"] : [] }

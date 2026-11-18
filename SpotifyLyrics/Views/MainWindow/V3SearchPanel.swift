@@ -28,14 +28,7 @@ struct V3SearchPanel: View {
     }
     static func otherSongs(_ results: [SongSearchResult], current: Track?) -> [SongSearchResult] {
         return SongSearchResultGroup.uniqueSongs(results).filter { result in
-            if let current {
-                let lhs = TrackIdentity(track: result.track), rhs = TrackIdentity(track: current)
-                if let id = lhs.spotifyTrackID, let currentID = rhs.spotifyTrackID {
-                    if id == currentID { return false }
-                } else if TrackTextNormalizer.normalize(result.track.title) == TrackTextNormalizer.normalize(current.title),
-                   TrackTextNormalizer.normalizeArtistToken(result.track.artist) == TrackTextNormalizer.normalizeArtistToken(current.artist) { return false }
-            }
-            return true
+            current.map { !TrackIdentity.sameSearchRecording($0, result.track) } ?? true
         }
     }
 
@@ -84,8 +77,9 @@ struct V3SearchPanel: View {
         }
         .task(id: state.liveTrackIdentity) {
             selectedCandidate = nil; selectedSongKey = nil; adoptionRequest = nil; catalogDuration = nil
-            if let track = await SpotifyTrackArtistResolver.shared.matchingTrack(for: state.currentTrack) { catalogDuration = track.duration }
-            else if state.playbackSourceIdentity == .appleMusic { catalogDuration = state.currentTrack.duration }
+            if state.playbackSourceIdentity == .appleMusic { catalogDuration = state.currentTrack.duration }
+            else if state.playbackSourceIdentity == .spotifyDesktop, let track = await SpotifyTrackArtistResolver.shared.matchingTrack(for: state.currentTrack),
+                    !Task.isCancelled { catalogDuration = track.duration }
         }
     }
     private func candidateRow(_ candidate: LyricsCandidate) -> some View {

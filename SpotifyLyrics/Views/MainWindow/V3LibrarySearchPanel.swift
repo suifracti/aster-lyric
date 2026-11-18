@@ -129,14 +129,17 @@ struct V3LibrarySearchPanel: View {
             .onExitCommand { presentation.dismiss() }
             .onAppear {
                 library.refresh()
-                if presentation.tab == .search, query.isEmpty { query = SongSearchQuery(track: state.currentTrack).text }
+                if presentation.tab == .search, query.isEmpty, state.hasLiveTrack { query = SongSearchQuery(track: state.currentTrack).text }
             }
             .onChange(of: library.entries) { _, _ in if selectedKey == nil { selectInitialEntry() } }
             .onChange(of: filter) { _, _ in selectInitialEntry() }
             .onChange(of: query) { _, _ in updateSearch() }
+            .onChange(of: state.playlistBrowser.source) { _, _ in
+                if presentation.tab == .search, !query.isEmpty { updateSearch() }
+            }
             .onChange(of: presentation.tab) { _, tab in
                 if tab == .library { library.searchQuery = query; library.refresh(); selectInitialEntry() }
-                else if tab == .search, query.isEmpty { query = SongSearchQuery(track: state.currentTrack).text }
+                else if tab == .search, query.isEmpty, state.hasLiveTrack { query = SongSearchQuery(track: state.currentTrack).text }
             }
             .onChange(of: batch.isRunning) { _, running in if !running { library.refresh() } }
             .onDisappear { batch.stop() }

@@ -90,6 +90,23 @@ public struct TrackIdentity: Hashable, Sendable, CustomStringConvertible {
             .map { "spotify:track:\($0)" }
     }
 
+    static func samePlaybackRecording(_ lhs: Track, _ rhs: Track) -> Bool {
+        if let a = playbackID(for: lhs), let b = playbackID(for: rhs) { return a == b }
+        return TrackIdentity(track: lhs) == TrackIdentity(track: rhs)
+    }
+
+    /// A public lyric index may omit player IDs or round the release's duration.
+    /// Two identifiable library recordings must stay individually selectable.
+    static func sameSearchRecording(_ lhs: Track, _ rhs: Track) -> Bool {
+        if let a = playbackID(for: lhs), let b = playbackID(for: rhs) { return a == b }
+        if let a = normalizeIdentifier(lhs.isrc), let b = normalizeIdentifier(rhs.isrc) { return a == b }
+        guard TrackTextNormalizer.normalize(lhs.title) == TrackTextNormalizer.normalize(rhs.title),
+              TrackTextNormalizer.normalizeArtistToken(lhs.artist) == TrackTextNormalizer.normalizeArtistToken(rhs.artist) else { return false }
+        if lhs.duration > 0, rhs.duration > 0 { return abs(lhs.duration - rhs.duration) <= 3 }
+        let a = normalizedComponent(lhs.album), b = normalizedComponent(rhs.album)
+        return a.isEmpty || b.isEmpty || a == b
+    }
+
     public static func normalizedComponent(_ value: String) -> String {
         let folded = value
             .precomposedStringWithCompatibilityMapping

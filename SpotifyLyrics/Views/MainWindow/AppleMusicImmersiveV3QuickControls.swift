@@ -6,6 +6,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
     @V3ContentPlaybackState var state: PlaybackState
     @ObservedObject var search: SongSearchManager
     @ObservedObject var library: PersonalLyricsLibraryService
+    @Environment(\.openSettings) private var openSettings
     let beforePresentSheet: () -> Void
     let openLibrary: () -> Void
     let openSearch: () -> Void
@@ -92,7 +93,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
                 .textFieldStyle(.roundedBorder)
                 .onSubmit {
                     if let selected = visibleSearchResults.first(where: { $0.searchMergeKey == selectedSearchResultKey }) {
-                        state.loadSearchResult(selected)
+                        selected.open(in: state, settings: openSettings)
                     } else { search.search(query: SongSearchQuery(text: query)) }
                 }
                 .onKeyPress(.downArrow) { moveSearchSelection(1); return .handled }
@@ -120,6 +121,10 @@ struct V3ToolbarQuickControls<Controls: View>: View {
         .onChange(of: query) { _, value in
             selectedSearchResultKey = nil
             search.search(query: SongSearchQuery(text: value), debounceNanoseconds: 250_000_000)
+        }
+        .onChange(of: state.playlistBrowser.source) { _, _ in
+            selectedSearchResultKey = nil
+            if !query.isEmpty { search.search(query: SongSearchQuery(text: query)) }
         }
     }
 

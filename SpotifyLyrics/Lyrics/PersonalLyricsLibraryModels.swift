@@ -16,7 +16,7 @@ public struct PersonalLyricsLibraryEntry: Identifiable, Equatable, Sendable, Cod
     public let artworkURL: URL?
 
     var libraryTrack: Track {
-        Track(title: title, artist: artist, album: album ?? "", duration: duration,
+        Track(id: "library:\(trackStableKey)", title: title, artist: artist, album: album ?? "", duration: duration,
               isrc: isrc, spotifyId: spotifyTrackID, artworkURL: artworkURL,
               spotifyURL: spotifyURI.flatMap(URL.init(string:)))
     }
@@ -897,13 +897,13 @@ enum LibraryPassageSource: Hashable, Sendable {
     }
 }
 
-struct LibraryPassageTarget: Hashable, Identifiable, Sendable {
+public struct LibraryPassageTarget: Hashable, Identifiable, Sendable {
     let trackKey: String
     var source: LibraryPassageSource = .selected
     var find: String = ""
     var lineIndex: Int? = nil
     var recallNextLine = false
-    var id: Self { self }
+    public var id: Self { self }
 }
 
 struct LibraryPassageHit: Identifiable, Sendable {
@@ -912,6 +912,11 @@ struct LibraryPassageHit: Identifiable, Sendable {
     let excerpt: String?
     var matchesMetadata = false
     var id: String { entry.trackStableKey }
+
+    func readingTarget(for term: String) -> LibraryPassageTarget {
+        LibraryPassageTarget(trackKey: id, source: source ?? entry.activeLyricsVersionID.map(LibraryPassageSource.original) ?? .selected,
+                             find: source == nil ? "" : term)
+    }
 }
 
 struct LibraryPassagePage: Sendable {

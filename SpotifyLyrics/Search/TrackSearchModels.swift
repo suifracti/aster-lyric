@@ -72,6 +72,7 @@ public struct TrackSearchResult: Identifiable, Equatable {
     public let artworkURL: URL?
     public let catalogMetadata: TrackSearchMetadata?
     public let savedLibraryEntry: PersonalLyricsLibraryEntry?
+    public let savedPassage: LibraryPassageTarget?
 
     public init(
         id: String,
@@ -80,7 +81,8 @@ public struct TrackSearchResult: Identifiable, Equatable {
         confidence: Double,
         artworkURL: URL? = nil,
         catalogMetadata: TrackSearchMetadata? = nil,
-        savedLibraryEntry: PersonalLyricsLibraryEntry? = nil
+        savedLibraryEntry: PersonalLyricsLibraryEntry? = nil,
+        savedPassage: LibraryPassageTarget? = nil
     ) {
         self.id = id
         self.source = source
@@ -89,6 +91,7 @@ public struct TrackSearchResult: Identifiable, Equatable {
         self.artworkURL = artworkURL
         self.catalogMetadata = catalogMetadata
         self.savedLibraryEntry = savedLibraryEntry
+        self.savedPassage = savedPassage
     }
 
     public var spotifyID: String? { catalogMetadata?.spotifyID ?? track.spotifyId }
@@ -107,23 +110,18 @@ public struct TrackSearchResult: Identifiable, Equatable {
         )
     }
 
-    /// Search-result de-duplication intentionally ignores album and duration:
-    /// public lyric indexes often publish the same recording under slightly
-    /// different release metadata or duration rounding.
     public var searchMergeKey: String {
-        if let spotifyID, !spotifyID.isEmpty {
-            return "spotify-id:\(spotifyID)"
+        if let id = TrackIdentity.playbackID(for: track) { return id }
+        if let id = TrackIdentity.canonicalSpotifyURI(spotifyID ?? spotifyURI) { return id }
+        if let isrc = TrackIdentity.normalizeIdentifier(isrc) { return "isrc:\(isrc)" }
+        return savedLibraryEntry?.trackStableKey ?? "metadata:\(metadataKey)"
+    }
+
+    var searchGroupKey: String {
+        if TrackIdentity.playbackID(for: track) != nil || spotifyID != nil || spotifyURI != nil || isrc != nil || savedLibraryEntry != nil {
+            return searchMergeKey
         }
-        if let uri = spotifyURI, !uri.isEmpty {
-            return "spotify-uri:\(uri)"
-        }
-        if let isrc, !isrc.isEmpty {
-            return "isrc:\(isrc.lowercased())"
-        }
-        return [
-            SongSearchQuery.normalizeSearchText(track.title),
-            SongSearchQuery.normalizeSearchText(track.artist)
-        ].joined(separator: "|")
+        return TrackTextNormalizer.normalize(track.title) + "|" + TrackTextNormalizer.normalizeArtistToken(track.artist)
     }
 
     /// Compatibility bridge used by existing UI/session code.
@@ -136,7 +134,7 @@ public struct TrackSearchResult: Identifiable, Equatable {
             lyrics: lyrics,
             artworkURL: artworkURL,
             catalogMetadata: catalogMetadata,
-            savedLibraryEntry: savedLibraryEntry
+            savedLibraryEntry: savedLibraryEntry, savedPassage: savedPassage
         )
     }
 }

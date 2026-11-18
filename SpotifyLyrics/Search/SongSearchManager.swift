@@ -48,7 +48,7 @@ private struct SongSearchProviderBridge: TrackSearchProvider {
                 confidence: result.confidence,
                 artworkURL: result.artworkURL,
                 catalogMetadata: result.catalogMetadata,
-                savedLibraryEntry: result.savedLibraryEntry
+                savedLibraryEntry: result.savedLibraryEntry, savedPassage: result.savedPassage
             )
         }
     }

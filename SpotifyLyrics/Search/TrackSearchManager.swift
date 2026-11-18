@@ -85,21 +85,26 @@ public final class TrackSearchManager: ObservableObject {
     }
 
     private static func merge(_ results: [TrackSearchResult]) -> [TrackSearchResult] {
-        var merged: [String: TrackSearchResult] = [:]
+        var merged: [String: [TrackSearchResult]] = [:]
         for result in results {
-            let key = result.searchMergeKey
-            guard let existing = merged[key] else {
-                merged[key] = result
+            let key = result.searchGroupKey
+            guard let rows = merged[key], let index = rows.firstIndex(where: {
+                $0.searchMergeKey == result.searchMergeKey || TrackIdentity.sameSearchRecording($0.track, result.track)
+            }) else {
+                merged[key, default: []].append(result)
                 continue
             }
+            let existing = rows[index]
             let best = result.confidence > existing.confidence ? result : existing
-            merged[key] = TrackSearchResult(id: best.id, source: best.source, track: best.track,
+            merged[key]?[index] = TrackSearchResult(id: best.id, source: best.source, track: best.track,
                 confidence: best.confidence, artworkURL: best.artworkURL, catalogMetadata: best.catalogMetadata,
-                savedLibraryEntry: best.savedLibraryEntry ?? result.savedLibraryEntry ?? existing.savedLibraryEntry)
+                savedLibraryEntry: best.savedLibraryEntry ?? result.savedLibraryEntry ?? existing.savedLibraryEntry,
+                savedPassage: best.savedPassage ?? result.savedPassage ?? existing.savedPassage)
         }
-        return merged.values.sorted {
-            if $0.confidence == $1.confidence { return $0.track.title < $1.track.title }
-            return $0.confidence > $1.confidence
+        return merged.values.flatMap { $0 }.sorted {
+            if $0.confidence != $1.confidence { return $0.confidence > $1.confidence }
+            if $0.track.title != $1.track.title { return $0.track.title < $1.track.title }
+            return $0.searchMergeKey < $1.searchMergeKey
         }
     }
 }

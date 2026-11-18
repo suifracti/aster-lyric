@@ -3937,7 +3937,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     }
 
     /// Reuse the version index so opening a text match can identify its exact source.
-    func searchLibraryPassages(_ query: String) throws -> [LibraryPassageHit] {
+    func searchLibraryPassages(_ query: String, includeExcerpt: Bool = true) throws -> [LibraryPassageHit] {
         try prepare()
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else { return [] }
@@ -3948,9 +3948,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             guard let match = passageComponent(in: song, matching: needle) else {
                 return metadata ? LibraryPassageHit(entry: song.entry, source: nil, excerpt: nil, matchesMetadata: true) : nil
             }
-            let excerpt = match.text.original.split { $0 == "\0" || $0.isNewline }.first {
+            let excerpt = includeExcerpt ? match.text.original.split { $0 == "\0" || $0.isNewline }.first {
                 $0.range(of: term, options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]) != nil
-            }
+            } : nil
             return LibraryPassageHit(entry: song.entry, source: match.source, excerpt: excerpt.map(String.init), matchesMetadata: metadata)
         }.sorted {
             if $0.entry.lastModifiedAt != $1.entry.lastModifiedAt { return $0.entry.lastModifiedAt > $1.entry.lastModifiedAt }

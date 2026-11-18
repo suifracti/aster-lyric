@@ -107,8 +107,28 @@ public final class PlaybackState: ObservableObject {
     private var lyricsOffsetScopeBinding: LyricsOffsetScopeBinding?
     private let usesConfiguredLyricsProviders: Bool
     private let alignmentService: any AlignmentService
-    public let songSearchManager: SongSearchManager
+    public private(set) lazy var songSearchManager: SongSearchManager = {
+        let local = LocalSearchProvider(index: .shared, savedSearch: { [lyricsRepository] query in
+            guard let library = lyricsRepository as? SQLiteLyricsRepository else { return [] }
+            let hits = try await library.searchLibraryPassages(query.text, includeExcerpt: false)
+            return hits.map { hit in
+                let entry = hit.entry
+                let track = entry.libraryTrack
+                return TrackSearchResult(id: "library:\(entry.trackStableKey)", source: .local, track: track,
+                    confidence: max(0.6, SongSearchScoring.score(track: track, query: query)), artworkURL: entry.artworkURL,
+                    savedLibraryEntry: entry, savedPassage: hit.readingTarget(for: query.text))
+            }
+        })
+        let current = CurrentTrackResolver(current: { [weak self] in
+            guard let self, self.hasLiveTrack, !self.isMockPreviewMode else { return nil }
+            return (self.currentTrack, self.playbackSourceIdentity)
+        })
+        let catalog = PlayerCatalogSearchProvider(spotify: SpotifySearchProvider(authorization: spotifyAuthorizationManager),
+            music: musicPlaylistCatalog, source: { [weak self] in self?.playlistCatalogSource ?? .unknown })
+        return SongSearchManager(providers: [current, local, catalog] as [TrackSearchProvider])
+    }()
     public let spotifyAuthorizationManager: SpotifyAuthorizationManager
+    private var catalogPlaybackTask: Task<Void, Never>?
     private var lyricsSessionCancellable: AnyCancellable?
     private var searchPreviewSessionCancellable: AnyCancellable?
     private var translationSessionCancellable: AnyCancellable?
@@ -264,24 +284,6 @@ public final class PlaybackState: ObservableObject {
         self.translationSession = translation
         self.readingSession = reading
         self.lyricsEditorSession = editor
-        // Track search is metadata-only: saved library, local index and current track.
-        // LRCLIB stays isolated inside the lyrics session path.
-        self.songSearchManager = SongSearchManager(providers: [
-            LocalSearchProvider(index: sharedIndex, savedSearch: { query in
-                guard let library = resolvedRepository as? SQLiteLyricsRepository else { return [] }
-                let entries = try await library.loadPersonalLibraryEntries(searchQuery: query.text)
-                return entries.map { entry in
-                    let track = Track(id: "library:\(entry.trackStableKey)", title: entry.title, artist: entry.artist,
-                        album: entry.album ?? "", duration: entry.duration, isrc: entry.isrc,
-                        spotifyId: entry.spotifyTrackID, artworkURL: entry.artworkURL, spotifyURL: entry.spotifyURI.flatMap(URL.init(string:)))
-                    return TrackSearchResult(id: "library:\(entry.trackStableKey)", source: .local, track: track,
-                        confidence: max(0.6, SongSearchScoring.score(track: track, query: query)), artworkURL: entry.artworkURL,
-                        savedLibraryEntry: entry)
-                }
-            }),
-            CurrentTrackResolver(playbackProvider: resolvedProvider),
-            SpotifySearchProvider(authorization: authorizationManager)
-        ] as [TrackSearchProvider])
         self.lyricsSessionCancellable = nil
         self.searchPreviewSessionCancellable = nil
         self.translationSessionCancellable = nil
@@ -426,7 +428,7 @@ public final class PlaybackState: ObservableObject {
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
-                    self.playlistBrowser.updateSource(self.playlistCatalogSource)
+                    self.updatePlayerCatalog()
                     self.reconnectSpotify()
                 }
             }
@@ -2724,27 +2726,36 @@ public final class PlaybackState: ObservableObject {
     }
 
 
-    /// Starts a lyrics preview for a selected catalog result. The preview uses
-    /// its own session, so selecting arbitrary Spotify catalog metadata never
-    /// changes the Desktop playback track or its time anchor.
-    public func playSearchTrack(_ track: Track) {
-        guard playlistBrowser.supportsQueueEdits else { return }
-        guard let id = TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString) else {
-            songSearchSelectionMessage = "这首歌没有可播放的 Spotify ID"
-            return
+    func searchPlaybackTitle(for track: Track) -> String? {
+        switch playlistBrowser.source {
+        case .appleMusic:
+            return track.spotifyId.flatMap(AppleMusicPlaylistCatalog.persistentTrackID) == nil ? nil : "在「音乐」播放"
+        case .spotifyDesktop:
+            return Self.playlistRequestTrackID(for: track, source: .spotifyDesktop) == nil ? nil : "在 Spotify 播放"
+        default: return nil
         }
+    }
+
+    /// The explicit play button is separate from opening a result's lyrics.
+    public func playSearchTrack(_ track: Track) {
+        guard searchPlaybackTitle(for: track) != nil else { return }
         let generation = playlistBrowser.sourceGeneration
         playlistBrowser.noteManualPlayback(track)
-        Task {
-            guard generation == playlistBrowser.sourceGeneration else { return }
+        catalogPlaybackTask?.cancel()
+        catalogPlaybackTask = Task {
+            guard !Task.isCancelled, generation == playlistBrowser.sourceGeneration else { return }
             do {
-                let token = try await spotifyAuthorizationManager.accessToken(requiredScopes: SpotifyOAuthConfiguration.playbackWriteScopes)
-                guard generation == playlistBrowser.sourceGeneration else { return }
-                try await spotifyLibraryService.playTrack(id, accessToken: token)
-                guard generation == playlistBrowser.sourceGeneration else { return }
+                if playlistBrowser.source == .appleMusic {
+                    try await musicPlaylistCatalog.playFromLibrary(track)
+                } else if let id = Self.playlistRequestTrackID(for: track, source: .spotifyDesktop) {
+                    let token = try await spotifyAuthorizationManager.accessToken(requiredScopes: SpotifyOAuthConfiguration.playbackWriteScopes)
+                    guard !Task.isCancelled, generation == playlistBrowser.sourceGeneration else { return }
+                    try await spotifyLibraryService.playTrack(id, accessToken: token)
+                }
+                guard !Task.isCancelled, generation == playlistBrowser.sourceGeneration else { return }
                 songSearchSelectionMessage = "已请求播放"
             } catch {
-                guard generation == playlistBrowser.sourceGeneration else { return }
+                guard !Task.isCancelled, generation == playlistBrowser.sourceGeneration else { return }
                 playlistBrowser.cancelManualPlaybackIntent()
                 songSearchSelectionMessage = (error as? SpotifyCatalogError) == .forbidden ? "需要 Spotify Premium" : error.localizedDescription
             }
@@ -2769,16 +2780,14 @@ public final class PlaybackState: ObservableObject {
         // Catalog and saved metadata can differ for the same player recording.
         // Keep that selection on the live session so its lyrics follow playback.
         // It still goes through the same SQLite-first path and never seeks.
-        let playbackID = TrackIdentity.playbackID(for: currentTrack)
-        let selectsCurrentRecording = playbackID != nil && playbackID == TrackIdentity.playbackID(for: result.track)
-        if hasLiveTrack, let currentIdentity = currentTrackIdentity,
-           identity == currentIdentity || selectsCurrentRecording {
+        if hasLiveTrack, let currentIdentity = currentTrackIdentity, TrackIdentity.samePlaybackRecording(currentTrack, result.track) {
             clearSearchPreview()
-            songSearchSelectionMessage = "已确认当前播放歌曲，正在读取 SQLite 与歌词；播放位置未改变"
+            songSearchSelectionMessage = "正在打开当前歌曲的歌词"
             searchPreviewTask = Task { @MainActor [weak self, lyricsRepository] in
                 guard let self else { return }
                 try? await lyricsRepository.saveTrackMetadata(metadata)
-                guard !Task.isCancelled, self.currentTrackIdentity == currentIdentity else { return }
+                guard !Task.isCancelled, self.currentTrackIdentity == currentIdentity,
+                      TrackIdentity.samePlaybackRecording(self.currentTrack, result.track) else { return }
                 self.lyricsSession.begin(track: self.currentTrack, identity: currentIdentity)
             }
             return
@@ -2787,9 +2796,9 @@ public final class PlaybackState: ObservableObject {
         searchPreviewTrack = result.track
         searchPreviewSession.beginLoadingPlaceholder(
             identity: identity,
-            message: "正在读取 SQLite 与歌词 Provider…"
+            message: "正在查找这首歌的歌词…"
         )
-        songSearchSelectionMessage = "已选择「\(result.track.title)」，正在读取歌词；播放位置未改变"
+        songSearchSelectionMessage = "正在预览「\(result.track.title)」的歌词"
 
         // Persist catalog metadata first, then start the session. This records
         // the TrackRecord/aliases even when every lyrics provider returns no
@@ -3322,12 +3331,20 @@ public final class PlaybackState: ObservableObject {
         (provider as? AppleMusicDesktopProvider)?.acceptDesktopSnapshot(snapshot)
     }
 
+    private func updatePlayerCatalog() {
+        let source = playlistCatalogSource
+        guard playlistBrowser.source != source else { return }
+        catalogPlaybackTask?.cancel()
+        playlistBrowser.updateSource(source)
+        songSearchManager.cancel()
+    }
+
     private func updatePlaybackSourceIdentity(_ next: PlaybackSourceIdentity) {
         guard playbackSourceIdentity != next else { return }
         let previous = playbackSourceIdentity
         playbackSourceIdentity = next
         if next == .appleMusic || next == .spotifyDesktop { lastPlaylistSource = next }
-        playlistBrowser.updateSource(playlistCatalogSource)
+        updatePlayerCatalog()
         if next == .unknown { playlistBrowser.clearCurrentTrack() }
         AutomaticAlignmentJobController.shared.notifyPlaybackSourceChanged(
             previous: previous,
@@ -3728,8 +3745,8 @@ public final class PlaybackState: ObservableObject {
     }
 }
 
-private extension Track {
-    static let emptyPlaybackPlaceholder = Track(
+extension Track {
+    fileprivate static let emptyPlaybackPlaceholder = Track(
         id: "no-live-track",
         title: "等待 Spotify 播放",
         artist: "Spotify Desktop",

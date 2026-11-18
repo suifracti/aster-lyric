@@ -19,7 +19,7 @@
 | 找回旧环境光、模糊/缩放参数、样式合并；改 renderer/偏好 | L-004；AppSettingsStore.swift 与 authenticAmbientArtworkLayers |
 | 已采用歌词突然被挡住、同一首重复入库、歌单已存却不打勾；改 Spotify ID | L-005；TrackIdentity、SQLiteLyricsRepository、PlaylistPickerTests |
 | Desktop 时长跳变、合作歌手待确认、错误的时长差提示 | L-006；SpotifyTrackArtistResolver、LyricsSearchManager |
-| 搜索慢、本地结果等网络、预加载同一首重复搜索；新歌首次找词要十几秒 | L-007；searchCachedLibrary、TrackSearchManager、LyricsSessionController、JapaneseMeCabEngine |
+| 搜索慢、本地结果等网络、搜索 Apple Music 或旧译文、预加载同一首重复搜索 | L-007；searchCachedLibrary、TrackSearchManager、LyricsSessionController、JapaneseMeCabEngine |
 | 队列不更新、循环列表被裁掉、隐藏后点第三首多跳、Apple Music 歌单串到 Spotify | L-008；PlaylistBrowserModel、AppleMusicPlaylistCatalog、V3PlaylistQueuePreview |
 | 版本弹窗挂在悬浮窗、关后黑着、大歌词库关闭或丢选择 | L-009；PersonalLyricsLibraryService、PersonalLibrarySheets |
 | 有歌词源译文却不显示、部分行没有译文、重复补存 | L-010；TranslationSessionController.synchronize 与 chooseVersion |
@@ -149,6 +149,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 现在 `JapaneseMeCabEngine` 在本次运行内按“可执行文件、参数、文本”记住成功输出，失败不记；轮询间隔改为 1 ms。没有改匹配规则、候选流程、来源或数据库，读音结果与原来逐字相同。新增 `testRepeatedLyricLineStartsTheReadingProcessOnce` 先复现同一句启动 3 次进程，修复后为 1 次。同机 Debug 测得 46 行日文补全首次 0.62 秒降到 0.17 秒，重复 0.007 秒；20 次匹配判定首次 0.066 秒，重复 0.016 秒（10-30 报告用另一组数据测得 0.574 秒，条件不同，只作参照）。完整原生 130 项中 129 通过、1 跳过、0 失败。真实新歌的端到端找词耗时要等统计文件积累新样本后再比，本轮没有实测。
 
 同一批无结果歌曲逐首向 LRCLIB 复查：8 首中 7 首确实没有条目，拒绝的是同名的其他歌曲，属于正确拒绝。只有《KILL MY LOVE》存在歌手写作 `Miliyah`、204 秒的带时间轴条目，播放侧是 `加藤MILIYAH`、198 秒，因 `primaryArtistConflict` 被硬拒。这是歌手别名规则的已知边界，本轮未改，其他来源未逐一复查。
+
+2026-11-18：找歌用已接收的当前曲快照；输入关键词不会再重新轮询或改变桌面播放器。Apple Music 选中时向系统「音乐」搜索本机资料库，同名现场版和录音室版以各自的持久 ID 保留。明确输入 Spotify 曲目链接仍可读取该曲的目录资料。搜索已存原词、旧译文和读音时只把出处与查询带给阅读页，目录结果不传整篇歌词。匹配到旧版时「读这句」打开对应版本，没放歌时也可阅读已存歌曲。隔离真窗从文件入库，再从「搜索」输入旧译独有词，点击「读这句」已读回那一行；不会把阅读当作播放。
 
 ## L-008 队列刷新保留稍后重复项，点击按原始 offset 前进
 

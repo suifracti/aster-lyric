@@ -552,6 +552,8 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 
 **跟随播放器的歌单（2026-11-18）。** 在 Apple Music 下，歌单面板与悬停入口从 Mac 的「音乐」读取本人歌单、喜爱歌曲和当前歌单顺序。歌单顺序显示歌单名以及当前位置之后最多 25 首，点击时按该歌单的原始位置和歌曲 ID 定位，支持同一首出现两次。系统允许手改待播队列，亦可随机播放，因此窗口将这份顺序写作「歌单后续」。没有可核对的当前歌单时显示原因。Spotify 的插播和单次跳过只在 Spotify 下出现。两个来源切换时撤下原列表和待执行操作。
 
+**找歌和读到某一句（2026-11-18）。** Spotify 下可以搜索在线曲库。Apple Music 下会查这台 Mac 的「音乐」资料库，结果按本机录音区分，只有明确点播放才向播放器发命令。搜索库内旧译文或读音时点「读这句」，会直接翻到命中的那一版。在没有播放歌曲时，搜索到的已存歌曲也能直接打开阅读。
+
 **Pinned panels.**
 - The glass runs to the top of the window, under the traffic lights. No separate title-bar strip, and no window title repeating the panel heading.
 
