@@ -112,7 +112,7 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         let loaded = try await library.readPassage(target)
         let opened = try XCTUnwrap(loaded)
         XCTAssertEqual(opened.originalVersionID, originalID)
-        let secondChorus = LibraryPassageTarget.ReadingPosition(find: "回声", lineIndex: 2)
+        let secondChorus = LibraryPassageTarget.ReadingPosition(find: "回声", lineIndex: 2, topLineIndex: 1)
         library.rememberReading(opened, openedFrom: target, position: secondChorus)
         let replacement = try await repository.save(track: track, identity: identity,
             document: LyricsDocument(identity: identity, lines: [LyricLine(timestamp: 2, originalText: "另一份原稿")],
@@ -155,6 +155,20 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         let returnedPage = try await library.readPassage(archiveTarget, recordOpening: false)
         XCTAssertEqual(returnedPage?.lines.first?.translation, "收藏的译文")
         XCTAssertNil(returnedPage?.lines.last?.translation)
+
+        let other = try await library.readPassage(.init(trackKey: identity.stableKey, source: .original(replacementID)))
+        XCTAssertEqual(other?.originalVersionID, replacementID)
+        let recentData = try XCTUnwrap(defaults.data(forKey: RecentLyricsReadings.defaultsKey))
+        let recent = RecentLyricsReadings.records(from: recentData, legacy: nil)
+        XCTAssertEqual(recent.map { $0.passage?.source }, [.original(replacementID), .original(originalID)])
+        XCTAssertEqual(recent.last?.passage?.readingPosition, secondChorus)
+        let otherArchive = LastOpenedLyricsRecord(trackKey: "separate-recording", title: "另一首歌", artist: "")
+        let suggestions = WorkspaceLookupRow.suggestions(readings: recent, lastOpened: otherArchive, favorites: [])
+        XCTAssertEqual(suggestions.prefix(2).map(\.location.passage?.source), recent.map { $0.passage?.source })
+        XCTAssertEqual(suggestions[2].location.trackKey, otherArchive.trackKey)
+
+        let oldReaderData = Data(#"{"find":"回声","lineIndex":2}"#.utf8)
+        XCTAssertNil(try JSONDecoder().decode(LibraryPassageTarget.ReadingPosition.self, from: oldReaderData).topLineIndex)
     }
 
     @MainActor

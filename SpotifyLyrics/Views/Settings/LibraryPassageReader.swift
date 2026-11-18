@@ -1,7 +1,27 @@
 import SwiftUI
 
+private struct FirstVisibleLyric: PreferenceKey {
+    struct Row: Equatable {
+        let id: Int
+        let bottom: CGFloat
+    }
+
+    static let defaultValue: Row? = nil
+
+    static func reduce(value: inout Row?, nextValue: () -> Row?) {
+        guard let next = nextValue(), next.bottom < (value?.bottom ?? .infinity) else { return }
+        value = next
+    }
+}
+
 /// A stable page from the local archive. Its find cursor is independent of the playing song.
 struct LibraryPassageReader: View {
+    private struct ScrollRequest: Equatable {
+        let id = UUID()
+        let line: Int
+        let restoreTop: Bool
+    }
+
     let target: LibraryPassageTarget
     let library: PersonalLyricsLibraryService
     var openArchive: ((LibraryPassageTarget) -> Void)?
@@ -19,6 +39,11 @@ struct LibraryPassageReader: View {
     @State private var recall: LyricRecallSession?
     @State private var recallNotice: String?
     @State private var returnedLine: Int?
+    @State private var topLine: Int?
+    @State private var scrollRequest: ScrollRequest?
+    @State private var loadedTarget: LibraryPassageTarget?
+    @State private var recordedPosition: LibraryPassageTarget.ReadingPosition?
+    @Namespace private var viewport
 
     init(target: LibraryPassageTarget, library: PersonalLyricsLibraryService,
          openArchive: ((LibraryPassageTarget) -> Void)? = nil, close: (() -> Void)? = nil) {
@@ -34,10 +59,15 @@ struct LibraryPassageReader: View {
     private var currentMatch: Int? { matches.indices.contains(cursor) ? matches[cursor] : nil }
     private var focusedLine: Int? { returnedLine ?? currentMatch }
     private var visibleFocus: Int? { focusedLine.map { voices.visibleID(for: $0) } }
+    private var readingPosition: LibraryPassageTarget.ReadingPosition {
+        let restoredLine = scrollRequest.flatMap { $0.restoreTop ? $0.line : nil }
+        let top = topLine ?? restoredLine
+        return .init(find: find, lineIndex: focusedLine, topLineIndex: top == page?.lines.first?.id ? nil : top)
+    }
 
     private var archiveTarget: LibraryPassageTarget {
         guard let page else { return .init(trackKey: target.trackKey) }
-        return page.archiveTarget(from: target, position: .init(find: find, lineIndex: focusedLine))
+        return page.archiveTarget(from: target, position: readingPosition)
     }
 
     var body: some View {
@@ -48,12 +78,14 @@ struct LibraryPassageReader: View {
                     updateMatches(preferred: line)
                     returnedLine = line
                     self.recall = nil
+                    scrollToLine(line)
                     rememberPosition()
                 }
             } else { readingPage }
         }
         .background(WorkspacePalette.paper)
         .task(id: target) { await load() }
+        .onDisappear { rememberPosition() }
     }
 
     private var readingPage: some View {
@@ -125,15 +157,34 @@ struct LibraryPassageReader: View {
                                 }
                             }
                             .padding(.horizontal, 10).padding(.bottom, 18)
-                            ForEach(voices.visibleLines(in: page.lines)) { line in row(line, page: page).id(line.id) }
+                            ForEach(voices.visibleLines(in: page.lines)) { line in
+                                row(line, page: page)
+                                    .background {
+                                        GeometryReader { geometry in
+                                            let bottom = geometry.frame(in: .named(viewport)).maxY
+                                            Color.clear.preference(key: FirstVisibleLyric.self,
+                                                value: bottom > 1 ? .init(id: line.id, bottom: bottom) : nil)
+                                        }
+                                    }
+                                    .id(line.id)
+                            }
                         }
                         .frame(maxWidth: 680, alignment: .leading)
                         .padding(.horizontal, 19).padding(.vertical, 22).frame(maxWidth: .infinity)
                     }
-                    .task(id: visibleFocus) {
-                        guard let id = visibleFocus else { return }
+                    .coordinateSpace(name: viewport)
+                    .onPreferenceChange(FirstVisibleLyric.self) { row in
+                        if let id = row?.id, topLine != id { topLine = id }
+                    }
+                    .task(id: scrollRequest) {
+                        guard let request = scrollRequest else { return }
                         await Task.yield()
-                        if !Task.isCancelled { scroll.scrollTo(id, anchor: .center) }
+                        if !Task.isCancelled { scroll.scrollTo(request.line, anchor: request.restoreTop ? .top : .center) }
+                    }
+                    .task(id: topLine) {
+                        guard topLine != nil, !Task.isCancelled else { return }
+                        try? await Task.sleep(for: .milliseconds(220))
+                        if !Task.isCancelled { rememberPosition() }
                     }
                 }
             } else if let failure {
@@ -187,6 +238,10 @@ struct LibraryPassageReader: View {
     }
 
     private func load() async {
+        loadedTarget = nil
+        recordedPosition = nil
+        scrollRequest = nil
+        topLine = nil
         failure = nil
         page = nil
         recall = nil
@@ -201,6 +256,7 @@ struct LibraryPassageReader: View {
             if let loaded, !loaded.lines.isEmpty {
                 voices = PassageVoicePresentation(lines: loaded.lines)
                 page = loaded
+                loadedTarget = target
                 let savedPosition = target.savedQuote?.originalVersionID == loaded.originalVersionID
                     && loaded.matchesOriginalVersion ? target.lineIndex : nil
                 let preferred = target.readingPosition != nil ? target.readingPosition?.lineIndex
@@ -208,6 +264,11 @@ struct LibraryPassageReader: View {
                 updateMatches(preferred: preferred)
                 if let preferred, loaded.lines.contains(where: { $0.id == preferred }) {
                     returnedLine = preferred
+                }
+                if let top = target.readingPosition?.topLineIndex, loaded.lines.contains(where: { $0.id == top }) {
+                    scrollToLine(top, restoreTop: true)
+                } else {
+                    scrollToLine(visibleFocus)
                 }
                 rememberPosition()
                 if target.recallNextLine {
@@ -241,18 +302,27 @@ struct LibraryPassageReader: View {
         find = text
         returnedLine = nil
         updateMatches()
+        scrollToLine(visibleFocus)
         rememberPosition()
     }
 
+    private func scrollToLine(_ id: Int?, restoreTop: Bool = false) {
+        guard let id else { return }
+        topLine = nil
+        scrollRequest = .init(line: voices.visibleID(for: id), restoreTop: restoreTop)
+    }
+
     private func rememberPosition() {
-        guard let page else { return }
-        library.rememberReading(page, openedFrom: target, position: .init(find: find, lineIndex: focusedLine))
+        guard let page, loadedTarget == target, recordedPosition != readingPosition else { return }
+        recordedPosition = readingPosition
+        library.rememberReading(page, openedFrom: target, position: readingPosition)
     }
 
     private func move(_ offset: Int) {
         guard !matches.isEmpty else { return }
         returnedLine = nil
         cursor = (cursor + offset + matches.count) % matches.count
+        scrollToLine(visibleFocus)
         rememberPosition()
     }
 }

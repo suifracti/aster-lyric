@@ -962,6 +962,7 @@ public struct LibraryPassageTarget: Hashable, Identifiable, Codable, Sendable {
     struct ReadingPosition: Hashable, Codable, Sendable {
         let find: String
         let lineIndex: Int?
+        var topLineIndex: Int? = nil
     }
 
     let trackKey: String

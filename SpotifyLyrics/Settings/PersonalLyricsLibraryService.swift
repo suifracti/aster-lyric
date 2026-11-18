@@ -8,6 +8,36 @@ struct LastOpenedLyricsRecord: Codable, Equatable {
     let title: String
     let artist: String
     var passage: LibraryPassageTarget? = nil
+    var edition: String? = nil
+
+    var readingID: String { "\(trackKey).\(String(describing: passage?.source))" }
+
+    var readingDetail: String {
+        let row = passage?.readingPosition.flatMap { $0.topLineIndex ?? $0.lineIndex }
+        return [artist, edition ?? passage?.source.label, row.map { "第 \($0 + 1) 行" }]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+}
+
+enum RecentLyricsReadings {
+    static let defaultsKey = "library.recentReadings.v1"
+
+    static func records(from data: Data, legacy: LastOpenedLyricsRecord?) -> [LastOpenedLyricsRecord] {
+        if let stored = try? JSONDecoder().decode([LastOpenedLyricsRecord].self, from: data), !stored.isEmpty {
+            return stored
+        }
+        if let legacy, legacy.passage != nil { return [legacy] }
+        return []
+    }
+
+    static func note(_ record: LastOpenedLyricsRecord, in defaults: UserDefaults, legacy: LastOpenedLyricsRecord?) {
+        let current = records(from: defaults.data(forKey: defaultsKey) ?? Data(), legacy: legacy)
+        let next = Array(([record] + current.filter { $0.readingID != record.readingID }).prefix(5))
+        if current != next || defaults.data(forKey: defaultsKey) == nil,
+           let data = try? JSONEncoder().encode(next) {
+            defaults.set(data, forKey: defaultsKey)
+        }
+    }
 }
 
 @MainActor
@@ -170,7 +200,18 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         let resolved = LibraryPassageTarget(trackKey: page.entry.trackStableKey, source: page.resolvedSource ?? target.source,
                                             find: target.find, lineIndex: target.lineIndex, savedQuote: target.savedQuote,
                                             readingPosition: position ?? target.readingPosition)
-        rememberOpenedRecord(page.entry, passage: resolved)
+        let version = resolved.source.versionID.flatMap { id -> String? in
+            let kind: String
+            switch resolved.source {
+            case .original, .attached: kind = "lyrics"
+            case .translation: kind = "translation"
+            case .reading: kind = "reading"
+            case .selected: return nil
+            }
+            let title = defaults.string(forKey: VersionLabelDraft.key(kind, id) + ".title") ?? ""
+            return title.isEmpty ? nil : title
+        }
+        rememberOpenedRecord(page.entry, passage: resolved, edition: version ?? page.edition)
     }
 
     public func beginRevision(versionID: UUID, entry: PersonalLyricsLibraryEntry) {
@@ -444,11 +485,17 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         }
     }
 
-    private func rememberOpenedRecord(_ entry: PersonalLyricsLibraryEntry, passage: LibraryPassageTarget? = nil) {
+    private func rememberOpenedRecord(_ entry: PersonalLyricsLibraryEntry, passage: LibraryPassageTarget? = nil, edition: String? = nil) {
         let previous = defaults.data(forKey: LastOpenedLyricsRecord.defaultsKey)
             .flatMap { try? JSONDecoder().decode(LastOpenedLyricsRecord.self, from: $0) }
         let resume = passage ?? (previous?.trackKey == entry.trackStableKey ? previous?.passage : nil)
-        let record = LastOpenedLyricsRecord(trackKey: entry.trackStableKey, title: entry.title, artist: entry.artist, passage: resume)
+        let record = LastOpenedLyricsRecord(trackKey: entry.trackStableKey, title: entry.title, artist: entry.artist,
+                                            passage: resume, edition: edition ?? (resume == nil ? nil : previous?.edition))
+        if passage != nil {
+            RecentLyricsReadings.note(record, in: defaults, legacy: previous)
+        } else if let previous, previous.passage != nil, defaults.data(forKey: RecentLyricsReadings.defaultsKey) == nil {
+            RecentLyricsReadings.note(previous, in: defaults, legacy: nil)
+        }
         if record != previous, let data = try? JSONEncoder().encode(record) {
             defaults.set(data, forKey: LastOpenedLyricsRecord.defaultsKey)
         }

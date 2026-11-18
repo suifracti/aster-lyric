@@ -60,7 +60,7 @@
 | 缺歌词里同一首歌的重复记录（时长错、借用别首的 ID）、批量补全拿错时长去搜 | L-039；PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere、needsLyrics |
 | 批量补词切换窗口时停掉、只看到次数、需要核对却看不到候选 | L-039；PlaybackState.lyricsBatch、LyricsBatchControls、LyricsSessionController.completeBatchLyrics |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
-| 翻阅收藏、从副歌第二次出现的位置接下一句、搜到旧译文、收藏文件无法读取 | L-046 · LibraryPassageReader、LyricRecallSession、V3FavoriteLines |
+| 翻阅收藏、从副歌第二次出现的位置接下一句、搜到旧译文、继续阅读丢位置或被档案覆盖 | L-046 · LibraryPassageReader、RecentLyricsReadings、V3FavoriteLines |
 | 灵动岛挡刘海、只剩歌名、想停在一句读、换歌拖错进度 | L-045；CapsuleNotchGeometry、CapsuleLyricsView、vocalCountdownWindow |
 | 状态栏双行词、日英混排少半句、收藏当前句、完整歌词与版本档案、没放歌时的菜单 | L-044；MenuBarTextFormatter.statusImage、MenuBarFullLyricsSnapshot、WorkspaceShelfCard、KeepLyricButton |
 | 全屏歌词按 Esc 没反应，退出后留下大窗 | L-031；FullScreenLyricsWindowController、handleExitCommand |
@@ -862,6 +862,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 2026-11-19：「继续阅读」改为记住实际打开的原词、译文或读音出处，以及阅读页最新一次查找命中或背词返回的行号。收藏带来的译文快照继续绑定原摘句；书签位置和阅读位置分别保存。只扩展现有本机偏好的可选字段。临时库先复现采用新稿后续读误跳新稿，改后能回到旧稿的第二处副歌、保留原收藏译文以及新稿的采用状态。共 10 项定向原生检查通过。隔离真窗在 ⌘K 的日文歌词译文里从第 1/2 处点到第 2/2 处，返回、清空搜索，再由「继续阅读」回到同一译稿第 2/2 处。
 
 2026-11-19 补阅读与档案往返。原来独立歌词库的预览没有「版本档案」，有入口的窗口也只传版本分类。现在阅读页传已确认的录音、版本和阅读位置。档案把该版本放在分类首行并标「刚才阅读」，已采用照原选择显示。同窗「读歌词」、该稿预览与设置后退都带回这次位置；从主窗版本弹窗进入档案时，等 sheet 关闭再打开设置。旧收藏的译文版本已不存在时，档案定位原词，回读仍保留原摘句的译文快照。49 项定向原生检查通过。隔离原生从主窗打开独立歌词库，把未采用的「译文一」定位到第 2/6 处，打开档案再回读，仍是该版本第 2/6 处。
+
+2026-11-19 续读记录增加视口首行，仍独立保存查找命中和收藏行号。SwiftUI 的滚动位置绑定在原生阅读窗翻页后未返回可靠行号，实际从行相对视口的位置取首行，滚动稍停或离开时保存。工作台和空白 ⌘K 共用最近五份按录音与版本区分的阅读记录；浏览档案仍沿用旧偏好，旧单份阅读记录可作为起始数据。隔离原生的长篇样例从首句查找进入，翻到第 9 行后关闭，从继续阅读回到第 9 行，查找仍为 1/1。另读《窗边的来信》译文后两份稿各自保留位置。定向原生检查覆盖同一首歌不同稿、旧偏好与收藏快照。
 
 ## L-047 本机空间和可恢复的数据库备份（2026-11-18）
 

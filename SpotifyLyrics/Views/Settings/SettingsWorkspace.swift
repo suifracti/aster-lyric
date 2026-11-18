@@ -21,6 +21,7 @@ enum WorkspacePalette {
 /// A local workspace. Opening any of its destinations works while every player is closed.
 struct SettingsWorkspace: View {
     @AppStorage(LastOpenedLyricsRecord.defaultsKey, store: .lyricsQ) private var lastOpenedData = Data()
+    @AppStorage(RecentLyricsReadings.defaultsKey, store: .lyricsQ) private var recentReadingsData = Data()
     @Environment(\.openDocument) private var openDocument
     @Environment(\.newDocument) private var newDocument
     @State private var droppedOn = false
@@ -166,15 +167,32 @@ struct SettingsWorkspace: View {
     }
 
     private var archiveHighlights: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let lastOpened = try? JSONDecoder().decode(LastOpenedLyricsRecord.self, from: lastOpenedData)
+        let readings = RecentLyricsReadings.records(from: recentReadingsData, legacy: lastOpened)
+        return VStack(alignment: .leading, spacing: 12) {
             WorkspaceShelfCard(navigate: navigate)
-            if let record = try? JSONDecoder().decode(LastOpenedLyricsRecord.self, from: lastOpenedData) {
-                actionRow(record.passage == nil ? "上次打开的档案" : "继续阅读",
-                          detail: [record.title, record.artist].filter { !$0.isEmpty }.joined(separator: " · "),
-                          icon: "bookmark") {
-                    if let passage = record.passage { navigate(.init(reading: passage)) }
-                    else { navigate(.init(.library, trackKey: record.trackKey)) }
+            if let latest = readings.first, let passage = latest.passage {
+                HStack(spacing: 5) {
+                    actionRow("继续阅读", detail: [latest.title, latest.readingDetail].filter { !$0.isEmpty }.joined(separator: " · "),
+                              icon: "bookmark") { navigate(.init(reading: passage)) }
+                    if readings.count > 1 {
+                        Menu {
+                            ForEach(readings, id: \.readingID) { record in
+                                if let passage = record.passage {
+                                    Button([record.title, record.readingDetail].filter { !$0.isEmpty }.joined(separator: " · ")) {
+                                        navigate(.init(reading: passage))
+                                    }
+                                }
+                            }
+                        } label: { Image(systemName: "clock.arrow.circlepath") }
+                            .menuStyle(.borderlessButton).fixedSize()
+                            .help("最近阅读").accessibilityLabel("最近阅读")
+                    }
                 }
+            }
+            if let record = lastOpened, record.passage == nil, record.trackKey != readings.first?.trackKey {
+                actionRow("上次打开的档案", detail: [record.title, record.artist].filter { !$0.isEmpty }.joined(separator: " · "),
+                          icon: "books.vertical") { navigate(.init(.library, trackKey: record.trackKey)) }
             }
         }
     }
@@ -295,11 +313,16 @@ struct WorkspaceLookupRow: Identifiable {
                     icon: "quote.opening", location: .init(reading: item.passage))
     }
 
-    static func suggestions(lastOpened: LastOpenedLyricsRecord?, favorites: [V3FavoriteLines.Entry]) -> [Self] {
-        var rows: [Self] = []
-        if let record = lastOpened {
-            rows.append(Self(id: "record." + record.trackKey, group: .recent, title: record.title, detail: record.artist, icon: "book",
-                             location: .init(reading: record.passage ?? .init(trackKey: record.trackKey))))
+    static func suggestions(readings: [LastOpenedLyricsRecord], lastOpened: LastOpenedLyricsRecord?,
+                            favorites: [V3FavoriteLines.Entry]) -> [Self] {
+        var rows = readings.compactMap { record -> Self? in
+            guard let passage = record.passage else { return nil }
+            return Self(id: "reading." + record.readingID, group: .recent, title: record.title, detail: record.readingDetail,
+                        icon: "book", location: .init(reading: passage))
+        }
+        if let record = lastOpened, record.passage == nil, record.trackKey != readings.first?.trackKey {
+            rows.append(Self(id: "record." + record.trackKey, group: .recent, title: record.title, detail: record.artist,
+                             icon: "books.vertical", location: .init(.library, trackKey: record.trackKey)))
         }
         rows += favorites.prefix(2).map(quote)
         rows += [SettingsCategory.library, .favorites, .appearance].map(tool)

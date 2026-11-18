@@ -38,6 +38,7 @@ struct WorkspaceQuickFind: View {
     @StateObject private var library: PersonalLyricsLibraryService
     @ObservedObject private var favorites = V3FavoriteLines.shared
     @AppStorage(LastOpenedLyricsRecord.defaultsKey, store: .lyricsQ) private var lastOpened = Data()
+    @AppStorage(RecentLyricsReadings.defaultsKey, store: .lyricsQ) private var recentReadings = Data()
     @Environment(\.openSettings) private var openSettings
     @Environment(\.dismissWindow) private var dismissWindow
     @State private var query = ""
@@ -55,7 +56,8 @@ struct WorkspaceQuickFind: View {
     private var items: [WorkspaceLookupRow] {
         if term.isEmpty {
             let last = try? JSONDecoder().decode(LastOpenedLyricsRecord.self, from: lastOpened)
-            return WorkspaceLookupRow.suggestions(lastOpened: last, favorites: favorites.entries)
+            return WorkspaceLookupRow.suggestions(readings: RecentLyricsReadings.records(from: recentReadings, legacy: last),
+                                                  lastOpened: last, favorites: favorites.entries)
         }
         return WorkspaceLookupRow.matches(term, songs: lookup.songs(for: term), favorites: favorites.entries)
     }
