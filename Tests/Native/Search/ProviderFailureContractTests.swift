@@ -1452,6 +1452,19 @@ final class ProviderFailureContractTests: XCTestCase {
             let entry = try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
             XCTAssertEqual(entry?["preload"] as? Bool, true)
         }
+
+        let apple = Track(title: "Music fixture", artist: "Fixture", album: "Queue", duration: 160, spotifyId: "applemusic:AB12000000110047")
+        let applePreload = LyricsSessionController(providers: [source], repository: repo, sourceStats: stats, isPreload: true)
+        await applePreload.loadForPreloading(track: apple)
+        let appleVersion = try XCTUnwrap(applePreload.activeLyricsVersionID)
+        let repeatedApple = LyricsSessionController(providers: [source], repository: repo, sourceStats: stats, isPreload: true)
+        await repeatedApple.loadForPreloading(track: apple)
+        XCTAssertNil(repeatedApple.activeLyricsVersionID)
+        let applePlaying = Track(title: apple.title, artist: apple.artist, album: "Now Playing", duration: 158, spotifyId: apple.spotifyId?.lowercased())
+        let liveApple = LyricsSessionController(providers: [source], repository: repo, sourceStats: stats)
+        await liveApple.loadForPreloading(track: applePlaying)
+        XCTAssertEqual(liveApple.activeLyricsVersionID, appleVersion)
+        XCTAssertEqual(counter.value, 3, "Music opens the same cached recording even if queue and playback metadata differ")
     }
 
     func testMultipleSourcesAgreeingOnOneRecordingAdoptDespiteSpotifyDurationGap() async throws {

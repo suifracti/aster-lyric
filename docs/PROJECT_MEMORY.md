@@ -164,7 +164,9 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 
 `188ce6f`、`f693196` 对应搜索缓存与变更接线。`SQLiteLyricsRepository.searchCachedLibrary` / `refreshLibrarySearchCache` / `cachedSearchVersions` 用 data_version、total_changes 感知变化，再比较逐歌曲签名，复用未变版本。`SpotifyLyrics/Search/TrackSearchManager.swift` 先发布本地 isLocal 结果再加在线结果。这里是内存缓存，不是数据库迁移或全文索引。
 
-预加载的另一处重复请求由 `c7bdf04` 收敛：`LyricsSessionController.attemptedPreloadSpotifyIDs` 只在 isPreload 路径使用运行期内存集合，任何结果（包括 review/无结果）本次运行仅尝试一次；`preloadedRecordingIDs` 另外记录成功项，真正播放仍走正常加载。`PlaybackState.preloadUpcomingLyrics` 只预取歌词，不进 AI 翻译；`SpotifyCatalogService.upcomingTracks` 默认取接下来的两首。
+预加载的另一处重复请求由 `c7bdf04` 收敛。现用 `LyricsSessionController.attemptedPreloadRecordingIDs` 在 isPreload 路径按录音去重，包括需要核对和无歌词结果；`preloadedRecordingIDs` 记录成功项，真正播放仍走正常加载。`PlaybackState.preloadUpcomingLyrics` 只预取歌词，不进 AI 翻译。
+
+2026-11-19：Spotify 预加载复用 `PlaylistBrowserModel` 已确认的队列，不另外读一次 API。候选从可见队列取接下来的两首不同录音，跳过已标记跳过的歌曲及当前录音。Apple Music 读取同一份已核对当前位置的歌单后续；已开启随机、单曲循环或顺序不可确认时保留浏览但不预取。按持久 ID 去重，播放时可以沿用预取的版本，即使队列与播放快照的专辑或长度不同。两播放器切换时取消预加载，单播放器换歌时交给实时会话加载新曲，余下预取等新队列确认后再调整。
 
 现有 `LibraryIdentitySearchContractTests`、`testReviewedQueueSongIsPreloadedOnceButStillSearchedWhenPlayed`、`testPreloadedQueueTrackPlaysFromStorageWithoutAnotherSearch` 是回归入口。下次保留本地先出、单曲失效、正常播放不受尝试集合阻挡和绝不提前 AI 翻译。
 

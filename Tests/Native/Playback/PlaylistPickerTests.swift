@@ -213,8 +213,15 @@ final class PlaylistPickerTests: XCTestCase {
             return (200, ["items": songs.map { ["track": $0] }, "next": NSNull(), "total": 3])
         }
         defer { PlaylistFixtureURLProtocol.response = nil }
-        browser.loadQueue()
+        let current = Track(title: "Current", artist: "Artist", album: "Album", duration: 180, spotifyId: "track-0")
+        var preloads: [[String]] = []
+        browser.onConfirmedQueueChanged = { [weak browser] in
+            if let browser { preloads.append(browser.lyricsPreloadCandidates(after: current, source: .spotifyDesktop).map(\.title)) }
+        }
+        browser.currentTrackChanged(to: current)
         await waitUntil { browser.tracks.count == 3 }
+        XCTAssertEqual(preloads, [["Song 1", "Song 2"]])
+        XCTAssertTrue(browser.lyricsPreloadCandidates(after: current, source: .appleMusic).isEmpty)
         guard browser.tracks.count == 3 else { return }
         browser.loadQueue()
         XCTAssertEqual(browser.queue.count, 3, "Refreshing keeps the last known queue visible")
@@ -480,7 +487,7 @@ final class PlaylistPickerTests: XCTestCase {
                 played.fulfill()
                 return "1"
             }
-            if script.contains("current playlist") { return "\(playlist)\u{1e}夜间驾驶\u{1f}" + rows }
+            if script.contains("current playlist") { return "\(playlist)\u{1e}夜间驾驶\u{1e}true\u{1f}" + rows }
             if script.contains("favorited is true") { liked.fulfill() }
             return rows
         }
@@ -490,12 +497,17 @@ final class PlaylistPickerTests: XCTestCase {
                                           source: .appleMusic, music: music, accessToken: { _ in
             XCTFail("Music 歌单不应向 Spotify 请求令牌"); throw CancellationError()
         }, advanceQueue: { _ in XCTFail("Music 歌单点选不能逐首跳转") })
-        browser.currentTrackChanged(to: try XCTUnwrap(libraryRows.first).track)
-        browser.loadQueue()
+        let current = Track(title: "正在播放", artist: "歌手", album: "专辑", duration: 160, spotifyId: "applemusic:1234567890abcdef")
+        var preloads: [[Track]] = []
+        browser.onConfirmedQueueChanged = { [weak browser] in
+            if let browser { preloads.append(browser.lyricsPreloadCandidates(after: current, source: .appleMusic)) }
+        }
+        browser.currentTrackChanged(to: current, loadForLyrics: true)
         await waitUntil { browser.hasLoadedQueue }
         XCTAssertEqual(browser.queueContextName, "夜间驾驶")
         XCTAssertEqual(browser.queueItems.map(\.offset), [4, 6])
         let last = try XCTUnwrap(browser.queueItems.last)
+        XCTAssertEqual(preloads, [[last.track]], "A later occurrence of the same song should use one preload")
         XCTAssertEqual(last.track.duration, 125.5)
         XCTAssertEqual(TrackIdentity.playbackID(for: last.track), "applemusic:" + song.lowercased())
         browser.skipQueuedTrack(last)
@@ -510,6 +522,22 @@ final class PlaylistPickerTests: XCTestCase {
         XCTAssertTrue(browser.queueItems.isEmpty)
         XCTAssertNil(browser.queueContextName)
         XCTAssertEqual(browser.selectedID, PlaylistBrowserModel.queueID)
+    }
+
+    func testMusicKeepsBrowsingAvailableWhenThePlaylistIsNotThePlaybackOrder() async {
+        let music = AppleMusicPlaylistCatalog { _, _ in
+            "9BEC9B1282CB0D2F\u{1e}夜间驾驶\u{1e}false\u{1f}4\u{1e}ABCDEF0123456789\u{1e}第二段\u{1e}歌手\u{1e}专辑\u{1e}125.5"
+        }
+        let browser = PlaylistBrowserModel(service: SpotifyCatalogService(), picker: model(FakePlaylistCatalog(rows: [])),
+            source: .appleMusic, music: music, accessToken: { _ in throw CancellationError() }, advanceQueue: { _ in })
+        let current = Track(title: "正在播放", artist: "歌手", album: "专辑", duration: 160, spotifyId: "applemusic:1234567890abcdef")
+        browser.currentTrackChanged(to: current, loadForLyrics: true)
+        await waitUntil { browser.hasLoadedQueue }
+        XCTAssertEqual(browser.queue.map(\.title), ["第二段"])
+        XCTAssertTrue(browser.lyricsPreloadCandidates(after: current, source: .appleMusic).isEmpty)
+        let next = Track(title: "另一首", artist: "歌手", album: "专辑", duration: 160, spotifyId: "applemusic:abcde01234567890")
+        browser.currentTrackChanged(to: next, loadForLyrics: false)
+        XCTAssertFalse(browser.isQueueLoading, "A preload-only request must not opt the browser into continued reads")
     }
 
     func testSwitchingPlayersWhileSpotifyTokenArrivesCannotSendAnOldPlaylistCommand() async {

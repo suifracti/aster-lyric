@@ -61,6 +61,9 @@ public final class PlaylistBrowserModel: ObservableObject {
     private var playTask: Task<Void, Never>?
     private var rawQueue: [Track] = []
     private var currentQueueTrackID: String?
+    private var confirmedQueueTrackID: String?
+    private var followsMusicQueue = false
+    var onConfirmedQueueChanged: (() -> Void)?
     private var skippedQueueOffsets: Set<Int> = []
     private enum ManualPlaybackIntent { case track(String), previous }
     private var manualPlaybackIntent: ManualPlaybackIntent?
@@ -75,6 +78,7 @@ public final class PlaylistBrowserModel: ObservableObject {
         skippedQueueOffsets.insert(item.offset)
         queue = queueItems.map(\.track)
         syncQueueSelection()
+        onConfirmedQueueChanged?()
     }
     public func noteManualPlayback(_ track: Track? = nil) {
         guard supportsQueueEdits else { return }
@@ -106,6 +110,20 @@ public final class PlaylistBrowserModel: ObservableObject {
             return SpotifyPlaylistTrack(track: track, offset: offset)
         }
     }
+
+    /// Keep the browsing tail during a refresh, but preload only a confirmed queue for the current recording.
+    func lyricsPreloadCandidates(after track: Track, source expectedSource: PlaybackSourceIdentity) -> [Track] {
+        guard source == expectedSource, let id = PlaybackState.playlistRequestTrackID(for: track, source: source),
+              id == confirmedQueueTrackID, source != .appleMusic || musicContinuation?.canPreloadLyrics == true else { return [] }
+        var seen: Set<String> = [id]
+        var candidates: [Track] = []
+        for item in queue {
+            guard let key = PlaybackState.playlistRequestTrackID(for: item, source: source), seen.insert(key).inserted else { continue }
+            candidates.append(item)
+            if candidates.count == 2 { break }
+        }
+        return candidates
+    }
     public func jumpToQueuedTrack(at offset: Int, expecting track: Track? = nil) {
         if let track {
             guard let row = queueItems.first(where: { $0.offset == offset }),
@@ -122,25 +140,27 @@ public final class PlaylistBrowserModel: ObservableObject {
         advanceQueue(offset + 1)
     }
     @discardableResult
-    public func currentTrackChanged(to track: Track) -> Bool {
+    public func currentTrackChanged(to track: Track, loadForLyrics: Bool = false) -> Bool {
         if source == .appleMusic {
-            let shouldRefresh = isQueueLoading || hasLoadedQueue
+            let shouldRefresh = followsMusicQueue || (loadForLyrics && TrackIdentity.appleMusicPersistentID(track.spotifyId) != nil)
             queueTask?.cancel()
             queueTask = nil
             isQueueLoading = false
             hasLoadedQueue = false
             currentQueueTrackID = TrackIdentity.playbackID(for: track)
+            confirmedQueueTrackID = nil
             musicContinuation = nil
             queue = []
             queueNotice = nil
             syncQueueSelection()
-            if shouldRefresh { loadQueue() }
+            if shouldRefresh { loadQueueSnapshot() }
             return false
         }
         guard supportsQueueEdits else { return false }
         let id = queueKey(track)
         if let id, currentQueueTrackID == id { return false }
         currentQueueTrackID = id
+        confirmedQueueTrackID = nil
         let shouldSkip = advanceQueueSnapshot(to: id)
         queue = queueItems.map(\.track)
         syncQueueSelection()
@@ -217,8 +237,10 @@ public final class PlaylistBrowserModel: ObservableObject {
         rawQueue = []
         musicContinuation = nil
         currentQueueTrackID = nil
+        confirmedQueueTrackID = nil
         skippedQueueOffsets = []
         manualPlaybackIntent = nil
+        followsMusicQueue = false
         queue = []
         if selectedID == Self.queueID { tracks = [] }
         queueNotice = nil
@@ -236,6 +258,13 @@ public final class PlaylistBrowserModel: ObservableObject {
         select(selectedID)
     }
     public func loadQueue() {
+        if source == .appleMusic { followsMusicQueue = true }
+        loadQueueSnapshot()
+    }
+
+    func loadQueueForLyrics() { loadQueueSnapshot() }
+
+    private func loadQueueSnapshot() {
         guard !isQueueLoading, source == .appleMusic || supportsQueueEdits else { return }
         isQueueLoading = true
         queueTask = Task {
@@ -246,10 +275,7 @@ public final class PlaylistBrowserModel: ObservableObject {
                     let context = try await music.continuation(after: currentQueueTrackID)
                     try Task.checkCancellation()
                     musicContinuation = context
-                    queue = queueItems.map(\.track)
-                    hasLoadedQueue = true
-                    queueNotice = nil
-                    syncQueueSelection()
+                    publishLoadedQueue()
                 } catch { if !Task.isCancelled { queueNotice = error.localizedDescription } }
                 return
             }
@@ -265,10 +291,7 @@ public final class PlaylistBrowserModel: ObservableObject {
                         nextQueue.removeFirst(nextQueue.prefix { queueKey($0) == id }.count)
                     }
                     replaceQueueSnapshot(with: nextQueue)
-                    queue = queueItems.map(\.track)
-                    hasLoadedQueue = true
-                    syncQueueSelection()
-                    queueNotice = nil
+                    publishLoadedQueue()
                     LyricsE2ELog.log("QUEUE load seconds=\(String(format: "%.3f", Date().timeIntervalSince(started))) count=\(upcoming.count)")
                     return
                 } catch {
@@ -283,6 +306,16 @@ public final class PlaylistBrowserModel: ObservableObject {
             }
         }
     }
+
+    private func publishLoadedQueue() {
+        confirmedQueueTrackID = currentQueueTrackID
+        queue = queueItems.map(\.track)
+        hasLoadedQueue = true
+        syncQueueSelection()
+        queueNotice = nil
+        onConfirmedQueueChanged?()
+    }
+
     public func select(_ id: String) {
         tracksTask?.cancel()
         selectedID = id

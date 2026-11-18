@@ -273,7 +273,9 @@ Based on real-song screenshots of Light source, 花の塔 and Runa: two bright c
 
 **Preloading:**
 - Setting 「提前加载下一首歌词」 in 设置 → 歌词, default on.
-- When a track starts, read the Spotify queue and search lyrics for the next 2 tracks in the background, with the same rules and storage as a normal search.
+- Spotify uses the same confirmed queue as the player panel. Up to two distinct upcoming recordings are preloaded, following the visible queue and its skip marks.
+- Apple Music preloads from the verified current playlist when shuffle is off and repeat-one is off. The Music app manages manual changes to Playing Next.
+- Both players use the same lookup rules and storage as a normal lyric search.
 - Preloading only searches lyrics; AI translation is never preloaded and runs only when the track actually plays.
 - Stats lines from preloading carry `preload: true`.
 

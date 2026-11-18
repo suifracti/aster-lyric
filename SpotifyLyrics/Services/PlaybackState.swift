@@ -162,7 +162,7 @@ public final class PlaybackState: ObservableObject {
     private var playbackSourceRevision: UInt64 = 0
     private var refreshRequestedWhileBusy = false
     private var providerRefreshTask: Task<Void, Never>?
-    private var lyricsPreloadTask: Task<Void, Never>?
+    private var lyricsPreloads: [String: Task<Void, Never>] = [:]
     private var preloadLyricsProviders: [LyricsProvider] = []
     private var persistencePreparationTask: Task<Void, Never>?
     private var searchPreviewTask: Task<Void, Never>?
@@ -382,7 +382,13 @@ public final class PlaybackState: ObservableObject {
         resolvedSettings.$preloadUpcomingLyrics
             .dropFirst()
             .sink { [weak self] enabled in
-                if !enabled { self?.lyricsPreloadTask?.cancel() }
+                if enabled {
+                    Task { @MainActor [weak self] in
+                        guard let self, self.hasLiveTrack, self.isLyricsPreloadEnabled,
+                              self.playlistBrowser.source == self.playbackSourceIdentity else { return }
+                        self.playlistBrowser.loadQueueForLyrics()
+                    }
+                } else { self?.cancelLyricsPreloads() }
             }
             .store(in: &self.settingsCancellables)
         resolvedSettings.$lyricsProviderConfiguration
@@ -539,7 +545,7 @@ public final class PlaybackState: ObservableObject {
 
     deinit {
         desktopArtworkTask?.cancel()
-        lyricsPreloadTask?.cancel()
+        lyricsPreloads.values.forEach { $0.cancel() }
         timer?.invalidate()
         calibrationTimer?.invalidate()
         providerRefreshTask?.cancel()
@@ -1738,7 +1744,7 @@ public final class PlaybackState: ObservableObject {
             mode: mode,
             settings: settingsStore
         )
-        lyricsPreloadTask?.cancel()
+        cancelLyricsPreloads()
         preloadLyricsProviders = providers
         lyricsSession.updateProviders(providers)
         searchPreviewSession.updateProviders(providers)
@@ -1818,31 +1824,31 @@ public final class PlaybackState: ObservableObject {
         return await session.completeBatchLyrics(track: track)
     }
 
+    private var isLyricsPreloadEnabled: Bool {
+        settingsStore.preloadUpcomingLyrics && usesConfiguredLyricsProviders
+    }
+
+    private func cancelLyricsPreloads() {
+        lyricsPreloads.values.forEach { $0.cancel() }
+        lyricsPreloads.removeAll()
+    }
+
     private func preloadUpcomingLyrics() {
-        lyricsPreloadTask?.cancel()
-        guard settingsStore.preloadUpcomingLyrics, hasLiveTrack, usesConfiguredLyricsProviders,
-              playbackSourceIdentity == .spotifyDesktop else { return }
+        guard isLyricsPreloadEnabled, hasLiveTrack, !isMockPreviewMode else { return }
+        let source = playbackSourceIdentity
+        let candidates = playlistBrowser.lyricsPreloadCandidates(after: currentTrack, source: source).compactMap { track in
+            Self.playlistRequestTrackID(for: track, source: source).map { (id: $0, track: track) }
+        }
+        let previous = lyricsPreloads.keys.filter { id in !candidates.contains { $0.id == id } }
+        for id in previous { lyricsPreloads.removeValue(forKey: id)?.cancel() }
         let providers = preloadLyricsProviders
         let repository = lyricsRepository
-        let authorization = spotifyAuthorizationManager
-        let service = spotifyLibraryService
-        lyricsPreloadTask = Task {
-            do {
-                let token = try await authorization.accessToken(requiredScopes: SpotifyOAuthConfiguration.playbackScopes)
-                let tracks = try await service.upcomingTracks(accessToken: token)
-                try Task.checkCancellation()
-                LyricsE2ELog.log("PRELOAD queue count=\(tracks.count)")
-                await withTaskGroup(of: Void.self) { group in
-                    for track in tracks {
-                        group.addTask { @MainActor in
-                            let session = LyricsSessionController(providers: providers, repository: repository,
-                                spotifyArtistResolver: .shared, sourceHealth: .shared, isPreload: true)
-                            await session.loadForPreloading(track: track)
-                        }
-                    }
-                }
-            } catch {
-                if !Task.isCancelled { LyricsE2ELog.log("PRELOAD unavailable error=\(error.localizedDescription)") }
+        for (id, track) in candidates where lyricsPreloads[id] == nil {
+            lyricsPreloads[id] = Task {
+                guard !Task.isCancelled else { return }
+                let session = LyricsSessionController(providers: providers, repository: repository,
+                    spotifyArtistResolver: .shared, sourceHealth: .shared, isPreload: true)
+                await session.loadForPreloading(track: track)
             }
         }
     }
@@ -2089,12 +2095,16 @@ public final class PlaybackState: ObservableObject {
         )
     }()
 
-    public lazy var playlistBrowser = PlaylistBrowserModel(service: spotifyLibraryService, picker: playlistPicker,
-        source: playlistCatalogSource, music: musicPlaylistCatalog,
-        accessToken: { [weak self] scopes in
-            guard let self else { throw SpotifyAuthorizationError.notAuthorized }
-            return try await self.spotifyAuthorizationManager.accessToken(requiredScopes: scopes)
-        }, advanceQueue: { [weak self] count in self?.advanceQueuedTracks(count) })
+    public lazy var playlistBrowser: PlaylistBrowserModel = {
+        let browser = PlaylistBrowserModel(service: spotifyLibraryService, picker: playlistPicker,
+            source: playlistCatalogSource, music: musicPlaylistCatalog,
+            accessToken: { [weak self] scopes in
+                guard let self else { throw SpotifyAuthorizationError.notAuthorized }
+                return try await self.spotifyAuthorizationManager.accessToken(requiredScopes: scopes)
+            }, advanceQueue: { [weak self] count in self?.advanceQueuedTracks(count) })
+        browser.onConfirmedQueueChanged = { [weak self] in self?.preloadUpcomingLyrics() }
+        return browser
+    }()
 
     func advanceQueuedTracks(_ count: Int) {
         guard playbackSourceIdentity == .spotifyDesktop else { return }
@@ -3356,7 +3366,11 @@ public final class PlaybackState: ObservableObject {
         if routeChanged {
             playbackRecordingRevision &+= 1
             cancelLyricLineLoop()
-            if playlistBrowser.currentTrackChanged(to: nextTrack) {
+            // The newly playing track has its own live session. The other
+            // preload may still be next, so reconcile it with the new queue.
+            if let nextID { lyricsPreloads.removeValue(forKey: nextID)?.cancel() }
+            else { cancelLyricsPreloads() }
+            if playlistBrowser.currentTrackChanged(to: nextTrack, loadForLyrics: isLyricsPreloadEnabled) {
                 LyricsE2ELog.log("QUEUE skip consumed id=\(nextID ?? "unknown")")
                 runProviderCommand { try await $0.next() }
                 return
@@ -3402,7 +3416,6 @@ public final class PlaybackState: ObservableObject {
                 identity: nextIdentity,
                 automaticallySearch: settingsStore.autoSearchLyricsOnTrackChange
             )
-            preloadUpcomingLyrics()
 #if DEBUG
             let newGeneration = lyricsSession.revision
             let nowIso = ISO8601DateFormatter().string(from: Date())
@@ -3525,6 +3538,7 @@ public final class PlaybackState: ObservableObject {
     private func updatePlaybackSourceIdentity(_ next: PlaybackSourceIdentity) {
         guard playbackSourceIdentity != next else { return }
         let previous = playbackSourceIdentity
+        cancelLyricsPreloads()
         playbackSourceRevision &+= 1
         changingPlayerModes = false
         pendingPlayerModes.removeAll()

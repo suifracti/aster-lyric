@@ -55,7 +55,7 @@ public final class LyricsSessionController: ObservableObject {
     private let isPreload: Bool
     private let isBatch: Bool
     private var batchSaveDisposition: LyricsPersistenceSaveDisposition?
-    private static var attemptedPreloadSpotifyIDs: Set<String> = []
+    private static var attemptedPreloadRecordingIDs: Set<String> = []
     private static var preloadedRecordingIDs: Set<String> = []
     private var requestTask: Task<Void, Never>?
     private var manualAdoptionRequestIDs: [TrackIdentity: UUID] = [:]
@@ -147,8 +147,11 @@ public final class LyricsSessionController: ObservableObject {
     /// translation observer. Wait through persistence before releasing the session.
     func loadForPreloading(track: Track) async {
         guard !Task.isCancelled else { return }
-        if isPreload, let id = TrackIdentity.spotifyRequestTrackID(track.spotifyId),
-           !Self.attemptedPreloadSpotifyIDs.insert(id).inserted { return }
+        if isPreload {
+            let id = TrackIdentity.appleMusicPersistentID(track.spotifyId).map { "applemusic:\($0)" }
+                ?? TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString)
+            if let id, !Self.attemptedPreloadRecordingIDs.insert(id).inserted { return }
+        }
         begin(track: track, identity: TrackIdentity(track: track))
         let task = requestTask
         await withTaskCancellationHandler {

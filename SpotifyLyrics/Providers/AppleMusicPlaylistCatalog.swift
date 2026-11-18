@@ -127,6 +127,7 @@ public final class AppleMusicPlaylistCatalog: PlaylistCataloging {
         let playlistID: String
         let name: String
         let tracks: [SpotifyPlaylistTrack]
+        let canPreloadLyrics: Bool
     }
 
     func tracks(in playlistID: String) async throws -> [SpotifyPlaylistTrack] {
@@ -164,7 +165,11 @@ public final class AppleMusicPlaylistCatalog: PlaylistCataloging {
                 \(check)
                 set currentIndex to index of current track
                 if currentIndex < 1 or (persistent ID of track currentIndex of sourcePlaylist) is not currentID then return ""
-                set headerText to (persistent ID of sourcePlaylist as text) & (character id 30) & (name of sourcePlaylist as text) & (character id 31)
+                set canPreloadLyrics to false
+                try
+                    set canPreloadLyrics to (not (shuffle enabled)) and ((song repeat) is not one)
+                end try
+                set headerText to (persistent ID of sourcePlaylist as text) & (character id 30) & (name of sourcePlaylist as text) & (character id 30) & (canPreloadLyrics as text) & (character id 31)
                 set trackTotal to count tracks of sourcePlaylist
             on error number -1728
                 return ""
@@ -180,8 +185,9 @@ public final class AppleMusicPlaylistCatalog: PlaylistCataloging {
         """
         guard let output = try await run(script, timeout: 8), let split = output.range(of: Self.rowSeparator) else { return nil }
         let header = output[..<split.lowerBound].components(separatedBy: Self.fieldSeparator)
-        guard header.count == 2, let id = Self.persistentPlaylistID(header[0]) else { return nil }
-        return Continuation(playlistID: id, name: header[1], tracks: Self.parseTracks(String(output[split.upperBound...])))
+        guard (2...3).contains(header.count), let id = Self.persistentPlaylistID(header[0]) else { return nil }
+        return Continuation(playlistID: id, name: header[1], tracks: Self.parseTracks(String(output[split.upperBound...])),
+                            canPreloadLyrics: header.count == 3 && header[2] == "true")
     }
 
     func play(_ item: SpotifyPlaylistTrack, in playlistID: String) async throws {
