@@ -1179,7 +1179,7 @@ enum V3LayoutPrewarmer {
         let lowerBound: CGFloat = compact ? 22 : 28
         let layerPenalty = CGFloat(max(0, layerCount - 2)) * 1.7
         let activeBaseSize = max(lowerBound, CGFloat(upperBound) - layerPenalty) * presentationScale
-        let readableLineWidth = min(max(240, availableWidth), LyricsDesignTokens.readableLyricLineMaxWidth * presentationScale)
+        let readableLineWidth = min(max(240, availableWidth), LyricsDesignTokens.readableLyricLineMaxWidth * presentationScale * V3LyricWidth.scale)
 
         let effectiveText = presentation.originalText
         let hasRuby = preferences.showOriginal && presentation.hasRuby && (isPinyin ? preferences.showPinyin : true) && preferences.kanaDisplayMode == .inlineRuby
@@ -1614,7 +1614,8 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
     }
 
     private var readableLineWidth: CGFloat {
-        min(bigLineAvailableHeight == nil ? max(240, availableWidth) : max(1, availableWidth), LyricsDesignTokens.readableLyricLineMaxWidth * presentationScale)
+        min(bigLineAvailableHeight == nil ? max(240, availableWidth) : max(1, availableWidth),
+            LyricsDesignTokens.readableLyricLineMaxWidth * presentationScale * V3LyricWidth.scale)
     }
 
     fileprivate static let balancedTextCache: NSCache<NSString, NSString> = {

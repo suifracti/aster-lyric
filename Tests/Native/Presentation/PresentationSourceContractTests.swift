@@ -684,3 +684,32 @@ final class V3KeepsakeTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent(print.fileName).path))
     }
 }
+
+final class V3SceneLayerTests: XCTestCase {
+    @MainActor
+    func testSceneStylesAreShownButNeverSavedAndUserChangesWin() throws {
+        let suite = "scene-layer-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        settings.v3LyricStyle = .karaoke
+        settings.v3PlaybackPresentation = .standard
+
+        let look = V3Room.stars.look(accent: .white)
+        settings.applySceneLayer(lyricStyle: look.lyricStyle, playback: look.playback, progress: look.progress)
+        XCTAssertEqual(settings.v3LyricStyle, .lightColor)
+        XCTAssertEqual(settings.v3PlaybackPresentation, .windowEdge)
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).v3LyricStyle, .karaoke, "the scene's style is not saved")
+
+        settings.applySceneLayer(lyricStyle: nil, playback: nil, progress: nil)
+        XCTAssertEqual(settings.v3LyricStyle, .karaoke)
+        XCTAssertEqual(settings.v3PlaybackPresentation, .standard)
+
+        // A choice made while a scene shows is the user's and survives the scene.
+        settings.applySceneLayer(lyricStyle: .depth, playback: nil, progress: nil)
+        settings.v3LyricStyle = .typewriter
+        settings.applySceneLayer(lyricStyle: nil, playback: nil, progress: nil)
+        XCTAssertEqual(settings.v3LyricStyle, .typewriter)
+        XCTAssertEqual(AppSettingsStore(defaults: defaults).v3LyricStyle, .typewriter)
+    }
+}

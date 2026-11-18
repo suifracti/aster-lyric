@@ -414,10 +414,18 @@ private struct V3TransportClockLabel: View {
 /// turning every individual action into a separate floating object.
 struct V3PlaybackSurface: View {
     var cornerRadius: CGFloat = 18
+    @Environment(\.v3SceneChrome) private var chrome
 
     var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(Color.black.opacity(0.24))
+        let shape = RoundedRectangle(cornerRadius: chrome?.cardRadius ?? cornerRadius, style: .continuous)
+        ZStack {
+            shape.fill(Color.black.opacity(0.24))
+            if let chrome {
+                shape.fill(chrome.tint.opacity(chrome.strength * 0.8))
+                shape.strokeBorder(chrome.tint.opacity(0.3), lineWidth: 0.8)
+            }
+        }
+        .animation(.easeInOut(duration: 0.6), value: chrome)
     }
 }
 

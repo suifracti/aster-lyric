@@ -743,6 +743,8 @@ struct V3SceneBackLayer: View {
     private var chorus: Bool { context.chorus && context.opensOnChorus && playing }
     private var light: Double { v3SceneLight(context.luminance) }
     @State private var linePulse = 0.0
+    /// A scene's tint, mixed with the cover's colour so the two read as one picture.
+    private func tone(_ base: Color, _ share: Double = 0.4) -> Color { base.v3Mixed(with: context.accent, share) }
 
     var body: some View {
         GeometryReader { geometry in
@@ -756,14 +758,14 @@ struct V3SceneBackLayer: View {
                     Color(red: 0.75, green: 0.8, blue: 0.86).opacity(0.10 * light).blendMode(.screen)
                 case .aurora:
                     // A darker sky so the light has somewhere to glow.
-                    Color(red: 0.02, green: 0.04, blue: 0.12).opacity(0.3 + 0.3 * context.luminance).blendMode(.multiply)
+                    tone(Color(red: 0.02, green: 0.04, blue: 0.12), 0.3).opacity(0.3 + 0.3 * context.luminance).blendMode(.multiply)
                     V3Aurora(size: size, accent: context.accent,
                              energy: (0.95 + (chorus ? 0.45 : 0) + 0.35 * linePulse) * max(0.75, light), running: moving)
                 case .water:
-                    Color(red: 0.05, green: 0.30, blue: 0.42).opacity(0.35).blendMode(.multiply)
+                    tone(Color(red: 0.05, green: 0.30, blue: 0.42), 0.3).opacity(0.35).blendMode(.multiply)
                 case .rain, .clearNight:
                     // A cooler, darker night, the window's cross cast over the picture, and the lamp.
-                    Color(red: 0.05, green: 0.08, blue: 0.16).opacity(0.28).blendMode(.multiply)
+                    tone(Color(red: 0.05, green: 0.08, blue: 0.16)).opacity(0.28).blendMode(.multiply)
                     V3WindowShadow(size: size)
                     RadialGradient(colors: [Color(red: 1, green: 0.70, blue: 0.40).opacity(0.30 * light), .clear],
                                    center: UnitPoint(x: 1.0, y: 1.0), startRadius: 0, endRadius: max(size.width, size.height) * 0.6)
@@ -771,7 +773,7 @@ struct V3SceneBackLayer: View {
                     if scene == .clearNight { V3Speckle(seed: 41, count: 90, color: .white, opacity: 0.5).mask(LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .center)) }
                     if scene == .rain, chorus { V3Lightning(running: moving) }
                 case .train:
-                    Color(red: 0.03, green: 0.04, blue: 0.08).opacity(0.35).blendMode(.multiply)
+                    tone(Color(red: 0.03, green: 0.04, blue: 0.08)).opacity(0.35).blendMode(.multiply)
                     V3PassingLights(playing: moving, size: size, speed: speed * (chorus ? 1.25 : 1), density: chorus ? 2 : 1)
                     if chorus {
                         // The bridge: the city spread out below.
@@ -779,11 +781,11 @@ struct V3SceneBackLayer: View {
                             .blendMode(.screen).transition(.opacity)
                     }
                 case .snow:
-                    Color(red: 0.55, green: 0.65, blue: 0.85).opacity(0.10).blendMode(.screen)
+                    tone(Color(red: 0.55, green: 0.65, blue: 0.85)).opacity(0.10).blendMode(.screen)
                     V3Firelight(size: size)
                 case .book:
                     // Old paper under a lamp: sepia, grain, warm light from the upper left.
-                    Color(red: 0.62, green: 0.48, blue: 0.30).opacity(0.30).blendMode(.multiply)
+                    tone(Color(red: 0.62, green: 0.48, blue: 0.30), 0.3).opacity(0.30).blendMode(.multiply)
                     V3Speckle(seed: 31, count: 1500, color: Color(red: 0.95, green: 0.85, blue: 0.65), opacity: 0.10)
                     RadialGradient(colors: [Color(red: 1, green: 0.85, blue: 0.6).opacity(0.28), .clear],
                                    center: UnitPoint(x: 0.1, y: 0.0), startRadius: 0, endRadius: max(size.width, size.height) * 0.8)
@@ -793,7 +795,7 @@ struct V3SceneBackLayer: View {
                     Color(red: 1, green: 0.93, blue: 0.80).opacity(0.08).blendMode(.screen)
                     Color(red: 1, green: 0.86, blue: 0.68).opacity(0.14).blendMode(.multiply)
                 case .stars:
-                    Color(red: 0.02, green: 0.03, blue: 0.10).opacity(0.55).blendMode(.multiply)
+                    tone(Color(red: 0.02, green: 0.03, blue: 0.10), 0.35).opacity(0.55).blendMode(.multiply)
                     V3Speckle(seed: 9, count: 320, color: .white, opacity: 0.55)
                     V3Constellation(size: size, seed: context.trackKey, count: context.lineCount,
                                     current: context.lineIndex, playing: moving)
@@ -829,6 +831,7 @@ struct V3SceneCoverLayer: View {
             let size = geometry.size
             ZStack(alignment: .topLeading) {
                 if let cover {
+                    V3CoverBlend(scene: scene, cover: cover, accent: context.accent)
                     switch scene {
                     case .polaroid:
                         V3PolaroidMount(cover: cover, line: context.currentLine, shutterAt: shutterAt,
@@ -862,6 +865,8 @@ struct V3SceneGlassLayer: View {
     let scene: V3Room
     let context: V3RoomContext
     let playing: Bool
+    /// The foreground cover: the glass thins out over it so the cover stays itself.
+    var cover: CGRect? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var turnedAt: Date?
     @State private var flareAt: Date?
@@ -915,6 +920,21 @@ struct V3SceneGlassLayer: View {
                 }
             }
             .frame(width: size.width, height: size.height)
+            .mask {
+                ZStack {
+                    Rectangle().fill(.white)
+                    if let cover {
+                        // A soft hole where the cover is; a quarter of the effect still crosses it.
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(.black.opacity(0.75))
+                            .frame(width: cover.width + 16, height: cover.height + 16)
+                            .position(x: cover.midX, y: cover.midY)
+                            .blur(radius: 12)
+                            .blendMode(.destinationOut)
+                    }
+                }
+                .compositingGroup()
+            }
             .onChange(of: size, initial: true) { _, next in canvasSize = next }
             .animation(.easeInOut(duration: 1.2), value: chorus)
         }
@@ -1153,6 +1173,8 @@ struct V3ScenePicker: View {
                     .font(.system(size: 11.5)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
+                Toggle("整套换装", isOn: $settings.v3RoomRestyles)
+                    .help("开：情境同时换上自己的版式、歌词位置与效果、播放栏和控件质感。关：只加情境本身，版式保持你自己的设置。你的设置不会被改写。")
                 Toggle("副歌时刻", isOn: $settings.v3RoomOpensOnChorus)
                     .help("唱到副歌时，情境有自己的变化：雨更大、开上桥、划过流星、按下快门……")
             }
@@ -1399,7 +1421,7 @@ struct V3FogGlass: View {
             let now = timeline.date.timeIntervalSinceReferenceDate
             ZStack {
                 Rectangle().fill(.ultraThinMaterial)
-                Color.white.opacity(thin ? 0.06 : 0.12)
+                Color.white.opacity(thin ? 0.03 : 0.06)
                 V3Speckle(seed: 53, count: 700, color: .white, opacity: 0.35)
             }
             .mask {
@@ -1408,10 +1430,10 @@ struct V3FogGlass: View {
                     context.blendMode = .destinationOut
                     // Where the lyrics are read, the glass stays half clear, as if breathed on less.
                     let reading = CGRect(x: canvas.width * 0.3, y: canvas.height * 0.12, width: canvas.width * 0.76, height: canvas.height * 0.76)
-                    context.fill(Path(ellipseIn: reading), with: .radialGradient(
-                        Gradient(stops: [.init(color: .black.opacity(0.6), location: 0), .init(color: .black.opacity(0.42), location: 0.45),
-                                         .init(color: .black.opacity(0.15), location: 0.8), .init(color: .clear, location: 1)]),
-                        center: CGPoint(x: reading.midX, y: reading.midY), startRadius: 0, endRadius: reading.width * 0.62))
+                    context.fill(Path(CGRect(origin: .zero, size: canvas)), with: .radialGradient(
+                        Gradient(stops: [.init(color: .black.opacity(0.55), location: 0), .init(color: .black.opacity(0.4), location: 0.35),
+                                         .init(color: .black.opacity(0.2), location: 0.7), .init(color: .clear, location: 1)]),
+                        center: CGPoint(x: reading.midX, y: reading.midY), startRadius: 0, endRadius: max(reading.width, reading.height) * 0.95))
                     let trail = V3SceneInput.shared.trail
                     for (index, mark) in trail.enumerated() {
                         let age = now - mark.time
@@ -1627,5 +1649,168 @@ struct V3MiniPolaroid: View {
         .shadow(color: .black.opacity(0.4), radius: 10, y: 5)
         .allowsHitTesting(false)
         .task(id: artworkURL) { if let artworkURL { cover = await ArtworkImageLoader.shared.image(for: artworkURL) } }
+    }
+}
+
+// MARK: - Each scene's whole look
+
+/// How a scene dresses the controls: the toolbar, player card and edge pill take
+/// its material instead of plain glass.
+struct V3SceneChrome: Equatable {
+    var tint: Color
+    var strength: Double
+    /// Corner radius for the player card; nil keeps the usual one.
+    var cardRadius: CGFloat?
+}
+
+private struct V3SceneChromeKey: EnvironmentKey { static let defaultValue: V3SceneChrome? = nil }
+extension EnvironmentValues {
+    var v3SceneChrome: V3SceneChrome? {
+        get { self[V3SceneChromeKey.self] }
+        set { self[V3SceneChromeKey.self] = newValue }
+    }
+}
+
+/// A scene's layout and lyric treatment. Applied only while the scene is on and
+/// never written over the user's own choices.
+struct V3SceneLook: Equatable {
+    var listeningScene: V3ListeningScene?
+    var lyricsPosition: String?
+    var lyricStyle: V3LyricStyle?
+    var playback: V3PlaybackPresentation?
+    var progress: V3ProgressStyle?
+    var chrome: V3SceneChrome?
+    /// 行宽 for this scene; nil keeps the user's.
+    var lyricWidth: Double?
+}
+
+extension V3Room {
+    /// Chosen so each scene reads as one picture: where the lyrics sit, how the
+    /// sung line is drawn, how the player shows, and what the controls are made of.
+    func look(accent: Color) -> V3SceneLook {
+        switch self {
+        case .off, .weather:
+            return V3SceneLook()
+        case .rain:
+            return V3SceneLook(listeningScene: .originalAmbient, lyricsPosition: "right", lyricStyle: .depth, playback: .standard,
+                               progress: .waveform, chrome: V3SceneChrome(tint: Color(red: 0.55, green: 0.68, blue: 0.85), strength: 0.22, cardRadius: 20))
+        case .clearNight:
+            return V3SceneLook(listeningScene: .originalAmbient, lyricsPosition: "right", lyricStyle: .standard, playback: .standard,
+                               progress: .standard, chrome: V3SceneChrome(tint: Color(red: 0.45, green: 0.52, blue: 0.75), strength: 0.2, cardRadius: 20))
+        case .fog:
+            return V3SceneLook(listeningScene: .focusedLyrics, lyricsPosition: "center", lyricStyle: .standard, playback: .onHover,
+                               progress: .standard, chrome: V3SceneChrome(tint: .white, strength: 0.28, cardRadius: 24), lyricWidth: 1.35)
+        case .snow:
+            return V3SceneLook(listeningScene: .originalAmbient, lyricsPosition: "right", lyricStyle: .lightColor, playback: .standard,
+                               progress: .standard, chrome: V3SceneChrome(tint: Color(red: 1, green: 0.88, blue: 0.74), strength: 0.24, cardRadius: 22))
+        case .train:
+            return V3SceneLook(listeningScene: .coverPhoto, lyricsPosition: "left", lyricStyle: .single, playback: .standard,
+                               progress: .lyricTicks, chrome: V3SceneChrome(tint: Color(white: 0.55), strength: 0.3, cardRadius: 28), lyricWidth: 1.35)
+        case .aurora:
+            return V3SceneLook(listeningScene: .flowingField, lyricsPosition: "center", lyricStyle: .lightColor, playback: .onHover,
+                               progress: .standard, chrome: V3SceneChrome(tint: accent, strength: 0.2, cardRadius: nil), lyricWidth: 1.35)
+        case .water:
+            return V3SceneLook(listeningScene: .flowingField, lyricsPosition: "center", lyricStyle: .depth, playback: .onHover,
+                               progress: .waveform, chrome: V3SceneChrome(tint: Color(red: 0.45, green: 0.88, blue: 0.95), strength: 0.22, cardRadius: 26), lyricWidth: 1.2)
+        case .book:
+            return V3SceneLook(listeningScene: .linerNotes, lyricsPosition: nil, lyricStyle: .typewriter, playback: .standard,
+                               progress: .lyricTicks, chrome: V3SceneChrome(tint: Color(red: 0.82, green: 0.7, blue: 0.5), strength: 0.34, cardRadius: 6))
+        case .polaroid:
+            return V3SceneLook(listeningScene: .originalAmbient, lyricsPosition: "right", lyricStyle: .standard, playback: .standard,
+                               progress: .standard, chrome: V3SceneChrome(tint: Color(red: 0.97, green: 0.95, blue: 0.9), strength: 0.3, cardRadius: 4))
+        case .stars:
+            return V3SceneLook(listeningScene: .focusedLyrics, lyricsPosition: "center", lyricStyle: .lightColor, playback: .windowEdge,
+                               progress: .standard, chrome: V3SceneChrome(tint: Color(red: 0.2, green: 0.25, blue: 0.55), strength: 0.36, cardRadius: nil), lyricWidth: 1.35)
+        case .film:
+            return V3SceneLook(listeningScene: .originalAmbient, lyricsPosition: "right", lyricStyle: .single, playback: .standard,
+                               progress: .standard, chrome: V3SceneChrome(tint: Color(white: 0.08), strength: 0.5, cardRadius: 3), lyricWidth: 1.2)
+        }
+    }
+}
+
+
+/// 行宽: how far a lyric line may run before it wraps. 1 is the established
+/// 680 pt reading measure; 情境 and the 文字 panel can open it up.
+enum V3LyricWidth {
+    nonisolated(unsafe) static var scale: CGFloat = 1
+    static let options: [(String, Double)] = [("标准", 1), ("宽", 1.35), ("满幅", 1.9)]
+}
+
+
+extension Color {
+    /// This colour with a share of another mixed in.
+    func v3Mixed(with other: Color, _ share: Double) -> Color {
+        let a = NSColor(self).usingColorSpace(.sRGB) ?? .black
+        let b = NSColor(other).usingColorSpace(.sRGB) ?? .black
+        let t = CGFloat(min(1, max(0, share)))
+        return Color(red: Double(a.redComponent * (1 - t) + b.redComponent * t),
+                     green: Double(a.greenComponent * (1 - t) + b.greenComponent * t),
+                     blue: Double(a.blueComponent * (1 - t) + b.blueComponent * t))
+    }
+}
+
+/// The cover takes part in the scene instead of sitting under it: a touch of
+/// the scene's weather or light on the cover itself, clipped to its shape.
+private struct V3CoverBlend: View {
+    let scene: V3Room
+    let cover: CGRect
+    let accent: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        ZStack {
+            switch scene {
+            case .rain, .clearNight:
+                // Wet glass in front of the print: a sheen across the top corner.
+                LinearGradient(colors: [.white.opacity(0.16), .clear, .clear], startPoint: .topLeading, endPoint: .center)
+                    .blendMode(.screen)
+            case .snow:
+                V3Frost(size: cover.size).opacity(0.7)
+            case .fog:
+                V3MistedEdges(size: cover.size, strength: 0.22)
+            case .water:
+                V3WaterLight(size: cover.size, accent: accent, strength: 0.35, running: !reduceMotion)
+            case .train:
+                V3PassingReflection(running: !reduceMotion)
+            case .aurora:
+                LinearGradient(colors: V3Aurora.palette(accent).map { $0.opacity(0.22) }, startPoint: .top, endPoint: .bottom)
+                    .blendMode(.screen)
+            case .stars:
+                Color(red: 0.05, green: 0.06, blue: 0.18).opacity(0.18).blendMode(.multiply)
+            default:
+                Color.clear
+            }
+        }
+        .frame(width: cover.width, height: cover.height)
+        .clipShape(shape)
+        // Some scenes also light the cover from outside.
+        .background {
+            if scene == .aurora {
+                shape.fill(Color.clear)
+                    .shadow(color: V3Aurora.palette(accent)[1].opacity(0.55), radius: 26)
+            } else if scene == .snow {
+                shape.fill(Color.clear).shadow(color: Color(red: 1, green: 0.6, blue: 0.3).opacity(0.35), radius: 22, y: 10)
+            }
+        }
+        .position(x: cover.midX, y: cover.midY)
+        .allowsHitTesting(false)
+    }
+}
+
+/// 夜行列车 on the cover: a light from outside sliding across its glass.
+private struct V3PassingReflection: View {
+    let running: Bool
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !running)) { timeline in
+            let cycle = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 5) / 5
+            GeometryReader { geometry in
+                LinearGradient(colors: [.clear, .white.opacity(0.22), .clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: geometry.size.width * 0.4)
+                    .rotationEffect(.degrees(18))
+                    .offset(x: geometry.size.width * (1.3 - cycle * 2))
+                    .blendMode(.screen)
+            }
+        }
     }
 }

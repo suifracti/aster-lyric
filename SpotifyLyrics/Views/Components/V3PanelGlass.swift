@@ -16,10 +16,13 @@ struct V3PanelGlass: View {
 /// edge player. Same material, hairline and shadow, following the system
 /// light or dark setting.
 struct V3ControlBarSurface: ViewModifier {
+    @Environment(\.v3SceneChrome) private var chrome
     func body(content: Content) -> some View {
         content
             .background(.regularMaterial.opacity(0.78), in: Capsule())
-            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.16), lineWidth: 0.7))
+            // A 情境 lends the bar its own material: frosted, paper, steel, film…
+            .background { if let chrome { Capsule().fill(chrome.tint.opacity(chrome.strength)) } }
+            .overlay(Capsule().strokeBorder(chrome.map { $0.tint.opacity(0.35) } ?? Color.primary.opacity(0.16), lineWidth: 0.7))
             .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 4)
     }
 }

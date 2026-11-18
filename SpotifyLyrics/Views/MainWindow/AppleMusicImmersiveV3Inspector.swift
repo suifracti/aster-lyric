@@ -789,6 +789,8 @@ struct V3VisualControls {
             V3ChipToggles("", items: [("只看前方", $settings.v3HidesSungLines),
                                       ("整句亮", $settings.v3WholeLineTiming)])
                 .help("只看前方：唱过的歌词隐去，只留当前句和后面的；只对带时间的歌词有效。\n整句亮：有逐字时间的歌词也按整句显示，不逐字填色。")
+            V3SegmentedPicker("行宽", selection: $settings.v3LyricWidth, options: V3LyricWidth.options)
+                .help("标准：保持适合阅读的行长。宽：一行能放更多字。满幅：歌词可以铺满窗口宽度（情境也可能带上自己的行宽）。")
             V3SegmentedPicker("对齐", selection: $settings.v3LyricsPosition,
                               options: [("跟随场景", "automatic"), ("左", "left"), ("居中", "center"), ("右", "right")])
                 .help("跟随场景：当前使用" + (settings.v3ListeningScene == .coverPhoto ? "右侧阅读区" : settings.v3ArtworkPresentation == .stage ? "居中阅读区" : "左对齐"))

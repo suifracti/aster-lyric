@@ -965,6 +965,9 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
   - 起雾的窗: the pointer wipes the fog, which closes in again over 20 s; the lyric area stays half clear.
   - 极光: curtains in the cover's colours behind the lyrics, brightening on each line.
   - 水面: aqua caustic light; each line and the pointer send out ripples.
+- 整套换装 (on by default): a scene also brings its layout, lyric position and style, player and progress style, control material and line width. None of this is saved over the user's own choices, and what the user changes during a scene is kept.
+- The scene is never a sheet over the cover: glass effects thin out over the foreground cover, the scene's tints are mixed from the cover's colour, and the cover carries a light touch of the scene.
+- 文字 › 行宽: 标准, 宽, 满幅.
 - All scenes take the cover's colour and brightness and cross-fade when switched. 窗上天气 is held back while a scene is on. Motion continues while paused (only Reduce Motion stops it).
 
 (Earlier, same day) **情境** (2026-11-18, 更多 › 窗口 › 情境, off by default; replaces the 雨夜房间 switch).

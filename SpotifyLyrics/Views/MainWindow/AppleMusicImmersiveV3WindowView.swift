@@ -211,7 +211,21 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var previewAutomaticSelection: LyricsAutomaticSelection?
     @State private var hoveredStyle: V3ArtworkPresentation?
     @State private var hoveredScene: V3ListeningScene?
-    private var compositionScene: V3ListeningScene? { hoveredStyle == nil ? settings.v3ListeningScene : hoveredScene }
+    private var compositionScene: V3ListeningScene? {
+        hoveredStyle == nil ? (sceneLook.listeningScene ?? settings.v3ListeningScene) : hoveredScene
+    }
+    /// 行宽: the scene's when it has one, else the user's.
+    private var lyricWidthScale: CGFloat { CGFloat(sceneLook.lyricWidth ?? settings.v3LyricWidth) }
+    /// The whole look of the 情境 on show, when the user lets it restyle the window.
+    private var sceneLook: V3SceneLook {
+        guard settings.v3RoomRestyles, activeScene != .off else { return V3SceneLook() }
+        return activeScene.look(accent: coverAccent ?? .white)
+    }
+    /// A scene that changes the layout uses that layout's own renderer, unless it is the user's layout.
+    private var sceneRenderer: V3ArtworkPresentation? {
+        guard let scene = sceneLook.listeningScene, scene != settings.v3ListeningScene else { return nil }
+        return scene.defaultRenderer
+    }
     /// 环境光's two scenes, where 光随歌曲 applies.
     private var usesAmbientLight: Bool {
         compositionScene == .originalAmbient || (compositionScene == .flowingField && compositionStyle == .ambientFeathered)
@@ -220,9 +234,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         !settings.v3PlaybackPresentation.replacesSceneCover
             && settings.v3ShowsForegroundArtwork(scene: compositionScene, renderer: compositionStyle)
     }
-    private var compositionStyle: V3ArtworkPresentation { hoveredStyle ?? settings.v3ArtworkPresentation }
+    private var compositionStyle: V3ArtworkPresentation { hoveredStyle ?? sceneRenderer ?? settings.v3ArtworkPresentation }
     private var compositionArtworkPosition: String { settings.v3PreviewPosition(for: compositionStyle, scene: compositionScene) }
-    private var compositionLyricsPosition: String { settings.v3PreviewLyricsPosition(for: compositionStyle, scene: compositionScene) }
+    private var compositionLyricsPosition: String {
+        (hoveredStyle == nil ? sceneLook.lyricsPosition : nil)
+            ?? settings.v3PreviewLyricsPosition(for: compositionStyle, scene: compositionScene)
+    }
     private var usesArtworkSubjectPlacement: Bool {
         compositionScene == .coverPhoto || (compositionScene == nil && compositionStyle == .stage)
     }
@@ -361,7 +378,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     isInstrumental: isInst,
                     isPlaying: state.isPlaying,
                     settings: settings,
-                    presentationOverride: hoveredStyle,
+                    presentationOverride: hoveredStyle ?? sceneRenderer,
                     sceneOverride: compositionScene,
                     clock: state.presentationClock,
                     inChorus: settings.v3ChorusEmphasis && chorusNow,
@@ -456,7 +473,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                                           cover: foregroundCover.flatMap { $0.isLargeEnough ? $0.frame : nil },
                                           player: playbackRegion)
                             .frame(width: geometry.size.width, height: geometry.size.height)
-                        V3SceneGlassLayer(scene: activeScene, context: roomContext, playing: state.isPlaying)
+                        V3SceneGlassLayer(scene: activeScene, context: roomContext, playing: state.isPlaying,
+                                          cover: foregroundCover.flatMap { $0.isLargeEnough ? $0.frame : nil })
                             .frame(width: geometry.size.width, height: geometry.size.height)
                     }
                     .id(activeScene)
@@ -620,6 +638,11 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
             }
             .modifier(V3SceneDriver(scene: settings.v3Room, context: roomContext, bpm: $sceneBPM))
+            .environment(\.v3SceneChrome, sceneLook.chrome)
+            // The scene's lyric style and player, shown without saving over the user's own.
+            .onChange(of: sceneLook, initial: true) { _, look in
+                settings.applySceneLayer(lyricStyle: look.lyricStyle, playback: look.playback, progress: look.progress)
+            }
             .onChange(of: state.currentLineIndex, initial: true) { _, index in
                 // 人声包络: the light can follow these word starts when no sound is heard.
                 V3VocalOnsets.current = settings.v3MusicMotionEnabled && state.liveLyricsAreSynchronized
@@ -834,7 +857,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private func photographicLayout(in geometry: GeometryProxy) -> some View {
         let compact = geometry.size.width < 760
         let placement = photographicReadingPlacement(canvas: geometry.size)
-        let readingWidth = min(760, max(1, geometry.size.width * (compact ? 0.90 : placement.widthFraction)))
+        let readingWidth = min(760 * lyricWidthScale, max(1, geometry.size.width * (compact ? 0.90 : min(0.94, placement.widthFraction * lyricWidthScale))))
         let playerHeight: CGFloat = settings.v3ScenePlayerHidden ? 0 : 44
         let readingHeight = max(1, min(geometry.size.height * 0.66 - 56,
             geometry.size.height - 76 - 32 - playerHeight - 12))
@@ -934,7 +957,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         heading
                     }.frame(width: coverColumnWidth, alignment: .leading)
                 }
-                lyricsColumn(width: compositionShowsCover ? textWidth : min(840, contentWidth),
+                lyricsColumn(width: compositionShowsCover ? textWidth : min(840 * lyricWidthScale, contentWidth),
                              compact: compact, lyricsFocus: false)
                     .frame(maxWidth: compositionShowsCover ? textWidth : 840, maxHeight: .infinity)
                     .environment(\.lyricTextAlignment, .leading)
@@ -1051,7 +1074,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
     private func lyricsOnlyLayout(in geometry: GeometryProxy, hidesArtwork: Bool = false) -> some View {
         let compact = isCompact(for: geometry.size)
-        let readingWidth = min(compositionScene == .focusedLyrics ? 760 : 940, max(1, geometry.size.width - (compact ? 56 : 112)))
+        let readingWidth = min((compositionScene == .focusedLyrics ? 760 : 940) * lyricWidthScale, max(1, geometry.size.width - (compact ? 56 : 112)))
         let headerHeight: CGFloat = hidesArtwork ? (compact ? 48 : 56) : (compact ? 64 : 76)
         let footerHeight: CGFloat = settings.v3ScenePlayerHidden && !isCompositionPreview ? 0 : 68
         let lyricHeight = max(1, geometry.size.height - 100 - headerHeight - footerHeight - 28)
@@ -1588,7 +1611,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         onSearch: (() -> Void)? = nil,
         stage: Bool = false
     ) -> some View {
-        VStack(spacing: 8) {
+        // Rows read 行宽 when they lay out; set it before they do, and rebuild them when it changes.
+        let _ = { V3LyricWidth.scale = lyricWidthScale }()
+        return VStack(spacing: 8) {
         AppleMusicImmersiveV3LyricsViewport(
             state: state,
             availableWidth: max(1, width - (compact ? 22 : 34)),
@@ -1599,6 +1624,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             stage: stage
         )
         .equatable()
+        .id(lyricWidthScale)
         .environmentObject(settings)
         .environment(\.v3PreviewPresentation, hoveredStyle)
         .environment(\.lyricIslandScene, compositionScene)

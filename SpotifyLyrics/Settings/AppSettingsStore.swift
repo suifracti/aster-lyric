@@ -1086,7 +1086,8 @@ public final class AppSettingsStore: ObservableObject {
     public var v3ScenePlayerHidden: Bool { v3PlaybackPresentation.hidesScenePlayer }
 
     @Published public var v3PlaybackStyleRawValue: String = "" {
-        didSet { defaults.set(v3PlaybackStyleRawValue, forKey: "v3.playbackStyle.v1") }
+        didSet { guard sceneLayerCommit(\.playbackStyle, v3PlaybackStyleRawValue) else { return }
+                 defaults.set(v3PlaybackStyleRawValue, forKey: "v3.playbackStyle.v1") }
     }
     /// 角落: which corner the small card sits in (topLeading, topTrailing, bottomLeading, bottomTrailing).
     @Published public var v3CornerCardCorner: String = "bottomTrailing" {
@@ -1099,10 +1100,57 @@ public final class AppSettingsStore: ObservableObject {
         didSet { defaults.set(v3ToolbarStyle.rawValue, forKey: "v3.toolbarStyle.v1") }
     }
     @Published public var v3LyricStyle: V3LyricStyle = .standard {
-        didSet { defaults.set(v3LyricStyle.rawValue, forKey: "v3.lyricStyle.v1") }
+        didSet { guard sceneLayerCommit(\.lyricStyle, v3LyricStyle) else { return }
+                 defaults.set(v3LyricStyle.rawValue, forKey: "v3.lyricStyle.v1") }
     }
     @Published public var v3ProgressStyle: V3ProgressStyle = .standard {
-        didSet { defaults.set(v3ProgressStyle.rawValue, forKey: "v3.playerBar.progress.v1") }
+        didSet { guard sceneLayerCommit(\.progress, v3ProgressStyle) else { return }
+                 defaults.set(v3ProgressStyle.rawValue, forKey: "v3.playerBar.progress.v1") }
+    }
+
+    // MARK: 情境 layer
+    /// The user's own values while a 情境 shows its own lyric and player style.
+    struct SceneLayerSaved: Equatable {
+        var lyricStyle: V3LyricStyle
+        var progress: V3ProgressStyle
+        var playbackStyle: String
+        var edge: Bool
+        var hover: Bool
+    }
+    private var sceneLayerSaved: SceneLayerSaved?
+    private var applyingSceneLayer = false
+
+    /// Shows a scene's lyric style, player and progress without saving them. Passing
+    /// nils puts the user's own values back.
+    func applySceneLayer(lyricStyle: V3LyricStyle?, playback: V3PlaybackPresentation?, progress: V3ProgressStyle?) {
+        let wanted = lyricStyle != nil || playback != nil || progress != nil
+        if wanted, sceneLayerSaved == nil {
+            sceneLayerSaved = SceneLayerSaved(lyricStyle: v3LyricStyle, progress: v3ProgressStyle, playbackStyle: v3PlaybackStyleRawValue,
+                                              edge: v3EdgeProgressEnabled, hover: v3PlaybackDetailsOnHover)
+        }
+        guard let saved = sceneLayerSaved else { return }
+        applyingSceneLayer = true
+        defer { applyingSceneLayer = false }
+        let style = lyricStyle ?? saved.lyricStyle
+        if v3LyricStyle != style { v3LyricStyle = style }
+        let bar = progress ?? saved.progress
+        if v3ProgressStyle != bar { v3ProgressStyle = bar }
+        if let playback {
+            if v3PlaybackPresentation != playback { v3PlaybackPresentation = playback }
+        } else {
+            if v3PlaybackStyleRawValue != saved.playbackStyle { v3PlaybackStyleRawValue = saved.playbackStyle }
+            if v3EdgeProgressEnabled != saved.edge { v3EdgeProgressEnabled = saved.edge }
+            if v3PlaybackDetailsOnHover != saved.hover { v3PlaybackDetailsOnHover = saved.hover }
+        }
+        if !wanted { sceneLayerSaved = nil }
+    }
+
+    /// Whether a change should be saved. A scene's own change is not; a change the
+    /// user makes while a scene is showing is saved and becomes their value.
+    private func sceneLayerCommit<Value>(_ field: WritableKeyPath<SceneLayerSaved, Value>, _ value: Value) -> Bool {
+        if applyingSceneLayer { return false }
+        sceneLayerSaved?[keyPath: field] = value
+        return true
     }
     /// 播放栏: the time row and buttons appear only while the pointer is on the card.
     @Published public var v3PlayerButtonsOnHover = false {
@@ -1146,6 +1194,14 @@ public final class AppSettingsStore: ObservableObject {
     /// it is shown on (老电影). Replaces the 雨夜房间 switch; `v3.rainRoom.v1` is still read once.
     @Published var v3Room: V3Room = .off {
         didSet { defaults.set(v3Room.rawValue, forKey: "v3.room.v1") }
+    }
+    /// 行宽: 1 standard, 1.35 wide, 1.9 the full window.
+    @Published public var v3LyricWidth: Double = 1 {
+        didSet { defaults.set(v3LyricWidth, forKey: "v3.lyricWidth.v1") }
+    }
+    /// 整套换装: a 情境 also brings its layout, lyric style, player and controls.
+    @Published var v3RoomRestyles = true {
+        didSet { defaults.set(v3RoomRestyles, forKey: "v3.roomRestyles.v1") }
     }
     /// 副歌时开窗: a window scene opens to the full view during a chorus.
     @Published var v3RoomOpensOnChorus = true {
@@ -1239,7 +1295,8 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     @Published public var v3PlaybackDetailsOnHover: Bool {
-        didSet { defaults.set(v3PlaybackDetailsOnHover, forKey: Key.v3PlaybackDetailsOnHover) }
+        didSet { guard sceneLayerCommit(\.hover, v3PlaybackDetailsOnHover) else { return }
+                 defaults.set(v3PlaybackDetailsOnHover, forKey: Key.v3PlaybackDetailsOnHover) }
     }
 
     @Published public var v3ExpandArtworkWhenDetailsHidden: Bool {
@@ -1255,7 +1312,8 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     @Published public var v3EdgeProgressEnabled: Bool {
-        didSet { defaults.set(v3EdgeProgressEnabled, forKey: Key.v3EdgeProgressEnabled) }
+        didSet { guard sceneLayerCommit(\.edge, v3EdgeProgressEnabled) else { return }
+                 defaults.set(v3EdgeProgressEnabled, forKey: Key.v3EdgeProgressEnabled) }
     }
 
     @Published public var v3EdgeProgressColorHex: String {
@@ -1666,6 +1724,8 @@ public final class AppSettingsStore: ObservableObject {
         self.v3Room = defaults.string(forKey: "v3.room.v1").flatMap(V3Room.init(rawValue:))
             ?? ((defaults.object(forKey: "v3.rainRoom.v1") as? Bool ?? false) ? .rain : .off)
         self.v3RoomOpensOnChorus = defaults.object(forKey: "v3.roomOpensOnChorus.v1") as? Bool ?? true
+        self.v3RoomRestyles = defaults.object(forKey: "v3.roomRestyles.v1") as? Bool ?? true
+        self.v3LyricWidth = defaults.object(forKey: "v3.lyricWidth.v1") as? Double ?? 1
         self.v3ChorusSwapsMaterial = defaults.object(forKey: "v3.chorusSwapsMaterial.v1") as? Bool ?? false
         self.v3SpectrumStyle = V3SpectrumStyle(rawValue: defaults.string(forKey: "v3.spectrumStyle.v1") ?? "") ?? .off
         self.floatingHiddenFromCapture = defaults.bool(forKey: "floating.hiddenFromCapture.v1")
