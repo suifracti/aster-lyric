@@ -122,7 +122,29 @@ struct LyricsPreferencesPopover: View {
 /// lyric presentation clock; it never seeks Spotify or edits LRC timestamps.
 enum LyricsPresentationOffsetTarget {
     case active
+    case preview
     case savedVersion(scope: LyricsOffsetScope?, versionID: UUID?, disabledReason: String?)
+
+    static func listening(isPreview: Bool) -> Self { isPreview ? .preview : .active }
+
+    func scope(in store: ScopedLyricsOffsetStore) -> LyricsOffsetScope? {
+        switch self {
+        case .active: return store.activeScope
+        case .preview: return nil
+        case .savedVersion(let scope, _, _): return scope
+        }
+    }
+
+    func disabledReason(in store: ScopedLyricsOffsetStore) -> String? {
+        switch self {
+        case .active:
+            return store.activeScope == nil ? "当前没有可确认的已保存歌词版本，偏移暂不可写。" : nil
+        case .preview:
+            return "试听的歌词暂不能校准"
+        case .savedVersion(let scope, _, let reason):
+            return scope == nil ? (reason ?? "当前内容没有明确的持久歌词版本，偏移已禁用。") : reason
+        }
+    }
 }
 
 /// Shared offset editor. Live windows target PlaybackState's active pair;
@@ -147,40 +169,19 @@ struct LyricsPresentationOffsetControl: View {
         self._offsetStore = ObservedObject(wrappedValue: settings.lyricsOffsetStore)
     }
 
-    private var scope: LyricsOffsetScope? {
-        switch target {
-        case .active:
-            return offsetStore.activeScope
-        case .savedVersion(let scope, _, _):
-            return scope
-        }
-    }
+    private var scope: LyricsOffsetScope? { target.scope(in: offsetStore) }
 
     private var offset: Double {
         scope.map(offsetStore.value(for:)) ?? 0
     }
 
-    private var isWritable: Bool {
-        switch target {
-        case .active:
-            return offsetStore.activeScope != nil
-        case .savedVersion(let scope, _, let reason):
-            return scope != nil && reason == nil
-        }
-    }
+    private var isWritable: Bool { disabledReason == nil }
 
-    private var disabledReason: String? {
-        switch target {
-        case .active:
-            return offsetStore.activeScope == nil ? "当前没有可确认的已保存歌词版本，偏移暂不可写。" : nil
-        case .savedVersion(let scope, _, let reason):
-            return scope == nil ? (reason ?? "当前内容没有明确的持久歌词版本，偏移已禁用。") : reason
-        }
-    }
+    private var disabledReason: String? { target.disabledReason(in: offsetStore) }
 
     private var controlTitle: String {
         switch target {
-        case .active:
+        case .active, .preview:
             return "当前歌词版本偏移"
         case .savedVersion(_, let versionID, _):
             if let versionID { return "编辑版本偏移 · \(versionID.uuidString.prefix(8))" }
@@ -188,8 +189,21 @@ struct LyricsPresentationOffsetControl: View {
         }
     }
 
-    @ViewBuilder var body: some View {
-        if rowStyle { panelRow } else { fullBody }
+    var body: some View {
+        Group {
+            if case .preview = target {
+                V3PanelRow(title: "歌词偏移") {
+                    Text(disabledReason ?? "").foregroundStyle(.secondary)
+                }
+            } else if rowStyle {
+                panelRow
+            } else {
+                fullBody
+            }
+        }
+        .onAppear { syncInput() }
+        .onChange(of: scope) { _, _ in syncInput() }
+        .onChange(of: offset) { _, _ in syncInput() }
     }
 
     private var panelRow: some View {
@@ -211,8 +225,6 @@ struct LyricsPresentationOffsetControl: View {
             .buttonStyle(.borderless)
             .disabled(!isWritable)
         }
-        .onAppear { syncInput() }
-        .onChange(of: offset) { _, _ in syncInput() }
     }
 
     private var fullBody: some View {
@@ -257,11 +269,6 @@ struct LyricsPresentationOffsetControl: View {
             }
         }
         .help(disabledReason ?? "正值让歌词提前出现，负值让歌词延后出现；不改变播放进度。")
-        .onAppear { syncInput() }
-        .onChange(of: scope) { _, _ in syncInput() }
-        .onChange(of: offsetStore.activeOffset) { _, _ in syncInput() }
-        .onChange(of: offsetStore.activeScope) { _, _ in syncInput() }
-        .onChange(of: offsetStore.storageRevision) { _, _ in syncInput() }
     }
 
     private var label: String {
@@ -295,6 +302,7 @@ struct LyricsPresentationOffsetControl: View {
             return
         }
         offsetStore.setValue(value, for: scope)
+        syncInput()
     }
 
     private func syncInput() {

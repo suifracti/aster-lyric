@@ -18,6 +18,18 @@ struct V3LyricActions {
         return "字号 \(Int(display.fontSize))"
     }
 
+    func calibrateLyrics(by delta: Double?, target: LyricsPresentationOffsetTarget) -> String {
+        let store = settings.lyricsOffsetStore
+        if let reason = target.disabledReason(in: store) { return reason }
+        guard let scope = target.scope(in: store) else { return "当前没有已保存歌词" }
+        if let delta {
+            store.setValue(store.value(for: scope) + delta, for: scope)
+            return String(format: "偏移 %+.1fs", store.value(for: scope))
+        }
+        store.resetValue(for: scope)
+        return "偏移归零"
+    }
+
     static func nextBlurPreset(after value: Double) -> Double {
         [0.0, 25, 50, 75, 100].first { $0 > value } ?? 0
     }

@@ -362,6 +362,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
     private var compositionTrack: Track { liveOnly ? state.currentTrack : state.displayedTrack }
     private var isCompositionPreview: Bool { !liveOnly && state.isShowingSearchPreview }
+    private var lyricsOffsetTarget: LyricsPresentationOffsetTarget { .listening(isPreview: isCompositionPreview) }
     private var compositionLyrics: [LyricLine] { liveOnly ? state.liveLyrics : state.lyrics }
     private var compositionIndex: Int? { liveOnly ? state.liveCurrentLineIndex : state.currentLineIndex }
     private var compositionSynchronized: Bool { liveOnly ? state.liveLyricsAreSynchronized : state.lyricsAreSynchronized }
@@ -1708,12 +1709,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         case .previousLine: showLyricNotice(state.stepLyricLine(forward: false) ? "上一句" : "这份歌词没有时间，不能按句跳")
         case .nextLine: showLyricNotice(state.stepLyricLine(forward: true) ? "下一句" : "没有下一句可跳")
         case .offset(let delta):
-            let store = settings.lyricsOffsetStore
-            if store.setActiveValue(store.activeOffset + delta) {
-                showLyricNotice(String(format: "偏移 %+.1fs", store.activeOffset))
-            } else { showLyricNotice("当前没有已保存歌词") }
+            showLyricNotice(V3LyricActions(settings: settings).calibrateLyrics(by: delta, target: lyricsOffsetTarget))
         case .resetOffset:
-            _ = settings.lyricsOffsetStore.resetActiveValue(); showLyricNotice("偏移归零")
+            showLyricNotice(V3LyricActions(settings: settings).calibrateLyrics(by: nil, target: lyricsOffsetTarget))
         case .blurFine(let delta):
             let blur = visualControls.blur
             blur.wrappedValue = min(100, max(0, blur.wrappedValue + delta))
@@ -2325,7 +2323,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             case .more:
                 visualControls.toolbarStyleControls
                 // 恢复歌词时间 was the same action as 归零 on the offset row, which stays.
-                LyricsPresentationOffsetControl(settings: settings, showsLegacyNotice: false,
+                LyricsPresentationOffsetControl(settings: settings, target: lyricsOffsetTarget, showsLegacyNotice: false,
                                                 showsExplanations: false, rowStyle: true)
                 SleepTimerControls(timer: state.sleepTimer, select: state.configureSleepTimer)
                 windowModePanel

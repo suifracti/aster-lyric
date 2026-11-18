@@ -46,6 +46,31 @@ private actor OffsetScopeFixtureResolver: LyricsOffsetScopeResolving {
 }
 
 final class ScopedLyricsOffsetPresentationTests: XCTestCase {
+    @MainActor
+    func testPreviewCalibrationCannotChangeThePlayingVersion() throws {
+        let (defaults, suite) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        let store = settings.lyricsOffsetStore
+        let live = try XCTUnwrap(LyricsOffsetScope(canonicalTrackStableKey: "playing-song", lyricsVersionID: UUID()))
+        store.setValue(0.5, for: live)
+        store.activate(live)
+        let actions = V3LyricActions(settings: settings)
+
+        let preview = LyricsPresentationOffsetTarget.listening(isPreview: true)
+        let playing = LyricsPresentationOffsetTarget.listening(isPreview: false)
+        XCTAssertNil(preview.scope(in: store))
+        XCTAssertEqual(playing.scope(in: store), live)
+        XCTAssertEqual(actions.calibrateLyrics(by: 0.1, target: preview), "试听的歌词暂不能校准")
+        XCTAssertEqual(actions.calibrateLyrics(by: nil, target: preview), "试听的歌词暂不能校准")
+        XCTAssertEqual(store.value(for: live), 0.5)
+
+        XCTAssertEqual(actions.calibrateLyrics(by: 0.1, target: playing), "偏移 +0.6s")
+        XCTAssertEqual(store.activeOffset, 0.6, accuracy: 0.001)
+        XCTAssertEqual(actions.calibrateLyrics(by: nil, target: playing), "偏移归零")
+        XCTAssertEqual(store.value(for: live), 0)
+    }
+
     func testUnscopedStoreKeepsLegacyValueAndStoresPairsIndependently() throws {
         let (defaults, suite) = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
