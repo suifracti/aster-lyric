@@ -376,10 +376,26 @@ struct ExperienceVisualHostApp: App {
             spotifyAuthorization: SpotifyAuthorizationManager(configuration: SpotifyOAuthConfiguration(clientID: nil)))
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ExperiencePlaylistProtocol.self]
-        let catalog = ExperiencePlaylistCatalog()
+        let isMusic = ExperienceArguments.surface == "music-order"
+        let music = AppleMusicPlaylistCatalog { script, _ in
+            let id = "A000000000000001", field = "\u{1e}", row = "\u{1f}"
+            let songs = ["窗外的灯", "月台来信", "夜班车", "月台来信"]
+            if script.contains("current playlist") {
+                let tail = songs.enumerated().map { i, name in
+                    [String(i + 2), i == 3 ? "B000000000000001" : "B00000000000000\(i)", name, "南窗", "末班车以后", "184"].joined(separator: field)
+                }.joined(separator: row)
+                return [id, "末班车以后"].joined(separator: field) + row + tail
+            }
+            if script.contains("repeat with p in user playlists") {
+                return [id, "末班车以后", "6"].joined(separator: field) + row + ["A000000000000002", "写字时听", "8"].joined(separator: field)
+            }
+            return ""
+        }
+        let catalog: PlaylistCataloging = isMusic ? music : ExperiencePlaylistCatalog()
         let picker = PlaylistPickerModel(catalog: catalog, trackID: { "AAAAAAAAAAAAAAAAAAAAAA" }, likedState: { true }, applyLiked: { $0 })
         playback.playlistBrowser = PlaylistBrowserModel(service: SpotifyCatalogService(session: URLSession(configuration: configuration),
-            baseURL: URL(string: "https://playlist.fixture/v1")!), picker: picker, accessToken: { _ in "fixture" }, advanceQueue: { _ in })
+            baseURL: URL(string: "https://playlist.fixture/v1")!), picker: picker,
+            source: isMusic ? .appleMusic : .spotifyDesktop, music: music, accessToken: { _ in "fixture" }, advanceQueue: { _ in })
         _playback=StateObject(wrappedValue:playback)
         print("VISUAL_FIXTURE_ROOT",root.path)
     }
@@ -698,10 +714,12 @@ private struct ExperienceFixtureRoot: View {
                     try? await Task.sleep(for: .milliseconds(800))
                 }
                 var extraWindow: NSWindow?
-                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker", "favorites", "reader", "lyric-file", "compare", "quick-find", "manuscript", "stanzas"].contains(ExperienceArguments.surface) {
+                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker", "music-order", "favorites", "reader", "lyric-file", "compare", "quick-find", "manuscript", "stanzas"].contains(ExperienceArguments.surface) {
                     MenuBarLyricsController.shared.bind(playbackState: playback)
                     let root: AnyView
-                    if ExperienceArguments.surface == "playlist-picker" {
+                    if ExperienceArguments.surface == "music-order" {
+                        root = AnyView(V3PlaylistPanel(browser: playback.playlistBrowser, query: "").background(Color(nsColor: .windowBackgroundColor)))
+                    } else if ExperienceArguments.surface == "playlist-picker" {
                         root = AnyView(PlaylistPickerPopover(model: playback.playlistBrowser.picker))
                     } else if ExperienceArguments.surface == "search-panel" {
                         root = AnyView(V3ToolbarQuickControls(panel: .search, state: playback,

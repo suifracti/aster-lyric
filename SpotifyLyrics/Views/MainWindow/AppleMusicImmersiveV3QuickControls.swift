@@ -21,7 +21,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text(panel == .playlists ? "接下来播放" : panel.title).font(.system(size: 12, weight: .semibold))
+                    Text(panel == .playlists ? state.playlistBrowser.queueTitle : panel.title).font(.system(size: 12, weight: .semibold))
                     Spacer()
                     if panel == .playlists { Button("全部", action: openPlaylists).buttonStyle(.plain).foregroundStyle(.secondary) }
                     if panel == .library { Button("打开歌词库", action: openLibrary).buttonStyle(.plain).foregroundStyle(.secondary) }
@@ -38,7 +38,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
                         .environmentObject(state)
 
                 case .playlists:
-                    V3PlaylistQueuePreview(browser: state.playlistBrowser, currentTrackID: state.currentTrack.spotifyId)
+                    V3PlaylistQueuePreview(browser: state.playlistBrowser)
                 case .search:
                     searchControls
 

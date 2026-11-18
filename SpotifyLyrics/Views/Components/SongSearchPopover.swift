@@ -387,10 +387,10 @@ struct SongSearchResultRow: View {
                     if isAdopted { Image(systemName: "checkmark.circle.fill").foregroundStyle(.primary) }
                     Button(isLoading ? "搜索中…" : "查看歌词", action: viewLyrics)
                         .buttonStyle(.plain).foregroundStyle(.primary).fixedSize()
-                    if TrackIdentity.spotifyRequestTrackID(result.track.spotifyId ?? result.track.spotifyURL?.absoluteString) != nil {
+                    if state.playlistBrowser.supportsQueueEdits, TrackIdentity.spotifyRequestTrackID(result.track.spotifyId ?? result.track.spotifyURL?.absoluteString) != nil {
                         V3QueueInsertButton(browser: state.playlistBrowser, track: result.track, hovered: hovered)
                         Button { state.playSearchTrack(result.track) } label: { Image(systemName: "play.fill") }
-                            .buttonStyle(.plain).help("播放这首歌").opacity(hovered ? 1 : 0)
+                            .buttonStyle(.plain).help("在 Spotify 播放").opacity(hovered ? 1 : 0)
                     }
                 }.font(.system(size: 10)).foregroundStyle(.secondary)
             }

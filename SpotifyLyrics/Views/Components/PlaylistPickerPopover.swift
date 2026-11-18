@@ -21,6 +21,7 @@ struct PlaylistPickerPopover: View {
         .background(V3PanelGlass())
         .modifier(V3SystemAppearanceModifier())
         .onAppear { model.open() }
+        .onChange(of: model.sourceRevision) { _, _ in model.open() }
     }
 
     private var searchField: some View {

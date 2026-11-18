@@ -218,7 +218,7 @@ Clicks that land on the popover's transparent arrow or shadow area are forwarded
 **Limits:**
 - Spotify's Web API does not expose playlist folders, so the list is flat. Don't fake folders.
 - Spotify scopes, added with the library ones: `playlist-read-private`, `playlist-read-collaborative`, `playlist-modify-private`, `playlist-modify-public`. The user re-connects once.
-- **Apple Music:** the same picker using its local playlists, with no 「已按讚的歌曲」 row. Its favourite is the heart.
+- **Apple Music:** the picker reads local playlists and its 「喜爱」 row uses Music’s favourite flag.
 - **Errors:** a short notice such as 「添加失败，稍后再试」. No retry queue.
 
 
@@ -545,10 +545,12 @@ The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because th
 - Spotify does not say why a song changed. If the user clicks a marked song inside Spotify, it is skipped once and the mark is used up, so clicking it again plays it. This is accepted. Do not add timing rules to tell these cases apart.
 
 **接下来播放: fast, always current, clickable (2026-11-01).**
-- The queue loads in the background at app launch, on every song change and each time a panel opens, so opening a panel shows the last list at once and then updates it. A failed load retries once after 2 s. A spinner only appears when nothing has ever loaded.
+- The Spotify queue loads when the first Spotify song arrives, on song changes and each time a panel opens. Opening the panel shows the last list at once and then updates it. A failed load retries once after 2 s. A spinner only appears when nothing has ever loaded.
 - On a song change, the list drops the new current song and everything before it straight away, without waiting for Spotify. The song now playing never stays as a row.
 - Clicking a row, in the hover and centred panels, jumps to that song: the app calls Next as many times as it takes, in one quick run. Songs passed over use up their marks, and the jump never adds extra skips. × keeps its own click.
 - With a repeating playlist the same song can appear later in the queue. Those rows are ordinary rows: only rows at the top of the list count as already played, and × on a later row marks it as usual.
+
+**跟随播放器的歌单（2026-11-18）。** 在 Apple Music 下，歌单面板与悬停入口从 Mac 的「音乐」读取本人歌单、喜爱歌曲和当前歌单顺序。歌单顺序显示歌单名以及当前位置之后最多 25 首，点击时按该歌单的原始位置和歌曲 ID 定位，支持同一首出现两次。系统允许手改待播队列，亦可随机播放，因此窗口将这份顺序写作「歌单后续」。没有可核对的当前歌单时显示原因。Spotify 的插播和单次跳过只在 Spotify 下出现。两个来源切换时撤下原列表和待执行操作。
 
 **Pinned panels.**
 - The glass runs to the top of the window, under the traffic lights. No separate title-bar strip, and no window title repeating the panel heading.

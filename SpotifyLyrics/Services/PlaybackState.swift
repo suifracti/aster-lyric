@@ -424,8 +424,11 @@ public final class PlaybackState: ObservableObject {
         resolvedSettings.$playbackSourceMode
             .dropFirst()
             .sink { [weak self] _ in
-                guard let self else { return }
-                self.reconnectSpotify()
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.playlistBrowser.updateSource(self.playlistCatalogSource)
+                    self.reconnectSpotify()
+                }
             }
             .store(in: &self.settingsCancellables)
         resolvedSettings.$menuBarLyricsEnabled
@@ -1229,7 +1232,6 @@ public final class PlaybackState: ObservableObject {
         guard !isProviderStarted else { return }
         isProviderStarted = true
         automaticSpotifyConnectionEnabled = connectSpotify
-        playlistBrowser.loadQueue()
         desktopEvents?.start(
             onUpdate: { [weak self] in self?.receiveDesktopUpdate($0) },
             onApplicationChanged: { [weak self] source, running in self?.desktopApplicationChanged(source: source, isRunning: running) },
@@ -1889,16 +1891,27 @@ public final class PlaybackState: ObservableObject {
     /// The heart's playlist picker. One model serves both players; it drops
     /// its rows when the source changes. Created once so reported checks
     /// survive reopening.
+    private lazy var musicPlaylistCatalog = AppleMusicPlaylistCatalog()
+    private var lastPlaylistSource: PlaybackSourceIdentity = .spotifyDesktop
+    private var playlistCatalogSource: PlaybackSourceIdentity {
+        if playbackSourceIdentity == .mockPreview { return .mockPreview }
+        switch settingsStore.playbackSourceMode {
+        case .appleMusic: return .appleMusic
+        case .spotify: return .spotifyDesktop
+        case .auto: return lastPlaylistSource
+        }
+    }
     public private(set) lazy var playlistPicker: PlaylistPickerModel = {
         let catalog = RoutingPlaylistCatalog(
             spotify: SpotifyPlaylistCatalog(authorization: spotifyAuthorizationManager),
-            appleMusic: AppleMusicPlaylistCatalog(),
-            usesAppleMusic: { [weak self] in self?.playbackSourceIdentity == .appleMusic }
+            appleMusic: musicPlaylistCatalog,
+            usesAppleMusic: { [weak self] in self?.playlistCatalogSource == .appleMusic }
         )
         return PlaylistPickerModel(
             catalog: catalog,
             trackID: { [weak self] in self?.playlistTrackID },
             likedState: { [weak self] in self?.isTrackLiked },
+            catalogAvailable: { [weak self] in self?.playlistCatalogSource != .mockPreview },
             applyLiked: { [weak self] value in
                 guard let self else { return nil }
                 return await self.setTrackLiked(value)
@@ -1907,27 +1920,37 @@ public final class PlaybackState: ObservableObject {
     }()
 
     public lazy var playlistBrowser = PlaylistBrowserModel(service: spotifyLibraryService, picker: playlistPicker,
+        source: playlistCatalogSource, music: musicPlaylistCatalog,
         accessToken: { [weak self] scopes in
             guard let self else { throw SpotifyAuthorizationError.notAuthorized }
             return try await self.spotifyAuthorizationManager.accessToken(requiredScopes: scopes)
         }, advanceQueue: { [weak self] count in self?.advanceQueuedTracks(count) })
 
     func advanceQueuedTracks(_ count: Int) {
-        runProviderCommand { provider in
-            for _ in 0..<count { try await provider.next() }
+        guard playbackSourceIdentity == .spotifyDesktop else { return }
+        runProviderCommand { [weak self] provider in
+            for _ in 0..<count {
+                guard self?.playbackSourceIdentity == .spotifyDesktop else { throw CancellationError() }
+                try await provider.next()
+            }
         }
     }
 
     /// The player's own ID for the current recording, in the shape its
     /// playlist API expects.
-    private var playlistTrackID: String? {
-        guard hasLiveTrack else { return nil }
+    var playlistTrackID: String? {
+        guard hasLiveTrack, playbackSourceIdentity == playlistCatalogSource else { return nil }
         return Self.playlistRequestTrackID(for: currentTrack, source: playbackSourceIdentity)
     }
 
     static func playlistRequestTrackID(for track: Track, source: PlaybackSourceIdentity) -> String? {
-        if source == .appleMusic { return TrackIdentity.playbackID(for: track) }
-        return TrackIdentity.spotifyRequestTrackID(track.spotifyId)
+        switch source {
+        case .appleMusic:
+            guard let id = TrackIdentity.playbackID(for: track), id.hasPrefix("applemusic:") else { return nil }
+            return id
+        case .spotifyDesktop: return TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString)
+        default: return nil
+        }
     }
 
     public var canPickPlaylists: Bool {
@@ -2705,18 +2728,26 @@ public final class PlaybackState: ObservableObject {
     /// its own session, so selecting arbitrary Spotify catalog metadata never
     /// changes the Desktop playback track or its time anchor.
     public func playSearchTrack(_ track: Track) {
+        guard playlistBrowser.supportsQueueEdits else { return }
         guard let id = TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString) else {
             songSearchSelectionMessage = "这首歌没有可播放的 Spotify ID"
             return
         }
+        let generation = playlistBrowser.sourceGeneration
         playlistBrowser.noteManualPlayback(track)
         Task {
+            guard generation == playlistBrowser.sourceGeneration else { return }
             do {
                 let token = try await spotifyAuthorizationManager.accessToken(requiredScopes: SpotifyOAuthConfiguration.playbackWriteScopes)
+                guard generation == playlistBrowser.sourceGeneration else { return }
                 try await spotifyLibraryService.playTrack(id, accessToken: token)
+                guard generation == playlistBrowser.sourceGeneration else { return }
                 songSearchSelectionMessage = "已请求播放"
-            } catch SpotifyCatalogError.forbidden { playlistBrowser.cancelManualPlaybackIntent(); songSearchSelectionMessage = "需要 Spotify Premium" }
-            catch { playlistBrowser.cancelManualPlaybackIntent(); songSearchSelectionMessage = error.localizedDescription }
+            } catch {
+                guard generation == playlistBrowser.sourceGeneration else { return }
+                playlistBrowser.cancelManualPlaybackIntent()
+                songSearchSelectionMessage = (error as? SpotifyCatalogError) == .forbidden ? "需要 Spotify Premium" : error.localizedDescription
+            }
         }
     }
 
@@ -3103,10 +3134,6 @@ public final class PlaybackState: ObservableObject {
             desktopSnapshots[snapshot.sourceIdentity] = snapshot
             cacheAcceptedDesktopSnapshot(snapshot)
         }
-        let nextSource = snapshot.status.isReady && snapshot.track != nil
-            ? snapshot.sourceIdentity
-            : .unknown
-        updatePlaybackSourceIdentity(nextSource)
         guard snapshot.status.isReady, let providerTrack = snapshot.track else {
             guard hasLiveTrack else {
                 transientProviderFailureStartedAt = nil
@@ -3133,9 +3160,11 @@ public final class PlaybackState: ObservableObject {
         if providerStatus != snapshot.status { providerStatus = snapshot.status }
 
         let nextTrack = Track(providerTrack: providerTrack)
-        let previousID = TrackIdentity.spotifyRequestTrackID(currentTrack.spotifyId)
-        let nextID = TrackIdentity.spotifyRequestTrackID(nextTrack.spotifyId)
-        if nextID != previousID {
+        let previousSource = playbackSourceIdentity
+        let previousID = Self.playlistRequestTrackID(for: currentTrack, source: previousSource)
+        updatePlaybackSourceIdentity(snapshot.sourceIdentity)
+        let nextID = Self.playlistRequestTrackID(for: nextTrack, source: snapshot.sourceIdentity)
+        if previousSource != snapshot.sourceIdentity || nextID != previousID {
             playlistBrowser.currentTrackChanged(to: nextTrack)
             if playlistBrowser.consumeQueueSkip(for: nextTrack) {
                 LyricsE2ELog.log("QUEUE skip consumed id=\(nextID ?? "unknown")")
@@ -3297,6 +3326,9 @@ public final class PlaybackState: ObservableObject {
         guard playbackSourceIdentity != next else { return }
         let previous = playbackSourceIdentity
         playbackSourceIdentity = next
+        if next == .appleMusic || next == .spotifyDesktop { lastPlaylistSource = next }
+        playlistBrowser.updateSource(playlistCatalogSource)
+        if next == .unknown { playlistBrowser.clearCurrentTrack() }
         AutomaticAlignmentJobController.shared.notifyPlaybackSourceChanged(
             previous: previous,
             next: next
@@ -3353,14 +3385,18 @@ public final class PlaybackState: ObservableObject {
     private func runProviderCommand(_ command: @escaping @MainActor (PlaybackProvider) async throws -> Void) {
         invalidateProviderRefresh()
         let commandGeneration = providerRefreshGeneration
+        let source = playbackSourceIdentity
+        let commandProvider = (provider as? ActivePlaybackProvider)?.activeProvider ?? provider
         providerRefreshTask = Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard let self, self.playbackSourceIdentity == source else { return }
             do {
-                try await command(self.provider)
+                try await command(commandProvider)
                 try? await Task.sleep(nanoseconds: 250_000_000)
                 guard !Task.isCancelled, self.providerRefreshGeneration == commandGeneration else { return }
                 await self.refreshProvider()
-            } catch {
+            } catch is CancellationError { return }
+            catch {
+                guard self.playbackSourceIdentity == source else { return }
                 self.playlistBrowser.cancelManualPlaybackIntent()
                 self.handleProviderError(error)
             }

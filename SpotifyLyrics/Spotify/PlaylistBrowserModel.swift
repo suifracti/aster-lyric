@@ -12,18 +12,35 @@ public final class PlaylistBrowserModel: ObservableObject {
     public static let queueID = "up-next"
     public static let likedID = "liked-songs"
     public let picker: PlaylistPickerModel
+    @Published public private(set) var source: PlaybackSourceIdentity
     @Published public private(set) var queue: [Track] = []
     @Published public private(set) var tracks: [SpotifyPlaylistTrack] = []
     @Published public private(set) var selectedID = queueID
     @Published public private(set) var isLoading = false
     @Published public private(set) var isQueueLoading = false
     @Published public private(set) var hasLoadedQueue = false
-    @Published public private(set) var notice: String?
+    @Published public private(set) var queueNotice: String?
+    @Published private var selectionNotice: String?
+    public var notice: String? { selectedID == Self.queueID ? queueNotice : selectionNotice }
+    public var queueTitle: String { source == .appleMusic ? "歌单顺序" : "接下来播放" }
+    public var supportsQueueEdits: Bool { source == .spotifyDesktop }
+    public var queueContextName: String? { musicContinuation?.name }
+    public var emptyQueueMessage: String {
+        if source == .mockPreview { return "预览中的歌曲没有播放队列" }
+        if source == .appleMusic {
+            return musicContinuation == nil ? "当前歌曲没有可读取的歌单顺序" : "已到这份歌单的末尾"
+        }
+        return "接下来没有待播歌曲"
+    }
     private let service: SpotifyCatalogService
+    private let music: AppleMusicPlaylistCatalog
+    private var musicContinuation: AppleMusicPlaylistCatalog.Continuation?
+    private(set) var sourceGeneration = 0
     private let advanceQueue: @MainActor (Int) -> Void
     private let accessToken: @MainActor (Set<String>) async throws -> String
     private var tracksTask: Task<Void, Never>?
     private var queueTask: Task<Void, Never>?
+    private var playTask: Task<Void, Never>?
     private var rawQueue: [Track] = []
     private var currentQueueTrackID: String?
     private var queueSkipCounts: [String: Int] = [:]
@@ -31,7 +48,8 @@ public final class PlaylistBrowserModel: ObservableObject {
     private var manualPlaybackIntent: ManualPlaybackIntent?
 
     private func queueKey(_ track: Track) -> String? {
-        TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString)
+        guard supportsQueueEdits else { return nil }
+        return TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString)
     }
     public func skipQueuedTrack(_ track: Track) {
         guard let id = queueKey(track) else { return }
@@ -40,6 +58,7 @@ public final class PlaylistBrowserModel: ObservableObject {
         syncQueueSelection()
     }
     public func noteManualPlayback(_ track: Track? = nil) {
+        guard supportsQueueEdits else { return }
         if let track {
             guard let id = queueKey(track) else { return }
             manualPlaybackIntent = .track(id)
@@ -66,6 +85,7 @@ public final class PlaylistBrowserModel: ObservableObject {
         return true
     }
     public var queueItems: [SpotifyPlaylistTrack] {
+        if source == .appleMusic { return musicContinuation?.tracks ?? [] }
         var remaining = queueSkipCounts
         return rawQueue.enumerated().compactMap { offset, track in
             if let id = queueKey(track), let count = remaining[id], count > 0 {
@@ -75,8 +95,18 @@ public final class PlaylistBrowserModel: ObservableObject {
             return SpotifyPlaylistTrack(track: track, offset: offset)
         }
     }
-    public func jumpToQueuedTrack(at offset: Int) {
-        guard rawQueue.indices.contains(offset) else { return }
+    public func jumpToQueuedTrack(at offset: Int, expecting track: Track? = nil) {
+        if let track {
+            guard let row = queueItems.first(where: { $0.offset == offset }),
+                  let id = PlaybackState.playlistRequestTrackID(for: track, source: source),
+                  PlaybackState.playlistRequestTrackID(for: row.track, source: source) == id else { return }
+        }
+        if source == .appleMusic {
+            guard let context = musicContinuation, let item = context.tracks.first(where: { $0.offset == offset }) else { return }
+            playInMusic(item, playlistID: context.playlistID, selection: Self.queueID)
+            return
+        }
+        guard supportsQueueEdits, rawQueue.indices.contains(offset) else { return }
         for track in rawQueue.prefix(offset + 1) {
             guard let id = queueKey(track), let count = queueSkipCounts[id] else { continue }
             if count == 1 { queueSkipCounts.removeValue(forKey: id) }
@@ -85,6 +115,21 @@ public final class PlaylistBrowserModel: ObservableObject {
         advanceQueue(offset + 1)
     }
     public func currentTrackChanged(to track: Track) {
+        if source == .appleMusic {
+            let shouldRefresh = isQueueLoading || hasLoadedQueue
+            queueTask?.cancel()
+            queueTask = nil
+            isQueueLoading = false
+            hasLoadedQueue = false
+            currentQueueTrackID = TrackIdentity.playbackID(for: track)
+            musicContinuation = nil
+            queue = []
+            queueNotice = nil
+            syncQueueSelection()
+            if shouldRefresh { loadQueue() }
+            return
+        }
+        guard supportsQueueEdits else { return }
         currentQueueTrackID = queueKey(track)
         trimQueueThroughCurrentTrack()
         queue = queueItems.map(\.track)
@@ -108,26 +153,79 @@ public final class PlaylistBrowserModel: ObservableObject {
     }
     public var emptyMessage: String? {
         guard tracks.isEmpty, !selectedTracksAreLoading, notice == nil else { return nil }
-        return selectedID == Self.queueID ? "接下来没有待播歌曲" : "歌单里还没有歌曲"
+        return selectedID == Self.queueID ? emptyQueueMessage : "歌单里还没有歌曲"
     }
 
     public init(service: SpotifyCatalogService, picker: PlaylistPickerModel,
+                source: PlaybackSourceIdentity = .spotifyDesktop, music: AppleMusicPlaylistCatalog? = nil,
                 accessToken: @escaping @MainActor (Set<String>) async throws -> String,
                 advanceQueue: @escaping @MainActor (Int) -> Void) {
         self.service = service; self.picker = picker; self.accessToken = accessToken
+        self.source = source; self.music = music ?? AppleMusicPlaylistCatalog()
         self.advanceQueue = advanceQueue
     }
-    public func open() { picker.open(); loadQueue() }
+    public func updateSource(_ next: PlaybackSourceIdentity) {
+        guard source != next else { return }
+        sourceGeneration &+= 1
+        tracksTask?.cancel()
+        playTask?.cancel()
+        tracksTask = nil
+        selectionNotice = nil
+        isLoading = false
+        selectedID = Self.queueID
+        clearCurrentTrack()
+        source = next
+        picker.resetForSourceChange()
+    }
+    func clearCurrentTrack() {
+        queueTask?.cancel()
+        queueTask = nil
+        rawQueue = []
+        musicContinuation = nil
+        currentQueueTrackID = nil
+        queueSkipCounts = [:]
+        manualPlaybackIntent = nil
+        queue = []
+        if selectedID == Self.queueID { tracks = [] }
+        queueNotice = nil
+        isQueueLoading = false
+        hasLoadedQueue = false
+    }
+    public func open() {
+        if source == .appleMusic || supportsQueueEdits { picker.open(); loadQueue() }
+    }
+    public func refresh() {
+        guard source == .appleMusic || supportsQueueEdits else { return }
+        picker.load(force: true)
+        picker.refreshLikedCount()
+        loadQueue()
+        select(selectedID)
+    }
     public func loadQueue() {
-        guard !isQueueLoading else { return }
+        guard !isQueueLoading, source == .appleMusic || supportsQueueEdits else { return }
         isQueueLoading = true
         queueTask = Task {
-            defer { isQueueLoading = false; queueTask = nil }
+            guard !Task.isCancelled else { return }
+            defer { if !Task.isCancelled { isQueueLoading = false; queueTask = nil } }
+            if source == .appleMusic {
+                do {
+                    let context = try await music.continuation(after: currentQueueTrackID)
+                    try Task.checkCancellation()
+                    musicContinuation = context
+                    queue = queueItems.map(\.track)
+                    hasLoadedQueue = true
+                    queueNotice = nil
+                    syncQueueSelection()
+                } catch { if !Task.isCancelled { queueNotice = error.localizedDescription } }
+                return
+            }
             for attempt in 0...1 {
                 let started = Date()
                 do {
                     let token = try await accessToken(SpotifyOAuthConfiguration.playbackScopes)
+                    try Task.checkCancellation()
                     let upcoming = try await service.upcomingTracks(accessToken: token, limit: nil)
+                    try Task.checkCancellation()
                     rawQueue = upcoming
                     if let id = currentQueueTrackID {
                         rawQueue.removeFirst(rawQueue.prefix { queueKey($0) == id }.count)
@@ -135,12 +233,12 @@ public final class PlaylistBrowserModel: ObservableObject {
                     queue = queueItems.map(\.track)
                     hasLoadedQueue = true
                     syncQueueSelection()
-                    notice = nil
+                    queueNotice = nil
                     LyricsE2ELog.log("QUEUE load seconds=\(String(format: "%.3f", Date().timeIntervalSince(started))) count=\(upcoming.count)")
                     return
                 } catch {
                     guard !Task.isCancelled else { return }
-                    notice = error.localizedDescription
+                    queueNotice = error.localizedDescription
                     LyricsE2ELog.log("QUEUE load seconds=\(String(format: "%.3f", Date().timeIntervalSince(started))) count=0 error=\(error.localizedDescription)")
                     if attempt == 0 {
                         do { try await Task.sleep(for: .seconds(2)) }
@@ -153,55 +251,89 @@ public final class PlaylistBrowserModel: ObservableObject {
     public func select(_ id: String) {
         tracksTask?.cancel()
         selectedID = id
-        notice = nil
+        selectionNotice = nil
         if id == Self.queueID {
             isLoading = false
             tracks = queueItems
             return
         }
+        guard source == .appleMusic || supportsQueueEdits else {
+            tracks = []; isLoading = false
+            return
+        }
         tracks = []; isLoading = true
         tracksTask = Task {
-            defer { if selectedID == id { isLoading = false } }
+            guard !Task.isCancelled else { return }
+            defer { if !Task.isCancelled { isLoading = false } }
             do {
-                let token = try await accessToken(id == Self.likedID ? SpotifyOAuthConfiguration.libraryScopes : SpotifyOAuthConfiguration.playlistScopes)
-                let songs = id == Self.likedID
-                    ? try await service.savedTracks(accessToken: token)
-                    : try await service.playlistTracks(id, accessToken: token)
-                guard !Task.isCancelled, selectedID == id else { return }
+                let songs: [SpotifyPlaylistTrack]
+                if source == .appleMusic {
+                    songs = try await music.tracks(in: id)
+                } else {
+                    let token = try await accessToken(id == Self.likedID ? SpotifyOAuthConfiguration.libraryScopes : SpotifyOAuthConfiguration.playlistScopes)
+                    try Task.checkCancellation()
+                    songs = id == Self.likedID ? try await service.savedTracks(accessToken: token) : try await service.playlistTracks(id, accessToken: token)
+                }
+                try Task.checkCancellation()
                 tracks = songs
-            } catch { if !Task.isCancelled, selectedID == id { notice = error.localizedDescription } }
+            } catch { if !Task.isCancelled { selectionNotice = error.localizedDescription } }
         }
     }
     public func enqueue(_ track: Track) async throws {
-        guard let id = TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString) else { return }
+        guard let id = queueKey(track) else { throw CancellationError() }
+        let generation = sourceGeneration
         let token = try await accessToken(SpotifyOAuthConfiguration.playbackWriteScopes)
+        guard generation == sourceGeneration else { throw CancellationError() }
         try await service.enqueueTrack(id, accessToken: token)
+        guard generation == sourceGeneration else { throw CancellationError() }
         queueSkipCounts.removeValue(forKey: id)
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(1))
-            self?.loadQueue()
+            if self?.sourceGeneration == generation { self?.loadQueue() }
         }
     }
 
     public func play(_ item: SpotifyPlaylistTrack) {
         let context = selectedID
-        if context == Self.queueID { jumpToQueuedTrack(at: item.offset); return }
+        guard tracks.contains(item) else { return }
+        if context == Self.queueID { jumpToQueuedTrack(at: item.offset, expecting: item.track); return }
+        if source == .appleMusic { playInMusic(item, playlistID: context, selection: context); return }
+        guard supportsQueueEdits else { return }
+        let generation = sourceGeneration
         noteManualPlayback(item.track)
         let remainingIDs = tracks.drop(while: { $0.offset != item.offset }).prefix(100)
             .compactMap { TrackIdentity.spotifyRequestTrackID($0.track.spotifyId) }
-        Task {
+        playTask?.cancel()
+        playTask = Task {
+            guard !Task.isCancelled, sourceGeneration == generation else { return }
             do {
                 let token = try await accessToken(SpotifyOAuthConfiguration.playbackWriteScopes)
+                guard !Task.isCancelled, sourceGeneration == generation else { return }
                 if context == Self.likedID {
                     guard !remainingIDs.isEmpty else { return }
                     try await service.playTracks(remainingIDs, accessToken: token)
                 } else {
                     try await service.playPlaylist(context, offset: item.offset, accessToken: token)
                 }
-                notice = "已请求播放"
-            } catch SpotifyCatalogError.forbidden { cancelManualPlaybackIntent(); notice = "需要 Spotify Premium" }
-            catch { cancelManualPlaybackIntent(); notice = error.localizedDescription }
+                if !Task.isCancelled, sourceGeneration == generation, selectedID == context { selectionNotice = "已请求播放" }
+            } catch {
+                guard !Task.isCancelled, sourceGeneration == generation else { return }
+                cancelManualPlaybackIntent()
+                if selectedID == context { selectionNotice = (error as? SpotifyCatalogError) == .forbidden ? "需要 Spotify Premium" : error.localizedDescription }
+            }
         }
     }
-    deinit { tracksTask?.cancel(); queueTask?.cancel() }
+    private func playInMusic(_ item: SpotifyPlaylistTrack, playlistID: String, selection: String) {
+        let generation = sourceGeneration
+        playTask?.cancel()
+        playTask = Task {
+            guard !Task.isCancelled, generation == sourceGeneration else { return }
+            let message: String
+            do { try await music.play(item, in: playlistID); message = "已请求播放" }
+            catch { message = error.localizedDescription }
+            guard !Task.isCancelled, generation == sourceGeneration, selectedID == selection else { return }
+            if selection == Self.queueID { queueNotice = message } else { selectionNotice = message }
+        }
+    }
+    deinit { tracksTask?.cancel(); queueTask?.cancel(); playTask?.cancel() }
 }

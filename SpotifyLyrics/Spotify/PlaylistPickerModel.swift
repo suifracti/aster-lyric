@@ -196,6 +196,7 @@ public final class PlaylistPickerModel: ObservableObject {
     @Published public private(set) var likedCount: Int?
     @Published public private(set) var isCreatingPlaylist = false
     @Published public var notice: String?
+    @Published public private(set) var sourceRevision = 0
 
     /// The Liked Songs row is not a playlist, so it uses this fixed identity.
     public static let likedRowID = "liked-songs"
@@ -204,11 +205,13 @@ public final class PlaylistPickerModel: ObservableObject {
     private let trackID: @MainActor () -> String?
     private let likedState: @MainActor () -> Bool?
     private let applyLiked: @MainActor (Bool) async -> Bool?
+    private let catalogAvailable: @MainActor () -> Bool
 
     private var cachedSnapshots: [String: String] = [:]
     private var membershipTracks: [String: String] = [:]
     private var stale: Set<String> = []
     private var membershipTasks: [String: Task<Void, Never>] = [:]
+    private var checkingTracks: [String: String] = [:]
     private var loadTask: Task<Void, Never>?
     private var likedCountTask: Task<Void, Never>?
     private var loadedSourceKey: String?
@@ -218,11 +221,14 @@ public final class PlaylistPickerModel: ObservableObject {
     public init(catalog: PlaylistCataloging,
                 trackID: @escaping @MainActor () -> String?,
                 likedState: @escaping @MainActor () -> Bool?,
+                catalogAvailable: @escaping @MainActor () -> Bool = { true },
                 applyLiked: @escaping @MainActor (Bool) async -> Bool?) {
         self.catalog = catalog
         self.trackID = trackID
         self.likedState = likedState
+        self.catalogAvailable = catalogAvailable
         self.applyLiked = applyLiked
+        self.loadedSourceKey = catalog.sourceKey
     }
 
     public var trimmedQuery: String {
@@ -243,21 +249,37 @@ public final class PlaylistPickerModel: ObservableObject {
     /// player; the playlist list itself is kept for the session, unless the
     /// player changed and the rows would belong to the other account.
     public func open() {
+        if loadedSourceKey != catalog.sourceKey { resetForSourceChange() }
+        guard catalogAvailable() else { return }
         isLiked = likedState() ?? false
         notice = nil
-        if loadedSourceKey != catalog.sourceKey {
-            loadedSourceKey = catalog.sourceKey
-            playlists = []
-            membership = [:]
-            cachedSnapshots = [:]
-            membershipTracks = [:]
-            stale = []
-            checking = []
-            phase = .idle
-        }
         refreshLikedCount()
         if case .ready = phase { return }
         load()
+    }
+
+    func resetForSourceChange() {
+        loadTask?.cancel()
+        loadTask = nil
+        likedCountTask?.cancel()
+        membershipTasks.values.forEach { $0.cancel() }
+        membershipTasks = [:]
+        checkingTracks = [:]
+        loadedSourceKey = catalog.sourceKey
+        playlists = []
+        membership = [:]
+        cachedSnapshots = [:]
+        membershipTracks = [:]
+        stale = []
+        checking = []
+        pending = []
+        isCreatingPlaylist = false
+        likedCount = nil
+        isLiked = false
+        notice = nil
+        query = ""
+        phase = .idle
+        sourceRevision &+= 1
     }
 
     /// The row's track count is read once per opening, not on every redraw.
@@ -268,28 +290,30 @@ public final class PlaylistPickerModel: ObservableObject {
         likedCountTask = Task { @MainActor [weak self] in
             guard let self else { return }
             let value = try? await self.catalog.likedTrackCount()
-            guard self.catalog.sourceKey == sourceKey else { return }
+            guard !Task.isCancelled, self.catalog.sourceKey == sourceKey else { return }
             self.likedCount = value
         }
     }
 
-    public func load() {
+    public func load(force: Bool = false) {
         guard loadTask == nil else { return }
-        if case .ready = phase { return }
+        if case .ready = phase, !force { return }
         phase = .loading
         let sourceKey = catalog.sourceKey
         loadTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { self.loadTask = nil }
+            defer { if !Task.isCancelled { self.loadTask = nil } }
             do {
+                try Task.checkCancellation()
                 let token = try await self.catalog.accessToken()
+                try Task.checkCancellation()
                 let rows = try await self.catalog.playlists(accessToken: token)
-                guard self.catalog.sourceKey == sourceKey else { return }
+                guard !Task.isCancelled, self.catalog.sourceKey == sourceKey else { return }
                 self.playlists = rows
                 self.phase = .ready
             } catch {
-                guard self.catalog.sourceKey == sourceKey else { return }
-                self.phase = .failed(Self.isPermissionError(error) ? self.catalog.connectionNotice : "无法读取歌单")
+                guard !Task.isCancelled, self.catalog.sourceKey == sourceKey else { return }
+                self.phase = .failed(self.failureMessage(error, fallback: "无法读取歌单"))
             }
         }
     }
@@ -310,37 +334,41 @@ public final class PlaylistPickerModel: ObservableObject {
     /// Lazily fills a row's checkmark. A cached answer is reused until the
     /// playlist's snapshot changes or this app modifies that playlist.
     public func ensureMembership(for playlist: PlaylistSummary) {
-        guard let track = trackID(), membershipTasks[playlist.id] == nil else { return }
+        guard let track = trackID(), checkingTracks[playlist.id] != track else { return }
+        membershipTasks[playlist.id]?.cancel()
+        membershipTasks[playlist.id] = nil
+        checkingTracks[playlist.id] = nil
+        checking.remove(playlist.id)
         if membershipTracks[playlist.id] == track, !stale.contains(playlist.id), let cached = cachedSnapshots[playlist.id],
            cached == playlist.snapshotID, membership[playlist.id] != nil {
             return
         }
         checking.insert(playlist.id)
+        checkingTracks[playlist.id] = track
         let sourceKey = catalog.sourceKey
         membershipTasks[playlist.id] = Task { @MainActor [weak self] in
             guard let self else { return }
             let started = Date()
             defer {
-                self.membershipTasks[playlist.id] = nil
-                self.checking.remove(playlist.id)
-            }
-            guard let track = self.trackID() else {
-                LyricsE2ELog.log("PLAYLIST check skipped id=\(playlist.id) no-current-track")
-                return
+                if !Task.isCancelled {
+                    self.membershipTasks[playlist.id] = nil
+                    self.checkingTracks[playlist.id] = nil
+                    self.checking.remove(playlist.id)
+                }
             }
             do {
+                try Task.checkCancellation()
                 let token = try await self.catalog.accessToken()
+                try Task.checkCancellation()
                 let isMember = try await self.catalog.contains(trackID: track, inPlaylist: playlist.id, accessToken: token)
-                guard self.catalog.sourceKey == sourceKey else {
-                    self.checking.remove(playlist.id)
-                    return
-                }
+                guard !Task.isCancelled, self.catalog.sourceKey == sourceKey else { return }
                 self.membership[playlist.id] = isMember ? [track] : []
                 self.membershipTracks[playlist.id] = track
                 self.cachedSnapshots[playlist.id] = playlist.snapshotID
                 self.stale.remove(playlist.id)
                 LyricsE2ELog.log("PLAYLIST check finished id=\(playlist.id) member=\(isMember) seconds=\(Date().timeIntervalSince(started))")
             } catch {
+                guard !Task.isCancelled, self.catalog.sourceKey == sourceKey else { return }
                 self.membership[playlist.id] = []
                 LyricsE2ELog.log("PLAYLIST check failed id=\(playlist.id) seconds=\(Date().timeIntervalSince(started)) error=\(error.localizedDescription)")
             }
@@ -351,18 +379,19 @@ public final class PlaylistPickerModel: ObservableObject {
         guard let track = trackID(), !pending.contains(playlist.id) else { return }
         let wasMember = isMember(playlist)
         pending.insert(playlist.id)
-        let sourceKey = catalog.sourceKey
+        let revision = sourceRevision
         Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.pending.remove(playlist.id) }
+            guard let self, self.sourceRevision == revision else { return }
+            defer { if self.sourceRevision == revision { self.pending.remove(playlist.id) } }
             do {
                 let token = try await self.catalog.accessToken()
+                guard self.sourceRevision == revision else { return }
                 if wasMember {
                     try await self.catalog.remove(trackID: track, fromPlaylist: playlist.id, accessToken: token)
                 } else {
                     try await self.catalog.add(trackID: track, toPlaylist: playlist.id, accessToken: token)
                 }
-                guard self.catalog.sourceKey == sourceKey else { return }
+                guard self.sourceRevision == revision else { return }
                 var ids = self.membership[playlist.id] ?? []
                 if wasMember { ids.remove(track) } else { ids.insert(track) }
                 self.membership[playlist.id] = ids
@@ -370,19 +399,24 @@ public final class PlaylistPickerModel: ObservableObject {
                 self.stale.insert(playlist.id)
                 self.cachedSnapshots[playlist.id] = nil
             } catch {
-                self.notice = Self.isPermissionError(error) ? self.catalog.connectionNotice : "添加失败，稍后再试"
+                guard self.sourceRevision == revision else { return }
+                self.notice = self.failureMessage(error, fallback: "添加失败，稍后再试")
             }
         }
     }
 
     public func toggleLikedSongs() {
-        guard trackID() != nil, !pending.contains(Self.likedRowID) else { return }
+        guard let track = trackID(), !pending.contains(Self.likedRowID) else { return }
         let target = !isLiked
+        let revision = sourceRevision
         pending.insert(Self.likedRowID)
         Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.pending.remove(Self.likedRowID) }
-            if let applied = await self.applyLiked(target) {
+            guard let self, self.sourceRevision == revision else { return }
+            defer { if self.sourceRevision == revision { self.pending.remove(Self.likedRowID) } }
+            guard self.trackID() == track else { return }
+            let applied = await self.applyLiked(target)
+            guard self.sourceRevision == revision, self.trackID() == track else { return }
+            if let applied {
                 self.isLiked = applied
             } else {
                 self.notice = "添加失败，稍后再试"
@@ -393,14 +427,18 @@ public final class PlaylistPickerModel: ObservableObject {
     public func createPlaylist() {
         guard let track = trackID(), !isCreatingPlaylist else { return }
         let name = newPlaylistName
+        let revision = sourceRevision
         isCreatingPlaylist = true
         Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.isCreatingPlaylist = false }
+            guard let self, self.sourceRevision == revision else { return }
+            defer { if self.sourceRevision == revision { self.isCreatingPlaylist = false } }
             do {
                 let token = try await self.catalog.accessToken()
+                guard self.sourceRevision == revision else { return }
                 let created = try await self.catalog.createPrivatePlaylist(named: name, accessToken: token)
+                guard self.sourceRevision == revision else { return }
                 try await self.catalog.add(trackID: track, toPlaylist: created.id, accessToken: token)
+                guard self.sourceRevision == revision else { return }
                 let row = PlaylistSummary(id: created.id, name: created.name,
                                           trackCount: created.trackCount + 1,
                                           snapshotID: created.snapshotID,
@@ -412,9 +450,15 @@ public final class PlaylistPickerModel: ObservableObject {
                 self.cachedSnapshots[row.id] = nil
                 self.query = ""
             } catch {
-                self.notice = Self.isPermissionError(error) ? self.catalog.connectionNotice : "添加失败，稍后再试"
+                guard self.sourceRevision == revision else { return }
+                self.notice = self.failureMessage(error, fallback: "添加失败，稍后再试")
             }
         }
+    }
+
+    private func failureMessage(_ error: Error, fallback: String) -> String {
+        if Self.isPermissionError(error) { return catalog.connectionNotice }
+        return catalog.sourceKey == "apple-music" ? error.localizedDescription : fallback
     }
 
     private static func isPermissionError(_ error: Error) -> Bool {

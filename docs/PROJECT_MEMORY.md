@@ -20,7 +20,7 @@
 | 已采用歌词突然被挡住、同一首重复入库、歌单已存却不打勾；改 Spotify ID | L-005；TrackIdentity、SQLiteLyricsRepository、PlaylistPickerTests |
 | Desktop 时长跳变、合作歌手待确认、错误的时长差提示 | L-006；SpotifyTrackArtistResolver、LyricsSearchManager |
 | 搜索慢、本地结果等网络、预加载同一首重复搜索；新歌首次找词要十几秒 | L-007；searchCachedLibrary、TrackSearchManager、LyricsSessionController、JapaneseMeCabEngine |
-| 队列不更新、循环列表被裁掉、隐藏后点第三首多跳 | L-008；PlaylistBrowserModel、V3PlaylistQueuePreview |
+| 队列不更新、循环列表被裁掉、隐藏后点第三首多跳、Apple Music 歌单串到 Spotify | L-008；PlaylistBrowserModel、AppleMusicPlaylistCatalog、V3PlaylistQueuePreview |
 | 版本弹窗挂在悬浮窗、关后黑着、大歌词库关闭或丢选择 | L-009；PersonalLyricsLibraryService、PersonalLibrarySheets |
 | 有歌词源译文却不显示、部分行没有译文、重复补存 | L-010；TranslationSessionController.synchronize 与 chooseVersion |
 | TTML 自带翻译或罗马音却没显示、无时间轴的文件被当成同步歌词 | L-032、L-048 · TTMLParser、AMLLLyricsProvider |
@@ -157,6 +157,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 `075d578` 恢复 `V3PlaylistQueuePreview` 打开时的 `loadQueue()`，`24cfa3a` 分开网络刷新与 `currentTrackChanged` 的裁剪，`e91ffca` 删除 queueJump intent 和 X 的当前歌特例。权威是 `SpotifyLyrics/Spotify/PlaylistBrowserModel.swift` 的 rawQueue、queueItems、jumpToQueuedTrack 和 `V3PlaylistPanel.swift`。隐藏行仍保留原始 offset；跳转先用掉跨过的 skip 标记，再发 offset + 1 次 next，X 一律标记。
 
 现有 `testQueueThirdPositionUsesThreeNextCallsIncludingHiddenSong` 覆盖首次空载再刷新、稍后重复曲目和隐藏第二首后点原第三首恰好三次 next。`e91ffca` 当轮报告 Debug 构建和 31 项相关检查通过，本轮只核既有证据，未对真实 Spotify 发写请求。下次保留原始队列位置、旧列表和一次性标记语义，不恢复已删的时序/跳转来源补丁。
+
+2026-11-18：原先爱心弹层会跟当前播放器，但右侧歌单、队列、搜索行插播仍固定请求 Spotify，Music 行还会因两个空 Spotify ID 而一起高亮。现在大面板、悬停和封面播放栏共用同一个来源。Music 本地歌单与喜爱按持久 ID 读取；当前歌单先核对当前曲所在的原始位置，只展示往后 25 首。手动待播与随机顺序属于系统「音乐」，所以用「歌单顺序」和「歌单后续」。点重复曲在原位置核对 ID 后播放；若歌单改变则提示刷新。切换来源会清掉旧队列、跳过标记和异步动作。长歌单在 osascript 退出前就排空输出管道。原生桩验证了 AppleScript 可编译、无 Spotify 凭据、重复位置、迟到令牌、长输出。真实账户操作须单独观察。
 
 ## L-009 版本弹窗归主窗口，居中歌词库保留在后面
 

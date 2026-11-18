@@ -311,6 +311,7 @@ private struct V3ShelfPresentation: View {
     let accent: Color
     @State private var previous: Track?
     @State private var lastTrack: Track?
+    @State private var lastSource: PlaybackSourceIdentity?
 
     var body: some View {
         let upcoming = Array(browser.queue.prefix(2))
@@ -334,7 +335,11 @@ private struct V3ShelfPresentation: View {
                 .frame(height: 3).padding(.top, 4)
             }
             .frame(width: 170, alignment: .leading)
-            sideCover(upcoming.first, size: 40, label: "下一首") { state.nextTrack() }
+            sideCover(upcoming.first, size: 40, label: browser.source == .appleMusic && !upcoming.isEmpty ? "歌单后一首" : "下一首") {
+                if browser.source == .appleMusic, let first = browser.queueItems.first {
+                    browser.jumpToQueuedTrack(at: first.offset, expecting: first.track)
+                } else { state.nextTrack() }
+            }
             if upcoming.count > 1 {
                 V3MiniCover(track: upcoming[1], size: 30, radius: 0.12).opacity(0.55)
             }
@@ -345,11 +350,14 @@ private struct V3ShelfPresentation: View {
         .padding(.bottom, 22)
         .onAppear {
             lastTrack = state.currentTrack
+            lastSource = browser.source
             if !browser.hasLoadedQueue { browser.loadQueue() }
         }
         .onChange(of: state.currentTrack.id) { _, _ in
-            if let lastTrack, lastTrack.id != state.currentTrack.id { previous = lastTrack }
+            if lastSource != browser.source { previous = nil }
+            else if let lastTrack, lastTrack.id != state.currentTrack.id { previous = lastTrack }
             lastTrack = state.currentTrack
+            lastSource = browser.source
             browser.loadQueue()
         }
     }
@@ -388,7 +396,7 @@ private struct V3InterludePresentation: View {
                     card(caption: nil, track: state.currentTrack, coverSize: 64, titleSize: 20)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 } else if remaining < 15, let next {
-                    card(caption: "下一首", track: next, coverSize: 44, titleSize: 15)
+                    card(caption: browser.source == .appleMusic ? "歌单后续" : "下一首", track: next, coverSize: 44, titleSize: 15)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }

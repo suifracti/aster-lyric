@@ -103,7 +103,7 @@ struct V3LibrarySearchPanel: View {
                     Divider()
                     Group {
                         if presentation.tab == .playlists {
-                            V3PlaylistPanel(browser: state.playlistBrowser, query: query, currentTrackID: state.currentTrack.spotifyId, currentArtworkURL: state.currentTrack.artworkURL)
+                            V3PlaylistPanel(browser: state.playlistBrowser, query: query, currentTrackID: state.playlistTrackID, currentArtworkURL: state.currentTrack.artworkURL)
                         } else if presentation.tab == .search {
                             V3SearchPanel(state: state, search: state.songSearchManager)
                         } else if presentation.tab == .history {
@@ -161,7 +161,7 @@ struct V3LibrarySearchPanel: View {
                 Button("导入资产", action: library.presentImportDialog)
             }
             Button("刷新") {
-                if presentation.tab == .playlists { state.playlistBrowser.picker.load(); state.playlistBrowser.loadQueue(); state.playlistBrowser.select(state.playlistBrowser.selectedID) }
+                if presentation.tab == .playlists { state.playlistBrowser.refresh() }
                 else { library.refresh(); updateSearch() }
             }
             if presentation.tab != .playlists {

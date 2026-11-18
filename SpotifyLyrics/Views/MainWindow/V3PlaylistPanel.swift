@@ -36,7 +36,7 @@ struct V3PlaylistPanel: View {
             HStack(spacing: 0) {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        destination("接下来播放", symbol: "list.bullet", id: PlaylistBrowserModel.queueID)
+                        destination(browser.queueTitle, symbol: "list.bullet", id: PlaylistBrowserModel.queueID)
                         destination(picker.likedRowTitle, symbol: "heart.fill", id: PlaylistBrowserModel.likedID)
                         Divider().padding(.vertical, 6)
                         ForEach(playlists) { playlist in
@@ -72,6 +72,7 @@ struct V3PlaylistPanel: View {
             }
         }
         .onAppear { browser.open() }
+        .onChange(of: browser.source) { _, _ in browser.open() }
         .task(id: currentArtworkURL) {
             let palette = await LyricIslandArtworkColors.palette(for: currentArtworkURL)
             guard !Task.isCancelled else { return }
@@ -79,13 +80,14 @@ struct V3PlaylistPanel: View {
         }
     }
     private var selectedTitle: String {
-        if browser.selectedID == PlaylistBrowserModel.queueID { return "接下来播放" }
+        if browser.selectedID == PlaylistBrowserModel.queueID { return browser.queueContextName ?? browser.queueTitle }
         if browser.selectedID == PlaylistBrowserModel.likedID { return picker.likedRowTitle }
         return picker.playlists.first { $0.id == browser.selectedID }?.name ?? "歌单"
     }
     private var selectedHeader: some View {
         let playlist = picker.playlists.first { $0.id == browser.selectedID }
         let isQueue = browser.selectedID == PlaylistBrowserModel.queueID
+        let isMusicOrder = isQueue && browser.queueContextName != nil
         let count = playlist?.trackCount ?? (isQueue ? browser.queue.count : picker.likedCount ?? browser.tracks.count)
         return HStack(spacing: 12) {
             Group {
@@ -96,7 +98,9 @@ struct V3PlaylistPanel: View {
             }.frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 4) {
                 Text(selectedTitle).font(.headline).lineLimit(2)
-                Text("\(count) 首").font(.caption).foregroundStyle(.secondary)
+                Text([browser.source == .appleMusic ? "Apple Music" : browser.source == .spotifyDesktop ? "Spotify" : nil,
+                      isMusicOrder ? "按歌单顺序" : nil, isMusicOrder ? "后续 \(count) 首" : "\(count) 首"].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer(minLength: 0)
             if !isQueue {
@@ -123,7 +127,7 @@ struct V3PlaylistPanel: View {
                     Spacer(minLength: 0)
                 }.frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
             }.buttonStyle(.plain)
-            if id != PlaylistBrowserModel.queueID {
+            if id != PlaylistBrowserModel.queueID, currentTrackID != nil {
                 let checked = playlist.map { picker.isMember($0) } ?? picker.isLiked
                 let busy = playlist.map { picker.isPending($0) || picker.isChecking($0) }
                     ?? picker.pending.contains(PlaylistPickerModel.likedRowID)
@@ -143,7 +147,9 @@ struct V3PlaylistPanel: View {
     }
 
     private func trackRow(_ item: SpotifyPlaylistTrack) -> some View {
-        let playing = currentTrackID != nil && TrackIdentity.spotifyRequestTrackID(currentTrackID) == TrackIdentity.spotifyRequestTrackID(item.track.spotifyId)
+        let playing = browser.selectedID != PlaylistBrowserModel.queueID && currentTrackID.map {
+            $0 == PlaybackState.playlistRequestTrackID(for: item.track, source: browser.source)
+        } == true
         return HStack(spacing: 8) {
             if browser.selectedID == PlaylistBrowserModel.queueID {
                 Button { browser.play(item) } label: { trackRowLabel(item, playing: playing) }
@@ -165,11 +171,16 @@ struct V3PlaylistPanel: View {
     }
     private func trackRowLabel(_ item: SpotifyPlaylistTrack, playing: Bool) -> some View {
         HStack(spacing: 8) {
-            AsyncImage(url: item.track.artworkURL) { $0.resizable().scaledToFill() } placeholder: { Image(systemName: "music.note") }
-                .frame(width: 32, height: 32).clipShape(RoundedRectangle(cornerRadius: 4))
+            AsyncImage(url: item.track.artworkURL) { $0.resizable().scaledToFill() } placeholder: {
+                if browser.source == .appleMusic, browser.selectedID != PlaylistBrowserModel.likedID {
+                    Text("\(item.offset + 1)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+                        .accessibilityLabel("歌单第 \(item.offset + 1) 首")
+                } else { Image(systemName: "music.note") }
+            }.frame(width: 32, height: 32).clipShape(RoundedRectangle(cornerRadius: 4))
             VStack(alignment: .leading) {
                 Text(item.track.title).lineLimit(1).foregroundStyle(playing ? playingAccent : .primary)
-                Text(item.track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text([item.track.artist, item.track.album].filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
             if playing { Image(systemName: "waveform").foregroundStyle(playingAccent).accessibilityLabel("正在播放") }
@@ -188,7 +199,6 @@ struct V3PlaylistPanel: View {
 
 struct V3PlaylistQueuePreview: View {
     @ObservedObject var browser: PlaylistBrowserModel
-    let currentTrackID: String?
     @State private var hoveredRow: Int? = {
 #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--queue-hover-fixture") { return 0 }
@@ -197,11 +207,14 @@ struct V3PlaylistQueuePreview: View {
     }()
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if let context = browser.queueContextName {
+                Text(context).font(.caption).foregroundStyle(.secondary).lineLimit(1).padding(.bottom, 5)
+            }
             ForEach(Array(browser.queueItems.prefix(5))) { item in
                 let index = item.offset
                 let track = item.track
                 HStack(spacing: 8) {
-                    Button { browser.jumpToQueuedTrack(at: item.offset) } label: {
+                    Button { browser.jumpToQueuedTrack(at: item.offset, expecting: track) } label: {
                         HStack(spacing: 8) {
                             AsyncImage(url: track.artworkURL) { $0.resizable().scaledToFill() } placeholder: { Image(systemName: "music.note") }
                                 .frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 4))
@@ -222,12 +235,13 @@ struct V3PlaylistQueuePreview: View {
                 .onHover { hoveredRow = $0 ? index : nil }
             }
             if browser.showsQueueLoading { ProgressView().controlSize(.small) }
-            else if browser.queue.isEmpty, browser.notice == nil {
-                Text("接下来没有待播歌曲").foregroundStyle(.secondary)
+            else if browser.queue.isEmpty, browser.queueNotice == nil {
+                Text(browser.emptyQueueMessage).foregroundStyle(.secondary)
             }
-            if let notice = browser.notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
+            if let notice = browser.queueNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
         }
         .onAppear { browser.loadQueue() }
+        .onChange(of: browser.source) { _, _ in browser.loadQueue() }
     }
 }
 
@@ -237,47 +251,52 @@ private struct V3QueueSkipButton: View {
     let track: Track
     let hovered: Bool
     var body: some View {
-        Button { browser.skipQueuedTrack(track) } label: {
-            Image(systemName: "xmark").font(.system(size: 11, weight: .medium))
-                .frame(width: 24, height: 24).contentShape(Rectangle())
+        if browser.supportsQueueEdits {
+            Button { browser.skipQueuedTrack(track) } label: {
+                Image(systemName: "xmark").font(.system(size: 11, weight: .medium))
+                    .frame(width: 24, height: 24).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .help("跳过这首").accessibilityLabel("跳过这首")
+            .disabled(TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString) == nil)
+            .opacity(hovered ? 1 : 0).allowsHitTesting(hovered).accessibilityHidden(!hovered)
         }
-        .buttonStyle(.plain).foregroundStyle(.secondary)
-        .help("跳过这首").accessibilityLabel("跳过这首")
-        .disabled(TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString) == nil)
-        .opacity(hovered ? 1 : 0).allowsHitTesting(hovered).accessibilityHidden(!hovered)
     }
 }
 
 /// Shared by playlist, liked-song and catalog search rows. Never used for queue rows.
 struct V3QueueInsertButton: View {
-    let browser: PlaylistBrowserModel
+    @ObservedObject var browser: PlaylistBrowserModel
     let track: Track
     let hovered: Bool
     @State private var sending = false
     @State private var inserted = false
     @State private var error: String?
     var body: some View {
-        HStack(spacing: 4) {
-            if let error { Text(error).font(.caption).foregroundStyle(.secondary) }
-            Button {
-                sending = true
-                error = nil
-                Task {
-                    defer { sending = false }
-                    do { try await browser.enqueue(track); inserted = true }
-                    catch SpotifyCatalogError.forbidden { error = "需要 Spotify Premium" }
-                    catch { self.error = error.localizedDescription }
+        if browser.supportsQueueEdits {
+            HStack(spacing: 4) {
+                if let error { Text(error).font(.caption).foregroundStyle(.secondary) }
+                Button {
+                    sending = true
+                    error = nil
+                    Task {
+                        defer { sending = false }
+                        do { try await browser.enqueue(track); inserted = true }
+                        catch is CancellationError { return }
+                        catch SpotifyCatalogError.forbidden { error = "需要 Spotify Premium" }
+                        catch { self.error = error.localizedDescription }
+                    }
+                } label: {
+                    Image(systemName: inserted ? "checkmark" : "text.line.first.and.arrowtriangle.forward")
                 }
-            } label: {
-                Image(systemName: inserted ? "checkmark" : "text.line.first.and.arrowtriangle.forward")
+                .buttonStyle(.plain).disabled(sending || inserted).help("插入播放")
+                .opacity(hovered || sending || inserted || error != nil ? 1 : 0)
             }
-            .buttonStyle(.plain).disabled(sending || inserted).help("插入播放")
-            .opacity(hovered || sending || inserted || error != nil ? 1 : 0)
-        }
-        .task(id: inserted) {
-            guard inserted else { return }
-            try? await Task.sleep(for: .milliseconds(1500))
-            if !Task.isCancelled { inserted = false }
+            .task(id: inserted) {
+                guard inserted else { return }
+                try? await Task.sleep(for: .milliseconds(1500))
+                if !Task.isCancelled { inserted = false }
+            }
         }
     }
 }

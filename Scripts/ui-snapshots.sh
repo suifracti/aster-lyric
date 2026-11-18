@@ -18,6 +18,7 @@ python3 "$ROOT/Tools/experience_visual_host/build.py" > /dev/null
 
 # Fix the scene toolbar state too; its pointer fade can otherwise be captured mid-animation.
 declare -a CASES=(
+  "apple-music-order|--surface music-order --appearance light --width 720 --height 440 --offscreen-composite"
   "r11-library-preview|--navigation library --version-preview --offscreen-composite --appearance dark --toolbar full"
   "r11-library-return|--navigation library --version-preview --close-version-preview --offscreen-composite --appearance dark --toolbar full"
   "r11-hover-delete|--panel hover:library --translation-delete-confirm --offscreen-composite --appearance dark --toolbar full"

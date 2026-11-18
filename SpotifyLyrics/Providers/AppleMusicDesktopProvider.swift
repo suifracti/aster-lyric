@@ -379,9 +379,10 @@ actor AppleMusicAppleScriptProcessRunner {
     func run(script: String, timeout: TimeInterval) async throws -> String? {
         await acquire()
         defer { release() }
+        try Task.checkCancellation()
 
         let processTask = Task.detached(priority: .userInitiated) {
-            try Self.runProcess(script: script, timeout: timeout)
+            try await Self.runProcess(script: script, timeout: timeout)
         }
         return try await withTaskCancellationHandler(operation: {
             try await processTask.value
@@ -413,7 +414,7 @@ actor AppleMusicAppleScriptProcessRunner {
     private nonisolated static func runProcess(
         script: String,
         timeout: TimeInterval
-    ) throws -> String? {
+    ) async throws -> String? {
         let outputPipe = Pipe()
         let errorPipe = Pipe()
         let process = Process()
@@ -431,24 +432,18 @@ actor AppleMusicAppleScriptProcessRunner {
             )
         }
 
+        // A library or long playlist can exceed a pipe's capacity before osascript exits.
+        let stdout = Task.detached { outputPipe.fileHandleForReading.readDataToEndOfFile() }
+        let stderr = Task.detached { errorPipe.fileHandleForReading.readDataToEndOfFile() }
         let deadline = Date().addingTimeInterval(max(0.2, timeout))
-        while process.isRunning {
-            if Task.isCancelled {
-                terminate(process)
-                throw CancellationError()
+        do {
+            while process.isRunning {
+                if Date() >= deadline { throw AppleScriptExecutionError(number: nil, message: "Apple Music Apple Events 请求超时") }
+                try await Task.sleep(for: .milliseconds(45))
             }
-            if Date() >= deadline {
-                terminate(process)
-                throw AppleScriptExecutionError(
-                    number: nil,
-                    message: "Apple Music Apple Events 请求超时"
-                )
-            }
-            Thread.sleep(forTimeInterval: 0.05)
-        }
-
-        let output = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        } catch { terminate(process); throw error }
+        let output = await stdout.value
+        let errorData = await stderr.value
         let standardOutput = String(data: output, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let standardError = String(data: errorData, encoding: .utf8)?
@@ -489,7 +484,15 @@ actor AppleMusicAppleScriptProcessRunner {
     }
 }
 
-private struct AppleScriptExecutionError: Error {
+private struct AppleScriptExecutionError: LocalizedError {
     let number: Int?
     let message: String
+    var errorDescription: String? {
+        if number == -1743 { return "需要在系统设置里允许控制「音乐」" }
+        if number == -600 || message.contains("音乐未运行") { return "请先打开「音乐」" }
+        if message.contains("歌单顺序已变") { return "歌单顺序已变，请刷新后重选" }
+        if number == -1728 { return "这首歌或歌单已不在「音乐」中" }
+        if message.contains("超时") { return "「音乐」暂未响应，请稍后刷新" }
+        return "「音乐」未能完成这次操作"
+    }
 }

@@ -27,7 +27,7 @@ public final class AppleMusicPlaylistCatalog: PlaylistCataloging {
 
     public func playlists(accessToken: String) async throws -> [PlaylistSummary] {
         let script = """
-        if application "Music" is not running then return ""
+        if application "Music" is not running then error "音乐未运行" number -600
         tell application "Music"
             set sep to character id 30
             set rowSep to character id 31
@@ -72,7 +72,8 @@ public final class AppleMusicPlaylistCatalog: PlaylistCataloging {
             return (count of (tracks of target whose persistent ID is "\(track)")) as text
         end tell
         """
-        return (try await run(script, timeout: 6))?.trimmingCharacters(in: .whitespacesAndNewlines) == "1"
+        let count = try await run(script, timeout: 6)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (count.flatMap(Int.init) ?? 0) > 0
     }
 
     public func add(trackID: String, toPlaylist id: String, accessToken: String) async throws {
@@ -122,6 +123,130 @@ public final class AppleMusicPlaylistCatalog: PlaylistCataloging {
         try await runner(script, timeout)
     }
 
+    struct Continuation {
+        let playlistID: String
+        let name: String
+        let tracks: [SpotifyPlaylistTrack]
+    }
+
+    func tracks(in playlistID: String) async throws -> [SpotifyPlaylistTrack] {
+        let source: String, selection: String
+        if playlistID == PlaylistBrowserModel.likedID {
+            source = "set sourcePlaylist to library playlist 1"
+            selection = "(every track of sourcePlaylist whose favorited is true)"
+        } else {
+            guard let id = Self.persistentPlaylistID(playlistID) else { throw AppleMusicPlaylistError.failed }
+            source = #"set sourcePlaylist to first user playlist whose persistent ID is "\#(id)""#
+            selection = "(every track of sourcePlaylist)"
+        }
+        let script = """
+        if application "Music" is not running then error "音乐未运行"
+        tell application "Music"
+            \(source)
+            set startOffset to 0
+            \(Self.trackRows(selection))
+            return packedText
+        end tell
+        """
+        return Self.parseTracks(try await run(script, timeout: 15) ?? "")
+    }
+
+    // Music exposes the current playlist, but does not expose its editable Playing Next queue.
+    func continuation(after currentID: String?) async throws -> Continuation? {
+        let expectedID = currentID.flatMap(Self.persistentTrackID)
+        let check = expectedID.map { #"if currentID is not "\#($0)" then return """# } ?? ""
+        let script = """
+        if application "Music" is not running then return ""
+        tell application "Music"
+            try
+                set sourcePlaylist to current playlist
+                set currentID to persistent ID of current track
+                \(check)
+                set currentIndex to index of current track
+                if currentIndex < 1 or (persistent ID of track currentIndex of sourcePlaylist) is not currentID then return ""
+                set headerText to (persistent ID of sourcePlaylist as text) & (character id 30) & (name of sourcePlaylist as text) & (character id 31)
+                set trackTotal to count tracks of sourcePlaylist
+            on error number -1728
+                return ""
+            end try
+            if currentIndex >= trackTotal then return headerText
+            set firstIndex to currentIndex + 1
+            set lastIndex to currentIndex + 25
+            if lastIndex > trackTotal then set lastIndex to trackTotal
+            set startOffset to currentIndex
+            \(Self.trackRows("(tracks firstIndex thru lastIndex of sourcePlaylist)"))
+            return headerText & packedText
+        end tell
+        """
+        guard let output = try await run(script, timeout: 8), let split = output.range(of: Self.rowSeparator) else { return nil }
+        let header = output[..<split.lowerBound].components(separatedBy: Self.fieldSeparator)
+        guard header.count == 2, let id = Self.persistentPlaylistID(header[0]) else { return nil }
+        return Continuation(playlistID: id, name: header[1], tracks: Self.parseTracks(String(output[split.upperBound...])))
+    }
+
+    func play(_ item: SpotifyPlaylistTrack, in playlistID: String) async throws {
+        guard let trackID = item.track.spotifyId.flatMap(Self.persistentTrackID), item.offset >= 0 else {
+            throw AppleMusicPlaylistError.failed
+        }
+        let selection: String
+        if playlistID == PlaylistBrowserModel.likedID {
+            selection = #"set chosenTrack to first track of library playlist 1 whose persistent ID is "\#(trackID)" and favorited is true"#
+        } else {
+            guard let id = Self.persistentPlaylistID(playlistID) else { throw AppleMusicPlaylistError.failed }
+            selection = """
+            set sourcePlaylist to first playlist whose persistent ID is "\(id)"
+            set chosenTrack to track \(item.offset + 1) of sourcePlaylist
+            """
+        }
+        let script = """
+        if application "Music" is not running then error "音乐未运行"
+        tell application "Music"
+            \(selection)
+            if (persistent ID of chosenTrack as text) is not "\(trackID)" then error "歌单顺序已变，请刷新后重选"
+            play chosenTrack once false
+            return "1"
+        end tell
+        """
+        guard try await run(script, timeout: 6) == "1" else { throw AppleMusicPlaylistError.failed }
+    }
+
+    // Fetch whole columns in Music, then join rows locally. The original ordinal
+    // survives an unreadable row and distinguishes repeated copies of the same song.
+    private static func trackRows(_ selection: String) -> String {
+        """
+        set rowIDs to get persistent ID of \(selection)
+        set rowTitles to get name of \(selection)
+        set rowArtists to get artist of \(selection)
+        set rowAlbums to get album of \(selection)
+        set rowDurations to get duration of \(selection)
+        set fieldSep to character id 30
+        set packedRows to {}
+        repeat with n from 1 to count of rowIDs
+            set a to item n of rowArtists
+            set b to item n of rowAlbums
+            set d to item n of rowDurations
+            if a is missing value then set a to ""
+            if b is missing value then set b to ""
+            if d is missing value then set d to 0
+            set end of packedRows to ((startOffset + n - 1) as text) & fieldSep & (item n of rowIDs as text) & fieldSep & (item n of rowTitles as text) & fieldSep & a & fieldSep & b & fieldSep & (d as text)
+        end repeat
+        set AppleScript's text item delimiters to character id 31
+        set packedText to packedRows as text
+        """
+    }
+
+    private static func parseTracks(_ output: String) -> [SpotifyPlaylistTrack] {
+        output.components(separatedBy: rowSeparator).compactMap { row in
+            let fields = row.components(separatedBy: fieldSeparator)
+            guard fields.count == 6, let offset = Int(fields[0]), offset >= 0,
+                  isPersistentID(fields[1]), !fields[2].isEmpty else { return nil }
+            let id = "applemusic:" + fields[1]
+            let duration = Double(fields[5].trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: ".")) ?? 0
+            return SpotifyPlaylistTrack(track: Track(id: id, title: fields[2], artist: fields[3], album: fields[4],
+                                                      duration: duration.isFinite ? max(0, duration) : 0, spotifyId: id), offset: offset)
+        }
+    }
+
     /// Rows arrive as `id <30> name <30> trackCount <31>`.
     static func parsePlaylists(_ output: String?) -> [PlaylistSummary] {
         guard let output, !output.isEmpty else { return [] }
@@ -163,6 +288,7 @@ public final class AppleMusicPlaylistCatalog: PlaylistCataloging {
     }
 }
 
-enum AppleMusicPlaylistError: Error {
+enum AppleMusicPlaylistError: LocalizedError {
     case failed
+    var errorDescription: String? { "无法在「音乐」中找到这首歌或歌单" }
 }

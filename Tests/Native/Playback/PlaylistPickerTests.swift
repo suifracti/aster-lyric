@@ -453,4 +453,91 @@ final class PlaylistPickerTests: XCTestCase {
         XCTAssertEqual(rows.first?.snapshotID, "count:12")
         XCTAssertTrue(AppleMusicPlaylistCatalog.parsePlaylists("").isEmpty)
     }
+
+    func testMusicBrowsesAndPlaysVerifiedPlaylistOccurrencesWithoutSpotify() async throws {
+        let playlist = "9BEC9B1282CB0D2F", song = "ABCDEF0123456789"
+        let rows = "4\u{1e}\(song)\u{1e}第二段\u{1e}歌手\u{1e}专辑\u{1e}125,5\u{1f}5\u{1e}missing\u{1e}坏行\u{1e}\u{1e}\u{1e}0\u{1f}6\u{1e}\(song)\u{1e}第二段\u{1e}歌手\u{1e}专辑\u{1e}125.5"
+        let played = expectation(description: "Music 播放原歌单第七首")
+        let liked = expectation(description: "Music 读取资料库里的喜爱")
+        let music = AppleMusicPlaylistCatalog { script, _ in
+            await MainActor.run {
+                var compilationError: NSDictionary?
+                XCTAssertTrue(NSAppleScript(source: script)?.compileAndReturnError(&compilationError) == true,
+                              compilationError?.description ?? "Music AppleScript 无法编译")
+            }
+            if script.contains("play chosenTrack") {
+                XCTAssertTrue(script.contains("track 7 of sourcePlaylist"))
+                XCTAssertTrue(script.contains(song))
+                XCTAssertTrue(script.contains(playlist))
+                played.fulfill()
+                return "1"
+            }
+            if script.contains("current playlist") { return "\(playlist)\u{1e}夜间驾驶\u{1f}" + rows }
+            if script.contains("favorited is true") { liked.fulfill() }
+            return rows
+        }
+        let libraryRows = try await music.tracks(in: playlist)
+        XCTAssertEqual(libraryRows.count, 2)
+        let browser = PlaylistBrowserModel(service: SpotifyCatalogService(), picker: model(FakePlaylistCatalog(rows: [])),
+                                          source: .appleMusic, music: music, accessToken: { _ in
+            XCTFail("Music 歌单不应向 Spotify 请求令牌"); throw CancellationError()
+        }, advanceQueue: { _ in XCTFail("Music 歌单点选不能逐首跳转") })
+        browser.currentTrackChanged(to: try XCTUnwrap(libraryRows.first).track)
+        browser.loadQueue()
+        await waitUntil { browser.hasLoadedQueue }
+        XCTAssertEqual(browser.queueContextName, "夜间驾驶")
+        XCTAssertEqual(browser.queueItems.map(\.offset), [4, 6])
+        let last = try XCTUnwrap(browser.queueItems.last)
+        XCTAssertEqual(last.track.duration, 125.5)
+        XCTAssertEqual(TrackIdentity.playbackID(for: last.track), "applemusic:" + song.lowercased())
+        browser.skipQueuedTrack(last.track)
+        XCTAssertEqual(browser.queueItems.count, 2)
+        browser.play(last)
+        await fulfillment(of: [played], timeout: 1)
+        browser.select(PlaylistBrowserModel.likedID)
+        await fulfillment(of: [liked], timeout: 1)
+        await waitUntil { !browser.isLoading }
+        XCTAssertEqual(browser.tracks.map(\.offset), [4, 6])
+        browser.updateSource(.spotifyDesktop)
+        XCTAssertTrue(browser.queueItems.isEmpty)
+        XCTAssertNil(browser.queueContextName)
+        XCTAssertEqual(browser.selectedID, PlaylistBrowserModel.queueID)
+    }
+
+    func testSwitchingPlayersWhileSpotifyTokenArrivesCannotSendAnOldPlaylistCommand() async {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [PlaylistFixtureURLProtocol.self]
+        let service = SpotifyCatalogService(session: URLSession(configuration: config), baseURL: URL(string: "https://playlist.test/v1")!)
+        PlaylistFixtureURLProtocol.response = { _ in XCTFail("切换前的令牌不能启动新请求"); return (200, [:]) }
+        defer { PlaylistFixtureURLProtocol.response = nil }
+        var waiters: [CheckedContinuation<String, Never>] = []
+        let browser = PlaylistBrowserModel(service: service, picker: model(FakePlaylistCatalog(rows: [])),
+            accessToken: { _ in await withCheckedContinuation { waiters.append($0) } }, advanceQueue: { _ in })
+        browser.loadQueue()
+        let enqueue = Task {
+            do {
+                try await browser.enqueue(Track(title: "旧来源", artist: "", album: "", duration: 60, spotifyId: track))
+                XCTFail("旧来源已取消")
+            } catch { XCTAssertTrue(error is CancellationError) }
+        }
+        await waitUntil { waiters.count == 2 }
+        browser.updateSource(.appleMusic)
+        browser.updateSource(.spotifyDesktop)
+        for waiter in waiters { waiter.resume(returning: "expired-source") }
+        await enqueue.value
+        XCTAssertFalse(browser.hasLoadedQueue)
+        XCTAssertTrue(browser.queue.isEmpty)
+        XCTAssertNil(browser.notice)
+    }
+
+    func testMusicScriptOutputCanExceedOnePipeWithoutOpeningAPlayer() async throws {
+        let text = try await AppleMusicAppleScriptProcessRunner.shared.run(script: """
+        set resultText to "a"
+        repeat 18 times
+            set resultText to resultText & resultText
+        end repeat
+        return resultText
+        """, timeout: 5)
+        XCTAssertEqual(text?.count, 262144)
+    }
 }
