@@ -3,6 +3,20 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class ExperienceLibraryPresentationTests: XCTestCase {
+    func testAppearanceOpensItsOwnVersionCategoryAndCanReturn() {
+        for (surface, category) in [(AppearanceSurface.desktop, PresentationCategory.floatingLyrics),
+                                    (.island, .capsule), (.main, .mainWindow)] {
+            var history = SettingsHistory(.appearance, surface: surface)
+            history.open(.init(versionsFor: surface))
+            XCTAssertEqual(history.current.presentationCategory, category)
+            history.back()
+            XCTAssertEqual(history.current.appearanceSurface, surface)
+            history.forward()
+            XCTAssertEqual(history.current.presentationCategory, category)
+        }
+        XCTAssertNil(SettingsLocation(versionsFor: .menuBar).presentationCategory)
+    }
+
     @MainActor
     func testChangingDesktopAppearancePreservesTheIslandBeingPreviewed() throws {
         let name = "appearance-\(UUID())"
@@ -17,6 +31,10 @@ final class ExperienceLibraryPresentationTests: XCTestCase {
         XCTAssertEqual(choices.currentStableID(for: .capsule), island)
         XCTAssertEqual(choices.transientPreviewStableID(for: .capsule), "capsule.controlFocused.v2")
         XCTAssertEqual(AppSettingsStore(defaults: defaults).floatingLyricsPresentation, .legacyPanel)
+        XCTAssertTrue(choices.beginPreview(category: .floatingLyrics, stableID: FloatingLyricsPresentationVersion.transparentV2.rawValue))
+        choices.cancelPreview(for: .floatingLyrics)
+        XCTAssertNil(choices.transientPreviewStableID(for: .floatingLyrics))
+        XCTAssertEqual(choices.transientPreviewStableID(for: .capsule), "capsule.controlFocused.v2")
     }
 
     func testCatalogPreviewAndSelectionBehavior() {

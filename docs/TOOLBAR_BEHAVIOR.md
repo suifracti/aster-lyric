@@ -690,6 +690,8 @@ Work in this order. Each batch is built, tested, restarted and pushed on its own
 - **封面's 静止 / 流动 is merged into 背景动态.** 关闭 is the still picture (纯高斯); 轻柔 and 鲜明 are the moving one (封面柔焦).
 - A saved 柔和光晕 or 独立色场 choice keeps drawing until a card is picked. The four old categories remain only for cycling scenes by gesture. Renderers, raw IDs, saved values and hover preview are unchanged.
 
+2026-11-19 补充。柔和光晕和独立色场可从「画面」的「旧版画面」折叠行切回，两个入口各自恢复原有参数。情境仍可和手选画面合用。
+
 **D3. 羽化, blur and the library panel (2026-11-12, from the user's review of the real window).**
 - **羽化 is the round light again.** A large round cover, as tall as the window, sits inside a surround that keeps a fixed heavy blur (36 pt plus the slider) at every slider position. The slider softens only the round cover, so at low values the circle is clear and the room is very blurred. 背景缩放 resizes the circle. This is the version before 2026-10-16 (`2c7c083^`), which the user remembered: on 2026-10-16 the surround's blur was tied to the slider, so at low values the circle and the room looked alike.
 - **背景模糊 grows by ratio, not by power.** Every look's largest radius is reached at 100% as before, but each quarter of the slider now multiplies the radius by the same factor: 0 · 25% · 50% · 75% · 100% draw about 0 · 5% · 17% · 43% · 100% of it. The old curve (`pow(n, 1.35)`: 15% · 39% · 68% · 100%) removed all detail by about 50%, and the upper half barely changed anything; this was measured in the real window. Saved values move once (`v3.blur.curve.v2`), so every saved picture looks as it did; the numbers shown change (old 25 → 48, 36 → 60, 58 → 78). The colour-field looks (内页, 专注, 独立色场) keep their values and response.
@@ -1276,6 +1278,8 @@ TTML 带有多种译文时，文档窗右上角显示当前语言，可就地切
 ### 外观
 
 点选桌面示意图里的位置，可以单独调整主窗口、桌面歌词、灵动岛和菜单栏歌词。较小的设置窗口使用位置选择栏。工作台搜索「状态栏宽度」「桌面歌词字号」或「刘海」，都能直达对应位置。点桌面停靠按钮会显示歌词并挪到屏幕顶部或程序坞上方；灵动岛可试读收起与展开的样子，菜单栏的例句使用与系统栏相同的排版。
+
+主窗口外观里可选「柔和光晕」和「独立色场」，搜索两种画面名称也会定位到这行。使用其他主窗口布局时，这一行可打开布局选择。从主窗口、桌面歌词或灵动岛的外观打开「体验版本库」，默认显示对应分类和已采用的版本。取消预览只作用于当前分类。
 
 「自动」环境光跟随本窗口正在显示的封面。换歌、试听或打开全屏时，用所显示的那张封面选择光效，已保存的画面选择仍可恢复。情境指定的版式和手选画面优先。
 

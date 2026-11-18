@@ -43,6 +43,7 @@
 | 不同画面背景大小不一样、取景切了没效果、繁体歌名对不上简体来源、别人有逐字/对唱我们没有 | L-023；V3BackdropArtworkGeometry、v3SharedBackdropComplete、TrackTextNormalizer.normalize、KRCParser、QRCParser |
 | 逐字上浮/长音发光动画跳回开头、状态栏弹窗改版、封面闪占位图或露出方形底板、暂停褪色、桌面歌词情境隐藏 | L-024；LyricLineView animateLift、MenuBarLyricsPopoverView、ArtworkView、v3PauseFadesColor、FloatingLyricsWindowController.observeContext |
 | 情境一开旧画面切不过去、光色不走封面色、同一首对唱在不同窗口不一样 | L-052；V3ListeningPresentation、V3RoomOverrides、LyricsTimeline.presentedLyrics |
+| 选过新画面后找不到柔和光晕或独立色场、体验版本库打开错分类 | L-052；V3SceneFamily.olderPictures、SettingsLocation.versionsFor |
 | 合唱被标成某个人独唱、桌面歌词或灵动岛看不出谁在唱 | L-052；LyricsTimeline.VoicePresentation |
 | 听歌有对唱，但阅读、文件或印本漏掉声部，合唱在档案里重复 | L-051；PassageVoicePresentation、LyricBook.Chapter.readingRows |
 | 单句循环只在主窗口有、切窗口找不到取消、拖进度被拉回 | L-052；PlaybackState.lyricLineLoopControl |
@@ -937,6 +938,8 @@ TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、
 听歌界面按实际显示的封面 URL 取同一颜色，换歌等待封面时先用白色。光色歌词保留外发光，当前字、读音、译文与进度/播放控件用接口给来的颜色；明确选择不同颜色模式的边缘线继续按其自己的设置。背景和情境仍有自己的材质与色彩。律动采集由各可见的听歌窗口表达当前需要，一个窗口退出或进入预览不会关闭另一窗口仍在使用的采集。
 
 2026-11-19 自动环境光以本窗封面的亮度、细节与配色选择原版、羽化或双色。它进入 `V3ListeningPresentation` 后同时提供画面和面板的实际样式。主窗、全屏和搜索预览独立取各自封面，手选与情境指定的版式优先。旧实现会在换歌时把计算结果写回画面和每场景偏好。自动开关继续读取 `v3.ambient.automatic.v1`，关闭后恢复已保存的样式。定向测试核过两窗用不同封面、悬停预览、情境及重新打开偏好；隔离原生全屏在画面面板中点选窗光、再切回自动，读取两次选中状态。
+
+2026-11-19 找回旧画面。之前柔和光晕和独立色场仍可渲染，但切走后没有明确返回入口。现从画面面板的折叠行和主窗口外观用同一组选择，搜索原名可直达。两者分别走旧渲染器和色场各自的参数；选中后覆盖当前情境的布局，情境效果及其它样式可照常使用。版本库沿外观入口带到主窗口、灵动岛或桌面歌词分类；取消预览对应这一类。隔离 App 设置实点两种画面和两个小窗口的版本入口，定向测试验证两份模糊值和按分类取消预览。
 
 旧画面和新情境使用相同的 V3 行渲染。早期兼容布局共享歌手/声部标签和同唱合并规则，保持行首对齐。状态栏、桌面和顶部胶囊使用 `LyricsTimeline.presentedLyrics` 取同一套当句与相邻行，保留真实隔开重唱与不同的声部句子，索引仍指向原文档，收藏、时间轴、歌词库与人工版本无需迁移。雪角 Metal 画布的 Swift 计算显式区分 `CGFloat` 与 `Double`，兼容 Xcode 16.4 的类型推断。
 

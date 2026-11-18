@@ -148,9 +148,10 @@ public final class PresentationSelectionStore: ObservableObject {
     /// Cancels the in-memory overlay. Persisted selections are never changed
     /// by Preview, so cancel simply removes the overlay and restores the
     /// applied values.
-    public func cancelPreview() {
+    public func cancelPreview(for category: PresentationCategory? = nil) {
         debugLog("event=cancel-before transient=\(transientPreviewSelections) persisted=\(persistedSelections)")
-        transientPreviewSelections.removeAll()
+        if let category { transientPreviewSelections.removeValue(forKey: category.rawValue) }
+        else { transientPreviewSelections.removeAll() }
         objectWillChange.send()
     }
 

@@ -113,6 +113,7 @@ struct V3ThemeSelectorView: View {
     @State private var thumbnail: NSImage?
     @State private var tint = Color.accentColor
     @State private var previewTask: Task<Void, Never>?
+    @State private var showsOlderPictures = false
     /// Which of 环境光's lights was used last, so its card returns to it.
     @AppStorage("v3.ambient.lastLook.v1", store: .lyricsQ) private var lastAmbientLook = ""
     @AppStorage("v3.reading.lastLook.v1", store: .lyricsQ) private var lastReadingLook = ""
@@ -131,12 +132,6 @@ struct V3ThemeSelectorView: View {
             preview = renderer
         }
     }
-    private func adopt(_ scene: V3ListeningScene?, renderer: V3ArtworkPresentation) {
-        clearPreview()
-        if let scene { settings.selectV3Scene(scene, renderer: renderer) }
-        else { settings.selectLegacyV3Presentation(renderer) }
-    }
-
     private func isCurrent(_ entry: V3SceneFamily.Entry) -> Bool {
         V3SceneFamily.inUse(entry, scene: displayedPresentation.scene,
                             renderer: displayedPresentation.renderer, treatment: displayedPresentation.ambientTreatment)
@@ -175,6 +170,11 @@ struct V3ThemeSelectorView: View {
                                       options: V3AmbientLyricMotion.allCases.map { ($0.title, $0) })
                     .help("换行呼吸：每换一句歌词，光轻轻亮一下。随曲推移：背景颜色随播放进度从封面主色走到副色。系统减少动态效果时不动。")
                 }
+            }
+            let olderPicture = V3SceneFamily.olderPictures.first(where: isCurrent)
+            V3DisclosureRow(title: olderPicture.map { "旧版画面 · \($0.title)" } ?? "旧版画面",
+                            isExpanded: $showsOlderPictures) {
+                V3OlderPictureChoices(presentation: displayedPresentation, select: adopt)
             }
             if !compact, settings.v3ListeningScene != nil {
                 Button("恢复此场景的默认值", role: .destructive) {
@@ -282,9 +282,7 @@ struct V3ThemeSelectorView: View {
         if let card = V3SceneFamily.cards.first(where: { $0.entries.count > 1 && $0.entries.contains(entry) }) {
             if card.automatic { lastAmbientLook = entry.id } else { lastReadingLook = entry.id }
         }
-        if entry.scene == .originalAmbient { settings.v3AmbientTreatment = entry.treatment }
-        if let scene = entry.scene { settings.selectV3Scene(scene, renderer: target) }
-        else { settings.selectLegacyV3Presentation(target) }
+        entry.apply(to: settings, renderer: target)
     }
 
 }
@@ -312,6 +310,14 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
         var renderer: V3ArtworkPresentation { renderers[0] }
         var isCoverPair: Bool { renderers.count > 1 }
         var isLegacy: Bool { scene == nil }
+
+        @MainActor
+        func apply(to settings: AppSettingsStore, renderer: V3ArtworkPresentation? = nil) {
+            let target = renderer ?? self.renderer
+            if scene == .originalAmbient { settings.v3AmbientTreatment = treatment }
+            if let scene { settings.selectV3Scene(scene, renderer: target) }
+            else { settings.selectLegacyV3Presentation(target) }
+        }
     }
 
     var title: String {
@@ -366,11 +372,9 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
 
     /// The 画面 panel shows four cards in one row, none behind a menu.
     /// - 环境光: 原版环境光 and 柔光羽化, chosen by the app for each song
-    ///   unless one is picked. 柔和光晕 is not listed: it differs from 原版
-    ///   in cover size and darkness, and both have their own controls.
-    /// - 阅读: 内页, 唱片卡 and 专注, the pages on a quiet background. 内页
-    ///   has the colour field that 独立色场 had, so 独立色场 is not listed.
-    /// A saved 柔和光晕 or 独立色场 choice keeps drawing until a card is picked.
+    ///   unless one is picked.
+    /// - 阅读: 内页, 唱片卡 and 专注, the pages on a quiet background.
+    /// The two older looks remain available in their own disclosure.
     static let cards: [Card] = {
         let all = allCases.flatMap(\.entries)
         func entries(_ titles: [String]) -> [Entry] { titles.compactMap { title in all.first { $0.title == title } } }
@@ -384,6 +388,8 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
                 Card(title: "舞台", rowTitle: "舞台", entries: entries(["舞台"])),
                 Card(title: "阅读", rowTitle: "版式", entries: entries(["内页", "唱片卡", "专注"]))]
     }()
+
+    static let olderPictures = Self.ambient.entries.filter { $0.renderer == .classic }
 
     /// 原版 keeps lyrics readable over a bright cover; 羽化 lets a dark cover
     /// give off light. The boundary is a first setting from two real songs.
@@ -497,6 +503,22 @@ enum V3SceneFamily: String, CaseIterable, Identifiable {
         allCases.first { family in
             family.entries.contains { $0.isLegacy && $0.renderers.contains(renderer) }
         } ?? .ambient
+    }
+}
+
+struct V3OlderPictureChoices: View {
+    let presentation: V3ListeningPresentation
+    let select: (V3SceneFamily.Entry) -> Void
+
+    var body: some View {
+        let options = V3SceneFamily.olderPictures
+        let current = options.first { entry in
+            V3SceneFamily.inUse(entry, scene: presentation.scene, renderer: presentation.renderer,
+                                treatment: presentation.ambientTreatment)
+        }
+        V3SegmentedPicker("旧版画面", selection: Binding(
+            get: { current }, set: { if let choice = $0 { select(choice) } }
+        ), options: options.map { ($0.title, Optional($0)) }, showsLabel: false)
     }
 }
 

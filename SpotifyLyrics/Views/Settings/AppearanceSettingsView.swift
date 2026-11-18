@@ -4,6 +4,14 @@ enum AppearanceSurface: String, CaseIterable, Identifiable {
     case main, desktop, island, menuBar
 
     var id: Self { self }
+    var presentationCategory: PresentationCategory? {
+        switch self {
+        case .main: .mainWindow
+        case .desktop: .floatingLyrics
+        case .island: .capsule
+        case .menuBar: nil
+        }
+    }
     var title: String {
         switch self {
         case .main: "主窗口"
@@ -59,7 +67,7 @@ enum AppearanceSurface: String, CaseIterable, Identifiable {
 }
 
 enum AppearanceControl: String, CaseIterable {
-    case mainLayout, fullScreenDisplay
+    case mainLayout, olderPictures, fullScreenDisplay
     case desktopDisplay, desktopDock, desktopFont, desktopOpacity, desktopPause, desktopCapture
     case islandDisplay, islandStyle, islandCapture
     case menuBarWidth, menuBarOverflow, menuBarLanguage, menuBarFont
@@ -67,6 +75,7 @@ enum AppearanceControl: String, CaseIterable {
     private var entry: (surface: AppearanceSurface, title: String, aliases: String) {
         switch self {
         case .mainLayout: (.main, "主窗口布局", "主界面")
+        case .olderPictures: (.main, "旧版画面", "旧画面 经典背景 " + V3SceneFamily.olderPictures.map(\.title).joined(separator: " "))
         case .fullScreenDisplay: (.main, "全屏歌词开在另一块屏幕", "另一屏 副屏 第二块屏幕 外接显示器 双屏")
         case .desktopDisplay: (.desktop, "显示器", "移动到 选屏 副屏 屏幕 跨屏")
         case .desktopDock: (.desktop, "停靠位置", "顶部 屏幕顶部 底部 程序坞")
@@ -173,6 +182,19 @@ struct AppearanceSettingsView: View {
             Toggle("启动时恢复上次窗口状态", isOn: $settings.restoreWindowState)
         }
         Section {
+            if settings.mainWindowLayoutStyle == .appleMusicImmersiveV3 {
+                LabeledContent(AppearanceControl.olderPictures.title) {
+                    V3OlderPictureChoices(
+                        presentation: V3ListeningPresentation(settings: settings, room: settings.v3Room.resolved(V3WeatherWatcher.shared)),
+                        select: { $0.apply(to: settings) }
+                    )
+                    .frame(maxWidth: 235)
+                }
+                .appearanceControl(.olderPictures, focused: focused)
+            } else {
+                ToolbarPanelLink(title: AppearanceControl.olderPictures.title, panel: .picture)
+                    .appearanceControl(.olderPictures, focused: focused)
+            }
             DisclosureGroup("经典伴随布局") {
                 Picker("呈现方式", selection: $settings.classicCompanionPresentationRawValue) {
                     ForEach(ClassicCompanionPresentation.allCases) { Text($0.title).tag($0.rawValue) }

@@ -194,6 +194,7 @@ struct SettingsLocation: Equatable {
     var passage: LibraryPassageTarget?
     var appearanceSurface: AppearanceSurface = .main
     var appearanceControl: AppearanceControl?
+    var presentationCategory: PresentationCategory?
     var opensSpotifyOnline = false
 
     var navigationTitle: String {
@@ -203,6 +204,7 @@ struct SettingsLocation: Equatable {
         if page == .appearance {
             return [page.rawValue, appearanceSurface.title, appearanceControl?.title].compactMap { $0 }.joined(separator: " › ")
         }
+        if let presentationCategory { return "\(page.rawValue) › \(presentationCategory.displayName)" }
         return page.rawValue
     }
 
@@ -210,6 +212,11 @@ struct SettingsLocation: Equatable {
         self.init(.appearance)
         appearanceSurface = surface
         appearanceControl = control
+    }
+
+    init(versionsFor surface: AppearanceSurface) {
+        self.init(.experienceLibrary)
+        presentationCategory = surface.presentationCategory
     }
 
     init(reading passage: LibraryPassageTarget) {
@@ -379,6 +386,7 @@ struct SettingsRootView: View {
                                        backFromReading: history.canGoBack ? { history.back() } : nil,
                                        openArchiveFromReading: { history.openArchive(fromReading: $0) },
                                        appearanceSurface: history.current.appearanceSurface, appearanceControl: history.current.appearanceControl,
+                                       presentationCategory: history.current.presentationCategory,
                                        opensSpotifyOnline: history.current.opensSpotifyOnline,
                                        library: library, navigate: navigate,
                                        rememberSelection: { history.rememberLibrarySelection($0) })
@@ -444,6 +452,7 @@ private struct SettingsDetailView: View {
     let openArchiveFromReading: (LibraryPassageTarget) -> Void
     let appearanceSurface: AppearanceSurface
     let appearanceControl: AppearanceControl?
+    let presentationCategory: PresentationCategory?
     let opensSpotifyOnline: Bool
     let library: PersonalLyricsLibraryService
     let navigate: (SettingsLocation) -> Void
@@ -465,7 +474,7 @@ private struct SettingsDetailView: View {
             case .appearance:
                 AppearanceSettingsView(surface: appearanceSurface, focused: appearanceControl,
                                        select: { navigate(.init(appearance: $0)) },
-                                       openVersions: { navigate(.init(.experienceLibrary)) })
+                                       openVersions: { navigate(.init(versionsFor: appearanceSurface)) })
             case .reading: ReadingSettingsView().padding(16)
             case .servicesAndSources: ServicesAndSourcesSettingsView(scope: .lyrics).padding(16)
             case .aiTranslation: AISettingsView().padding(16)
@@ -489,7 +498,10 @@ private struct SettingsDetailView: View {
             case .favorites: FavoriteLinesView(savedQuery: $favoriteQuery, openTrack: { navigate(.init(.library, trackKey: $0)) },
                                               readPassage: { navigate(.init(reading: $0)) })
             case .experienceLibrary:
-                ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections).padding(24)
+                ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections,
+                                              initialCategory: presentationCategory ?? .mainWindow)
+                    .id(presentationCategory)
+                    .padding(24)
             }
         }
         .id(selection)

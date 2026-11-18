@@ -500,7 +500,9 @@ final class PresentationSourceContractTests: XCTestCase {
             ("菜单栏 长句滚动", "长句显示", .menuBar),
             ("灵动岛所在屏幕", "所在屏幕", .island),
             ("桌面歌词暂停隐藏", "暂停时隐藏", .desktop),
-            ("全屏歌词开在另一块屏幕", "全屏歌词开在另一块屏幕", .main)
+            ("全屏歌词开在另一块屏幕", "全屏歌词开在另一块屏幕", .main),
+            ("柔和光晕", "旧版画面", .main),
+            ("独立色场", "旧版画面", .main)
         ]
         for (query, title, surface) in examples {
             let row = try XCTUnwrap(WorkspaceLookupRow.matches(query, songs: [], favorites: []).first, query)
@@ -517,6 +519,37 @@ final class PresentationSourceContractTests: XCTestCase {
             history.forward()
             XCTAssertEqual(history.current, row.location)
         }
+    }
+
+    @MainActor
+    func testOlderPicturesReopenTheirOwnParametersInsideARoom() throws {
+        let suite = "older-pictures-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        let glow = try XCTUnwrap(V3SceneFamily.olderPictures.first { $0.scene == nil })
+        let field = try XCTUnwrap(V3SceneFamily.olderPictures.first { $0.scene == .flowingField })
+        glow.apply(to: settings)
+        settings.setV3Blur(61, renderer: glow.renderer, scene: glow.scene)
+        field.apply(to: settings)
+        settings.setV3Blur(32, renderer: field.renderer, scene: field.scene)
+
+        settings.selectV3Room(.stars)
+        glow.apply(to: settings)
+        let legacy = V3ListeningPresentation(settings: settings, room: .stars)
+        XCTAssertNil(legacy.scene)
+        XCTAssertEqual(legacy.renderer, .classic)
+        XCTAssertEqual(legacy.lyricStyle, .lightColor)
+        XCTAssertEqual(settings.v3BackdropBlurRadius, 61)
+
+        field.apply(to: settings)
+        let reopened = AppSettingsStore(defaults: defaults)
+        let selected = V3ListeningPresentation(settings: reopened, room: .stars)
+        XCTAssertEqual(selected.scene, .flowingField)
+        XCTAssertEqual(selected.renderer, .classic)
+        XCTAssertEqual(reopened.v3Room, .stars)
+        XCTAssertEqual(reopened.v3BackdropBlurRadius, 32)
+        XCTAssertEqual(reopened.v3PreviewBlur(for: .classic, scene: nil), 61)
     }
 
     func testExperienceLibraryRouteAndPreviewAdaptersStayPresentationOnly() throws {
@@ -550,7 +583,7 @@ final class PresentationSourceContractTests: XCTestCase {
         XCTAssertTrue(settings.contains("onOpenTool(.experienceLibrary)"))
         XCTAssertTrue(settings.contains("accessibilityIdentifier(\"btn_enter_experience_library\")"))
         XCTAssertTrue(settings.contains("onOpenTool: { tool in selection = tool }"))
-        XCTAssertTrue(settings.contains("ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections)"))
+        XCTAssertTrue(settings.contains("ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections,"))
     }
 
     func testScopedOffsetConsumersUseTheVersionScopedValue() throws {

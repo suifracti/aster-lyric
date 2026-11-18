@@ -7,14 +7,20 @@ struct ExperienceLibrarySettingsView: View {
     @EnvironmentObject private var settings: AppSettingsStore
     @ObservedObject var selectionStore: PresentationSelectionStore
 
-    @State private var selectedCategory: PresentationCategory = .mainWindow
-    @State private var selectedStableID = "mainWindow.appleMusicImmersiveV3.v3"
+    @State private var selectedCategory: PresentationCategory
+    @State private var selectedStableID: String
     @State private var compareStableID: String?
     @State private var compareEnabled = false
     @State private var capsuleState: PresentationPreviewCapsuleState = .expanded
     @State private var notice: String?
 
     private let catalog = PresentationCatalog.shared
+
+    init(selectionStore: PresentationSelectionStore, initialCategory: PresentationCategory = .mainWindow) {
+        self.selectionStore = selectionStore
+        _selectedCategory = State(initialValue: initialCategory)
+        _selectedStableID = State(initialValue: selectionStore.currentStableID(for: initialCategory))
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -133,8 +139,8 @@ struct ExperienceLibrarySettingsView: View {
                 .disabled(!settings.canApplyPresentation(category: selectedCategory, stableID: entry.stableID))
 
                 Button("取消预览") {
-                    selectionStore.cancelPreview()
-                    notice = "已恢复应用前的版本"
+                    selectionStore.cancelPreview(for: selectedCategory)
+                    notice = "已取消\(selectedCategory.displayName)预览"
                 }
                 .disabled(selectionStore.transientPreviewStableID(for: selectedCategory) == nil)
 
