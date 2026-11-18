@@ -186,7 +186,8 @@ public struct PersonalLyricsLibraryView: View {
     private var detailContent: some View {
         if let stableKey = selectedStableKey {
             PersonalLibraryTrackDetailView(service: service, stableKey: stableKey, readPassage: readPassage,
-                                           preferredPassage: stableKey == initialPassage?.trackKey ? initialPassage : nil)
+                                           preferredPassage: stableKey == initialPassage?.trackKey ? initialPassage : nil,
+                                           searchMatch: service.matchingPassage(for: stableKey, in: libraryQuery))
         } else {
             VStack(spacing: 12) {
                 RecordShelfMark()
@@ -485,6 +486,7 @@ public struct PersonalLibraryTrackDetailView: View {
     var beforePresentSheet: (() -> Void)?
     var readPassage: ((LibraryPassageTarget) -> Void)? = nil
     var preferredPassage: LibraryPassageTarget?
+    var searchMatch: (target: LibraryPassageTarget, excerpt: String?)? = nil
     private var preferredSource: LibraryPassageSource? { preferredPassage?.source }
     @State private var selectedSection: VersionSection = .all
     @State private var incomingFile: IncomingFile?
@@ -527,6 +529,9 @@ public struct PersonalLibraryTrackDetailView: View {
                 }
                 Group {
                     VStack(alignment: .leading, spacing: 20) {
+                        if let searchMatch {
+                            matchedPassageButton(target: searchMatch.target, excerpt: searchMatch.excerpt)
+                        }
                         if !compact {
                         trackHeader(detail)
 
@@ -810,6 +815,26 @@ public struct PersonalLibraryTrackDetailView: View {
     }
 
     // MARK: - Version Rows
+
+    private func matchedPassageButton(target: LibraryPassageTarget, excerpt: String?) -> some View {
+        Button { showPassage(target) } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "text.magnifyingglass").foregroundStyle(WorkspacePalette.ink)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("读命中句 · \(target.source.label)").font(.caption.weight(.semibold))
+                    if let excerpt {
+                        Text(excerpt).font(.callout).lineLimit(2)
+                    }
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
+            }
+            .padding(10)
+            .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
 
     private func librarySourceName(_ source: String) -> String {
         DatabaseSourceIdentifier.source(for: source) == .unknown ? "未知来源" : DatabaseSourceIdentifier.displayName(for: source)

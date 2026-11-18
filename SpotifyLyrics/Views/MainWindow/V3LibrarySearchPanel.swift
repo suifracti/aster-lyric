@@ -256,7 +256,8 @@ struct V3LibrarySearchPanel: View {
                 Divider()
                 ScrollView {
                     if let selectedKey {
-                        PersonalLibraryTrackDetailView(service: library, stableKey: selectedKey, compact: true, showsActions: true)
+                        PersonalLibraryTrackDetailView(service: library, stableKey: selectedKey, compact: true, showsActions: true,
+                            searchMatch: library.matchingPassage(for: selectedKey, in: browsing.scope.query))
                             .padding(14)
                     } else if library.isLoading {
                         ProgressView("正在读取歌词库…").padding(24)

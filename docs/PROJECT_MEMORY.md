@@ -22,7 +22,7 @@
 | 找回旧环境光、模糊/缩放参数、样式合并；改 renderer/偏好 | L-004；AppSettingsStore.swift 与 authenticAmbientArtworkLayers |
 | 已采用歌词突然被挡住、同一首重复入库、歌单已存却不打勾；改 Spotify ID | L-005；TrackIdentity、SQLiteLyricsRepository、PlaylistPickerTests |
 | Desktop 时长跳变、合作歌手待确认、错误的时长差提示 | L-006；SpotifyTrackArtistResolver、LyricsSearchManager |
-| 搜索慢、本地结果等网络、搜索 Apple Music 或旧译文、预加载同一首重复搜索 | L-007；searchCachedLibrary、TrackSearchManager、LyricsSessionController、JapaneseMeCabEngine |
+| 搜索慢、本地结果等网络、搜索 Apple Music 或旧译文、预加载同一首重复搜索 | L-007；searchLibraryPassages、refreshLibrarySearchCache、TrackSearchManager、LyricsSessionController |
 | 找歌重开后变回当前曲、弹出歌单后筛选丢失 | L-007、L-008；SongSearchManager.prepareQuery、PlaylistBrowserModel.filteredTracks |
 | 队列不更新、循环列表被裁掉、隐藏后点第三首多跳、Apple Music 歌单串到 Spotify | L-008；PlaylistBrowserModel、AppleMusicPlaylistCatalog、V3PlaylistQueuePreview |
 | 播放 App 的运行、连接与在线曲库授权容易混淆 | L-008；PlaybackConnectionCards、PlaybackState、SettingsLocation |
@@ -74,6 +74,7 @@
 | 设置里找歌或歌词、从金句或封面墙回到歌、没放音乐时继续整理、历史录音一直转圈 | L-043；SettingsWorkspace、SettingsHistory、selectedDetail(for:) |
 | 不同窗口的听歌统计互相覆盖、歌曲排行无法回到档案 | L-043；listeningStatisticsLoad(for:)、ListeningStatisticsView |
 | 歌词库弹到独立窗口后筛选丢了、搜索时批量补词用了上一组结果 | L-043；PersonalLibraryScope、entries(for:) |
+| 歌词库用一句歌词找到歌，却不知道是哪份稿或点不开那句 | L-043、L-046；PersonalLyricsLibraryService.matchingPassage、LibraryPassageReader |
 
 ## 默认自动执行：不等用户提醒
 
@@ -821,6 +822,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 2026-11-19：主窗、独立歌词库和设置共用全部、当前歌曲、缺歌词、有译文、手动编辑、已锁定筛选。主窗关闭面板后保留自己的条件和所选行；「在新窗口打开」把搜索词、筛选和录音键一次交给独立窗口。两个窗口后续各改各的。`PersonalLyricsLibraryService` 取消已过时的防抖查询，列表只取与输入相符的已读结果。批量补词等当前查询完成后才能启动；已在运行的任务仍可在各处查看或停止。主窗浏览状态由面板观察，避免逐字输入触发听歌画面重绘。
 
 隔离真窗从「缺歌词」搜索「雨のあと」，带着唯一结果和选中的歌曲弹出独立窗口。独立窗口清空后显示三首缺词，返回主窗仍只显示原来一首。28 项定向原生检查通过，覆盖连续搜索时旧结果不会进入新范围。
+
+2026-11-19：歌词库搜索从 `searchLibraryPassages` 一次拿到歌曲和命中的版本，仍可按筛选查缺词歌曲。主窗面板、设置和独立歌词库共用档案顶部的「读命中句」，展示片段并用原查询打开相应原词、译文或读音。清空或重输时不沿用旧命中；仅歌名、歌手等资料匹配时照常打开档案。隔离真窗用「译文二 · 3」从主窗打开并返回，弹出独立歌词库继续读，再从设置打开同一句，三处均为该译稿 1/1。65 项定向原生检查通过，1 项环境跳过，覆盖命中旧译文、只按歌名命中及原采用稿保留。
 
 外观按主窗口、桌面歌词、灵动岛和菜单栏四处切换，搜索和后退都能回到其中一处。可视地图只导航；显示开关和停靠按钮调用现有窗口控制器。改桌面歌词版本时曾把另一处尚在试看的灵动岛一起保存。现在 `apply(category:stableID:)` 只提交用户选中的位置，灵动岛也只在自己的呈现选择改变时收起。经典布局与实验工作台的文字和翻译入口在原处展开，沿用相同设置值。
 

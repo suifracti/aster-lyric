@@ -4030,14 +4030,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         try prepare()
         let searchText = searchQuery?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !searchText.isEmpty {
-            let saved = try searchCachedLibrary(searchText)
-            guard includeMissingLyrics else { return saved }
-            let needle = Self.normalizedLibrarySearchText(searchText)
-            let all = try loadPersonalLibraryEntries(includeMissingLyrics: true)
-            let missing = all.filter {
-                $0.lyricsVersionCount == 0 && Self.normalizedLibrarySearchText("\($0.title) \($0.artist) \($0.album ?? "")").contains(needle)
-            }
-            return PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere(saved, among: all) + missing
+            return try searchLibraryPassages(searchText, includeExcerpt: false, includeMissingLyrics: includeMissingLyrics).map(\.entry)
         }
         // Newly saved keys must join their recording family without a restart.
         try reloadRedirectResolver()
@@ -4074,37 +4067,35 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             .precomposedStringWithCanonicalMapping
     }
 
-    private func searchCachedLibrary(_ query: String) throws -> [PersonalLyricsLibraryEntry] {
-        try refreshLibrarySearchCache()
-        let needle = Data(Self.normalizedLibrarySearchText(query).utf8)
-        return librarySearchCache.values.filter { song in
-            song.versions.values.contains { $0.normalized.range(of: needle) != nil }
-        }.map(\.entry).sorted {
-            if $0.lastModifiedAt != $1.lastModifiedAt { return $0.lastModifiedAt > $1.lastModifiedAt }
-            return $0.trackStableKey < $1.trackStableKey
-        }
-    }
-
     /// Reuse the version index so opening a text match can identify its exact source.
-    func searchLibraryPassages(_ query: String, includeExcerpt: Bool = true) throws -> [LibraryPassageHit] {
+    func searchLibraryPassages(_ query: String, includeExcerpt: Bool = true,
+                               includeMissingLyrics: Bool = false) throws -> [LibraryPassageHit] {
         try prepare()
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else { return [] }
         try refreshLibrarySearchCache()
-        let needle = Data(Self.normalizedLibrarySearchText(term).utf8)
-        return librarySearchCache.values.compactMap { song in
+        let all = includeMissingLyrics ? try loadPersonalLibraryEntries(includeMissingLyrics: true) : []
+        let entries = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
+        let normalized = Self.normalizedLibrarySearchText(term)
+        let needle = Data(normalized.utf8)
+        let saved: [LibraryPassageHit] = librarySearchCache.values.compactMap { song in
+            let entry = entries[song.entry.id] ?? song.entry
             let metadata = song.versions["metadata"]?.normalized.range(of: needle) != nil
             guard let match = passageComponent(in: song, matching: needle) else {
-                return metadata ? LibraryPassageHit(entry: song.entry, source: nil, excerpt: nil, matchesMetadata: true) : nil
+                return metadata ? LibraryPassageHit(entry: entry, source: nil, excerpt: nil, matchesMetadata: true) : nil
             }
             let excerpt = includeExcerpt ? match.text.original.split { $0 == "\0" || $0.isNewline }.first {
                 $0.range(of: term, options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]) != nil
             } : nil
-            return LibraryPassageHit(entry: song.entry, source: match.source, excerpt: excerpt.map(String.init), matchesMetadata: metadata)
+            return LibraryPassageHit(entry: entry, source: match.source, excerpt: excerpt.map(String.init), matchesMetadata: metadata)
         }.sorted {
             if $0.entry.lastModifiedAt != $1.entry.lastModifiedAt { return $0.entry.lastModifiedAt > $1.entry.lastModifiedAt }
             return $0.id < $1.id
         }
+        let missing = all.filter {
+            $0.lyricsVersionCount == 0 && Self.normalizedLibrarySearchText("\($0.title) \($0.artist) \($0.album ?? "")").contains(normalized)
+        }.map { LibraryPassageHit(entry: $0, source: nil, excerpt: nil, matchesMetadata: true) }
+        return saved + missing
     }
 
     private func passageComponent(in song: SearchSong, matching needle: Data) -> (source: LibraryPassageSource, text: SearchVersionText)? {

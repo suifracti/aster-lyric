@@ -41,6 +41,44 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         let entry = try XCTUnwrap(results.first)
         XCTAssertTrue(PersonalLibraryFilter.missing.includes(entry, currentTrackKey: nil))
         XCTAssertFalse(PersonalLibraryFilter.locked.includes(entry, currentTrackKey: nil))
+        XCTAssertNil(library.matchingPassage(for: entry.id, in: "海边"))
+    }
+
+    @MainActor
+    func testLibrarySearchOpensMatchedHistoricalTranslation() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("search.sqlite3"))
+        let library = PersonalLyricsLibraryService(repository: repository)
+        let track = Track(title: "返程", artist: "南窗", album: "", duration: 60)
+        let originalFile = try LocalLyricsFile(data: Data("""
+        <tt xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xml:lang="ja"><body><div>
+        <p begin="1s" end="2s">ただいま</p>
+        <p begin="8s" end="9s">ただいま<span ttm:role="x-translation" xml:lang="zh-Hans">檐下还有雨声</span></p>
+        </div></body></tt>
+        """.utf8), kind: .ttml, preferredLanguage: "zh-Hans")
+        let original = try await repository.importLyricFile(originalFile, into: track)
+        let libraryDetail = try await repository.loadPersonalLibraryTrackDetail(stableKey: original.trackKey)
+        let translated = try XCTUnwrap(libraryDetail?.translationVersions.first)
+        let currentFile = try LocalLyricsFile(data: Data("回来了".utf8), kind: .txt, preferredLanguage: "zh-Hans")
+        let current = try await repository.importLyricFile(currentFile, into: track)
+        let currentID = try XCTUnwrap(current.source.versionID)
+        try await repository.setPersonalLibraryActiveLyrics(trackStableKey: original.trackKey, lyricsVersionID: currentID)
+
+        library.search("雨声", immediately: true)
+        for _ in 0..<100 {
+            if !library.isLoading { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(library.entries(for: "雨声").map(\.id), [original.trackKey])
+        let match = try XCTUnwrap(library.matchingPassage(for: original.trackKey, in: "雨声"))
+        XCTAssertEqual(match.target.source, .translation(translated.id))
+        XCTAssertEqual(match.excerpt, "檐下还有雨声")
+        let opened = try await library.readPassage(match.target, recordOpening: false)
+        XCTAssertEqual(opened?.lines.filter { $0.matches(match.target.find) }.map(\.id), [1])
+        XCTAssertEqual(opened?.originalVersionID, original.source.versionID)
+        let adopted = try await repository.loadPersonalLibraryTrackDetail(stableKey: original.trackKey)
+        XCTAssertEqual(adopted?.entry.activeLyricsVersionID, currentID)
+        XCTAssertNil(library.matchingPassage(for: original.trackKey, in: "回来了"))
     }
 
     func testMusicRecordingsWithIdenticalTitlesAndLengthsKeepIndependentLyrics() async throws {

@@ -47,6 +47,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     @Published public private(set) var statusMessage: String = ""
     private var searchQuery = ""
     private var loadedSearchQuery: String?
+    private var loadedPassages: [String: LibraryPassageHit] = [:]
 
     @Published public var selectedTrackDetail: PersonalLyricsLibraryTrackDetail?
     @Published private var currentTrackDetail: PersonalLyricsLibraryTrackDetail?
@@ -444,6 +445,12 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         loadedSearchQuery == query.trimmingCharacters(in: .whitespacesAndNewlines) ? entries : []
     }
 
+    func matchingPassage(for trackKey: String, in query: String) -> (target: LibraryPassageTarget, excerpt: String?)? {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard loadedSearchQuery == term, let hit = loadedPassages[trackKey] else { return nil }
+        return (hit.readingTarget(for: term), hit.excerpt)
+    }
+
     func search(_ query: String, immediately: Bool = false) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard immediately || searchQuery != trimmed || (loadedSearchQuery != trimmed && !isLoading) else { return }
@@ -462,9 +469,18 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         listTask = Task { [weak self] in
             do {
                 if delay > .zero { try await Task.sleep(for: delay) }
-                let list = try await repository.loadPersonalLibraryEntries(searchQuery: query.isEmpty ? nil : query, includeMissingLyrics: true)
+                let list: [PersonalLyricsLibraryEntry]
+                let hits: [LibraryPassageHit]
+                if query.isEmpty {
+                    list = try await repository.loadPersonalLibraryEntries(includeMissingLyrics: true)
+                    hits = []
+                } else {
+                    hits = try await repository.searchLibraryPassages(query, includeMissingLyrics: true)
+                    list = hits.map(\.entry)
+                }
                 guard !Task.isCancelled, let self else { return }
                 self.loadedSearchQuery = query
+                self.loadedPassages = Dictionary(uniqueKeysWithValues: hits.filter { $0.source != nil }.map { ($0.id, $0) })
                 self.entries = list
                 self.isLoading = false
                 self.statusMessage = ""
