@@ -256,7 +256,7 @@ public struct PersonalLyricsLibraryView: View {
                 }
                 .fixedSize()
                 LyricsBatchControls(playback: playback, entries: libraryFilter == .missing && !service.isLoading ? visibleEntries : [],
-                                    refresh: service.refresh, openTrack: { selectedStableKey = $0 })
+                                    library: service, openTrack: { selectedStableKey = $0 })
                 Spacer()
                 Text("\(visibleEntries.count) 首")
                     .font(.caption)
@@ -1255,16 +1255,18 @@ struct LyricsBatchControls: View {
     let playback: PlaybackState
     @ObservedObject private var batch: LyricsBatchCompletion
     let entries: [PersonalLyricsLibraryEntry]
-    let refresh: () -> Void
+    let library: PersonalLyricsLibraryService
     let openTrack: (String) -> Void
     @State private var showsResults = false
+    @State private var review: LyricsBatchCompletion.Result?
+    @State private var savedReviewTrack: String?
 
     init(playback: PlaybackState, entries: [PersonalLyricsLibraryEntry],
-         refresh: @escaping () -> Void, openTrack: @escaping (String) -> Void) {
+         library: PersonalLyricsLibraryService, openTrack: @escaping (String) -> Void) {
         self.playback = playback
         self.batch = playback.lyricsBatch
         self.entries = entries
-        self.refresh = refresh
+        self.library = library
         self.openTrack = openTrack
     }
 
@@ -1288,7 +1290,23 @@ struct LyricsBatchControls: View {
             }
         }
         .controlSize(.small)
-        .onChange(of: batch.isRunning) { _, running in if !running { refresh() } }
+        .onChange(of: batch.isRunning) { _, running in if !running { library.refresh() } }
+        .onChange(of: batch.lastResolvedReview) { _, _ in library.refresh() }
+        .sheet(item: $review, onDismiss: {
+            if let savedReviewTrack { openTrack(savedReviewTrack) }
+            savedReviewTrack = nil
+        }) { result in
+            LyricsBatchReviewSheet(item: result) { candidate in
+                let saved = try await batch.resolve(result, with: candidate) {
+                    try await library.adoptBatchCandidate(candidate, for: result.entry)
+                }
+                if saved.versionID != nil, saved.disposition == .inserted || saved.disposition == .duplicate {
+                    savedReviewTrack = result.id
+                    review = nil
+                }
+                return saved
+            }
+        }
     }
 
     private var results: some View {
@@ -1306,15 +1324,19 @@ struct LyricsBatchControls: View {
                         ForEach(batch.results) { result in
                             Button {
                                 showsResults = false
-                                openTrack(result.id)
+                                if result.candidates.isEmpty {
+                                    openTrack(result.id)
+                                } else {
+                                    review = result
+                                }
                             } label: {
                                 HStack(spacing: 12) {
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(result.title).lineLimit(1)
-                                        Text(result.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        Text(result.entry.title).lineLimit(1)
+                                        Text(result.entry.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                                     }
                                     Spacer(minLength: 6)
-                                    Text(result.outcome.rawValue).font(.caption).foregroundStyle(.secondary).fixedSize()
+                                    Text(result.outcome.label).font(.caption).foregroundStyle(.secondary).fixedSize()
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.vertical, 6).contentShape(Rectangle())
@@ -1327,6 +1349,54 @@ struct LyricsBatchControls: View {
             }
         }
         .frame(width: 305).padding(13)
+    }
+}
+
+private struct LyricsBatchReviewSheet: View {
+    let item: LyricsBatchCompletion.Result
+    let adopt: (LyricsCandidate) async throws -> LyricsPersistenceSaveResult
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedCandidateID: String
+    @State private var isSaving = false
+
+    init(item: LyricsBatchCompletion.Result, adopt: @escaping (LyricsCandidate) async throws -> LyricsPersistenceSaveResult) {
+        self.item = item
+        self.adopt = adopt
+        _selectedCandidateID = State(initialValue: item.candidates.first?.id ?? "")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("核对歌词").font(.headline)
+                    Text("\(item.entry.title) · \(item.entry.artist)").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction).disabled(isSaving)
+            }
+            .padding(14)
+            if item.candidates.count > 1 {
+                Picker("歌词候选", selection: $selectedCandidateID) {
+                    ForEach(item.candidates) { candidate in
+                        Text("\(candidate.source.displayName) · \(candidate.title)").tag(candidate.id)
+                    }
+                }
+                .disabled(isSaving)
+                .padding(.horizontal, 14).padding(.bottom, 10)
+            }
+            Divider()
+            if let candidate = item.candidates.first(where: { $0.id == selectedCandidateID }) {
+                LyricsCandidatePreviewSheet(candidate: candidate, onAdopt: {
+                    isSaving = true
+                    defer { isSaving = false }
+                    return try await adopt(candidate)
+                }, onConfirmLocked: { nil }, onCancelLocked: {}, embedded: true)
+                .id(candidate.id)
+            }
+        }
+        .frame(width: 620, height: 600)
+        .interactiveDismissDisabled(isSaving)
     }
 }
 

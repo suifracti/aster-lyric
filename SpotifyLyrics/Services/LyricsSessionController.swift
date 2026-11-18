@@ -167,7 +167,7 @@ public final class LyricsSessionController: ObservableObject {
         if batchSaveDisposition == .inserted { return isSynchronized ? .timedSaved : .plainSaved }
         guard !Task.isCancelled else { return nil }
         if isNoSelection || batchSaveDisposition == .skippedLocked || batchSaveDisposition == .duplicate { return .unchanged }
-        if case .candidates = state { return .review }
+        if case .candidates(_, let candidates) = state, !candidates.isEmpty { return .review(candidates) }
         if case .failed = state { return .failed }
         if batchSaveDisposition != nil || persistenceStatusMessage != nil || sourceFailureSummary != nil { return .failed }
         switch state {

@@ -1106,6 +1106,7 @@ struct LyricsCandidatePreviewSheet: View {
     @State private var isLockConfirmationPresented = false
     @State private var conflictingLockedVersionIDs: [UUID] = []
     @State private var failureMessage: String?
+    private var showsTiming: Bool { candidate.isSynchronized && !candidate.requiresTextOnlyPreview }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -1117,13 +1118,16 @@ struct LyricsCandidatePreviewSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text(candidate.isSynchronized ? "含时间轴" : "纯文本")
+                Text(showsTiming ? "含时间轴" : "纯文本")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
             }
 
             Text("候选预览")
                 .font(.headline)
+            if let notice = candidate.arrangementNotice {
+                Text(notice).font(.caption).foregroundStyle(.secondary)
+            }
             DisclosureGroup("来源与匹配详情") {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(candidate.source.displayName) · \(candidate.queryMethodLabel) · \(candidate.timelineLabel)")
@@ -1138,9 +1142,9 @@ struct LyricsCandidatePreviewSheet: View {
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(Array(candidate.lines.enumerated()), id: \.element.id) { index, line in
+                    ForEach(Array(candidate.previewLines.enumerated()), id: \.element.id) { index, line in
                         HStack(alignment: .top, spacing: 12) {
-                            Text(candidate.isSynchronized ? previewTimeLabel(line.timestamp) : "#\(index + 1)")
+                            Text(showsTiming ? previewTimeLabel(line.timestamp) : "#\(index + 1)")
                                 .font(.caption.monospacedDigit())
                                 .foregroundStyle(.secondary)
                                 .frame(width: 48, alignment: .trailing)

@@ -158,6 +158,12 @@ private final class ExperiencePlaybackProvider: PlaybackProvider {
 private struct ExperienceLyricsProvider: LyricsProvider {
     let name = "Generated fixture lyrics"
     func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult {
+        if ProcessInfo.processInfo.arguments.contains("--batch-review-fixture"), track.title == "雨のあと" {
+            return .candidates([LyricsCandidate(id: "review-rain", identity: identity,
+                title: "雨のあとの手紙", artist: track.artist, album: track.album, duration: track.duration + 35,
+                lines: [LyricLine(timestamp: 2, originalText: "雨がやんだら手紙を書こう")],
+                source: .neteaseExperimental, confidence: 0.9)])
+        }
         let next = ExperienceArguments.nextFixture.flatMap { $0.track.title == track.title ? $0 : nil }
         if let fixture = next ?? ExperienceArguments.fixture {
             let lines = fixture.lines.map {

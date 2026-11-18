@@ -498,6 +498,12 @@ public final class PersonalLyricsLibraryService: ObservableObject {
 
     // MARK: - Version Actions
 
+    func adoptBatchCandidate(_ candidate: LyricsCandidate, for entry: PersonalLyricsLibraryEntry) async throws -> LyricsPersistenceSaveResult {
+        let result = try await repository.adoptBatchCandidate(candidate, for: entry)
+        if result.versionID != nil { refreshTrackDetail(stableKey: entry.trackStableKey) }
+        return result
+    }
+
     func isCurrentTrack(stableKey: String, playbackIdentity: TrackIdentity?) async throws -> Bool {
         guard let playbackIdentity else { return false }
         let libraryKey = try await repository.resolveStableKey(stableKey)

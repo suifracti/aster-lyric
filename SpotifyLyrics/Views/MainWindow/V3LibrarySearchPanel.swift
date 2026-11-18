@@ -232,7 +232,7 @@ struct V3LibrarySearchPanel: View {
                     .scrollIndicators(.hidden)
                     .padding(.top, 10)
                     LyricsBatchControls(playback: state, entries: filter == .missing && !library.isLoading ? entries : [],
-                                        refresh: library.refresh, openTrack: { batchArchiveKey = $0 })
+                                        library: library, openTrack: { batchArchiveKey = $0 })
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(entries) { entry in

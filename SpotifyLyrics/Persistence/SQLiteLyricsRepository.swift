@@ -718,6 +718,27 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     /// its high-confidence gate; only this user-intent path may save a lower
     /// provider confidence, and it commits the preferred selection together
     /// with the lyric rows and any timing attachment.
+    func adoptBatchCandidate(_ candidate: LyricsCandidate, for entry: PersonalLyricsLibraryEntry) async throws -> LyricsPersistenceSaveResult {
+        try ensurePrepared()
+        let track = entry.libraryTrack
+        let identity = TrackIdentity(track: track)
+        guard candidate.identity == identity, let recording = try archiveTrack(stableKey: entry.trackStableKey),
+              try resolvedCanonicalStableKey(recording.stableKey) == resolvedCanonicalStableKey(identity.stableKey) else {
+            return .init(versionID: nil, disposition: .rejected("候选与这个歌曲档案的录音不一致。"))
+        }
+        let requestID = UUID()
+        try await registerManualAdoptionRequest(identity: identity, requestID: requestID)
+        defer {
+            if manualAdoptionRequestIDs[identity.stableKey] == requestID {
+                manualAdoptionRequestIDs.removeValue(forKey: identity.stableKey)
+            }
+        }
+        let saved = try await saveAndAdoptManually(track: track, identity: identity, document: candidate.makeDocument(),
+                                                   requestID: requestID, confirmedLockedVersionIDs: nil)
+        if saved.disposition == .lockedConflict { return .init(versionID: nil, disposition: .skippedLocked) }
+        return saved
+    }
+
     public func saveAndAdoptManually(
         track: Track,
         identity: TrackIdentity,

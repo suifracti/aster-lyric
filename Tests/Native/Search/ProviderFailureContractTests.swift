@@ -1136,6 +1136,52 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertEqual(noMatch, .noMatch)
         let failed = await complete(missing, result: .failed(.networkUnavailable))
         XCTAssertEqual(failed, .failed)
+
+        let reviewTrack = Track(title: "雨のあと", artist: "Visual Fixture", album: "Missing lyrics", duration: 210)
+        try await (repository as any LyricsRepository).saveTrackMetadata(.bootstrap(from: reviewTrack))
+        let key = TrackIdentity(track: reviewTrack).stableKey
+        let detail = try await repository.loadPersonalLibraryTrackDetail(stableKey: key)
+        let entry = try XCTUnwrap(detail?.entry)
+        let candidate = LyricsCandidate(id: "batch-review-fixture", identity: TrackIdentity(track: reviewTrack),
+            title: "雨のあとの手紙", artist: reviewTrack.artist, album: reviewTrack.album, duration: 245,
+            lines: [LyricLine(timestamp: 2, originalText: "candidate lyrics")],
+            source: .neteaseExperimental, confidence: 0.9)
+        let reviewProvider = ProviderFailureFixedLyricsProvider(name: "NetEase Experimental", result: .candidates([candidate]))
+        let reviewSession = LyricsSessionController(providers: [reviewProvider], repository: repository, isBatch: true)
+        let review = await reviewSession.completeBatchLyrics(track: reviewTrack)
+        guard case .review(let candidates) = review, let selected = candidates.first else {
+            return XCTFail("需保留本次查询返回的候选：\(reviewSession.state) \(reviewSession.sourceFailureSummary ?? "") \(reviewSession.persistenceStatusMessage ?? "")")
+        }
+        XCTAssertEqual(selected.id, candidate.id)
+        let before = try await repository.loadBestStored(track: reviewTrack, identity: candidate.identity)
+        XCTAssertNil(before)
+
+        let batch = LyricsBatchCompletion()
+        batch.start(entries: [entry]) { _ in review }
+        for _ in 0..<20 { if !batch.isRunning { break }; await Task.yield() }
+        let item = try XCTUnwrap(batch.results.first)
+        let filed = try await batch.resolve(item, with: selected) {
+            try await repository.adoptBatchCandidate(selected, for: entry)
+        }
+        let savedID = try XCTUnwrap(filed.versionID)
+        XCTAssertEqual(batch.results.first?.outcome, .timedSaved)
+        let adopted = try await repository.loadPersonalLibraryTrackDetail(stableKey: key)
+        XCTAssertEqual(adopted?.entry.activeLyricsVersionID, savedID)
+        let stale = try await batch.resolve(item, with: selected) {
+            XCTFail("旧核对页不应再保存")
+            return filed
+        }
+        XCTAssertNil(stale.versionID)
+
+        try await repository.markLocked(versionID: savedID, locked: true)
+        let alternate = LyricsCandidate(id: "other-batch-review", identity: candidate.identity,
+            title: candidate.title, artist: candidate.artist, album: candidate.album, duration: candidate.duration,
+            lines: [LyricLine(timestamp: 4, originalText: "alternate proposal")],
+            source: .lrclib, confidence: 0.9)
+        let blocked = try await repository.adoptBatchCandidate(alternate, for: entry)
+        XCTAssertEqual(blocked.disposition, .skippedLocked)
+        let reloaded = try await repository.loadPersonalLibraryTrackDetail(stableKey: key)
+        XCTAssertEqual(reloaded?.entry.activeLyricsVersionID, savedID)
     }
 
     func testStoredLineTimingWaitsPastTheGraceForWordTiming() async {
