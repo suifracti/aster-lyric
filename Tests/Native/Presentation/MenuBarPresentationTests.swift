@@ -279,14 +279,36 @@ final class MenuBarPresentationTests: XCTestCase {
 
         snapshot.currentTranslationText = "天空"
         var bilingual = MenuBarLyricsAppearance(showsTranslation: true, width: 120)
-        let paired = MenuBarTextFormatter.bilingualImage(snapshot: snapshot, appearance: bilingual)
-        XCTAssertEqual(paired?.size.height, 22)
-        XCTAssertEqual(paired?.isTemplate, true)
-        XCTAssertLessThanOrEqual(paired?.size.width ?? .infinity, bilingual.contentWidth)
+        let paired = MenuBarTextFormatter.bilingualImages(snapshot: snapshot, appearance: bilingual)
+        XCTAssertEqual(paired?.count, 2)
+        XCTAssertTrue(paired?.allSatisfy { $0.size.height == 22 && $0.isTemplate && $0.size.width <= bilingual.contentWidth } == true)
         bilingual.showsOriginal = false
-        XCTAssertNil(MenuBarTextFormatter.bilingualImage(snapshot: snapshot, appearance: bilingual))
+        XCTAssertNil(MenuBarTextFormatter.bilingualImages(snapshot: snapshot, appearance: bilingual))
         snapshot.currentTranslationText = nil
-        XCTAssertNil(MenuBarTextFormatter.bilingualImage(snapshot: snapshot, appearance: .init(showsTranslation: true)))
+        XCTAssertNil(MenuBarTextFormatter.bilingualImages(snapshot: snapshot, appearance: .init(showsTranslation: true)))
+    }
+
+    func testMenuBarMarqueeOnlyMovesRowsThatOverflow() throws {
+        let original = "星を探して\nLeave the window open until we find our way home"
+        let snapshot = MenuBarLyricsSnapshot(state: .synchronized(current: original, next: nil),
+            statusText: "", trackTitle: "Song", artistName: nil, currentLineText: original,
+            nextLineText: nil, isPlaying: true, hasLiveTrack: true, artworkURL: nil, currentTranslationText: "寻找星星")
+        let settings = MenuBarLyricsAppearance(showsTranslation: true, width: 120)
+        let scrolling = settings.forDisplay(isPlaying: true, reduceMotion: false)
+        let rows = MenuBarTextFormatter.statusImages(snapshot: snapshot, appearance: scrolling)
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertGreaterThan(rows[0].size.width, scrolling.contentWidth)
+        XCTAssertLessThan(rows[1].size.width, scrolling.contentWidth)
+
+        let shortened = MenuBarTextFormatter.statusImages(snapshot: snapshot,
+            appearance: settings.forDisplay(isPlaying: true, reduceMotion: true))
+        XCTAssertLessThanOrEqual(shortened[0].size.width, settings.contentWidth)
+        XCTAssertEqual(shortened[1].size, rows[1].size)
+        XCTAssertFalse(settings.forDisplay(isPlaying: false, reduceMotion: false).showsFullLine)
+        XCTAssertLessThan(settings.itemWidth(for: rows[1].size.width), 120)
+        var fixed = settings
+        fixed.widthMode = "fixed"
+        XCTAssertEqual(fixed.itemWidth(for: rows[1].size.width), 120)
     }
 
     func testMixedReadingImageFitsTheWholeOriginalOnOneRow() {

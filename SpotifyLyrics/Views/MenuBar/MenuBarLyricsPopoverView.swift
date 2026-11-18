@@ -474,32 +474,86 @@ private struct MenuBarTimedOriginal: View {
 struct MenuBarAppearancePreview: View {
     @ObservedObject var settings: AppSettingsStore
     @ObservedObject var controller: MenuBarLyricsController
-    private var snapshot: MenuBarLyricsSnapshot { controller.currentSnapshot }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showsExample = false
 
     var body: some View {
-        let preview = MenuBarTextFormatter.statusImage(snapshot: previewSnapshot, appearance: .init(
+        let live = controller.currentSnapshot
+        let hasCurrentLine = live.currentLineText?.isEmpty == false
+        let usesExample = showsExample || !hasCurrentLine
+        let snapshot = usesExample ? Self.example : live
+        let appearance = MenuBarLyricsAppearance(
             showsOriginal: settings.menuBarLyricsShowsOriginal, showsTranslation: settings.menuBarLyricsShowsTranslation,
             showsKana: settings.menuBarLyricsShowsKana, showsRomaji: settings.menuBarLyricsShowsRomaji,
             fontSize: settings.menuBarLyricsFontSize, readingsAbove: settings.menuBarLyricsReadingsAbove,
-            width: settings.menuBarWidth))
-        HStack(spacing: 8) {
-            if snapshot.currentLineText?.isEmpty != false {
-                Text("示例").font(.caption2).foregroundStyle(.secondary)
+            widthMode: settings.menuBarWidthMode, width: settings.menuBarWidth, overflow: settings.menuBarOverflow
+        ).forDisplay(isPlaying: snapshot.isPlaying, reduceMotion: reduceMotion)
+        let help = MenuBarTextFormatter.statusItemHelp(snapshot: snapshot)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(usesExample ? "长句示例" : "当前歌词").foregroundStyle(.secondary)
+                Spacer()
+                if hasCurrentLine {
+                    Button(usesExample ? "使用当前歌词" : "试读长句") { showsExample.toggle() }
+                        .buttonStyle(.link)
+                }
             }
-            Image(nsImage: preview).renderingMode(.template).frame(height: 22)
+            .font(.caption2)
+            GeometryReader { geometry in
+                MenuBarNativePreview(snapshot: snapshot, appearance: appearance, availableWidth: geometry.size.width) {
+                    usesExample ? nil : controller.remainingLineTime()
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("菜单栏文字预览")
+                .accessibilityValue(help)
+                .help(help)
+            }
+            .frame(height: 22)
         }
-        .frame(maxWidth: .infinity, alignment: .leading).clipped().padding(9)
+        .padding(9)
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
-        .accessibilityLabel("菜单栏文字预览")
     }
 
-    private var previewSnapshot: MenuBarLyricsSnapshot {
-        if snapshot.currentLineText?.isEmpty == false { return snapshot }
-        return MenuBarLyricsSnapshot(state: .synchronized(current: "星が光る", next: nil),
-                                     statusText: "", trackTitle: nil, artistName: nil, currentLineText: "星が光る",
-                                     nextLineText: nil, isPlaying: false, hasLiveTrack: false, artworkURL: nil,
-                                     currentTranslationText: "星光亮起", currentKanaText: "ほしがひかる",
-                                     currentRomajiText: "hoshi ga hikaru")
+    private static let example: MenuBarLyricsSnapshot = {
+        let line = "星を探して\nLeave the window open until the stars guide us home"
+        return .init(state: .synchronized(current: line, next: nil), statusText: "", trackTitle: "夜の窓",
+            artistName: nil, currentLineText: line, nextLineText: nil, isPlaying: true, hasLiveTrack: false,
+            artworkURL: nil, currentTranslationText: "留一扇窗，等星光指路", currentKanaText: "ほしをさがして",
+            currentRomajiText: "hoshi o sagashite")
+    }()
+}
+
+private struct MenuBarNativePreview: NSViewRepresentable {
+    let snapshot: MenuBarLyricsSnapshot
+    let appearance: MenuBarLyricsAppearance
+    let availableWidth: CGFloat
+    let remaining: () -> TimeInterval?
+
+    @MainActor final class PreviewView: NSView {
+        let item = NSBox(frame: .zero)
+        let lyrics = LyricIslandStatusTextView(frame: .zero)
+    }
+
+    func makeNSView(context: Context) -> PreviewView {
+        let preview = PreviewView(frame: .zero)
+        preview.item.boxType = .custom
+        preview.item.borderWidth = 0
+        preview.item.cornerRadius = 5
+        preview.item.fillColor = NSColor.labelColor.withAlphaComponent(0.08)
+        preview.item.setAccessibilityElement(false)
+        preview.addSubview(preview.item)
+        preview.addSubview(preview.lyrics)
+        return preview
+    }
+
+    func updateNSView(_ preview: PreviewView, context: Context) {
+        let width = preview.lyrics.configure(snapshot: snapshot, appearance: appearance, remaining: remaining)
+        guard availableWidth > 0 else { return }
+        let scale = min(1, availableWidth / width)
+        let bottom = (22 - 22 * scale) / 2
+        preview.item.frame = NSRect(x: 0, y: bottom, width: width * scale, height: 22 * scale)
+        preview.lyrics.frame = NSRect(x: 8 * scale, y: bottom, width: (width - 16) * scale, height: 22 * scale)
+        preview.lyrics.bounds = NSRect(x: 0, y: 0, width: width - 16, height: 22)
     }
 }
 

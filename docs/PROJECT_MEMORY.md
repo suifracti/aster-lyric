@@ -67,7 +67,7 @@
 | 翻阅收藏、从副歌第二次出现的位置接下一句、搜到旧译文、继续阅读丢位置或被档案覆盖 | L-046 · LibraryPassageReader、RecentLyricsReadings、V3FavoriteLines |
 | 灵动岛挡刘海、只剩歌名、想停在一句读、换歌拖错进度 | L-045；CapsuleNotchGeometry、CapsuleLyricsView、vocalCountdownWindow |
 | 从灵动岛、桌面歌词或状态栏读全文，保持定住的那一处 | L-045；ListeningLyricsSnapshot、ListeningLyricsReader |
-| 状态栏双行词、日英混排少半句、收藏当前句、完整歌词与版本档案、没放歌时的菜单 | L-044；MenuBarTextFormatter.statusImage、MenuBarFullLyricsSnapshot、WorkspaceShelfCard、KeepLyricButton |
+| 状态栏双行词、日英混排少半句、收藏当前句、完整歌词与版本档案、没放歌时的菜单 | L-044；MenuBarTextFormatter.statusImages、MenuBarFullLyricsSnapshot、WorkspaceShelfCard、KeepLyricButton |
 | 全屏歌词按 Esc 没反应，退出后留下大窗 | L-031；FullScreenLyricsWindowController、handleExitCommand |
 | 桌面歌词、灵动岛、菜单栏分散难找，调整一个外观时另一个预览被采用 | L-043；AppearanceSettingsView、AppearanceSurface、PresentationSelectionStore.apply |
 | 搜设置后还得找开关、状态栏字号搜不到 | L-043；AppearanceControl、WorkspaceLookupRow、SettingsHistory |
@@ -838,6 +838,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 弹窗收藏采用屏幕所示的歌词与录音键。停播时从本机金句或歌词库进入工作台。播放与空闲的离屏检查使用临时数据库，截图宿主退出即清走自己产生的封面和工作目录。
 
 日英混排原文和注音进模板图前把内嵌换行合成空格，原始歌词仍保留换行。直接用 AppKit 测量含换行的字符串会给出最宽一行的宽度，第二行画进固定 22 pt 高度的图时被裁掉。播放时超宽句的滚动以实际下一句的时间为限，保留看到句尾的时间。暂停或开启减少动态效果时使用带省略号的紧凑图，系统提示和弹窗仍可以读全文。
+
+2026-11-19 双行滚动。原文和译文各用一个原生图层，以各自字宽判断滚动和省略。能完整放下的短行保持原位。系统栏、设置页和弹窗外观预览复用同一个 AppKit 视图，预览可试读日英混排长句，随设置切换宽度、文字层和溢出方式。隔离设置窗实点双行、固定宽度、滚动和省略，也核对只显示短译文时自适应缩窄。42 项相关原生检查通过，1 项环境跳过。真实系统栏的可用宽度与实播未参与这轮核对。
 
 状态栏弹窗的封面和背景缩图按实际查询 URL 配对。旧实现等异步加载完成才替换，慢图时会把下一首的歌名配上上一首的封面。换歌时立即从当前 URL 选择图或占位，背景同步切换；阅读区域只在同一录音和同一歌词状态内做滑移动画，避免加载提示与下一首的原词重叠。隔离宿主用《インパーフェクト》切到《Complain》，把后者封面延迟六秒复现并复核，又通过「找一句」回读先前收藏的原句和译文。
 
