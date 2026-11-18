@@ -24,10 +24,13 @@ struct LyricFileDocument: FileDocument {
         throw CocoaError(.fileWriteNoPermission)
     }
 
-    @MainActor static func choose(multiple: Bool) -> [URL] {
+    @MainActor static func choose(multiple: Bool, includesEditableDocuments: Bool = false) -> [URL] {
         let panel = NSOpenPanel()
-        panel.message = "打开本地歌词"
-        panel.allowedContentTypes = readableContentTypes + [LyricManuscript.manuscriptType, LyricBook.bookType]
+        panel.message = includesEditableDocuments ? "打开本机文件" : "选择 TXT、LRC 或 TTML 歌词"
+        panel.allowedContentTypes = readableContentTypes
+        if includesEditableDocuments {
+            panel.allowedContentTypes += [LyricManuscript.manuscriptType, LyricBook.bookType]
+        }
         panel.allowsMultipleSelection = multiple
         panel.canChooseDirectories = false
         return panel.runModal() == .OK ? panel.urls : []

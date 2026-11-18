@@ -189,7 +189,7 @@ struct SettingsWorkspace: View {
             Text("文件").font(.headline).accessibilityAddTraits(.isHeader).padding(.horizontal, 10)
                 .padding(.top, 9).padding(.bottom, 3)
             actionRow("打开文件…", detail: "歌词、手稿或歌本", icon: "doc.text") {
-                openFiles(LyricFileDocument.choose(multiple: true))
+                openFiles(LyricFileDocument.choose(multiple: true, includesEditableDocuments: true))
             }
             Divider().padding(.horizontal, 10)
             actionRow("写手稿", detail: "写词与编排段落", icon: "square.and.pencil") { newDocument(LyricManuscript()) }
@@ -218,7 +218,9 @@ struct SettingsWorkspace: View {
     private var fileActions: some View {
         Button("写手稿", systemImage: "square.and.pencil") { newDocument(LyricManuscript()) }
         Button("编歌本", systemImage: "book.closed") { newDocument(LyricBook()) }
-        Button("打开文件…", systemImage: "doc.text") { openFiles(LyricFileDocument.choose(multiple: true)) }
+        Button("打开文件…", systemImage: "doc.text") {
+            openFiles(LyricFileDocument.choose(multiple: true, includesEditableDocuments: true))
+        }
             .help("打开 TXT、LRC、TTML、手稿或歌本，也可以从 Finder 拖到这里")
     }
 
