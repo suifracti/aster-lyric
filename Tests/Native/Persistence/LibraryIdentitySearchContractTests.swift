@@ -68,6 +68,14 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         let rows = WorkspaceLookupRow.matches(service.request.query, songs: [], favorites: [favorite])
         XCTAssertEqual(rows.first?.location.passage?.source, .original(version))
         XCTAssertEqual(rows.first?.location.passage?.lineIndex, 9)
+        let row = try XCTUnwrap(rows.first)
+        var history = SettingsHistory()
+        history.search(service.request.query)
+        history.rememberSearchResult(row.id)
+        history.open(row.location)
+        history.back()
+        XCTAssertEqual(history.current.query, service.request.query)
+        XCTAssertEqual(history.current.resultID, row.id)
         XCTAssertTrue(WorkspaceLookupRow.matches("刘海", songs: [], favorites: []).contains {
             $0.location.page == .appearance && $0.location.appearanceSurface == .island
         })

@@ -331,27 +331,47 @@ struct LyricBookOffer: View {
     var title = ""
     /// Line rows use an icon beside the bookmark; headers and menus keep the text label.
     var compact = false
-    let chapters: () -> [LyricBook.Chapter]
+    private let load: () async throws -> [LyricBook.Chapter]
     @ObservedObject private var windows = LyricBookWindows.shared
     @Environment(\.newDocument) private var newDocument
     @State private var addedTo: String?
+    @State private var isLoading = false
+    @State private var issue: String?
+
+    init(label: String = "编成歌本", title: String = "", compact: Bool = false,
+         chapters: @escaping () -> [LyricBook.Chapter]) {
+        self.label = label
+        self.title = title
+        self.compact = compact
+        load = { chapters() }
+    }
+
+    init(label: String, title: String, loadChapters: @escaping () async throws -> [LyricBook.Chapter]) {
+        self.label = label
+        self.title = title
+        load = loadChapters
+    }
 
     var body: some View {
         Group {
             if windows.destinations.isEmpty {
-                Button(action: openNew) { face }
+                Button { prepare { newDocument(LyricBook(title: title, chapters: $0)) } } label: { face }
             } else {
                 Menu {
-                    Button("新建歌本", action: openNew)
+                    Button("新建歌本") { prepare { newDocument(LyricBook(title: title, chapters: $0)) } }
                     Section("加入打开的歌本") {
                         ForEach(windows.destinations) { destination in
-                            Button(destination.title) { add(to: destination) }
+                            Button(destination.title) { prepare { add($0, to: destination) } }
                         }
                     }
                 } label: { face }
                 .menuIndicator(compact ? .hidden : .visible)
             }
         }
+        .disabled(isLoading)
+        .alert("暂时无法收进歌本", isPresented: Binding(get: { issue != nil }, set: { if !$0 { issue = nil } })) {
+            Button("好") { issue = nil }
+        } message: { Text(issue ?? "") }
         .help(addedTo.map { "已收进《\($0)》" } ?? label)
         .accessibilityLabel(addedTo.map { "已收进《\($0)》" } ?? label)
         .task(id: addedTo) {
@@ -370,19 +390,29 @@ struct LyricBookOffer: View {
         }
     }
 
-    private func add(to destination: LyricBookWindows.Destination) {
-        let chapters = chapters()
-        guard !chapters.isEmpty else { return }
+    private func add(_ chapters: [LyricBook.Chapter], to destination: LyricBookWindows.Destination) {
         destination.add(chapters)
         addedTo = destination.title.isEmpty ? "歌本" : destination.title
         NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
                              userInfo: [.announcement: "已收进《\(addedTo ?? "歌本")》", .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
-    private func openNew() {
-        let chapters = chapters()
-        guard !chapters.isEmpty else { return }
-        newDocument(LyricBook(title: title, chapters: chapters))
+    private func prepare(_ use: @escaping ([LyricBook.Chapter]) -> Void) {
+        guard !isLoading else { return }
+        isLoading = true
+        Task { @MainActor in
+            defer { isLoading = false }
+            do {
+                let chapters = try await load()
+                guard !chapters.isEmpty else {
+                    issue = "这份版本里没有可收录的歌词。"
+                    return
+                }
+                use(chapters)
+            } catch {
+                issue = error.localizedDescription
+            }
+        }
     }
 }
 

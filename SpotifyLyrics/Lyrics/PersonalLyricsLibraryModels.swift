@@ -898,11 +898,17 @@ enum LibraryPassageSource: Hashable, Codable, Sendable {
 }
 
 public struct LibraryPassageTarget: Hashable, Identifiable, Codable, Sendable {
+    struct SavedQuote: Hashable, Codable, Sendable {
+        let originalVersionID: UUID?
+        let translation: String?
+    }
+
     let trackKey: String
     var source: LibraryPassageSource = .selected
     var find: String = ""
     var lineIndex: Int? = nil
     var recallNextLine = false
+    var savedQuote: SavedQuote? = nil
     public var id: Self { self }
 }
 
@@ -954,6 +960,7 @@ struct LibraryPassagePage: Sendable {
     var translationLanguage: String?
     var translationSource = ""
     var translationLocked = false
+    var translationVersionID: UUID? = nil
 
     func originalOccurrence(of text: String, preferred: Int?) -> Int? {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)

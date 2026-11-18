@@ -4053,8 +4053,11 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             lyricsID = entry.activeLyricsVersionID ?? detail.lyricsVersions.max(by: { $0.updatedAt < $1.updatedAt })?.id
         case let .original(id), let .attached(id): lyricsID = id
         case let .translation(id):
-            translation = detail.translationVersions.first { $0.id == id }
-            lyricsID = translation?.lyricsVersionID
+            let savedOriginalID = target.savedQuote?.originalVersionID
+            translation = detail.translationVersions.first {
+                $0.id == id && (savedOriginalID == nil || $0.lyricsVersionID == savedOriginalID)
+            }
+            lyricsID = translation?.lyricsVersionID ?? savedOriginalID
         case let .reading(id):
             reading = detail.readingVersions.first { $0.id == id }
             lyricsID = reading?.lyricsVersionID
@@ -4064,7 +4067,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         guard !originals.isEmpty else { return nil }
         let hash = LyricsSourceContentHasher.hash(isSynchronized: version.isSynced, lines: originals)
         let attached = source == .attached(lyricsID)
-        if !attached && translation == nil {
+        if !attached && translation == nil && target.savedQuote == nil {
             translation = detail.translationVersions.first { $0.lyricsVersionID == lyricsID && $0.id == entry.activeTranslationVersionID }
         }
         var translated: [Int: String] = [:]
@@ -4079,13 +4082,14 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 hasStoredTranslation = true
                 for line in valid.lines { translated[line.lineIndex] = line.translatedText }
                 if case .translation = source { edition = "已保存的译文" }
-            } else if case .translation = source {
+            } else if case .translation = source, target.savedQuote == nil {
                 let lines = try fetchTranslationLines(versionID: translation.id).map {
                     LibraryPassagePage.Line(id: $0.lineIndex, original: "", translation: $0.translatedText)
                 }
                 return LibraryPassagePage(entry: entry, originalVersionID: lyricsID, edition: "历史译文 · 单独阅读", lines: lines,
                                           matchesOriginalVersion: false, translationLanguage: translation.targetLanguage,
-                                          translationSource: translation.sourceKind, translationLocked: translation.isLocked)
+                                          translationSource: translation.sourceKind, translationLocked: translation.isLocked,
+                                          translationVersionID: translation.id)
             }
         }
         if let reading {
@@ -4139,10 +4143,21 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             let base = Self.documentForTimingValidation(identity: TrackIdentity(track: track), track: track, version: stored, lines: originals)
             timing = try fetchBestTimingVersion(lyricsVersionID: lyricsID, sourceContentHash: hash, document: base)?.rows ?? [:]
         }
+        let quoteIndex: Int? = target.savedQuote.flatMap { quote in
+            if quote.originalVersionID == lyricsID, let index = target.lineIndex,
+               originals.contains(where: { $0.lineIndex == index }) { return index }
+            return originals.first {
+                $0.originalText.trimmingCharacters(in: .whitespacesAndNewlines) == target.find
+            }?.lineIndex
+        }
+        if quoteIndex != nil, !hasStoredTranslation, target.savedQuote?.translation != nil {
+            edition = "收藏时的译文"
+        }
         let lines = originals.map { line in
             let embedded = [line.kanaText, line.romajiText].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
             return LibraryPassagePage.Line(id: line.lineIndex, original: line.originalText,
-                     translation: hasStoredTranslation ? translated[line.lineIndex] : line.translationText,
+                     translation: line.lineIndex == quoteIndex ? target.savedQuote?.translation
+                        : (hasStoredTranslation ? translated[line.lineIndex] : line.translationText),
                      reading: pronunciation[line.lineIndex] ?? (embedded.isEmpty ? nil : embedded),
                      background: timing[line.lineIndex]?.backgroundText ?? line.backgroundText, startTime: line.startTime,
                      endTime: line.endTime, timedSpans: timing[line.lineIndex]?.spans,
@@ -4153,7 +4168,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                                   language: version.language, originalSource: version.source, originalLocked: version.isLocked,
                                   translationLanguage: hasStoredTranslation ? translation?.targetLanguage : nil,
                                   translationSource: hasStoredTranslation ? translation?.sourceKind ?? "" : "legacyEmbedded",
-                                  translationLocked: hasStoredTranslation && translation?.isLocked == true)
+                                  translationLocked: hasStoredTranslation && translation?.isLocked == true,
+                                  translationVersionID: hasStoredTranslation ? translation?.id : nil)
     }
 
     /// SQLite's change counters include other repository connections. Only a

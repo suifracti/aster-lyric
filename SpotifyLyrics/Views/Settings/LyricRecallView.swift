@@ -35,9 +35,7 @@ struct LyricRecallView: View {
                             Divider()
                             block(answer, isAnswer: true)
                             HStack {
-                                KeepLyricButton(text: answer.original, translation: answer.translation, trackKey: page.entry.trackStableKey,
-                                                title: page.entry.title, artist: page.entry.artist, artworkURL: page.entry.artworkURL,
-                                                lyricsVersionID: page.originalVersionID, lineIndex: answer.id)
+                                KeepLyricButton(entry: page.quote(answer))
                                 Spacer()
                                 Button {
                                     if session.canAdvance { session.advance() } else { returnToLine(answer.id) }

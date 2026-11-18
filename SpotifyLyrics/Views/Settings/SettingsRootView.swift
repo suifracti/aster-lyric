@@ -189,6 +189,8 @@ struct SettingsLocation: Equatable {
     let page: SettingsCategory
     var trackKey: String?
     var query: String
+    var resultID: String?
+    var archiveSource: LibraryPassageSource?
     var passage: LibraryPassageTarget?
     var appearanceSurface: AppearanceSurface = .main
     var opensSpotifyOnline = false
@@ -209,6 +211,11 @@ struct SettingsLocation: Equatable {
     init(reading passage: LibraryPassageTarget) {
         self.init(.library, trackKey: passage.trackKey)
         self.passage = passage
+    }
+
+    init(archive target: LibraryPassageTarget) {
+        self.init(.library, trackKey: target.trackKey)
+        archiveSource = target.source
     }
 
     init(_ page: SettingsCategory, trackKey: String? = nil, query: String = "", opensSpotifyOnline: Bool = false) {
@@ -255,13 +262,19 @@ struct SettingsHistory {
         } else if current.query.isEmpty {
             open(.init(.workspace, query: text))
         } else {
+            if current.query != text { current.resultID = nil }
             current.query = text
             later.removeAll()
         }
     }
 
+    mutating func rememberSearchResult(_ id: String) {
+        if !current.query.isEmpty { current.resultID = id }
+    }
+
     mutating func rememberLibrarySelection(_ key: String?) {
         guard current.page == .library || current.page == .missingLyrics else { return }
+        if current.trackKey != key { current.archiveSource = nil }
         current.trackKey = key
     }
 }
@@ -271,6 +284,7 @@ struct SettingsRootView: View {
     @ObservedObject private var navigationRoute = SettingsNavigationRoute.shared
     @State private var history: SettingsHistory
     @State private var library = PersonalLyricsLibraryService()
+    @State private var favoriteQuery = ""
     @FocusState private var searchFocused: Bool
 
     init(initialPage: String? = nil, initialSurface: AppearanceSurface = .main) {
@@ -347,11 +361,16 @@ struct SettingsRootView: View {
                 if history.current.query.isEmpty {
                     SettingsDetailView(selection: Binding(get: { history.current.page }, set: { navigate(.init($0)) }),
                                        trackKey: history.current.trackKey, passage: history.current.passage,
+                                       archiveSource: history.current.archiveSource, favoriteQuery: $favoriteQuery,
+                                       backFromReading: history.canGoBack ? { history.back() } : nil,
                                        appearanceSurface: history.current.appearanceSurface, opensSpotifyOnline: history.current.opensSpotifyOnline,
                                        library: library, navigate: navigate,
                                        rememberSelection: { history.rememberLibrarySelection($0) })
                 } else {
-                    SettingsLocalSearch(query: history.current.query, library: library, navigate: navigate)
+                    SettingsLocalSearch(query: history.current.query, resultID: history.current.resultID, library: library) { row in
+                        history.rememberSearchResult(row.id)
+                        navigate(row.location)
+                    }
                 }
             }
         }
@@ -400,6 +419,9 @@ private struct SettingsDetailView: View {
     @Binding var selection: SettingsCategory
     let trackKey: String?
     let passage: LibraryPassageTarget?
+    let archiveSource: LibraryPassageSource?
+    @Binding var favoriteQuery: String
+    let backFromReading: (() -> Void)?
     let appearanceSurface: AppearanceSurface
     let opensSpotifyOnline: Bool
     let library: PersonalLyricsLibraryService
@@ -430,16 +452,16 @@ private struct SettingsDetailView: View {
             case .library, .missingLyrics:
                 if let passage {
                     LibraryPassageReader(target: passage, library: library,
-                                        openArchive: { navigate(.init(.library, trackKey: passage.trackKey)) })
+                                        openArchive: { navigate(.init(archive: $0)) }, close: backFromReading)
                         .id(passage)
                 } else {
                     PersonalLyricsLibraryView(embeddedInSettings: true, initialTrackKey: trackKey,
-                                              showingMissing: selection == .missingLyrics, service: library,
+                                              showingMissing: selection == .missingLyrics, initialSource: archiveSource, service: library,
                                               onSelection: rememberSelection, readPassage: { navigate(.init(reading: $0)) })
                 }
             case .history: ListeningHistoryView(openTrack: { navigate(.init(.library, trackKey: $0)) })
             case .statistics: ListeningStatisticsView()
-            case .favorites: FavoriteLinesView(openTrack: { navigate(.init(.library, trackKey: $0)) },
+            case .favorites: FavoriteLinesView(savedQuery: $favoriteQuery, openTrack: { navigate(.init(.library, trackKey: $0)) },
                                               readPassage: { navigate(.init(reading: $0)) })
             case .experienceLibrary:
                 ExperienceLibrarySettingsView(selectionStore: settings.presentationSelections).padding(24)

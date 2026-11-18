@@ -38,6 +38,14 @@ public struct MenuBarLyricsSnapshot: Equatable, Sendable {
     public var currentLineIndex: Int? = nil
     var trackKey: String? = nil
     var lyricsVersionID: UUID? = nil
+    var translationVersionID: UUID? = nil
+
+    var keptLine: V3FavoriteLines.Entry? {
+        guard let trackKey, let currentLineText, !currentLineText.isEmpty else { return nil }
+        return .init(text: currentLineText, translation: currentTranslationText, title: trackTitle ?? "",
+                     artist: artistName ?? "", trackKey: trackKey, artworkURL: artworkURL,
+                     lyricsVersionID: lyricsVersionID, lineIndex: currentLineIndex, translationVersionID: translationVersionID)
+    }
 }
 
 /// Captured on the explicit read action, so selecting/copying text is stable
@@ -733,6 +741,8 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         snapshot.canControlPlayback = state.canControlSpotify
         snapshot.trackKey = state.currentTrackIdentity?.stableKey
         snapshot.lyricsVersionID = state.liveLyricsVersionID
+        snapshot.translationVersionID = state.selectedTranslation?.quoteVersionID(
+            originalID: snapshot.lyricsVersionID, lineIndex: snapshot.currentLineIndex, text: snapshot.currentTranslationText)
         return snapshot
     }
 
@@ -866,7 +876,8 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 return snapshot
             } else if !isSync {
                 let displayTitle = title.isEmpty ? "Aster · Lyric" : title
-                let firstLine = lines.first { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                let firstIndex = lines.firstIndex { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                let firstLine = firstIndex.map { lines[$0] }
                 var snapshot = MenuBarLyricsSnapshot(
                     state: .unsynchronized(title: displayTitle),
                     statusText: "♪ \(displayTitle)",
@@ -879,6 +890,7 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                     artworkURL: artworkURL
                 )
                 let translation = firstLine?.translationText?.trimmingCharacters(in: .whitespacesAndNewlines)
+                snapshot.currentLineIndex = firstIndex
                 snapshot.currentTranslationText = translation?.isEmpty == true ? nil : translation
                 snapshot.currentRubyTokens = firstLine?.rubyTokens
                 snapshot.currentKanaText = firstLine?.kanaText

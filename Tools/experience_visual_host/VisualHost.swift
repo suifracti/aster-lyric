@@ -808,12 +808,28 @@ private struct ExperienceFixtureRoot: View {
                         let file = try! LocalLyricsFile(data: Data(sample.utf8), kind: .ttml, preferredLanguage: "zh-Hans")
                         root = AnyView(LyricFileReader(file: file, name: "窗边的来信.ttml", library: PersonalLyricsLibraryService()))
                     } else if ExperienceArguments.surface == "reader" {
-                        let recall = ProcessInfo.processInfo.arguments.contains("--recall-next")
-                        let target = LibraryPassageTarget(trackKey: TrackIdentity(track: playback.currentTrack).stableKey,
+                        let library = PersonalLyricsLibraryService()
+                        var target = LibraryPassageTarget(trackKey: TrackIdentity(track: playback.currentTrack).stableKey,
                                                           find: ExperienceArguments.value("--find-line", fallback: "朝へ"),
-                                                          recallNextLine: recall)
-                        root = AnyView(LibraryPassageReader(target: target, library: PersonalLyricsLibraryService(),
-                                                           openArchive: {}).frame(width: 610, height: 500))
+                                                          recallNextLine: ProcessInfo.processInfo.arguments.contains("--recall-next"))
+                        if ProcessInfo.processInfo.arguments.contains("--read-kept-line") {
+                            let line = MenuBarLyricsController.deriveSnapshot(from: playback).keptLine!
+                            precondition(V3FavoriteLines.shared.toggle(line))
+                            V3FavoriteLines.shared.reload()
+                            let reopened = V3FavoriteLines.shared.entries[0]
+                            target = reopened.passage
+                            let found = WorkspaceLookupRow.matches(line.text, songs: [], favorites: [reopened])
+                            precondition(found.first?.location.passage == target)
+                            let page = try! await library.readPassage(target)!
+                            let index = line.lineIndex!
+                            precondition(page.originalVersionID == line.lyricsVersionID)
+                            precondition(page.lines.first(where: { $0.id == index })?.translation == line.translation)
+                            let chapter = LyricBook.Chapter(quote: reopened)
+                            precondition(chapter.origin == target)
+                            print("KEPT_LINE_FLOW title=\(page.entry.title) line=\(index) stored=true reader=true songbook=true")
+                        }
+                        root = AnyView(LibraryPassageReader(target: target, library: library,
+                                                           openArchive: { _ in }).frame(width: 610, height: 500))
                     } else if ExperienceArguments.surface == "favorites" {
                         if ProcessInfo.processInfo.arguments.contains("--sample-favorites"), V3FavoriteLines.shared.entries.isEmpty {
                             let track = playback.currentTrack

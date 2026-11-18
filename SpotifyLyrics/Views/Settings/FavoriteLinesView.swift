@@ -5,12 +5,16 @@ struct FavoriteLinesView: View {
     @ObservedObject private var store = V3FavoriteLines.shared
     @AppStorage("favorites.browse.asBook.v1", store: .lyricsQ) private var asBook = true
     @AppStorage("favorites.browse.entry.v1", store: .lyricsQ) private var selectedEntry = ""
-    @State private var query = ""
+    @State private var localQuery = ""
     @State private var notice: String?
     @State private var pageArtwork: NSImage?
 
+    var savedQuery: Binding<String>?
     var openTrack: ((String) -> Void)? = nil
     var readPassage: (LibraryPassageTarget) -> Void = { MenuBarLyricsController.shared.openSettings(at: .init(reading: $0)) }
+
+    private var queryBinding: Binding<String> { savedQuery ?? $localQuery }
+    private var query: String { queryBinding.wrappedValue }
 
     private var results: [V3FavoriteLines.Entry] {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -50,9 +54,9 @@ struct FavoriteLinesView: View {
             if !store.entries.isEmpty {
                 HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("查找句子、译文、歌曲或歌手", text: $query).textFieldStyle(.plain)
+                    TextField("查找句子、译文、歌曲或歌手", text: queryBinding).textFieldStyle(.plain)
                     if !query.isEmpty {
-                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
+                        Button { queryBinding.wrappedValue = "" } label: { Image(systemName: "xmark.circle.fill") }
                             .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("清除查找")
                     }
                 }
@@ -74,11 +78,20 @@ struct FavoriteLinesView: View {
                 let index = entries.firstIndex { $0.id.uuidString == selectedEntry } ?? 0
                 book(entries[index], index: index, entries: entries)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(entries) { entry in
-                            row(entry)
-                            if entry.id != entries.last?.id { Divider() }
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(entries) { entry in
+                                row(entry).id(entry.id.uuidString)
+                                if entry.id != entries.last?.id { Divider() }
+                            }
+                        }
+                    }
+                    .task(id: entries.map(\.id)) {
+                        let selected = selectedEntry
+                        if entries.contains(where: { $0.id.uuidString == selected }) {
+                            await Task.yield()
+                            if !Task.isCancelled { proxy.scrollTo(selected, anchor: .center) }
                         }
                     }
                 }
@@ -212,21 +225,13 @@ struct FavoriteLinesView: View {
 struct KeepLyricButton: View {
     @ObservedObject private var store = V3FavoriteLines.shared
     @State private var showsError = false
-    let text: String
-    let translation: String?
-    let trackKey: String
-    let title: String
-    let artist: String
-    let artworkURL: URL?
-    var lyricsVersionID: UUID? = nil
-    var lineIndex: Int? = nil
+    let entry: V3FavoriteLines.Entry
 
     var body: some View {
-        let kept = store.contains(text: text, trackKey: trackKey)
+        let kept = store.contains(entry)
         let action = kept ? "取消收藏这句" : "收藏这句"
         Button {
-            store.toggle(text: text, translation: translation, title: title, artist: artist,
-                         trackKey: trackKey, artworkURL: artworkURL, lyricsVersionID: lyricsVersionID, lineIndex: lineIndex)
+            store.toggle(entry)
             showsError = store.errorMessage != nil
         } label: {
             Image(systemName: kept ? "bookmark.fill" : "bookmark")

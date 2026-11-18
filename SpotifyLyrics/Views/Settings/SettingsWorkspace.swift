@@ -169,9 +169,12 @@ struct SettingsWorkspace: View {
         VStack(alignment: .leading, spacing: 12) {
             WorkspaceShelfCard(navigate: navigate)
             if let record = try? JSONDecoder().decode(LastOpenedLyricsRecord.self, from: lastOpenedData) {
-                actionRow("上次打开的档案",
+                actionRow(record.passage == nil ? "上次打开的档案" : "继续阅读",
                           detail: [record.title, record.artist].filter { !$0.isEmpty }.joined(separator: " · "),
-                          icon: "bookmark") { navigate(.init(.library, trackKey: record.trackKey)) }
+                          icon: "bookmark") {
+                    if let passage = record.passage { navigate(.init(reading: passage)) }
+                    else { navigate(.init(.library, trackKey: record.trackKey)) }
+                }
             }
         }
     }
@@ -286,15 +289,17 @@ struct WorkspaceLookupRow: Identifiable {
     }
 
     private static func quote(_ item: V3FavoriteLines.Entry) -> Self {
-        Self(id: "quote." + item.id.uuidString, group: .quotes, title: item.text, detail: [item.title, item.artist].filter { !$0.isEmpty }.joined(separator: " · "),
-             icon: "quote.opening", location: .init(reading: item.passage))
+        let line = item.lineIndex.map { "第 \($0 + 1) 行" }
+        let detail = [line, item.title, item.artist, item.translation].compactMap { $0 }.filter { !$0.isEmpty }
+        return Self(id: "quote." + item.id.uuidString, group: .quotes, title: item.text, detail: detail.joined(separator: " · "),
+                    icon: "quote.opening", location: .init(reading: item.passage))
     }
 
     static func suggestions(lastOpened: LastOpenedLyricsRecord?, favorites: [V3FavoriteLines.Entry]) -> [Self] {
         var rows: [Self] = []
         if let record = lastOpened {
             rows.append(Self(id: "record." + record.trackKey, group: .recent, title: record.title, detail: record.artist, icon: "book",
-                             location: .init(reading: .init(trackKey: record.trackKey))))
+                             location: .init(reading: record.passage ?? .init(trackKey: record.trackKey))))
         }
         rows += favorites.prefix(2).map(quote)
         rows += [SettingsCategory.library, .favorites, .appearance].map(tool)
@@ -304,7 +309,10 @@ struct WorkspaceLookupRow: Identifiable {
     static func matches(_ query: String, songs: [LibraryPassageHit], favorites: [V3FavoriteLines.Entry]) -> [Self] {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else { return [] }
-        var rows: [Self] = []
+        let matchingQuotes = favorites.filter {
+            $0.text.localizedStandardContains(term) || $0.translation?.localizedStandardContains(term) == true
+        }
+        var rows = matchingQuotes.map(quote)
         for hit in songs {
             let title = hit.entry.title, artist = hit.entry.artist
             if let source = hit.source {
@@ -318,8 +326,9 @@ struct WorkspaceLookupRow: Identifiable {
                                  location: .init(.library, trackKey: hit.id)))
             }
         }
-        rows += favorites.filter { item in
-            [item.text, item.translation ?? "", item.title, item.artist].contains { $0.localizedStandardContains(term) }
+        let quoteIDs = Set(matchingQuotes.map(\.id))
+        rows += favorites.filter {
+            !quoteIDs.contains($0.id) && [$0.title, $0.artist].contains { $0.localizedStandardContains(term) }
         }.map(quote)
         let surfaces = AppearanceSurface.allCases.filter { $0.matches(term) }
         rows += surfaces.map { surface in
@@ -354,42 +363,54 @@ final class WorkspaceLookup: ObservableObject {
 
 struct SettingsLocalSearch: View {
     let query: String
+    let resultID: String?
     let library: PersonalLyricsLibraryService
-    let navigate: (SettingsLocation) -> Void
+    let open: (WorkspaceLookupRow) -> Void
     @ObservedObject private var favorites = V3FavoriteLines.shared
     @StateObject private var lookup = WorkspaceLookup()
     private var term: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
         let results = WorkspaceLookupRow.matches(term, songs: lookup.songs(for: term), favorites: favorites.entries)
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                Text("搜索本机资料").font(.system(size: 24, weight: .semibold, design: .serif)).padding(.bottom, 18)
-                if term.isEmpty {
-                    Text("输入歌曲名、歌词片段或设置名称").foregroundStyle(.secondary)
-                } else {
-                    ForEach([WorkspaceLookupRow.Group.tools, .quotes, .songs], id: \.self) { group in
-                        let items = results.filter { $0.group == group }
-                        if !items.isEmpty || group == .songs {
-                            Text(group.rawValue).font(.caption.weight(.semibold)).foregroundStyle(WorkspacePalette.ink)
-                                .padding(.top, 12).padding(.bottom, 6).accessibilityAddTraits(.isHeader)
-                            ForEach(items) { item in
-                                Button { navigate(item.location) } label: { WorkspaceResultLabel(item: item) }
-                                    .buttonStyle(.plain)
-                            }
-                            if group == .songs && items.isEmpty {
-                                if lookup.result?.term != term {
-                                    ProgressView().controlSize(.small).accessibilityLabel("正在搜索本机歌词库")
-                                } else {
-                                    Text(lookup.result?.failed == true ? "暂时读不到歌词库" : "没有找到匹配的歌曲或歌词")
-                                        .font(.callout).foregroundStyle(.secondary)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    Text("搜索本机资料").font(.system(size: 24, weight: .semibold, design: .serif)).padding(.bottom, 18)
+                    if term.isEmpty {
+                        Text("输入歌曲名、歌词片段或设置名称").foregroundStyle(.secondary)
+                    } else {
+                        ForEach([WorkspaceLookupRow.Group.tools, .quotes, .songs], id: \.self) { group in
+                            let items = results.filter { $0.group == group }
+                            if !items.isEmpty || group == .songs {
+                                Text(group.rawValue).font(.caption.weight(.semibold)).foregroundStyle(WorkspacePalette.ink)
+                                    .padding(.top, 12).padding(.bottom, 6).accessibilityAddTraits(.isHeader)
+                                ForEach(items) { item in
+                                    Button { open(item) } label: { WorkspaceResultLabel(item: item, selected: item.id == resultID) }
+                                        .buttonStyle(.plain)
+                                        .background(item.id == resultID ? WorkspacePalette.selection : .clear,
+                                                    in: RoundedRectangle(cornerRadius: 6))
+                                        .id(item.id)
+                                }
+                                if group == .songs && items.isEmpty {
+                                    if lookup.result?.term != term {
+                                        ProgressView().controlSize(.small).accessibilityLabel("正在搜索本机歌词库")
+                                    } else {
+                                        Text(lookup.result?.failed == true ? "暂时读不到歌词库" : "没有找到匹配的歌曲或歌词")
+                                            .font(.callout).foregroundStyle(.secondary)
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                .padding(26).frame(maxWidth: 820, alignment: .leading).frame(maxWidth: .infinity)
             }
-            .padding(26).frame(maxWidth: 820, alignment: .leading).frame(maxWidth: .infinity)
+            .task(id: results.map(\.id)) {
+                if let resultID, results.contains(where: { $0.id == resultID }) {
+                    await Task.yield()
+                    if !Task.isCancelled { proxy.scrollTo(resultID, anchor: .center) }
+                }
+            }
         }
         .background(WorkspacePalette.paper)
         .task(id: term) { await lookup.search(term, library: library) }

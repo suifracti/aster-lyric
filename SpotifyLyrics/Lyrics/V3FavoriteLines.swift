@@ -4,7 +4,7 @@ import Foundation
 /// beside the database; the lyric database itself is not touched.
 @MainActor
 final class V3FavoriteLines: ObservableObject {
-    struct Entry: Codable, Identifiable, Equatable {
+    struct Entry: Codable, Identifiable, Equatable, Sendable {
         var id = UUID()
         var text: String
         var translation: String?
@@ -15,10 +15,13 @@ final class V3FavoriteLines: ObservableObject {
         var addedAt = Date()
         var lyricsVersionID: UUID? = nil
         var lineIndex: Int? = nil
+        var translationVersionID: UUID? = nil
 
         var passage: LibraryPassageTarget {
-            LibraryPassageTarget(trackKey: trackKey, source: lyricsVersionID.map(LibraryPassageSource.original) ?? .selected,
-                                 find: text, lineIndex: lineIndex)
+            let source = translationVersionID.map(LibraryPassageSource.translation)
+                ?? lyricsVersionID.map(LibraryPassageSource.original) ?? .selected
+            return LibraryPassageTarget(trackKey: trackKey, source: source, find: text, lineIndex: lineIndex,
+                                        savedQuote: .init(originalVersionID: lyricsVersionID, translation: translation))
         }
     }
 
@@ -73,29 +76,47 @@ final class V3FavoriteLines: ObservableObject {
 
     private static func key(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-    func contains(text: String, trackKey: String) -> Bool {
-        let wanted = Self.key(text)
-        return entries.contains { $0.trackKey == trackKey && Self.key($0.text) == wanted }
+    private static func matches(_ stored: Entry, _ proposed: Entry) -> Bool {
+        guard stored.trackKey == proposed.trackKey, key(stored.text) == key(proposed.text) else { return false }
+        let storedHasPosition = stored.lyricsVersionID != nil && stored.lineIndex != nil
+        let proposedHasPosition = proposed.lyricsVersionID != nil && proposed.lineIndex != nil
+        if storedHasPosition || proposedHasPosition {
+            return stored.lyricsVersionID == proposed.lyricsVersionID && stored.lineIndex == proposed.lineIndex
+                && stored.translationVersionID == proposed.translationVersionID
+        }
+        return true
     }
 
-    /// Adds the line, or removes it when it is already kept. Returns true when it is kept afterwards.
+    func contains(_ entry: Entry) -> Bool { entries.contains { Self.matches($0, entry) } }
+
+    func contains(text: String, trackKey: String) -> Bool {
+        entries.contains { $0.trackKey == trackKey && Self.key($0.text) == Self.key(text) }
+    }
+
+    /// Adds the occurrence, or removes it when that same occurrence is already kept.
     @discardableResult
-    func toggle(text: String, translation: String?, title: String, artist: String, trackKey: String,
-                artworkURL: URL?, lyricsVersionID: UUID? = nil, lineIndex: Int? = nil) -> Bool {
-        let wanted = Self.key(text)
-        guard !wanted.isEmpty else { return false }
+    func toggle(_ entry: Entry) -> Bool {
+        var normalized = entry
+        normalized.text = Self.key(entry.text)
+        normalized.translation = entry.translation.map(Self.key).flatMap { $0.isEmpty ? nil : $0 }
+        guard !normalized.text.isEmpty else { return false }
         var kept = false
         let written = update { next in
-            if let index = next.firstIndex(where: { $0.trackKey == trackKey && Self.key($0.text) == wanted }) {
+            if let index = next.firstIndex(where: { Self.matches($0, normalized) }) {
                 next.remove(at: index)
             } else {
-                next.insert(Entry(text: wanted, translation: translation.map(Self.key).flatMap { $0.isEmpty ? nil : $0 },
-                                  title: title, artist: artist, trackKey: trackKey, artworkURL: artworkURL,
-                                  lyricsVersionID: lyricsVersionID, lineIndex: lineIndex), at: 0)
+                next.insert(normalized, at: 0)
                 kept = true
             }
         }
-        return written ? kept : contains(text: wanted, trackKey: trackKey)
+        return written ? kept : contains(normalized)
+    }
+
+    @discardableResult
+    func toggle(text: String, translation: String?, title: String, artist: String, trackKey: String,
+                artworkURL: URL?, lyricsVersionID: UUID? = nil, lineIndex: Int? = nil) -> Bool {
+        toggle(Entry(text: text, translation: translation, title: title, artist: artist, trackKey: trackKey,
+                     artworkURL: artworkURL, lyricsVersionID: lyricsVersionID, lineIndex: lineIndex))
     }
 
     func remove(_ id: UUID) {
@@ -118,5 +139,37 @@ final class V3FavoriteLines: ObservableObject {
             errorMessage = "暂时无法更新本机收藏，原来的文件已保留。"
             return false
         }
+    }
+}
+
+
+extension V3FavoriteLines.Entry {
+    init(line: LyricLine, track: Track, trackKey: String, originalVersion: UUID?,
+         index: Int?, translationVersion: StoredTranslationVersion?) {
+        self.init(text: line.originalText, translation: line.translationText, title: track.title, artist: track.artist,
+                  trackKey: trackKey, artworkURL: track.artworkURL, lyricsVersionID: originalVersion, lineIndex: index,
+                  translationVersionID: translationVersion?.quoteVersionID(
+                    originalID: originalVersion, lineIndex: index, text: line.translationText))
+    }
+}
+
+extension StoredTranslationVersion {
+    /// A selected edition may cover only part of the document. Capture its ID
+    /// only when it supplied the translation on the displayed row.
+    func quoteVersionID(originalID: UUID?, lineIndex: Int?, text: String?) -> UUID? {
+        guard let originalID, record.lyricsVersionID == originalID, let lineIndex, let text else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, lines.contains(where: {
+            $0.lineIndex == lineIndex && $0.translatedText.trimmingCharacters(in: .whitespacesAndNewlines) == trimmed
+        }) else { return nil }
+        return record.id
+    }
+}
+
+extension LibraryPassagePage {
+    func quote(_ line: Line) -> V3FavoriteLines.Entry {
+        .init(text: line.original, translation: line.translation, title: entry.title, artist: entry.artist,
+              trackKey: entry.trackStableKey, artworkURL: entry.artworkURL, lyricsVersionID: originalVersionID,
+              lineIndex: matchesOriginalVersion ? line.id : nil, translationVersionID: translationVersionID)
     }
 }

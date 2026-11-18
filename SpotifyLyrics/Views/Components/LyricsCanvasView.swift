@@ -603,6 +603,23 @@ struct LyricsCanvasView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .id(line.id)
+        .contextMenu {
+            if !state.isShowingSearchPreview, state.liveLyricsDocumentMatchesCurrentTrack,
+               let trackKey = state.currentTrackIdentity?.stableKey,
+               state.liveLyrics.indices.contains(index), state.liveLyrics[index].id == line.id,
+               !line.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let entry = V3FavoriteLines.Entry(line: line, track: state.currentTrack, trackKey: trackKey,
+                    originalVersion: state.liveLyricsVersionID, index: index, translationVersion: state.selectedTranslation)
+                let kept = V3FavoriteLines.shared.contains(entry)
+                Button(kept ? "取消收藏这句" : "收藏这句", systemImage: kept ? "bookmark.slash" : "bookmark") {
+                    let saved = V3FavoriteLines.shared.toggle(entry)
+                    state.showNotice(V3FavoriteLines.shared.errorMessage ?? (saved ? "已收藏，在歌词库的「金句」里" : "已取消收藏"))
+                }
+                Button("读这句上下文", systemImage: "book") {
+                    MenuBarLyricsController.shared.openSettings(at: .init(reading: entry.passage))
+                }
+            }
+        }
     }
 
     private func scrollToCurrentLine(

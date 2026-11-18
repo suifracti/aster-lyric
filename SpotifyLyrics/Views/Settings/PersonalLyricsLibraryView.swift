@@ -9,6 +9,7 @@ public struct PersonalLyricsLibraryView: View {
     @State private var showSyncFolder = false
     private let embeddedInSettings: Bool
     private let requestedTrackKey: String?
+    private let initialSource: LibraryPassageSource?
     private let onSelection: ((String?) -> Void)?
     private let readPassage: ((LibraryPassageTarget) -> Void)?
 
@@ -42,10 +43,11 @@ public struct PersonalLyricsLibraryView: View {
     public init() { self.init(embeddedInSettings: false) }
 
     init(embeddedInSettings: Bool, initialTrackKey: String? = nil, showingMissing: Bool = false,
-         service: PersonalLyricsLibraryService? = nil, onSelection: ((String?) -> Void)? = nil,
+         initialSource: LibraryPassageSource? = nil, service: PersonalLyricsLibraryService? = nil, onSelection: ((String?) -> Void)? = nil,
          readPassage: ((LibraryPassageTarget) -> Void)? = nil) {
         self.embeddedInSettings = embeddedInSettings
         self.requestedTrackKey = initialTrackKey
+        self.initialSource = initialSource
         self.readPassage = readPassage
         self.onSelection = onSelection
         _service = StateObject(wrappedValue: service ?? PersonalLyricsLibraryService())
@@ -194,7 +196,8 @@ public struct PersonalLyricsLibraryView: View {
     @ViewBuilder
     private var detailContent: some View {
         if let stableKey = selectedStableKey {
-            PersonalLibraryTrackDetailView(service: service, stableKey: stableKey, readPassage: readPassage)
+            PersonalLibraryTrackDetailView(service: service, stableKey: stableKey, readPassage: readPassage,
+                                           preferredSource: stableKey == requestedTrackKey ? initialSource : nil)
         } else {
             VStack(spacing: 12) {
                 RecordShelfMark()
@@ -487,6 +490,7 @@ public struct PersonalLibraryTrackDetailView: View {
     var usesCurrentTrackDetail = false
     var beforePresentSheet: (() -> Void)?
     var readPassage: ((LibraryPassageTarget) -> Void)? = nil
+    var preferredSource: LibraryPassageSource?
     @State private var selectedSection: VersionSection = .all
     @State private var incomingFile: IncomingFile?
     @State private var fileIssue: String?
@@ -528,7 +532,7 @@ public struct PersonalLibraryTrackDetailView: View {
                         trackHeader(detail)
 
                         Picker("版本类型", selection: $selectedSection) {
-                            ForEach(VersionSection.allCases) { section in
+                            ForEach(VersionSection.allCases.filter { $0 != .timing || selectedSection == .timing }) { section in
                                 Text(section.rawValue).tag(section)
                             }
                         }
@@ -586,7 +590,7 @@ public struct PersonalLibraryTrackDetailView: View {
                         }
 
                         // Section 4: Timing Versions
-                        if selectedSection == .all || selectedSection == .timing {
+                        if selectedSection == .timing || compact {
                             versionSection(title: "时间轴", count: timingVersions.count, icon: "waveform") {
                                 if timingVersions.isEmpty {
                                     emptyPlaceholder("暂无保存的逐字时间轴")
@@ -617,6 +621,14 @@ public struct PersonalLibraryTrackDetailView: View {
                         .foregroundStyle(.secondary) }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .onChange(of: preferredSource, initial: true) { _, source in
+            switch source {
+            case .translation: selectedSection = .translations
+            case .reading: selectedSection = .readings
+            case .original, .attached: selectedSection = .lyrics
+            default: selectedSection = .all
             }
         }
         .task(id: stableKey) {
@@ -656,51 +668,105 @@ public struct PersonalLibraryTrackDetailView: View {
 
     private func trackHeader(_ detail: PersonalLyricsLibraryTrackDetail) -> some View {
         let entry = detail.entry
-        return HStack(alignment: .top, spacing: 14) {
-            AsyncImage(url: entry.artworkURL) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFill()
-                default:
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.secondary.opacity(0.12))
-                        .overlay(Image(systemName: "music.note").font(.title2).foregroundStyle(.secondary))
-                }
-            }
-            .frame(width: compact ? 56 : 72, height: compact ? 56 : 72)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(entry.title)
-                    .font(.system(size: compact ? 21 : 25, weight: .semibold, design: .serif))
-                    .fixedSize(horizontal: false, vertical: true)
-                Text([entry.artist, entry.album].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
-                HStack(spacing: 8) {
-                    if entry.lyricsVersionCount > 0 {
-                        Button("读歌词", systemImage: "book") {
-                            let target = LibraryPassageTarget(trackKey: entry.trackStableKey)
-                            if let readPassage { readPassage(target) }
-                            else { beforePresentSheet?(); service.presentPassage(target) }
-                        }
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 14) {
+                AsyncImage(url: entry.artworkURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    default:
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.secondary.opacity(0.12))
+                            .overlay(Image(systemName: "music.note").font(.title2).foregroundStyle(.secondary))
                     }
-                    compareAction(detail)
-                    Menu("更多") {
-                        Button("为这首歌写手稿…", systemImage: "square.and.pencil") { writeManuscript(for: entry) }
-                        Button("从文件添加歌词…", systemImage: "doc.badge.plus") { attachFile(to: entry) }
-                        Button("导出资产包", systemImage: "square.and.arrow.up") { service.exportPackage(for: entry.trackStableKey) }
-                    }.fixedSize()
-                }.controlSize(.small)
-                    .padding(.top, 3)
-            }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(width: compact ? 56 : 72, height: compact ? 56 : 72)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(entry.title)
+                        .font(.system(size: compact ? 21 : 25, weight: .semibold, design: .serif))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text([entry.artist, entry.album].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }
+            archiveActions(detail)
         }
         .padding(.bottom, 4)
     }
 
+    private func archiveActions(_ detail: PersonalLyricsLibraryTrackDetail) -> some View {
+        let entry = detail.entry
+        let original = headerOriginal(in: detail)
+        let translation = headerTranslation(in: detail, original: original)
+        let source = preferredSource ?? .selected
+        let target = LibraryPassageTarget(trackKey: entry.trackStableKey, source: source)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                if entry.lyricsVersionCount > 0 {
+                    Button("读歌词", systemImage: "book") {
+                        if let readPassage { readPassage(target) }
+                        else { presentSheet { service.presentPassage(target) } }
+                    }
+                }
+                compareAction(detail, original: original, translation: translation)
+                Menu("更多") {
+                    Button("查看时间轴", systemImage: "waveform") { selectedSection = .timing }
+                    Button("歌词来源设置", systemImage: "magnifyingglass") {
+                        MenuBarLyricsController.shared.openSettings(at: .init(.servicesAndSources))
+                    }
+                    Divider()
+                    Button("为这首歌写手稿…", systemImage: "square.and.pencil") { writeManuscript(for: entry) }
+                    Button("从文件添加歌词…", systemImage: "doc.badge.plus") { attachFile(to: entry) }
+                    Button("导出资产包", systemImage: "square.and.arrow.up") { service.exportPackage(for: entry.trackStableKey) }
+                }.fixedSize()
+            }
+            if let original {
+                HStack(spacing: 8) {
+                    if let translation {
+                        Menu("修订") {
+                            Button("修订这份译文", systemImage: "character.bubble") {
+                                presentSheet { service.beginTranslationRevision(version: translation, entry: entry) }
+                            }
+                            Button("修订这份原词", systemImage: "pencil") {
+                                presentSheet { service.beginRevision(versionID: original, entry: entry) }
+                            }
+                        }.fixedSize()
+                    } else {
+                        Button("修订原词", systemImage: "pencil") {
+                            presentSheet { service.beginRevision(versionID: original, entry: entry) }
+                        }
+                    }
+                    LyricBookOffer(label: "收进歌本", title: entry.title, loadChapters: {
+                        guard let page = try await service.readPassage(target, recordOpening: false) else { return [] }
+                        return [.init(page: page, source: target.source)]
+                    })
+                }
+            }
+        }.controlSize(.small)
+    }
+
+    private func headerOriginal(in detail: PersonalLyricsLibraryTrackDetail) -> UUID? {
+        switch preferredSource {
+        case .original(let id), .attached(let id): return detail.lyricsVersions.first(where: { $0.id == id })?.id
+        case .translation(let id): return detail.translationVersions.first(where: { $0.id == id })?.lyricsVersionID
+        case .reading(let id): return detail.readingVersions.first(where: { $0.id == id })?.lyricsVersionID
+        default: return detail.entry.activeLyricsVersionID ?? detail.lyricsVersions.first?.id
+        }
+    }
+
+    private func headerTranslation(in detail: PersonalLyricsLibraryTrackDetail, original: UUID?) -> PersonalTranslationVersionItem? {
+        let members = detail.translationVersions.filter { $0.lyricsVersionID == original }
+        if case .translation(let id) = preferredSource { return members.first { $0.id == id } }
+        return members.first { $0.id == detail.entry.activeTranslationVersionID } ?? members.first
+    }
+
     @ViewBuilder
-    private func compareAction(_ detail: PersonalLyricsLibraryTrackDetail) -> some View {
-        let original = detail.lyricsVersions.count > 1 ? (detail.entry.activeLyricsVersionID ?? detail.lyricsVersions.first?.id) : nil
-        let translation = detail.translationVersions.count > 1 ? (detail.entry.activeTranslationVersionID ?? detail.translationVersions.first?.id) : nil
+    private func compareAction(_ detail: PersonalLyricsLibraryTrackDetail, original: UUID?, translation: PersonalTranslationVersionItem?) -> some View {
+        let original = detail.lyricsVersions.count > 1 ? original : nil
+        let translation = detail.translationVersions.count > 1 ? translation?.id : nil
         if let original, let translation {
             Menu("逐句对读") {
                 compareOriginal(original, detail)

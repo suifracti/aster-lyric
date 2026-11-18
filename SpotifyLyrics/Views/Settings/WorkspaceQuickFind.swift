@@ -70,8 +70,9 @@ struct WorkspaceQuickFind: View {
                         .buttonStyle(.borderless).keyboardShortcut(.cancelAction).help("Esc 返回查找结果")
                         .padding(.horizontal, 17).padding(.vertical, 9)
                     Divider()
-                    LibraryPassageReader(target: reading, library: library, openArchive: {
-                        open(.init(.library, trackKey: reading.trackKey))
+                    LibraryPassageReader(target: reading, library: library, openArchive: { archive in
+                        SettingsNavigationRoute.shared.requestedLocation = .init(archive: archive)
+                        openSettings()
                     })
                 }
                 .focusable().focusEffectDisabled().focused($readingFocused)
@@ -102,7 +103,7 @@ struct WorkspaceQuickFind: View {
                     guard !rows.isEmpty else { return }
                     let current = rows.firstIndex { $0.id == active?.id } ?? 0
                     selectedID = rows[min(max(0, current + step), rows.count - 1)].id
-                }, submit: { if let active { open(active.location) } }, cancel: { close() })
+                }, submit: { if let active { openResult(active) } }, cancel: { close() })
                 .frame(height: 36)
                 if !query.isEmpty {
                     Button { query = ""; focusRequest = UUID() } label: { Image(systemName: "xmark.circle.fill") }
@@ -128,7 +129,7 @@ struct WorkspaceQuickFind: View {
                                         .padding(.leading, 12).padding(.top, 10).padding(.bottom, 3)
                                         .accessibilityAddTraits(.isHeader)
                                 }
-                                Button { open(item.location) } label: {
+                                Button { openResult(item) } label: {
                                     WorkspaceResultLabel(item: item, selected: item.id == active?.id).padding(.horizontal, 10)
                                 }
                                 .buttonStyle(.plain)
@@ -139,6 +140,12 @@ struct WorkspaceQuickFind: View {
                         }.padding(.horizontal, 9).padding(.bottom, 9)
                     }
                     .onChange(of: selectedID) { _, id in if let id { proxy.scrollTo(id) } }
+                    .task(id: rows.map(\.id)) {
+                        if let selectedID, rows.contains(where: { $0.id == selectedID }) {
+                            await Task.yield()
+                            if !Task.isCancelled { proxy.scrollTo(selectedID) }
+                        }
+                    }
                 }
             }
             Divider()
@@ -152,6 +159,11 @@ struct WorkspaceQuickFind: View {
             .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 19).frame(height: 32)
         }
         .onChange(of: term) { _, _ in selectedID = nil }
+    }
+
+    private func openResult(_ row: WorkspaceLookupRow) {
+        selectedID = row.id
+        open(row.location)
     }
 
     private func open(_ location: SettingsLocation) {

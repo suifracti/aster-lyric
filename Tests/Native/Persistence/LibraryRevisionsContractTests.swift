@@ -525,6 +525,27 @@ final class LibraryRevisionsContractTests: XCTestCase {
         let reader = try await repo.readLibraryPassage(.init(trackKey: identity.stableKey, source: .translation(originalTranslation.record.id)))
         XCTAssertEqual(reader?.lines.map(\.original), ["Original first", "Original second"])
         XCTAssertEqual(reader?.lines.compactMap(\.translation), ["原译一", "原译二"], "Read the requested locked translation even after a revision")
+        let quote = V3FavoriteLines.Entry(text: "Original first", translation: "原译一", title: track.title,
+            artist: track.artist, trackKey: identity.stableKey, lyricsVersionID: source.record.id, lineIndex: 0,
+            translationVersionID: originalTranslation.record.id)
+        let favoritesURL = root.appendingPathComponent("favorite-lines.json")
+        XCTAssertTrue(V3FavoriteLines(fileURL: favoritesURL).toggle(quote))
+        let reopenedQuote = try XCTUnwrap(V3FavoriteLines(fileURL: favoritesURL).entries.first)
+        let reopenedPage = try await repo.readLibraryPassage(reopenedQuote.passage)
+        XCTAssertEqual(reopenedPage?.translationVersionID, originalTranslation.record.id)
+        XCTAssertEqual(reopenedPage?.lines.compactMap(\.translation), ["原译一", "原译二"])
+        let chapter = LyricBook.Chapter(quote: reopenedQuote)
+        XCTAssertEqual(chapter.origin.source, .translation(originalTranslation.record.id))
+        let editionPage = try XCTUnwrap(reopenedPage)
+        XCTAssertEqual(LyricBook.Chapter(page: editionPage, source: .selected).origin.source,
+                       .translation(originalTranslation.record.id))
+
+        var missingEdition = reopenedQuote
+        missingEdition.translationVersionID = UUID()
+        let recovered = try await repo.readLibraryPassage(missingEdition.passage)
+        XCTAssertEqual(recovered?.originalVersionID, source.record.id)
+        XCTAssertEqual(recovered?.lines.first?.translation, "原译一")
+
         XCTAssertEqual(
             translationVersions.first { $0.record.id == translationChild.record.id }?.lines.map(\.translatedText),
             ["修订译一", "原译二"]

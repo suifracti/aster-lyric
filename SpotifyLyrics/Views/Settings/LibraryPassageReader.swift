@@ -4,7 +4,7 @@ import SwiftUI
 struct LibraryPassageReader: View {
     let target: LibraryPassageTarget
     let library: PersonalLyricsLibraryService
-    var openArchive: (() -> Void)?
+    var openArchive: ((LibraryPassageTarget) -> Void)?
     var close: (() -> Void)?
     @State private var page: LibraryPassagePage?
     @State private var failure: String?
@@ -19,7 +19,7 @@ struct LibraryPassageReader: View {
     @State private var returnedLine: Int?
 
     init(target: LibraryPassageTarget, library: PersonalLyricsLibraryService,
-         openArchive: (() -> Void)? = nil, close: (() -> Void)? = nil) {
+         openArchive: ((LibraryPassageTarget) -> Void)? = nil, close: (() -> Void)? = nil) {
         self.target = target
         self.library = library
         self.openArchive = openArchive
@@ -31,6 +31,15 @@ struct LibraryPassageReader: View {
 
     private var currentMatch: Int? { matches.indices.contains(cursor) ? matches[cursor] : nil }
     private var focusedLine: Int? { returnedLine ?? currentMatch }
+
+    private var archiveTarget: LibraryPassageTarget {
+        guard let page else { return .init(trackKey: target.trackKey) }
+        let source: LibraryPassageSource
+        if case .reading = target.source { source = target.source }
+        else if let translation = page.translationVersionID { source = .translation(translation) }
+        else { source = .original(page.originalVersionID) }
+        return .init(trackKey: page.entry.trackStableKey, source: source)
+    }
 
     var body: some View {
         Group {
@@ -63,7 +72,7 @@ struct LibraryPassageReader: View {
                         .help("清除查找").accessibilityLabel("清除查找")
                 }
                 if let openArchive {
-                    Button { openArchive() } label: { Label("版本档案", systemImage: "books.vertical") }.fixedSize()
+                    Button { openArchive(archiveTarget) } label: { Label("版本档案", systemImage: "books.vertical") }.fixedSize()
                 }
                 Menu {
                     Toggle("显示译文", isOn: $showsTranslation)
@@ -134,9 +143,7 @@ struct LibraryPassageReader: View {
             PassageLineText(line: line, showsTranslation: showsTranslation || selected, showsReading: showsReading || selected)
             Spacer(minLength: 8)
             if !line.original.isEmpty {
-                KeepLyricButton(text: line.original, translation: line.translation, trackKey: page.entry.trackStableKey,
-                                title: page.entry.title, artist: page.entry.artist, artworkURL: page.entry.artworkURL,
-                                lyricsVersionID: page.originalVersionID, lineIndex: line.id)
+                KeepLyricButton(entry: page.quote(line))
                     .opacity(hoveredLine == line.id || selected ? 1 : 0.45)
             }
             if [line.original, line.translation, line.reading, line.background].compactMap({ $0 }).contains(where: { !$0.isEmpty }) {
@@ -176,9 +183,14 @@ struct LibraryPassageReader: View {
             try Task.checkCancellation()
             if let loaded, !loaded.lines.isEmpty {
                 page = loaded
-                updateMatches(preferred: target.lineIndex)
+                let savedPosition = target.savedQuote?.originalVersionID == loaded.originalVersionID
+                    && loaded.matchesOriginalVersion ? target.lineIndex : nil
+                updateMatches(preferred: savedPosition ?? target.lineIndex)
+                if let savedPosition, loaded.lines.contains(where: { $0.id == savedPosition }) {
+                    returnedLine = savedPosition
+                }
                 if target.recallNextLine {
-                    if let anchor = loaded.originalOccurrence(of: target.find, preferred: target.lineIndex) {
+                    if let anchor = returnedLine ?? loaded.originalOccurrence(of: target.find, preferred: target.lineIndex) {
                         startRecall(loaded, anchor: anchor)
                     } else { recallNotice = "这份原词里找不到选中的那句。" }
                 }

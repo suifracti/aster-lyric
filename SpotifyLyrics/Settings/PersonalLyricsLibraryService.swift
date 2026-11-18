@@ -7,6 +7,7 @@ struct LastOpenedLyricsRecord: Codable, Equatable {
     let trackKey: String
     let title: String
     let artist: String
+    var passage: LibraryPassageTarget? = nil
 }
 
 @MainActor
@@ -165,7 +166,11 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     func readPassage(_ target: LibraryPassageTarget, recordOpening: Bool = true) async throws -> LibraryPassagePage? {
         let page = try await repository.readLibraryPassage(target)
         try Task.checkCancellation()
-        if let page, recordOpening { rememberOpenedRecord(page.entry) }
+        if let page, recordOpening {
+            let resolved = LibraryPassageTarget(trackKey: page.entry.trackStableKey, source: target.source,
+                                                find: target.find, lineIndex: target.lineIndex, savedQuote: target.savedQuote)
+            rememberOpenedRecord(page.entry, passage: resolved)
+        }
         return page
     }
 
@@ -423,10 +428,11 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         }
     }
 
-    private func rememberOpenedRecord(_ entry: PersonalLyricsLibraryEntry) {
-        let record = LastOpenedLyricsRecord(trackKey: entry.trackStableKey, title: entry.title, artist: entry.artist)
+    private func rememberOpenedRecord(_ entry: PersonalLyricsLibraryEntry, passage: LibraryPassageTarget? = nil) {
         let previous = defaults.data(forKey: LastOpenedLyricsRecord.defaultsKey)
             .flatMap { try? JSONDecoder().decode(LastOpenedLyricsRecord.self, from: $0) }
+        let resume = passage ?? (previous?.trackKey == entry.trackStableKey ? previous?.passage : nil)
+        let record = LastOpenedLyricsRecord(trackKey: entry.trackStableKey, title: entry.title, artist: entry.artist, passage: resume)
         if record != previous, let data = try? JSONEncoder().encode(record) {
             defaults.set(data, forKey: LastOpenedLyricsRecord.defaultsKey)
         }

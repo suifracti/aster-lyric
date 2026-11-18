@@ -612,6 +612,18 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: url), incomplete)
     }
 
+    @MainActor func testFavoriteKeepsSeparateOccurrencesOfAChorus() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("chorus-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let version = UUID()
+        let favorites = V3FavoriteLines(fileURL: url)
+        for index in [1, 4] {
+            XCTAssertTrue(favorites.toggle(text: "又唱到这里", translation: "Here again", title: "歌", artist: "人",
+                                           trackKey: "song", artworkURL: nil, lyricsVersionID: version, lineIndex: index))
+        }
+        XCTAssertEqual(V3FavoriteLines(fileURL: url).entries.map(\.lineIndex), [4, 1])
+    }
+
     func testWholeLineTimingDropsOnlyTheWordTiming() {
         var line = LyricLine(timestamp: 12, originalText: "hello world")
         XCTAssertEqual(line.withoutWordTiming, line, "a line without word timing is left alone")

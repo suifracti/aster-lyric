@@ -68,6 +68,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
         let instrumental: Bool
         let wordClock: LyricsPresentationClock?
         let loopedLineID: UUID?
+        let translationVersionID: UUID?
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -88,7 +89,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
             preview: isPreview, instrumental: hasExplicitInstrumentalMark,
             wordClock: usesWordClock || LyricsTimeline.vocalCountdownWindow(lines: lines, currentIndex: index, isSynchronized: sync) != nil
                 ? state.presentationClock : nil,
-            loopedLineID: state.loopedLyricLineID)
+            loopedLineID: state.loopedLyricLineID, translationVersionID: isPreview ? nil : state.selectedTranslation?.record.id)
     }
 
     private func scheduleContentRefresh() {
@@ -281,6 +282,8 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
             ScrollViewReader { proxy in
                 let bigLine = settings.v3BigLineModeEnabled && synchronized
                 let savedVersion = isPreview ? nil : state.liveLyricsVersionID
+                let translation = isPreview ? nil : state.selectedTranslation
+                let track = documentTrack
                 let scrollAnchor = bigLine ? 0 : V3ResponsiveGeometry.lyricScrollAnchor(
                     viewportHeight: geometry.size.height,
                     stage: stage
@@ -303,6 +306,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                         language: language,
                         trackStableKey: trackStableKey,
                         savedVersion: savedVersion,
+                        translationVersionID: translation?.record.id,
                         artistDisplay: artistDisplay,
                         title: documentTrack.title,
                         duration: documentTrack.duration,
@@ -345,14 +349,13 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                             }
                         },
                         onCopyLine: { LyricsCopyText.copy($0) },
-                        onFavoriteLine: { line in
-                            let track = documentTrack
-                            let kept = V3FavoriteLines.shared.toggle(
-                                text: line.originalText, translation: line.translationText, title: track.title,
-                                artist: track.artist, trackKey: TrackIdentity(track: track).stableKey,
-                                artworkURL: track.artworkURL,
-                                lyricsVersionID: savedVersion,
-                                lineIndex: lines.firstIndex { $0.id == line.id })
+                        quote: { line, index in
+                            guard !isPreview, let trackStableKey else { return nil }
+                            return .init(line: line, track: track, trackKey: trackStableKey,
+                                         originalVersion: savedVersion, index: index, translationVersion: translation)
+                        },
+                        onFavoriteLine: { entry in
+                            let kept = V3FavoriteLines.shared.toggle(entry)
                             state.showNotice(V3FavoriteLines.shared.errorMessage ?? (kept ? "已收藏，在歌词库的「金句」里" : "已取消收藏"))
                         },
                         onShareLine: { line in
@@ -549,6 +552,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     let language: String?
     let trackStableKey: String?
     let savedVersion: UUID?
+    let translationVersionID: UUID?
     let artistDisplay: String
     let title: String
     let duration: TimeInterval
@@ -565,7 +569,8 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     let onSeek: (TimeInterval) -> Void
     let onRuby: ((String, String) -> Void)?
     let onCopyLine: (String) -> Void
-    var onFavoriteLine: (LyricLine) -> Void = { _ in }
+    let quote: (LyricLine, Int) -> V3FavoriteLines.Entry?
+    let onFavoriteLine: (V3FavoriteLines.Entry) -> Void
     var onShareLine: (LyricLine) -> Void = { _ in }
     let onCopyAll: () -> Void
     let onCopyPassage: (Int) -> Void
@@ -581,6 +586,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             && lhs.language == rhs.language
             && lhs.trackStableKey == rhs.trackStableKey
             && lhs.savedVersion == rhs.savedVersion
+            && lhs.translationVersionID == rhs.translationVersionID
             && lhs.artistDisplay == rhs.artistDisplay
             && lhs.title == rhs.title
             && lhs.duration == rhs.duration
@@ -709,13 +715,20 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             }
             if !isPreview, !line.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Button("做成分享卡", systemImage: "photo.on.rectangle") { onShareLine(line) }
-                let kept = trackStableKey.map { V3FavoriteLines.shared.contains(text: line.originalText, trackKey: $0) } ?? false
-                Button(kept ? "取消收藏这句" : "收藏这句", systemImage: kept ? "star.slash" : "star") { onFavoriteLine(line) }
-                if let savedVersion, let trackStableKey, index < lines.count - 1 {
-                    Button("接下一句…", systemImage: "text.bubble") {
-                        let target = LibraryPassageTarget(trackKey: trackStableKey, source: .original(savedVersion),
-                                                          find: line.originalText, lineIndex: index, recallNextLine: true)
-                        MenuBarLyricsController.shared.openSettings(at: .init(reading: target))
+                if let entry = quote(line, index) {
+                    let kept = V3FavoriteLines.shared.contains(entry)
+                    Button(kept ? "取消收藏这句" : "收藏这句", systemImage: kept ? "bookmark.slash" : "bookmark") {
+                        onFavoriteLine(entry)
+                    }
+                    Button("读这句上下文", systemImage: "book") {
+                        MenuBarLyricsController.shared.openSettings(at: .init(reading: entry.passage))
+                    }
+                    if savedVersion != nil, index < lines.count - 1 {
+                        Button("接下一句…", systemImage: "text.bubble") {
+                            var target = entry.passage
+                            target.recallNextLine = true
+                            MenuBarLyricsController.shared.openSettings(at: .init(reading: target))
+                        }
                     }
                 }
             }

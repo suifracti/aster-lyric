@@ -56,14 +56,12 @@ struct CapsuleLyricsView: View {
 
     private struct PinnedLine {
         let line: LyricLine
-        let trackKey: String
-        let versionID: UUID?
-        let lineIndex: Int?
+        let entry: V3FavoriteLines.Entry
     }
 
     private var held: LyricLine? {
-        guard let pinnedLine, pinnedLine.trackKey == state.currentTrackIdentity?.stableKey,
-              state.liveLyricsDocumentMatchesCurrentTrack, pinnedLine.versionID == state.liveLyricsVersionID
+        guard let pinnedLine, pinnedLine.entry.trackKey == state.currentTrackIdentity?.stableKey,
+              state.liveLyricsDocumentMatchesCurrentTrack, pinnedLine.entry.lyricsVersionID == state.liveLyricsVersionID
         else { return nil }
         return pinnedLine.line
     }
@@ -75,6 +73,12 @@ struct CapsuleLyricsView: View {
             isSynchronized: state.liveLyricsAreSynchronized,
             state: state.liveLyricsState
         )
+    }
+
+    private func quote(_ line: LyricLine, index: Int?) -> V3FavoriteLines.Entry? {
+        guard state.liveLyricsDocumentMatchesCurrentTrack, let key = state.currentTrackIdentity?.stableKey else { return nil }
+        return .init(line: line, track: state.currentTrack, trackKey: key,
+                     originalVersion: state.liveLyricsVersionID, index: index, translationVersion: state.selectedTranslation)
     }
 
     private var visibleLayerCount: Int {
@@ -390,19 +394,21 @@ struct CapsuleLyricsView: View {
                         .font(.system(size: 10)).foregroundStyle(.white.opacity(0.68)).lineLimit(1)
                 }
                 Spacer(minLength: 4)
-                if let line, let key = state.currentTrackIdentity?.stableKey {
+                if let line, let entry = held == nil ? quote(line, index: live.currentIndex) : pinnedLine?.entry {
                     Button {
-                        pinnedLine = held == nil ? PinnedLine(line: line, trackKey: key, versionID: state.liveLyricsVersionID,
-                                                           lineIndex: live.currentIndex) : nil
+                        pinnedLine = held == nil ? PinnedLine(line: line, entry: entry) : nil
                     } label: {
                         Label(held == nil ? "定住这句" : "跟回演唱", systemImage: held == nil ? "pin" : "arrow.uturn.backward")
                             .font(.system(size: 10, weight: .medium)).fixedSize()
                     }
                     .buttonStyle(.plain)
                     .help(held == nil ? "把眼前这句留在岛上，播放照常继续" : "回到正在唱的歌词")
-                    KeepLyricButton(text: line.originalText, translation: line.translationText, trackKey: key,
-                                    title: state.currentTrack.title, artist: state.currentTrack.artist, artworkURL: state.currentTrack.artworkURL,
-                                    lyricsVersionID: state.liveLyricsVersionID, lineIndex: held == nil ? live.currentIndex : pinnedLine?.lineIndex)
+                    KeepLyricButton(entry: entry)
+                    Button {
+                        windowController.collapse()
+                        MenuBarLyricsController.shared.openSettings(at: .init(reading: entry.passage))
+                    } label: { Image(systemName: "book").frame(width: 22, height: 24) }
+                    .buttonStyle(.plain).help("读这句上下文").accessibilityLabel("读这句上下文")
                 }
                 moreButton
                 Button { windowController.collapse() } label: {
