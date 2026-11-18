@@ -49,9 +49,10 @@ struct LyricBook: FileDocument, Codable, Equatable, Sendable {
                 Line(original: $0.original, translation: $0.translation, reading: $0.reading,
                      background: $0.background, romanization: $0.romanization, performer: $0.performerID)
             }
+            let resolved = page.resolvedSource ?? source
             let exact: LibraryPassageSource
-            switch source {
-            case .reading, .attached: exact = source
+            switch resolved {
+            case .reading, .attached: exact = resolved
             default: exact = page.translationVersionID.map(LibraryPassageSource.translation) ?? .original(page.originalVersionID)
             }
             let kept = excerpt.flatMap { row in

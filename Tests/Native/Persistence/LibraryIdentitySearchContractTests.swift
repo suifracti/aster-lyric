@@ -50,6 +50,61 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
     }
 
     @MainActor
+    func testContinueReadingKeepsTheOpenedEditionAfterAdoptingAnother() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("reading.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await repository.prepare()
+        let suite = "aster-reading-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let library = PersonalLyricsLibraryService(repository: repository, defaults: defaults)
+        let track = Track(title: "窗边", artist: "南窗", album: "卷一", duration: 180)
+        let identity = TrackIdentity(track: track)
+        let first = LyricsDocument(identity: identity, lines: [
+            LyricLine(timestamp: 1, originalText: "回声"),
+            LyricLine(timestamp: 4, originalText: "转角"),
+            LyricLine(timestamp: 8, originalText: "回声"),
+        ], source: .manualImport, confidence: 1)
+        let original = try await repository.save(track: track, identity: identity, document: first)
+        let originalID = try XCTUnwrap(original.versionID)
+        try await repository.setPersonalLibraryActiveLyrics(trackStableKey: identity.stableKey, lyricsVersionID: originalID)
+
+        let target = LibraryPassageTarget(trackKey: identity.stableKey)
+        let loaded = try await library.readPassage(target)
+        let opened = try XCTUnwrap(loaded)
+        XCTAssertEqual(opened.originalVersionID, originalID)
+        let secondChorus = LibraryPassageTarget.ReadingPosition(find: "回声", lineIndex: 2)
+        library.rememberReading(opened, openedFrom: target, position: secondChorus)
+        let replacement = try await repository.save(track: track, identity: identity,
+            document: LyricsDocument(identity: identity, lines: [LyricLine(timestamp: 2, originalText: "另一份原稿")],
+                                     source: .manualImport, confidence: 1))
+        let replacementID = try XCTUnwrap(replacement.versionID)
+        try await repository.setPersonalLibraryActiveLyrics(trackStableKey: identity.stableKey, lyricsVersionID: replacementID)
+
+        let saved = try XCTUnwrap(defaults.data(forKey: LastOpenedLyricsRecord.defaultsKey))
+        let record = try JSONDecoder().decode(LastOpenedLyricsRecord.self, from: saved)
+        let resume = try XCTUnwrap(record.passage)
+        XCTAssertEqual(resume.source, .original(originalID))
+        XCTAssertEqual(resume.readingPosition, secondChorus)
+        let resumed = try await library.readPassage(resume)
+        XCTAssertEqual(resumed?.originalVersionID, originalID)
+        let selected = try await repository.loadPersonalLibraryTrackDetail(stableKey: identity.stableKey)
+        XCTAssertEqual(selected?.entry.activeLyricsVersionID, replacementID)
+
+        let bookmark = LibraryPassageTarget(trackKey: identity.stableKey, source: .original(originalID),
+            find: "回声", lineIndex: 0, savedQuote: .init(originalVersionID: originalID, translation: "收藏的译文"))
+        let quoted = try await library.readPassage(bookmark)
+        library.rememberReading(try XCTUnwrap(quoted), openedFrom: bookmark, position: secondChorus)
+        let bookmarkData = try XCTUnwrap(defaults.data(forKey: LastOpenedLyricsRecord.defaultsKey))
+        let bookmarkResume = try XCTUnwrap(JSONDecoder().decode(LastOpenedLyricsRecord.self, from: bookmarkData).passage)
+        let bookmarkPage = try await library.readPassage(bookmarkResume)
+        XCTAssertEqual(bookmarkResume.readingPosition, secondChorus)
+        XCTAssertEqual(bookmarkPage?.lines.first?.translation, "收藏的译文")
+        XCTAssertNil(bookmarkPage?.lines.last?.translation)
+    }
+
+    @MainActor
     func testQuickFindUsesTheOfferedSelectionAndOpensTheExactSavedLine() throws {
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }

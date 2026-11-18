@@ -908,12 +908,19 @@ public struct LibraryPassageTarget: Hashable, Identifiable, Codable, Sendable {
         let translation: String?
     }
 
+    struct ReadingPosition: Hashable, Codable, Sendable {
+        let find: String
+        let lineIndex: Int?
+    }
+
     let trackKey: String
     var source: LibraryPassageSource = .selected
     var find: String = ""
     var lineIndex: Int? = nil
     var recallNextLine = false
     var savedQuote: SavedQuote? = nil
+    // The reader can move away from the bookmarked quote without moving its translation snapshot.
+    var readingPosition: ReadingPosition? = nil
     public var id: Self { self }
 }
 
@@ -966,6 +973,7 @@ struct LibraryPassagePage: Sendable {
     var translationSource = ""
     var translationLocked = false
     var translationVersionID: UUID? = nil
+    var resolvedSource: LibraryPassageSource? = nil
 
     func originalOccurrence(of text: String, preferred: Int?) -> Int? {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)

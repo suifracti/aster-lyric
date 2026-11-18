@@ -4145,7 +4145,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 return LibraryPassagePage(entry: entry, originalVersionID: lyricsID, edition: "历史译文 · 单独阅读", lines: lines,
                                           matchesOriginalVersion: false, translationLanguage: translation.targetLanguage,
                                           translationSource: translation.sourceKind, translationLocked: translation.isLocked,
-                                          translationVersionID: translation.id)
+                                          translationVersionID: translation.id, resolvedSource: source)
             }
         }
         if let reading {
@@ -4153,7 +4153,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             if try fetchReadingVersion(versionID: reading.id)?.sourceContentHash != hash {
                 let lines = rows.map { LibraryPassagePage.Line(id: $0.lineIndex, original: $0.originalText, reading: $0.readingText) }
                 return LibraryPassagePage(entry: entry, originalVersionID: lyricsID, edition: "历史读音 · 单独阅读", lines: lines,
-                                          matchesOriginalVersion: false)
+                                          matchesOriginalVersion: false, resolvedSource: source)
             }
             for line in rows {
                 pronunciation[line.lineIndex] = line.readingText
@@ -4225,7 +4225,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                                   translationLanguage: hasStoredTranslation ? translation?.targetLanguage : nil,
                                   translationSource: hasStoredTranslation ? translation?.sourceKind ?? "" : "legacyEmbedded",
                                   translationLocked: hasStoredTranslation && translation?.isLocked == true,
-                                  translationVersionID: hasStoredTranslation ? translation?.id : nil)
+                                  translationVersionID: hasStoredTranslation ? translation?.id : nil,
+                                  resolvedSource: source == .selected ? .original(lyricsID) : source)
     }
 
     /// SQLite's change counters include other repository connections. Only a

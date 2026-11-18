@@ -166,12 +166,17 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     func readPassage(_ target: LibraryPassageTarget, recordOpening: Bool = true) async throws -> LibraryPassagePage? {
         let page = try await repository.readLibraryPassage(target)
         try Task.checkCancellation()
-        if let page, recordOpening {
-            let resolved = LibraryPassageTarget(trackKey: page.entry.trackStableKey, source: target.source,
-                                                find: target.find, lineIndex: target.lineIndex, savedQuote: target.savedQuote)
-            rememberOpenedRecord(page.entry, passage: resolved)
-        }
+        if let page, recordOpening { rememberReading(page, openedFrom: target) }
         return page
+    }
+
+    func rememberReading(_ page: LibraryPassagePage, openedFrom target: LibraryPassageTarget,
+                         position: LibraryPassageTarget.ReadingPosition? = nil) {
+        guard !page.lines.isEmpty else { return }
+        let resolved = LibraryPassageTarget(trackKey: page.entry.trackStableKey, source: page.resolvedSource ?? target.source,
+                                            find: target.find, lineIndex: target.lineIndex, savedQuote: target.savedQuote,
+                                            readingPosition: position ?? target.readingPosition)
+        rememberOpenedRecord(page.entry, passage: resolved)
     }
 
     public func beginRevision(versionID: UUID, entry: PersonalLyricsLibraryEntry) {

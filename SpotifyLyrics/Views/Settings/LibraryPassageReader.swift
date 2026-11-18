@@ -24,7 +24,7 @@ struct LibraryPassageReader: View {
         self.library = library
         self.openArchive = openArchive
         self.close = close
-        _find = State(initialValue: target.find)
+        _find = State(initialValue: target.readingPosition?.find ?? target.find)
         if case .reading = target.source { _showsReading = State(initialValue: true) }
         else { _showsReading = State(initialValue: false) }
     }
@@ -34,10 +34,12 @@ struct LibraryPassageReader: View {
 
     private var archiveTarget: LibraryPassageTarget {
         guard let page else { return .init(trackKey: target.trackKey) }
+        let resolved = page.resolvedSource ?? target.source
         let source: LibraryPassageSource
-        if case .reading = target.source { source = target.source }
-        else if let translation = page.translationVersionID { source = .translation(translation) }
-        else { source = .original(page.originalVersionID) }
+        switch resolved {
+        case .reading, .attached: source = resolved
+        default: source = page.translationVersionID.map(LibraryPassageSource.translation) ?? .original(page.originalVersionID)
+        }
         return .init(trackKey: page.entry.trackStableKey, source: source)
     }
 
@@ -45,13 +47,14 @@ struct LibraryPassageReader: View {
         Group {
             if let page, let recall {
                 LyricRecallView(page: page, session: recall, showsTranslation: showsTranslation, showsReading: showsReading) { line in
+                    updateMatches(preferred: line)
                     returnedLine = line
                     self.recall = nil
+                    rememberPosition()
                 }
             } else { readingPage }
         }
         .background(WorkspacePalette.paper)
-        .onChange(of: find) { _, _ in returnedLine = nil; updateMatches() }
         .task(id: target) { await load() }
     }
 
@@ -59,7 +62,7 @@ struct LibraryPassageReader: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 9) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("在这份歌词里查找", text: $find).textFieldStyle(.plain)
+                TextField("在这份歌词里查找", text: Binding(get: { find }, set: changeFind)).textFieldStyle(.plain)
                     .onSubmit { move(1) }
                 if !find.isEmpty {
                     Text(matches.isEmpty ? "无匹配" : "\(cursor + 1)/\(matches.count)")
@@ -68,7 +71,7 @@ struct LibraryPassageReader: View {
                         .help("上一处").accessibilityLabel("上一处").disabled(matches.isEmpty)
                     Button { move(1) } label: { Image(systemName: "chevron.down") }
                         .help("下一处").accessibilityLabel("下一处").disabled(matches.isEmpty)
-                    Button { find = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    Button { changeFind("") } label: { Image(systemName: "xmark.circle.fill") }
                         .help("清除查找").accessibilityLabel("清除查找")
                 }
                 if let openArchive {
@@ -177,18 +180,23 @@ struct LibraryPassageReader: View {
         recall = nil
         recallNotice = nil
         returnedLine = nil
-        find = target.find
+        find = target.readingPosition?.find ?? target.find
+        matches = []
+        cursor = 0
         do {
-            let loaded = try await library.readPassage(target)
+            let loaded = try await library.readPassage(target, recordOpening: false)
             try Task.checkCancellation()
             if let loaded, !loaded.lines.isEmpty {
                 page = loaded
                 let savedPosition = target.savedQuote?.originalVersionID == loaded.originalVersionID
                     && loaded.matchesOriginalVersion ? target.lineIndex : nil
-                updateMatches(preferred: savedPosition ?? target.lineIndex)
-                if let savedPosition, loaded.lines.contains(where: { $0.id == savedPosition }) {
-                    returnedLine = savedPosition
+                let preferred = target.readingPosition != nil ? target.readingPosition?.lineIndex
+                    : (target.savedQuote == nil ? target.lineIndex : savedPosition)
+                updateMatches(preferred: preferred)
+                if let preferred, loaded.lines.contains(where: { $0.id == preferred }) {
+                    returnedLine = preferred
                 }
+                rememberPosition()
                 if target.recallNextLine {
                     if let anchor = returnedLine ?? loaded.originalOccurrence(of: target.find, preferred: target.lineIndex) {
                         startRecall(loaded, anchor: anchor)
@@ -215,10 +223,23 @@ struct LibraryPassageReader: View {
         cursor = preferred.flatMap { matches.firstIndex(of: $0) } ?? 0
     }
 
+    private func changeFind(_ text: String) {
+        find = text
+        returnedLine = nil
+        updateMatches()
+        rememberPosition()
+    }
+
+    private func rememberPosition() {
+        guard let page else { return }
+        library.rememberReading(page, openedFrom: target, position: .init(find: find, lineIndex: focusedLine))
+    }
+
     private func move(_ offset: Int) {
         guard !matches.isEmpty else { return }
         returnedLine = nil
         cursor = (cursor + offset + matches.count) % matches.count
+        rememberPosition()
     }
 }
 
