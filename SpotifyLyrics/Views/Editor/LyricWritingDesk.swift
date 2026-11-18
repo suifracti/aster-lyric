@@ -115,7 +115,7 @@ struct LyricWritingDesk: View {
                         .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     Spacer()
                     if let lastFiled {
-                        Button("阅读已存稿") {
+                        Button("阅读关联版本") {
                             SettingsNavigationRoute.shared.requestedLocation = .init(reading: lastFiled)
                             openSettings()
                         }.buttonStyle(.borderless)

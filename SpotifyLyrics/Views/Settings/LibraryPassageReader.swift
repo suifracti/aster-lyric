@@ -6,6 +6,7 @@ struct LibraryPassageReader: View {
     let library: PersonalLyricsLibraryService
     var openArchive: ((LibraryPassageTarget) -> Void)?
     var close: (() -> Void)?
+    @Environment(\.newDocument) private var newDocument
     @State private var page: LibraryPassagePage?
     @State private var failure: String?
     @State private var find: String
@@ -99,6 +100,16 @@ struct LibraryPassageReader: View {
                                 HStack {
                                     Text(page.entry.artist).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                                     Spacer()
+                                    if page.canWriteManuscript {
+                                        Button {
+                                            if let draft = LyricManuscript(copyingOriginal: page) { newDocument(draft) }
+                                        } label: {
+                                            Image(systemName: "square.and.pencil")
+                                        }
+                                        .buttonStyle(.borderless).controlSize(.small)
+                                        .help("从这版写手稿 · 复制原词和每行的起始时间")
+                                        .accessibilityLabel("从这版写手稿")
+                                    }
                                     PortableLyricsExportMenu { page.portableEdition }
                                     LyricBookOffer(title: page.entry.title) { [.init(page: page, source: target.source)] }
                                         .controlSize(.small).fixedSize()

@@ -191,9 +191,8 @@ public enum LRCExporter {
         for (key, value) in metadata { output.append("[\(key):\(value)]") }
         for index in document.lines.indices {
             let body = text.indices.contains(index) ? text[index] : ""
-            if document.lineHasExplicitTiming(index) {
-                let timestamp = document.lines[index].timestamp
-                output.append("[\(formatTimestamp(timestamp))]\(body)")
+            if document.lineHasExplicitTiming(index), let label = timestampLabel(document.lines[index].timestamp) {
+                output.append(label + body)
             } else {
                 output.append(body)
             }
@@ -201,11 +200,12 @@ public enum LRCExporter {
         return output.joined(separator: "\n") + "\n"
     }
 
-    private static func formatTimestamp(_ value: TimeInterval) -> String {
-        let safe = max(0, value)
-        let minutes = Int(safe / 60)
-        let seconds = safe - Double(minutes * 60)
-        return String(format: "%02d:%06.3f", minutes, seconds)
+    static func timestampLabel(_ value: TimeInterval) -> String? {
+        guard value.isFinite, value >= 0, value < 60_000 else { return nil }
+        let milliseconds = Int((value * 1_000).rounded())
+        let minutes = milliseconds / 60_000
+        guard minutes < 1_000 else { return nil }
+        return String(format: "[%02d:%02d.%03d]", minutes, milliseconds / 1_000 % 60, milliseconds % 1_000)
     }
 
     private static func formatLength(_ value: TimeInterval) -> String {

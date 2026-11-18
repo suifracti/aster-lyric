@@ -187,6 +187,49 @@ final class LibraryRevisionsContractTests: XCTestCase {
         XCTAssertNil(separate?.lyricsVersions.first?.parentVersionID)
     }
 
+    func testWritingFromAnArchivedEditionFilesUnderTheExactBase() async throws {
+        let track = Track(title: "还没写完", artist: "自习室", album: "书桌", duration: 90)
+        let repo = SQLiteLyricsRepository(databaseURL: NativeTestRuntime.root.appendingPathComponent("\(UUID()).sqlite3"))
+        let text = "[00:01.125]まだ書けない\n予備の句\n\n[01:00.000]まだ書けない"
+        let originalFile = try LocalLyricsFile(data: Data(text.utf8), kind: .lrc, preferredLanguage: "ja")
+        let adoptedFile = try LocalLyricsFile(data: Data("当前采用的歌词".utf8), kind: .txt, preferredLanguage: "zh")
+        let base = try await repo.importLyricFile(originalFile, into: track)
+        let adopted = try await repo.importLyricFile(adoptedFile, into: track)
+        guard case let .original(baseID) = base.source, case let .original(adoptedID) = adopted.source else {
+            return XCTFail("需要两份可读原词")
+        }
+        try await repo.adoptLyricsVersion(trackStableKey: base.trackKey, lyricsVersionID: adoptedID)
+        let savedBase = try await repo.readLibraryPassage(base)
+        var page = try XCTUnwrap(savedBase)
+        var draft = try XCTUnwrap(LyricManuscript(copyingOriginal: page))
+        XCTAssertEqual(try LyricManuscript(data: draft.data), draft)
+        XCTAssertEqual(draft.text, text)
+        XCTAssertEqual(draft.title, track.title)
+        XCTAssertEqual(draft.artist, track.artist)
+        XCTAssertEqual(draft.album, track.album)
+        XCTAssertEqual(draft.recordingKey, base.trackKey)
+        XCTAssertEqual(draft.filedVersionID, baseID)
+
+        draft.text = draft.text.replacingOccurrences(of: "予備の句", with: "書き直した句")
+        let filed = try await repo.importLyricFile(draft.lyricFile(), into: track)
+        guard case let .original(childID) = filed.source else { return XCTFail("应当留下独立分稿") }
+        let detail = try await repo.loadPersonalLibraryTrackDetail(stableKey: base.trackKey)
+        XCTAssertEqual(detail?.entry.activeLyricsVersionID, adoptedID)
+        XCTAssertEqual(detail?.lyricsVersions.first { $0.id == childID }?.parentVersionID, baseID)
+        let newPage = try await repo.readLibraryPassage(filed)
+        XCTAssertEqual(newPage?.lines.map(\.startTime), [1.125, nil, nil, 60])
+        XCTAssertEqual(newPage?.lines.map(\.original), ["まだ書けない", "書き直した句", "", "まだ書けない"])
+        let unchanged = try await repo.readLibraryPassage(base)
+        XCTAssertEqual(unchanged?.lines, page.lines)
+
+        let otherTrack = Track(title: track.title, artist: "另一位", album: "", duration: 90)
+        let unrelated = try await repo.importLyricFile(draft.lyricFile(), into: otherTrack)
+        let otherDetail = try await repo.loadPersonalLibraryTrackDetail(stableKey: unrelated.trackKey)
+        XCTAssertNil(otherDetail?.lyricsVersions.first?.parentVersionID)
+        page.matchesOriginalVersion = false
+        XCTAssertNil(LyricManuscript(copyingOriginal: page))
+    }
+
     func testPortableTTMLPreservesSourceLanguagesAndExportsTheExactArchivedTranslation() async throws {
         let text = """
         <tt xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xml:lang="ja"><body><div>

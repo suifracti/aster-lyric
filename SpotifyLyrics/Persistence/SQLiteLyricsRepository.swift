@@ -3415,13 +3415,14 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         let family = try resolvedIdentityFamily(stableKey: trackKey)
         let statement = try prepare("""
             SELECT id FROM lyrics_versions WHERE track_stable_key IN (\(placeholders(count: family.count)))
-              AND source = 'manualCreate' AND provider_source_id GLOB ?
+              AND (id = ? OR (source = 'manualCreate' AND provider_source_id GLOB ?))
             ORDER BY (id = ?) DESC, created_at DESC, rowid DESC LIMIT 1;
             """)
         defer { sqlite3_finalize(statement) }
         for (index, key) in family.enumerated() { try bindText(key, at: Int32(index + 1), to: statement) }
-        try bindText(LyricManuscript.sourcePrefix(manuscript) + "*", at: Int32(family.count + 1), to: statement)
-        try bindText(preferred?.uuidString, at: Int32(family.count + 2), to: statement)
+        try bindText(preferred?.uuidString, at: Int32(family.count + 1), to: statement)
+        try bindText(LyricManuscript.sourcePrefix(manuscript) + "*", at: Int32(family.count + 2), to: statement)
+        try bindText(preferred?.uuidString, at: Int32(family.count + 3), to: statement)
         switch sqlite3_step(statement) {
         case SQLITE_DONE: return nil
         case SQLITE_ROW:

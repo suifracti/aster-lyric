@@ -24,6 +24,16 @@ struct LyricManuscript: Equatable, Sendable {
         self.filedVersionID = filedVersionID
     }
 
+    init?(copyingOriginal page: LibraryPassagePage) {
+        guard page.canWriteManuscript else { return nil }
+        let text = page.lines.map { line in
+            let label = line.startTime.flatMap(LRCExporter.timestampLabel) ?? ""
+            return label + line.original
+        }.joined(separator: "\n")
+        self.init(title: page.entry.title, artist: page.entry.artist, album: page.entry.album ?? "", text: text,
+                  recordingKey: page.entry.trackStableKey, filedVersionID: page.originalVersionID)
+    }
+
     var data: Data {
         var header = ["[re:Aster · Lyric]", "[aster-draft:\(id.uuidString)]"]
         if let recordingKey { header.append("[aster-recording:\(recordingKey)]") }
@@ -57,6 +67,12 @@ struct LyricManuscript: Equatable, Sendable {
     }
 
     func lyricFile() throws -> LocalLyricsFile { try LocalLyricsFile(manuscript: self) }
+}
+
+extension LibraryPassagePage {
+    var canWriteManuscript: Bool {
+        matchesOriginalVersion && lines.contains { $0.original.contains { !$0.isWhitespace } }
+    }
 }
 
 struct ManuscriptStanzas {

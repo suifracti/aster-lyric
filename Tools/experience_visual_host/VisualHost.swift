@@ -445,6 +445,10 @@ struct ExperienceVisualHostApp: App {
         }
         .defaultSize(width: 565, height: 430)
         Settings { SettingsRootView().environmentObject(settings).environmentObject(playback).environmentObject(SettingsDataController()) }
+        DocumentGroup(newDocument: LyricManuscript()) { opened in
+            LyricWritingDesk(draft: opened.$document, fileURL: opened.fileURL)
+        }
+        .defaultSize(width: 650, height: 610)
         DocumentGroup(newDocument: LyricBook()) { opened in
             LyricBookDesk(book: opened.$document, fileURL: opened.fileURL)
         }

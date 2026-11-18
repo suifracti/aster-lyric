@@ -15,7 +15,7 @@
 | 两份稿逐句对照、改译时借用另一版的句子、重复副歌错位 | L-049 · LibraryVersionComparison、LibraryTranslationRevisionDraft |
 | 编辑器打开停在开头、重开丢草稿、试听跳到别首歌 | L-049 · prepareLyricsEditor、focusLine、auditionLyricsEditorLine |
 | 从 Finder 打开歌词文件、给本机录音补稿、导出手里的版本、入库后合声消失 | L-032、L-048 · LyricFileDocument、LocalLyricsFile、PortableLyricsEdition |
-| 没放歌时写手稿、调整段落或接着修上一稿 | L-050 · LyricManuscript、LyricWritingDesk、ManuscriptStanzas |
+| 没放歌时写手稿、从歌词库版本开稿、调整段落或接着修上一稿 | L-050 · LyricManuscript、LyricWritingDesk、ManuscriptStanzas |
 | 从原词、译文或金句编歌本、保存原出处、导出带目录的 PDF | L-051 · LyricBook、LyricBookDesk、LyricBookPrint |
 | 新包、截图、构建/签名、实际运行是哪份 | L-002；DEVELOPMENT_WORKFLOW.md |
 | 极简、减少按钮、保留旧功能 | L-003；TOOLBAR_BEHAVIOR.md |
@@ -894,6 +894,8 @@ TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、
 归档以录音、手稿 ID 和正文指纹去重，局部时间也计入指纹。同一手稿再次归档时关联到它在这份录音中引用的父稿，其他录音不能借用。外部 TXT、LRC 和 TTML 继续用独立的阅读窗口；手稿 UTI 属于 `public.text`，这样系统不会把它交给通用纯文本阅读器。
 
 2026-11-19：从歌曲档案开始写手稿时，存入面板先解析手稿带来的录音键。旧键定位到正式档案；只有播放记录的曲目以原键临时出现在本次面板里。普通选录音仍显示已知档案，打开面板也不提前写入歌曲表。隔离库验证了两种目标都能保存至原录音。
+
+同日接上阅读页的「从这版写手稿」。手稿复制原词和已有的行级起点，首存时可把同一录音中明确打开的原词版本（包括手稿之外的版本）作为父稿。沿用现有手稿头部和去重规则。仅剩译文或读音的旧稿只走原有阅读和导出。
 
 真实窗口验收在私有目录打开一份手稿，重复第二段，经文件菜单保存并回读正文，移动首段再存入同一录音。两版之间的父稿和原有采用选择均已读回。从已存稿打开阅读页后，通过启用的 ⌘N 菜单项新建了空白手稿。
 
