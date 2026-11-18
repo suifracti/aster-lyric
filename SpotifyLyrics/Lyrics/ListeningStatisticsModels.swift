@@ -1,7 +1,7 @@
 import Foundation
 
 /// Time windows supported by the local observed-playback statistics.
-public enum ListeningStatisticsTimeRange: String, CaseIterable, Identifiable, Equatable, Sendable {
+public enum ListeningStatisticsTimeRange: String, CaseIterable, Identifiable, Hashable, Sendable {
     case last7Days
     case last30Days
     case allTime
@@ -27,6 +27,12 @@ public enum ListeningStatisticsTimeRange: String, CaseIterable, Identifiable, Eq
             return Date(timeIntervalSince1970: 0)
         }
     }
+}
+
+struct ListeningStatisticsLoad {
+    var statistics: ListeningStatistics?
+    var isLoading = false
+    var error: String?
 }
 
 public struct ListeningStatisticsDailyCount: Identifiable, Equatable, Sendable {

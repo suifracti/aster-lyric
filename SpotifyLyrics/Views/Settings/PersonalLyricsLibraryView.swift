@@ -1331,6 +1331,7 @@ public struct UnifiedLibraryHistoryWindowView: View {
     @EnvironmentObject private var playback: PlaybackState
     @State private var reading: LibraryPassageTarget?
     @State private var library = PersonalLyricsLibraryService()
+    @State private var statisticsTimeRange: ListeningStatisticsTimeRange = .allTime
 
     public init() {}
 
@@ -1378,7 +1379,7 @@ public struct UnifiedLibraryHistoryWindowView: View {
         case .history:
             ListeningHistoryView(openTrack: openTrack)
         case .statistics:
-            ListeningStatisticsView()
+            ListeningStatisticsView(timeRange: $statisticsTimeRange, openTrack: openTrack)
         case .favorites:
             FavoriteLinesView(openTrack: openTrack, readPassage: { reading = $0 })
         }

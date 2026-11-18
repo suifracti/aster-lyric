@@ -31,7 +31,8 @@ struct V3LibrarySearchPanel: View {
     @Environment(\.openWindow) private var openWindow
     @ObservedObject var library: PersonalLyricsLibraryService
     @State private var selectedKey: String?
-    @State private var historyTrackKey: String?
+    @State private var listeningTrackKey: String?
+    @State private var statisticsTimeRange: ListeningStatisticsTimeRange = .allTime
     @State private var queries: [V3LibrarySearchPresentation.Tab: String] = [:]
     private var query: String {
         get { queries[presentation.tab ?? .library] ?? "" }
@@ -74,15 +75,17 @@ struct V3LibrarySearchPanel: View {
                         ), options: V3LibrarySearchPresentation.Tab.allCases.map { ($0.title, $0) },
                            showsLabel: false, height: 28)
                         .frame(width: 360)
-                        if presentation.tab == .history, historyTrackKey != nil {
-                            Button("返回最近播放", systemImage: "chevron.left") { historyTrackKey = nil }
+                        if presentation.tab?.isListening == true, listeningTrackKey != nil {
+                            Button(presentation.tab == .history ? "返回最近播放" : "返回统计", systemImage: "chevron.left") {
+                                listeningTrackKey = nil
+                            }
                                 .buttonStyle(.borderless)
                             Spacer(minLength: 0)
                         } else if presentation.tab?.isListening == true {
                             Spacer(minLength: 0)
                             Button {
                                 if presentation.tab == .history { state.refreshListeningHistory() }
-                                else { state.refreshListeningStatistics(for: state.listeningStatistics?.timeRange ?? .allTime) }
+                                else { state.refreshListeningStatistics(for: statisticsTimeRange) }
                             } label: { Image(systemName: "arrow.clockwise") }
                             .buttonStyle(.borderless).help("刷新")
                         } else {
@@ -103,10 +106,8 @@ struct V3LibrarySearchPanel: View {
                             V3PlaylistPanel(browser: state.playlistBrowser, query: query, currentTrackID: state.playlistTrackID, currentArtworkURL: state.currentTrack.artworkURL)
                         } else if presentation.tab == .search {
                             V3SearchPanel(state: state, search: state.songSearchManager)
-                        } else if presentation.tab == .history {
-                            recentPlaybackContent
-                        } else if presentation.tab == .statistics {
-                            ListeningStatisticsView()
+                        } else if presentation.tab?.isListening == true {
+                            listeningContent
                         } else {
                             libraryContent
                         }
@@ -135,20 +136,27 @@ struct V3LibrarySearchPanel: View {
                 if presentation.tab == .search, !query.isEmpty { updateSearch() }
             }
             .onChange(of: presentation.tab) { _, tab in
+                listeningTrackKey = nil
                 if tab == .library { library.searchQuery = query; library.refresh(); selectInitialEntry() }
                 else if tab == .search, query.isEmpty, state.hasLiveTrack { query = SongSearchQuery(track: state.currentTrack).text }
             }
         }
     }
-    private var recentPlaybackContent: some View {
+    private var listeningContent: some View {
         ZStack {
-            ListeningHistoryView(openTrack: { historyTrackKey = $0 })
-                .opacity(historyTrackKey == nil ? 1 : 0)
-                .allowsHitTesting(historyTrackKey == nil)
-                .accessibilityHidden(historyTrackKey != nil)
-            if let historyTrackKey {
-                PersonalLibraryTrackDetailView(service: library, stableKey: historyTrackKey)
-                    .id(historyTrackKey)
+            Group {
+                if presentation.tab == .history {
+                    ListeningHistoryView(openTrack: { listeningTrackKey = $0 })
+                } else {
+                    ListeningStatisticsView(timeRange: $statisticsTimeRange, openTrack: { listeningTrackKey = $0 })
+                }
+            }
+            .opacity(listeningTrackKey == nil ? 1 : 0)
+            .allowsHitTesting(listeningTrackKey == nil)
+            .accessibilityHidden(listeningTrackKey != nil)
+            if let listeningTrackKey {
+                PersonalLibraryTrackDetailView(service: library, stableKey: listeningTrackKey)
+                    .id(listeningTrackKey)
             }
         }
     }
@@ -160,9 +168,10 @@ struct V3LibrarySearchPanel: View {
         case .search: openWindow(id: "song-search")
         case .playlists: openWindow(id: "playlist-browser")
         case .library, .history, .statistics, nil:
-            if tab == .history, historyTrackKey == nil { state.openLibraryTool(tab: .history) }
+            if tab?.isListening == true, let listeningTrackKey { state.openLibraryTool(trackKey: listeningTrackKey) }
+            else if tab == .history { state.openLibraryTool(tab: .history) }
             else if tab == .statistics { state.openLibraryTool(tab: .statistics) }
-            else { state.openLibraryTool(trackKey: tab == .history ? historyTrackKey : selectedKey) }
+            else { state.openLibraryTool(trackKey: selectedKey) }
             openWindow(id: "personal-library-activity")
         }
     }

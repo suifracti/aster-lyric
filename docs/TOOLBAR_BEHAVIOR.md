@@ -928,6 +928,8 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 - The 列表 / 封面墙 choice is remembered (`listening.history.coverWall.v1`).
 
 **生成回顾卡** (`统计` page, F6).
+- The main window, settings, and the separate library each keep their own stats range. The song ranking opens the song's archive, and returning keeps the selected range.
+- If a new range fails to load, the page can still show its previous result with the previous range named. The recap card requires a result for the selected range.
 - Turns the chosen time range into a 1080 × 1350 picture:
   - time listened;
   - number of songs and plays;

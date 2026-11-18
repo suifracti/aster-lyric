@@ -160,12 +160,22 @@ final class DesktopPlaybackEventTests: XCTestCase {
         let entry = ListeningHistoryEntry(sessionID: UUID(), stableKey: "history-fixture", title: "Fixture",
             artist: "Fixture", album: "", startedAt: now, lastObservedAt: now, observedPlaybackDuration: 60,
             trackDuration: 180, completionRatio: 1 / 3)
+        let earlier = now.addingTimeInterval(-10 * 86_400)
+        let older = ListeningHistoryEntry(sessionID: UUID(), stableKey: "older-fixture", title: "Older",
+            artist: "Fixture", album: "", startedAt: earlier, lastObservedAt: earlier, observedPlaybackDuration: 30,
+            trackDuration: 180, completionRatio: 1 / 6)
         try await repository.upsertListeningHistory(entry)
+        try await repository.upsertListeningHistory(older)
         state.refreshListeningHistory()
         state.refreshListeningStatistics(for: .allTime)
-        try await wait { !state.isListeningHistoryLoading && !state.isListeningStatisticsLoading }
-        XCTAssertEqual(state.listeningHistory.map(\.sessionID), [entry.sessionID])
-        XCTAssertEqual(state.listeningStatistics?.sessionCount, 1)
+        state.refreshListeningStatistics(for: .last7Days)
+        try await wait {
+            !state.isListeningHistoryLoading && !state.listeningStatisticsLoad(for: .allTime).isLoading
+                && !state.listeningStatisticsLoad(for: .last7Days).isLoading
+        }
+        XCTAssertEqual(state.listeningHistory.map(\.sessionID), [entry.sessionID, older.sessionID])
+        XCTAssertEqual(state.listeningStatisticsLoad(for: .allTime).statistics?.sessionCount, 2)
+        XCTAssertEqual(state.listeningStatisticsLoad(for: .last7Days).statistics?.topSongs.map(\.stableKey), [entry.stableKey])
 
         var database: OpaquePointer?
         XCTAssertEqual(sqlite3_open_v2(repository.databaseURL.path, &database, SQLITE_OPEN_READWRITE, nil), SQLITE_OK)
@@ -178,27 +188,28 @@ final class DesktopPlaybackEventTests: XCTestCase {
         cold.refreshListeningHistory()
         cold.refreshListeningStatistics(for: .allTime)
         try await wait(timeout: .seconds(16)) {
-            !state.isListeningHistoryLoading && !state.isListeningStatisticsLoading
-                && !cold.isListeningHistoryLoading && !cold.isListeningStatisticsLoading
+            !state.isListeningHistoryLoading && !state.listeningStatisticsLoad(for: .last7Days).isLoading
+                && !cold.isListeningHistoryLoading && !cold.listeningStatisticsLoad(for: .allTime).isLoading
         }
-        XCTAssertEqual(state.listeningHistory.map(\.sessionID), [entry.sessionID])
-        XCTAssertEqual(state.listeningStatistics?.timeRange, .allTime, "A failed range change keeps the correct label")
+        XCTAssertEqual(state.listeningHistory.map(\.sessionID), [entry.sessionID, older.sessionID])
+        XCTAssertEqual(state.listeningStatisticsLoad(for: .allTime).statistics?.sessionCount, 2)
+        XCTAssertNil(state.listeningStatisticsLoad(for: .allTime).error)
+        XCTAssertEqual(state.listeningStatisticsLoad(for: .last7Days).statistics?.sessionCount, 1)
         XCTAssertNotNil(state.listeningHistoryError)
-        XCTAssertNotNil(state.listeningStatisticsError)
+        XCTAssertNotNil(state.listeningStatisticsLoad(for: .last7Days).error)
         XCTAssertTrue(cold.listeningHistory.isEmpty)
-        XCTAssertNil(cold.listeningStatistics)
+        XCTAssertNil(cold.listeningStatisticsLoad(for: .allTime).statistics)
         XCTAssertNotNil(cold.listeningHistoryError)
-        XCTAssertNotNil(cold.listeningStatisticsError)
+        XCTAssertNotNil(cold.listeningStatisticsLoad(for: .allTime).error)
 
         XCTAssertEqual(sqlite3_exec(connection, "ROLLBACK", nil, nil, nil), SQLITE_OK)
         state.refreshListeningHistory()
         state.refreshListeningStatistics(for: .last7Days)
-        try await wait { !state.isListeningHistoryLoading && !state.isListeningStatisticsLoading }
+        try await wait { !state.isListeningHistoryLoading && !state.listeningStatisticsLoad(for: .last7Days).isLoading }
         XCTAssertNil(state.listeningHistoryError)
-        XCTAssertNil(state.listeningStatisticsError)
-        XCTAssertEqual(state.listeningHistory.map(\.sessionID), [entry.sessionID])
-        XCTAssertEqual(state.listeningStatistics?.sessionCount, 1)
-        XCTAssertEqual(state.listeningStatistics?.timeRange, .last7Days)
+        XCTAssertNil(state.listeningStatisticsLoad(for: .last7Days).error)
+        XCTAssertEqual(state.listeningHistory.map(\.sessionID), [entry.sessionID, older.sessionID])
+        XCTAssertEqual(state.listeningStatisticsLoad(for: .last7Days).statistics?.sessionCount, 1)
     }
 
     func testAnOldProgressDragCannotSeekAfterReturningToTheSameSong() async throws {

@@ -294,6 +294,7 @@ struct SettingsRootView: View {
     @State private var history: SettingsHistory
     @State private var library = PersonalLyricsLibraryService()
     @State private var favoriteQuery = ""
+    @State private var statisticsTimeRange: ListeningStatisticsTimeRange = .allTime
     @FocusState private var searchFocused: Bool
 
     init(initialPage: String? = nil, initialSurface: AppearanceSurface = .main) {
@@ -371,6 +372,7 @@ struct SettingsRootView: View {
                     SettingsDetailView(selection: Binding(get: { history.current.page }, set: { navigate(.init($0)) }),
                                        trackKey: history.current.trackKey, passage: history.current.passage,
                                        archivePassage: history.current.archivePassage, favoriteQuery: $favoriteQuery,
+                                       statisticsTimeRange: $statisticsTimeRange,
                                        backFromReading: history.canGoBack ? { history.back() } : nil,
                                        openArchiveFromReading: { history.openArchive(fromReading: $0) },
                                        appearanceSurface: history.current.appearanceSurface, appearanceControl: history.current.appearanceControl,
@@ -432,6 +434,7 @@ private struct SettingsDetailView: View {
     let passage: LibraryPassageTarget?
     let archivePassage: LibraryPassageTarget?
     @Binding var favoriteQuery: String
+    @Binding var statisticsTimeRange: ListeningStatisticsTimeRange
     let backFromReading: (() -> Void)?
     let openArchiveFromReading: (LibraryPassageTarget) -> Void
     let appearanceSurface: AppearanceSurface
@@ -475,7 +478,8 @@ private struct SettingsDetailView: View {
                                               openArchive: { navigate(.init(archive: $0)) })
                 }
             case .history: ListeningHistoryView(openTrack: { navigate(.init(.library, trackKey: $0)) })
-            case .statistics: ListeningStatisticsView()
+            case .statistics:
+                ListeningStatisticsView(timeRange: $statisticsTimeRange, openTrack: { navigate(.init(.library, trackKey: $0)) })
             case .favorites: FavoriteLinesView(savedQuery: $favoriteQuery, openTrack: { navigate(.init(.library, trackKey: $0)) },
                                               readPassage: { navigate(.init(reading: $0)) })
             case .experienceLibrary:

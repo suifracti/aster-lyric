@@ -4,12 +4,21 @@ public struct ListeningStatisticsView: View {
     @EnvironmentObject private var playback: PlaybackState
     @State private var visibleSongCount = 20
     @State private var recapStatus: String?
+    @State private var isGeneratingRecap = false
+    @State private var lastDisplayedStatistics: ListeningStatistics?
     /// 0 → 1 while the three summary figures count up.
     @State private var rolled = 1.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var selectedTimeRange: ListeningStatisticsTimeRange = .allTime
+    @Binding private var selectedTimeRange: ListeningStatisticsTimeRange
+    private let openTrack: (String) -> Void
 
-    public init() {}
+    public init(timeRange: Binding<ListeningStatisticsTimeRange>, openTrack: @escaping (String) -> Void) {
+        self._selectedTimeRange = timeRange
+        self.openTrack = openTrack
+    }
+
+    private var load: ListeningStatisticsLoad { playback.listeningStatisticsLoad(for: selectedTimeRange) }
+    private var displayedStatistics: ListeningStatistics? { load.statistics ?? lastDisplayedStatistics }
 
     public var body: some View {
         ScrollView {
@@ -26,7 +35,7 @@ public struct ListeningStatisticsView: View {
                 }
                 .pickerStyle(.segmented)
 
-                if let error = playback.listeningStatisticsError {
+                if let error = load.error {
                     HStack {
                         Label(error, systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.secondary)
@@ -34,10 +43,10 @@ public struct ListeningStatisticsView: View {
                         Button("重试") { playback.refreshListeningStatistics(for: selectedTimeRange) }
                     }
                 }
-                if playback.isListeningStatisticsLoading {
+                if load.isLoading {
                     ProgressView("读取统计…")
                 }
-                if let statistics = playback.listeningStatistics {
+                if let statistics = displayedStatistics {
                     if statistics.timeRange != selectedTimeRange {
                         Text("上次成功读取：\(statistics.timeRange.title)")
                             .font(.caption)
@@ -49,18 +58,23 @@ public struct ListeningStatisticsView: View {
                         summary(statistics)
                         HStack(spacing: 10) {
                             Button {
+                                isGeneratingRecap = true
                                 recapStatus = "正在生成…"
                                 Task { @MainActor in
+                                    defer { isGeneratingRecap = false }
                                     if let url = await V3RecapCard.make(statistics) {
-                                        recapStatus = "已复制，并存到 图片/Aster Lyric"
+                                        if statistics.timeRange == selectedTimeRange {
+                                            recapStatus = "已复制，并存到 图片/Aster Lyric"
+                                        }
                                         NSWorkspace.shared.activateFileViewerSelecting([url])
-                                    } else {
+                                    } else if statistics.timeRange == selectedTimeRange {
                                         recapStatus = "没能生成"
                                     }
                                 }
                             } label: {
                                 Label("生成回顾卡", systemImage: "photo.on.rectangle")
                             }
+                            .disabled(isGeneratingRecap || statistics.timeRange != selectedTimeRange)
                             .help("把这一时间范围做成一张 1080×1350 的图：听了多久、最常听的歌手和前五首")
                             if let recapStatus {
                                 Text(recapStatus).font(.caption).foregroundStyle(.secondary)
@@ -87,27 +101,31 @@ public struct ListeningStatisticsView: View {
                 .help("刷新听歌统计")
             }
         }
-        .onAppear {
+        .task(id: selectedTimeRange) {
             playback.refreshListeningStatistics(for: selectedTimeRange)
         }
-        .onChange(of: playback.listeningStatistics) { _, _ in rollFigures() }
-        .onChange(of: selectedTimeRange) { _, newValue in
+        .onChange(of: load.statistics, initial: true) { _, statistics in
+            if let statistics { lastDisplayedStatistics = statistics }
+        }
+        .task(id: displayedStatistics) {
+            if displayedStatistics != nil { await rollFigures() }
+        }
+        .onChange(of: selectedTimeRange) { _, _ in
             visibleSongCount = 20
-            playback.refreshListeningStatistics(for: newValue)
+            recapStatus = nil
         }
     }
 
     /// Counts the summary figures up from zero in a dozen steps (about 0.7 s).
-    private func rollFigures() {
+    private func rollFigures() async {
         guard !reduceMotion else { rolled = 1; return }
         rolled = 0
-        Task { @MainActor in
-            for step in 1...12 {
-                try? await Task.sleep(nanoseconds: 55_000_000)
-                // Ease out: most of the distance early, the last digits slowly.
-                let t = Double(step) / 12
-                withAnimation(.easeOut(duration: 0.12)) { rolled = 1 - pow(1 - t, 3) }
-            }
+        for step in 1...12 {
+            try? await Task.sleep(for: .milliseconds(55))
+            guard !Task.isCancelled else { return }
+            // Ease out: most of the distance early, the last digits slowly.
+            let t = Double(step) / 12
+            withAnimation(.easeOut(duration: 0.12)) { rolled = 1 - pow(1 - t, 3) }
         }
     }
 
@@ -210,27 +228,37 @@ public struct ListeningStatisticsView: View {
         if !displaySongs.isEmpty {
             statisticsGroup(title: "歌曲排行", icon: "music.note") {
                 ForEach(Array(displaySongs.enumerated()), id: \.element.id) { index, song in
-                    HStack(spacing: 10) {
-                        Text("\(index + 1)")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.tertiary)
-                            .frame(width: 22, alignment: .leading)
-                        ListeningArtwork(url: song.artworkURL)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(song.title)
-                                .font(.system(size: 13, weight: .semibold))
-                                .lineLimit(1)
-                            Text(song.artist)
-                                .font(.system(size: 11))
+                    Button {
+                        openTrack(song.stableKey)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Text("\(index + 1)")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.tertiary)
+                                .frame(width: 22, alignment: .leading)
+                            ListeningArtwork(url: song.artworkURL)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(song.title)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .lineLimit(1)
+                                Text(song.artist)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 8)
+                            Text("\(song.sessionCount) 次 · \(formattedDuration(song.observedListeningTime))")
+                                .font(.system(.caption, design: .monospaced))
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
                         }
-                        Spacer(minLength: 8)
-                        Text("\(song.sessionCount) 次 · \(formattedDuration(song.observedListeningTime))")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.vertical, 8)
+                    .buttonStyle(.plain)
+                    .help("打开歌曲档案")
                     if song.id != displaySongs.last?.id {
                         Divider()
                     }

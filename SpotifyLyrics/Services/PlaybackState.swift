@@ -65,11 +65,9 @@ public final class PlaybackState: ObservableObject {
     @Published public private(set) var songSearchSelectionMessage = ""
     @Published public private(set) var searchPreviewTrack: Track?
     @Published public private(set) var listeningHistory: [ListeningHistoryEntry] = []
-    @Published public private(set) var listeningStatistics: ListeningStatistics?
+    @Published private var listeningStatisticsLoads: [ListeningStatisticsTimeRange: ListeningStatisticsLoad] = [:]
     @Published public private(set) var isListeningHistoryLoading = false
-    @Published public private(set) var isListeningStatisticsLoading = false
     @Published public private(set) var listeningHistoryError: String?
-    @Published public private(set) var listeningStatisticsError: String?
     @Published public var selectedLibraryToolTab: LibraryToolTab = .library
     @Published private(set) var selectedLibraryToolArchive: LibraryPassageTarget?
 
@@ -162,7 +160,6 @@ public final class PlaybackState: ObservableObject {
     private var listeningHistorySession: ListeningHistorySession?
     private var listeningHistoryWriteTask: Task<Void, Never>?
     private var listeningHistoryLoadTask: Task<Void, Never>?
-    private var listeningStatisticsLoadTask: Task<Void, Never>?
     private var searchPreviewGeneration: UInt64 = 0
     private var networkRecoveryMonitor: NWPathMonitor?
     private var networkWasSatisfied = false
@@ -1253,23 +1250,24 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
+    func listeningStatisticsLoad(for timeRange: ListeningStatisticsTimeRange) -> ListeningStatisticsLoad {
+        listeningStatisticsLoads[timeRange, default: ListeningStatisticsLoad()]
+    }
+
     public func refreshListeningStatistics(for timeRange: ListeningStatisticsTimeRange) {
-        listeningStatisticsLoadTask?.cancel()
-        isListeningStatisticsLoading = true
-        listeningStatisticsError = nil
+        let previous = listeningStatisticsLoad(for: timeRange)
+        guard !previous.isLoading else { return }
+        listeningStatisticsLoads[timeRange] = ListeningStatisticsLoad(statistics: previous.statistics, isLoading: true)
         let repository = lyricsRepository
         let pendingWrite = listeningHistoryWriteTask
-        listeningStatisticsLoadTask = Task { @MainActor [weak self, repository] in
+        Task { @MainActor [weak self] in
+            await pendingWrite?.value
             do {
-                await pendingWrite?.value
                 let statistics = try await repository.loadListeningStatistics(for: timeRange)
-                guard !Task.isCancelled, let self else { return }
-                self.listeningStatistics = statistics
-                self.isListeningStatisticsLoading = false
+                self?.listeningStatisticsLoads[timeRange] = ListeningStatisticsLoad(statistics: statistics)
             } catch {
-                guard !Task.isCancelled, let self else { return }
-                self.listeningStatisticsError = "无法读取听歌统计，请重试。"
-                self.isListeningStatisticsLoading = false
+                self?.listeningStatisticsLoads[timeRange] = ListeningStatisticsLoad(
+                    statistics: previous.statistics, error: "无法读取听歌统计，请重试。")
             }
         }
     }
