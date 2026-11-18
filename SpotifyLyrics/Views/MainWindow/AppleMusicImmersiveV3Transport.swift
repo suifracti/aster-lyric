@@ -468,7 +468,7 @@ struct V3PlaybackButtons: View {
         HStack(spacing: compact ? 4 : 12) {
             heartButton
             if state.canPickPlaylists {
-                V3PlaylistAddButton(picker: state.playlistPicker, open: showsPlaylistPicker,
+                V3PlaylistAddButton(picker: state.playlistPicker, open: showsPlaylistPicker, trackKey: state.playlistTrackID,
                                     size: compact ? .compact : .regular) {
                     showsPlaylistPicker = true
                 }
@@ -543,12 +543,14 @@ struct V3PlayerModeButton: View {
 private struct V3PlaylistAddButton: View {
     @ObservedObject var picker: PlaylistPickerModel
     let open: Bool
+    var trackKey: String?
     var size: IslandTransportButton.Size = .regular
     let action: () -> Void
     var body: some View {
         V3TransportIconButton(systemImage: picker.currentTrackIsSaved ? "text.badge.checkmark" : "text.badge.plus",
                               label: picker.currentTrackIsSaved ? "已在歌单中 · 添加到其他歌单" : "添加到歌单",
                               enabled: true, active: open || picker.currentTrackIsSaved, size: size, action: action)
+            .task(id: trackKey) { picker.refreshSavedIndexIfNeeded() }
     }
 }
 

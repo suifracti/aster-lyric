@@ -51,6 +51,14 @@ private final class FakePlaylistCatalog: PlaylistCataloging {
         removed.append((id, trackID))
         itemIDs[id]?.removeAll { $0 == trackID }
     }
+
+    var listsTracks = true
+    private(set) var indexReads: [String] = []
+    func trackIDs(inPlaylist id: String, accessToken: String) async throws -> Set<String>? {
+        guard listsTracks else { return nil }
+        indexReads.append(id)
+        return Set(itemIDs[id] ?? [])
+    }
 }
 
 final class PlaylistFixtureURLProtocol: URLProtocol {
@@ -539,5 +547,47 @@ final class PlaylistPickerTests: XCTestCase {
         return resultText
         """, timeout: 5)
         XCTAssertEqual(text?.count, 262144)
+    }
+}
+
+@MainActor
+final class PlaylistSavedIndexTests: XCTestCase {
+    private let track = "4cTnxwbzLd90onQ9bKm9V6"
+
+    private func waitForIndex(_ catalog: FakePlaylistCatalog, reads: Int) async {
+        for _ in 0..<200 where catalog.indexReads.count < reads { await Task.yield(); try? await Task.sleep(for: .milliseconds(5)) }
+        for _ in 0..<20 { await Task.yield() }
+    }
+
+    func testAddButtonKnowsTheSongIsSavedWithoutOpeningThePicker() async {
+        let catalog = FakePlaylistCatalog(rows: [
+            PlaylistSummary(id: "a", name: "A", trackCount: 1, snapshotID: "s1", imageURL: nil),
+            PlaylistSummary(id: "b", name: "B", trackCount: 1, snapshotID: "s1", imageURL: nil)
+        ], itemIDs: ["a": ["other"], "b": [track]])
+        var current: String? = track
+        let model = PlaylistPickerModel(catalog: catalog, trackID: { current }, likedState: { false }, applyLiked: { _ in nil })
+        XCTAssertFalse(model.currentTrackIsSaved)
+        model.refreshSavedIndexIfNeeded()
+        await waitForIndex(catalog, reads: 2)
+        XCTAssertTrue(model.currentTrackIsSaved)
+        XCTAssertEqual(Set(catalog.indexReads), ["a", "b"])
+
+        // Another song is answered from the same index, with no further reads.
+        current = "other"
+        model.refreshSavedIndexIfNeeded()
+        XCTAssertTrue(model.currentTrackIsSaved)
+        current = "missing"
+        XCTAssertFalse(model.currentTrackIsSaved)
+        XCTAssertEqual(catalog.indexReads.count, 2)
+    }
+
+    func testPlayersThatCannotListTracksStayUnmarked() async {
+        let catalog = FakePlaylistCatalog(rows: [PlaylistSummary(id: "a", name: "A", trackCount: 1, snapshotID: "s1", imageURL: nil)],
+                                          itemIDs: ["a": [track]])
+        catalog.listsTracks = false
+        let model = PlaylistPickerModel(catalog: catalog, trackID: { self.track }, likedState: { false }, applyLiked: { _ in nil })
+        model.refreshSavedIndexIfNeeded()
+        for _ in 0..<50 { await Task.yield() }
+        XCTAssertFalse(model.currentTrackIsSaved)
     }
 }

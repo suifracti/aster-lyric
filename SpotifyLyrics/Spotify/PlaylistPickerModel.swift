@@ -38,9 +38,13 @@ public protocol PlaylistCataloging: AnyObject {
     var connectionNotice: String { get }
     /// Identifies the backing player, so a source switch cannot reuse rows.
     var sourceKey: String { get }
+    /// Every track in a playlist, for the "already in a playlist" mark; nil when the
+    /// player cannot list it cheaply.
+    func trackIDs(inPlaylist id: String, accessToken: String) async throws -> Set<String>?
 }
 
 public extension PlaylistCataloging {
+    func trackIDs(inPlaylist id: String, accessToken: String) async throws -> Set<String>? { nil }
     var likedRowTitle: String { "已点赞的歌曲" }
     func likedTrackCount() async throws -> Int? { nil }
     var connectionNotice: String { "需要重新连接 Spotify" }
@@ -72,6 +76,10 @@ public final class SpotifyPlaylistCatalog: PlaylistCataloging {
 
     public func contains(trackID: String, inPlaylist id: String, accessToken: String) async throws -> Bool {
         try await service.playlistTrackIDs(id, accessToken: accessToken).contains(trackID)
+    }
+
+    public func trackIDs(inPlaylist id: String, accessToken: String) async throws -> Set<String>? {
+        Set(try await service.playlistTrackIDs(id, accessToken: accessToken))
     }
 
     public func likedTrackCount() async throws -> Int? {
@@ -154,6 +162,11 @@ public final class RoutingPlaylistCatalog: PlaylistCataloging {
         return try await catalog.contains(trackID: trackID, inPlaylist: id, accessToken: token)
     }
 
+    public func trackIDs(inPlaylist id: String, accessToken: String) async throws -> Set<String>? {
+        let (catalog, token) = route(accessToken)
+        return try await catalog.trackIDs(inPlaylist: id, accessToken: token)
+    }
+
     public func add(trackID: String, toPlaylist id: String, accessToken: String) async throws {
         let (catalog, token) = route(accessToken)
         try await catalog.add(trackID: trackID, toPlaylist: id, accessToken: token)
@@ -197,6 +210,11 @@ public final class PlaylistPickerModel: ObservableObject {
     @Published public private(set) var isCreatingPlaylist = false
     @Published public var notice: String?
     @Published public private(set) var sourceRevision = 0
+    /// Track IDs of each playlist, kept per snapshot so a song change needs no request.
+    @Published private(set) var savedIndex: [String: (snapshot: String?, ids: Set<String>)] = [:]
+    private var indexTask: Task<Void, Never>?
+    private var indexedAt: Date?
+    static let indexRefreshInterval: TimeInterval = 600
 
     /// The Liked Songs row is not a playlist, so it uses this fixed identity.
     public static let likedRowID = "liked-songs"
@@ -277,6 +295,10 @@ public final class PlaylistPickerModel: ObservableObject {
         likedCount = nil
         isLiked = false
         notice = nil
+        indexTask?.cancel()
+        indexTask = nil
+        indexedAt = nil
+        savedIndex = [:]
         query = ""
         phase = .idle
         sourceRevision &+= 1
@@ -318,10 +340,42 @@ public final class PlaylistPickerModel: ObservableObject {
         }
     }
 
-    /// The playing song is in at least one playlist checked so far.
+    /// The playing song is in at least one of the user's playlists.
     public var currentTrackIsSaved: Bool {
         guard let track = trackID() else { return false }
         return membership.values.contains { $0.contains(track) }
+            || savedIndex.values.contains { $0.ids.contains(track) }
+    }
+
+    /// Reads each playlist's tracks once and again only when its snapshot changes.
+    /// The playlist list itself is re-read at most every ten minutes.
+    public func refreshSavedIndexIfNeeded() {
+        guard indexTask == nil, catalogAvailable() else { return }
+        if loadedSourceKey != catalog.sourceKey { resetForSourceChange() }
+        if let indexedAt, Date().timeIntervalSince(indexedAt) < Self.indexRefreshInterval { return }
+        let sourceKey = catalog.sourceKey
+        indexTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.indexTask = nil }
+            do {
+                let token = try await self.catalog.accessToken()
+                let rows = try await self.catalog.playlists(accessToken: token)
+                guard !Task.isCancelled, self.catalog.sourceKey == sourceKey else { return }
+                if case .ready = self.phase {} else if self.loadTask == nil { self.playlists = rows; self.phase = .ready }
+                let live = Set(rows.map(\.id))
+                self.savedIndex = self.savedIndex.filter { live.contains($0.key) }
+                for row in rows {
+                    if let known = self.savedIndex[row.id], known.snapshot != nil, known.snapshot == row.snapshotID { continue }
+                    guard let ids = try await self.catalog.trackIDs(inPlaylist: row.id, accessToken: token) else { break }
+                    guard !Task.isCancelled, self.catalog.sourceKey == sourceKey else { return }
+                    self.savedIndex[row.id] = (row.snapshotID, ids)
+                }
+                self.indexedAt = Date()
+            } catch {
+                LyricsE2ELog.log("PLAYLIST index failed error=\(error.localizedDescription)")
+                self.indexedAt = Date().addingTimeInterval(-Self.indexRefreshInterval + 60)
+            }
+        }
     }
 
     public func isMember(_ playlist: PlaylistSummary) -> Bool {
@@ -401,6 +455,11 @@ public final class PlaylistPickerModel: ObservableObject {
                 var ids = self.membership[playlist.id] ?? []
                 if wasMember { ids.remove(track) } else { ids.insert(track) }
                 self.membership[playlist.id] = ids
+                if var indexed = self.savedIndex[playlist.id] {
+                    if wasMember { indexed.ids.remove(track) } else { indexed.ids.insert(track) }
+                    indexed.snapshot = nil
+                    self.savedIndex[playlist.id] = indexed
+                }
                 // The list changed outside this response, so refetch on reopen.
                 self.stale.insert(playlist.id)
                 self.cachedSnapshots[playlist.id] = nil
