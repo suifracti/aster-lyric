@@ -50,7 +50,7 @@ struct LyricDocumentWindow: View {
     var body: some View {
         Group {
             if let file {
-                LyricFileReader(file: file, name: url?.lastPathComponent ?? "", library: library)
+                LyricFileReader(file: file, name: url?.lastPathComponent ?? "", library: library, sourceURL: url)
             } else if let error {
                 ContentUnavailableView("歌词文件无法读取", systemImage: "doc.text", description: Text(error))
             } else { ProgressView("正在读歌词") }
@@ -81,6 +81,7 @@ struct LyricFileReader: View {
     let file: LocalLyricsFile
     let name: String
     let library: PersonalLyricsLibraryService
+    var sourceURL: URL?
     var destination: PersonalLyricsLibraryEntry?
     var close: (() -> Void)?
     @Environment(\.openSettings) private var openSettings
@@ -207,6 +208,10 @@ struct LyricFileReader: View {
                     Text(error ?? "\(file.lines.filter { !$0.originalText.isEmpty }.count) 行歌词")
                         .font(.caption).foregroundStyle(error == nil ? Color.secondary : .red)
                     Spacer(minLength: 0)
+                    PortableLyricsExportMenu(sourceURL: sourceURL) {
+                        PortableLyricsEdition(document: file.viewing(language).content, title: title, originalSource: "manualImport",
+                                              originalLocked: file.locked, translationLanguage: language, translationSource: "providerEmbedded")
+                    }
                     if let filed {
                         Button("阅读已存版本") {
                             SettingsNavigationRoute.shared.requestedLocation = .init(reading: filed)
@@ -258,6 +263,53 @@ struct LyricFileReader: View {
             defer { saving = false }
             do { filed = try await library.fileLyrics(file.viewing(language), with: entry.libraryTrack, archiveKey: entry.trackStableKey); error = nil }
             catch { self.error = error.localizedDescription }
+        }
+    }
+}
+
+/// A save panel belongs to the edition that opened it, including read-only files.
+struct PortableLyricsExportMenu: View {
+    var sourceURL: URL?
+    var edition: () -> PortableLyricsEdition
+
+    var body: some View {
+        Menu {
+            PortableLyricsExportItems(edition: edition(), sourceURL: sourceURL)
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+        .accessibilityLabel("导出这份歌词").help("导出这份歌词")
+    }
+}
+
+struct PortableLyricsExportItems: View {
+    let edition: PortableLyricsEdition
+    var sourceURL: URL?
+    var onSaved: ((URL) -> Void)?
+
+    var body: some View {
+        ForEach(edition.formats) { format in
+            Button(format.label) { save(format) }
+        }
+    }
+
+    private func save(_ format: PortableLyricsFormat) {
+        let panel = NSSavePanel()
+        panel.title = "导出这份歌词"
+        panel.nameFieldStringValue = edition.filename(for: format)
+        if let sourceURL { panel.directoryURL = sourceURL.deletingLastPathComponent() }
+        panel.allowedContentTypes = [UTType(filenameExtension: format.fileExtension) ?? .data]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            if let sourceURL, url.resolvingSymlinksInPath().standardizedFileURL == sourceURL.resolvingSymlinksInPath().standardizedFileURL {
+                throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteFileExistsError,
+                              userInfo: [NSLocalizedDescriptionKey: "请为副本选一个新文件名，保留打开的原文件。"])
+            }
+            try edition.contents(format).write(to: url, atomically: true, encoding: .utf8)
+            onSaved?(url)
+        } catch {
+            NSAlert(error: error).runModal()
         }
     }
 }

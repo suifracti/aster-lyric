@@ -147,8 +147,11 @@ struct LyricsEditorWindowView: View {
                 Button("导入 TXT", systemImage: "doc.text") { importTXT() }
                 Button("导入 LRC", systemImage: "square.and.arrow.down") { importLRC() }
                 Divider()
-                Button("导出原文", systemImage: "square.and.arrow.up") { exportOriginal() }
-                Button("导出翻译", systemImage: "text.badge.plus") { exportTranslation() }
+                if let edition = editor.portableEdition {
+                    PortableLyricsExportItems(edition: edition) { url in
+                        editor.reportExportResult("已导出 \(url.lastPathComponent)")
+                    }
+                }
             }
             Button("关闭") { dismiss() }
         }
@@ -703,48 +706,6 @@ struct LyricsEditorWindowView: View {
         }
     }
 
-    private func exportOriginal() {
-        guard let draft = editor.draft, let document = draft.document(source: draft.source) else { return }
-        saveFile(contents: LRCExporter.original(
-            document: document,
-            source: draft.source.rawValue,
-            locked: false
-        ), suggestedName: "\(draft.title ?? "lyrics").lrc")
-    }
-
-    private func exportTranslation() {
-        guard let draft = editor.draft, let document = draft.document(source: draft.source) else { return }
-        let selected = editor.selectedTranslation
-        let translations = selected?.lines
-            .sorted { $0.lineIndex < $1.lineIndex }
-            .map(\.translatedText)
-            ?? draft.lines.map { $0.translationText ?? "" }
-        guard translations.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { return }
-        saveFile(contents: LRCExporter.translation(
-            document: document,
-            translations: translations,
-            targetLanguage: selected?.record.targetLanguage ?? "und",
-            source: selected?.record.sourceKind.rawValue ?? "legacyEmbedded",
-            locked: selected?.record.isLocked ?? false
-        ), suggestedName: "\(draft.title ?? "lyrics").\(selected?.record.targetLanguage ?? "und").lrc")
-    }
-
-    private func saveFile(contents: String, suggestedName: String) {
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = suggestedName
-        // `.plainText` makes NSSavePanel append `.txt` to an otherwise valid
-        // LRC filename. Use the dynamic LRC UTI so exports remain reparsable
-        // as `song.lrc` / `song.zh-Hans.lrc`.
-        panel.allowedContentTypes = [UTType(filenameExtension: "lrc") ?? .data]
-        panel.allowsOtherFileTypes = true
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try contents.write(to: url, atomically: true, encoding: .utf8)
-            editor.reportExportResult("已导出 LRC：\(url.lastPathComponent)")
-        } catch {
-            editor.reportExportResult("导出失败：\(error.localizedDescription)")
-        }
-    }
 }
 
 private struct LyricsEditorRecordMark: View {

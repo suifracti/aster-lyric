@@ -1,6 +1,7 @@
 import Foundation
 import SQLite3
 import Darwin
+@testable import SpotifyLyrics
 
 @main struct ProductionDatabaseUpgradeContract {
     static func sql(_ db: OpaquePointer, _ sql: String) throws {
@@ -20,7 +21,7 @@ import Darwin
         let root = FileManager.default.homeDirectoryForCurrentUser
         precondition(root.path.hasPrefix("/tmp/") || root.path.hasPrefix("/private/tmp/"))
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        for version in [10, 11, 12] {
+        for version in [10, 11, 12, 13] {
             let url = root.appendingPathComponent("v\(version).sqlite3")
             precondition(!FileManager.default.fileExists(atPath: url.path))
             var db: OpaquePointer?
@@ -51,20 +52,27 @@ import Darwin
                     VALUES ('m1-timing','m1-parent','fixture','word','hash','[]',1);
 
                 """)
-            try sql(handle, "DROP INDEX translation_requests_completion_id; ALTER TABLE translation_requests DROP COLUMN completion_version_id;")
+            try sql(handle, "ALTER TABLE lyric_lines DROP COLUMN performer_id; ALTER TABLE lyric_lines DROP COLUMN background_text;")
+            if version < 13 { try sql(handle, "DROP INDEX translation_requests_completion_id; ALTER TABLE translation_requests DROP COLUMN completion_version_id;") }
             if version < 12 { try sql(handle, "DROP TABLE lyrics_selection_revocations;") }
             else { try sql(handle, "INSERT INTO lyrics_selection_revocations VALUES ('m1-fixture','m1-parent',1);") }
             if version == 10 { try sql(handle, "DROP TABLE translation_requests;") }
-            else { try sql(handle, "INSERT INTO translation_requests VALUES ('fixture-request','fixture-attempt','received','{\"fixture\":true}',1);") }
+            else { try sql(handle, "INSERT INTO translation_requests(request_key,attempt_id,phase,result_json,updated_at) VALUES ('fixture-request','fixture-attempt','received','{\"fixture\":true}',1);") }
             try sql(handle, "DELETE FROM schema_migrations WHERE version>\(version); PRAGMA user_version=\(version);")
-            precondition(scalar(handle, "SELECT count(*) FROM sqlite_master WHERE name='lyrics_selection_revocations'") == (version == 12 ? 1 : 0))
+            precondition(scalar(handle, "SELECT count(*) FROM sqlite_master WHERE name='lyrics_selection_revocations'") == (version >= 12 ? 1 : 0))
             precondition(scalar(handle, "SELECT count(*) FROM sqlite_master WHERE name='translation_requests'") == (version == 10 ? 0 : 1))
-            let tables = ["tracks", "lyrics_versions", "lyric_lines", "translation_versions", "translation_lines", "reading_versions", "reading_lines", "lyrics_timing_versions"] + (version >= 11 ? ["translation_requests"] : []) + (version == 12 ? ["lyrics_selection_revocations"] : [])
+            let tables = ["tracks", "lyrics_versions", "lyric_lines", "translation_versions", "translation_lines", "reading_versions", "reading_lines", "lyrics_timing_versions"] + (version >= 11 ? ["translation_requests"] : []) + (version >= 12 ? ["lyrics_selection_revocations"] : [])
             func snapshot() -> [String: [[String]]] {
                 var result: [String: [[String]]] = [:]
                 for table in tables {
                     var statement: OpaquePointer?
-                    precondition(sqlite3_prepare_v2(handle, "SELECT \(table == "translation_requests" ? "request_key,attempt_id,phase,result_json,updated_at" : "*") FROM \(table) ORDER BY rowid", -1, &statement, nil) == SQLITE_OK)
+                    let columns: String
+                    switch table {
+                    case "translation_requests": columns = "request_key,attempt_id,phase,result_json,updated_at"
+                    case "lyric_lines": columns = "lyrics_version_id,line_index,start_time,end_time,original_text,kana_text,romaji_text,translation_text"
+                    default: columns = "*"
+                    }
+                    precondition(sqlite3_prepare_v2(handle, "SELECT \(columns) FROM \(table) ORDER BY rowid", -1, &statement, nil) == SQLITE_OK)
                     defer { sqlite3_finalize(statement) }
                     var rows: [[String]] = []
                     while sqlite3_step(statement) == SQLITE_ROW {
@@ -79,15 +87,16 @@ import Darwin
             }
             let before = snapshot()
             try DatabaseMigrator.migrate(handle)
-            precondition(scalar(handle, "PRAGMA user_version") == 13)
+            precondition(scalar(handle, "PRAGMA user_version") == DatabaseMigrator.currentVersion)
             precondition(snapshot() == before, "v\(version) migration changed manual/locked/preferred/parent/translation/reading/timing/request assets")
             precondition(scalar(handle, "SELECT count(*) FROM schema_migrations WHERE version=11") == 1)
             precondition(scalar(handle, "SELECT count(*) FROM schema_migrations WHERE version=12") == 1)
             try DatabaseMigrator.migrate(handle)
             precondition(snapshot() == before, "repeated prepare changed assets")
-            precondition(scalar(handle, "SELECT count(*) FROM schema_migrations WHERE version IN (11,12,13)") == 3)
+            precondition(scalar(handle, "SELECT count(*) FROM schema_migrations WHERE version IN (11,12,13,14)") == 4)
             precondition(scalar(handle, "SELECT count(*) FROM translation_requests WHERE completion_version_id IS NOT NULL") == 0, "legacy association must not be guessed")
-            print("PASS actual v\(version) schema to v13; exact asset rows/parent chains/meta preserved; ordered ledger and idempotence")
+            precondition(scalar(handle, "SELECT count(*) FROM lyric_lines WHERE performer_id IS NOT NULL OR background_text IS NOT NULL") == 0)
+            print("PASS actual v\(version) schema to v\(DatabaseMigrator.currentVersion); exact asset rows/parent chains/meta preserved; ordered ledger and idempotence")
         }
     }
 

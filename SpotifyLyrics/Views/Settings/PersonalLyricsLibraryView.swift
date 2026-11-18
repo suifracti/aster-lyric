@@ -493,7 +493,7 @@ public struct PersonalLibraryTrackDetailView: View {
     private struct IncomingFile: Identifiable {
         let id = UUID()
         let file: LocalLyricsFile
-        let name: String
+        let url: URL
         let destination: PersonalLyricsLibraryEntry
     }
 
@@ -619,7 +619,7 @@ public struct PersonalLibraryTrackDetailView: View {
             if !usesCurrentTrackDetail { service.selectTrack(stableKey: stableKey) }
         }
         .sheet(item: $incomingFile) { incoming in
-            LyricFileReader(file: incoming.file, name: incoming.name, library: service, destination: incoming.destination,
+            LyricFileReader(file: incoming.file, name: incoming.url.lastPathComponent, library: service, sourceURL: incoming.url, destination: incoming.destination,
                             close: { incomingFile = nil })
                 .frame(minWidth: 460, idealWidth: 540, minHeight: 390, idealHeight: 530)
         }
@@ -640,7 +640,7 @@ public struct PersonalLibraryTrackDetailView: View {
                     return try LocalLyricsFile(data: data, kind: LocalLyricsFileKind(rawValue: url.pathExtension.lowercased()) ?? .txt,
                                                preferredLanguage: language)
                 }.value
-                incomingFile = IncomingFile(file: file, name: url.lastPathComponent, destination: entry)
+                incomingFile = IncomingFile(file: file, url: url, destination: entry)
             } catch { fileIssue = error.localizedDescription }
         }
     }

@@ -250,7 +250,8 @@ public enum LyricsPersistenceMapper {
                 originalText: line.originalText,
                 kanaText: line.kanaText,
                 romajiText: line.romajiText,
-                translationText: line.translationText
+                translationText: line.translationText,
+                performerID: line.performerID, backgroundText: line.backgroundText
             )
         }
     }
@@ -277,7 +278,8 @@ public enum LyricsPersistenceMapper {
                 endTime: line.endTime,
                 translationText: line.translationText,
                 romajiText: line.romajiText,
-                kanaText: line.kanaText
+                kanaText: line.kanaText,
+                performerID: line.performerID, backgroundText: line.backgroundText
             )
         }
         // Partial Assist timelines: is_synced=0 but some start_time values present.

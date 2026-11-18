@@ -4,7 +4,7 @@ import SQLite3
 /// Forward-only SQLite schema migrations. The repository calls this from its
 /// actor, so no migration work runs on MainActor.
 public enum DatabaseMigrator {
-    public static let currentVersion = 13
+    public static let currentVersion = 14
     public static let v4MigrationID = "track-identity-v4-initial"
     private static let waterSourceStableKey = "spotify-id:spotify:track:5mqkkcsrujqyakvolven0w|metadata:水曜日の約束|kawasakirio|水曜日の約束|171"
     private static let waterCanonicalStableKey = "spotify-id:5mqkkcsrujqyakvolven0w|metadata:水曜日の約束|kawasakirio|水曜日の約束|171"
@@ -152,6 +152,21 @@ public enum DatabaseMigrator {
                             ON translation_requests(completion_version_id) WHERE completion_version_id IS NOT NULL;
                         INSERT INTO schema_migrations(version, applied_at) VALUES (13, strftime('%s','now'));
                         PRAGMA user_version = 13;
+                        """)
+                    try execute(database, sql: "COMMIT;")
+                } catch {
+                    _ = try? execute(database, sql: "ROLLBACK;")
+                    throw error
+                }
+            }
+            if try integerValue(database, sql: "PRAGMA user_version;") == 13 {
+                try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
+                do {
+                    try execute(database, sql: """
+                        ALTER TABLE lyric_lines ADD COLUMN performer_id TEXT;
+                        ALTER TABLE lyric_lines ADD COLUMN background_text TEXT;
+                        INSERT INTO schema_migrations(version, applied_at) VALUES (14, strftime('%s','now'));
+                        PRAGMA user_version = 14;
                         """)
                     try execute(database, sql: "COMMIT;")
                 } catch {

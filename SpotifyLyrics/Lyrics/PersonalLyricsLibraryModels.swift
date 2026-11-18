@@ -476,6 +476,8 @@ public struct PersonalLyricsLibraryPackage: Equatable, Sendable, Codable {
         public let kanaText: String?
         public let romajiText: String?
         public let translationText: String?
+        public let performerID: String?
+        public let backgroundText: String?
 
         public init(
             lineIndex: Int,
@@ -484,7 +486,9 @@ public struct PersonalLyricsLibraryPackage: Equatable, Sendable, Codable {
             originalText: String,
             kanaText: String?,
             romajiText: String?,
-            translationText: String?
+            translationText: String?,
+            performerID: String? = nil,
+            backgroundText: String? = nil
         ) {
             self.lineIndex = lineIndex
             self.startTime = startTime
@@ -493,6 +497,8 @@ public struct PersonalLyricsLibraryPackage: Equatable, Sendable, Codable {
             self.kanaText = kanaText
             self.romajiText = romajiText
             self.translationText = translationText
+            self.performerID = performerID
+            self.backgroundText = backgroundText
         }
     }
 
@@ -918,6 +924,8 @@ struct LibraryPassagePage: Sendable {
         var startTime: TimeInterval?
         var endTime: TimeInterval?
         var timedSpans: [TimedTextSpan]?
+        var performerID: String?
+        var romanization: String?
 
         func matches(_ text: String) -> Bool {
             guard !text.isEmpty else { return false }
@@ -935,6 +943,12 @@ struct LibraryPassagePage: Sendable {
     let edition: String
     let lines: [Line]
     var matchesOriginalVersion = true
+    var language: String?
+    var originalSource = ""
+    var originalLocked = false
+    var translationLanguage: String?
+    var translationSource = ""
+    var translationLocked = false
 
     func originalOccurrence(of text: String, preferred: Int?) -> Int? {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)

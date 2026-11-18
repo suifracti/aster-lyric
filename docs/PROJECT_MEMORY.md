@@ -12,7 +12,7 @@
 | 清理缓存、查看备份占用、另一个窗口打开时也要备份最新歌词 | L-047 · SettingsDataController、writeDatabaseSnapshot、V3CanvasStore |
 | 从其他应用选字查歌词、⌘K 找回一句、搜到副歌却只打开歌曲档案 | L-043、L-046 · WorkspaceQuickFind、searchLibraryPassages |
 | 两份稿逐句对照、改译时借用另一版的句子、重复副歌错位 | L-049 · LibraryVersionComparison、LibraryTranslationRevisionDraft |
-| 从 Finder 打开歌词文件、给本机录音补稿、导入后已有版被换掉 | L-048 · LyricFileDocument、LocalLyricsFile、storeImportedFile |
+| 从 Finder 打开歌词文件、给本机录音补稿、导出手里的版本、入库后合声消失 | L-032、L-048 · LyricFileDocument、LocalLyricsFile、PortableLyricsEdition |
 | 新包、截图、构建/签名、实际运行是哪份 | L-002；DEVELOPMENT_WORKFLOW.md |
 | 极简、减少按钮、保留旧功能 | L-003；TOOLBAR_BEHAVIOR.md |
 | 找回旧环境光、模糊/缩放参数、样式合并；改 renderer/偏好 | L-004；AppSettingsStore.swift 与 authenticAmbientArtworkLayers |
@@ -468,6 +468,7 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **加一个可选数据先看有没有 JSON 列**：和声存在逐字时间的 JSON（`spans_payload`）里，`LineTimingPayload.backgroundText` 可选，没有时不写进 JSON，所以旧数据的去重比较和旧版本读取都不变，不用升数据库版本。
   - 2026-11-18 修订。加载和编辑统一用 `DocumentTimingPayload.decodeRows` 一次读出整条时间轴，可沿用同一份已校验的行和和声。先前加载每一行都会重读整首 JSON，手工调整一个词头或打开编辑器还会丢失和声。旧 `decode` 的元组接口仍然可用。
   - 不要为了存和声写出“有行但 spans 为空”的条目：`decode` 遇到空 spans 会让整份逐字时间作废。
+  - 无逐字的对唱、和声也属于原稿。v14 在原词行增加可空的演唱者和和声字段，旧哈希和选中稿继续有效。有逐字时先取所选时间轴标的声部，缺项从原词行补。此前版本丢失的无逐字声部可以通过重新存入字节相同的源文件补回。
   - **AMLL 把和声的译文、罗马音嵌在 `x-bg` 里面**（真实文件 One Last Kiss）。解析时和声里的 `x-translation` / `x-roman` 子 span 不算和声文字；只用手写的简单样例测不出来，要拿真实文件试。
   - 2026-11-18。行内注释与 Apple 头部的译文、转写均按原句保留。头部仅按 `for` 和 `itunes:key` 的完全匹配挂回主唱。多语译文先匹配应用目标语及文字系统，否则显示文件已有的一种。解析结果保留文件语言、元数据、和声与逐字；无时间文件按原序阅读，部分计时只给确有时间的行。旧库、锁定版本和用户译文选择沿用既有规则。[AMLL TTML 规范](https://github.com/amll-dev/amll-ttml-db/blob/main/instructions/ttml-specification-en.md)
 - **流动用 WKWebView 跑 butterchurn**：声音由 App 每秒 30 次把 1024 个采样（`Levels.waveform`）以 base64 送进页面，页面不用麦克风也不联网（CSP `default-src 'none'`）。`render({audioLevels})` 接受外部采样。
@@ -736,6 +737,8 @@ TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、
 多语 TTML 的每条译文按 XML 语言标记跟随原句排序。播放器、文档窗和编辑器按目标语言及文字系统选稿，整首保留同一语言，稀疏行留空。所有语言作为独立的词源译文入库；换显示语言、重复打开或后续 synchronize 均复用旧资产。同一文件的旧存档用录音、导入指纹与原词哈希识别。对旧的未标语种版本做人工修订时可指定子稿语种。
 
 已用独立 Bundle ID、临时数据库、停用 Keychain 和模型的 App 从 macOS 打开一个 LRC，经真实文档窗读取正文，点击存入并回读数据库。词库保护及 UTF-16 的证据在 LibraryRevisionsContractTests。
+
+文件、离线阅读和编辑器共用「导出这份歌词」。TTML 写实际逐字区间，未唱的标点和间隔照原文保留。文件保留各语种，档案只导出这份阅读页选中的译稿，编辑器使用眼前草稿。TXT 能带上所选读音，缺匹配原词的历史稿也能单独导出。已在独立 App 的系统存储面板另存并重开混合时间的 TTML，比对原文件字节一致。v5、v10 至 v13 升级均使用合成库。
 
 ## L-049 两份原词或译文逐句对读（2026-11-18）
 

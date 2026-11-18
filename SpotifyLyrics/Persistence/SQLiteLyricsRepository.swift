@@ -637,6 +637,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 providerSourceID: versionRecord.providerSourceID, contentHash: versionRecord.contentHash,
                 fileSourceHash: isFingerprintedFile ? sourceContentHash : nil)
             if let duplicateID {
+                if isFingerprintedFile {
+                    try restoreFileVoices(document.lines, versionID: duplicateID)
+                }
                 try storeSourceTranslations(document, versionID: duplicateID, sourceHash: sourceContentHash)
                 try attachTimingVersionIfNeeded(
                     document: document,
@@ -2245,21 +2248,11 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     }
 
     private static func documentWithoutTranslations(_ document: LyricsDocument) -> LyricsDocument {
-        let lines = document.lines.map { line in
-            LyricLine(
-                id: line.id,
-                timestamp: line.timestamp,
-                originalText: line.originalText,
-                endTime: line.endTime,
-                translationText: nil,
-                romajiText: line.romajiText,
-                kanaText: line.kanaText,
-                rubyTokens: line.rubyTokens,
-                performerID: line.performerID,
-                timedSpans: line.timedSpans,
-                readingRepresentationID: line.readingRepresentationID,
-                readingSurfaceText: line.readingSurfaceText
-            )
+        let lines = document.lines.map { original in
+            var line = original
+            line.translationText = nil
+            line.sourceTranslations = []
+            return line
         }
         return LyricsDocument(
             identity: document.identity,
@@ -2336,7 +2329,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 endTime: line.endTime,
                 translationText: line.translationText,
                 romajiText: line.romajiText,
-                kanaText: line.kanaText
+                kanaText: line.kanaText,
+                performerID: line.performerID, backgroundText: line.backgroundText
             )
         }
         let timedIndices: Set<Int>? = {
@@ -3295,8 +3289,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         let statement = try prepare("""
             INSERT INTO lyric_lines(
                 lyrics_version_id, line_index, start_time, end_time,
-                original_text, kana_text, romaji_text, translation_text
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                original_text, kana_text, romaji_text, translation_text, performer_id, background_text
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """)
         defer { sqlite3_finalize(statement) }
         try bindText(record.lyricsVersionID.uuidString, at: 1, to: statement)
@@ -3307,7 +3301,30 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         try bindText(record.kanaText, at: 6, to: statement)
         try bindText(record.romajiText, at: 7, to: statement)
         try bindText(record.translationText, at: 8, to: statement)
+        try bindText(record.performerID, at: 9, to: statement)
+        try bindText(record.backgroundText, at: 10, to: statement)
         try stepDone(statement)
+    }
+
+    /// A byte-identical file can restore voices lost by older imports. The
+    /// original row, order and any already recorded voice still win.
+    private func restoreFileVoices(_ lines: [LyricLine], versionID: UUID) throws {
+        guard lines.contains(where: { $0.performerID != nil || $0.backgroundText != nil }) else { return }
+        let statement = try prepare("""
+            UPDATE lyric_lines SET performer_id = COALESCE(performer_id, ?1), background_text = COALESCE(background_text, ?2)
+            WHERE lyrics_version_id = ?3 AND line_index = ?4 AND original_text = ?5
+              AND ((performer_id IS NULL AND ?1 IS NOT NULL) OR (background_text IS NULL AND ?2 IS NOT NULL));
+            """)
+        defer { sqlite3_finalize(statement) }
+        try bindText(versionID.uuidString, at: 3, to: statement)
+        for (index, line) in lines.enumerated() where line.performerID != nil || line.backgroundText != nil {
+            sqlite3_reset(statement)
+            try bindText(line.performerID, at: 1, to: statement)
+            try bindText(line.backgroundText, at: 2, to: statement)
+            try bindInt(index, at: 4, to: statement)
+            try bindText(line.originalText, at: 5, to: statement)
+            try stepDone(statement)
+        }
     }
 
     private func deleteVersionRows(versionID: UUID) throws {
@@ -3536,7 +3553,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     private func fetchLines(versionID: UUID) throws -> [DatabaseLyricLineRecord] {
         let statement = try prepare("""
             SELECT lyrics_version_id, line_index, start_time, end_time,
-                   original_text, kana_text, romaji_text, translation_text
+                   original_text, kana_text, romaji_text, translation_text, performer_id, background_text
             FROM lyric_lines WHERE lyrics_version_id = ? ORDER BY line_index ASC;
             """)
         defer { sqlite3_finalize(statement) }
@@ -3558,7 +3575,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                     originalText: original,
                     kanaText: columnText(statement, index: 5),
                     romajiText: columnText(statement, index: 6),
-                    translationText: columnText(statement, index: 7)
+                    translationText: columnText(statement, index: 7),
+                    performerID: columnText(statement, index: 8), backgroundText: columnText(statement, index: 9)
                 )
             )
         }
@@ -3692,9 +3710,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                                                         document: document) else { return document }
         var lines = document.lines
         for (index, row) in selected.rows {
-            lines[index].performerID = row.performerID
+            lines[index].performerID = row.performerID ?? lines[index].performerID
             lines[index].timedSpans = row.spans
-            lines[index].backgroundText = row.backgroundText.flatMap { $0.isEmpty ? nil : $0 }
+            lines[index].backgroundText = row.backgroundText.flatMap { $0.isEmpty ? nil : $0 } ?? lines[index].backgroundText
         }
         return document.replacingLines(lines, timingVersionID: selected.record.id)
     }
@@ -3995,6 +4013,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         var translated: [Int: String] = [:]
         var hasStoredTranslation = false
         var pronunciation: [Int: String] = [:]
+        var romanization: [Int: String] = [:]
         var edition = attached ? "原词自带的译文与读音" : (version.isCurrent ? "当前原词" : "已保存的原词")
         if let translation {
             let valid = try loadTranslationVersions(lyricsVersionID: lyricsID, targetLanguage: translation.targetLanguage,
@@ -4008,7 +4027,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                     LibraryPassagePage.Line(id: $0.lineIndex, original: "", translation: $0.translatedText)
                 }
                 return LibraryPassagePage(entry: entry, originalVersionID: lyricsID, edition: "历史译文 · 单独阅读", lines: lines,
-                                          matchesOriginalVersion: false)
+                                          matchesOriginalVersion: false, translationLanguage: translation.targetLanguage,
+                                          translationSource: translation.sourceKind, translationLocked: translation.isLocked)
             }
         }
         if let reading {
@@ -4018,11 +4038,16 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 return LibraryPassagePage(entry: entry, originalVersionID: lyricsID, edition: "历史读音 · 单独阅读", lines: lines,
                                           matchesOriginalVersion: false)
             }
-            for line in rows { pronunciation[line.lineIndex] = line.readingText }
+            for line in rows {
+                pronunciation[line.lineIndex] = line.readingText
+                if reading.representationID == ReadingRepresentationID.romaji.rawValue { romanization[line.lineIndex] = line.readingText }
+            }
             edition = "已保存的读音"
         } else {
+            for line in originals { romanization[line.lineIndex] = line.romajiText }
             var lockedLegacyLines: Set<Int> = []
             for layer in try fetchReadingLayers(versionID: lyricsID) {
+                if let value = layer.romajiText { romanization[layer.lineIndex] = value }
                 let text = [layer.kanaText, layer.romajiText].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
                 if !text.isEmpty {
                     pronunciation[layer.lineIndex] = text
@@ -4038,6 +4063,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             for item in selectedReadings {
                 guard try fetchReadingVersion(versionID: item.id)?.sourceContentHash == hash else { continue }
                 for row in try fetchReadingLines(versionID: item.id) {
+                    if item.representationID == ReadingRepresentationID.romaji.rawValue, !lockedLegacyLines.contains(row.lineIndex) {
+                        romanization[row.lineIndex] = row.readingText
+                    }
                     guard let value = row.readingText, !value.isEmpty,
                           parts[row.lineIndex]?.contains(value) != true else { continue }
                     parts[row.lineIndex, default: []].append(value)
@@ -4059,10 +4087,16 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             return LibraryPassagePage.Line(id: line.lineIndex, original: line.originalText,
                      translation: hasStoredTranslation ? translated[line.lineIndex] : line.translationText,
                      reading: pronunciation[line.lineIndex] ?? (embedded.isEmpty ? nil : embedded),
-                     background: timing[line.lineIndex]?.backgroundText, startTime: line.startTime,
-                     endTime: line.endTime, timedSpans: timing[line.lineIndex]?.spans)
+                     background: timing[line.lineIndex]?.backgroundText ?? line.backgroundText, startTime: line.startTime,
+                     endTime: line.endTime, timedSpans: timing[line.lineIndex]?.spans,
+                     performerID: timing[line.lineIndex]?.performerID ?? line.performerID,
+                     romanization: romanization[line.lineIndex])
         }
-        return LibraryPassagePage(entry: entry, originalVersionID: lyricsID, edition: edition, lines: lines)
+        return LibraryPassagePage(entry: entry, originalVersionID: lyricsID, edition: edition, lines: lines,
+                                  language: version.language, originalSource: version.source, originalLocked: version.isLocked,
+                                  translationLanguage: hasStoredTranslation ? translation?.targetLanguage : nil,
+                                  translationSource: hasStoredTranslation ? translation?.sourceKind ?? "" : "legacyEmbedded",
+                                  translationLocked: hasStoredTranslation && translation?.isLocked == true)
     }
 
     /// SQLite's change counters include other repository connections. Only a
@@ -4684,33 +4718,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(lyricsStmt, 12))
             let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(lyricsStmt, 13))
 
-            let lineStmt = try prepare("""
-                SELECT line_index, start_time, end_time, original_text,
-                       kana_text, romaji_text, translation_text
-                FROM lyric_lines WHERE lyrics_version_id = ?
-                ORDER BY line_index ASC;
-                """)
-            try bindText(id.uuidString, at: 1, to: lineStmt)
-            var lines: [PersonalLyricsLibraryPackage.PackageLyricLine] = []
-            while sqlite3_step(lineStmt) == SQLITE_ROW {
-                let idx = Int(sqlite3_column_int(lineStmt, 0))
-                let st = sqlite3_column_type(lineStmt, 1) != SQLITE_NULL ? sqlite3_column_double(lineStmt, 1) : nil
-                let et = sqlite3_column_type(lineStmt, 2) != SQLITE_NULL ? sqlite3_column_double(lineStmt, 2) : nil
-                let orig = columnText(lineStmt, index: 3) ?? ""
-                let kana = columnText(lineStmt, index: 4)
-                let romaji = columnText(lineStmt, index: 5)
-                let trans = columnText(lineStmt, index: 6)
-                lines.append(PersonalLyricsLibraryPackage.PackageLyricLine(
-                    lineIndex: idx,
-                    startTime: st,
-                    endTime: et,
-                    originalText: orig,
-                    kanaText: kana,
-                    romajiText: romaji,
-                    translationText: trans
-                ))
+            let lines = try fetchLines(versionID: id).map { line in
+                PersonalLyricsLibraryPackage.PackageLyricLine(
+                    lineIndex: line.lineIndex, startTime: line.startTime, endTime: line.endTime,
+                    originalText: line.originalText, kanaText: line.kanaText, romajiText: line.romajiText,
+                    translationText: line.translationText, performerID: line.performerID, backgroundText: line.backgroundText
+                )
             }
-            sqlite3_finalize(lineStmt)
 
             pkgLyrics.append(PersonalLyricsLibraryPackage.PackageLyricsVersion(
                 id: id,
@@ -5128,8 +5142,14 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                     let lineInsert = try prepare("""
                         INSERT OR IGNORE INTO lyric_lines(
                             lyrics_version_id, line_index, start_time, end_time,
-                            original_text, kana_text, romaji_text, translation_text
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                            original_text, kana_text, romaji_text, translation_text, performer_id, background_text
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(lyrics_version_id, line_index) DO UPDATE SET
+                            performer_id = COALESCE(lyric_lines.performer_id, excluded.performer_id),
+                            background_text = COALESCE(lyric_lines.background_text, excluded.background_text)
+                        WHERE lyric_lines.original_text = excluded.original_text
+                          AND ((lyric_lines.performer_id IS NULL AND excluded.performer_id IS NOT NULL)
+                            OR (lyric_lines.background_text IS NULL AND excluded.background_text IS NOT NULL));
                         """)
                     try bindText(lv.id.uuidString, at: 1, to: lineInsert)
                     try bindInt(line.lineIndex, at: 2, to: lineInsert)
@@ -5139,6 +5159,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                     try bindText(line.kanaText, at: 6, to: lineInsert)
                     try bindText(line.romajiText, at: 7, to: lineInsert)
                     try bindText(line.translationText, at: 8, to: lineInsert)
+                    try bindText(line.performerID, at: 9, to: lineInsert)
+                    try bindText(line.backgroundText, at: 10, to: lineInsert)
                     try stepDone(lineInsert)
                     sqlite3_finalize(lineInsert)
                 }

@@ -171,9 +171,9 @@ public enum LRCImportMatcher {
 
 public enum LRCExporter {
     public static func original(document: LyricsDocument, source: String, locked: Bool) -> String {
-        export(document: document, text: document.lines.map(\.originalText), metadata: [
-            ("source", source), ("locked", locked ? "true" : "false")
-        ])
+        var metadata = [("source", source), ("locked", locked ? "true" : "false")]
+        if let language = document.language, !language.isEmpty { metadata.append(("language", language)) }
+        return export(document: document, text: document.lines.map(\.originalText), metadata: metadata)
     }
 
     public static func translation(document: LyricsDocument, translations: [String], targetLanguage: String, source: String, locked: Bool) -> String {

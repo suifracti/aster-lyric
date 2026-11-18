@@ -4,6 +4,84 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class LibraryRevisionsContractTests: XCTestCase {
+    func testPortableTTMLPreservesSourceLanguagesAndExportsTheExactArchivedTranslation() async throws {
+        let text = """
+        <tt xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xml:lang="ja"><body><div>
+        <p begin="0s" end="2.5s" ttm:agent="v1">「<span begin="0.125s" end="1s">風</span> &amp; 海」
+        <span ttm:role="x-translation" xml:lang="en">wind &amp; sea</span><span ttm:role="x-translation" xml:lang="zh-Hans">风与海</span><span ttm:role="x-roman">kaze to umi</span></p>
+        <p ttm:agent="v2">間奏<span ttm:role="x-bg">（小声）</span></p></div></body></tt>
+        """
+        let file = try LocalLyricsFile(data: Data(text.utf8), kind: .ttml, preferredLanguage: "en")
+        let track = Track(title: "潮 & 汐", artist: "一 < 二", album: "纸上的歌", duration: 9)
+        let edition = PortableLyricsEdition(document: file.document(for: track), title: track.title, translationLanguage: "en")
+        let copy = try LocalLyricsFile(data: Data(edition.contents(.ttml).utf8), kind: .ttml, preferredLanguage: "zh-Hans")
+        XCTAssertEqual(copy.translationLanguages, ["en", "zh-Hans"])
+        XCTAssertEqual(copy.content.title, track.title)
+        XCTAssertEqual(copy.content.artist, track.artist)
+        XCTAssertEqual(copy.lines.map(\.originalText), file.lines.map(\.originalText))
+        XCTAssertEqual(copy.lines.map(\.timedSpans), file.lines.map(\.timedSpans))
+        XCTAssertEqual(copy.content.explicitlyTimedLineIndices, [0])
+        XCTAssertEqual(copy.lines.map(\.performerID), ["v1", "v2"])
+        XCTAssertEqual(copy.lines.map(\.backgroundText), [nil, "小声"])
+        XCTAssertEqual(copy.lines.map(\.romajiText), ["kaze to umi", nil])
+
+        let repo = SQLiteLyricsRepository(databaseURL: NativeTestRuntime.root.appendingPathComponent("\(UUID()).sqlite3"))
+        let target = try await repo.importLyricFile(file, into: track)
+        let detail = try await repo.loadPersonalLibraryTrackDetail(stableKey: target.trackKey)
+        let zh = try XCTUnwrap(detail?.translationVersions.first { $0.targetLanguage == "zh-Hans" })
+        let loaded = try await repo.readLibraryPassage(.init(trackKey: target.trackKey, source: .translation(zh.id)))
+        let page = try XCTUnwrap(loaded).portableEdition
+        let exported = try LocalLyricsFile(data: Data(page.contents(.ttml).utf8), kind: .ttml, preferredLanguage: "en")
+        XCTAssertEqual(exported.translationLanguages, ["zh-Hans"])
+        XCTAssertEqual(exported.lines.map(\.translationText), ["风与海", nil])
+        XCTAssertEqual(exported.lines.map(\.performerID), copy.lines.map(\.performerID))
+        XCTAssertEqual(exported.lines.map(\.timedSpans), copy.lines.map(\.timedSpans))
+        XCTAssertTrue(page.contents(.translationLRC).contains("[00:00.000]风与海"))
+        XCTAssertTrue(page.contents(.readingText).contains("（小声）"))
+    }
+
+    func testLineOnlyDuetSurvivesFilingAndMovingTheArchive() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("first.sqlite3"))
+        let track = Track(title: "两个人的信", artist: "测试", album: "", duration: 0)
+        let identity = TrackIdentity(track: track)
+        let text = """
+        <tt xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div>
+        <p ttm:agent="v1">寄出<span ttm:role="x-bg">（回声）</span></p>
+        <p ttm:agent="v2">收到</p></div></body></tt>
+        """
+        let file = try LocalLyricsFile(data: Data(text.utf8), kind: .ttml, preferredLanguage: "zh")
+        let target = try await repo.importLyricFile(file, into: track)
+        let fromDisk = try await repo.readLibraryPassage(target)
+        XCTAssertEqual(fromDisk?.lines.first?.background, file.lines.first?.backgroundText)
+        let detail = try await repo.loadPersonalLibraryTrackDetail(stableKey: target.trackKey)
+        XCTAssertEqual(detail?.timingVersions.count, 0)
+        let packed = try await repo.exportPersonalLibraryPackage(stableKey: target.trackKey)
+        let restored = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("second.sqlite3"))
+        try await restored.importPersonalLibraryPackage(packed)
+        let held = try await restored.loadBestStored(track: track, identity: identity)
+        XCTAssertEqual(held?.document.lines.map(\.performerID), ["v1", "v2"])
+        XCTAssertEqual(held?.document.lines.first?.backgroundText, file.lines.first?.backgroundText)
+        XCTAssertEqual(held?.document.hasTimedSpans, false)
+
+        let url = root.appendingPathComponent("second.sqlite3")
+        try executeSQL("""
+            ALTER TABLE lyric_lines DROP COLUMN performer_id;
+            ALTER TABLE lyric_lines DROP COLUMN background_text;
+            DELETE FROM schema_migrations WHERE version = 14;
+            PRAGMA user_version = 13;
+            """, at: url)
+        let upgraded = SQLiteLyricsRepository(databaseURL: url)
+        let prior = try await upgraded.readLibraryPassage(target)
+        XCTAssertEqual(prior?.lines.map(\.original), ["寄出", "收到"])
+        XCTAssertNil(prior?.lines.first?.background)
+        let recovered = try await upgraded.importLyricFile(file, into: track)
+        XCTAssertEqual(recovered, target)
+        let voices = try await upgraded.loadBestStored(track: track, identity: identity)
+        XCTAssertEqual(voices?.document.lines.map(\.performerID), ["v1", "v2"])
+        XCTAssertEqual(voices?.document.lines.first?.backgroundText, "回声")
+    }
+
     func testLocalFileReadsUTF16AndKeepsUntimedLRCLinesInPlace() throws {
         let ttml = #"<?xml version="1.0" encoding="UTF-16"?><tt><body><div><p>纸上</p></div></body></tt>"#
         let utf16 = Data([0xff, 0xfe]) + (try XCTUnwrap(ttml.data(using: .utf16LittleEndian)))

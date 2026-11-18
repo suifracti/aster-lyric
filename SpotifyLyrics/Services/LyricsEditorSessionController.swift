@@ -110,6 +110,20 @@ public final class LyricsEditorSessionController: ObservableObject {
         draft?.isDirty == true || pendingImport != nil || pendingTextImport != nil || pendingTranslationPaste != nil
     }
 
+    var portableEdition: PortableLyricsEdition? {
+        guard let draft, let document = draft.document(source: draft.source) else { return nil }
+        let saved = availableVersions.first { $0.record.id == draft.sourceVersionID }?.record
+        let changedLyrics = draft.lines.map(Self.lyricsProjection) != baseLyricsLines || lockedReadingIDs != baseLockedReadingIDs
+        let changedTranslation = draft.lines.map(Self.translationText) != baseTranslationLines
+        let translation = selectedTranslation?.record
+        return PortableLyricsEdition(document: document, title: document.title ?? "歌词",
+            originalSource: changedLyrics ? LyricsSource.manualEdit.rawValue : draft.source.rawValue,
+            originalLocked: !changedLyrics && saved?.isLocked == true,
+            translationLanguage: translation?.targetLanguage ?? (changedTranslation ? translationConfiguration.targetLanguage : nil),
+            translationSource: changedTranslation ? "manualEdit" : translation?.sourceKind.rawValue ?? "legacyEmbedded",
+            translationLocked: !changedTranslation && translation?.isLocked == true)
+    }
+
     public var currentIdentity: TrackIdentity? { identity }
     public var currentSourceVersionID: UUID? { sourceVersionID }
     public var currentSourceContentHash: String? { sourceContentHash }

@@ -92,6 +92,7 @@ struct LibraryPassageReader: View {
                                 HStack {
                                     Text(page.entry.artist).font(.callout).foregroundStyle(.secondary)
                                     Spacer()
+                                    PortableLyricsExportMenu { page.portableEdition }
                                     if page.lines.contains(where: { !$0.original.isEmpty }) {
                                         Button { startRecall(page, anchor: focusedLine) } label: {
                                             Label("接下一句", systemImage: "text.bubble")

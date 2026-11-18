@@ -144,6 +144,8 @@ public struct DatabaseLyricLineRecord: Equatable, Sendable {
     public let kanaText: String?
     public let romajiText: String?
     public let translationText: String?
+    public let performerID: String?
+    public let backgroundText: String?
 
     public init(
         lyricsVersionID: UUID,
@@ -153,7 +155,9 @@ public struct DatabaseLyricLineRecord: Equatable, Sendable {
         originalText: String,
         kanaText: String? = nil,
         romajiText: String? = nil,
-        translationText: String? = nil
+        translationText: String? = nil,
+        performerID: String? = nil,
+        backgroundText: String? = nil
     ) {
         self.lyricsVersionID = lyricsVersionID
         self.lineIndex = lineIndex
@@ -163,6 +167,8 @@ public struct DatabaseLyricLineRecord: Equatable, Sendable {
         self.kanaText = kanaText
         self.romajiText = romajiText
         self.translationText = translationText
+        self.performerID = performerID
+        self.backgroundText = backgroundText
     }
 }
 
