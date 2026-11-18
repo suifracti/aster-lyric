@@ -269,7 +269,7 @@ struct V3LibrarySearchPanel: View {
     }
     private func libraryRow(_ entry: PersonalLyricsLibraryEntry, isSelected: Bool) -> some View {
         HStack(spacing: 8) {
-            AsyncImage(url: entry.artworkURL) { $0.resizable().scaledToFill() } placeholder: {
+            CachedArtwork(url: entry.artworkURL) {
                 Image(systemName: "music.note").frame(maxWidth: .infinity, maxHeight: .infinity).background(.white.opacity(0.07))
             }.frame(width: 32, height: 32).clipShape(RoundedRectangle(cornerRadius: 5))
             VStack(alignment: .leading, spacing: 2) {

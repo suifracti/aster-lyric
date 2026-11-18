@@ -42,6 +42,7 @@
 | 视频背景（Canvas）、歌手照片背景、按封面配色、随音乐律动、拖进度吸附、跳转回弹、脏词显示 | L-022；SpotifyLocalCache、V3BackdropMedia、CoverColorRoute、V3MusicPulse、LyricCensorRestorer |
 | 不同画面背景大小不一样、取景切了没效果、繁体歌名对不上简体来源、别人有逐字/对唱我们没有 | L-023；V3BackdropArtworkGeometry、v3SharedBackdropComplete、TrackTextNormalizer.normalize、KRCParser、QRCParser |
 | 逐字上浮/长音发光动画跳回开头、状态栏弹窗改版、封面闪占位图或露出方形底板、暂停褪色、桌面歌词情境隐藏 | L-024；LyricLineView animateLift、MenuBarLyricsPopoverView、ArtworkView、v3PauseFadesColor、FloatingLyricsWindowController.observeContext |
+| 主窗口有封面，歌词库、找歌、歌单或情境仍显示占位图或上一首 | L-024；CachedArtwork、ArtworkImageLoader、V3RainLens |
 | 情境一开旧画面切不过去、光色不走封面色、同一首对唱在不同窗口不一样 | L-052；V3ListeningPresentation、V3RoomOverrides、LyricsTimeline.presentedLyrics |
 | 选过新画面后找不到柔和光晕或独立色场、体验版本库打开错分类 | L-052；V3SceneFamily.olderPictures、SettingsLocation.versionsFor |
 | 合唱被标成某个人独唱、桌面歌词或灵动岛看不出谁在唱 | L-052；LyricsTimeline.VoicePresentation |
@@ -449,6 +450,7 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **本 App 的电脑操作被策略禁止**（`request_access` 返回 policyDenied），状态栏弹窗打不开做真窗口核对；只能用 `Scripts/ui-snapshots.sh <dir> menubar-light menubar-dark`。主窗口仍可用 `screencapture -l` 拍。
 - **换歌时封面闪一下占位图**：`ArtworkView` 原来先把图置空再加载。现在保留旧图，新图载入后从轻微模糊中显出，再移除旧图；新歌没有封面时照旧不保留旧图。任务键只用封面地址，同一张专辑换歌不再重播。
 - **非正方形前景封面露出方形底板（2026-11-18）。** Spotify 的 Superfly 这张封面原图为 568×640。`ArtworkView` 在方形槽里用 fit 放图，却把占位渐变、整体裁切、边框和效果几何留在方形槽上。现在保持原图取景和固定布局槽，圆角、边框、题句、进度与情境效果都跟随实际封面矩形；切歌显影期间仍保留原有交接，缺封面时用同一层圆角裁切绘制占位图。
+- **已有封面在别的入口仍显示占位（2026-11-19）。** 档案、找歌和队列的缩略图原来另用 `AsyncImage`，读不到听歌窗已解码的封面。现在这些入口、歌单选择器、最近播放、封面墙和拍立得共用 `CachedArtwork`，沿用 `ArtworkImageLoader` 的本机文件与网络缓存。缩略图保留各自裁切，封面和雨滴玻璃按当前 URL 显示并拒绝已取消的加载结果。定向原生测试先复现临时源文件消失后歌单的封面变空，再验证复用播放已加载的长方形封面，以及地址清空以后不串图。
 - **暂停褪色**用一层灰色 `.blendMode(.saturation)`，只在暂停 1.5 秒后才插入。播放时不存在这层，不多一次全窗合成。跳转造成的短暂停顿不会触发。
 - **桌面歌词情境隐藏**：CGWindowList 的第 0 层窗口要在桌面歌词所在屏幕上覆盖全屏。只看宽高，会把另一块同分辨率的屏幕也判成全屏。用显卡的屏幕矩形与窗口矩形比较四条边，两者都以主屏左上角为原点。隐藏期间保留鼠标穿透设置。见 Apple 的 [CGDisplayBounds](https://developer.apple.com/documentation/coregraphics/cgdisplaybounds(_:)) 与 [kCGWindowBounds](https://developer.apple.com/documentation/coregraphics/kcgwindowbounds)。
 - **侧拉工具栏**：右缘 76 pt 内触发，竖列居中，从窗外滑入；悬停面板改为 `preferredEdge: .minX`，即向左打开（`V3ToolPopoverAnchor` 里按样式判断）。`v3_toolbar_model_contract` 断言了样式清单，加样式要一并更新。

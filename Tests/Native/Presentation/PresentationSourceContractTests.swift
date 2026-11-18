@@ -351,6 +351,44 @@ final class PresentationSourceContractTests: XCTestCase {
         XCTAssertEqual(settings.v3AtmosphereLevel(for: .ambient), 0)
     }
 
+    @MainActor
+    func testPlaylistCoverReusesArtworkAlreadyLoadedForPlayback() async throws {
+        let file = NativeTestRuntime.root.appendingPathComponent("cover-\(UUID()).tiff")
+        let artwork = NSImage(size: CGSize(width: 24, height: 48), flipped: false) { rect in
+            NSColor.magenta.setFill()
+            rect.fill()
+            return true
+        }
+        let contents = try XCTUnwrap(artwork.tiffRepresentation)
+        try contents.write(to: file)
+        let loaded = await ArtworkImageLoader.shared.image(for: file)
+        XCTAssertNotNil(loaded)
+        // The thumbnail must use the image playback already loaded even if
+        // the original temporary file is no longer available.
+        try FileManager.default.removeItem(at: file)
+
+        let host = NSHostingView(rootView: PlaylistCover(url: file).frame(width: 40, height: 40))
+        let window = NSWindow(contentRect: NSRect(x: -2000, y: -2000, width: 40, height: 40),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = host
+        window.orderBack(nil)
+        try await Task.sleep(for: .milliseconds(100))
+
+        func centerShowsCover() throws -> Bool {
+            host.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let color = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.sRGB))
+            return color.redComponent > 0.7 && color.blueComponent > 0.7 && color.greenComponent < 0.3
+        }
+        XCTAssertTrue(try centerShowsCover())
+        host.rootView = PlaylistCover(url: nil).frame(width: 40, height: 40)
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertFalse(try centerShowsCover())
+    }
+
     func testTopEdgePlayerClearsToolbarOrUsesBottomWithoutShrinking() {
         for (width, toolbarX, expectedEdge) in [(1200.0, 600.0, V3WindowEdgeControlPositioner.Edge.top),
                                                (700.0, 300.0, .bottom)] {

@@ -365,9 +365,7 @@ struct SongSearchResultRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Button(action: viewLyrics) {
-                AsyncImage(url: result.artworkURL ?? result.track.artworkURL) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
+                CachedArtwork(url: result.artworkURL ?? result.track.artworkURL) {
                     Image(systemName: "music.note").frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(Color.secondary.opacity(0.1))
                 }

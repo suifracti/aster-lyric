@@ -205,19 +205,13 @@ struct PlaylistCover: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.1))
-            if let url {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Color.clear
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-            } else {
+            CachedArtwork(url: url) {
                 Image(systemName: "music.note.list")
                     .font(.system(size: 11))
                     .foregroundStyle(Color.primary.opacity(0.5))
             }
         }
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }
 

@@ -204,7 +204,7 @@ struct V3PlaylistPanel: View {
     }
     private func trackRowLabel(_ item: SpotifyPlaylistTrack, playing: Bool) -> some View {
         HStack(spacing: 8) {
-            AsyncImage(url: item.track.artworkURL) { $0.resizable().scaledToFill() } placeholder: {
+            CachedArtwork(url: item.track.artworkURL) {
                 if browser.source == .appleMusic, browser.selectedID != PlaylistBrowserModel.likedID {
                     Text("\(item.offset + 1)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
                         .accessibilityLabel("歌单第 \(item.offset + 1) 首")
@@ -249,7 +249,7 @@ struct V3PlaylistQueuePreview: View {
                 HStack(spacing: 8) {
                     Button { browser.jumpToQueuedTrack(at: item.offset, expecting: track) } label: {
                         HStack(spacing: 8) {
-                            AsyncImage(url: track.artworkURL) { $0.resizable().scaledToFill() } placeholder: { Image(systemName: "music.note") }
+                            CachedArtwork(url: track.artworkURL) { Image(systemName: "music.note") }
                                 .frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 4))
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(track.title).lineLimit(1)

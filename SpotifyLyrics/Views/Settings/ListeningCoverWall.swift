@@ -71,14 +71,11 @@ private struct ListeningWallTile: View {
     let tile: ListeningCoverWall.Tile
     let hovered: Bool
     let dimmed: Bool
-    @State private var image: NSImage?
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.14))
-            if let image {
-                Image(nsImage: image).resizable().scaledToFill()
-            } else {
+            CachedArtwork(url: tile.entry.artworkURL) {
                 Image(systemName: "music.note").font(.system(size: 24)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -102,10 +99,5 @@ private struct ListeningWallTile: View {
         .opacity(dimmed ? 0.3 : 1)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(tile.entry.title)，\(tile.entry.artist)" + (tile.plays > 1 ? "，听了 \(tile.plays) 次" : ""))
-        .task(id: tile.entry.artworkURL) {
-            let loaded = await ArtworkImageLoader.shared.image(for: tile.entry.artworkURL)
-            guard !Task.isCancelled else { return }
-            image = loaded
-        }
     }
 }

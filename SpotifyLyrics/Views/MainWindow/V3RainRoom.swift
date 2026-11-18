@@ -1503,13 +1503,10 @@ enum V3WaterLight {
 struct V3MiniPolaroid: View {
     let artworkURL: URL?
     let line: String
-    @State private var cover: NSImage?
     var body: some View {
         VStack(spacing: 4) {
-            Group {
-                if let cover { Image(nsImage: cover).resizable().scaledToFill() } else { Color(white: 0.25) }
-            }
-            .frame(width: 112, height: 112).clipped()
+            CachedArtwork(url: artworkURL) { Color(white: 0.25) }
+                .frame(width: 112, height: 112).clipped()
             Text(line.isEmpty ? " " : line).font(V3SceneHand.font(size: 11))
                 .foregroundStyle(Color(red: 0.16, green: 0.17, blue: 0.24).opacity(0.86))
                 .lineLimit(1).minimumScaleFactor(0.5).frame(width: 112, height: 18)
@@ -1519,7 +1516,6 @@ struct V3MiniPolaroid: View {
         .rotationEffect(.degrees(-4))
         .shadow(color: .black.opacity(0.4), radius: 10, y: 5)
         .allowsHitTesting(false)
-        .task(id: artworkURL) { if let artworkURL { cover = await ArtworkImageLoader.shared.image(for: artworkURL) } }
     }
 }
 
@@ -1753,12 +1749,13 @@ struct V3RainLens: View {
     let artworkURL: URL?
     let running: Bool
     var heavy = false
-    @State private var cover: NSImage?
+    @State private var loaded: (url: URL, image: NSImage)?
     private static let blank = NSImage(size: NSSize(width: 2, height: 2), flipped: false) { rect in
         NSColor(white: 0.3, alpha: 1).setFill(); rect.fill(); return true
     }
 
     var body: some View {
+        let cover = loaded?.url == artworkURL ? loaded?.image : artworkURL.flatMap { ArtworkImageLoader.shared.imageInMemory(for: $0) }
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !running)) { timeline in
             let t = Float(timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3600))
             Rectangle().fill(.white)
@@ -1767,8 +1764,10 @@ struct V3RainLens: View {
         }
         .frame(width: size.width, height: size.height)
         .task(id: artworkURL) {
-            cover = nil
-            if let artworkURL { cover = await ArtworkImageLoader.shared.image(for: artworkURL) }
+            guard let artworkURL else { loaded = nil; return }
+            let image = await ArtworkImageLoader.shared.image(for: artworkURL)
+            guard !Task.isCancelled else { return }
+            loaded = image.map { (artworkURL, $0) }
         }
     }
 }

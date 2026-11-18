@@ -381,19 +381,14 @@ private struct PersonalLibraryEntryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 10) {
-                AsyncImage(url: entry.artworkURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(Color.secondary.opacity(0.15))
-                            .overlay(
-                                Image(systemName: "music.note")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(.secondary)
-                            )
-                    }
+                CachedArtwork(url: entry.artworkURL) {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.secondary.opacity(0.15))
+                        .overlay {
+                            Image(systemName: "music.note")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.secondary)
+                        }
                 }
                 .frame(width: 44, height: 44)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -674,15 +669,10 @@ public struct PersonalLibraryTrackDetailView: View {
         let entry = detail.entry
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 14) {
-                AsyncImage(url: entry.artworkURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.secondary.opacity(0.12))
-                            .overlay(Image(systemName: "music.note").font(.title2).foregroundStyle(.secondary))
-                    }
+                CachedArtwork(url: entry.artworkURL) {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.secondary.opacity(0.12))
+                        .overlay(Image(systemName: "music.note").font(.title2).foregroundStyle(.secondary))
                 }
                 .frame(width: compact ? 56 : 72, height: compact ? 56 : 72)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))

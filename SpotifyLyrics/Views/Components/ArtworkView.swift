@@ -1,6 +1,34 @@
 import AppKit
 import SwiftUI
 
+/// Cover thumbnails use the same file and network cache as the playback view.
+struct CachedArtwork<Placeholder: View>: View {
+    let url: URL?
+    private let placeholder: Placeholder
+    @State private var loaded: (url: URL, image: NSImage)?
+
+    init(url: URL?, @ViewBuilder placeholder: () -> Placeholder) {
+        self.url = url
+        self.placeholder = placeholder()
+    }
+
+    var body: some View {
+        Group {
+            if let url, let image = loaded?.url == url ? loaded?.image : ArtworkImageLoader.shared.imageInMemory(for: url) {
+                Image(nsImage: image).resizable().scaledToFill()
+            } else {
+                placeholder
+            }
+        }
+        .task(id: url) {
+            guard let url else { loaded = nil; return }
+            let image = await ArtworkImageLoader.shared.image(for: url)
+            guard !Task.isCancelled else { return }
+            loaded = image.map { (url, $0) }
+        }
+    }
+}
+
 /// Reusable artwork surface shared by the focus and immersive layouts.
 struct ArtworkView: View {
     let track: Track

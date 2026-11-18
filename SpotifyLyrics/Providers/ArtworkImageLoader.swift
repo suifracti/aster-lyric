@@ -35,14 +35,15 @@ public final class ArtworkImageLoader {
         session.configuration.urlCache?.removeAllCachedResponses()
     }
 
+    func imageInMemory(for url: URL) -> NSImage? {
+        cache.object(forKey: url as NSURL)
+    }
+
     public func cachedImage(for url: URL?) -> NSImage? {
         guard let url else { return nil }
-        let key = url as NSURL
-        if let cached = cache.object(forKey: key) {
-            return cached
-        }
+        if let cached = imageInMemory(for: url) { return cached }
         if url.isFileURL, let image = NSImage(contentsOf: url) {
-            cache.setObject(image, forKey: key)
+            cache.setObject(image, forKey: url as NSURL)
             return image
         }
         return nil
@@ -51,9 +52,7 @@ public final class ArtworkImageLoader {
     public func image(for url: URL?) async -> NSImage? {
         guard let url else { return nil }
         let key = url as NSURL
-        if let cached = cache.object(forKey: key) {
-            return cached
-        }
+        if let cached = imageInMemory(for: url) { return cached }
 
         let currentGeneration = generation
         if let existingTask = inFlightTasks[url] {
