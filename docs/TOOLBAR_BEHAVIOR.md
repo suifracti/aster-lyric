@@ -383,6 +383,7 @@ A control never appears on both sides. Where the other side used to have it, sho
   - one search field for the active tab;
   - a 「⋯」 menu holding 导出, 导入数据, 导入资产, 刷新 and 私人文件夹同步;
   - 在新窗口打开 and ×.
+- **Personal data import:** all songs commit together. The preview flags assets attached to another recording or source version. Folder sync confirms the previewed file revision before import and before writing back. The library reports local import and folder write outcomes separately.
 - **Two columns:** a compact list on the left (about 300 pt) and the selected item's detail on the right. No grey inner box.
 - **歌词库 tab:**
   - **Filter chips:** 全部 · 当前歌曲 · 缺歌词 · 有译文 · 手动编辑. Selecting 缺歌词 shows 全部补全.

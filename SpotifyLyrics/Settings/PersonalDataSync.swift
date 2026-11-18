@@ -1,8 +1,10 @@
+import CryptoKit
 import Foundation
 
 public enum PersonalDataSyncStoreError: Error, Equatable, Sendable, LocalizedError {
     case folderUnavailable
     case invalidPackage
+    case packageChanged
 
     public var errorDescription: String? {
         switch self {
@@ -10,6 +12,8 @@ public enum PersonalDataSyncStoreError: Error, Equatable, Sendable, LocalizedErr
             return "同步文件夹当前不可访问"
         case .invalidPackage:
             return "同步文件夹中的个人数据包无效"
+        case .packageChanged:
+            return "同步文件已更新，请重新检查同步文件夹"
         }
     }
 }
@@ -17,6 +21,11 @@ public enum PersonalDataSyncStoreError: Error, Equatable, Sendable, LocalizedErr
 /// The filesystem boundary for the private sync folder. It stores only the
 /// versioned personal-data JSON and a durable reference to the chosen folder.
 public enum PersonalDataSyncStore {
+    struct Snapshot: Sendable {
+        let package: PersonalDataPackage
+        let revision: Data
+    }
+
     public static let packageFileName = "LyricIslandPersonalData.json"
 
     private static let folderBookmarkDefaultsKey = "personalDataSync.folderBookmark.v1"
@@ -103,12 +112,33 @@ public enum PersonalDataSyncStore {
     }
 
     public static func read(from folder: URL) throws -> PersonalDataPackage? {
-        let url = packageURL(in: folder)
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        return try decode(Data(contentsOf: url))
+        try snapshot(in: folder)?.package
+    }
+
+    static func snapshot(in folder: URL) throws -> Snapshot? {
+        guard let data = try contents(at: packageURL(in: folder)) else { return nil }
+        return Snapshot(package: try decode(data), revision: revision(of: data))
     }
 
     public static func write(_ package: PersonalDataPackage, to folder: URL) throws {
+        try write(package, to: folder, check: { _ in })
+    }
+
+    static func write(_ package: PersonalDataPackage, to folder: URL, replacing expectedRevision: Data?) throws {
+        try write(package, to: folder) { destination in
+            let storedRevision = try contents(at: destination).map(revision(of:))
+            guard storedRevision == expectedRevision else { throw PersonalDataSyncStoreError.packageChanged }
+        }
+    }
+
+    private static func contents(at url: URL) throws -> Data? {
+        do { return try Data(contentsOf: url) }
+        catch let error as CocoaError where error.code == .fileReadNoSuchFile { return nil }
+    }
+
+    private static func revision(of data: Data) -> Data { Data(SHA256.hash(data: data)) }
+
+    private static func write(_ package: PersonalDataPackage, to folder: URL, check: (URL) throws -> Void) throws {
         let data = try encode(package)
         let normalizedFolder = folder.standardizedFileURL
         var isDirectory = ObjCBool(false)
@@ -116,23 +146,18 @@ public enum PersonalDataSyncStore {
             throw PersonalDataSyncStoreError.folderUnavailable
         }
 
-        let destination = packageURL(in: normalizedFolder)
-        let temporary = normalizedFolder.appendingPathComponent(
-            ".\(packageFileName).\(UUID().uuidString).tmp",
-            isDirectory: false
-        )
-
-        do {
-            try data.write(to: temporary, options: [.atomic])
-            if FileManager.default.fileExists(atPath: destination.path) {
-                _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
-            } else {
-                try FileManager.default.moveItem(at: temporary, to: destination)
+        var coordinationError: NSError?
+        var result: Result<Void, Error>?
+        NSFileCoordinator().coordinate(writingItemAt: packageURL(in: normalizedFolder),
+                                       options: .forReplacing, error: &coordinationError) { destination in
+            result = Result {
+                try check(destination)
+                try data.write(to: destination, options: .atomic)
             }
-        } catch {
-            try? FileManager.default.removeItem(at: temporary)
-            throw error
         }
+        if let coordinationError { throw coordinationError }
+        guard let result else { throw PersonalDataSyncStoreError.folderUnavailable }
+        try result.get()
     }
 
     public static func withFolderAccess<T>(

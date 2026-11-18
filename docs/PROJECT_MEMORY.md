@@ -10,6 +10,7 @@
 |---|---|
 | 改名、换界面、旧数据或人工歌词不能丢；改持久化/身份逻辑 | L-001 |
 | 清理缓存、查看备份占用、另一个窗口打开时也要备份最新歌词 | L-047 · SettingsDataController、writeDatabaseSnapshot、V3CanvasStore |
+| 数据包导入一半报错、版本串到别首歌、确认旧的同步文件 | L-047 · previewTrackImport、importPersonalDataPackage、PersonalDataSyncStore |
 | 从其他应用选字查歌词、⌘K 找回一句、搜到副歌却只打开歌曲档案 | L-043、L-046 · WorkspaceQuickFind、searchLibraryPassages |
 | 两份稿逐句对照、改译时借用另一版的句子、重复副歌错位 | L-049 · LibraryVersionComparison、LibraryTranslationRevisionDraft |
 | 从 Finder 打开歌词文件、给本机录音补稿、导出手里的版本、入库后合声消失 | L-032、L-048 · LyricFileDocument、LocalLyricsFile、PortableLyricsEdition |
@@ -835,6 +836,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 设置的「本机空间」分别显示数据库及日志、手动与升级备份、封面与背景视频。可以在 Finder 定位备份，或把选中的一份移到废纸篓。缓存清理只清本应用的封面、生成文件名的 Canvas 和可重建的搜索索引。歌词原词、译文、读音、逐字与排轴来源文件都是用户资产。
 
 旧清理实现直接删除了原词版本，外键同时删除已锁定原词的译文。旧手动备份先执行 FULL checkpoint 再复制主文件，在另一个窗口持有 WAL 读快照时会漏掉新提交。临时库均已复现。手动与升级备份现在共用原有 SQLite 在线快照实现，临时文件关闭后才取得备份名。统计、备份和清缓存的异步方法明确实现仓库协议，设置更新操作后直接重新取用量。对应原生用例在 LibraryRevisionsContractTests 与 ListeningBatchOneTests。[SQLite 在线备份](https://sqlite.org/backup.html)
+
+2026-11-19：标准个人数据包在一个 SQLite 写事务内导入，任一曲失败就撤销本次全部写入。预览和提交都核对录音族和原词 UUID，接受已知的旧键重定向。私人文件夹的确认绑定所见文件内容，文件在预览后改变会要求重新检查，在写回前改变会保留新文件并提示本机已导入。两个歌词库入口共用状态文案。临时库复现了后曲失败却残留前曲、跨录音复用同版本 ID，并验证回滚后可重试；临时同步目录验证预览后替换、禁止旧版本写回和重新预览成功。使用 [macOS 文件协调](https://developer.apple.com/documentation/foundation/nsfilecoordinator/coordinate%28writingitemat%3Aoptions%3Aerror%3Abyaccessor%3A%29) 保护本机写回，未验证第三方云盘跨设备传输。
 
 ## L-048 把歌词文件当文档打开（2026-11-18）
 

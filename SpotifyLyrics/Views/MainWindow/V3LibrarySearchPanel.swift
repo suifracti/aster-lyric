@@ -191,9 +191,9 @@ struct V3LibrarySearchPanel: View {
             }
             if presentation.tab != .playlists {
                 Menu("私人文件夹同步") {
-                    Button("选择文件夹", action: library.selectSyncFolder)
+                    Button("选择文件夹", action: library.selectSyncFolder).disabled(library.isSyncing)
                     Button("立即同步", action: library.syncNow).disabled(library.syncFolderURL == nil || library.isSyncing)
-                    Button("取消同步", action: library.cancelSyncFolder).disabled(library.syncFolderURL == nil)
+                    Button("取消同步", action: library.cancelSyncFolder).disabled(library.syncFolderURL == nil || library.isSyncing)
                 }
             }
         } label: { Image(systemName: "ellipsis") }
@@ -223,7 +223,9 @@ struct V3LibrarySearchPanel: View {
                             }
                         }
                     }
-                    if library.statusMessage.contains("失败") {
+                    if let notice = library.personalDataNotice {
+                        Text(notice).font(.caption).foregroundStyle(.secondary).padding(8)
+                    } else if library.statusMessage.contains("失败") {
                         Text(library.statusMessage).font(.caption).foregroundStyle(.secondary).padding(8)
                     }
                 }

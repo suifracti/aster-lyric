@@ -5,6 +5,110 @@ import PDFKit
 @testable import SpotifyLyrics
 
 final class LibraryRevisionsContractTests: XCTestCase {
+    func testPersonalDataImportRollsBackEarlierSongsWhenALaterWriteFails() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let (first, second) = try await portableImportFixtures(at: root)
+        let targetURL = root.appendingPathComponent("target.sqlite3")
+        let target = SQLiteLyricsRepository(databaseURL: targetURL)
+        try await target.prepare()
+        try executeSQL("""
+            CREATE TRIGGER reject_second_song BEFORE INSERT ON tracks WHEN NEW.title = 'Second recording'
+            BEGIN SELECT RAISE(ABORT, 'fixture write failure'); END;
+            """, at: targetURL)
+        let data = PersonalDataPackage(tracks: [first, second])
+        let preview = try await target.previewImportPersonalDataPackage(data)
+        XCTAssertEqual(preview.totalNewAssets, 2)
+        do {
+            try await target.importPersonalDataPackage(data)
+            XCTFail("The second recording should fail to write")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("fixture write failure"))
+        }
+        let afterFailure = try await target.exportPersonalDataPackage()
+        XCTAssertTrue(afterFailure.tracks.isEmpty, "An unsuccessful import must leave the earlier recording out as well")
+
+        try executeSQL("DROP TRIGGER reject_second_song;", at: targetURL)
+        try await target.importPersonalDataPackage(data)
+        let restored = try await target.exportPersonalDataPackage()
+        XCTAssertEqual(Set(restored.tracks.map(\.track.stableKey)), Set([first.track.stableKey, second.track.stableKey]))
+    }
+
+    func testPackagePreviewRejectsALyricsVersionAlreadyOwnedByAnotherRecording() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let (first, second) = try await portableImportFixtures(at: root)
+        let target = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("target.sqlite3"))
+        try await target.importPersonalLibraryPackage(first)
+        let wrongRecording = PersonalLyricsLibraryPackage(track: second.track, lyricsVersions: first.lyricsVersions,
+                                                          translationVersions: [], readingVersions: [], timingVersions: [])
+        let preview = try await target.previewImportPersonalLibraryPackage(wrongRecording)
+        XCTAssertTrue(preview.hasConflicts)
+        XCTAssertEqual(preview.lyricsToSkip, 0)
+        do {
+            try await target.importPersonalLibraryPackage(wrongRecording)
+            XCTFail("A shared version ID cannot be transferred to another recording")
+        } catch {
+            let restored = try await target.exportPersonalDataPackage()
+            XCTAssertEqual(restored.tracks.map(\.track.stableKey), [first.track.stableKey])
+        }
+    }
+
+    @MainActor
+    func testPrivateFolderConfirmationRequiresTheSnapshotThatWasPreviewed() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let (first, second) = try await portableImportFixtures(at: root)
+        let folder = root.appendingPathComponent("sync", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let suite = "lyricsq-import-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        try PersonalDataSyncStore.saveFolderReference(folder, defaults: defaults)
+        let firstPackage = PersonalDataPackage(tracks: [first])
+        try PersonalDataSyncStore.write(firstPackage, to: folder, replacing: nil)
+        let firstSnapshot = try XCTUnwrap(PersonalDataSyncStore.snapshot(in: folder))
+        let target = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("target.sqlite3"))
+        let service = PersonalLyricsLibraryService(repository: target, defaults: defaults)
+
+        func finishSync() async throws {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+            while service.isSyncing && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertFalse(service.isSyncing)
+        }
+
+        service.syncNow()
+        try await finishSync()
+        XCTAssertEqual(service.dataImportPreview?.trackPreviews.first?.trackStableKey, first.track.stableKey)
+        try PersonalDataSyncStore.write(.init(tracks: [second]), to: folder)
+        XCTAssertThrowsError(try PersonalDataSyncStore.write(firstPackage, to: folder, replacing: firstSnapshot.revision)) {
+            XCTAssertEqual($0 as? PersonalDataSyncStoreError, .packageChanged)
+        }
+        service.confirmPersonalDataImport()
+        try await finishSync()
+        XCTAssertEqual(service.personalDataNotice, PersonalDataSyncStoreError.packageChanged.localizedDescription)
+        XCTAssertFalse(service.showDataImportPreviewSheet)
+        let unchanged = try await target.exportPersonalDataPackage()
+        XCTAssertTrue(unchanged.tracks.isEmpty)
+
+        service.syncNow()
+        try await finishSync()
+        XCTAssertEqual(service.dataImportPreview?.trackPreviews.first?.trackStableKey, second.track.stableKey)
+        service.confirmPersonalDataImport()
+        try await finishSync()
+        let local = try await target.exportPersonalDataPackage()
+        let synced = try PersonalDataSyncStore.read(from: folder)
+        XCTAssertEqual(local.tracks.map(\.track.stableKey), [second.track.stableKey])
+        XCTAssertEqual(synced?.tracks.map(\.track.stableKey), [second.track.stableKey])
+        XCTAssertEqual(service.personalDataNotice, "已导入资产并更新同步文件")
+    }
+
+    private func portableImportFixtures(at root: URL) async throws -> (PersonalLyricsLibraryPackage, PersonalLyricsLibraryPackage) {
+        let source = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("source.sqlite3"))
+        let file = try LocalLyricsFile(data: Data("[00:01.00]Fixture lyrics".utf8), kind: .lrc, preferredLanguage: "en")
+        let first = try await source.importLyricFile(file, into: Track(title: "First recording", artist: "Test", album: "", duration: 180))
+        let second = try await source.importLyricFile(file, into: Track(title: "Second recording", artist: "Test", album: "", duration: 180))
+        return (try await source.exportPersonalLibraryPackage(stableKey: first.trackKey),
+                try await source.exportPersonalLibraryPackage(stableKey: second.trackKey))
+    }
+
     func testPortableSongbookRetainsRepeatedPassagesAndPrintsTheLastLine() throws {
         let version = UUID()
         let first = V3FavoriteLines.Entry(text: "回到这里", translation: "Here again", title: "慢车", artist: "南窗",

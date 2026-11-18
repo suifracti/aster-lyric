@@ -5044,10 +5044,23 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     public func previewImportPersonalLibraryPackage(_ package: PersonalLyricsLibraryPackage) throws -> PersonalLibraryImportPreview {
         try prepare()
+        try reloadRedirectResolver()
+        return try previewTrackImport(package, family: resolvedIdentityFamily(stableKey: package.track.stableKey))
+    }
 
+    private func previewTrackImport(_ package: PersonalLyricsLibraryPackage, family: [String]) throws -> PersonalLibraryImportPreview {
+        let packagedLyrics = Set(package.lyricsVersions.map(\.id))
+        func containsLyrics(_ id: UUID) throws -> Bool {
+            if packagedLyrics.contains(id) { return true }
+            guard let existing = try fetchLyricsVersion(versionID: id) else { return false }
+            return family.contains(existing.trackStableKey)
+        }
         var lyricsToAdd = 0
         var lyricsToSkip = 0
         var lyricsConflicts: [String] = []
+        if let preferred = package.preferredLyricsVersionID, !packagedLyrics.contains(preferred) {
+            lyricsConflicts.append("资产包采用的原词不存在")
+        }
 
         var translationsToAdd = 0
         var translationsToSkip = 0
@@ -5062,67 +5075,95 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         var timingsConflicts: [String] = []
 
         for lv in package.lyricsVersions {
-            let checkStmt = try prepare("SELECT content_hash FROM lyrics_versions WHERE id = ? LIMIT 1;")
+            guard family.contains(lv.trackStableKey) else {
+                lyricsConflicts.append("原词 \(lv.id) 属于另一首歌")
+                continue
+            }
+            let checkStmt = try prepare("SELECT content_hash, track_stable_key FROM lyrics_versions WHERE id = ? LIMIT 1;")
+            defer { sqlite3_finalize(checkStmt) }
             try bindText(lv.id.uuidString, at: 1, to: checkStmt)
-            if sqlite3_step(checkStmt) == SQLITE_ROW {
+            switch sqlite3_step(checkStmt) {
+            case SQLITE_ROW:
                 let existingHash = columnText(checkStmt, index: 0) ?? ""
-                if existingHash == lv.contentHash {
+                if columnText(checkStmt, index: 1).map(family.contains) != true {
+                    lyricsConflicts.append("原词 \(lv.id) 已属于另一首歌")
+                } else if existingHash == lv.contentHash {
                     lyricsToSkip += 1
                 } else {
                     lyricsConflicts.append("Lyrics version \(lv.id) exists with differing content hash")
                 }
-            } else {
-                lyricsToAdd += 1
+            case SQLITE_DONE: lyricsToAdd += 1
+            default: throw lastError()
             }
-            sqlite3_finalize(checkStmt)
         }
 
         for tv in package.translationVersions {
-            let checkStmt = try prepare("SELECT source_content_hash FROM translation_versions WHERE id = ? LIMIT 1;")
+            guard try containsLyrics(tv.lyricsVersionID) else {
+                translationsConflicts.append("译文 \(tv.id) 的原词不在这首歌里")
+                continue
+            }
+            let checkStmt = try prepare("SELECT source_content_hash, lyrics_version_id FROM translation_versions WHERE id = ? LIMIT 1;")
+            defer { sqlite3_finalize(checkStmt) }
             try bindText(tv.id.uuidString, at: 1, to: checkStmt)
-            if sqlite3_step(checkStmt) == SQLITE_ROW {
+            switch sqlite3_step(checkStmt) {
+            case SQLITE_ROW:
                 let existingHash = columnText(checkStmt, index: 0) ?? ""
-                if existingHash == tv.sourceContentHash {
+                if columnText(checkStmt, index: 1) != tv.lyricsVersionID.uuidString {
+                    translationsConflicts.append("译文 \(tv.id) 已属于另一份原词")
+                } else if existingHash == tv.sourceContentHash {
                     translationsToSkip += 1
                 } else {
                     translationsConflicts.append("Translation version \(tv.id) exists with differing content hash")
                 }
-            } else {
-                translationsToAdd += 1
+            case SQLITE_DONE: translationsToAdd += 1
+            default: throw lastError()
             }
-            sqlite3_finalize(checkStmt)
         }
 
         for rv in package.readingVersions {
-            let checkStmt = try prepare("SELECT source_content_hash, representation_id FROM reading_versions WHERE id = ? LIMIT 1;")
+            guard try containsLyrics(rv.lyricsVersionID) else {
+                readingsConflicts.append("读音 \(rv.id) 的原词不在这首歌里")
+                continue
+            }
+            let checkStmt = try prepare("SELECT source_content_hash, lyrics_version_id FROM reading_versions WHERE id = ? LIMIT 1;")
+            defer { sqlite3_finalize(checkStmt) }
             try bindText(rv.id.uuidString, at: 1, to: checkStmt)
-            if sqlite3_step(checkStmt) == SQLITE_ROW {
+            switch sqlite3_step(checkStmt) {
+            case SQLITE_ROW:
                 let existingHash = columnText(checkStmt, index: 0) ?? ""
-                if existingHash == rv.sourceContentHash {
+                if columnText(checkStmt, index: 1) != rv.lyricsVersionID.uuidString {
+                    readingsConflicts.append("读音 \(rv.id) 已属于另一份原词")
+                } else if existingHash == rv.sourceContentHash {
                     readingsToSkip += 1
                 } else {
                     readingsConflicts.append("Reading version \(rv.id) (\(rv.representationID)) exists with differing content hash")
                 }
-            } else {
-                readingsToAdd += 1
+            case SQLITE_DONE: readingsToAdd += 1
+            default: throw lastError()
             }
-            sqlite3_finalize(checkStmt)
         }
 
         for tv in package.timingVersions {
-            let checkStmt = try prepare("SELECT spans_payload FROM lyrics_timing_versions WHERE id = ? LIMIT 1;")
+            guard try containsLyrics(tv.lyricsVersionID) else {
+                timingsConflicts.append("时间轴 \(tv.id) 的原词不在这首歌里")
+                continue
+            }
+            let checkStmt = try prepare("SELECT spans_payload, lyrics_version_id FROM lyrics_timing_versions WHERE id = ? LIMIT 1;")
+            defer { sqlite3_finalize(checkStmt) }
             try bindText(tv.id.uuidString, at: 1, to: checkStmt)
-            if sqlite3_step(checkStmt) == SQLITE_ROW {
+            switch sqlite3_step(checkStmt) {
+            case SQLITE_ROW:
                 let existingPayload = columnText(checkStmt, index: 0) ?? ""
-                if existingPayload == tv.spansPayload {
+                if columnText(checkStmt, index: 1) != tv.lyricsVersionID.uuidString {
+                    timingsConflicts.append("时间轴 \(tv.id) 已属于另一份原词")
+                } else if existingPayload == tv.spansPayload {
                     timingsToSkip += 1
                 } else {
                     timingsConflicts.append("Timing version \(tv.id) exists with differing payload")
                 }
-            } else {
-                timingsToAdd += 1
+            case SQLITE_DONE: timingsToAdd += 1
+            default: throw lastError()
             }
-            sqlite3_finalize(checkStmt)
         }
 
         return PersonalLibraryImportPreview(
@@ -5148,23 +5189,19 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     public func previewImportPersonalDataPackage(_ package: PersonalDataPackage) throws -> PersonalDataImportPreview {
         try package.validate()
-        let previews = try package.tracks.map { try previewImportPersonalLibraryPackage($0) }
+        try prepare()
+        try reloadRedirectResolver()
+        let previews = try package.tracks.map { try previewTrackImport($0, family: resolvedIdentityFamily(stableKey: $0.track.stableKey)) }
         return PersonalDataImportPreview(trackPreviews: previews)
     }
 
     public func importPersonalDataPackage(_ package: PersonalDataPackage) throws {
         try package.validate()
-        let preview = try previewImportPersonalDataPackage(package)
-        guard !preview.hasConflicts else {
-            let conflicts = preview.trackPreviews.flatMap { $0.allConflicts }
-            throw LyricsRepositoryError.dataIntegrityViolation(
-                "存在冲突版本，无法导入个人数据包：" + conflicts.joined(separator: "; ")
-            )
-        }
         guard !package.tracks.isEmpty else { return }
-
-        for trackPackage in package.tracks {
-            try importPersonalLibraryPackage(trackPackage)
+        try prepare()
+        try withTransaction {
+            try reloadRedirectResolver()
+            for trackPackage in package.tracks { try applyTrackImport(trackPackage) }
         }
     }
 
@@ -5172,10 +5209,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     public func importPersonalLibraryPackage(_ package: PersonalLyricsLibraryPackage) throws {
         try prepare()
-        if let preferred = package.preferredLyricsVersionID,
-           !package.lyricsVersions.contains(where: { $0.id == preferred }) {
-            throw LyricsRepositoryError.invalidData("资产包采用版本不存在")
+        try withTransaction {
+            try reloadRedirectResolver()
+            try applyTrackImport(package)
         }
+    }
+
+    private func applyTrackImport(_ package: PersonalLyricsLibraryPackage) throws {
         let preferenceFamily = try resolvedIdentityFamily(stableKey: package.track.stableKey)
         let preferenceQuery = try prepare("SELECT COUNT(*) FROM lyrics_versions WHERE track_stable_key IN (\(placeholders(count: preferenceFamily.count))) AND is_preferred = 1;")
         defer { sqlite3_finalize(preferenceQuery) }
@@ -5184,215 +5224,208 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         let hasLocalPreference = sqlite3_column_int(preferenceQuery, 0) > 0
         guard sqlite3_step(preferenceQuery) == SQLITE_DONE else { throw lastError() }
 
-        let preview = try previewImportPersonalLibraryPackage(package)
+        let preview = try previewTrackImport(package, family: preferenceFamily)
         guard !preview.hasConflicts else {
-            throw LyricsRepositoryError.dataIntegrityViolation("存在冲突版本，无法直接覆盖已有资产：\(preview.lyricsConflicts + preview.translationsConflicts + preview.readingsConflicts + preview.timingsConflicts)")
+            throw LyricsRepositoryError.dataIntegrityViolation("「\(package.track.title)」存在冲突版本：\(preview.allConflicts.joined(separator: "、"))")
         }
 
-        try execute("BEGIN IMMEDIATE TRANSACTION;")
-        do {
-            let targetStableKey = try redirectResolver?.resolve(package.track.stableKey) ?? package.track.stableKey
-            let trackInsert = try prepare("""
-                INSERT INTO tracks(
-                    stable_key, spotify_id, spotify_uri, isrc, title, artist_display,
-                    album, duration, artwork_url, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(stable_key) DO UPDATE SET
-                    title = excluded.title,
-                    artist_display = excluded.artist_display,
-                    album = excluded.album,
-                    artwork_url = COALESCE(excluded.artwork_url, tracks.artwork_url),
-                    updated_at = excluded.updated_at;
+        let targetStableKey = preferenceFamily[0]
+        let trackInsert = try prepare("""
+            INSERT INTO tracks(
+                stable_key, spotify_id, spotify_uri, isrc, title, artist_display,
+                album, duration, artwork_url, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(stable_key) DO UPDATE SET
+                title = excluded.title,
+                artist_display = excluded.artist_display,
+                album = excluded.album,
+                artwork_url = COALESCE(excluded.artwork_url, tracks.artwork_url),
+                updated_at = excluded.updated_at;
+            """)
+        defer { sqlite3_finalize(trackInsert) }
+
+        try bindText(targetStableKey, at: 1, to: trackInsert)
+        try bindText(package.track.spotifyID, at: 2, to: trackInsert)
+        try bindText(package.track.spotifyURI, at: 3, to: trackInsert)
+        try bindText(package.track.isrc, at: 4, to: trackInsert)
+        try bindText(package.track.title, at: 5, to: trackInsert)
+        try bindText(package.track.artist, at: 6, to: trackInsert)
+        try bindText(package.track.album, at: 7, to: trackInsert)
+        try bindDouble(package.track.duration, at: 8, to: trackInsert)
+        try bindText(package.track.artworkURL, at: 9, to: trackInsert)
+        try bindDouble(Date().timeIntervalSince1970, at: 10, to: trackInsert)
+        try bindDouble(Date().timeIntervalSince1970, at: 11, to: trackInsert)
+        try stepDone(trackInsert)
+
+        for lv in package.lyricsVersions {
+            let lvInsert = try prepare("""
+                INSERT OR IGNORE INTO lyrics_versions(
+                    id, track_stable_key, parent_version_id, source, provider_source_id,
+                    language, is_synced, raw_text, content_hash, is_machine_generated,
+                    is_manually_edited, is_locked, confidence, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """)
-            defer { sqlite3_finalize(trackInsert) }
+            defer { sqlite3_finalize(lvInsert) }
+            try bindText(lv.id.uuidString, at: 1, to: lvInsert)
+            try bindText(targetStableKey, at: 2, to: lvInsert)
+            try bindText(lv.parentVersionID?.uuidString, at: 3, to: lvInsert)
+            try bindText(lv.source, at: 4, to: lvInsert)
+            try bindText(lv.providerSourceID, at: 5, to: lvInsert)
+            try bindText(lv.language, at: 6, to: lvInsert)
+            try bindInt(lv.isSynced ? 1 : 0, at: 7, to: lvInsert)
+            try bindText(lv.rawText, at: 8, to: lvInsert)
+            try bindText(lv.contentHash, at: 9, to: lvInsert)
+            try bindInt(lv.isMachineGenerated ? 1 : 0, at: 10, to: lvInsert)
+            try bindInt(lv.isManuallyEdited ? 1 : 0, at: 11, to: lvInsert)
+            try bindInt(lv.isLocked ? 1 : 0, at: 12, to: lvInsert)
+            try bindDouble(lv.confidence, at: 13, to: lvInsert)
+            try bindDouble(lv.createdAt.timeIntervalSince1970, at: 14, to: lvInsert)
+            try bindDouble(lv.updatedAt.timeIntervalSince1970, at: 15, to: lvInsert)
+            try stepDone(lvInsert)
 
-            try bindText(targetStableKey, at: 1, to: trackInsert)
-            try bindText(package.track.spotifyID, at: 2, to: trackInsert)
-            try bindText(package.track.spotifyURI, at: 3, to: trackInsert)
-            try bindText(package.track.isrc, at: 4, to: trackInsert)
-            try bindText(package.track.title, at: 5, to: trackInsert)
-            try bindText(package.track.artist, at: 6, to: trackInsert)
-            try bindText(package.track.album, at: 7, to: trackInsert)
-            try bindDouble(package.track.duration, at: 8, to: trackInsert)
-            try bindText(package.track.artworkURL, at: 9, to: trackInsert)
-            try bindDouble(Date().timeIntervalSince1970, at: 10, to: trackInsert)
-            try bindDouble(Date().timeIntervalSince1970, at: 11, to: trackInsert)
-            try stepDone(trackInsert)
-
-            for lv in package.lyricsVersions {
-                let lvInsert = try prepare("""
-                    INSERT OR IGNORE INTO lyrics_versions(
-                        id, track_stable_key, parent_version_id, source, provider_source_id,
-                        language, is_synced, raw_text, content_hash, is_machine_generated,
-                        is_manually_edited, is_locked, confidence, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            for line in lv.lines {
+                let lineInsert = try prepare("""
+                    INSERT OR IGNORE INTO lyric_lines(
+                        lyrics_version_id, line_index, start_time, end_time,
+                        original_text, kana_text, romaji_text, translation_text, performer_id, background_text
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(lyrics_version_id, line_index) DO UPDATE SET
+                        performer_id = COALESCE(lyric_lines.performer_id, excluded.performer_id),
+                        background_text = COALESCE(lyric_lines.background_text, excluded.background_text)
+                    WHERE lyric_lines.original_text = excluded.original_text
+                      AND ((lyric_lines.performer_id IS NULL AND excluded.performer_id IS NOT NULL)
+                        OR (lyric_lines.background_text IS NULL AND excluded.background_text IS NOT NULL));
                     """)
-                try bindText(lv.id.uuidString, at: 1, to: lvInsert)
-                try bindText(targetStableKey, at: 2, to: lvInsert)
-                try bindText(lv.parentVersionID?.uuidString, at: 3, to: lvInsert)
-                try bindText(lv.source, at: 4, to: lvInsert)
-                try bindText(lv.providerSourceID, at: 5, to: lvInsert)
-                try bindText(lv.language, at: 6, to: lvInsert)
-                try bindInt(lv.isSynced ? 1 : 0, at: 7, to: lvInsert)
-                try bindText(lv.rawText, at: 8, to: lvInsert)
-                try bindText(lv.contentHash, at: 9, to: lvInsert)
-                try bindInt(lv.isMachineGenerated ? 1 : 0, at: 10, to: lvInsert)
-                try bindInt(lv.isManuallyEdited ? 1 : 0, at: 11, to: lvInsert)
-                try bindInt(lv.isLocked ? 1 : 0, at: 12, to: lvInsert)
-                try bindDouble(lv.confidence, at: 13, to: lvInsert)
-                try bindDouble(lv.createdAt.timeIntervalSince1970, at: 14, to: lvInsert)
-                try bindDouble(lv.updatedAt.timeIntervalSince1970, at: 15, to: lvInsert)
-                try stepDone(lvInsert)
-                sqlite3_finalize(lvInsert)
-
-                for line in lv.lines {
-                    let lineInsert = try prepare("""
-                        INSERT OR IGNORE INTO lyric_lines(
-                            lyrics_version_id, line_index, start_time, end_time,
-                            original_text, kana_text, romaji_text, translation_text, performer_id, background_text
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(lyrics_version_id, line_index) DO UPDATE SET
-                            performer_id = COALESCE(lyric_lines.performer_id, excluded.performer_id),
-                            background_text = COALESCE(lyric_lines.background_text, excluded.background_text)
-                        WHERE lyric_lines.original_text = excluded.original_text
-                          AND ((lyric_lines.performer_id IS NULL AND excluded.performer_id IS NOT NULL)
-                            OR (lyric_lines.background_text IS NULL AND excluded.background_text IS NOT NULL));
-                        """)
-                    try bindText(lv.id.uuidString, at: 1, to: lineInsert)
-                    try bindInt(line.lineIndex, at: 2, to: lineInsert)
-                    if let st = line.startTime { try bindDouble(st, at: 3, to: lineInsert) } else { sqlite3_bind_null(lineInsert, 3) }
-                    if let et = line.endTime { try bindDouble(et, at: 4, to: lineInsert) } else { sqlite3_bind_null(lineInsert, 4) }
-                    try bindText(line.originalText, at: 5, to: lineInsert)
-                    try bindText(line.kanaText, at: 6, to: lineInsert)
-                    try bindText(line.romajiText, at: 7, to: lineInsert)
-                    try bindText(line.translationText, at: 8, to: lineInsert)
-                    try bindText(line.performerID, at: 9, to: lineInsert)
-                    try bindText(line.backgroundText, at: 10, to: lineInsert)
-                    try stepDone(lineInsert)
-                    sqlite3_finalize(lineInsert)
-                }
+                defer { sqlite3_finalize(lineInsert) }
+                try bindText(lv.id.uuidString, at: 1, to: lineInsert)
+                try bindInt(line.lineIndex, at: 2, to: lineInsert)
+                if let st = line.startTime { try bindDouble(st, at: 3, to: lineInsert) } else { sqlite3_bind_null(lineInsert, 3) }
+                if let et = line.endTime { try bindDouble(et, at: 4, to: lineInsert) } else { sqlite3_bind_null(lineInsert, 4) }
+                try bindText(line.originalText, at: 5, to: lineInsert)
+                try bindText(line.kanaText, at: 6, to: lineInsert)
+                try bindText(line.romajiText, at: 7, to: lineInsert)
+                try bindText(line.translationText, at: 8, to: lineInsert)
+                try bindText(line.performerID, at: 9, to: lineInsert)
+                try bindText(line.backgroundText, at: 10, to: lineInsert)
+                try stepDone(lineInsert)
             }
+        }
 
-            for tv in package.translationVersions {
-                let tvInsert = try prepare("""
-                    INSERT OR IGNORE INTO translation_versions(
-                        id, lyrics_version_id, parent_version_id, source_kind, target_language,
-                        model, base_url_host, prompt_hash, source_content_hash,
-                        is_machine_generated, is_manually_edited, is_locked, is_archived,
-                        status, confidence, engine_id, prompt_preset_id, profile_id,
-                        profile_snapshot, temperature, workflow_id, fallback_strategy,
-                        is_draft, created_at, updated_at
-                    ) VALUES (
-                        ?, ?, ?, ?, ?,
-                        ?, '', '', ?,
-                        ?, ?, ?, ?,
-                        ?, ?, ?, ?, NULL,
-                        '', 0.2, 'translationWorkflow.classicV1', 'none',
-                        0, ?, ?
-                    );
-                    """)
-                try bindText(tv.id.uuidString, at: 1, to: tvInsert)
-                try bindText(tv.lyricsVersionID.uuidString, at: 2, to: tvInsert)
-                try bindText(tv.parentVersionID?.uuidString, at: 3, to: tvInsert)
-                try bindText(tv.sourceKind, at: 4, to: tvInsert)
-                try bindText(tv.targetLanguage, at: 5, to: tvInsert)
-                try bindText(tv.model, at: 6, to: tvInsert)
-                try bindText(tv.sourceContentHash, at: 7, to: tvInsert)
-                try bindInt(tv.isMachineGenerated ? 1 : 0, at: 8, to: tvInsert)
-                try bindInt(tv.isManuallyEdited ? 1 : 0, at: 9, to: tvInsert)
-                try bindInt(tv.isLocked ? 1 : 0, at: 10, to: tvInsert)
-                try bindInt(tv.isArchived ? 1 : 0, at: 11, to: tvInsert)
-                try bindText(tv.status, at: 12, to: tvInsert)
-                try bindDouble(tv.confidence, at: 13, to: tvInsert)
-                try bindText(tv.engineID, at: 14, to: tvInsert)
-                try bindText(tv.promptPresetID, at: 15, to: tvInsert)
-                try bindDouble(tv.createdAt.timeIntervalSince1970, at: 16, to: tvInsert)
-                try bindDouble(tv.updatedAt.timeIntervalSince1970, at: 17, to: tvInsert)
-                try stepDone(tvInsert)
-                sqlite3_finalize(tvInsert)
+        for tv in package.translationVersions {
+            let tvInsert = try prepare("""
+                INSERT OR IGNORE INTO translation_versions(
+                    id, lyrics_version_id, parent_version_id, source_kind, target_language,
+                    model, base_url_host, prompt_hash, source_content_hash,
+                    is_machine_generated, is_manually_edited, is_locked, is_archived,
+                    status, confidence, engine_id, prompt_preset_id, profile_id,
+                    profile_snapshot, temperature, workflow_id, fallback_strategy,
+                    is_draft, created_at, updated_at
+                ) VALUES (
+                    ?, ?, ?, ?, ?,
+                    ?, '', '', ?,
+                    ?, ?, ?, ?,
+                    ?, ?, ?, ?, NULL,
+                    '', 0.2, 'translationWorkflow.classicV1', 'none',
+                    0, ?, ?
+                );
+                """)
+            defer { sqlite3_finalize(tvInsert) }
+            try bindText(tv.id.uuidString, at: 1, to: tvInsert)
+            try bindText(tv.lyricsVersionID.uuidString, at: 2, to: tvInsert)
+            try bindText(tv.parentVersionID?.uuidString, at: 3, to: tvInsert)
+            try bindText(tv.sourceKind, at: 4, to: tvInsert)
+            try bindText(tv.targetLanguage, at: 5, to: tvInsert)
+            try bindText(tv.model, at: 6, to: tvInsert)
+            try bindText(tv.sourceContentHash, at: 7, to: tvInsert)
+            try bindInt(tv.isMachineGenerated ? 1 : 0, at: 8, to: tvInsert)
+            try bindInt(tv.isManuallyEdited ? 1 : 0, at: 9, to: tvInsert)
+            try bindInt(tv.isLocked ? 1 : 0, at: 10, to: tvInsert)
+            try bindInt(tv.isArchived ? 1 : 0, at: 11, to: tvInsert)
+            try bindText(tv.status, at: 12, to: tvInsert)
+            try bindDouble(tv.confidence, at: 13, to: tvInsert)
+            try bindText(tv.engineID, at: 14, to: tvInsert)
+            try bindText(tv.promptPresetID, at: 15, to: tvInsert)
+            try bindDouble(tv.createdAt.timeIntervalSince1970, at: 16, to: tvInsert)
+            try bindDouble(tv.updatedAt.timeIntervalSince1970, at: 17, to: tvInsert)
+            try stepDone(tvInsert)
 
-                for line in tv.lines {
-                    let tlInsert = try prepare("INSERT OR IGNORE INTO translation_lines(translation_version_id, line_index, translated_text) VALUES (?, ?, ?);")
-                    try bindText(tv.id.uuidString, at: 1, to: tlInsert)
-                    try bindInt(line.lineIndex, at: 2, to: tlInsert)
-                    try bindText(line.translatedText, at: 3, to: tlInsert)
-                    try stepDone(tlInsert)
-                    sqlite3_finalize(tlInsert)
-                }
+            for line in tv.lines {
+                let tlInsert = try prepare("INSERT OR IGNORE INTO translation_lines(translation_version_id, line_index, translated_text) VALUES (?, ?, ?);")
+                defer { sqlite3_finalize(tlInsert) }
+                try bindText(tv.id.uuidString, at: 1, to: tlInsert)
+                try bindInt(line.lineIndex, at: 2, to: tlInsert)
+                try bindText(line.translatedText, at: 3, to: tlInsert)
+                try stepDone(tlInsert)
             }
+        }
 
-            for rv in package.readingVersions {
-                let rvInsert = try prepare("""
-                    INSERT OR IGNORE INTO reading_versions(
-                        id, lyrics_version_id, parent_version_id, source_content_hash,
-                        engine_id, representation_id, source_kind, language,
-                        is_machine_generated, is_manually_edited, is_current,
-                        is_locked, is_archived, confidence, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                    """)
-                try bindText(rv.id.uuidString, at: 1, to: rvInsert)
-                try bindText(rv.lyricsVersionID.uuidString, at: 2, to: rvInsert)
-                try bindText(rv.parentVersionID?.uuidString, at: 3, to: rvInsert)
-                try bindText(rv.sourceContentHash, at: 4, to: rvInsert)
-                try bindText(rv.engineID, at: 5, to: rvInsert)
-                try bindText(rv.representationID, at: 6, to: rvInsert)
-                try bindText(rv.sourceKind, at: 7, to: rvInsert)
-                try bindText(rv.language, at: 8, to: rvInsert)
-                try bindInt(rv.isMachineGenerated ? 1 : 0, at: 9, to: rvInsert)
-                try bindInt(rv.isManuallyEdited ? 1 : 0, at: 10, to: rvInsert)
-                try bindInt(rv.isCurrent ? 1 : 0, at: 11, to: rvInsert)
-                try bindInt(rv.isLocked ? 1 : 0, at: 12, to: rvInsert)
-                try bindInt(rv.isArchived ? 1 : 0, at: 13, to: rvInsert)
-                try bindDouble(rv.confidence, at: 14, to: rvInsert)
-                try bindDouble(rv.createdAt.timeIntervalSince1970, at: 15, to: rvInsert)
-                try bindDouble(rv.updatedAt.timeIntervalSince1970, at: 16, to: rvInsert)
-                try stepDone(rvInsert)
-                sqlite3_finalize(rvInsert)
+        for rv in package.readingVersions {
+            let rvInsert = try prepare("""
+                INSERT OR IGNORE INTO reading_versions(
+                    id, lyrics_version_id, parent_version_id, source_content_hash,
+                    engine_id, representation_id, source_kind, language,
+                    is_machine_generated, is_manually_edited, is_current,
+                    is_locked, is_archived, confidence, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """)
+            defer { sqlite3_finalize(rvInsert) }
+            try bindText(rv.id.uuidString, at: 1, to: rvInsert)
+            try bindText(rv.lyricsVersionID.uuidString, at: 2, to: rvInsert)
+            try bindText(rv.parentVersionID?.uuidString, at: 3, to: rvInsert)
+            try bindText(rv.sourceContentHash, at: 4, to: rvInsert)
+            try bindText(rv.engineID, at: 5, to: rvInsert)
+            try bindText(rv.representationID, at: 6, to: rvInsert)
+            try bindText(rv.sourceKind, at: 7, to: rvInsert)
+            try bindText(rv.language, at: 8, to: rvInsert)
+            try bindInt(rv.isMachineGenerated ? 1 : 0, at: 9, to: rvInsert)
+            try bindInt(rv.isManuallyEdited ? 1 : 0, at: 10, to: rvInsert)
+            try bindInt(rv.isCurrent ? 1 : 0, at: 11, to: rvInsert)
+            try bindInt(rv.isLocked ? 1 : 0, at: 12, to: rvInsert)
+            try bindInt(rv.isArchived ? 1 : 0, at: 13, to: rvInsert)
+            try bindDouble(rv.confidence, at: 14, to: rvInsert)
+            try bindDouble(rv.createdAt.timeIntervalSince1970, at: 15, to: rvInsert)
+            try bindDouble(rv.updatedAt.timeIntervalSince1970, at: 16, to: rvInsert)
+            try stepDone(rvInsert)
 
-                for line in rv.lines {
-                    let rlInsert = try prepare("""
-                        INSERT OR IGNORE INTO reading_lines(
-                            reading_version_id, line_index, original_text, reading_text,
-                            tokens_json, language, source
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?);
-                        """)
-                    try bindText(rv.id.uuidString, at: 1, to: rlInsert)
-                    try bindInt(line.lineIndex, at: 2, to: rlInsert)
-                    try bindText(line.originalText, at: 3, to: rlInsert)
-                    try bindText(line.readingText, at: 4, to: rlInsert)
-                    try bindText(line.tokensJSON, at: 5, to: rlInsert)
-                    try bindText(line.language, at: 6, to: rlInsert)
-                    try bindText(line.source, at: 7, to: rlInsert)
-                    try stepDone(rlInsert)
-                    sqlite3_finalize(rlInsert)
-                }
-            }
-
-            for tv in package.timingVersions {
-                let timeInsert = try prepare("""
-                    INSERT OR IGNORE INTO lyrics_timing_versions(
-                        id, lyrics_version_id, source, granularity,
-                        source_content_hash, spans_payload, created_at
+            for line in rv.lines {
+                let rlInsert = try prepare("""
+                    INSERT OR IGNORE INTO reading_lines(
+                        reading_version_id, line_index, original_text, reading_text,
+                        tokens_json, language, source
                     ) VALUES (?, ?, ?, ?, ?, ?, ?);
                     """)
-                try bindText(tv.id.uuidString, at: 1, to: timeInsert)
-                try bindText(tv.lyricsVersionID.uuidString, at: 2, to: timeInsert)
-                try bindText(tv.source, at: 3, to: timeInsert)
-                try bindText(tv.granularity, at: 4, to: timeInsert)
-                try bindText(tv.sourceContentHash, at: 5, to: timeInsert)
-                try bindText(tv.spansPayload, at: 6, to: timeInsert)
-                try bindDouble(tv.createdAt.timeIntervalSince1970, at: 7, to: timeInsert)
-                try stepDone(timeInsert)
-                sqlite3_finalize(timeInsert)
+                defer { sqlite3_finalize(rlInsert) }
+                try bindText(rv.id.uuidString, at: 1, to: rlInsert)
+                try bindInt(line.lineIndex, at: 2, to: rlInsert)
+                try bindText(line.originalText, at: 3, to: rlInsert)
+                try bindText(line.readingText, at: 4, to: rlInsert)
+                try bindText(line.tokensJSON, at: 5, to: rlInsert)
+                try bindText(line.language, at: 6, to: rlInsert)
+                try bindText(line.source, at: 7, to: rlInsert)
+                try stepDone(rlInsert)
             }
+        }
 
-            if !hasLocalPreference, let preferred = package.preferredLyricsVersionID {
-                try setPreferredLyricsVersion(trackStableKey: package.track.stableKey, lyricsVersionID: preferred)
-            }
-            try execute("COMMIT;")
-        } catch {
-            _ = try? execute("ROLLBACK;")
-            throw error
+        for tv in package.timingVersions {
+            let timeInsert = try prepare("""
+                INSERT OR IGNORE INTO lyrics_timing_versions(
+                    id, lyrics_version_id, source, granularity,
+                    source_content_hash, spans_payload, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?);
+                """)
+            defer { sqlite3_finalize(timeInsert) }
+            try bindText(tv.id.uuidString, at: 1, to: timeInsert)
+            try bindText(tv.lyricsVersionID.uuidString, at: 2, to: timeInsert)
+            try bindText(tv.source, at: 3, to: timeInsert)
+            try bindText(tv.granularity, at: 4, to: timeInsert)
+            try bindText(tv.sourceContentHash, at: 5, to: timeInsert)
+            try bindText(tv.spansPayload, at: 6, to: timeInsert)
+            try bindDouble(tv.createdAt.timeIntervalSince1970, at: 7, to: timeInsert)
+            try stepDone(timeInsert)
+        }
+
+        if !hasLocalPreference, let preferred = package.preferredLyricsVersionID {
+            try setPreferredLyricsVersion(trackStableKey: package.track.stableKey, lyricsVersionID: preferred)
         }
     }
 

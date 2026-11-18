@@ -241,9 +241,10 @@ public struct PersonalLyricsLibraryView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
 
-            if !service.statusMessage.isEmpty {
+            let libraryNotice = service.personalDataNotice ?? service.statusMessage
+            if !libraryNotice.isEmpty {
                 HStack {
-                    Text(service.statusMessage)
+                    Text(libraryNotice)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -332,6 +333,7 @@ public struct PersonalLyricsLibraryView: View {
                 Button("选择") {
                     service.selectSyncFolder()
                 }
+                .disabled(service.isSyncing)
             }
 
             if let folder = service.syncFolderURL {
@@ -346,8 +348,8 @@ public struct PersonalLyricsLibraryView: View {
                         service.syncNow()
                     } label: {
                         Label(
-                            service.isSyncing ? "检查中..." : "同步现在",
-                            systemImage: service.isSyncing ? "arrow.triangle.2.circlepath" : "arrow.triangle.2.circlepath"
+                            service.isSyncing ? "处理中…" : "立即同步",
+                            systemImage: "arrow.triangle.2.circlepath"
                         )
                     }
                     .disabled(service.isSyncing)
@@ -355,6 +357,7 @@ public struct PersonalLyricsLibraryView: View {
                     Button("取消同步") {
                         service.cancelSyncFolder()
                     }
+                    .disabled(service.isSyncing)
                 }
             } else {
                 Text("尚未设置私人同步文件夹")
@@ -1136,6 +1139,8 @@ public struct PersonalLibraryImportPreviewSheet: View {
 
 public struct PersonalDataImportPreviewSheet: View {
     let preview: PersonalDataImportPreview
+    let isBusy: Bool
+    let notice: String?
     let onConfirm: () -> Void
     let onCancel: () -> Void
 
@@ -1168,23 +1173,29 @@ public struct PersonalDataImportPreviewSheet: View {
                 .frame(minHeight: 180)
             }
 
+            if let notice {
+                Text(notice).font(.caption).foregroundStyle(.secondary)
+            }
             HStack {
+                if isBusy { ProgressView().controlSize(.small).accessibilityLabel("正在导入个人数据") }
                 Spacer()
                 Button("取消") {
                     onCancel()
                 }
                 .keyboardShortcut(.cancelAction)
+                .disabled(isBusy)
 
                 Button("确认导入") {
                     onConfirm()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(preview.hasConflicts || preview.totalNewAssets == 0)
+                .disabled(isBusy || preview.hasConflicts || preview.totalNewAssets == 0)
                 .keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
         .frame(minWidth: 520, minHeight: 360)
+        .interactiveDismissDisabled(isBusy)
     }
 
     private func trackSummary(_ trackPreview: PersonalLibraryImportPreview) -> some View {
@@ -1925,7 +1936,7 @@ struct PersonalLibrarySheets: ViewModifier {
         }
         .sheet(isPresented: $service.showDataImportPreviewSheet) {
             if let preview = service.dataImportPreview {
-                PersonalDataImportPreviewSheet(preview: preview, onConfirm: {
+                PersonalDataImportPreviewSheet(preview: preview, isBusy: service.isSyncing, notice: service.personalDataNotice, onConfirm: {
                     service.confirmPersonalDataImport()
                 }, onCancel: {
                     service.cancelPersonalDataImport()
