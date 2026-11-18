@@ -34,13 +34,7 @@ struct LibraryPassageReader: View {
 
     private var archiveTarget: LibraryPassageTarget {
         guard let page else { return .init(trackKey: target.trackKey) }
-        let resolved = page.resolvedSource ?? target.source
-        let source: LibraryPassageSource
-        switch resolved {
-        case .reading, .attached: source = resolved
-        default: source = page.translationVersionID.map(LibraryPassageSource.translation) ?? .original(page.originalVersionID)
-        }
-        return .init(trackKey: page.entry.trackStableKey, source: source)
+        return page.archiveTarget(from: target, position: .init(find: find, lineIndex: focusedLine))
     }
 
     var body: some View {
@@ -76,6 +70,7 @@ struct LibraryPassageReader: View {
                 }
                 if let openArchive {
                     Button { openArchive(archiveTarget) } label: { Label("版本档案", systemImage: "books.vertical") }.fixedSize()
+                        .disabled(page == nil && failure == nil)
                 }
                 Menu {
                     Toggle("显示译文", isOn: $showsTranslation)

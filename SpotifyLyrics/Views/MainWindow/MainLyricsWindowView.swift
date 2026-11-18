@@ -186,7 +186,7 @@ struct MainLyricsWindowView: View {
     }
 
     private func openWorkbenchLocation(_ location: SettingsLocation) {
-        if location.passage == nil, location.archiveSource == nil, location.query.isEmpty, location.resultID == nil {
+        if location.passage == nil, location.archivePassage == nil, location.query.isEmpty, location.resultID == nil {
             let tab: LibraryToolTab? = switch location.page {
             case .library: .library
             case .history: .history

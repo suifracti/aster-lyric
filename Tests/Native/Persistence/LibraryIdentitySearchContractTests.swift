@@ -102,6 +102,21 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         XCTAssertEqual(bookmarkResume.readingPosition, secondChorus)
         XCTAssertEqual(bookmarkPage?.lines.first?.translation, "收藏的译文")
         XCTAssertNil(bookmarkPage?.lines.last?.translation)
+
+        var oldBookmark = bookmark
+        oldBookmark.source = .translation(UUID())
+        var history = SettingsHistory()
+        history.open(.init(reading: oldBookmark))
+        let resolvedBookmark = try await library.readPassage(oldBookmark, recordOpening: false)
+        let archiveTarget = try XCTUnwrap(resolvedBookmark).archiveTarget(from: oldBookmark, position: secondChorus)
+        history.openArchive(fromReading: archiveTarget)
+        XCTAssertEqual(history.current.archivePassage?.source, .original(originalID))
+        XCTAssertEqual(history.current.archivePassage?.readingPosition, secondChorus)
+        history.back()
+        XCTAssertEqual(history.current.passage, archiveTarget)
+        let returnedPage = try await library.readPassage(archiveTarget, recordOpening: false)
+        XCTAssertEqual(returnedPage?.lines.first?.translation, "收藏的译文")
+        XCTAssertNil(returnedPage?.lines.last?.translation)
     }
 
     @MainActor

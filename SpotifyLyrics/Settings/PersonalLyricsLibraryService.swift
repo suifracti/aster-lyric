@@ -134,15 +134,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         var passage: LibraryPassageTarget? = nil
     }
     @Published var versionPreview: VersionPreview?
-    func previewVersion(lyricsID: UUID, entry: PersonalLyricsLibraryEntry,
-                        translation: PersonalTranslationVersionItem? = nil,
-                        reading: PersonalReadingVersionItem? = nil, timingID: UUID? = nil) {
-        guard let timingID else {
-            let target = LibraryPassageTarget(trackKey: entry.trackStableKey,
-                source: translation.map { .translation($0.id) } ?? reading.map { .reading($0.id) } ?? .original(lyricsID))
-            presentPassage(target)
-            return
-        }
+    func previewTimingVersion(lyricsID: UUID, entry: PersonalLyricsLibraryEntry, timingID: UUID) {
         Task {
             do {
                 let track = entry.libraryTrack

@@ -190,7 +190,7 @@ struct SettingsLocation: Equatable {
     var trackKey: String?
     var query: String
     var resultID: String?
-    var archiveSource: LibraryPassageSource?
+    var archivePassage: LibraryPassageTarget?
     var passage: LibraryPassageTarget?
     var appearanceSurface: AppearanceSurface = .main
     var opensSpotifyOnline = false
@@ -215,7 +215,7 @@ struct SettingsLocation: Equatable {
 
     init(archive target: LibraryPassageTarget) {
         self.init(.library, trackKey: target.trackKey)
-        archiveSource = target.source
+        archivePassage = target
     }
 
     init(_ page: SettingsCategory, trackKey: String? = nil, query: String = "", opensSpotifyOnline: Bool = false) {
@@ -242,6 +242,11 @@ struct SettingsHistory {
         earlier.append(current)
         later.removeAll()
         current = location
+    }
+
+    mutating func openArchive(fromReading passage: LibraryPassageTarget) {
+        if current.passage != nil, passage.readingPosition != nil { current = .init(reading: passage) }
+        open(.init(archive: passage))
     }
 
     mutating func back() {
@@ -274,7 +279,7 @@ struct SettingsHistory {
 
     mutating func rememberLibrarySelection(_ key: String?) {
         guard current.page == .library || current.page == .missingLyrics else { return }
-        if current.trackKey != key { current.archiveSource = nil }
+        if current.trackKey != key { current.archivePassage = nil }
         current.trackKey = key
     }
 }
@@ -361,8 +366,9 @@ struct SettingsRootView: View {
                 if history.current.query.isEmpty {
                     SettingsDetailView(selection: Binding(get: { history.current.page }, set: { navigate(.init($0)) }),
                                        trackKey: history.current.trackKey, passage: history.current.passage,
-                                       archiveSource: history.current.archiveSource, favoriteQuery: $favoriteQuery,
+                                       archivePassage: history.current.archivePassage, favoriteQuery: $favoriteQuery,
                                        backFromReading: history.canGoBack ? { history.back() } : nil,
+                                       openArchiveFromReading: { history.openArchive(fromReading: $0) },
                                        appearanceSurface: history.current.appearanceSurface, opensSpotifyOnline: history.current.opensSpotifyOnline,
                                        library: library, navigate: navigate,
                                        rememberSelection: { history.rememberLibrarySelection($0) })
@@ -419,9 +425,10 @@ private struct SettingsDetailView: View {
     @Binding var selection: SettingsCategory
     let trackKey: String?
     let passage: LibraryPassageTarget?
-    let archiveSource: LibraryPassageSource?
+    let archivePassage: LibraryPassageTarget?
     @Binding var favoriteQuery: String
     let backFromReading: (() -> Void)?
+    let openArchiveFromReading: (LibraryPassageTarget) -> Void
     let appearanceSurface: AppearanceSurface
     let opensSpotifyOnline: Bool
     let library: PersonalLyricsLibraryService
@@ -452,12 +459,13 @@ private struct SettingsDetailView: View {
             case .library, .missingLyrics:
                 if let passage {
                     LibraryPassageReader(target: passage, library: library,
-                                        openArchive: { navigate(.init(archive: $0)) }, close: backFromReading)
+                                        openArchive: openArchiveFromReading, close: backFromReading)
                         .id(passage)
                 } else {
                     PersonalLyricsLibraryView(embeddedInSettings: true, initialTrackKey: trackKey,
-                                              showingMissing: selection == .missingLyrics, initialSource: archiveSource, service: library,
-                                              onSelection: rememberSelection, readPassage: { navigate(.init(reading: $0)) })
+                                              showingMissing: selection == .missingLyrics, initialPassage: archivePassage, service: library,
+                                              onSelection: rememberSelection, readPassage: { navigate(.init(reading: $0)) },
+                                              openArchive: { navigate(.init(archive: $0)) })
                 }
             case .history: ListeningHistoryView(openTrack: { navigate(.init(.library, trackKey: $0)) })
             case .statistics: ListeningStatisticsView()

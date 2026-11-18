@@ -891,6 +891,13 @@ enum LibraryPassageSource: Hashable, Codable, Sendable {
     case translation(UUID)
     case reading(UUID)
 
+    var versionID: UUID? {
+        switch self {
+        case .selected: return nil
+        case .original(let id), .attached(let id), .translation(let id), .reading(let id): return id
+        }
+    }
+
     var label: String {
         switch self {
         case .selected: return "歌词"
@@ -974,6 +981,17 @@ struct LibraryPassagePage: Sendable {
     var translationLocked = false
     var translationVersionID: UUID? = nil
     var resolvedSource: LibraryPassageSource? = nil
+
+    func archiveTarget(from target: LibraryPassageTarget, position: LibraryPassageTarget.ReadingPosition) -> LibraryPassageTarget {
+        var source = resolvedSource ?? target.source
+        switch source {
+        case .selected: source = .original(originalVersionID)
+        case .translation where translationVersionID == nil: source = .original(originalVersionID)
+        default: break
+        }
+        return .init(trackKey: entry.trackStableKey, source: source, find: target.find,
+                     lineIndex: target.lineIndex, savedQuote: target.savedQuote, readingPosition: position)
+    }
 
     func originalOccurrence(of text: String, preferred: Int?) -> Int? {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
