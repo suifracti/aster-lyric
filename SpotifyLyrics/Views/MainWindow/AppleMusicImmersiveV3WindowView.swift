@@ -380,7 +380,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                                          artworkURL: compositionTrack.artworkURL)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
-                if (settings.v3GlassWeather != .off || settings.v3LyricImagery), hoveredStyle == nil {
+                // A 情境 brings its own weather; the two never stack.
+                if (settings.v3GlassWeather != .off || settings.v3LyricImagery), hoveredStyle == nil, activeScene == .off {
                     V3GlassWeatherLayer(weather: settings.v3GlassWeather,
                                         imagery: settings.v3LyricImagery ? currentLyricImagery : nil,
                                         playing: state.isPlaying)
@@ -409,11 +410,18 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                                      speed: (sceneBPM ?? 110) / 110)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .blur(radius: librarySearch.isPresented ? 5 : 0)
+                        .id(activeScene)
+                        .transition(.opacity.animation(.easeInOut(duration: 0.8)))
                 }
 
                 GeometryReader { canvasGeometry in
                     layout(for: canvasGeometry)
                         .frame(width: canvasGeometry.size.width, height: canvasGeometry.size.height)
+                }
+                // 起雾的窗 and 水面 follow the pointer; nothing re-renders for it.
+                .onContinuousHover(coordinateSpace: .local) { phase in
+                    guard activeScene == .fog || activeScene == .water else { return }
+                    if case .active(let point) = phase { V3SceneInput.shared.pointer(point, scene: activeScene) }
                 }
                 .frame(width: canvasWidth, height: geometry.size.height)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -443,12 +451,16 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
 
                 if activeScene != .off, !librarySearch.isPresented {
-                    V3SceneCoverLayer(scene: activeScene, context: roomContext,
-                                      cover: foregroundCover.flatMap { $0.isLargeEnough ? $0.frame : nil },
-                                      player: playbackRegion)
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                    V3SceneGlassLayer(scene: activeScene, context: roomContext, playing: state.isPlaying)
-                        .frame(width: geometry.size.width, height: geometry.size.height)
+                    Group {
+                        V3SceneCoverLayer(scene: activeScene, context: roomContext,
+                                          cover: foregroundCover.flatMap { $0.isLargeEnough ? $0.frame : nil },
+                                          player: playbackRegion)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                        V3SceneGlassLayer(scene: activeScene, context: roomContext, playing: state.isPlaying)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                    }
+                    .id(activeScene)
+                    .transition(.opacity.animation(.easeInOut(duration: 0.8)))
                 }
 
                 if settings.v3PlayerProgressOnCover, !settings.v3ScenePlayerHidden, !isFocusMode,
@@ -1962,6 +1974,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                              trackKey: TrackIdentity(track: state.currentTrack).stableKey,
                              spotifyTrackID: state.currentTrack.spotifyId.flatMap(SpotifyPublicArtwork.trackID(from:)),
                              opensOnChorus: settings.v3RoomOpensOnChorus,
+                             accent: coverAccent ?? .white, luminance: coverLuminance,
+                             artworkURL: state.currentTrack.artworkURL,
                              song: [.polaroid, .stars].contains(settings.v3Room) ? roomSong : nil)
     }
 

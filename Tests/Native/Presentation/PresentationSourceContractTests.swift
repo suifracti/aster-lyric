@@ -638,7 +638,7 @@ final class V3RoomSceneTests: XCTestCase {
         XCTAssertTrue(source.contains(".allowsHitTesting(false)"))
         XCTAssertEqual(V3Room.rain.resolved(), .rain)
         XCTAssertNotEqual(V3Room.weather.resolved(), .weather)
-        XCTAssertEqual(V3Room.rooms + V3Room.materials, [.rain, .train, .snow, .weather, .book, .polaroid, .stars, .film])
+        XCTAssertEqual(V3Room.rooms + V3Room.lights + V3Room.materials, [.rain, .fog, .snow, .train, .weather, .aurora, .water, .book, .polaroid, .stars, .film])
     }
 
     func testStanzasCountBlankLinesAndLongPauses() {
@@ -657,7 +657,7 @@ final class V3RoomSceneTests: XCTestCase {
         XCTAssertEqual(V3WeatherWatcher.room(forWeatherCode: 95), .rain)
         XCTAssertEqual(V3WeatherWatcher.room(forWeatherCode: 73), .snow)
         XCTAssertEqual(V3WeatherWatcher.room(forWeatherCode: 0), .clearNight)
-        XCTAssertEqual(V3WeatherWatcher.room(forWeatherCode: 45), .clearNight)
+        XCTAssertEqual(V3WeatherWatcher.room(forWeatherCode: 45), .fog)
     }
 }
 

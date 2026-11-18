@@ -960,6 +960,12 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 - Each scene draws a back layer (behind the lyrics), a cover layer (around the foreground cover) and a glass layer (on top, no pointer). It never writes the user's other picture settings.
 - Chorus moments: heavier rain with distant lightning; the train crosses a bridge; denser snow; a shooting star; a polaroid shutter; the projector lamp; the chorus passage marked in the book.
 - 拍立得 and 星座 keep the tray for developed prints next to the cover.
+- Third batch (same day). The groups are now 窗 (雨滴玻璃, 起雾的窗, 雪夜小屋, 夜行列车, 跟随天气), 光影 (极光, 水面) and 材质.
+  - 雨滴玻璃: lens drops that each show the cover upside down; big ones slide and leave a trail.
+  - 起雾的窗: the pointer wipes the fog, which closes in again over 20 s; the lyric area stays half clear.
+  - 极光: curtains in the cover's colours behind the lyrics, brightening on each line.
+  - 水面: aqua caustic light; each line and the pointer send out ripples.
+- All scenes take the cover's colour and brightness and cross-fade when switched. 窗上天气 is held back while a scene is on. Motion continues while paused (only Reduce Motion stops it).
 
 (Earlier, same day) **情境** (2026-11-18, 更多 › 窗口 › 情境, off by default; replaces the 雨夜房间 switch).
 - The listening view keeps 85–92% of the window and becomes the glass; the room lives in a thin margin and on the glass, never under the pointer.
