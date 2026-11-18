@@ -1142,9 +1142,10 @@ public final class AppSettingsStore: ObservableObject {
     @Published public var v3GlassWeather: V3GlassWeather = .off {
         didSet { defaults.set(v3GlassWeather.rawValue, forKey: "v3.glassWeather.v1") }
     }
-    /// 雨夜房间: the listening view as a monitor on a desk on a rainy night.
-    @Published public var v3RainRoom = false {
-        didSet { defaults.set(v3RainRoom, forKey: "v3.rainRoom.v1") }
+    /// 情境: a room around the listening view (雨夜窗边、夜行列车、雪夜小屋) or a material
+    /// it is shown on (老电影). Replaces the 雨夜房间 switch; `v3.rainRoom.v1` is still read once.
+    @Published var v3Room: V3Room = .off {
+        didSet { defaults.set(v3Room.rawValue, forKey: "v3.room.v1") }
     }
     /// 副歌时换素材: during a chorus the backdrop shows the other material
     /// (the Canvas clip over a still picture, or the still picture over a clip).
@@ -1658,7 +1659,8 @@ public final class AppSettingsStore: ObservableObject {
         self.v3BackdropGrain = defaults.object(forKey: "v3.backdropGrain.v1") as? Bool ?? true
         self.v3GlassWeather = V3GlassWeather(rawValue: defaults.string(forKey: "v3.glassWeather.v1") ?? "") ?? .off
         self.v3LyricImagery = defaults.object(forKey: "v3.lyricImagery.v1") as? Bool ?? false
-        self.v3RainRoom = defaults.object(forKey: "v3.rainRoom.v1") as? Bool ?? false
+        self.v3Room = defaults.string(forKey: "v3.room.v1").flatMap(V3Room.init(rawValue:))
+            ?? ((defaults.object(forKey: "v3.rainRoom.v1") as? Bool ?? false) ? .rain : .off)
         self.v3ChorusSwapsMaterial = defaults.object(forKey: "v3.chorusSwapsMaterial.v1") as? Bool ?? false
         self.v3SpectrumStyle = V3SpectrumStyle(rawValue: defaults.string(forKey: "v3.spectrumStyle.v1") ?? "") ?? .off
         self.floatingHiddenFromCapture = defaults.bool(forKey: "floating.hiddenFromCapture.v1")

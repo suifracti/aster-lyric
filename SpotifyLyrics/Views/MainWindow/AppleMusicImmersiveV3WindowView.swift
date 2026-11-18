@@ -588,7 +588,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     }
                 }
             }
-            .modifier(V3RainRoomModifier(enabled: settings.v3RainRoom && !isFocusMode, playing: state.isPlaying))
+            .modifier(V3RoomModifier(room: isFocusMode ? .off : settings.v3Room, playing: state.isPlaying))
             .onChange(of: state.currentLineIndex, initial: true) { _, index in
                 // 人声包络: the light can follow these word starts when no sound is heard.
                 V3VocalOnsets.current = settings.v3MusicMotionEnabled && state.liveLyricsAreSynchronized
@@ -2287,8 +2287,16 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     .accessibilityIdentifier("menubar.lyrics.toggle")
                     .help("直接开启或关闭菜单栏歌词；播放面板仍可从菜单栏图标打开。")
             }
-            Toggle("雨夜房间", isOn: $settings.v3RainRoom)
-                .help("把听歌画面缩进雨夜书桌上的一台显示器里：窗外下雨，台灯暖光。画面里的操作照常。")
+            V3PanelRow(title: "情境") {
+                Picker("情境", selection: $settings.v3Room) {
+                    ForEach(V3Room.allCases) { room in
+                        if room == .film { Divider() }
+                        Text(room.title).tag(room)
+                    }
+                }
+                .labelsHidden().pickerStyle(.menu).fixedSize()
+            }
+            .help(V3Room.allCases.filter { $0 != .off }.map { $0.title + "：" + $0.detail }.joined(separator: "\n") + "\n画面保持接近原大小，里面的操作照常。")
             V3PanelRow(title: "全屏歌词") {
                 Button(liveOnly ? "退出" : "打开") {
                     if liveOnly {

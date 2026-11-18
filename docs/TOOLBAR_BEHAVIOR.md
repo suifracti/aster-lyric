@@ -955,6 +955,14 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 - A 1.2 s cross-fade in each direction; the backdrop changes back when the chorus ends.
 - This is a temporary override of the clip layer only, separate from the hover preview. The saved material never changes.
 
+**情境** (2026-11-18, 更多 › 窗口 › 情境, off by default; replaces the 雨夜房间 switch).
+- The listening view keeps 85–92% of the window and becomes the glass; the room lives in a thin margin and on the glass, never under the pointer.
+- 雨夜窗边: a wooden casement and sill, rain on the glass, misted edges, a lamp's warmth from the lower right.
+- 夜行列车: a rounded carriage window; blurred lights stream past along the top and bottom of the pane only, and a street lamp sweeps across every 9 s.
+- 雪夜小屋: a painted frame, snow, frost grown in from the corners, firelight flickering on the log wall.
+- 老电影 (not a room): sprocket strips on both sides, grain at 12 fps, the odd scratch, flicker and a vignette.
+- Motion stops while paused or with Reduce Motion. `v3.rainRoom.v1` is read once as 雨夜窗边.
+
 **雨夜房间** (`50c8de2`, 更多 › 窗口, off by default; A13).
 - The whole listening view is drawn at 62% as the screen of a monitor on a desk.
 - Around it: a dark wall, and a window of far city lights with rain (the 窗上天气 particles, running while playing). Below and beside: the desk and a lamp's warm light.

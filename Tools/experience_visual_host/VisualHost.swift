@@ -365,6 +365,7 @@ struct ExperienceVisualHostApp: App {
         }
         if let style = V3ToolbarStyle(rawValue: ExperienceArguments.value("--toolbar-style", fallback: "-")) { settings.v3ToolbarStyle = style }
         if let presentation = V3PlaybackPresentation(rawValue: ExperienceArguments.value("--playback-presentation", fallback: "-")) { settings.v3PlaybackPresentation = presentation }
+        if let room = V3Room(rawValue: ExperienceArguments.value("--room", fallback: "-")) { settings.v3Room = room }
         if let style = V3LyricStyle(rawValue: ExperienceArguments.value("--lyric-style", fallback: "-")) { settings.v3LyricStyle = style }
         settings.v3ArtworkPosition=ExperienceArguments.value("--position",fallback:"left")
         if let scale=Double(ExperienceArguments.value("--scale",fallback:"")) { settings.v3ArtworkSizeScale=scale }
