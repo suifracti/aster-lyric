@@ -3,17 +3,23 @@ import SwiftUI
 struct PlaybackControlsView: View {
     @ObservedObject var state: PlaybackState
     var vertical: Bool = false
+    @State private var seekDraft = PlaybackSeekDraft()
+
+    private var duration: Double { max(0.1, state.currentTrack.duration) }
+    private var position: Double { seekDraft.position(for: state.seekRecording) ?? state.currentTime }
 
     var body: some View {
         VStack(spacing: vertical ? 14 : 10) {
             Slider(
                 value: Binding(
-                    get: { state.currentTime },
-                    set: { state.seek(to: $0, source: "progress-slider") }
+                    get: { min(position, duration) },
+                    set: { seekDraft.update($0, for: state.seekRecording) }
                 ),
-                in: 0...max(0.1, state.currentTrack.duration)
+                in: 0...duration,
+                onEditingChanged: editProgress
             )
             .tint(LyricsDesignTokens.accent)
+            .accessibilityLabel("播放进度")
 
             if vertical {
                 controlRow
@@ -39,6 +45,15 @@ struct PlaybackControlsView: View {
         }
         .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
         .accessibilityElement(children: .contain)
+        .onChange(of: state.seekRecording) { _, _ in seekDraft.invalidate() }
+    }
+
+    private func editProgress(_ editing: Bool) {
+        if editing {
+            seekDraft.begin(for: state.seekRecording)
+        } else if let target = seekDraft.finish(for: state.seekRecording) {
+            state.seek(to: min(target, duration), source: "progress-slider")
+        }
     }
 
     private var controlRow: some View {
@@ -75,7 +90,7 @@ struct PlaybackControlsView: View {
                 state.nextTrack()
             }
 
-            Text("\(formatTime(state.currentTime)) / \(formatTime(state.currentTrack.duration))")
+            Text("\(formatTime(position)) / \(formatTime(state.currentTrack.duration))")
                 .font(.system(size: 12, design: .rounded).monospacedDigit())
                 .foregroundStyle(LyricsDesignTokens.mutedText)
         }

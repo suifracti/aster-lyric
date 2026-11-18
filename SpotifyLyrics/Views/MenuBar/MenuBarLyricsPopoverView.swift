@@ -574,8 +574,7 @@ private struct MenuBarProgressRail: View {
     @State private var hovering = false
 
     private var duration: Double { max(0.1, state.currentTrack.duration) }
-    private var trackKey: String? { state.currentTrackIdentity?.stableKey }
-    private var draft: Double? { seekDraft.position(for: trackKey) }
+    private var draft: Double? { seekDraft.position(for: state.seekRecording) }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 0.25, paused: !state.isPlaying || draft != nil)) { _ in
@@ -601,11 +600,11 @@ private struct MenuBarProgressRail: View {
                     .contentShape(Rectangle())
                     .gesture(DragGesture(minimumDistance: 0)
                         .onChanged { value in
-                            seekDraft.update(min(max(value.location.x / width, 0), 1) * duration, for: trackKey)
+                            seekDraft.update(min(max(value.location.x / width, 0), 1) * duration, for: state.seekRecording)
                         }
                         .onEnded { _ in
-                            if let target = seekDraft.finish(for: trackKey) {
-                                state.seek(to: state.lyricSnappedSeekTarget(target), source: "menu-bar-progress")
+                            if let target = seekDraft.finish(for: state.seekRecording) {
+                                state.seek(to: state.lyricSnappedSeekTarget(min(target, duration)), source: "menu-bar-progress")
                             }
                         })
                     .onHover { inside in withAnimation(.easeOut(duration: 0.14)) { hovering = inside } }
@@ -628,6 +627,6 @@ private struct MenuBarProgressRail: View {
                 state.seek(to: min(max(position + step, 0), duration), source: "menu-bar-progress")
             }
         }
-        .onChange(of: trackKey) { _, _ in seekDraft.invalidate() }
+        .onChange(of: state.seekRecording) { _, _ in seekDraft.invalidate() }
     }
 }

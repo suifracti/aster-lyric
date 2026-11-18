@@ -35,6 +35,7 @@ public final class PlaybackState: ObservableObject {
     private static let seekLogger = Logger(subsystem: "com.spotifylyrics.app", category: "seek")
 #endif
     @Published public private(set) var currentTrack: Track = .emptyPlaybackPlaceholder
+    private var playbackRecordingRevision: UInt64 = 0
     public let progress = PlaybackProgress()
     public private(set) var currentTime: TimeInterval {
         get { progress.currentTime }
@@ -1126,6 +1127,9 @@ public final class PlaybackState: ObservableObject {
         canControlSpotify || isMockPreviewMode
     }
 
+    /// Unlike a track ID, this changes even when playback leaves a song and returns to it.
+    var seekRecording: UInt64? { canInteractWithPlayback ? playbackRecordingRevision : nil }
+
     public var providerStatusMessage: String {
         if isMockPreviewMode {
             return "Mock Preview"
@@ -1651,6 +1655,7 @@ public final class PlaybackState: ObservableObject {
         alignmentTask?.cancel()
         clearSearchPreview()
         lyricsOffsetScopeBinding?.clear()
+        playbackRecordingRevision &+= 1
         isMockPreviewMode = true
         hasLiveTrack = false
         updatePlaybackSourceIdentity(.mockPreview)
@@ -2119,8 +2124,10 @@ public final class PlaybackState: ObservableObject {
             target: seekTime, issuedAt: ProcessInfo.processInfo.systemUptime, trackKey: currentTrackIdentity?.stableKey)
 
         guard canControlSpotify else { return }
+        let recording = seekRecording
         invalidateProviderRefresh()
-        runProviderCommand { provider in
+        runProviderCommand { [weak self] provider in
+            guard let self, self.seekRecording == recording else { return }
             try await provider.seek(to: seekTime)
         }
     }
@@ -3212,7 +3219,9 @@ public final class PlaybackState: ObservableObject {
         let previousID = Self.playlistRequestTrackID(for: currentTrack, source: previousSource)
         updatePlaybackSourceIdentity(snapshot.sourceIdentity)
         let nextID = Self.playlistRequestTrackID(for: nextTrack, source: snapshot.sourceIdentity)
-        if previousSource != snapshot.sourceIdentity || nextID != previousID {
+        let routeChanged = previousSource != snapshot.sourceIdentity || nextID != previousID
+        if routeChanged {
+            playbackRecordingRevision &+= 1
             if playlistBrowser.currentTrackChanged(to: nextTrack) {
                 LyricsE2ELog.log("QUEUE skip consumed id=\(nextID ?? "unknown")")
                 runProviderCommand { try await $0.next() }
@@ -3225,6 +3234,7 @@ public final class PlaybackState: ObservableObject {
         let nextIdentity = lyricsSession.hasAdoptedLyrics(for: nextTrack)
             ? (lyricsSession.activeIdentity ?? TrackIdentity(track: nextTrack)) : TrackIdentity(track: nextTrack)
         let identityChanged = !hasLiveTrack || lyricsSession.activeIdentity != nextIdentity
+        if identityChanged && !routeChanged && nextID == nil { playbackRecordingRevision &+= 1 }
         let observedAt = Date()
 
         if let session = listeningHistorySession,

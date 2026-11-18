@@ -51,14 +51,14 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
     @State private var isHovered = false
     @State private var tickHover: (x: CGFloat, text: String)?
     @State private var isEditing = false
-    @State private var draftPosition: Double?
+    @State private var seekDraft = PlaybackSeekDraft()
 
     private var duration: Double {
         max(0.1, state.currentTrack.duration)
     }
 
     private var playbackPosition: Double {
-        let rawValue = draftPosition ?? state.presentationClock.playbackTime(
+        let rawValue = seekDraft.position(for: state.seekRecording) ?? state.presentationClock.playbackTime(
             at: ProcessInfo.processInfo.systemUptime
         )
         return min(max(rawValue, 0), duration)
@@ -99,6 +99,7 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
                 progressRail
             }
         }
+        .onChange(of: state.seekRecording) { _, _ in seekDraft.invalidate() }
     }
 
     private var progressRail: some View {
@@ -205,7 +206,7 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
                 V3PlaybackInputSlider(
                     value: Binding(
                         get: { playbackPosition },
-                        set: { draftPosition = min(max($0, 0), duration) }
+                        set: { seekDraft.update(min(max($0, 0), duration), for: state.seekRecording) }
                     ),
                     duration: duration,
                     onEditingChanged: handleEditingChanged
@@ -246,11 +247,11 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
     private func handleEditingChanged(_ editing: Bool) {
         isEditing = editing
         interactionChanged(editing)
-        // A native Slider may write its binding before beginning tracking.
-        // Preserve that target rather than replacing it with the live clock.
-        guard !editing, let draftPosition else { return }
-        self.draftPosition = nil
-        state.seek(to: state.lyricSnappedSeekTarget(min(max(draftPosition, 0), duration)), source: "v3-progress-slider")
+        if editing {
+            seekDraft.begin(for: state.seekRecording)
+        } else if let target = seekDraft.finish(for: state.seekRecording) {
+            state.seek(to: state.lyricSnappedSeekTarget(min(target, duration)), source: "v3-progress-slider")
+        }
     }
 }
 

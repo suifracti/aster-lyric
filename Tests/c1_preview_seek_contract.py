@@ -149,7 +149,7 @@ precondition(mock.seeks == [0])
 print("C1 row guard runtime: PASS (A-B, A-B-A, zero/forward/backward, preview/live origins, stale revisions, mock)")
 '''.replace('ORIGIN', source_enum).replace('IDENTITY', identity_property).replace('SEEK', seek_method)
 
-v3_source = (root / 'SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift').read_text()
+v3_source = (root / 'SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3Lyrics.swift').read_text()
 canvas_source = (root / 'SpotifyLyrics/Views/Components/LyricsCanvasView.swift').read_text()
 for source, target, label in (
     (v3_source, 'timestamp', 'v3-lyric-line'),
@@ -177,10 +177,17 @@ else:
     with tempfile.TemporaryDirectory(prefix='spotifylyrics-c1-preview-') as temp:
         script = Path(temp) / 'main.swift'
         script.write_text(program)
+        reading = (root / 'SpotifyLyrics/Lyrics/ReadingModels.swift').read_text()
+        conversion_id = Path(temp) / 'ScriptConversionID.swift'
+        conversion_id.write_text(block('public enum ScriptConversionID:', reading))
         binary = Path(temp) / 'contract'
         subprocess.run([
             'swiftc', str(root / 'SpotifyLyrics/Models/Models.swift'),
             str(root / 'SpotifyLyrics/Lyrics/TrackIdentity.swift'),
+            str(root / 'SpotifyLyrics/Lyrics/TrackTextNormalizer.swift'),
+            str(root / 'SpotifyLyrics/Lyrics/TrackAlias.swift'),
+            str(root / 'SpotifyLyrics/Lyrics/ReadingScriptConversion.swift'),
+            str(conversion_id),
             str(script), '-o', str(binary)
         ], check=True)
         subprocess.run([str(binary)], check=True)

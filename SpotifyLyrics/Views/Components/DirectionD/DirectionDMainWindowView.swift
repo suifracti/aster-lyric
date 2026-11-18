@@ -15,7 +15,7 @@ public struct DirectionDMainWindowView: View {
 
     @State private var isInspectorOpen = false
     @State private var isSmallSheetOpen = false
-    @State private var draftSeek: Double?
+    @State private var seekDraft = PlaybackSeekDraft()
     @State private var lastDirectionDScrollTargetID: UUID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -362,12 +362,14 @@ public struct DirectionDMainWindowView: View {
                 value: seekBinding,
                 in: 0...max(totalDuration, 1)
             ) { editing in
-                if !editing, let draftSeek {
-                    playbackState.seek(to: draftSeek, source: "direction-d-main-window-slider")
-                    self.draftSeek = nil
+                if editing {
+                    seekDraft.begin(for: playbackState.seekRecording)
+                } else if let target = seekDraft.finish(for: playbackState.seekRecording) {
+                    playbackState.seek(to: min(target, currentTrack.duration), source: "direction-d-main-window-slider")
                 }
             }
             .tint(.white)
+            .accessibilityLabel("播放进度")
 
             HStack {
                 Text(formatTime(currentTime))
@@ -377,12 +379,13 @@ public struct DirectionDMainWindowView: View {
             .font(.system(size: 10, design: .monospaced))
             .foregroundStyle(.white.opacity(0.60))
         }
+        .onChange(of: playbackState.seekRecording) { _, _ in seekDraft.invalidate() }
     }
 
     private var seekBinding: Binding<Double> {
         Binding(
-            get: { draftSeek ?? min(max(0, currentTime), max(totalDuration, 1)) },
-            set: { draftSeek = $0 }
+            get: { seekDraft.position(for: playbackState.seekRecording) ?? min(max(0, currentTime), max(totalDuration, 1)) },
+            set: { seekDraft.update($0, for: playbackState.seekRecording) }
         )
     }
 

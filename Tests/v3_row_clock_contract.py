@@ -5,7 +5,8 @@ import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-source = (root / "SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift").read_text()
+source = (root / "SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3Lyrics.swift").read_text()
+window = (root / "SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift").read_text()
 models = (root / "SpotifyLyrics/Models/Models.swift").read_text()
 
 def block(text, signature):
@@ -18,21 +19,24 @@ def block(text, signature):
     return text[start:end]
 
 clock = block(models, "public struct LyricsPresentationClock:")
-equality = block(source, "static func == (lhs: AppleMusicImmersiveV3LyricRow,")
-equality = equality.replace("AppleMusicImmersiveV3LyricRow", "Row")
+outer = block(source, "static func == (lhs: AppleMusicImmersiveV3LyricRow,")
+outer = outer.replace("func ==", "func sameOuter").replace("AppleMusicImmersiveV3LyricRow", "Row")
+equality = block(source, "static func == (lhs: AppleMusicImmersiveV3LyricRowContent,")
 equality = equality.replace("AppleMusicImmersiveV3LyricRowContent", "Row")
 relay = block((root / "SpotifyLyrics/Views/Components/ReadingVersionEditorView.swift").read_text(), "final class RubyCorrectionAction:")
-interaction = block(source, "final class V3PlaybackInteractionRelay:")
+interaction = block(window, "final class V3PlaybackInteractionRelay:")
 program = "import Foundation\n" + clock + "\n" + relay + "\n" + interaction + "\n" + r'''
 struct Line: Equatable { var timedSpans: [Int]? = [1] }
 struct Row: Equatable {
     var line = Line()
     var clampedDistance = 0
     var isActive = true
+    var isPast = false
     var isAdjacent = false
     var isNearActive = true
     var isSynchronized = true
     var availableWidth = 600
+    var bigLineAvailableHeight: Double? = nil
     var compact = false
     var preferences = 0
     var language = "ja"
@@ -45,9 +49,13 @@ struct Row: Equatable {
     var presentationClock = LyricsPresentationClock(authoritativePosition: 10,
         receivedAtMonotonicTime: 100, isPlaying: true, trackID: "track", trackDuration: 240)
 EQUALITY
+OUTER
 }
 func expect(_ condition: Bool, _ message: String) {
     if !condition { print("FAIL: " + message); exit(1) }
+}
+func expectRows(_ first: Row, _ second: Row, equal: Bool, _ message: String) {
+    expect((first == second) == equal && Row.sameOuter(lhs: first, rhs: second) == equal, message)
 }
 let relay = RubyCorrectionAction()
 let stableHandler = relay
@@ -72,24 +80,24 @@ let original = Row()
 var changed = original
 changed.presentationClock = LyricsPresentationClock(authoritativePosition: 11,
     receivedAtMonotonicTime: 101, isPlaying: false, trackID: "track", trackDuration: 240)
-expect(original != changed, "same-line pause must refresh active timed row")
+expectRows(original, changed, equal: false, "same-line pause must refresh active timed row")
 changed.presentationClock = LyricsPresentationClock(authoritativePosition: 13,
     receivedAtMonotonicTime: 101, isPlaying: true, trackID: "track", trackDuration: 240)
-expect(original != changed, "same-line seek must refresh active timed row")
+expectRows(original, changed, equal: false, "same-line seek must refresh active timed row")
 changed.presentationClock = original.presentationClock.withPresentationOffset(1)
-expect(original != changed, "lyric offset must refresh active timed row")
+expectRows(original, changed, equal: false, "lyric offset must refresh active timed row")
 var staticRow = original
 staticRow.line.timedSpans = nil
 changed = staticRow
 changed.presentationClock = original.presentationClock.withPresentationOffset(1)
-expect(staticRow == changed, "static ruby must not re-layout for clock-only changes")
+expectRows(staticRow, changed, equal: true, "static ruby must not re-layout for clock-only changes")
 var inactiveRow = original
 inactiveRow.isActive = false
 changed = inactiveRow
 changed.presentationClock = original.presentationClock.withPresentationOffset(1)
-expect(inactiveRow == changed, "inactive timed rows must not re-layout for clock-only changes")
+expectRows(inactiveRow, changed, equal: true, "inactive timed rows must not re-layout for clock-only changes")
 print("PASS: active timed rows follow pause/seek/offset; static and inactive rows stay stable")
-'''.replace("EQUALITY", equality)
+'''.replace("EQUALITY", equality).replace("OUTER", outer)
 with tempfile.TemporaryDirectory(prefix="lyricsq-row-clock-") as folder:
     path = Path(folder)
     (path / "main.swift").write_text(program)

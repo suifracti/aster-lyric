@@ -432,7 +432,8 @@ private struct V3InterludePresentation: View {
 private struct V3CoverProgressPresentation: View {
     let state: PlaybackState
     let cover: V3ForegroundCoverFrame
-    @State private var draft: Double?
+    @State private var seekDraft = PlaybackSeekDraft()
+    private var draft: Double? { seekDraft.position(for: state.seekRecording) }
     @State private var hover: Double?
     @State private var showsControls = false
 
@@ -448,6 +449,7 @@ private struct V3CoverProgressPresentation: View {
         }
         .frame(width: rect.width, height: rect.height)
         .onHover { inside in withAnimation(.easeOut(duration: 0.2)) { showsControls = inside } }
+        .onChange(of: state.seekRecording) { _, _ in seekDraft.invalidate(); hover = nil }
         .position(x: rect.midX, y: rect.midY)
     }
 
@@ -491,12 +493,11 @@ private struct V3CoverProgressPresentation: View {
             .gesture(DragGesture(minimumDistance: 0)
                 .onChanged { value in
                     guard v3CanSeek(state) else { return }
-                    draft = min(1, max(0, value.location.x / rect.width))
+                    seekDraft.update(min(1, max(0, value.location.x / rect.width)), for: state.seekRecording)
                     hover = draft
                 }
                 .onEnded { value in
-                    defer { draft = nil }
-                    guard v3CanSeek(state) else { return }
+                    guard seekDraft.finish(for: state.seekRecording) != nil, v3CanSeek(state) else { return }
                     let target = min(1, max(0, value.location.x / rect.width))
                     state.seek(to: state.lyricSnappedSeekTarget(target * state.currentTrack.duration), source: "v3-cover-progress")
                 })

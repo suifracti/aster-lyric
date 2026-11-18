@@ -687,6 +687,39 @@ final class V3KeepsakeTests: XCTestCase {
 
 final class V3SceneLayerTests: XCTestCase {
     @MainActor
+    func testClassicBackdropMigrationKeepsTheExistingFramingAcrossScenesAndRestart() throws {
+        let suite = "classic-backdrop-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(V3ArtworkPresentation.classic.rawValue, forKey: AppSettingsStore.Key.v3ArtworkPresentation)
+        defaults.set(0.9, forKey: AppSettingsStore.Key.v3ArtworkSizeScale)
+        defaults.set(1.3, forKey: AppSettingsStore.Key.v3ClassicBackdropSizeScale)
+        defaults.set([V3ArtworkPresentation.classic.rawValue: true], forKey: "v3.backgroundFramingByPresentation.v1")
+
+        let settings = AppSettingsStore(defaults: defaults)
+        XCTAssertEqual(settings.v3PreviewScale(for: .classic), 0.9)
+        XCTAssertEqual(settings.v3BackdropScale(for: .classic), 1.3)
+        XCTAssertTrue(settings.v3BackgroundShowsCompleteArtwork(for: .classic))
+        XCTAssertFalse(settings.v3EdgeProgressEnabled)
+        XCTAssertEqual(settings.v3EdgeProgressColorMode, "randomSong")
+
+        settings.selectV3Scene(.flowingField, renderer: .ambientFeathered)
+        let reopened = AppSettingsStore(defaults: defaults)
+        XCTAssertEqual(reopened.v3BackdropScale(for: .ambientFeathered), 1.3)
+        XCTAssertTrue(reopened.v3BackgroundShowsCompleteArtwork(for: .ambientFeathered))
+        let before = defaults.persistentDomain(forName: suite)
+        for style in V3ArtworkPresentation.allCases {
+            XCTAssertEqual(reopened.v3PreviewBackdropScale(for: style), 1.3)
+            XCTAssertTrue(reopened.v3BackgroundShowsCompleteArtwork(for: style))
+            _ = reopened.v3PreviewScale(for: style)
+            _ = reopened.v3PreviewBlur(for: style)
+        }
+        XCTAssertEqual(before as NSDictionary?, defaults.persistentDomain(forName: suite) as NSDictionary?)
+        XCTAssertEqual(defaults.double(forKey: AppSettingsStore.Key.v3ClassicBackdropSizeScale), 1.3)
+        XCTAssertEqual(defaults.double(forKey: AppSettingsStore.Key.v3ArtworkSizeScale), 0.9)
+    }
+
+    @MainActor
     func testAutomaticAmbientKeepsTheStoredLookIndependentOfEachCover() throws {
         let suite = "automatic-ambient-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

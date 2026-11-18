@@ -31,8 +31,8 @@ struct V3WindowEdgePlaybackOverlay: View {
     @State private var playerShown = false
     @State private var lingerTask: Task<Void, Never>?
     @State private var lastCanvasSize = CGSize.zero
-    @State private var draftFraction: Double?
-    @State private var dragTrackKey: String?
+    @State private var seekDraft = PlaybackSeekDraft()
+    private var draftFraction: Double? { seekDraft.position(for: state.seekRecording) }
     @State private var windowVisible = false
     @State private var colorElapsed: TimeInterval = 0
     @State private var colorStartedAt: Date?
@@ -117,7 +117,8 @@ struct V3WindowEdgePlaybackOverlay: View {
                             duration: state.currentTrack.duration,
                             canSeek: canSeek,
                             onScrub: { setDraft($0) },
-                            onScrubEnd: { finishSeek(fraction: $0) })
+                            onScrubEnd: { finishSeek(fraction: $0) },
+                            onScrubAdjust: { seek(toFraction: $0) })
                     }
                 }
                 .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
@@ -170,11 +171,10 @@ struct V3WindowEdgePlaybackOverlay: View {
                 if !Task.isCancelled { playerShown = false }
             }
         }
-        .onChange(of: state.currentTrackIdentity) { _, _ in
-            if dragTrackKey != nil {
-                // Keep the original gesture identity until release so a track
-                // change cannot redirect an unfinished drag onto the new song.
-                draftFraction = nil
+        .onChange(of: state.seekRecording) { _, _ in
+            if seekDraft.isTracking {
+                seekDraft.invalidate()
+                setHover(nil)
                 interactionChanged(false)
             }
         }
@@ -266,27 +266,24 @@ struct V3WindowEdgePlaybackOverlay: View {
 
     private func setDraft(_ fraction: Double) {
         guard canSeek else { return }
-        if dragTrackKey == nil {
-            dragTrackKey = state.currentTrackIdentity?.stableKey
-            interactionChanged(true)
-        }
-        guard dragTrackKey == state.currentTrackIdentity?.stableKey else { return }
-        draftFraction = min(1, max(0, fraction))
+        if !seekDraft.isTracking { interactionChanged(true) }
+        seekDraft.update(min(1, max(0, fraction)), for: state.seekRecording)
     }
 
-    /// Release on the pill's scrubber. A song change during the drag leaves
-    /// `dragTrackKey` on the old song, so the new song is never seeked.
     private func finishSeek(fraction: Double) {
         defer { cancelDraft() }
-        guard canSeek, dragTrackKey == state.currentTrackIdentity?.stableKey else { return }
-        state.seek(to: state.lyricSnappedSeekTarget(min(1, max(0, fraction)) * state.currentTrack.duration),
-                   source: "v3-edge-progress")
+        guard seekDraft.position(for: state.seekRecording) != nil else { return }
+        seek(toFraction: fraction)
+    }
+
+    private func seek(toFraction fraction: Double) {
+        guard canSeek else { return }
+        state.seek(to: state.lyricSnappedSeekTarget(min(1, max(0, fraction)) * state.currentTrack.duration), source: "v3-edge-progress")
     }
 
     private func cancelDraft() {
-        if dragTrackKey != nil { interactionChanged(false) }
-        draftFraction = nil
-        dragTrackKey = nil
+        if seekDraft.isTracking { interactionChanged(false) }
+        seekDraft = PlaybackSeekDraft()
     }
 
     private func railPresentation(at date: Date, songHue: Double, size: CGSize) -> some View {
@@ -493,6 +490,7 @@ struct V3EdgePillScrubber: View {
     let onHover: (Double?) -> Void
     let onDrag: (Double) -> Void
     let onRelease: (Double) -> Void
+    let onAdjust: (Double) -> Void
     @State private var hovering = false
 
     /// Thickness of the pointer target; the visible line is thinner.
@@ -523,7 +521,6 @@ struct V3EdgePillScrubber: View {
                     onDrag(fraction(value.location)); onHover(fraction(value.location))
                 }
                 .onEnded { value in
-                    guard enabled else { return }
                     onRelease(fraction(value.location)); onHover(nil)
                 })
             .onContinuousHover { phase in
@@ -539,7 +536,7 @@ struct V3EdgePillScrubber: View {
         .accessibilityValue("\(Int(progress * 100))%")
         .accessibilityAdjustableAction { direction in
             guard enabled else { return }
-            onRelease(min(1, max(0, progress + (direction == .increment ? 0.03 : -0.03))))
+            onAdjust(min(1, max(0, progress + (direction == .increment ? 0.03 : -0.03))))
         }
     }
 }
@@ -602,6 +599,7 @@ private struct V3WindowEdgeTransportButtons: View {
     let canSeek: Bool
     let onScrub: (Double) -> Void
     let onScrubEnd: (Double) -> Void
+    let onScrubAdjust: (Double) -> Void
     @State private var showsPlaylistPicker = false
     /// Where a click on the scrubber would land; replaces the elapsed time.
     @State private var scrubFraction: Double?
@@ -609,7 +607,7 @@ private struct V3WindowEdgeTransportButtons: View {
 
     private var scrubber: some View {
         V3EdgePillScrubber(isVertical: isVertical, progress: progress, accent: accent, enabled: canSeek,
-            onHover: { scrubFraction = $0 }, onDrag: onScrub, onRelease: onScrubEnd)
+            onHover: { scrubFraction = $0 }, onDrag: onScrub, onRelease: onScrubEnd, onAdjust: onScrubAdjust)
     }
 
     var body: some View {

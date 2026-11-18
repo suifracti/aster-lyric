@@ -70,6 +70,111 @@ private struct EventOfflineLyrics: LyricsProvider {
 
 @MainActor
 final class DesktopPlaybackEventTests: XCTestCase {
+    func testAdoptingAPreviewCandidateLeavesThePlayingSongUntouched() async throws {
+        let (state, _, _, _) = fixture()
+        state.startProvider(connectSpotify: false)
+        try await wait { state.hasLiveTrack }
+        let liveTrack = state.currentTrack
+        let preview = Track(title: "Preview track", artist: "Fixture", album: "", duration: 181)
+        func candidate(for track: Track, text: String) -> LyricsCandidate {
+            LyricsCandidate(id: track.title, identity: TrackIdentity(track: track), title: track.title,
+                artist: track.artist, album: track.album, duration: track.duration,
+                lines: [LyricLine(timestamp: 1, originalText: text)], source: .lrclib, confidence: 1)
+        }
+        state.loadSearchResult(SongSearchResult(id: "preview-reliability", source: .local, track: preview, confidence: 1))
+        try await wait {
+            if case .noMatch = state.lyricsState { return true }
+            return false
+        }
+        let previewResult = try await state.adoptLyricsCandidate(candidate(for: preview, text: "Only in the preview"))
+        XCTAssertNotNil(previewResult.versionID)
+        XCTAssertEqual(state.lyrics.first?.originalText, "Only in the preview")
+        XCTAssertTrue(state.liveLyrics.isEmpty)
+        let wrongResult = try await state.adoptLyricsCandidate(candidate(for: liveTrack, text: "Only on the live track"))
+        XCTAssertNil(wrongResult.versionID)
+        XCTAssertEqual(state.lyrics.first?.originalText, "Only in the preview")
+
+        state.clearSearchPreview()
+        let liveResult = try await state.adoptLyricsCandidate(candidate(for: liveTrack, text: "Only on the live track"))
+        XCTAssertNotNil(liveResult.versionID)
+        XCTAssertEqual(state.liveLyrics.first?.originalText, "Only on the live track")
+    }
+
+    func testListeningViewsRetainTheLastGoodResultAndRecoverAfterUnlock() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("history.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        let (state, _, _, _) = fixture(repository: repository)
+        try await repository.prepare()
+        let now = Date()
+        let entry = ListeningHistoryEntry(sessionID: UUID(), stableKey: "history-fixture", title: "Fixture",
+            artist: "Fixture", album: "", startedAt: now, lastObservedAt: now, observedPlaybackDuration: 60,
+            trackDuration: 180, completionRatio: 1 / 3)
+        try await repository.upsertListeningHistory(entry)
+        state.refreshListeningHistory()
+        state.refreshListeningStatistics(for: .allTime)
+        try await wait { !state.isListeningHistoryLoading && !state.isListeningStatisticsLoading }
+        XCTAssertEqual(state.listeningHistory.map(\.sessionID), [entry.sessionID])
+        XCTAssertEqual(state.listeningStatistics?.sessionCount, 1)
+
+        var database: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(repository.databaseURL.path, &database, SQLITE_OPEN_READWRITE, nil), SQLITE_OK)
+        let connection = try XCTUnwrap(database)
+        defer { sqlite3_close(connection) }
+        XCTAssertEqual(sqlite3_exec(connection, "BEGIN EXCLUSIVE", nil, nil, nil), SQLITE_OK)
+        state.refreshListeningHistory()
+        state.refreshListeningStatistics(for: .last7Days)
+        let (cold, _, _, _) = fixture(repository: repository)
+        cold.refreshListeningHistory()
+        cold.refreshListeningStatistics(for: .allTime)
+        try await wait(timeout: .seconds(16)) {
+            !state.isListeningHistoryLoading && !state.isListeningStatisticsLoading
+                && !cold.isListeningHistoryLoading && !cold.isListeningStatisticsLoading
+        }
+        XCTAssertEqual(state.listeningHistory.map(\.sessionID), [entry.sessionID])
+        XCTAssertEqual(state.listeningStatistics?.timeRange, .allTime, "A failed range change keeps the correct label")
+        XCTAssertNotNil(state.listeningHistoryError)
+        XCTAssertNotNil(state.listeningStatisticsError)
+        XCTAssertTrue(cold.listeningHistory.isEmpty)
+        XCTAssertNil(cold.listeningStatistics)
+        XCTAssertNotNil(cold.listeningHistoryError)
+        XCTAssertNotNil(cold.listeningStatisticsError)
+
+        XCTAssertEqual(sqlite3_exec(connection, "ROLLBACK", nil, nil, nil), SQLITE_OK)
+        state.refreshListeningHistory()
+        state.refreshListeningStatistics(for: .last7Days)
+        try await wait { !state.isListeningHistoryLoading && !state.isListeningStatisticsLoading }
+        XCTAssertNil(state.listeningHistoryError)
+        XCTAssertNil(state.listeningStatisticsError)
+        XCTAssertEqual(state.listeningHistory.map(\.sessionID), [entry.sessionID])
+        XCTAssertEqual(state.listeningStatistics?.sessionCount, 1)
+        XCTAssertEqual(state.listeningStatistics?.timeRange, .last7Days)
+    }
+
+    func testAnOldProgressDragCannotSeekAfterReturningToTheSameSong() async throws {
+        let (state, provider, _, center) = fixture()
+        state.startProvider(connectSpotify: false)
+        try await wait { state.hasLiveTrack }
+        let first = try XCTUnwrap(state.seekRecording)
+        var original = payload("Initial", position: 35)
+        original["Track ID"] = try XCTUnwrap(provider.snapshot.track?.id)
+        var draft = PlaybackSeekDraft()
+        draft.begin(for: first)
+        draft.update(100, for: first)
+
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: original)
+        try await wait { abs(state.currentTime - 35) < 0.2 }
+        XCTAssertEqual(state.seekRecording, first, "same-song updates keep the drag")
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: payload(position: 10))
+        try await wait { state.currentTrack.title == "Event B" }
+        XCTAssertNil(draft.position(for: state.seekRecording))
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: original)
+        try await wait { state.currentTrack.title == "Initial" }
+        XCTAssertNotEqual(state.seekRecording, first)
+        draft.update(120, for: state.seekRecording)
+        XCTAssertNil(draft.finish(for: state.seekRecording))
+    }
+
     func testStartupRecoversMissingArtworkBeforeThePlayerSendsANotification() async throws {
         let (state, provider, _, _) = fixture()
         provider.snapshot = PlaybackSnapshot(status: .ready, track: provider.snapshot.track,
@@ -517,11 +622,13 @@ final class DesktopPlaybackEventTests: XCTestCase {
         return (state, provider, events, center)
     }
 
-    private func wait(_ condition: @MainActor () -> Bool, file: StaticString = #filePath, line: UInt = #line) async throws {
-        for _ in 0..<200 {
+    private func wait(timeout: Duration = .seconds(1), _ condition: @MainActor () -> Bool,
+                      file: StaticString = #filePath, line: UInt = #line) async throws {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        repeat {
             if condition() { return }
-            try await Task.sleep(nanoseconds: 5_000_000)
-        }
+            try await Task.sleep(for: .milliseconds(5))
+        } while ContinuousClock.now < deadline
         XCTFail("Event did not arrive", file: file, line: line)
     }
 

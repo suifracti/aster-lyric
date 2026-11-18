@@ -26,6 +26,8 @@ Existing entrypoints remain compatible and select the matching target classes:
 | settings_route / menu_bar_lyrics_toggle | real MenuBarPresentationTests + source connections |
 | song_search | SongSearchContractTests + SearchModelsContractTests + ProviderFailureContractTests + source connections |
 | v3_toolbar_model / v3_inspector_navigation | V3ToolbarPresentationTests + source connections |
+| reliability_playback | DesktopPlaybackEventTests (isolated preview adoption and history/statistics read recovery) |
+| v3_classic_scale | V3SceneLayerTests (legacy framing migration and settings readback) |
 
 Toolbar behavior assertions stay at the agreed canonical path
 `Tests/v3_toolbar_model_contract.swift`; rules remain in `docs/TOOLBAR_BEHAVIOR.md`.

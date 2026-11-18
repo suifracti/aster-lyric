@@ -317,22 +317,22 @@ final class ListeningBatchOneTests: XCTestCase {
 
     func testProgressDraftCannotSeekTheNextRecording() {
         var draft = PlaybackSeekDraft()
-        draft.begin(for: "first")
-        draft.update(30, for: "first")
-        XCTAssertEqual(draft.position(for: "first"), 30)
-        draft.update(55, for: "second")
-        XCTAssertNil(draft.position(for: "second"))
-        XCTAssertNil(draft.finish(for: "second"))
+        draft.begin(for: 1)
+        draft.update(30, for: 1)
+        XCTAssertEqual(draft.position(for: 1), 30)
+        draft.update(55, for: 2)
+        XCTAssertNil(draft.position(for: 2))
+        XCTAssertNil(draft.finish(for: 2))
 
-        draft.update(22, for: "first")
+        draft.update(22, for: 1)
         draft.invalidate()
-        draft.update(70, for: "first")
-        XCTAssertNil(draft.finish(for: "first"), "Returning to the same recording still cancels the original drag")
+        draft.update(70, for: 1)
+        XCTAssertNil(draft.finish(for: 1), "Invalidation discards the held gesture even if playback remains on the same recording")
 
-        draft.update(33, for: "second")
-        draft.begin(for: "second")
-        XCTAssertEqual(draft.finish(for: "second"), 33, "A native slider can write its value before starting an edit")
-        XCTAssertNil(draft.finish(for: "second"), "A completed drag commits only once")
+        draft.update(33, for: 2)
+        draft.begin(for: 2)
+        XCTAssertEqual(draft.finish(for: 2), 33, "A native slider can write its value before starting an edit")
+        XCTAssertNil(draft.finish(for: 2), "A completed drag commits only once")
     }
 
     func testLyricImageryFindsPlainKeywordsOnly() {

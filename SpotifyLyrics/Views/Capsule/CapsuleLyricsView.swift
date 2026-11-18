@@ -52,8 +52,7 @@ struct CapsuleLyricsView: View {
     @State private var seekDraft = PlaybackSeekDraft()
 
     @State private var pinnedLine: PinnedLine?
-    private var seekTrackKey: String? { state.currentTrackIdentity?.stableKey }
-    private var draftPosition: Double? { seekDraft.position(for: seekTrackKey) }
+    private var draftPosition: Double? { seekDraft.position(for: state.seekRecording) }
 
     private struct PinnedLine {
         let line: LyricLine
@@ -131,14 +130,14 @@ struct CapsuleLyricsView: View {
     private var progressBinding: Binding<Double> {
         Binding(
             get: { draftPosition ?? min(max(0, state.currentTime), duration) },
-            set: { seekDraft.update(min(max(0, $0), duration), for: seekTrackKey) }
+            set: { seekDraft.update(min(max(0, $0), duration), for: state.seekRecording) }
         )
     }
 
     private func editProgress(_ editing: Bool, source: String) {
         windowController.setSeeking(editing)
-        if editing { seekDraft.begin(for: seekTrackKey) }
-        else if let target = seekDraft.finish(for: seekTrackKey) { state.seek(to: target, source: source) }
+        if editing { seekDraft.begin(for: state.seekRecording) }
+        else if let target = seekDraft.finish(for: state.seekRecording) { state.seek(to: min(target, duration), source: source) }
     }
 
     private var standardProgressSlider: some View {
@@ -177,8 +176,8 @@ struct CapsuleLyricsView: View {
             if mode != .expanded { seekDraft = PlaybackSeekDraft() }
         }
         .onChange(of: state.liveLyricsVersionID) { _, _ in pinnedLine = nil }
-        .onChange(of: state.currentTrackIdentity) { _, _ in
-            pinnedLine = nil
+        .onChange(of: state.currentTrackIdentity) { _, _ in pinnedLine = nil }
+        .onChange(of: state.seekRecording) { _, _ in
             seekDraft.invalidate()
             windowController.setSeeking(false)
         }

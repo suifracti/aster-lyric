@@ -1957,13 +1957,17 @@ public final class AppSettingsStore: ObservableObject {
         migrateMergedSceneEntriesIfNeeded()
         // Before 2026-11-12 every scene kept its own 取景 and 背景缩放, so
         // switching pictures changed the backdrop's size. Start the shared
-        // values from the picture in use.
+        // values from the picture in use, including legacy renderers.
         let current = v3ArtworkPresentation
-        self.v3SharedBackdropComplete = defaults.object(forKey: "v3.backdrop.sharedComplete.v1") as? Bool
-            ?? (v3ListeningScene.map { v3Preset(for: $0, renderer: current).completeArtwork }
-                ?? (v3BackgroundFraming[current.rawValue] ?? false))
-        self.v3SharedBackdropScale = defaults.object(forKey: "v3.backdrop.sharedScale.v1") as? Double
-            ?? v3ListeningScene.map { v3Preset(for: $0, renderer: current).backdropScale } ?? 1
+        let framingKey = "v3.backdrop.sharedComplete.v1"
+        let sharedScaleKey = "v3.backdrop.sharedScale.v1"
+        let savedFraming = defaults.object(forKey: framingKey) as? Bool
+        let savedScale = defaults.object(forKey: sharedScaleKey) as? Double
+        self.v3SharedBackdropComplete = savedFraming ?? v3BackgroundShowsCompleteArtwork(for: current)
+        self.v3SharedBackdropScale = savedScale ?? v3PreviewBackdropScale(for: current)
+        // Property observers do not persist assignments during initialization.
+        if savedFraming == nil { defaults.set(v3SharedBackdropComplete, forKey: framingKey) }
+        if savedScale == nil { defaults.set(v3SharedBackdropScale, forKey: sharedScaleKey) }
     }
 
     /// The R3 entry merge removes six 经典版 entries. Anyone sitting on one of

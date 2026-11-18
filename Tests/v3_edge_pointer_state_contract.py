@@ -30,7 +30,8 @@ assert 'static let edgeBand: ClosedRange<CGFloat> = 8...24' in text
 assert '.contentShape(V3ProgressHitBand(track: track), eoFill: true)' in text
 assert 'V3EdgePillScrubber(isVertical: isVertical' in text
 assert 'onScrubEnd: { finishSeek(fraction: $0) }' in text
-assert 'dragTrackKey == state.currentTrackIdentity?.stableKey' in text
+assert 'guard seekDraft.position(for: state.seekRecording) != nil else { return }' in text
+assert 'onScrubAdjust: { seek(toFraction: $0) }' in text
 assert '.spring(response: 0.3, dampingFraction: 1)' in text
 
 TESTS = r'''

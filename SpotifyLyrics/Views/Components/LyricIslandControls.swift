@@ -4,32 +4,33 @@ import SwiftUI
 /// A pending progress change belongs to the recording visible when it began.
 struct PlaybackSeekDraft {
     private struct Gesture {
-        var trackKey: String?
+        let recording: UInt64?
         var position: Double?
     }
     private var gesture: Gesture?
+    var isTracking: Bool { gesture != nil }
 
-    func position(for trackKey: String?) -> Double? {
-        guard let trackKey, gesture?.trackKey == trackKey else { return nil }
+    func position(for recording: UInt64?) -> Double? {
+        guard let recording, gesture?.recording == recording else { return nil }
         return gesture?.position
     }
 
-    mutating func begin(for trackKey: String?) {
-        if gesture == nil || gesture?.trackKey != trackKey { gesture = Gesture(trackKey: trackKey) }
+    mutating func begin(for recording: UInt64?) {
+        if gesture == nil || gesture?.recording != recording { gesture = Gesture(recording: recording) }
     }
 
-    mutating func update(_ position: Double, for trackKey: String?) {
-        if gesture == nil { begin(for: trackKey) }
-        guard let trackKey, gesture?.trackKey == trackKey else { return }
+    mutating func update(_ position: Double, for recording: UInt64?) {
+        if gesture == nil { begin(for: recording) }
+        guard position.isFinite, let recording, gesture?.recording == recording else { return }
         gesture?.position = position
     }
 
     mutating func invalidate() {
-        if gesture != nil { gesture = Gesture(trackKey: nil) }
+        if gesture != nil { gesture = Gesture(recording: nil) }
     }
 
-    mutating func finish(for trackKey: String?) -> Double? {
-        let target = position(for: trackKey)
+    mutating func finish(for recording: UInt64?) -> Double? {
+        let target = position(for: recording)
         gesture = nil
         return target
     }
