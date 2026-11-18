@@ -588,7 +588,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     }
                 }
             }
-            .modifier(V3RoomModifier(room: isFocusMode ? .off : settings.v3Room, playing: state.isPlaying))
+            .modifier(V3RoomModifier(room: isFocusMode ? .off : settings.v3Room, playing: state.isPlaying, context: roomContext))
             .onChange(of: state.currentLineIndex, initial: true) { _, index in
                 // 人声包络: the light can follow these word starts when no sound is heard.
                 V3VocalOnsets.current = settings.v3MusicMotionEnabled && state.liveLyricsAreSynchronized
@@ -1925,6 +1925,20 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     /// faint resting toolbar while it is inside (so tools are discoverable
     /// without covering the lyrics), and full contrast near the top edge or
     /// while a panel is open. Positions never change between levels.
+    /// What the 情境 scene needs from the song; built only while one is chosen.
+    private var roomContext: V3RoomContext {
+        guard settings.v3Room != .off else { return V3RoomContext() }
+        let synced = state.lyricsAreSynchronized
+        let index = synced ? state.currentLineIndex : nil
+        let text = index.flatMap { state.lyrics.indices.contains($0) ? state.lyrics[$0].originalText : nil } ?? ""
+        return V3RoomContext(chorus: chorusNow, lineIndex: index, lineCount: state.lyrics.count,
+                             stanza: settings.v3Room == .book ? V3RoomContext.stanza(of: index, in: state.lyrics) : 0,
+                             currentLine: settings.v3Room == .polaroid ? text : "",
+                             trackKey: TrackIdentity(track: state.currentTrack).stableKey,
+                             spotifyTrackID: state.currentTrack.spotifyId.flatMap(SpotifyPublicArtwork.trackID(from:)),
+                             opensOnChorus: settings.v3RoomOpensOnChorus)
+    }
+
     /// The line being sung is in a chorus (repeated lyrics).
     private var chorusNow: Bool {
         state.lyricsAreSynchronized
@@ -2289,14 +2303,17 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             }
             V3PanelRow(title: "情境") {
                 Picker("情境", selection: $settings.v3Room) {
-                    ForEach(V3Room.allCases) { room in
-                        if room == .film { Divider() }
-                        Text(room.title).tag(room)
-                    }
+                    Text(V3Room.off.title).tag(V3Room.off)
+                    Section("窗") { ForEach(V3Room.rooms) { Text($0.title).tag($0) } }
+                    Section("材质") { ForEach(V3Room.materials) { Text($0.title).tag($0) } }
                 }
                 .labelsHidden().pickerStyle(.menu).fixedSize()
             }
-            .help(V3Room.allCases.filter { $0 != .off }.map { $0.title + "：" + $0.detail }.joined(separator: "\n") + "\n画面保持接近原大小，里面的操作照常。")
+            .help((V3Room.rooms + V3Room.materials).map { $0.title + "：" + $0.detail }.joined(separator: "\n") + "\n画面保持接近原大小，里面的操作照常。")
+            if settings.v3Room.isRoom {
+                Toggle("副歌时开窗", isOn: $settings.v3RoomOpensOnChorus)
+                    .help("唱到副歌时窗框淡去、画面回到全尺寸，副歌结束再关上。")
+            }
             V3PanelRow(title: "全屏歌词") {
                 Button(liveOnly ? "退出" : "打开") {
                     if liveOnly {

@@ -1147,6 +1147,10 @@ public final class AppSettingsStore: ObservableObject {
     @Published var v3Room: V3Room = .off {
         didSet { defaults.set(v3Room.rawValue, forKey: "v3.room.v1") }
     }
+    /// 副歌时开窗: a window scene opens to the full view during a chorus.
+    @Published var v3RoomOpensOnChorus = true {
+        didSet { defaults.set(v3RoomOpensOnChorus, forKey: "v3.roomOpensOnChorus.v1") }
+    }
     /// 副歌时换素材: during a chorus the backdrop shows the other material
     /// (the Canvas clip over a still picture, or the still picture over a clip).
     @Published public var v3ChorusSwapsMaterial = false {
@@ -1661,6 +1665,7 @@ public final class AppSettingsStore: ObservableObject {
         self.v3LyricImagery = defaults.object(forKey: "v3.lyricImagery.v1") as? Bool ?? false
         self.v3Room = defaults.string(forKey: "v3.room.v1").flatMap(V3Room.init(rawValue:))
             ?? ((defaults.object(forKey: "v3.rainRoom.v1") as? Bool ?? false) ? .rain : .off)
+        self.v3RoomOpensOnChorus = defaults.object(forKey: "v3.roomOpensOnChorus.v1") as? Bool ?? true
         self.v3ChorusSwapsMaterial = defaults.object(forKey: "v3.chorusSwapsMaterial.v1") as? Bool ?? false
         self.v3SpectrumStyle = V3SpectrumStyle(rawValue: defaults.string(forKey: "v3.spectrumStyle.v1") ?? "") ?? .off
         self.floatingHiddenFromCapture = defaults.bool(forKey: "floating.hiddenFromCapture.v1")

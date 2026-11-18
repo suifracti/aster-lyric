@@ -1428,9 +1428,13 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
         .shadow(color: showsReadingShadow ? .black.opacity(0.95) : .clear,
                 radius: 2.5, x: 0, y: 1)
         .opacity(presentedOpacity)
-        .blur(radius: reduceMotion ? 0 : rowBlur)
         .animation(nil, value: isActive)
         .animation(nil, value: layoutSignature)
+        .blur(radius: reduceMotion ? 0 : rowBlur)
+        // 雾窗: a line just written stays clear, then the fog slowly closes over it
+        // again, the way breath fogs a pane after a fingertip has passed.
+        .animation(lyricStyle == .fogWriting && !reduceMotion
+                   ? (isActive ? .easeOut(duration: 0.25) : .easeIn(duration: 3.2)) : nil, value: rowBlur)
         // 只看前方: a sung line fades away instead of staying dimmed above.
         .opacity(isPast ? 0 : 1)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.5), value: isPast)

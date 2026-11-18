@@ -625,3 +625,37 @@ final class PresentationSourceContractTests: XCTestCase {
         return root
     }
 }
+
+/// 情境 (2026-11-18): the listening view stays large, stanzas and weather map as described.
+final class V3RoomSceneTests: XCTestCase {
+    func testEverySceneKeepsMostOfTheWindowForTheLyrics() {
+        for size in [CGSize(width: 1077, height: 700), CGSize(width: 720, height: 480), CGSize(width: 1600, height: 1000)] {
+            for room in V3Room.rooms + V3Room.materials + [.clearNight] {
+                let glass = V3RoomModifier.glass(in: size, room: room)
+                XCTAssertGreaterThanOrEqual(glass.width / size.width, 0.8, "\(room) at \(size)")
+                XCTAssertLessThanOrEqual(glass.maxY, size.height)
+                XCTAssertGreaterThanOrEqual(glass.minX, 0)
+            }
+        }
+        XCTAssertEqual(V3RoomModifier.glass(in: CGSize(width: 800, height: 500), room: .off), CGRect(x: 0, y: 0, width: 800, height: 500))
+    }
+
+    func testStanzasCountBlankLinesAndLongPauses() {
+        let lines = [LyricLine(timestamp: 0, originalText: "一"), LyricLine(timestamp: 3, originalText: "二"),
+                     LyricLine(timestamp: 6, originalText: ""), LyricLine(timestamp: 9, originalText: "三"),
+                     LyricLine(timestamp: 20, originalText: "四")]
+        XCTAssertEqual(V3RoomContext.stanza(of: 1, in: lines), 0)
+        XCTAssertEqual(V3RoomContext.stanza(of: 3, in: lines), 1)
+        XCTAssertEqual(V3RoomContext.stanza(of: 4, in: lines), 2)
+        XCTAssertEqual(V3RoomContext.stanza(of: nil, in: lines), 0)
+    }
+
+    @MainActor
+    func testWeatherCodesChooseAWindow() {
+        XCTAssertEqual(V3WeatherWatcher.room(forWeatherCode: 61), .rain)
+        XCTAssertEqual(V3WeatherWatcher.room(forWeatherCode: 95), .rain)
+        XCTAssertEqual(V3WeatherWatcher.room(forWeatherCode: 73), .snow)
+        XCTAssertEqual(V3WeatherWatcher.room(forWeatherCode: 0), .clearNight)
+        XCTAssertEqual(V3WeatherWatcher.room(forWeatherCode: 45), .clearNight)
+    }
+}

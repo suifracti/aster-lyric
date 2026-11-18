@@ -962,6 +962,12 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 - 雪夜小屋: a painted frame, snow, frost grown in from the corners, firelight flickering on the log wall.
 - 老电影 (not a room): sprocket strips on both sides, grain at 12 fps, the odd scratch, flicker and a vignette.
 - Motion stops while paused or with Reduce Motion. `v3.rainRoom.v1` is read once as 雨夜窗边.
+- Second batch (same day). The menu groups 窗 (雨夜窗边, 夜行列车, 雪夜小屋, 跟随天气) and 材质 (书页, 拍立得, 星座, 老电影).
+- Windows take the local time of day on their wall. 副歌时开窗 (on by default, shown only for windows) fades the frame out and returns the view to full size during a chorus.
+- 夜行列车 runs at the song's cached tempo.
+- 跟随天气 asks for location once and sends a ~10 km position to Open-Meteo every 30 min. It picks the rain, snow or a clear-night window.
+- 书页: paper grain, a gutter shadow, a page turn at each new stanza. 拍立得: a white mount on a corkboard with the sung line handwritten below. 星座: one star per line, sung stars joined.
+- 雾窗 lyric style: a line just sung stays clear, then fogs over in 3.2 s.
 
 **雨夜房间** (`50c8de2`, 更多 › 窗口, off by default; A13).
 - The whole listening view is drawn at 62% as the screen of a monitor on a desk.

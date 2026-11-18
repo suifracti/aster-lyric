@@ -69,6 +69,8 @@
 	</array>
 	<key>CFBundleIconFile</key>
 	<string>SpotifyLyrics.icns</string>
+	<key>NSLocationUsageDescription</key>
+	<string>只在你选了「情境 › 跟随天气」时使用：把大致位置（约 10 公里）发给公开天气服务 Open-Meteo，按当地是雨、雪还是晴夜换窗外景色。不保存位置。</string>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>自动实时排轴仅支持 Spotify Desktop 播放源。捕获的音频会临时写入本机 WAV 分段供处理，任务结束后清理；不捕获麦克风或其他 App。</string>
 </dict>
