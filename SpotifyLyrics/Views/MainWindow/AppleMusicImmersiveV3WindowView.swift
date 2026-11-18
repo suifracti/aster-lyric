@@ -204,7 +204,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private var displayedCoverColors: CoverColors? { coverColors?.url == compositionTrack.artworkURL ? coverColors : nil }
     private var coverAccent: Color? { displayedCoverColors?.accent }
     private var coverLuminance: Double { displayedCoverColors?.luminance ?? 0 }
-    @State private var coverSubject: V3ArtworkSubject.Analysis?
+    @State private var analyzedCover: (url: URL, subject: V3ArtworkSubject.Analysis)?
+    private var subjectArtworkURL: URL? { usesArtworkSubjectPlacement ? compositionTrack.artworkURL : nil }
     @State private var showsListeningKeys = false
     @State private var windowVisible = false
     @State private var isFocusMode = false
@@ -756,12 +757,11 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             guard !Task.isCancelled, coverColors?.url == url else { return }
             coverColors?.automaticAmbient = V3SceneFamily.automaticAmbient(luminance: palette.luminance, detail: detail, route: palette.route)
         }
-        .task(id: "\(usesArtworkSubjectPlacement)|\(compositionTrack.artworkURL?.absoluteString ?? "none")") {
-            coverSubject = nil
-            guard usesArtworkSubjectPlacement else { return }
-            let subject = await V3ArtworkSubject.analysis(for: compositionTrack.artworkURL)
-            guard !Task.isCancelled else { return }
-            coverSubject = subject
+        .task(id: subjectArtworkURL) {
+            analyzedCover = nil
+            guard let url = subjectArtworkURL,
+                  let subject = await V3ArtworkSubject.analysis(for: url), !Task.isCancelled else { return }
+            analyzedCover = (url, subject)
         }
         .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: compositionLyrics))
         .environment(\.v3PlaybackInteractionChanged, playbackInteractionRelay)
@@ -852,7 +852,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
     private func photographicReadingPlacement(canvas: CGSize) -> V3ArtworkSubjectLayout.Placement {
         var subjects: [CGRect]?
-        if let coverSubject {
+        if let analyzedCover, analyzedCover.url == subjectArtworkURL {
+            let coverSubject = analyzedCover.subject
             let complete = settings.v3BackgroundShowsCompleteArtwork(for: compositionStyle, scene: compositionScene)
             let scale = settings.v3PreviewBackdropScale(for: compositionStyle, scene: compositionScene)
             let effectiveScale = V3BackdropArtworkGeometry.imageScale(requested: scale, complete: complete)

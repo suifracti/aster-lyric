@@ -17,19 +17,13 @@ struct TrackBackdropView: View {
     let identity: TrackIdentity?
     let isLiveTrack: Bool
 
-    @State private var currentPayload: BackdropPayload?
-    @State private var outgoingPayload: BackdropPayload?
+    @State private var loaded: BackdropPayload?
+    private var currentPayload: BackdropPayload? { loaded?.url == requestKey ? loaded : nil }
     @Environment(\.directionDBackdropTreatment) private var directionDBackdropTreatment
 
     var body: some View {
         ZStack {
             neutralBackground
-
-            if let outgoingPayload {
-                backdropLayers(for: outgoingPayload)
-                    .opacity(0.24)
-                    .transition(.opacity)
-            }
 
             if let currentPayload {
                 backdropLayers(for: currentPayload)
@@ -48,9 +42,8 @@ struct TrackBackdropView: View {
         }
     }
 
-    private var requestKey: String? {
-        guard isLiveTrack, let identity else { return nil }
-        return "\(identity.stableKey)|\(track.artworkURL?.absoluteString ?? "no-artwork")"
+    private var requestKey: URL? {
+        isLiveTrack && identity != nil ? track.artworkURL : nil
     }
 
     private var neutralBackground: some View {
@@ -145,51 +138,18 @@ struct TrackBackdropView: View {
     }
 
     @MainActor
-    private func reload(for key: String?) async {
-        let previous = currentPayload
-        outgoingPayload = previous
-        currentPayload = nil
-
-        guard let key, isLiveTrack, let artworkURL = track.artworkURL else {
-            outgoingPayload = nil
-            return
-        }
+    private func reload(for url: URL?) async {
         guard !Task.isCancelled else { return }
-
-        guard let image = await ArtworkImageLoader.shared.image(for: artworkURL) else {
-            guard key == requestKey, !Task.isCancelled else { return }
-            outgoingPayload = nil
-            return
-        }
-        guard key == requestKey, !Task.isCancelled else { return }
-
-        guard let imageData = image.tiffRepresentation else {
-            guard key == requestKey, !Task.isCancelled else { return }
-            outgoingPayload = nil
-            return
-        }
-
-        // Palette sampling is keyed only by the current track/artwork and is
-        // performed off the main actor. Playback progress never re-enters it.
+        if loaded?.url != url { loaded = nil }
+        guard let url, let image = await ArtworkImageLoader.shared.image(for: url), !Task.isCancelled,
+              let imageData = image.tiffRepresentation else { return }
         let palette = await BackdropPaletteCache.shared.palette(
-            for: key,
+            for: AppleMusicImmersiveV3BackdropKey.make(artworkURL: url),
             imageData: imageData
         )
-        guard key == requestKey, !Task.isCancelled else { return }
-
-        let payload = BackdropPayload(
-            key: key,
-            image: image,
-            palette: palette
-        )
+        guard url == requestKey, !Task.isCancelled else { return }
         withAnimation(.easeInOut(duration: 0.42)) {
-            currentPayload = payload
-        }
-
-        try? await Task.sleep(nanoseconds: 460_000_000)
-        guard key == requestKey, !Task.isCancelled else { return }
-        withAnimation(.easeOut(duration: 0.18)) {
-            outgoingPayload = nil
+            loaded = .init(url: url, image: image, palette: palette)
         }
     }
 
@@ -199,7 +159,7 @@ struct TrackBackdropView: View {
 }
 
 private struct BackdropPayload {
-    let key: String
+    let url: URL
     let image: NSImage
     let palette: BackdropPalette
 }

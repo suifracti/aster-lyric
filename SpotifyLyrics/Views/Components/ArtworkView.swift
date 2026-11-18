@@ -39,11 +39,16 @@ struct ArtworkView: View {
     var cornerRadiusRatio: CGFloat = 0.18
     var preservesCompleteArtwork: Bool = false
     var reportsForegroundFrame: Bool = false
-    @State private var remoteArtwork: NSImage?
-    /// The cover being replaced, kept underneath until the new one is clear.
-    @State private var outgoingArtwork: NSImage?
+    @State private var loaded: (url: URL, image: NSImage)?
     @State private var developed = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var remoteArtwork: NSImage? {
+        guard let url = effectiveArtworkURL else { return nil }
+        return loaded?.url == url ? loaded?.image : ArtworkImageLoader.shared.imageInMemory(for: url)
+    }
+
+    private var isDeveloping: Bool { loaded?.url == effectiveArtworkURL && !developed }
 
     private var cardSize: CGSize {
         let slot = CGSize(width: size, height: size)
@@ -61,8 +66,8 @@ struct ArtworkView: View {
             .frame(width: size, height: size)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(track.album.isEmpty ? "专辑封面" : "专辑封面，\(track.album)")
-            .task(id: "\(effectiveArtworkURL?.absoluteString ?? "no-artwork")|\(debugForceNoArtwork ? "debug-no-artwork" : "artwork")") {
-                await loadArtwork()
+            .task(id: effectiveArtworkURL) {
+                await loadArtwork(for: effectiveArtworkURL)
             }
     }
 
@@ -71,21 +76,15 @@ struct ArtworkView: View {
         let shape = RoundedRectangle(cornerRadius: min(dimensions.width, dimensions.height) * cornerRadiusRatio,
                                      style: .continuous)
         return ZStack {
-            if (remoteArtwork == nil || !developed) && outgoingArtwork == nil { fallbackArtwork }
-
-            if let outgoingArtwork {
-                Image(nsImage: outgoingArtwork)
-                    .resizable()
-                    .aspectRatio(contentMode: preservesCompleteArtwork ? .fit : .fill)
-            }
+            if remoteArtwork == nil || isDeveloping { fallbackArtwork }
             if let remoteArtwork {
                 // 显影: a new cover comes up out of a soft blur, like a print developing.
                 Image(nsImage: remoteArtwork)
                     .resizable()
                     .aspectRatio(contentMode: preservesCompleteArtwork ? .fit : .fill)
-                    .blur(radius: developed || reduceMotion ? 0 : size * 0.05)
-                    .scaleEffect(developed || reduceMotion ? 1 : 1.04)
-                    .opacity(developed ? 1 : 0)
+                    .blur(radius: isDeveloping ? size * 0.05 : 0)
+                    .scaleEffect(isDeveloping ? 1.04 : 1)
+                    .opacity(isDeveloping ? 0 : 1)
             }
 
             if showsAlbumLabel {
@@ -105,20 +104,22 @@ struct ArtworkView: View {
         .shadow(color: .black.opacity(showsAlbumLabel ? 0.28 : 0.18), radius: size * 0.08, y: size * 0.04)
     }
 
-    private func loadArtwork() async {
-        // A song without artwork never keeps the previous song's image.
-        let next = debugForceNoArtwork ? nil : await ArtworkImageLoader.shared.image(for: effectiveArtworkURL)
+    private func loadArtwork(for url: URL?) async {
         guard !Task.isCancelled else { return }
-        guard let next else { outgoingArtwork = nil; remoteArtwork = nil; developed = true; return }
-        if next === remoteArtwork { outgoingArtwork = nil; developed = true; return }
-        outgoingArtwork = remoteArtwork
-        developed = false
-        remoteArtwork = next
-        try? await Task.sleep(nanoseconds: 30_000_000)
+        if let cached = remoteArtwork {
+            loaded = url.map { ($0, cached) }
+            developed = true
+            return
+        }
+        loaded = nil
+        developed = true
+        guard let url, let next = await ArtworkImageLoader.shared.image(for: url), !Task.isCancelled else { return }
+        developed = reduceMotion
+        loaded = (url, next)
+        guard !reduceMotion else { return }
+        try? await Task.sleep(for: .milliseconds(30))
         guard !Task.isCancelled else { return }
-        withAnimation(reduceMotion ? .easeInOut(duration: 0.25) : .easeOut(duration: 0.75)) { developed = true }
-        try? await Task.sleep(nanoseconds: 800_000_000)
-        if !Task.isCancelled { outgoingArtwork = nil }
+        withAnimation(.easeOut(duration: 0.75)) { developed = true }
     }
 
     /// Debug-only fixture for visual validation. It forces the same formal

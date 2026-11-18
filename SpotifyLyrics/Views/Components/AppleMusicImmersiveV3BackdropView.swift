@@ -72,21 +72,35 @@ struct AppleMusicImmersiveV3BackdropView: View {
     /// override of the clip layer only; the saved material never changes.
     var chorusSwapsMaterial: Bool = false
 
+    private struct ArtworkRequest: Equatable {
+        let coverURL: URL?
+        let artistLookupTrack: String?
+    }
+
+    private struct Picture {
+        let url: URL
+        let image: NSImage?
+        let ambient: NSImage?
+        let noise: NSImage?
+        let palette: BackdropPalette
+    }
+
+    private struct CanvasClip {
+        let trackID: String
+        let file: URL
+        var isReady = false
+    }
+
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
-    @State private var artworkImage: NSImage?
-    @State private var outgoingArtworkImage: NSImage?
-    @State private var ambientArtworkImage: NSImage?
-    @State private var outgoingAmbientArtworkImage: NSImage?
-    @State private var noiseImage: NSImage?
-    @State private var palette = BackdropPalette.neutral
+    @State private var loadedArtwork: (request: ArtworkRequest, picture: Picture)?
+    private var picture: Picture? { loadedArtwork?.request == requestKey ? loadedArtwork?.picture : nil }
+    private var palette: BackdropPalette { picture?.palette ?? .neutral }
+    private var noiseImage: NSImage? { picture?.noise }
     @State private var accessibilityDisplayRevision = 0
     @Environment(\.v3WindowVisible) private var isWindowVisible
     @State private var musicListener = UUID()
-    /// The picture the backdrop is made from: the cover, or the artist's photo.
-    @State private var backdropImageURL: URL?
-    /// The song's Spotify Canvas on disk, once found.
-    @State private var canvasFile: URL?
-    @State private var canvasReady = false
+    @State private var canvas: CanvasClip?
+    private var currentCanvas: CanvasClip? { showsCanvas && canvas?.trackID == spotifyTrackID ? canvas : nil }
     /// 暂停褪色, set a moment after pausing so a seek never flickers.
     @State private var pausedFade = false
 
@@ -113,20 +127,19 @@ struct AppleMusicImmersiveV3BackdropView: View {
             } else if listeningScene == .focusedLyrics {
                 quietArtworkColors
             } else {
-                if let outgoingArtworkImage {
-                    artworkLayers(image: outgoingArtworkImage, ambientImage: outgoingAmbientArtworkImage)
-                        .opacity(0.28).transition(.opacity)
-                }
-                if let artworkImage {
-                    artworkLayers(image: artworkImage, ambientImage: ambientArtworkImage)
+                if let picture, let image = picture.image {
+                    artworkLayers(image: image, ambientImage: picture.ambient)
+                        .id(picture.url)
                         .transition(.opacity)
                 }
-                if showsCanvas, let canvasFile {
+                if let clip = currentCanvas {
                     // The clip covers the picture; the darker veil keeps lyrics readable over motion.
-                    V3CanvasVideoView(file: canvasFile, playing: isPlaying && isWindowVisible && canvasShownNow,
-                                      blurRadius: perceptualBlur * 10) { canvasReady = true }
-                        .opacity(canvasReady && canvasShownNow ? 1 : 0)
-                    Color.black.opacity(canvasReady && canvasShownNow ? 0.26 : 0)
+                    V3CanvasVideoView(file: clip.file, playing: isPlaying && isWindowVisible && canvasShownNow,
+                                      blurRadius: perceptualBlur * 10) {
+                        if canvas?.trackID == clip.trackID, canvas?.file == clip.file { canvas?.isReady = true }
+                    }
+                        .opacity(clip.isReady && canvasShownNow ? 1 : 0)
+                    Color.black.opacity(clip.isReady && canvasShownNow ? 0.26 : 0)
                 }
                 // Legacy exposure and the accepted original look stay unchanged.
                 // The common *local* reading protection is applied by the text host.
@@ -150,7 +163,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .animation(.easeInOut(duration: 0.8), value: canvasReady)
+        .animation(.easeInOut(duration: 0.8), value: currentCanvas?.isReady)
         .animation(accessibilityReduceMotion ? .easeInOut(duration: 0.2) : .easeInOut(duration: 1.2), value: canvasShownNow)
         .animation(accessibilityReduceMotion ? .easeInOut(duration: 0.2)
                    : pausedFade ? .easeInOut(duration: 2.4) : .easeOut(duration: 0.5), value: pausedFade)
@@ -170,7 +183,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
         }
         .onDisappear { V3MusicPulse.shared.setWanted(false, from: musicListener) }
         .task(id: requestKey) {
-            await loadSnapshot(for: requestKey)
+            await loadArtwork(for: requestKey)
         }
         .onReceive(
             NotificationCenter.default.publisher(
@@ -181,9 +194,10 @@ struct AppleMusicImmersiveV3BackdropView: View {
         }
     }
 
-    private var requestKey: String {
-        let identityKey = identity?.stableKey ?? track.id
-        return "\(paletteCacheKey)|\(identityKey)|\(debugForceNoArtwork ? "debug-no-artwork" : "artwork")|\(settings.v3BackdropSource.rawValue)"
+    private var requestKey: ArtworkRequest {
+        guard !debugForceNoArtwork else { return .init(coverURL: nil, artistLookupTrack: nil) }
+        return .init(coverURL: track.artworkURL,
+            artistLookupTrack: settings.v3BackdropSource == .artist ? identity?.stableKey ?? track.id : nil)
     }
 
     /// Scene cards and hover previews draw this view too; only the real
@@ -214,8 +228,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
     /// Spotify fetches a song's Canvas a little after the song starts, so a
     /// first miss is looked at again for about three minutes.
     private func findCanvas() async {
-        canvasReady = false
-        canvasFile = nil
+        canvas = nil
         guard showsCanvas, let id = spotifyTrackID else { return }
         for attempt in 0..<12 {
             if let remote = await V3CanvasStore.shared.remoteClip(trackID: id) {
@@ -223,17 +236,13 @@ struct AppleMusicImmersiveV3BackdropView: View {
                 guard !Task.isCancelled else { return }
                 if let local {
                     LyricsE2ELog.log("CANVAS ready id=\(id) attempt=\(attempt)")
-                    canvasFile = local
+                    canvas = .init(trackID: id, file: local)
                 }
                 return
             }
             try? await Task.sleep(nanoseconds: UInt64((attempt < 3 ? 5 : 15) * 1_000_000_000))
             guard !Task.isCancelled else { return }
         }
-    }
-
-    private var paletteCacheKey: String {
-        AppleMusicImmersiveV3BackdropKey.make(artworkURL: track.artworkURL)
     }
 
     /// Debug-only visual validation switch. It exercises the same neutral
@@ -308,12 +317,6 @@ struct AppleMusicImmersiveV3BackdropView: View {
         accessibilityReduceMotion
             ? LyricsDesignTokens.Motion.reduceMotionDuration
             : presentationStyle.transitionDuration
-    }
-
-    private var outgoingTransitionDuration: Double {
-        accessibilityReduceMotion
-            ? LyricsDesignTokens.Motion.reduceMotionDuration
-            : presentationStyle.outgoingTransitionDuration
     }
 
     private var neutralBackground: some View {
@@ -1054,68 +1057,46 @@ struct AppleMusicImmersiveV3BackdropView: View {
     }
 
     @MainActor
-    private func loadSnapshot(for key: String) async {
-        LyricsE2ELog.log("ARTWORK backdrop begin key=\(key)")
-        outgoingArtworkImage = artworkImage
-        outgoingAmbientArtworkImage = ambientArtworkImage
-        artworkImage = nil
-        ambientArtworkImage = nil
-        noiseImage = nil
-        // A track without artwork must not inherit the previous track's
-        // palette while its new snapshot is being resolved.
-        palette = .neutral
-
-        if debugForceNoArtwork {
-            outgoingArtworkImage = nil
-            return
-        }
-
-        // 歌手照片 when chosen and found; otherwise the cover.
-        var sourceURL = track.artworkURL
-        var loadedPhoto: NSImage?
-        if settings.v3BackdropSource == .artist, let photo = await V3ArtistImageStore.shared.imageURL(for: track) {
-            // A photo that will not download falls back to the cover instead of a blank backdrop.
-            loadedPhoto = await ArtworkImageLoader.shared.image(for: photo)
-            if loadedPhoto != nil { sourceURL = photo }
-        }
+    private func loadArtwork(for request: ArtworkRequest) async {
         guard !Task.isCancelled else { return }
-        backdropImageURL = sourceURL
-        let loadedImage: NSImage?
-        if let loadedPhoto { loadedImage = loadedPhoto }
-        else if let sourceURL { loadedImage = await ArtworkImageLoader.shared.image(for: sourceURL) }
-        else { loadedImage = nil }
-        guard let artworkURL = sourceURL,
-              let image = loadedImage,
-              let imageData = image.tiffRepresentation,
-              !Task.isCancelled else {
-            outgoingArtworkImage = nil
-            return
+        if loadedArtwork?.request != request { loadedArtwork = nil }
+        if request.artistLookupTrack != nil {
+            // Let the current cover show while the optional artist photo loads.
+            async let photo = loadArtistPicture()
+            present(await loadPicture(at: request.coverURL), for: request, source: "cover")
+            present(await photo, for: request, source: "artist")
+        } else {
+            present(await loadPicture(at: request.coverURL), for: request, source: "cover")
         }
+    }
 
+    @MainActor
+    private func loadArtistPicture() async -> Picture? {
+        let photo = await V3ArtistImageStore.shared.imageURL(for: track)
+        return await loadPicture(at: photo)
+    }
+
+    @MainActor
+    private func loadPicture(at url: URL?) async -> Picture? {
+        guard let url, !Task.isCancelled,
+              let image = await ArtworkImageLoader.shared.image(for: url), !Task.isCancelled,
+              let imageData = image.tiffRepresentation else { return nil }
         let snapshot = await AppleMusicImmersiveV3BackdropCache.shared.snapshot(
-            for: AppleMusicImmersiveV3BackdropKey.make(artworkURL: artworkURL),
+            for: AppleMusicImmersiveV3BackdropKey.make(artworkURL: url),
             artworkData: imageData
         )
-        guard key == requestKey, !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return nil }
+        return Picture(url: url, image: NSImage(data: snapshot.artworkData),
+                       ambient: NSImage(data: snapshot.ambientArtworkData),
+                       noise: NSImage(data: snapshot.noiseData), palette: snapshot.palette)
+    }
 
-        LyricsE2ELog.log("ARTWORK backdrop ready key=\(key) route=\(snapshot.palette.route.rawValue) source=\(settings.v3BackdropSource == .artist && sourceURL != track.artworkURL ? "artist" : "cover")")
-        let nextArtwork = NSImage(data: snapshot.artworkData)
-        let nextAmbientArtwork = NSImage(data: snapshot.ambientArtworkData)
-        let nextNoise = NSImage(data: snapshot.noiseData)
+    @MainActor
+    private func present(_ picture: Picture?, for request: ArtworkRequest, source: String) {
+        guard let picture, request == requestKey, !Task.isCancelled else { return }
+        LyricsE2ELog.log("ARTWORK backdrop ready key=\(AppleMusicImmersiveV3BackdropKey.make(artworkURL: picture.url)) route=\(picture.palette.route.rawValue) source=\(source)")
         withAnimation(.easeInOut(duration: artworkTransitionDuration)) {
-            palette = snapshot.palette
-            artworkImage = nextArtwork
-            ambientArtworkImage = nextAmbientArtwork
-            noiseImage = nextNoise
-        }
-
-        try? await Task.sleep(
-            nanoseconds: UInt64(outgoingTransitionDuration * 1_000_000_000)
-        )
-        guard key == requestKey, !Task.isCancelled else { return }
-        withAnimation(.easeOut(duration: outgoingTransitionDuration)) {
-            outgoingArtworkImage = nil
-            outgoingAmbientArtworkImage = nil
+            loadedArtwork = (request, picture)
         }
     }
 
