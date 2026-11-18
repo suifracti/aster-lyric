@@ -323,6 +323,7 @@ struct FloatingLyricsView: View {
 
         let end = line.endTime ?? nextIndex.map { rows[$0].timestamp } ?? state.currentTrack.duration
         let duration = max(1, end - line.timestamp)
+        let clock = projection.current != nil && !reduceMotion ? state.synchronizedLivePresentationClock : nil
         let effectiveSpans = ReadingScriptConverter.convertSpans(
             line.timedSpans ?? [],
             originalText: line.originalText,
@@ -330,7 +331,7 @@ struct FloatingLyricsView: View {
             using: conversion
         ) ?? (line.timedSpans ?? [])
         let timedLayout: TimedRubyLayout?
-        if primaryIsOriginal && activeIndex != nil {
+        if primaryIsOriginal && clock != nil {
             let weight = NSFont.Weight.bold.rawValue
             let key = FloatingTimedRubyLayoutCache.key(
                 originalText: original,
@@ -354,85 +355,45 @@ struct FloatingLyricsView: View {
             timedLayout = nil
         }
         let baseColor = timedLayout != nil || activeIndex == nil ? palette.original : palette.highlight
-        let originalView: (TimeInterval?) -> RubyLineView = { time in
-            RubyLineView(originalText: original, kanaText: hasRuby ? (presentation.kanaText ?? "") : "",
-                         tokens: hasRuby ? rubyTokens : nil,
-                         timedLayout: timedLayout, currentTime: time,
-                         baseFont: .system(size: fontSize, weight: .bold),
-                         rubyFont: .system(size: fontSize * 0.45, weight: .medium),
-                         baseColor: baseColor, rubyColor: palette.ruby,
-                         rubySpacing: 2, tokenVerticalSpacing: 0, maxWidth: nil,
-                         highlightColor: palette.highlight, outlineColor: palette.outline,
-                         outlineWidth: palette.outlineWidth,
-                         baseNSFont: .systemFont(ofSize: fontSize, weight: .bold),
-                         rubyNSFont: .systemFont(ofSize: fontSize * 0.45, weight: .medium),
-                         unplayedOpacity: 1, showsRuby: hasRuby)
-        }
-        let hasTimelineMotion = (allowsPrimaryMotion || allowsCompanionMotion || timedLayout != nil) && !reduceMotion && state.isPlaying
+        let hasRibbonMotion = clock != nil && (allowsPrimaryMotion || allowsCompanionMotion)
         let primaryColor = primary == line.translationText ? palette.translation : palette.ruby
         let companionColor = companion == next ? palette.original
             : (settings.floatingDesktopCompanion == "kana" || settings.floatingDesktopCompanion == "reading" ? palette.ruby : palette.translation)
 
-        return Group {
-            if hasTimelineMotion {
-                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !state.isPlaying || reduceMotion)) { _ in
-                    let presentedTime = state.presentationClock.presentationTime(at: ProcessInfo.processInfo.systemUptime)
-                    let elapsed = reduceMotion || activeIndex == nil ? 0 : max(0, presentedTime - line.timestamp)
-                    VStack(spacing: 7) {
-                        FloatingDesktopRibbon(label: primary, width: width,
-                            height: FloatingDesktopTypography.ribbonHeight(fontSize: fontSize, hasRuby: hasRuby, outlineWidth: palette.outlineWidth),
-                            elapsed: elapsed, duration: duration, allowsMotion: allowsPrimaryMotion) {
-                            if primaryIsOriginal {
-                                originalView(timedLayout != nil ? presentedTime : nil)
-                            } else {
-                                OutlinedLyricText(text: primary, font: .systemFont(ofSize: fontSize, weight: .bold),
-                                                  fill: primaryColor, outline: palette.outline, width: palette.outlineWidth)
-                            }
-                        }
-                        if let companion, companion != primary {
-                            FloatingDesktopRibbon(label: companion, width: width,
-                                height: FloatingDesktopTypography.ribbonHeight(fontSize: fontSize * 0.66, hasRuby: false, outlineWidth: palette.outlineWidth),
-                                elapsed: elapsed, duration: duration, allowsMotion: allowsCompanionMotion) {
-                                OutlinedLyricText(text: companion, font: .systemFont(ofSize: fontSize * 0.66, weight: .bold),
-                                                  fill: companionColor, outline: palette.outline, width: palette.outlineWidth)
-                            }
-                        }
-                    }
-                    .frame(width: width, alignment: .center)
-                    .padding(.horizontal, 16).padding(.vertical, 8)
-                    .frame(maxHeight: .infinity, alignment: .center)
-                    .transaction { transaction in
-                        transaction.animation = nil
+        return TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !hasRibbonMotion || clock?.isPlaying != true)) { _ in
+            let elapsed = clock.map { max(0, $0.presentationTime(at: ProcessInfo.processInfo.systemUptime) - line.timestamp) } ?? 0
+            VStack(spacing: 7) {
+                FloatingDesktopRibbon(label: primary, width: width,
+                    height: FloatingDesktopTypography.ribbonHeight(fontSize: fontSize, hasRuby: hasRuby, outlineWidth: palette.outlineWidth),
+                    elapsed: elapsed, duration: duration, allowsMotion: hasRibbonMotion && allowsPrimaryMotion) {
+                    if primaryIsOriginal {
+                        RubyLineView(originalText: original, kanaText: hasRuby ? (presentation.kanaText ?? "") : "",
+                            tokens: hasRuby ? rubyTokens : nil, presentationClock: clock, timedLayout: timedLayout,
+                            baseFont: .system(size: fontSize, weight: .bold),
+                            rubyFont: .system(size: fontSize * 0.45, weight: .medium),
+                            baseColor: baseColor, rubyColor: palette.ruby, rubySpacing: 2, tokenVerticalSpacing: 0,
+                            highlightColor: palette.highlight, outlineColor: palette.outline, outlineWidth: palette.outlineWidth,
+                            baseNSFont: .systemFont(ofSize: fontSize, weight: .bold),
+                            rubyNSFont: .systemFont(ofSize: fontSize * 0.45, weight: .medium),
+                            unplayedOpacity: 1, showsRuby: hasRuby)
+                    } else {
+                        OutlinedLyricText(text: primary, font: .systemFont(ofSize: fontSize, weight: .bold),
+                                          fill: primaryColor, outline: palette.outline, width: palette.outlineWidth)
                     }
                 }
-            } else {
-                VStack(spacing: 7) {
-                    FloatingDesktopRibbon(label: primary, width: width,
-                        height: FloatingDesktopTypography.ribbonHeight(fontSize: fontSize, hasRuby: hasRuby, outlineWidth: palette.outlineWidth),
-                        elapsed: 0, duration: duration, allowsMotion: false) {
-                        if primaryIsOriginal {
-                            originalView(nil)
-                        } else {
-                            OutlinedLyricText(text: primary, font: .systemFont(ofSize: fontSize, weight: .bold),
-                                              fill: primaryColor, outline: palette.outline, width: palette.outlineWidth)
-                        }
+                if let companion, companion != primary {
+                    FloatingDesktopRibbon(label: companion, width: width,
+                        height: FloatingDesktopTypography.ribbonHeight(fontSize: fontSize * 0.66, hasRuby: false, outlineWidth: palette.outlineWidth),
+                        elapsed: elapsed, duration: duration, allowsMotion: hasRibbonMotion && allowsCompanionMotion) {
+                        OutlinedLyricText(text: companion, font: .systemFont(ofSize: fontSize * 0.66, weight: .bold),
+                                          fill: companionColor, outline: palette.outline, width: palette.outlineWidth)
                     }
-                    if let companion, companion != primary {
-                        FloatingDesktopRibbon(label: companion, width: width,
-                            height: FloatingDesktopTypography.ribbonHeight(fontSize: fontSize * 0.66, hasRuby: false, outlineWidth: palette.outlineWidth),
-                            elapsed: 0, duration: duration, allowsMotion: false) {
-                            OutlinedLyricText(text: companion, font: .systemFont(ofSize: fontSize * 0.66, weight: .bold),
-                                              fill: companionColor, outline: palette.outline, width: palette.outlineWidth)
-                        }
-                    }
-                }
-                .frame(width: width, alignment: .center)
-                .padding(.horizontal, 16).padding(.vertical, 8)
-                .frame(maxHeight: .infinity, alignment: .center)
-                .transaction { transaction in
-                    transaction.animation = nil
                 }
             }
+            .frame(width: width, alignment: .center)
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            .frame(maxHeight: .infinity, alignment: .center)
+            .transaction { $0.animation = nil }
         }
         .id("desktop-\(state.liveLyricsSessionRevision)-\(index)-\(settings.floatingDesktopLineMode)-\(settings.floatingDesktopCompanion)-\(preferences.showPinyin)-\(preferences.showKana)-\(conversion.rawValue)")
         .padding(.top, voice == nil ? 0 : 14)
@@ -469,6 +430,9 @@ struct FloatingLyricsView: View {
             followingCount: followingCount
         )
         let visibleLayerCount = visibleLayerCount
+        let timing = state.synchronizedLivePresentationClock.map {
+            CompactLyricTiming(clock: $0, tint: FloatingDesktopPalette(settings: settings).highlight, allowsWrappedLines: true)
+        }
 
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
@@ -520,6 +484,7 @@ struct FloatingLyricsView: View {
                 proxy.scrollTo(rows[index].id, anchor: .top)
             }
         }
+        .environment(\.compactLyricTiming, timing)
     }
 
     @ViewBuilder

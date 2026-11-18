@@ -451,11 +451,11 @@ private struct MenuBarTimedOriginal: View {
 
     var body: some View {
         let live = state.liveLyrics
-        if state.hasLiveTrack, !state.isMockPreviewMode, state.liveLyricsAreSynchronized,
+        if let clock = state.synchronizedLivePresentationClock,
            state.liveTrackIdentity?.stableKey == trackKey, live.indices.contains(index), live[index].id == line.id,
            let layout = WordTimedLyricText.layout(for: line, text: line.originalText, size: 17,
                                                 weight: .semibold, design: "default", width: width) {
-            WordTimedLyricText(layout: layout, clock: state.presentationClock,
+            WordTimedLyricText(layout: layout, clock: clock,
                               font: .system(size: 17, weight: .semibold), base: .primary.opacity(0.52), tint: tint,
                               selectable: true)
                 .frame(maxWidth: .infinity, alignment: .leading)

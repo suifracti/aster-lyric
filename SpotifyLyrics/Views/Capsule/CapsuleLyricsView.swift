@@ -188,10 +188,10 @@ struct CapsuleLyricsView: View {
 
     private var expandedWordTiming: CompactLyricTiming? {
         guard windowController.presentationState == .expanded, held == nil,
-              state.hasLiveTrack, !state.isMockPreviewMode, state.liveLyricsAreSynchronized else { return nil }
+              let clock = state.synchronizedLivePresentationClock else { return nil }
         let foreground = NSColor(LyricsDesignTokens.primaryText)
         let readableTint = foreground.blended(withFraction: 0.32, of: NSColor(islandAccent)) ?? foreground
-        return .init(clock: state.presentationClock, tint: Color(nsColor: readableTint))
+        return .init(clock: clock, tint: Color(nsColor: readableTint))
     }
 
     @ViewBuilder

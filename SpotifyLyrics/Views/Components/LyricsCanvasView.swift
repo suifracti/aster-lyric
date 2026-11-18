@@ -44,6 +44,7 @@ struct LyricsCanvasView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .id(state.lyricsSessionRevision)
         .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: state.lyrics))
+        .environment(\.compactLyricTiming, wordTiming)
         .sheet(isPresented: $isAlignmentDetailsPresented) {
             if let report = state.lyricsState.alignmentReport {
                 AlignmentPreviewView(report: report)
@@ -51,6 +52,11 @@ struct LyricsCanvasView: View {
         }
         // AssistExplainSheet is hosted once on MainLyricsWindowView so default
         // appleMusicImmersiveV3 (which does not embed LyricsCanvasView) can present it.
+    }
+
+    private var wordTiming: CompactLyricTiming? {
+        guard !state.isShowingSearchPreview, let clock = state.synchronizedLivePresentationClock else { return nil }
+        return .init(clock: clock, tint: LyricsDesignTokens.primaryText, allowsWrappedLines: true)
     }
 
     /// The archived renderer remains available as a rollback target. It uses

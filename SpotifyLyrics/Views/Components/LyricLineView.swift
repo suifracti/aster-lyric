@@ -39,6 +39,7 @@ private struct LyricAgentPresentationMapKey: EnvironmentKey {
 struct CompactLyricTiming {
     let clock: LyricsPresentationClock
     let tint: Color
+    var allowsWrappedLines = false
 }
 
 private struct CompactLyricTimingKey: EnvironmentKey {
@@ -212,7 +213,7 @@ struct LyricLineView: View {
         if let timing = wordTiming,
            let layout = WordTimedLyricText.layout(for: line, text: effectiveOriginalText, size: primaryFontSize,
                                                   weight: .bold, design: "rounded", width: availableWidth),
-           layout.isSingleLine {
+           (layout.isSingleLine || timing.allowsWrappedLines) {
             WordTimedLyricText(layout: layout, clock: timing.clock, font: font, base: color.opacity(0.54), tint: timing.tint)
         } else {
             Text(effectiveOriginalText).font(font).foregroundStyle(color).lineSpacing(isActive ? 3 : 2)
@@ -274,7 +275,6 @@ struct LyricLineView: View {
                                 tokens: tokens,
                                 presentationClock: timing?.clock,
                                 timedLayout: timedRuby,
-                                currentTime: timedRuby == nil ? nil : 0,
                                 baseFont: .system(
                                     size: primaryFontSize,
                                     weight: fontWeight,
@@ -567,7 +567,7 @@ struct RubyLineView: View {
 
     var body: some View {
         RubyTokenFlowLayout(horizontalSpacing: 0, verticalSpacing: tokenVerticalSpacing, maxWidth: maxWidth, alignmentFraction: textAlignment.lyricAlignmentFraction) {
-            if timedLayout != nil, currentTime != nil {
+            if timedLayout != nil, presentationClock != nil || currentTime != nil {
                 ForEach(Array(displayTimedTokenGroups.enumerated()), id: \.offset) { _, group in
                     let groupEdgeReserve: CGFloat = group.count > 1
                         && group.filter(\.hasRuby).count == 1 ? 5 : 0
@@ -808,7 +808,7 @@ private struct RubyTokenBlock: View, Equatable {
                     .fixedSize(horizontal: true, vertical: false)
             }
 
-            if timedToken != nil, currentTime != nil {
+            if timedToken != nil, presentationClock != nil || currentTime != nil {
                 renderedText(surface, font: baseNSFont, fill: baseColor.opacity(unplayedOpacity))
                     .font(baseFont)
                     .overlay(

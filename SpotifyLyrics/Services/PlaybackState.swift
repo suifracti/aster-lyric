@@ -3938,6 +3938,11 @@ public final class PlaybackState: ObservableObject {
         )
     }
 
+    var synchronizedLivePresentationClock: LyricsPresentationClock? {
+        guard hasLiveTrack, !isMockPreviewMode, liveLyricsAreSynchronized else { return nil }
+        return presentationClock
+    }
+
     private func syncLiveLyricsOffsetScope() {
         syncLiveLyricsOffsetScope(lyricsVersionID: lyricsSession.activeLyricsVersionID)
     }
