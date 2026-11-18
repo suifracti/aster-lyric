@@ -461,6 +461,19 @@ final class LibraryRevisionsContractTests: XCTestCase {
                 : item.targetLanguage == "zh-Hant" ? ["第一個夢", nil] : ["第一个梦", "风"]
             XCTAssertEqual(page?.lines.map { ($0.translation?.isEmpty == false) ? $0.translation : nil }, expected)
         }
+
+        let opened = try await repo.readLibraryPassage(.init(trackKey: key, source: .translation(targetID)), includeEditions: true)
+        let page = try XCTUnwrap(opened)
+        let englishID = try XCTUnwrap(detail.translationVersions.first { $0.targetLanguage == "en" }?.id)
+        let edition = try XCTUnwrap(page.editions.first { $0.source == .translation(englishID) })
+        let position = LibraryPassageTarget.ReadingPosition(find: "夢", lineIndex: 0, topLineIndex: nil)
+        let switched = edition.readingTarget(from: page, position: position)
+        XCTAssertEqual(switched.trackKey, key)
+        XCTAssertEqual(switched.readingPosition, position)
+        let otherTranslation = try await repo.readLibraryPassage(switched)
+        XCTAssertEqual(otherTranslation?.lines.first?.translation, "dream")
+        let afterReading = try await repo.loadPersonalLibraryTrackDetail(stableKey: key)
+        XCTAssertEqual(afterReading?.entry.activeTranslationVersionID, detail.entry.activeTranslationVersionID)
     }
 
     func testLocalFileCanBeReadAndFiledBesideLockedLyricsWithoutPlaying() async throws {

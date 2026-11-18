@@ -121,15 +121,11 @@ public final class PersonalLyricsLibraryService: ObservableObject {
                                 playing: LibraryCompareRequest.Playing? = nil,
                                 available: [UUID: StoredTranslationVersion]? = nil) -> LibraryCompareRequest? {
         let choices: [LibraryCompareVersion], selected: UUID
-        func title(_ kind: String, _ id: UUID, _ fallback: String) -> String {
-            let custom = defaults.string(forKey: VersionLabelDraft.key(kind, id) + ".title") ?? ""
-            return custom.isEmpty ? fallback : custom
-        }
         switch source {
         case let .original(id):
             selected = id
             choices = detail.lyricsVersions.map {
-                .init(id: $0.id, title: title("lyrics", $0.id, DatabaseSourceIdentifier.displayName(for: $0.source)),
+                .init(id: $0.id, title: versionTitle("lyrics", $0.id, DatabaseSourceIdentifier.displayName(for: $0.source)),
                       updatedAt: $0.updatedAt, isCurrent: $0.isCurrent, parentID: $0.parentVersionID)
             }
         case let .translation(id):
@@ -139,7 +135,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
                 if available != nil && stored == nil { return nil }
                 let name = stored?.record.translationSourceTitle ?? AITranslationSourceKind(rawValue: item.sourceKind)?.displayName ?? "译文"
                 let current = playing.map { $0.selectedID == item.id } ?? item.isCurrent
-                return .init(id: item.id, title: title("translation", item.id, name), updatedAt: item.updatedAt,
+                return .init(id: item.id, title: versionTitle("translation", item.id, name), updatedAt: item.updatedAt,
                              isCurrent: current, parentID: item.parentVersionID, translation: item)
             }
         default: return nil
@@ -187,11 +183,21 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         versionPreview = VersionPreview(title: "", text: "", passage: target)
     }
 
-    func readPassage(_ target: LibraryPassageTarget, recordOpening: Bool = true) async throws -> LibraryPassagePage? {
-        let page = try await repository.readLibraryPassage(target)
+    func readPassage(_ target: LibraryPassageTarget, recordOpening: Bool = true, includeEditions: Bool = false) async throws -> LibraryPassagePage? {
+        let page = try await repository.readLibraryPassage(target, includeEditions: includeEditions)
         try Task.checkCancellation()
         if let page, recordOpening { rememberReading(page, openedFrom: target) }
         return page
+    }
+
+    func readingEditionTitle(_ edition: LibraryPassageEdition) -> String {
+        guard let id = edition.source.versionID else { return edition.title }
+        return versionTitle(edition.kind.rawValue, id, edition.title)
+    }
+
+    private func versionTitle(_ kind: String, _ id: UUID, _ fallback: String) -> String {
+        let title = defaults.string(forKey: VersionLabelDraft.key(kind, id) + ".title") ?? ""
+        return title.isEmpty ? fallback : title
     }
 
     func rememberReading(_ page: LibraryPassagePage, openedFrom target: LibraryPassageTarget,

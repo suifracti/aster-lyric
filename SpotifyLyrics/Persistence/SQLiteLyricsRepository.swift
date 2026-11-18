@@ -4112,9 +4112,11 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     }
 
     /// Reading a historical version never changes the adopted lyrics or playback.
-    func readLibraryPassage(_ target: LibraryPassageTarget) throws -> LibraryPassagePage? {
-        guard let detail = try loadPersonalLibraryTrackDetail(stableKey: target.trackKey) else { return nil }
-        return try readLibraryPassage(target, from: detail)
+    func readLibraryPassage(_ target: LibraryPassageTarget, includeEditions: Bool = false) throws -> LibraryPassagePage? {
+        guard let detail = try loadPersonalLibraryTrackDetail(stableKey: target.trackKey),
+              var page = try readLibraryPassage(target, from: detail) else { return nil }
+        if includeEditions { page.editions = detail.readingEditions }
+        return page
     }
 
     func readPassagePair(trackKey: String, base: LibraryPassageSource, reference: LibraryPassageSource) throws -> (LibraryPassagePage, LibraryPassagePage)? {

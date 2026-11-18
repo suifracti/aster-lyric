@@ -22,7 +22,8 @@ struct LibraryPassageReader: View {
         let restoreTop: Bool
     }
 
-    let target: LibraryPassageTarget
+    private let initialTarget: LibraryPassageTarget
+    @State private var editionSelection: (origin: LibraryPassageTarget, target: LibraryPassageTarget)?
     let library: PersonalLyricsLibraryService
     var openArchive: ((LibraryPassageTarget) -> Void)?
     var close: (() -> Void)?
@@ -48,13 +49,18 @@ struct LibraryPassageReader: View {
 
     init(target: LibraryPassageTarget, library: PersonalLyricsLibraryService,
          openArchive: ((LibraryPassageTarget) -> Void)? = nil, close: (() -> Void)? = nil) {
-        self.target = target
+        self.initialTarget = target
         self.library = library
         self.openArchive = openArchive
         self.close = close
         _find = State(initialValue: target.readingPosition?.find ?? target.find)
         if case .reading = target.source { _showsReading = State(initialValue: true) }
         else { _showsReading = State(initialValue: false) }
+    }
+
+    private var target: LibraryPassageTarget {
+        if let editionSelection, editionSelection.origin == initialTarget { return editionSelection.target }
+        return initialTarget
     }
 
     private var currentMatch: Int? { matches.indices.contains(cursor) ? matches[cursor] : nil }
@@ -116,6 +122,9 @@ struct LibraryPassageReader: View {
                 if let openArchive {
                     Button { openArchive(archiveTarget) } label: { Label("版本档案", systemImage: "books.vertical") }.fixedSize()
                         .disabled(page == nil && failure == nil)
+                }
+                if let page, page.editions.contains(where: { $0.source != page.resolvedSource }) {
+                    editionMenu(page)
                 }
                 Menu {
                     Toggle("显示译文", isOn: $showsTranslation)
@@ -218,6 +227,33 @@ struct LibraryPassageReader: View {
         }
     }
 
+    private func editionMenu(_ page: LibraryPassagePage) -> some View {
+        Menu {
+            ForEach(LibraryPassageEdition.Kind.allCases, id: \.self) { kind in
+                let editions = page.editions.filter { $0.kind == kind }
+                if !editions.isEmpty {
+                    Section(kind.label) {
+                        ForEach(editions) { edition in
+                            let title = [library.readingEditionTitle(edition), v3ShortDateText(edition.updatedAt), edition.status]
+                                .compactMap { $0 }.joined(separator: " · ")
+                            let current = edition.source == page.resolvedSource
+                            Button {
+                                guard !current else { return }
+                                rememberPosition()
+                                editionSelection = (initialTarget, edition.readingTarget(from: page, position: readingPosition))
+                            } label: {
+                                if current { Label(title, systemImage: "checkmark") }
+                                else { Text(title) }
+                            }
+                        }
+                    }
+                }
+            }
+        } label: { Image(systemName: "square.stack") }
+        .menuStyle(.borderlessButton).fixedSize()
+        .help("切换阅读版本").accessibilityLabel("切换阅读版本")
+    }
+
     private func row(_ line: LibraryPassagePage.Line, page: LibraryPassagePage) -> some View {
         let selected = visibleFocus == line.id
         let partOfExcerpt = target.excerptRange?.contains(line.id) == true
@@ -257,6 +293,8 @@ struct LibraryPassageReader: View {
     }
 
     private func load() async {
+        let target = self.target
+        let switched = editionSelection?.origin == initialTarget
         loadedTarget = nil
         recordedPosition = nil
         scrollRequest = nil
@@ -271,21 +309,23 @@ struct LibraryPassageReader: View {
         matches = []
         cursor = 0
         do {
-            let loaded = try await library.readPassage(target, recordOpening: false)
+            let loaded = try await library.readPassage(target, recordOpening: false, includeEditions: true)
             try Task.checkCancellation()
             if let loaded, !loaded.lines.isEmpty {
+                if case .reading = target.source { showsReading = true }
                 voices = PassageVoicePresentation(lines: loaded.lines)
                 page = loaded
                 loadedTarget = target
                 let savedPosition = target.savedQuote?.originalVersionID == loaded.originalVersionID
                     && loaded.matchesOriginalVersion ? target.lineIndex : nil
-                let preferred = target.readingPosition != nil ? target.readingPosition?.lineIndex
+                let restored = switched && !loaded.matchesOriginalVersion ? nil : target.readingPosition
+                let preferred = restored != nil ? restored?.lineIndex
                     : (target.savedQuote == nil ? target.lineIndex : savedPosition)
                 updateMatches(preferred: preferred)
                 if let preferred, loaded.lines.contains(where: { $0.id == preferred }) {
                     returnedLine = preferred
                 }
-                if let top = target.readingPosition?.topLineIndex, loaded.lines.contains(where: { $0.id == top }) {
+                if let top = restored?.topLineIndex, loaded.lines.contains(where: { $0.id == top }) {
                     scrollToLine(top, restoreTop: true)
                 } else {
                     scrollToLine(visibleFocus)

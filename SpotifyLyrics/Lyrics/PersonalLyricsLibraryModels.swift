@@ -998,6 +998,59 @@ struct LibraryPassageHit: Identifiable, Sendable {
     }
 }
 
+struct LibraryPassageEdition: Identifiable, Sendable {
+    enum Kind: String, CaseIterable, Sendable {
+        case lyrics, translation, reading
+
+        var label: String {
+            switch self {
+            case .lyrics: "原词"
+            case .translation: "译文"
+            case .reading: "读音"
+            }
+        }
+    }
+
+    let source: LibraryPassageSource
+    let originalVersionID: UUID
+    let kind: Kind
+    let title: String
+    let updatedAt: Date
+    var status: String? = nil
+    var id: LibraryPassageSource { source }
+
+    func readingTarget(from page: LibraryPassagePage, position: LibraryPassageTarget.ReadingPosition) -> LibraryPassageTarget {
+        let sameOriginal = originalVersionID == page.originalVersionID && page.matchesOriginalVersion
+        return .init(trackKey: page.entry.trackStableKey, source: source, find: position.find,
+                     readingPosition: .init(find: position.find, lineIndex: sameOriginal ? position.lineIndex : nil,
+                                            topLineIndex: sameOriginal ? position.topLineIndex : nil))
+    }
+}
+
+extension PersonalLyricsLibraryTrackDetail {
+    var readingEditions: [LibraryPassageEdition] {
+        let originals = lyricsVersions.filter { $0.lineCount > 0 }.map {
+            LibraryPassageEdition(source: .original($0.id), originalVersionID: $0.id, kind: .lyrics,
+                title: DatabaseSourceIdentifier.displayName(for: $0.source), updatedAt: $0.updatedAt,
+                status: $0.id == entry.activeLyricsVersionID ? "已采用" : nil)
+        }
+        let translations = translationVersions.filter { $0.lineCount > 0 }.map {
+            let origin = AITranslationSourceKind(rawValue: $0.sourceKind)?.displayName ?? "译文"
+            let language = $0.targetLanguage == "und" ? "" : LyricSourceTranslation.displayName($0.targetLanguage)
+            let title = [origin, language].filter { !$0.isEmpty }.joined(separator: " · ")
+            return LibraryPassageEdition(source: .translation($0.id), originalVersionID: $0.lyricsVersionID, kind: .translation,
+                title: title, updatedAt: $0.updatedAt,
+                status: $0.isArchived ? "已归档" : ($0.isDraft ? "待采用" : ($0.isCurrent ? "已采用" : nil)))
+        }
+        let readings = readingVersions.filter { $0.lineCount > 0 }.map {
+            let title = ReadingRepresentationID(rawValue: $0.representationID)?.displayName ?? "读音"
+            return LibraryPassageEdition(source: .reading($0.id), originalVersionID: $0.lyricsVersionID, kind: .reading,
+                title: title, updatedAt: $0.updatedAt, status: $0.isArchived ? "已归档" : ($0.isCurrent ? "已采用" : nil))
+        }
+        return originals + translations + readings
+    }
+}
+
 struct LibraryPassagePage: Sendable {
     struct Line: Identifiable, Equatable, Sendable {
         let id: Int
@@ -1045,6 +1098,7 @@ struct LibraryPassagePage: Sendable {
     var translationLocked = false
     var translationVersionID: UUID? = nil
     var resolvedSource: LibraryPassageSource? = nil
+    var editions: [LibraryPassageEdition] = []
 
     func archiveTarget(from target: LibraryPassageTarget, position: LibraryPassageTarget.ReadingPosition) -> LibraryPassageTarget {
         var source = resolvedSource ?? target.source
