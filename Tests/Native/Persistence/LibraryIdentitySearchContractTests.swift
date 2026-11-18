@@ -5,6 +5,50 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class LibraryIdentitySearchContractTests: XCTestCase {
+    func testMusicRecordingsWithIdenticalTitlesAndLengthsKeepIndependentLyrics() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("aster-music-identities-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let db = directory.appendingPathComponent("library.sqlite3")
+        let repo = SQLiteLyricsRepository(databaseURL: db)
+        try await repo.prepare()
+        let legacy = Track(title: "窗边", artist: "南窗", album: "卷一", duration: 180)
+        let legacyKey = TrackIdentity(track: legacy).stableKey
+        let legacyPage = try await repo.save(track: legacy, identity: TrackIdentity(track: legacy),
+            document: LyricsDocument(identity: TrackIdentity(track: legacy), lines: [
+                LyricLine(timestamp: 0, originalText: "第一首的原稿")
+            ], source: .manualImport, confidence: 1))
+        let legacyID = try XCTUnwrap(legacyPage.versionID)
+        try executeSQL("UPDATE tracks SET spotify_id='applemusic:ABCDEF0123456789';", at: db)
+        try await repo.adoptLyricsVersion(trackStableKey: legacyKey, lyricsVersionID: legacyID)
+
+        let refreshed = Track(title: "窗边（重整资料）", artist: "南窗", album: "卷一", duration: 181, spotifyId: "applemusic:abcdef0123456789")
+        let sameMetadata = Track(title: legacy.title, artist: legacy.artist, album: legacy.album, duration: legacy.duration,
+                                 spotifyId: "applemusic:ABCDEF012345678A")
+        let secondIdentity = TrackIdentity(track: sameMetadata)
+        XCTAssertNotEqual(secondIdentity.stableKey, legacyKey)
+        let firstRead = try await repo.loadBestStored(track: refreshed, identity: TrackIdentity(track: refreshed))
+        let secondBeforeSave = try await repo.loadBestStored(track: sameMetadata, identity: secondIdentity)
+        XCTAssertEqual(firstRead?.versionID, legacyID)
+        XCTAssertNil(secondBeforeSave)
+
+        let second = try await repo.save(track: sameMetadata, identity: secondIdentity,
+            document: LyricsDocument(identity: secondIdentity, lines: [LyricLine(timestamp: 0, originalText: "另一份录音")],
+                                     source: .manualImport, confidence: 1))
+        let reopened = SQLiteLyricsRepository(databaseURL: db)
+        try await reopened.prepare()
+        let firstAgain = try await reopened.loadBestStored(track: refreshed, identity: TrackIdentity(track: refreshed))
+        let secondAgain = try await reopened.loadBestStored(track: sameMetadata, identity: secondIdentity)
+        XCTAssertEqual(firstAgain?.versionID, legacyID)
+        XCTAssertEqual(secondAgain?.versionID, second.versionID)
+        XCTAssertEqual(secondAgain?.document.lines.first?.originalText, "另一份录音")
+        let retainedKey = try await reopened.resolveStableKey(TrackIdentity(track: refreshed).stableKey)
+        XCTAssertEqual(retainedKey, legacyKey)
+        let renamedSecond = Track(title: "窗边（改名）", artist: "南窗", album: "卷一", duration: 183, spotifyId: sameMetadata.spotifyId)
+        let renamedRead = try await reopened.loadBestStored(track: renamedSecond, identity: TrackIdentity(track: renamedSecond))
+        XCTAssertEqual(renamedRead?.versionID, second.versionID)
+    }
+
     @MainActor
     func testQuickFindUsesTheOfferedSelectionAndOpensTheExactSavedLine() throws {
         let board = NSPasteboard.withUniqueName()

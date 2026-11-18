@@ -201,9 +201,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     private func bestStored(track: Track, identity: TrackIdentity) throws -> StoredLyricsDocument? {
         try ensurePrepared()
-        // Apple Music persistent IDs retain their existing metadata-refresh behaviour.
-        // Spotify identity changes use the persisted redirect table instead.
-        if let key = try adoptedAppleMusicStableKey(for: track) {
+        // Older nonstandard Music identifiers still use the historical metadata keys.
+        if TrackIdentity.appleMusicPersistentID(track.spotifyId) == nil, let key = try adoptedAppleMusicStableKey(for: track) {
             adoptedMusicPlaybackKeys.removeValue(forKey: key)
             if identity.stableKey != key { adoptedMusicPlaybackKeys[identity.stableKey] = key }
         }
@@ -3063,6 +3062,39 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         return result == SQLITE_ROW ? columnText(query, index: 0) : nil
     }
 
+    /// Preserve physical keys written before Music's persistent ID was part of the runtime key.
+    /// An older metadata row can only be reused when no different player ID already owns it.
+    private func appleMusicArchiveKey(for key: String) throws -> String {
+        let prefix = "applemusic-id:"
+        guard key.hasPrefix(prefix), let separator = key.range(of: "|metadata:"),
+              separator.lowerBound >= key.index(key.startIndex, offsetBy: prefix.count) else { return key }
+        let rawID = "applemusic:" + String(key[key.index(key.startIndex, offsetBy: prefix.count)..<separator.lowerBound])
+        guard let id = TrackIdentity.appleMusicPersistentID(rawID) else { return key }
+        if try fetchTrack(stableKey: key) != nil { return key }
+        let recordingKey = prefix + id
+        if try fetchTrack(stableKey: recordingKey) != nil { return recordingKey }
+        let query = try prepare("""
+            SELECT t.stable_key FROM tracks t
+            WHERE t.spotify_id = ? COLLATE NOCASE
+            ORDER BY EXISTS (SELECT 1 FROM lyrics_versions v WHERE v.track_stable_key = t.stable_key AND v.is_preferred = 1) DESC,
+                     EXISTS (SELECT 1 FROM lyrics_versions v WHERE v.track_stable_key = t.stable_key AND v.is_locked = 1) DESC,
+                     EXISTS (SELECT 1 FROM lyrics_versions v WHERE v.track_stable_key = t.stable_key) DESC,
+                     t.created_at, t.stable_key
+            LIMIT 1;
+            """)
+        defer { sqlite3_finalize(query) }
+        try bindText("applemusic:" + id, at: 1, to: query)
+        let result = sqlite3_step(query)
+        guard result == SQLITE_ROW || result == SQLITE_DONE else { throw lastError() }
+        if result == SQLITE_ROW, let existing = columnText(query, index: 0) { return existing }
+        let fingerprint = String(key[separator.upperBound...])
+        let legacy = "metadata:\(fingerprint)|metadata:\(fingerprint)"
+        if let record = try fetchTrack(stableKey: legacy), record.spotifyID?.isEmpty != false, record.spotifyURI?.isEmpty != false {
+            return legacy
+        }
+        return recordingKey
+    }
+
     /// New Spotify metadata keys join the existing recording without creating
     /// another Track row. Existing physical splits are handled by the one-off pass.
     private func redirectNewSpotifyKey(_ stableKey: String) throws {
@@ -3139,14 +3171,16 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     private func resolvedCanonicalStableKey(_ stableKey: String) throws -> String {
         try redirectNewSpotifyKey(stableKey)
-        let stableKey = adoptedMusicPlaybackKeys[stableKey] ?? stableKey
+        let compatibleKey = try appleMusicArchiveKey(for: stableKey)
+        let stableKey = adoptedMusicPlaybackKeys[compatibleKey] ?? compatibleKey
         guard let redirectResolver else { return stableKey }
         return try redirectResolver.resolve(stableKey)
     }
 
     private func resolvedIdentityFamily(stableKey: String) throws -> [String] {
         try redirectNewSpotifyKey(stableKey)
-        let stableKey = adoptedMusicPlaybackKeys[stableKey] ?? stableKey
+        let compatibleKey = try appleMusicArchiveKey(for: stableKey)
+        let stableKey = adoptedMusicPlaybackKeys[compatibleKey] ?? compatibleKey
         guard let redirectResolver else { return [stableKey] }
         return try redirectResolver.identityFamily(for: stableKey)
     }

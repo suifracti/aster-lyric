@@ -14,8 +14,10 @@ public struct TrackIdentity: Hashable, Sendable, CustomStringConvertible {
         // base62 ID, a spotify:track URI, and an open.spotify.com URL.  Keep
         // one canonical representation at the identity boundary so those
         // shapes cannot create three physical Track identities.
-        let normalizedID = Self.canonicalSpotifyTrackID(track.spotifyId)
-            ?? Self.canonicalSpotifyTrackID(track.spotifyURL?.absoluteString)
+        let musicID = Self.appleMusicPersistentID(track.spotifyId)
+        let normalizedID = musicID == nil
+            ? Self.canonicalSpotifyTrackID(track.spotifyId) ?? Self.canonicalSpotifyTrackID(track.spotifyURL?.absoluteString)
+            : nil
         let normalizedURI = normalizedID.map { "spotify:track:\($0)" }
         let normalizedISRC = Self.normalizeIdentifier(track.isrc)
 
@@ -34,6 +36,8 @@ public struct TrackIdentity: Hashable, Sendable, CustomStringConvertible {
             primary = "spotify-id:\(normalizedID)"
         } else if let normalizedURI {
             primary = "spotify-uri:\(normalizedURI)"
+        } else if let musicID {
+            primary = "applemusic-id:\(musicID)"
         } else if let normalizedISRC {
             primary = "isrc:\(normalizedISRC)"
         } else {
@@ -88,6 +92,15 @@ public struct TrackIdentity: Hashable, Sendable, CustomStringConvertible {
         }
         return (canonicalSpotifyTrackID(track.spotifyId) ?? canonicalSpotifyTrackID(track.spotifyURL?.absoluteString))
             .map { "spotify:track:\($0)" }
+    }
+
+    /// Music.app persistent IDs identify local recordings even when titles and lengths coincide.
+    static func appleMusicPersistentID(_ rawID: String?) -> String? {
+        let prefix = "applemusic:"
+        guard let id = normalizeIdentifier(rawID), id.hasPrefix(prefix) else { return nil }
+        let value = id.dropFirst(prefix.count)
+        guard value.count == 16, value.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { return nil }
+        return String(value)
     }
 
     static func samePlaybackRecording(_ lhs: Track, _ rhs: Track) -> Bool {
