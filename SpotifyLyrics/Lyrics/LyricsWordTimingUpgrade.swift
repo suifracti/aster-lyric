@@ -43,6 +43,11 @@ public enum LyricsWordTimingUpgrade {
     /// light the corresponding characters in the listener's chosen text.
     static func addingTiming(from upgrade: LyricsDocument, to held: LyricsDocument) -> LyricsDocument? {
         guard wantsUpgrade(held), upgrade.isSynchronized, held.identity == upgrade.identity else { return nil }
+        let lines = matchingRows(from: upgrade, to: held) ?? matchingWords(from: upgrade, to: held)
+        return lines.map { held.replacingLines($0, timingVersionID: nil) }
+    }
+
+    private static func matchingRows(from upgrade: LyricsDocument, to held: LyricsDocument) -> [LyricLine]? {
         var byText = Dictionary(grouping: upgrade.lines, by: { normalized($0.originalText) })
         var lines = held.lines
         var sung = 0, matched = 0, timed = 0
@@ -64,7 +69,94 @@ public enum LyricsWordTimingUpgrade {
             }
         }
         guard Double(matched) >= Double(sung) * requiredCoverage, timed * 2 >= sung else { return nil }
-        return held.replacingLines(lines, timingVersionID: nil)
+        return lines
+    }
+
+    private struct DonorWord {
+        let row: Int
+        let letters: [Unicode.Scalar]
+        let span: TimedTextSpan
+    }
+
+    private typealias Letter = (value: Unicode.Scalar, range: Range<String.Index>)
+
+    /// The same recording can break a phrase across different rows. Match
+    /// complete saved rows against contiguous donor words in timeline order.
+    private static func matchingWords(from upgrade: LyricsDocument, to held: LyricsDocument) -> [LyricLine]? {
+        let words = upgrade.lines.enumerated().flatMap { row, line -> [DonorWord] in
+            guard line.hasValidTimedSpans(), let spans = line.timedSpans,
+                  normalized(spans.map(\.text).joined()) == normalized(line.originalText) else { return [] }
+            return spans.compactMap { span in
+                let letters = Array(normalized(span.text).unicodeScalars)
+                return letters.isEmpty ? nil : DonorWord(row: row, letters: letters, span: span)
+            }
+        }
+        guard !words.isEmpty else { return nil }
+        var lines = held.lines
+        var nextWord = 0
+        var sung = 0
+        var timed = 0
+        for (index, original) in held.lines.enumerated() {
+            let text = original.originalText
+            let letters: [Letter] = text.indices.flatMap { start in
+                let range = start..<text.index(after: start)
+                return normalized(String(text[range])).unicodeScalars.map { (value: $0, range: range) }
+            }
+            guard !letters.isEmpty else { continue }
+            sung += 1
+            guard let range = matchingWordRange(letters.map(\.value), at: original.timestamp, in: words, after: nextWord),
+                  let projected = projectWords(words[range], onto: original, letters: letters) else { continue }
+            nextWord = range.upperBound
+            lines[index] = projected
+            timed += 1
+        }
+        // Require timeline-aligned word evidence for at least two thirds of
+        // the saved sung rows. Differently worded rows keep their line timing.
+        return sung > 0 && timed * 3 >= sung * 2 ? lines : nil
+    }
+
+    private static func matchingWordRange(_ letters: [Unicode.Scalar], at timestamp: TimeInterval,
+                                          in words: [DonorWord], after consumed: Int) -> Range<Int>? {
+        var best: Range<Int>?
+        var distance = TimeInterval.infinity
+        for start in words.indices.dropFirst(consumed) {
+            let delta = abs(words[start].span.startTime - timestamp)
+            guard delta <= lineStartTolerance, delta < distance else { continue }
+            var offset = 0
+            var end = start
+            while end < words.count, end == start || words[end].row - words[end - 1].row <= 1,
+                  letters.dropFirst(offset).starts(with: words[end].letters) {
+                offset += words[end].letters.count
+                end += 1
+                if offset == letters.count {
+                    best = start..<end
+                    distance = delta
+                    break
+                }
+            }
+        }
+        return best
+    }
+
+    private static func projectWords(_ words: ArraySlice<DonorWord>, onto original: LyricLine,
+                                     letters: [Letter]) -> LyricLine? {
+        let text = original.originalText
+        let upperTime = original.endTime ?? .infinity
+        var offset = 0
+        let spans = words.enumerated().map { id, word in
+            let startIndex = letters[offset].range.lowerBound
+            offset += word.letters.count
+            let endIndex = letters[offset - 1].range.upperBound
+            let range = NSRange(startIndex..<endIndex, in: text)
+            let start = min(upperTime, max(original.timestamp, word.span.startTime))
+            let end = max(start, min(upperTime, word.span.endTime))
+            return TimedTextSpan(id: id, text: String(text[startIndex..<endIndex]),
+                trailingWhitespace: String(text[endIndex...].prefix(while: \.isWhitespace)), startTime: start, endTime: end,
+                utf16Start: range.location, utf16Length: range.length, granularity: word.span.granularity)
+        }
+        var line = original
+        line.timedSpans = spans
+        return spans.contains { $0.endTime > $0.startTime } && line.hasValidTimedSpans() ? line : nil
     }
 
     private static func addingSpans(from donor: LyricLine, to original: LyricLine) -> LyricLine? {

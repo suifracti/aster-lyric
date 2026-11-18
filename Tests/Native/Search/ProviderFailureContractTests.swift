@@ -1191,6 +1191,39 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertFalse(LyricsWordTimingUpgrade.wantsUpgrade(manual.makeDocument()), "a manual edit is never replaced")
     }
 
+    func testWordTimingFollowsWordsAcrossDifferentSourceLineBreaks() throws {
+        let (_, _, lineTimed, wordTimed) = wordTimingFixture()
+        let held = lineTimed.makeDocument().replacingLines([
+            LyricLine(timestamp: 10, originalText: "雨が止んだ、歩こう。", translationText: "雨停了，走吧。"),
+            LyricLine(timestamp: 14, originalText: "またいつか"),
+            LyricLine(timestamp: 16, originalText: "会えたら"),
+            LyricLine(timestamp: 20, originalText: "こちらだけのコーラス")
+        ])
+        func timed(_ pieces: [(String, Double, Double)]) -> LyricLine {
+            var offset = 0
+            let spans = pieces.enumerated().map { index, piece in
+                defer { offset += piece.0.utf16.count }
+                return TimedTextSpan(id: index, text: piece.0, startTime: piece.1, endTime: piece.2,
+                    utf16Start: offset, utf16Length: piece.0.utf16.count)
+            }
+            return LyricLine(timestamp: pieces[0].1, originalText: pieces.map { $0.0 }.joined(), timedSpans: spans)
+        }
+        let donor = wordTimed.makeDocument().replacingLines([
+            timed([("雨が", 10, 10.8), ("止んだ", 10.8, 11.6)]),
+            timed([("歩こう", 12, 13.6)]),
+            timed([("またいつか", 14, 15.5), ("会えたら", 16, 17.9)]),
+            timed([("別のコーラス", 20, 22)])
+        ])
+
+        let upgraded = try XCTUnwrap(LyricsWordTimingUpgrade.addingTiming(from: donor, to: held))
+        XCTAssertEqual(upgraded.lines.map(\.id), held.lines.map(\.id))
+        XCTAssertEqual(upgraded.lines.map(\.originalText), held.lines.map(\.originalText))
+        XCTAssertEqual(upgraded.lines[0].translationText, held.lines[0].translationText)
+        XCTAssertEqual(upgraded.lines[0].timedSpans?.map(\.startTime), [10, 10.8, 12])
+        XCTAssertEqual(upgraded.lines[2].timedSpans?.first?.startTime, 16)
+        XCTAssertNil(upgraded.lines[3].timedSpans)
+    }
+
     func testQRCLineCoversItsWordsSoWordTimingStillRanksFirst() {
         // Lost My Mind: the header said the line ended at 31.395 while its
         // last word ended at 31.396; every QQ QRC then ranked as line timing.
