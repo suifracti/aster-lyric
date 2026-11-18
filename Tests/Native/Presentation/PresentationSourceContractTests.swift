@@ -242,6 +242,65 @@ final class PresentationSourceContractTests: XCTestCase {
     }
 
     @MainActor
+    func testBatchCanResumeAndRetryWithoutLosingSavedSongsOrCandidateReviews() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("batch.sqlite3"))
+        try await repository.prepare()
+        let titles = ["A saved", "B review", "C failed", "D unfinished", "E unmatched"]
+        let tracks = titles.map { Track(title: $0, artist: "Fixture", album: "", duration: 180) }
+        for track in tracks { try await (repository as any LyricsRepository).saveTrackMetadata(.bootstrap(from: track)) }
+        let entries = try await repository.loadPersonalLibraryEntries(includeMissingLyrics: true).sorted { $0.title < $1.title }
+        let candidate = LyricsCandidate(id: "preserved-review", identity: TrackIdentity(track: tracks[1]),
+            title: titles[1], artist: "Fixture", album: "", duration: 180,
+            lines: [LyricLine(timestamp: 2, originalText: "A reviewable line")], source: .lrclib, confidence: 0.8)
+        let batch = LyricsBatchCompletion()
+        func waitForRun() async throws {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+            while batch.isRunning && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
+            XCTAssertFalse(batch.isRunning)
+        }
+
+        batch.start(entries: entries) { track in
+            switch track.title {
+            case titles[0]: return .timedSaved
+            case titles[1]: return .review([candidate])
+            case titles[2]: return .failed
+            default:
+                batch.stop()
+                return nil
+            }
+        }
+        try await waitForRun()
+        XCTAssertEqual(batch.pendingCount, 2)
+        XCTAssertEqual(batch.failedCount, 1)
+        let reviewID = try XCTUnwrap(batch.results.first { $0.entry.title == titles[1] }).lookupID
+
+        var resumed: [String] = []
+        batch.resume { track in
+            resumed.append(track.title)
+            return track.title == titles[3] ? .timedSaved : .noMatch
+        }
+        try await waitForRun()
+        XCTAssertEqual(resumed, Array(titles.suffix(2)))
+        XCTAssertEqual(batch.pendingCount, 0)
+
+        var retried: [String] = []
+        batch.retryFailures { track in
+            retried.append(track.title)
+            return .plainSaved
+        }
+        XCTAssertEqual(batch.retryProgress?.total, 1)
+        try await waitForRun()
+        XCTAssertEqual(retried, [titles[2]])
+        XCTAssertEqual(batch.results.map(\.entry.title), titles)
+        XCTAssertEqual(batch.results.map(\.outcome), [.timedSaved, .review([candidate]), .plainSaved, .timedSaved, .noMatch])
+        XCTAssertEqual(batch.results[1].lookupID, reviewID)
+        XCTAssertEqual(batch.completed, batch.total)
+        XCTAssertEqual(batch.failedCount, 0)
+    }
+
+    @MainActor
     func testJapaneseAndChineseSongsRestoreTheirOwnReadingSwitches() {
         let suite = "reading-language-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!

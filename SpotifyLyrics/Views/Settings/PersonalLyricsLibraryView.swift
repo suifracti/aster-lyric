@@ -1265,17 +1265,13 @@ struct LyricsBatchControls: View {
             if batch.isRunning {
                 Button(batch.wasStopped ? "停止中" : "停止") { batch.stop() }.disabled(batch.wasStopped)
             } else if !entries.isEmpty {
-                Button("全部补全") {
-                    batch.start(entries: entries) { [weak playback] track in
-                        await playback?.completeMissingLyrics(track: track)
-                    }
-                }
-                .help("依次为当前列表查找歌词")
+                Button("全部补全") { batch.start(entries: entries, search: searchMissing) }
+                    .help("为当前列表开始一轮补词")
             }
             if batch.total > 0 {
-                Button(batch.isRunning ? "\(batch.completed)/\(batch.total)" : "结果") { showsResults.toggle() }
+                Button(batch.isRunning ? progress : "结果") { showsResults.toggle() }
                     .monospacedDigit().help("查看补词结果").accessibilityLabel("查看补词结果")
-                    .accessibilityValue(batch.isRunning ? "\(batch.completed) / \(batch.total)" : "")
+                    .accessibilityValue(batch.isRunning ? progress : "")
                     .popover(isPresented: $showsResults) { results }
             }
         }
@@ -1299,13 +1295,39 @@ struct LyricsBatchControls: View {
         }
     }
 
+    private var searchMissing: LyricsBatchCompletion.Search {
+        { [weak playback] track in await playback?.completeMissingLyrics(track: track) }
+    }
+
+    private var progress: String {
+        if let retry = batch.retryProgress { return "\(retry.completed)/\(retry.total)" }
+        return "\(batch.completed)/\(batch.total)"
+    }
+
+    private var resultsTitle: String {
+        if batch.wasStopped { return batch.isRunning ? "正在停止" : "已停止" }
+        if batch.retryProgress != nil { return "正在重试" }
+        return batch.isRunning ? "正在补词" : "本次补词"
+    }
+
     private var results: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(batch.isRunning ? (batch.wasStopped ? "正在停止" : "正在补词") : (batch.wasStopped ? "已停止" : "本次补词"))
-                .font(.headline)
-            Text("已查 \(batch.completed) / \(batch.total) 首").font(.caption.monospacedDigit())
+            Text(resultsTitle).font(.headline)
+            Text(batch.retryProgress == nil ? "已查 \(progress) 首" : "已重试 \(progress) 首")
+                .font(.caption.monospacedDigit())
             if let title = batch.currentTitle {
                 Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            if !batch.isRunning {
+                let failedCount = batch.failedCount
+                HStack(spacing: 7) {
+                    if batch.pendingCount > 0 {
+                        Button("继续未查（\(batch.pendingCount)）") { batch.resume(search: searchMissing) }
+                    }
+                    if failedCount > 0 {
+                        Button("仅重试失败（\(failedCount)）") { batch.retryFailures(search: searchMissing) }
+                    }
+                }
             }
             if !batch.results.isEmpty {
                 Divider()
