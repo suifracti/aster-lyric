@@ -25,72 +25,26 @@ struct SettingsWorkspace: View {
     @Environment(\.newDocument) private var newDocument
     @State private var droppedOn = false
     @State private var openingError: String?
+    struct MainWindowControls {
+        let playerStatus: String
+        let showLyrics: () -> Void
+        let findLyrics: () -> Void
+        let openSettings: () -> Void
+    }
+
+    var mainWindow: MainWindowControls? = nil
     let navigate: (SettingsLocation) -> Void
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 19) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("我的工作台").font(.system(size: 29, weight: .semibold, design: .serif))
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer()
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 7) { fileActions }.fixedSize()
-                        Menu { fileActions } label: { Label("文件", systemImage: "folder") }.fixedSize()
-                    }
-                }
-                WorkspaceShelfCard(navigate: navigate)
-                if let record = try? JSONDecoder().decode(LastOpenedLyricsRecord.self, from: lastOpenedData) {
-                    Button { navigate(.init(.library, trackKey: record.trackKey)) } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "bookmark").foregroundStyle(WorkspacePalette.ink)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("上次打开的档案").font(.caption).foregroundStyle(.secondary)
-                                Text([record.title, record.artist].filter { !$0.isEmpty }.joined(separator: " · "))
-                                    .font(.callout.weight(.medium)).lineLimit(1)
-                            }
-                            Spacer()
-                            Image(systemName: "arrow.right").font(.caption)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible())], spacing: 8) {
-                    ForEach([SettingsCategory.favorites, .missingLyrics, .history, .statistics]) { category in
-                        Button { navigate(.init(category)) } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: category.systemImage)
-                                    .font(.system(size: 17)).foregroundStyle(WorkspacePalette.ink)
-                                    .frame(width: 26)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(category.rawValue).font(.system(size: 13, weight: .medium))
-                                    Text(category.detail).font(.caption).foregroundStyle(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 12).frame(minHeight: 60)
-                            .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                Divider()
-                Button { navigate(.init(.general)) } label: {
-                    HStack {
-                        Label("播放来源与连接", systemImage: "cable.connector")
-                        Spacer()
-                        Text("Spotify / Apple Music").font(.caption).foregroundStyle(.secondary)
-                        Image(systemName: "chevron.right").font(.caption)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+            Group {
+                if let mainWindow { workbench(mainWindow) }
+                else { settingsWorkspace }
             }
-            .frame(maxWidth: 770, alignment: .leading)
-            .padding(.horizontal, 28).padding(.vertical, 22)
+            .frame(maxWidth: mainWindow == nil ? 770 : 956, alignment: .leading)
+            .padding(.horizontal, mainWindow == nil ? 28 : 38)
+            .padding(.top, mainWindow == nil ? 22 : 54)
+            .padding(.bottom, 26)
             .frame(maxWidth: .infinity)
         }
         .background(WorkspacePalette.paper)
@@ -112,6 +66,152 @@ struct SettingsWorkspace: View {
         .alert("无法打开文件", isPresented: Binding(get: { openingError != nil }, set: { if !$0 { openingError = nil } })) {
             Button("好") { openingError = nil }
         } message: { Text(openingError ?? "") }
+    }
+
+    private var settingsWorkspace: some View {
+        VStack(alignment: .leading, spacing: 19) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("我的工作台").font(.system(size: 29, weight: .semibold, design: .serif))
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 7) { fileActions }.fixedSize()
+                    Menu { fileActions } label: { Label("文件", systemImage: "folder") }.fixedSize()
+                }
+            }
+            archive
+            Divider()
+            Button { navigate(.init(.general)) } label: {
+                HStack {
+                    Label("播放来源与连接", systemImage: "cable.connector")
+                    Spacer()
+                    Text("Spotify / Apple Music").font(.caption).foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right").font(.caption)
+                }.contentShape(Rectangle())
+            }.buttonStyle(.plain)
+        }
+    }
+
+    private func workbench(_ controls: MainWindowControls) -> some View {
+        VStack(alignment: .leading, spacing: 25) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 18) {
+                    workbenchTitle.fixedSize()
+                    Spacer(minLength: 6)
+                    workbenchTools(controls).fixedSize()
+                }
+                VStack(alignment: .leading, spacing: 15) {
+                    workbenchTitle
+                    workbenchTools(controls)
+                }
+            }
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 24) {
+                    archive.frame(minWidth: 310)
+                    desk.frame(width: 272)
+                }
+                VStack(alignment: .leading, spacing: 16) {
+                    archiveHighlights
+                    HStack(spacing: 8) { fileActions }.buttonStyle(.bordered)
+                    archiveTools
+                }
+            }
+            Divider()
+            HStack(spacing: 10) {
+                Image(systemName: "waveform").foregroundStyle(WorkspacePalette.ink)
+                Text(controls.playerStatus).lineLimit(1).foregroundStyle(.secondary)
+                    .accessibilityLabel("播放状态 \(controls.playerStatus)")
+                Spacer(minLength: 5)
+                Button("连接设置", action: { navigate(.init(.general)) }).fixedSize()
+            }.font(.callout).buttonStyle(.borderless)
+        }
+        .accessibilityIdentifier("main.workbench")
+    }
+
+    private var workbenchTitle: some View {
+        HStack(alignment: .center, spacing: 13) {
+            Image(systemName: "asterisk")
+                .font(.system(size: 25, weight: .medium)).foregroundStyle(.white)
+                .frame(width: 48, height: 48)
+                .background(WorkspacePalette.sleeve, in: RoundedRectangle(cornerRadius: 12))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Aster · Lyric").font(.callout.weight(.medium)).foregroundStyle(WorkspacePalette.ink)
+                Text("我的工作台").font(.system(size: 34, weight: .semibold, design: .serif))
+                    .accessibilityAddTraits(.isHeader)
+            }
+        }
+    }
+
+    private func workbenchTools(_ controls: MainWindowControls) -> some View {
+        HStack(spacing: 9) {
+            Button(action: controls.findLyrics) {
+                HStack(spacing: 7) {
+                    Label("找回一句", systemImage: "magnifyingglass")
+                    Text("⌘K").font(.caption.monospaced()).foregroundStyle(.secondary).accessibilityHidden(true)
+                }
+            }
+            Button("歌词窗口", systemImage: "waveform", action: controls.showLyrics)
+            Button(action: controls.openSettings) { Image(systemName: "gearshape") }
+                .help("设置").accessibilityLabel("设置")
+        }
+        .controlSize(.regular).buttonStyle(.bordered)
+    }
+
+    private var archive: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            archiveHighlights
+            archiveTools
+        }
+    }
+
+    private var archiveHighlights: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            WorkspaceShelfCard(navigate: navigate)
+            if let record = try? JSONDecoder().decode(LastOpenedLyricsRecord.self, from: lastOpenedData) {
+                actionRow("上次打开的档案",
+                          detail: [record.title, record.artist].filter { !$0.isEmpty }.joined(separator: " · "),
+                          icon: "bookmark") { navigate(.init(.library, trackKey: record.trackKey)) }
+            }
+        }
+    }
+
+    private var archiveTools: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible())], spacing: 8) {
+            ForEach([SettingsCategory.favorites, .missingLyrics, .history, .statistics]) { category in
+                actionRow(category.rawValue, detail: category.detail, icon: category.systemImage) { navigate(.init(category)) }
+            }
+        }
+    }
+
+    private var desk: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("文件").font(.headline).accessibilityAddTraits(.isHeader).padding(.horizontal, 10)
+                .padding(.top, 9).padding(.bottom, 3)
+            actionRow("打开文件…", detail: "歌词、手稿或歌本", icon: "doc.text") {
+                openFiles(LyricFileDocument.choose(multiple: true))
+            }
+            Divider().padding(.horizontal, 10)
+            actionRow("写手稿", detail: "写词与编排段落", icon: "square.and.pencil") { newDocument(LyricManuscript()) }
+            actionRow("编歌本", detail: "收录歌词和金句，排成印本", icon: "book.closed") { newDocument(LyricBook()) }
+        }
+        .padding(9)
+        .background(.primary.opacity(0.042), in: RoundedRectangle(cornerRadius: 11))
+    }
+
+    private func actionRow(_ title: String, detail: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: icon).font(.system(size: 16)).foregroundStyle(WorkspacePalette.ink).frame(width: 23)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.callout.weight(.medium))
+                    if !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+            }
+            .padding(8).contentShape(Rectangle())
+        }.buttonStyle(.plain)
     }
 
     @ViewBuilder

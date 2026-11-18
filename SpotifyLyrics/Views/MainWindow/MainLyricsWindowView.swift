@@ -1,13 +1,36 @@
 import SwiftUI
 import AppKit
 
+@MainActor
+final class MainWindowWorkspaceMode: ObservableObject {
+    enum Destination { case followsPlayback, workbench, lyrics }
+    static let shared = MainWindowWorkspaceMode()
+    @Published private(set) var destination = Destination.followsPlayback
+
+    func show(_ next: Destination) { if destination != next { destination = next } }
+
+    func showsWorkbench(hasTrack: Bool, hasPreview: Bool) -> Bool {
+        switch destination {
+        case .workbench: return true
+        case .lyrics: return false
+        case .followsPlayback: return !hasTrack && !hasPreview
+        }
+    }
+}
+
 struct MainLyricsWindowView: View {
     @EnvironmentObject private var state: PlaybackState
     @EnvironmentObject private var settings: AppSettingsStore
     @EnvironmentObject private var directionDAdapter: DirectionDProductStateAdapter
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
+    @ObservedObject private var workspaceMode = MainWindowWorkspaceMode.shared
+    @ObservedObject private var settingsRoute = SettingsNavigationRoute.shared
     @State private var isSearchPresented = false
+
+    private var showsWorkbench: Bool {
+        workspaceMode.showsWorkbench(hasTrack: state.hasLiveTrack, hasPreview: state.isShowingSearchPreview || state.isUsingMockPreview)
+    }
 
     private var layoutStyle: MainWindowLayoutStyle {
         settings.mainWindowLayoutStyle
@@ -32,7 +55,14 @@ struct MainLyricsWindowView: View {
 
     var body: some View {
         Group {
-            if layoutStyle == .appleMusicImmersiveV3 {
+            if showsWorkbench {
+                SettingsWorkspace(mainWindow: .init(
+                    playerStatus: workbenchPlayerStatus,
+                    showLyrics: showLyrics,
+                    findLyrics: { QuickFindLauncher.shared.show() },
+                    openSettings: { openSettings() }
+                ), navigate: openWorkbenchLocation)
+            } else if layoutStyle == .appleMusicImmersiveV3 {
                 AppleMusicImmersiveV3WindowView(
                     state: state,
                     settings: settings,
@@ -62,7 +92,7 @@ struct MainLyricsWindowView: View {
                     ? 520
                 : LyricsDesignTokens.minimumMainWindowSize.height
         )
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(showsWorkbench ? nil : .dark)
         .background(Color.clear)
         .background(WindowStateAccessor(settings: settings))
         .ignoresSafeArea()
@@ -112,6 +142,16 @@ struct MainLyricsWindowView: View {
                 openWindow(id: "personal-library-activity")
             }
         }
+        .onChange(of: showsWorkbench) { _, visible in
+            if visible { isSearchPresented = false }
+            state.updatePlaybackVisibility()
+        }
+        .onChange(of: settingsRoute.requestedToolbarPanel, initial: true) { _, requested in
+            if requested != nil, showsWorkbench { showLyrics() }
+        }
+        .onChange(of: state.hasLiveTrack) { _, active in
+            if active, workspaceMode.destination == .lyrics { workspaceMode.show(.followsPlayback) }
+        }
         .task {
             state.startProvider(connectSpotify: settings.connectSpotifyOnLaunch)
             WindowManager.shared.restoreFloatingWindowIfConfigured(state: state)
@@ -120,6 +160,48 @@ struct MainLyricsWindowView: View {
             await Task.yield()
             WindowManager.shared.restoreCapsuleWindowIfConfigured(state: state)
         }
+    }
+
+    private func showLyrics() {
+        let hasLyricsContext = state.hasLiveTrack || state.isShowingSearchPreview || state.isUsingMockPreview
+        workspaceMode.show(hasLyricsContext ? .followsPlayback : .lyrics)
+    }
+
+    private var workbenchPlayerStatus: String {
+        if state.isShowingSearchPreview { return "歌词预览已打开" }
+        if state.isUsingMockPreview { return "演示已就绪" }
+        if state.hasLiveTrack { return state.currentTrack.title }
+        let source: String = switch settings.playbackSourceMode {
+        case .auto: "Spotify 或 Apple Music"
+        case .spotify: "Spotify"
+        case .appleMusic: "Apple Music"
+        }
+        switch state.providerStatus {
+        case .connecting: return "正在查找 \(source)…"
+        case .notInstalled: return "尚未安装 \(source)"
+        case .permissionDenied: return "需要允许控制 \(source)"
+        case .unavailable: return "播放连接未启用或暂时不可用"
+        default: return "等待 \(source) 播放"
+        }
+    }
+
+    private func openWorkbenchLocation(_ location: SettingsLocation) {
+        if location.passage == nil, location.trackKey == nil {
+            let tab: LibraryToolTab? = switch location.page {
+            case .library: .library
+            case .history: .history
+            case .statistics: .statistics
+            case .favorites: .favorites
+            default: nil
+            }
+            if let tab {
+                state.selectedLibraryToolTab = tab
+                openWindow(id: "personal-library-activity")
+                return
+            }
+        }
+        SettingsNavigationRoute.shared.requestedLocation = location
+        openSettings()
     }
 
     private var legacyWindowBody: some View {

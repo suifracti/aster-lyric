@@ -18,6 +18,8 @@ python3 "$ROOT/Tools/experience_visual_host/build.py" > /dev/null
 
 # Fix the scene toolbar state too; its pointer fade can otherwise be captured mid-animation.
 declare -a CASES=(
+  "workbench-idle|--surface workbench --idle true --appearance light --width 1030 --height 645 --offscreen-composite"
+  "workbench-reading|--surface workbench --workbench-quote --appearance dark --width 720 --height 590 --offscreen-composite"
   "songbook-cover|--surface songbook --appearance light --width 780 --height 570 --offscreen-composite"
   "songbook-reading|--surface songbook --songbook-page --appearance dark --width 760 --height 545 --offscreen-composite"
   "apple-music-order|--surface music-order --appearance light --width 720 --height 440 --offscreen-composite"

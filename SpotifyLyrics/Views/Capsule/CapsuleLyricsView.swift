@@ -438,7 +438,8 @@ struct CapsuleLyricsView: View {
     private func islandDestination(_ title: String, symbol: String, page: SettingsCategory) -> some View {
         Button {
             windowController.collapse()
-            MenuBarLyricsController.shared.openSettings(at: .init(page))
+            if page == .workspace { MenuBarLyricsController.shared.openWorkspace() }
+            else { MenuBarLyricsController.shared.openSettings(at: .init(page)) }
         } label: {
             Label(title, systemImage: symbol).font(.callout.weight(.medium))
                 .frame(maxWidth: .infinity).padding(.vertical, 13)
@@ -464,7 +465,7 @@ struct CapsuleLyricsView: View {
                 MenuBarLyricsController.shared.openMainWindow()
             }
             moreAction("工作台", symbol: "square.grid.2x2") {
-                MenuBarLyricsController.shared.openSettings(at: .init(.workspace))
+                MenuBarLyricsController.shared.openWorkspace()
             }
             moreAction("灵动岛外观", symbol: "slider.horizontal.3") {
                 MenuBarLyricsController.shared.openSettings(at: .init(appearance: .island))

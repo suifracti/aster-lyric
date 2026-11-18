@@ -2262,6 +2262,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         VStack(alignment: .leading, spacing: 2) {
             V3PanelSection(title: "窗口")
             if !liveOnly {
+                V3PanelRow(title: "工作台") {
+                    Button("打开") { MenuBarLyricsController.shared.openWorkspace() }
+                        .controlSize(.small).accessibilityLabel("打开工作台")
+                }
                 Toggle("桌面歌词", isOn: Binding(get: { state.showFloatingWindow }, set: { _ in
                     WindowManager.shared.toggleFloatingLyrics(state: state)
                 }))

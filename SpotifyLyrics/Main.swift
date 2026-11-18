@@ -235,6 +235,9 @@ struct SpotifyLyricsApp: App {
         }
         // Register once, alongside native window actions; never add a second Window menu.
         CommandGroup(after: .windowArrangement) {
+            Button("工作台") { MenuBarLyricsController.shared.openWorkspace() }
+            Button("歌词窗口") { MenuBarLyricsController.shared.openLyricsWindow() }
+            Divider()
             Button("菜单栏歌词与播放") {
                 MenuBarLyricsController.shared.togglePopover()
             }

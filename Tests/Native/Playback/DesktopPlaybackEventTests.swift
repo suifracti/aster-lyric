@@ -55,6 +55,19 @@ private struct EventOfflineLyrics: LyricsProvider {
 
 @MainActor
 final class DesktopPlaybackEventTests: XCTestCase {
+    func testWorkbenchFollowsIdlePlaybackAndKeepsAnExplicitWorkspaceOpen() {
+        let mode = MainWindowWorkspaceMode()
+        XCTAssertTrue(mode.showsWorkbench(hasTrack: false, hasPreview: false))
+        XCTAssertFalse(mode.showsWorkbench(hasTrack: true, hasPreview: false))
+        XCTAssertFalse(mode.showsWorkbench(hasTrack: false, hasPreview: true))
+        mode.show(.workbench)
+        XCTAssertTrue(mode.showsWorkbench(hasTrack: true, hasPreview: false))
+        mode.show(.lyrics)
+        XCTAssertFalse(mode.showsWorkbench(hasTrack: false, hasPreview: false))
+        mode.show(.followsPlayback)
+        XCTAssertTrue(mode.showsWorkbench(hasTrack: false, hasPreview: false))
+    }
+
     func testMarkedQueueSongSkipsOnceThenPlaysNormally() async throws {
         let (state, provider, _, center) = fixture()
         let original = provider.snapshot.track!

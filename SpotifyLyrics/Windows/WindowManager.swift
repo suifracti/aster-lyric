@@ -11,7 +11,8 @@ public final class WindowManager: ObservableObject {
     /// Actual exposure, rather than a command toggle or app activation.
     var hasExposedLyricsWindow: Bool {
         guard !NSApp.isHidden else { return false }
-        let windows = [WindowStatePersistence.shared.attachedMainWindow,
+        let main = MainWindowWorkspaceMode.shared.destination == .workbench ? nil : WindowStatePersistence.shared.attachedMainWindow
+        let windows = [main,
                        floatingController?.playbackWindow, capsuleController?.playbackWindow,
                        fullScreenController?.window]
         return windows.contains { window in

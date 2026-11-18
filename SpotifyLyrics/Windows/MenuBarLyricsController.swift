@@ -428,13 +428,24 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         }
     }
 
+    func openWorkspace() {
+        MainWindowWorkspaceMode.shared.show(.workbench)
+        openMainWindow()
+    }
+
+    func openLyricsWindow() {
+        let hasContext = playbackState.map { $0.hasLiveTrack || $0.isShowingSearchPreview || $0.isUsingMockPreview } ?? false
+        MainWindowWorkspaceMode.shared.show(hasContext ? .followsPlayback : .lyrics)
+        openMainWindow()
+    }
+
     /// Explicitly return to the live song before opening its lyrics. Merely
     /// opening the menu never changes a search preview or adopts a candidate.
     public func openCurrentLyrics() {
         if let playbackState, playbackState.hasLiveTrack, !playbackState.isMockPreviewMode {
             playbackState.clearSearchPreview()
         }
-        openMainWindow()
+        openLyricsWindow()
     }
 
     public func showFullLyrics() {
