@@ -22,6 +22,7 @@
 | Desktop 时长跳变、合作歌手待确认、错误的时长差提示 | L-006；SpotifyTrackArtistResolver、LyricsSearchManager |
 | 搜索慢、本地结果等网络、搜索 Apple Music 或旧译文、预加载同一首重复搜索 | L-007；searchCachedLibrary、TrackSearchManager、LyricsSessionController、JapaneseMeCabEngine |
 | 队列不更新、循环列表被裁掉、隐藏后点第三首多跳、Apple Music 歌单串到 Spotify | L-008；PlaylistBrowserModel、AppleMusicPlaylistCatalog、V3PlaylistQueuePreview |
+| 播放 App 的运行、连接与在线曲库授权容易混淆 | L-008；PlaybackConnectionCards、PlaybackState、SettingsLocation |
 | 版本弹窗挂在悬浮窗、关后黑着、大歌词库关闭或丢选择 | L-009；PersonalLyricsLibraryService、PersonalLibrarySheets |
 | 有歌词源译文却不显示、部分行没有译文、重复补存 | L-010；TranslationSessionController.synchronize 与 chooseVersion |
 | TTML 自带翻译或罗马音却没显示、无时间轴的文件被当成同步歌词 | L-032、L-048 · TTMLParser、AMLLLyricsProvider |
@@ -162,6 +163,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 现有 `testQueueThirdPositionUsesThreeNextCallsIncludingHiddenSong` 覆盖首次空载再刷新、稍后重复曲目和隐藏第二首后点原第三首恰好三次 next。`e91ffca` 当轮报告 Debug 构建和 31 项相关检查通过，本轮只核既有证据，未对真实 Spotify 发写请求。下次保留原始队列位置、旧列表和一次性标记语义，不恢复已删的时序/跳转来源补丁。
 
 2026-11-18：原先爱心弹层会跟当前播放器，但右侧歌单、队列、搜索行插播仍固定请求 Spotify，Music 行还会因两个空 Spotify ID 而一起高亮。现在大面板、悬停和封面播放栏共用同一个来源。Music 本地歌单与喜爱按持久 ID 读取；当前歌单先核对当前曲所在的原始位置，只展示往后 25 首。手动待播与随机顺序属于系统「音乐」，所以用「歌单顺序」和「歌单后续」。点重复曲在原位置核对 ID 后播放；若歌单改变则提示刷新。切换来源会清掉旧队列、跳过标记和异步动作。长歌单在 osascript 退出前就排空输出管道。原生桩验证了 AppleScript 可编译、无 Spotify 凭据、重复位置、迟到令牌、长输出。真实账户操作须单独观察。
+
+播放来源页按播放器显示本机安装、运行及已观测的连接情况，App 运行不等于已经连接，自动跟随的选择也不冒充某个正在播放的来源。「重新检测」复用播放器读取路径，不先清空实时歌曲；单播放器授权信息由实际快照记录。Spotify 在线授权折叠在独立入口，首页不请求账号资料。搜索中的「在线搜索设置」打开在线授权页。靠真实工作台、设置和搜索窗口走过两条入口；没有打开音乐 App、改业务凭据或发送播放写操作。
 
 ## L-009 版本弹窗归主窗口，居中歌词库保留在后面
 

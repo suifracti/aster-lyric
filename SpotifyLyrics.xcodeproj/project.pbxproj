@@ -286,6 +286,7 @@
 		0EE7632A8D14755E8E769271 /* LyricBookPrint.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E2035E8BA56FB9A2683E19 /* LyricBookPrint.swift */; };
 		9E2DD2812586A48DFBABFFC5 /* LyricBookDesk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3278F5F017EFC4C01ECDB3B9 /* LyricBookDesk.swift */; };
 		E0344A1381D163C4152A2ECF /* LyricBookPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61A751E17C36770F17898D26 /* LyricBookPicker.swift */; };
+		01452928D3A88BBA3CC2BF81 /* PlaybackConnectionCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = F06373F4B54D84A5257B4FA0 /* PlaybackConnectionCards.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -574,6 +575,7 @@
 		B6E2035E8BA56FB9A2683E19 /* LyricBookPrint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricBookPrint.swift; sourceTree = "<group>"; };
 		3278F5F017EFC4C01ECDB3B9 /* LyricBookDesk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricBookDesk.swift; sourceTree = "<group>"; };
 		61A751E17C36770F17898D26 /* LyricBookPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricBookPicker.swift; sourceTree = "<group>"; };
+		F06373F4B54D84A5257B4FA0 /* PlaybackConnectionCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackConnectionCards.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -741,6 +743,7 @@
 			isa = PBXGroup;
 			children = (
 				110000612D83400100000000 /* SettingsRootView.swift */,
+				F06373F4B54D84A5257B4FA0 /* PlaybackConnectionCards.swift */,
 				0342EF8892AAF6BD5E1F5E79 /* AppearanceSettingsView.swift */,
 				E64E1B146BA70DF96667E71D /* LibraryPassageReader.swift */,
 				DB7897AB0B3E2046F4D44B7D /* LibraryVersionCompareView.swift */,
@@ -1282,6 +1285,7 @@
 				1100005F2D83400100000001 /* WindowStatePersistence.swift in Sources */,
 				110000602D83400100000001 /* SettingsDataController.swift in Sources */,
 				110000612D83400100000001 /* SettingsRootView.swift in Sources */,
+				01452928D3A88BBA3CC2BF81 /* PlaybackConnectionCards.swift in Sources */,
 				09C1CD83C63842207A3EF955 /* AppearanceSettingsView.swift in Sources */,
 				96DB0441CC165D2F07AC0C11 /* LibraryPassageReader.swift in Sources */,
 				C0EAD72A39DBF51001F1F0D5 /* LibraryVersionCompareView.swift in Sources */,

@@ -206,6 +206,7 @@ declare -a CASES=(
   "favorite-book|--surface favorites --sample-favorites --appearance light"
   "settings-light|--surface settings --appearance light"
   "settings-appearance|--surface settings --settings-page 外观 --appearance light"
+  "settings-playback|--surface settings --settings-page 播放 --appearance light --width 920 --height 610"
   "settings-island|--surface settings --settings-page 外观 --settings-surface island --appearance dark --width 860 --height 580"
   "settings-menubar|--surface settings --settings-page 外观 --settings-surface menuBar --appearance light --width 780 --height 520"
   "settings-lyrics|--surface settings --settings-page 歌词与翻译 --appearance light"

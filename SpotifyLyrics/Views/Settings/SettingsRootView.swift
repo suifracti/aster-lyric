@@ -191,10 +191,12 @@ struct SettingsLocation: Equatable {
     var query: String
     var passage: LibraryPassageTarget?
     var appearanceSurface: AppearanceSurface = .main
+    var opensSpotifyOnline = false
 
     var navigationTitle: String {
         if !query.isEmpty { return "搜索本机资料" }
         if passage != nil { return "阅读歌词" }
+        if opensSpotifyOnline { return "Spotify 在线曲库" }
         if page == .appearance { return "\(page.rawValue) › \(appearanceSurface.title)" }
         return page.rawValue
     }
@@ -209,10 +211,11 @@ struct SettingsLocation: Equatable {
         self.passage = passage
     }
 
-    init(_ page: SettingsCategory, trackKey: String? = nil, query: String = "") {
+    init(_ page: SettingsCategory, trackKey: String? = nil, query: String = "", opensSpotifyOnline: Bool = false) {
         self.page = page
         self.trackKey = trackKey
         self.query = query
+        self.opensSpotifyOnline = opensSpotifyOnline
     }
 }
 
@@ -344,7 +347,8 @@ struct SettingsRootView: View {
                 if history.current.query.isEmpty {
                     SettingsDetailView(selection: Binding(get: { history.current.page }, set: { navigate(.init($0)) }),
                                        trackKey: history.current.trackKey, passage: history.current.passage,
-                                       appearanceSurface: history.current.appearanceSurface, library: library, navigate: navigate,
+                                       appearanceSurface: history.current.appearanceSurface, opensSpotifyOnline: history.current.opensSpotifyOnline,
+                                       library: library, navigate: navigate,
                                        rememberSelection: { history.rememberLibrarySelection($0) })
                 } else {
                     SettingsLocalSearch(query: history.current.query, library: library, navigate: navigate)
@@ -397,6 +401,7 @@ private struct SettingsDetailView: View {
     let trackKey: String?
     let passage: LibraryPassageTarget?
     let appearanceSurface: AppearanceSurface
+    let opensSpotifyOnline: Bool
     let library: PersonalLyricsLibraryService
     let navigate: (SettingsLocation) -> Void
     let rememberSelection: (String?) -> Void
@@ -407,7 +412,7 @@ private struct SettingsDetailView: View {
             case .workspace:
                 SettingsWorkspace(navigate: navigate)
             case .general:
-                ServicesAndSourcesSettingsView(scope: .playback).padding(16)
+                ServicesAndSourcesSettingsView(scope: .playback, opensSpotifyOnline: opensSpotifyOnline).padding(16)
             case .lyricsAndText:
                 LyricsAndTextSettingsView(
                     onOpenSources: { selection = .servicesAndSources },
@@ -540,6 +545,7 @@ struct LyricsSearchSettingsSections: View {
 private struct ServicesAndSourcesSettingsView: View {
     enum Scope { case playback, lyrics }
     let scope: Scope
+    var opensSpotifyOnline = false
     @EnvironmentObject private var playbackState: PlaybackState
     @EnvironmentObject private var settings: AppSettingsStore
     @State private var clientIDDraft = ""
@@ -547,6 +553,7 @@ private struct ServicesAndSourcesSettingsView: View {
     @State private var isExternalDiscoveryExpanded = false
     @State private var isDeveloperConfigExpanded = false
     @State private var isAdvancedExpanded = false
+    @State private var isSpotifyOnlineExpanded = false
     @State private var accountName: String?
 
     private var authorization: SpotifyAuthorizationManager {
@@ -556,73 +563,25 @@ private struct ServicesAndSourcesSettingsView: View {
     var body: some View {
         Form {
             SettingsPageHeader(
-                title: scope == .playback ? "播放" : "歌词来源",
-                detail: scope == .playback ? "选择正在使用的音乐 App，查看连接状态与启动行为。" : "选择歌词搜索范围，调整来源顺序或在浏览器中继续查找。"
+                title: opensSpotifyOnline ? "Spotify 在线曲库" : scope == .playback ? "播放来源" : "歌词来源",
+                detail: opensSpotifyOnline ? "管理搜索和歌单使用的账号授权。"
+                    : scope == .playback ? "在 Spotify 和 Apple Music 之间切换，查看各自的连接状态。"
+                    : "选择歌词搜索范围，调整来源顺序或在浏览器中继续查找。"
             )
 
             if scope == .playback {
-                Section("播放来源") {
-                    Picker("播放源模式", selection: $settings.playbackSourceMode) {
-                        ForEach(PlaybackSourceMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.radioGroup)
-
-                    Text(settings.playbackSourceMode.detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    LabeledContent("当前状态", value: playbackState.providerStatusMessage)
-                }
-
-                Section("启动行为") {
-                    Toggle("启动时自动连接 Spotify Desktop", isOn: $settings.connectSpotifyOnLaunch)
-                    Text("播放状态会显示在上方；连接失败时，可在主窗口重新连接。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section {
-                    SpotifyStatusRow(title: "桌面播放", value: desktopPlaybackLabel, tone: desktopPlaybackTone)
-                    SpotifyStatusRow(title: "账号授权", value: accountAuthorizationLabel, tone: accountAuthorizationTone)
-                    if authorization.state.isAuthorized {
-                        SpotifyStatusRow(title: "账号", value: accountName ?? "Spotify 账号", tone: .secondary)
-                    }
-
-                    spotifyPrimaryAction
-
-                    DisclosureGroup("开发者配置", isExpanded: $isDeveloperConfigExpanded) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 8) {
-                                TextField("Client ID", text: $clientIDDraft)
-                                    .textFieldStyle(.roundedBorder)
-                                    .onSubmit { saveClientID() }
-                                Button("保存") { saveClientID() }
-                                    .disabled(clientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        == (authorization.clientID ?? ""))
-                            }
-                            Text("只填 Client ID，不需要 Client Secret。")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.top, 4)
-                    }
-
-                    DisclosureGroup("高级", isExpanded: $isAdvancedExpanded) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            advancedAddressRow("Dashboard 回调地址", value: authorization.dashboardRedirectURI)
-                            advancedAddressRow("当前监听地址", value: authorization.localRedirectURI ?? "未启动")
-                            HStack(spacing: 10) {
-                                Button("刷新授权状态") { authorization.refreshAuthorizationState() }
-                                Button("清除授权凭据") { authorization.disconnect() }
-                                    .disabled(!authorization.state.isAuthorized)
+                if opensSpotifyOnline { Section { spotifyOnlineControls } }
+                else {
+                    Section { PlaybackConnectionCards(state: playbackState, settings: settings) }
+                    Section {
+                        DisclosureGroup(isExpanded: $isSpotifyOnlineExpanded) { spotifyOnlineControls } label: {
+                            HStack {
+                                Label("Spotify 在线曲库", systemImage: "globe")
+                                Spacer()
+                                Text(accountAuthorizationLabel).font(.caption).foregroundStyle(accountAuthorizationTone)
                             }
                         }
-                        .padding(.top, 4)
                     }
-                } header: {
-                    Text("Spotify")
                 }
             } else {
                 Section("歌词来源模式") {
@@ -701,35 +660,57 @@ private struct ServicesAndSourcesSettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear {
+            guard scope == .playback else { return }
             clientIDDraft = authorization.clientID ?? ""
             if !authorization.isConfigured { isDeveloperConfigExpanded = true }
         }
-        .task(id: authorization.state.isAuthorized) {
-            guard authorization.state.isAuthorized else {
+        .task(id: scope == .playback && (opensSpotifyOnline || isSpotifyOnlineExpanded) && authorization.state.isAuthorized) {
+            guard scope == .playback, opensSpotifyOnline || isSpotifyOnlineExpanded, authorization.state.isAuthorized else {
                 accountName = nil
                 return
             }
-            accountName = await authorization.authorizedAccountName()
+            let name = await authorization.authorizedAccountName()
+            if !Task.isCancelled { accountName = name }
         }
     }
 
-    private var desktopPlaybackLabel: String {
-        switch playbackState.providerStatus {
-        case .ready, .noTrack: return "已连接"
-        case .connecting: return "连接中"
-        case .notInstalled: return "未安装"
-        case .notRunning: return "未运行"
-        case .permissionDenied: return "无权限"
-        case .mockPreview: return "预览"
-        case .unavailable: return "未连接"
+    @ViewBuilder
+    private var spotifyOnlineControls: some View {
+        SpotifyStatusRow(title: "账号授权", value: accountAuthorizationLabel, tone: accountAuthorizationTone)
+        if authorization.state.isAuthorized {
+            SpotifyStatusRow(title: "账号", value: accountName ?? "Spotify 账号", tone: .secondary)
         }
-    }
 
-    private var desktopPlaybackTone: Color {
-        switch playbackState.providerStatus {
-        case .ready, .noTrack: return .green
-        case .connecting: return .orange
-        default: return .secondary
+        spotifyPrimaryAction
+
+        DisclosureGroup("开发者配置", isExpanded: $isDeveloperConfigExpanded) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    TextField("Client ID", text: $clientIDDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { saveClientID() }
+                    Button("保存") { saveClientID() }
+                        .disabled(clientIDDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            == (authorization.clientID ?? ""))
+                }
+                Text("只填 Client ID，不需要 Client Secret。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 4)
+        }
+
+        DisclosureGroup("高级", isExpanded: $isAdvancedExpanded) {
+            VStack(alignment: .leading, spacing: 10) {
+                advancedAddressRow("Dashboard 回调地址", value: authorization.dashboardRedirectURI)
+                advancedAddressRow("当前监听地址", value: authorization.localRedirectURI ?? "未启动")
+                HStack(spacing: 10) {
+                    Button("刷新授权状态") { authorization.refreshAuthorizationState() }
+                    Button("清除授权凭据") { authorization.disconnect() }
+                        .disabled(!authorization.state.isAuthorized)
+                }
+            }
+            .padding(.top, 4)
         }
     }
 
@@ -786,7 +767,7 @@ private struct ServicesAndSourcesSettingsView: View {
                 Button(authorization.state == .authorizing ? "等待授权…" : "连接 Spotify") { authorize() }
                     .buttonStyle(.borderedProminent)
                     .disabled(authorization.state == .authorizing)
-                Text("连接后可读取随机与循环状态，并使用已实现的账号功能。")
+                Text("授权后可查在线曲库、管理歌单与待播列表。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if case .failed(let message) = authorization.state, !message.isEmpty {

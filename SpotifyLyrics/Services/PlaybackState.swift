@@ -53,6 +53,7 @@ public final class PlaybackState: ObservableObject {
     @Published public var currentMode: LyricsDisplayMode = .mainWindow
     @Published public var preferences: DisplayPreferences = DisplayPreferences()
     @Published public private(set) var providerStatus: PlaybackProviderState = .connecting
+    @Published private(set) var desktopConnectionStatus: [PlaybackSourceIdentity: PlaybackProviderState] = [:]
     /// Source identity reported by the active playback provider. This is not
     /// inferred from process existence or track metadata and is the source
     /// capability input for automatic live capture.
@@ -420,7 +421,7 @@ public final class PlaybackState: ObservableObject {
             .dropFirst()
             .sink { [weak self] shouldConnect in
                 guard let self, shouldConnect else { return }
-                self.reconnectSpotify()
+                self.checkPlaybackConnection()
             }
             .store(in: &self.settingsCancellables)
         resolvedSettings.$playbackSourceMode
@@ -1283,6 +1284,7 @@ public final class PlaybackState: ObservableObject {
         refreshRequestedWhileBusy = false
         if update.isStopped {
             desktopSnapshots[update.source] = nil
+            noteConnection(for: update.source, status: .noTrack)
             providerStatus = .noTrack
             clearLiveTrackIfNeeded()
         } else {
@@ -1327,6 +1329,7 @@ public final class PlaybackState: ObservableObject {
         guard isProviderStarted, !isMockPreviewMode else { return }
         if !isRunning {
             desktopSnapshots[source] = nil
+            noteConnection(for: source, status: .notRunning)
             if lastObservedDesktopSource == source {
                 providerRefreshGeneration &+= 1
                 refreshRequestedWhileBusy = false
@@ -1614,6 +1617,18 @@ public final class PlaybackState: ObservableObject {
 
     public func reconnectProvider() {
         reconnectSpotify()
+    }
+
+    func checkPlaybackConnection() {
+        guard !isMockPreviewMode else { return }
+        automaticSpotifyConnectionEnabled = true
+        if !hasLiveTrack, providerStatus != .connecting { providerStatus = .connecting }
+        providerRefreshTask = Task { @MainActor [weak self] in await self?.refreshProvider() }
+    }
+
+    private func noteConnection(for source: PlaybackSourceIdentity, status: PlaybackProviderState) {
+        guard source == .spotifyDesktop || source == .appleMusic, desktopConnectionStatus[source] != status else { return }
+        desktopConnectionStatus[source] = status
     }
 
     public func enterMockPreview() {
@@ -3137,6 +3152,7 @@ public final class PlaybackState: ObservableObject {
 
     private func synchronize(with snapshot: PlaybackSnapshot, observedAtMonotonic: TimeInterval? = nil) {
         guard !isMockPreviewMode else { return }
+        noteConnection(for: snapshot.sourceIdentity, status: snapshot.status)
         defer { updatePlaybackScheduling() }
         if snapshot.status.isReady, snapshot.track != nil {
             lastObservedDesktopSource = snapshot.sourceIdentity

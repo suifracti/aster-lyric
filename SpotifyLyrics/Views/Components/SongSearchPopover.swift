@@ -4,6 +4,7 @@ import AppKit
 struct SongSearchPopover: View {
     @ObservedObject var manager: SongSearchManager
     @ObservedObject var playbackState: PlaybackState
+    @Environment(\.openSettings) private var openSettings
     var embedded = false
     @State private var query = ""
     @State private var isApplyingPreview = false
@@ -114,7 +115,10 @@ struct SongSearchPopover: View {
                     .controlSize(.small)
                     .disabled(isAuthorizing)
                 } else {
-                    SettingsLink {
+                    Button {
+                        SettingsNavigationRoute.shared.requestedLocation = .init(.general, opensSpotifyOnline: true)
+                        openSettings()
+                    } label: {
                         Label("在线搜索设置", systemImage: "gearshape")
                             .font(.system(size: 11, weight: .medium, design: .rounded))
                     }

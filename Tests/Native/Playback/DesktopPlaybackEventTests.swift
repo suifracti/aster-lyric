@@ -55,6 +55,20 @@ private struct EventOfflineLyrics: LyricsProvider {
 
 @MainActor
 final class DesktopPlaybackEventTests: XCTestCase {
+    func testCheckingPlaybackConnectionPreservesTheCurrentRecordingDuringAScriptFailure() async throws {
+        let (state, provider, _, _) = fixture()
+        state.startProvider(connectSpotify: false)
+        try await wait { state.hasLiveTrack }
+        let track = state.currentTrack
+        let previousRefreshes = provider.refreshes
+        provider.snapshot = PlaybackSnapshot(status: .permissionDenied, sourceIdentity: .spotifyDesktop)
+        state.checkPlaybackConnection()
+        try await wait { provider.refreshes > previousRefreshes && state.desktopConnectionStatus[.spotifyDesktop] == .permissionDenied }
+        XCTAssertNil(state.desktopConnectionStatus[.appleMusic])
+        XCTAssertEqual(state.currentTrack, track)
+        XCTAssertTrue(state.hasLiveTrack)
+    }
+
     func testWorkbenchFollowsIdlePlaybackAndKeepsAnExplicitWorkspaceOpen() {
         let mode = MainWindowWorkspaceMode()
         XCTAssertTrue(mode.showsWorkbench(hasTrack: false, hasPreview: false))
