@@ -573,6 +573,38 @@ public enum LyricsLoadState: Equatable {
 }
 
 public enum LyricsTimeline {
+    struct VoicePresentation: Equatable {
+        let duplicates: [Int: Int]
+        private let labels: [Int: String]
+        private let changes: [Int: String]
+
+        init(in lines: [LyricLine], isSynchronized: Bool = true) {
+            let voices = LyricAgentPresentationMap(lines: lines)
+            duplicates = isSynchronized && voices.isActive ? LyricsTimeline.duetUnisonDuplicates(in: lines) : [:]
+            let unisons = Set(duplicates.values)
+            var labels: [Int: String] = [:]
+            var changes: [Int: String] = [:]
+            var previousLabel: String?
+            if voices.isActive {
+                for index in lines.indices where duplicates[index] == nil {
+                    let label = unisons.contains(index) ? "合唱" : voices.singerLabel(for: lines[index].performerID)
+                    labels[index] = label
+                    if label != previousLabel { changes[index] = label }
+                    previousLabel = label
+                }
+            }
+            self.labels = labels
+            self.changes = changes
+        }
+
+        func label(at index: Int?) -> String? {
+            guard let index else { return nil }
+            return labels[duplicates[index] ?? index]
+        }
+
+        func labelAtChange(_ index: Int) -> String? { changes[index] }
+    }
+
     /// Two singers can carry separate timing rows for the same unison phrase.
     /// Keep the source rows and return only their presentation aliases.
     static func duetUnisonDuplicates(in lines: [LyricLine]) -> [Int: Int] {
@@ -580,8 +612,10 @@ public enum LyricsTimeline {
         for index in lines.indices.dropFirst() {
             let first = lines[index - 1]
             let second = lines[index]
-            guard let firstSinger = first.performerID, let secondSinger = second.performerID,
-                  firstSinger != secondSinger, abs(first.timestamp - second.timestamp) <= 0.15,
+            guard let firstSinger = first.performerID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  let secondSinger = second.performerID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !firstSinger.isEmpty, !secondSinger.isEmpty, firstSinger != secondSinger,
+                  abs(first.timestamp - second.timestamp) <= 0.15,
                   let firstEnd = first.endTime, let secondEnd = second.endTime else { continue }
             let text = first.originalText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty, text == second.originalText.trimmingCharacters(in: .whitespacesAndNewlines) else { continue }
@@ -595,16 +629,17 @@ public enum LyricsTimeline {
     }
 
     /// A compact window around the actual sung line, in original document indices.
-    static func presentedLyrics(in lines: [LyricLine], currentIndex: Int?,
-                                before: Int = 0, after: Int = 1) -> (current: Int?, visible: [Int]) {
-        let duplicates = duetUnisonDuplicates(in: lines)
+    static func presentedLyrics(in lines: [LyricLine], currentIndex: Int?, before: Int = 0, after: Int = 1)
+        -> (current: Int?, visible: [Int], voices: VoicePresentation) {
+        let voices = VoicePresentation(in: lines)
+        let duplicates = voices.duplicates
         guard let index = currentIndex, lines.indices.contains(index) else {
-            return (nil, Array(lines.indices.lazy.filter { duplicates[$0] == nil }.prefix(1 + max(0, after))))
+            return (nil, Array(lines.indices.lazy.filter { duplicates[$0] == nil }.prefix(1 + max(0, after))), voices)
         }
         let current = duplicates[index] ?? index
         let previous = lines.indices[..<current].reversed().lazy.filter { duplicates[$0] == nil }.prefix(max(0, before))
         let following = lines.indices.dropFirst(current + 1).lazy.filter { duplicates[$0] == nil }.prefix(max(0, after))
-        return (current, Array(previous.reversed()) + [current] + Array(following))
+        return (current, Array(previous.reversed()) + [current] + Array(following), voices)
     }
 
     struct VocalCountdownWindow: Equatable {

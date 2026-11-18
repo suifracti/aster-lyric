@@ -42,11 +42,13 @@ public struct FloatingLyricsSelection: Equatable, Sendable {
     public let visibleIndices: [Int]
     public let currentIndex: Int?
     public let autoScroll: Bool
+    let voiceLabels: [Int: String]
 
-    public init(visibleIndices: [Int], currentIndex: Int?, autoScroll: Bool) {
+    public init(visibleIndices: [Int], currentIndex: Int?, autoScroll: Bool, voiceLabels: [Int: String] = [:]) {
         self.visibleIndices = visibleIndices
         self.currentIndex = currentIndex
         self.autoScroll = autoScroll
+        self.voiceLabels = voiceLabels
     }
 }
 
@@ -69,10 +71,14 @@ public enum FloatingLyricsPresentationHelper {
 
         let projection = LyricsTimeline.presentedLyrics(in: lines, currentIndex: currentIndex,
                                                         before: precedingCount, after: followingCount)
+        let voiceLabels = Dictionary(uniqueKeysWithValues: projection.visible.compactMap { index in
+            projection.voices.label(at: index).map { (index, $0) }
+        })
         return FloatingLyricsSelection(
             visibleIndices: projection.visible,
             currentIndex: projection.current,
-            autoScroll: projection.current != nil
+            autoScroll: projection.current != nil,
+            voiceLabels: voiceLabels
         )
     }
 

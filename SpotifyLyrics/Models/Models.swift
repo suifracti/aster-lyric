@@ -1496,10 +1496,9 @@ public struct LyricAgentPresentationMap: Equatable, Sendable {
         return value
     }
 
-    func singerChangeLabel(for performerID: String?, after previousID: String?) -> String? {
+    func singerLabel(for performerID: String?) -> String? {
         guard isActive, let performerID, let id = normalizedID(performerID),
-              let index = agentIDs.firstIndex(of: id),
-              previousID.flatMap(normalizedID) != id else { return nil }
+              let index = agentIDs.firstIndex(of: id) else { return nil }
         return Self.displayName(id) ?? "声部 \(index + 1)"
     }
 

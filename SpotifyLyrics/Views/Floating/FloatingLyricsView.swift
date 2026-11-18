@@ -195,6 +195,7 @@ struct FloatingLyricsView: View {
         let activeIndex = synchronized ? state.liveCurrentLineIndex : nil
         let projection = LyricsTimeline.presentedLyrics(in: rows, currentIndex: activeIndex)
         let index = projection.current ?? 0
+        let voice = projection.voices.label(at: projection.current)
         let nextIndex = projection.visible.first { $0 > index }
         let line = rows[index]
         let preferences = state.preferences
@@ -418,6 +419,10 @@ struct FloatingLyricsView: View {
             }
         }
         .id("desktop-\(state.liveLyricsSessionRevision)-\(index)-\(settings.floatingDesktopLineMode)-\(settings.floatingDesktopCompanion)-\(preferences.showPinyin)-\(preferences.showKana)-\(conversion.rawValue)")
+        .padding(.top, voice == nil ? 0 : 14)
+        .overlay(alignment: .top) {
+            if let voice { voiceLabel(voice) }
+        }
         .overlay(alignment: .leading) {
             if presentationVersion == .transparentV2, activeIndex != nil {
                 Capsule()
@@ -427,6 +432,15 @@ struct FloatingLyricsView: View {
                     .accessibilityHidden(true)
             }
         }
+    }
+
+    private func voiceLabel(_ voice: String) -> some View {
+        Text(voice)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white)
+            .shadow(color: .black, radius: 3, y: 1)
+            .lineLimit(1)
+            .accessibilityLabel("演唱：\(voice)")
     }
 
     @ViewBuilder
@@ -445,16 +459,21 @@ struct FloatingLyricsView: View {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(selection.visibleIndices, id: \.self) { index in
                         let distance = selection.currentIndex.map { abs(index - $0) } ?? 0
-                        LyricLineView(
-                            line: rows[index],
-                            isActive: index == selection.currentIndex,
-                            distance: distance,
-                            isSynchronized: true,
-                            preferences: desktopPreferences,
-                            availableWidth: width,
-                            visibleLayerCount: visibleLayerCount,
-                            language: state.liveLyricsLanguage
-                        )
+                        VStack(alignment: .leading, spacing: 2) {
+                            if let voice = selection.voiceLabels[index] {
+                                voiceLabel(voice)
+                            }
+                            LyricLineView(
+                                line: rows[index],
+                                isActive: index == selection.currentIndex,
+                                distance: distance,
+                                isSynchronized: true,
+                                preferences: desktopPreferences,
+                                availableWidth: width,
+                                visibleLayerCount: visibleLayerCount,
+                                language: state.liveLyricsLanguage
+                            )
+                        }
                         .shadow(color: .black.opacity(0.95), radius: 2, y: 1)
                         .shadow(color: .black.opacity(0.65), radius: 5, y: 1)
                         .id(rows[index].id)

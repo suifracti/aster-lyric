@@ -697,16 +697,29 @@ final class ListeningBatchOneTests: XCTestCase {
         ]
         XCTAssertEqual(LyricsTimeline.duetUnisonDuplicates(in: lines), [3: 2])
         XCTAssertEqual(lines[3].performerID, "v1")
-        let voices = LyricAgentPresentationMap(lines: lines)
-        XCTAssertEqual(voices.singerChangeLabel(for: "v1", after: "v2"), "声部 2")
-        XCTAssertNil(voices.singerChangeLabel(for: "v1", after: "v1"))
         let projection = LyricsTimeline.presentedLyrics(in: lines, currentIndex: 3, before: 2)
         XCTAssertEqual(projection.current, 2)
         XCTAssertEqual(projection.visible, [0, 1, 2, 4])
+        XCTAssertEqual(projection.voices.label(at: 3), "合唱")
+        XCTAssertEqual([0, 1, 2, 4].map(projection.voices.labelAtChange), ["声部 1", "声部 2", "合唱", "声部 1"])
+        let unsynchronized = LyricsTimeline.VoicePresentation(in: lines, isSynchronized: false)
+        XCTAssertTrue(unsynchronized.duplicates.isEmpty)
+        XCTAssertEqual(unsynchronized.label(at: 3), "声部 2")
+        XCTAssertNil(LyricsTimeline.VoicePresentation(in: [lines[1]]).label(at: 0))
         let desktop = FloatingLyricsPresentationHelper.selection(lines: lines, currentIndex: 3,
                                                                  isSynchronized: true, isPlaying: true)
         XCTAssertEqual(desktop.currentIndex, 2)
         XCTAssertEqual(desktop.visibleIndices, [2, 4])
+        XCTAssertEqual(desktop.voiceLabels, [2: "合唱", 4: "声部 1"])
+        let track = Track(title: "Fixture", artist: "Duet", album: "", duration: 100)
+        let document = LyricsDocument(identity: TrackIdentity(track: track), title: track.title, artist: track.artist,
+                                      album: track.album, duration: track.duration, lines: lines,
+                                      isSynchronized: true, source: .amll, confidence: 1)
+        let capsule = CapsuleLyricsPresentation.selection(lines: lines, currentIndex: 3,
+                                                          isSynchronized: true, state: .loaded(document))
+        XCTAssertEqual(capsule.currentIndex, 2)
+        XCTAssertEqual(capsule.currentVoiceLabel, "合唱")
+        XCTAssertEqual(capsule.followingVoiceLabel, "声部 1")
     }
 
     // MARK: 和声

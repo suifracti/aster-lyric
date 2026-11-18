@@ -41,6 +41,7 @@
 | 不同画面背景大小不一样、取景切了没效果、繁体歌名对不上简体来源、别人有逐字/对唱我们没有 | L-023；V3BackdropArtworkGeometry、v3SharedBackdropComplete、TrackTextNormalizer.normalize、KRCParser、QRCParser |
 | 逐字上浮/长音发光动画跳回开头、状态栏弹窗改版、封面闪占位图或露出方形底板、暂停褪色、桌面歌词情境隐藏 | L-024；LyricLineView animateLift、MenuBarLyricsPopoverView、ArtworkView、v3PauseFadesColor、FloatingLyricsWindowController.observeContext |
 | 情境一开旧画面切不过去、光色不走封面色、同一首对唱在不同窗口不一样 | L-052；V3ListeningPresentation、V3RoomOverrides、LyricsTimeline.presentedLyrics |
+| 合唱被标成某个人独唱、桌面歌词或灵动岛看不出谁在唱 | L-052；LyricsTimeline.VoicePresentation |
 | 粒子（雨雪雾、歌词意象）不显示、VU 表指针手感、新呈现一行放不下、分享卡排版跑偏、封面墙离屏图空白、声纹圈、频谱 | L-025；V3GlassWeather、V3ParticleHostView、V3VUMeter、V3LyricShareCard、ListeningCoverWall、V3Soundprint、V3SpectrumOverlay |
 | QQ 来源突然全部 http(500)、别人有词我们“暂无歌词正文” | L-026；QQExperimentalLyricsProvider.searchBases |
 | 某个来源一段时间连着超时/503、每首新歌都卡几秒、来源顺序要不要按统计调 | L-035；LyricsSourceHealth、LyricsSearchManager supplements |
@@ -904,5 +905,9 @@ TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、
 2026-11-19 自动环境光以本窗封面的亮度、细节与配色选择原版、羽化或双色。它进入 `V3ListeningPresentation` 后同时提供画面和面板的实际样式。主窗、全屏和搜索预览独立取各自封面，手选与情境指定的版式优先。旧实现会在换歌时把计算结果写回画面和每场景偏好。自动开关继续读取 `v3.ambient.automatic.v1`，关闭后恢复已保存的样式。定向测试核过两窗用不同封面、悬停预览、情境及重新打开偏好；隔离原生全屏在画面面板中点选窗光、再切回自动，读取两次选中状态。
 
 旧画面和新情境使用相同的 V3 行渲染。早期兼容布局共享歌手/声部标签和同唱合并规则，保持行首对齐。状态栏、桌面和顶部胶囊使用 `LyricsTimeline.presentedLyrics` 取同一套当句与相邻行，保留真实隔开重唱与不同的声部句子，索引仍指向原文档，收藏、时间轴、歌词库与人工版本无需迁移。雪角 Metal 画布的 Swift 计算显式区分 `CGFloat` 与 `Double`，兼容 Xcode 16.4 的类型推断。
+
+2026-11-19：原先合并了同唱行但仍显示其中一个声部。`LyricsTimeline.VoicePresentation` 同时给出显示行和声部标签。合唱显示「合唱」，恢复独唱时重新标出声部；不同词或稍后重唱仍保留，合并只用于有时间轴的视图。V3 主窗、全屏、经典歌词行、桌面歌词、灵动岛和菜单栏弹窗共用判定。灵动岛定住歌词会记住所定行的声部；狭窄的系统菜单栏通过提示显示，歌词本身沿用原宽度。原文档行、时间轴与收藏出处沿用原索引。
+
+隔离原生主窗在默认画面和雨滴玻璃中都显示一次同唱及单独的后续重唱；同一样例的离屏图核对桌面歌词、展开灵动岛和菜单栏弹窗的「合唱」。79 项定向原生检查通过。
 
 本机 Xcode Debug 通过 6 项相关原生检查，涵盖多窗口情境解析、旧画面选择与读回、对唱及桌面歌词、真实词间时间断句、封面回补、错过通知时的切歌补读。对比 Claude 末尾 `c6c1104` 的 15 个可独立运行 Python 合同，7 个旧脚本在两边都失败；本轮更新现行场景合同的接线断言，现行原生用例验证行为。两个调用 Xcode 的包装脚本和一个需要测试参数的数据库矩阵未计入这次比较。

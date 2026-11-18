@@ -249,10 +249,6 @@ struct LyricsCanvasView: View {
         .accessibilityLabel("手动修改歌词搜索词")
     }
 
-    private var duetDuplicates: [Int: Int] {
-        state.lyricsAreSynchronized ? LyricsTimeline.duetUnisonDuplicates(in: state.lyrics) : [:]
-    }
-
     private var lyricsScroll: some View {
         let seekDocumentTrack = state.displayedTrack
         let seekDocumentIdentity = TrackIdentity(track: seekDocumentTrack)
@@ -260,10 +256,10 @@ struct LyricsCanvasView: View {
         let seekDocumentSource: PlaybackState.LyricsSeekDocumentSource = state.isShowingSearchPreview ? .searchPreview : .live
         let seekLines = state.lyrics
         let seekIsSynchronized = state.lyricsAreSynchronized
-        let duplicates = duetDuplicates
+        let voices = LyricsTimeline.VoicePresentation(in: seekLines, isSynchronized: seekIsSynchronized)
+        let duplicates = voices.duplicates
         let rows = seekLines.enumerated().filter { duplicates[$0.offset] == nil }
         let currentIndex = state.currentLineIndex.map { duplicates[$0] ?? $0 }
-        let voices = LyricAgentPresentationMap(lines: seekLines)
         return VStack(alignment: .leading, spacing: 6) {
             lyricsScopeControls
             GeometryReader { geometry in
@@ -280,10 +276,7 @@ struct LyricsCanvasView: View {
                             )
                         ) {
                             ForEach(rows, id: \.element.id) { index, line in
-                                if let previous = (0..<index).last(where: { duplicates[$0] == nil }),
-                                   let label = voices.singerChangeLabel(for: line.performerID, after: seekLines[previous].performerID) {
-                                    singerLabel(label)
-                                } else if index == 0, let label = voices.singerChangeLabel(for: line.performerID, after: nil) {
+                                if let label = voices.labelAtChange(index) {
                                     singerLabel(label)
                                 }
                                 if let seekTimestamp = LyricsTimeline.validSeekTimestamp(
@@ -627,7 +620,7 @@ struct LyricsCanvasView: View {
         animated: Bool,
         force: Bool = false
     ) {
-        let duplicates = duetDuplicates
+        let duplicates = LyricsTimeline.VoicePresentation(in: state.lyrics, isSynchronized: state.lyricsAreSynchronized).duplicates
         guard let currentIndex = state.currentLineIndex.map({ duplicates[$0] ?? $0 }),
               state.lyrics.indices.contains(currentIndex),
               force || lastScrolledLineIndex != currentIndex else { return }

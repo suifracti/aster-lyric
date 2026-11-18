@@ -339,15 +339,20 @@ public struct MenuBarLyricsPopoverView: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
                 } else {
+                    if let voice = snapshot.currentVoiceLabel {
+                        Text(voice).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            .accessibilityLabel("演唱：\(voice)")
+                    }
                     lyricText(current, translation: snapshot.currentTranslationText)
                 }
                 if let next, !next.isEmpty {
-                    Text(next)
+                    let voice = snapshot.nextVoiceLabel == snapshot.currentVoiceLabel ? nil : snapshot.nextVoiceLabel
+                    Text(voice.map { "\($0) · \(next)" } ?? next)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
-                        .accessibilityLabel("下一句：\(next)")
+                        .accessibilityLabel(voice.map { "下一句，\($0)：\(next)" } ?? "下一句：\(next)")
                 }
             }
         case .unsynchronized:

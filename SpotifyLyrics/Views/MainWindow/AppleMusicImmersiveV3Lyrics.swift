@@ -282,8 +282,8 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
         seekDocumentRevision: UInt64,
         seekDocumentSource: PlaybackState.LyricsSeekDocumentSource
     ) -> some View {
-        let duplicates = synchronized ? LyricsTimeline.duetUnisonDuplicates(in: lines) : [:]
-        let displayedIndex = currentIndex.map { duplicates[$0] ?? $0 }
+        let voices = LyricsTimeline.VoicePresentation(in: lines, isSynchronized: synchronized)
+        let displayedIndex = currentIndex.map { voices.duplicates[$0] ?? $0 }
         return GeometryReader { geometry in
             ScrollViewReader { proxy in
                 let bigLine = settings.v3BigLineModeEnabled && synchronized
@@ -308,7 +308,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                     AppleMusicImmersiveV3LyricsDocumentView(
                         lines: lines,
                         currentIndex: displayedIndex,
-                        hiddenDuetRows: Set(duplicates.keys),
+                        voices: voices,
                         synchronized: synchronized,
                         language: language,
                         trackStableKey: trackStableKey,
@@ -553,7 +553,6 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
 
 private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     @Environment(\.v3CoverAccent) private var coverAccent
-    @Environment(\.lyricAgentPresentationMap) private var voices
     @Environment(\.lyricIslandScene) private var readingScene
     @State private var rubyActionRelay = RubyCorrectionAction()
     @Environment(\.lyricTextAlignment) private var textAlignment
@@ -561,7 +560,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
 
     let lines: [LyricLine]
     let currentIndex: Int?
-    let hiddenDuetRows: Set<Int>
+    let voices: LyricsTimeline.VoicePresentation
     let synchronized: Bool
     let language: String?
     let trackStableKey: String?
@@ -596,7 +595,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     ) -> Bool {
         lhs.lines == rhs.lines
             && lhs.currentIndex == rhs.currentIndex
-            && lhs.hiddenDuetRows == rhs.hiddenDuetRows
+            && lhs.voices == rhs.voices
             && lhs.synchronized == rhs.synchronized
             && lhs.language == rhs.language
             && lhs.trackStableKey == rhs.trackStableKey
@@ -642,14 +641,15 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
         let countdown = countdownWindow
         VStack(alignment: textAlignment.lyricHorizontalAlignment, spacing: rowSpacing) {
             ForEach(Array(lines.enumerated()).filter {
-                !hiddenDuetRows.contains($0.offset) && (bigLineAvailableHeight == nil || $0.offset >= (currentIndex ?? 0))
+                voices.duplicates[$0.offset] == nil && (bigLineAvailableHeight == nil || $0.offset >= (currentIndex ?? 0))
             }, id: \.element.id) { index, line in
                 if let window = countdown, window.lineIndex == index {
                     V3VocalCountdown(window: window, clock: presentationClock)
                         .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
                 }
                 // Duets: the singer's name where the voice changes.
-                if let name = singerChange(at: index) {
+                if let name = bigLineAvailableHeight != nil && index == currentIndex
+                    ? voices.label(at: index) : voices.labelAtChange(index) {
                     Text(name)
                         .font(.system(size: compact ? 10 : 11, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.5))
@@ -669,12 +669,6 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
         .padding(.bottom, verticalPadding)
         .padding(.leading, textAlignment == .leading ? 0 : (compact ? 10 : 18) * (textAlignment == .center ? 0.5 : 1))
         .padding(.trailing, textAlignment == .trailing ? 0 : (compact ? 10 : 18) * (textAlignment == .center ? 0.5 : 1))
-    }
-
-    private func singerChange(at index: Int) -> String? {
-        let previous = (0..<index).last(where: { !hiddenDuetRows.contains($0) })
-        return voices.singerChangeLabel(for: lines[index].performerID,
-                                       after: previous.flatMap { lines[$0].performerID })
     }
 
     private func isParagraphStart(_ index: Int) -> Bool {

@@ -57,6 +57,7 @@ struct CapsuleLyricsView: View {
     private struct PinnedLine {
         let line: LyricLine
         let entry: V3FavoriteLines.Entry
+        let voiceLabel: String?
     }
 
     private var held: LyricLine? {
@@ -353,6 +354,10 @@ struct CapsuleLyricsView: View {
         return preferredText(selection.current) ?? state.currentTrack.title
     }
 
+    private func subtitle(_ text: String, voice: String?) -> String {
+        [text.isEmpty ? nil : text, voice].compactMap { $0 }.joined(separator: " · ")
+    }
+
     private var expandButton: some View {
         Button { windowController.expand() } label: {
             ZStack {
@@ -386,7 +391,7 @@ struct CapsuleLyricsView: View {
             v4Artwork(size: 27)
             VStack(alignment: .leading, spacing: 1) {
                 Text(compactCaption).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                Text(state.hasLiveTrack ? state.currentTrack.title : "打开工作台与收藏")
+                Text(state.hasLiveTrack ? subtitle(state.currentTrack.title, voice: selection.currentVoiceLabel) : "打开工作台与收藏")
                     .font(.system(size: 10)).foregroundStyle(.white.opacity(0.70)).lineLimit(1)
             }
             Spacer(minLength: 0)
@@ -398,19 +403,20 @@ struct CapsuleLyricsView: View {
     private var v4ExpandedContent: some View {
         let live = selection
         let line = held ?? live.current
+        let voice = held == nil ? live.currentVoiceLabel : pinnedLine?.voiceLabel
         return VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
                 v4Artwork(size: 27)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(state.hasLiveTrack ? state.currentTrack.title : "Aster · Lyric")
                         .font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                    Text(state.hasLiveTrack ? state.currentTrack.artist : "未在播放")
+                    Text(state.hasLiveTrack ? subtitle(state.currentTrack.artist, voice: voice) : "未在播放")
                         .font(.system(size: 10)).foregroundStyle(.white.opacity(0.68)).lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 if let line, let entry = held == nil ? quote(line, index: live.currentIndex) : pinnedLine?.entry {
                     Button {
-                        pinnedLine = held == nil ? PinnedLine(line: line, entry: entry) : nil
+                        pinnedLine = held == nil ? PinnedLine(line: line, entry: entry, voiceLabel: voice) : nil
                     } label: {
                         Label(held == nil ? "定住这句" : "跟回演唱", systemImage: held == nil ? "pin" : "arrow.uturn.backward")
                             .font(.system(size: 10, weight: .medium)).fixedSize()
@@ -571,11 +577,12 @@ struct CapsuleLyricsView: View {
                                           visibleLayerCount: visibleLayerCount, language: state.liveLyricsLanguage)
                         .frame(maxHeight: .infinity)
                     if held != nil, line.id != live.current?.id, let now = preferredText(live.current) {
-                        referenceLine("正在唱", text: now)
+                        referenceLine(subtitle("正在唱", voice: live.currentVoiceLabel), text: now)
                     } else if held == nil, let cue = upcomingCue, let next = preferredText(cue.line) {
                         referenceLine("\(cue.seconds) 秒后", text: next)
                     } else if held == nil, let next = preferredText(live.following) {
-                        referenceLine("下一句", text: next)
+                        let voice = live.followingVoiceLabel == live.currentVoiceLabel ? nil : live.followingVoiceLabel
+                        referenceLine(subtitle("下一句", voice: voice), text: next)
                     }
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
@@ -714,7 +721,7 @@ struct CapsuleLyricsView: View {
                     Text(state.currentTrack.title)
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
                         .lineLimit(1)
-                    Text(state.currentTrack.artist)
+                    Text(subtitle(state.currentTrack.artist, voice: selection.currentVoiceLabel))
                         .font(.system(size: 10, design: .rounded))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -748,7 +755,7 @@ struct CapsuleLyricsView: View {
                     Text(state.currentTrack.title)
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .lineLimit(1)
-                    Text(state.currentTrack.artist)
+                    Text(subtitle(state.currentTrack.artist, voice: selection.currentVoiceLabel))
                         .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -844,7 +851,7 @@ struct CapsuleLyricsView: View {
                     Text(state.currentTrack.title)
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .lineLimit(1)
-                    Text(state.currentTrack.artist)
+                    Text(subtitle(state.currentTrack.artist, voice: selection.currentVoiceLabel))
                         .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)

@@ -234,19 +234,25 @@ public struct CapsuleLyricsSelection: Equatable, Sendable {
     public let following: LyricLine?
     public let isSynchronized: Bool
     public let status: String?
+    let currentVoiceLabel: String?
+    let followingVoiceLabel: String?
 
     public init(
         current: LyricLine?,
         following: LyricLine?,
         isSynchronized: Bool,
         status: String?,
-        currentIndex: Int? = nil
+        currentIndex: Int? = nil,
+        currentVoiceLabel: String? = nil,
+        followingVoiceLabel: String? = nil
     ) {
         self.current = current
         self.currentIndex = currentIndex
         self.following = following
         self.isSynchronized = isSynchronized
         self.status = status
+        self.currentVoiceLabel = currentVoiceLabel
+        self.followingVoiceLabel = followingVoiceLabel
     }
 }
 
@@ -308,12 +314,15 @@ public enum CapsuleLyricsPresentation {
             )
         }
 
+        let followingIndex = projection.visible.dropFirst().first
         return CapsuleLyricsSelection(
             current: lines[currentIndex],
-            following: projection.visible.dropFirst().first.map { lines[$0] },
+            following: followingIndex.map { lines[$0] },
             isSynchronized: true,
             status: nil,
-            currentIndex: currentIndex
+            currentIndex: currentIndex,
+            currentVoiceLabel: projection.voices.label(at: currentIndex),
+            followingVoiceLabel: projection.voices.label(at: followingIndex)
         )
     }
 

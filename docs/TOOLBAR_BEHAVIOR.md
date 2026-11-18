@@ -830,6 +830,7 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 **Duets.**
 - A KRC/QRC line that is only `歌手：` names the singer of the lines after it; that line is not shown.
 - Voices follow the order they first sing. The second voice is set in by 12% of the column, and the singer's name appears in small type where the voice changes.
+- Current behavior (2026-11-19). Main window and full-screen themes share the same text alignment and voice labels. Matching lines sung together are shown once as 「合唱」. Different lyrics and later repetitions keep their own rows. Desktop lyrics and the expanded island and menu-bar popover use those same labels for the line they display. The narrow system menu bar keeps its text width and gives the singer in its tooltip.
 
 **Matching, later the same evening.**
 - Titles with the same characters apart from spaces, dashes and brackets are the same title (如果真爱 - ２０２４ 说唱版 / 如果真爱（2024说唱版）).
