@@ -217,6 +217,9 @@ public struct PersonalTranslationVersionItem: Identifiable, Equatable, Sendable,
     public let engineID: String
     public let createdAt: Date
     public let updatedAt: Date
+    private let draft: Bool?
+
+    public var isDraft: Bool { draft == true }
 
     public init(
         id: UUID,
@@ -234,7 +237,8 @@ public struct PersonalTranslationVersionItem: Identifiable, Equatable, Sendable,
         confidence: Double,
         engineID: String,
         createdAt: Date,
-        updatedAt: Date
+        updatedAt: Date,
+        draft: Bool? = nil
     ) {
         self.id = id
         self.lyricsVersionID = lyricsVersionID
@@ -252,6 +256,7 @@ public struct PersonalTranslationVersionItem: Identifiable, Equatable, Sendable,
         self.engineID = engineID
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.draft = draft
     }
 }
 

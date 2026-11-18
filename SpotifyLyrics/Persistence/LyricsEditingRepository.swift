@@ -53,6 +53,7 @@ public struct ManualTranslationEdit: Equatable, Sendable {
     public let lines: [String]
     public let parentVersionID: UUID?
     public let isLocked: Bool
+    public let isDraft: Bool
 
     public init(
         targetLanguage: String,
@@ -61,7 +62,8 @@ public struct ManualTranslationEdit: Equatable, Sendable {
         promptHash: String = "",
         lines: [String],
         parentVersionID: UUID? = nil,
-        isLocked: Bool = false
+        isLocked: Bool = false,
+        isDraft: Bool = false
     ) {
         self.targetLanguage = targetLanguage
         self.model = model
@@ -70,6 +72,7 @@ public struct ManualTranslationEdit: Equatable, Sendable {
         self.lines = lines
         self.parentVersionID = parentVersionID
         self.isLocked = isLocked
+        self.isDraft = isDraft
     }
 }
 
@@ -324,7 +327,8 @@ public struct LibraryTranslationRevisionDraft: Identifiable {
                 baseURLHost: source.record.baseURLHost,
                 promptHash: source.record.promptHash,
                 lines: lines,
-                parentVersionID: source.record.id
+                parentVersionID: source.record.id,
+                isDraft: true
             )
         )
     }

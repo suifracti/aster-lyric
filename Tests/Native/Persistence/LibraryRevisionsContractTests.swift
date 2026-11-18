@@ -506,7 +506,6 @@ final class LibraryRevisionsContractTests: XCTestCase {
             ),
             forceNewVersion: true
         )
-        try await repo.markTranslationLocked(versionID: originalTranslation.record.id, locked: true)
         var translationDraft = LibraryTranslationRevisionDraft(track: track, lyricsSource: source, source: originalTranslation)
         translationDraft.lines[0] = "修订译一"
         let translationChildResult = try await repo.saveManualEdit(translationDraft.saveRequest())
@@ -516,6 +515,17 @@ final class LibraryRevisionsContractTests: XCTestCase {
         XCTAssertEqual(translationChild.record.sourceContentHash, source.sourceContentHash)
         XCTAssertTrue(translationChild.record.isManuallyEdited)
         XCTAssertFalse(translationChild.record.isLocked)
+        XCTAssertTrue(translationChild.record.isDraft)
+        let beforeAdoption = try await repo.loadPersonalLibraryTrackDetail(stableKey: identity.stableKey)
+        XCTAssertEqual(beforeAdoption?.entry.activeTranslationVersionID, originalTranslation.record.id)
+        XCTAssertEqual(beforeAdoption?.translationVersions.first(where: { $0.isCurrent })?.id, originalTranslation.record.id)
+        let draftPage = try await repo.readLibraryPassage(.init(trackKey: identity.stableKey, source: .translation(translationChild.record.id)))
+        XCTAssertEqual(draftPage?.lines.first?.translation, "修订译一")
+        try await repo.adoptTranslation(versionID: translationChild.record.id)
+        let afterAdoption = try await repo.loadPersonalLibraryTrackDetail(stableKey: identity.stableKey)
+        XCTAssertEqual(afterAdoption?.entry.activeTranslationVersionID, translationChild.record.id)
+        XCTAssertEqual(afterAdoption?.translationVersions.first(where: { $0.isCurrent })?.id, translationChild.record.id)
+        try await repo.markTranslationLocked(versionID: originalTranslation.record.id, locked: true)
         let translationVersions = try await repo.loadTranslationVersions(
             lyricsVersionID: source.record.id, targetLanguage: "zh-Hans", sourceContentHash: source.sourceContentHash
         )

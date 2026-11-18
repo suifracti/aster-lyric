@@ -323,6 +323,14 @@ public final class TranslationSessionController: ObservableObject {
         select(versionID: versionID)
     }
 
+    func includeSavedRevision(_ version: StoredTranslationVersion) {
+        guard let context, version.record.lyricsVersionID == context.lyricsVersionID,
+              version.record.sourceContentHash == context.sourceContentHash,
+              version.record.targetLanguage == context.configuration.targetLanguage,
+              !availableVersions.contains(where: { $0.record.id == version.record.id }) else { return }
+        availableVersions.insert(version, at: 0)
+    }
+
     public func select(versionID: UUID) {
         guard let context,
               let version = availableVersions.first(where: { $0.record.id == versionID }),
@@ -581,7 +589,7 @@ public final class TranslationSessionController: ObservableObject {
                           self.requestGeneration == loadGeneration else { return }
                     self.availableVersions = versions
                     self.pendingCandidate = versions.first(where: {
-                        $0.isComplete && $0.isDraft && !$0.isArchived && self.matchesRequest($0, context: context)
+                        $0.isComplete && $0.isDraft && !$0.isArchived && !$0.record.isManuallyEdited && self.matchesRequest($0, context: context)
                     })
                     if self.manualNoSelection.contains(key) {
                         self.selectedVersion = nil

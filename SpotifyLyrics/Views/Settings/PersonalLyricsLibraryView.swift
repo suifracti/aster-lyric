@@ -857,7 +857,7 @@ public struct PersonalLibraryTrackDetailView: View {
                 .compactMap { $0 }.joined(separator: " · "),
             date: tv.updatedAt, lineCount: tv.lineCount,
             isCurrent: compact ? playback.selectedTranslation?.record.id == tv.id : tv.isCurrent,
-            locked: tv.isLocked, archived: tv.isArchived, busy: service.revisionBusy,
+            locked: tv.isLocked, archived: tv.isArchived, draft: tv.isDraft, busy: service.revisionBusy,
             preview: { presentSheet { service.previewVersion(lyricsID: tv.lyricsVersionID, entry: entry, translation: tv) } },
             edit: { presentSheet { service.beginTranslationRevision(version: tv, entry: entry) } },
             rename: { draft in presentSheet { service.versionLabelDraft = draft } },
@@ -928,16 +928,22 @@ public struct PersonalLibraryTrackDetailView: View {
 
     private func adoptTranslation(_ version: PersonalTranslationVersionItem, entry: PersonalLyricsLibraryEntry) {
         Task { @MainActor in
+            let identity = playback.liveTrackIdentity
             guard (try? await service.isCurrentTrack(stableKey: entry.trackStableKey,
-                playbackIdentity: playback.liveTrackIdentity)) == true else {
-                service.adoptTranslation(versionID: version.id, trackStableKey: entry.trackStableKey)
+                playbackIdentity: identity)) == true,
+                  playback.liveTrackIdentity == identity, !playback.isShowingSearchPreview else {
+                await service.adoptTranslation(versionID: version.id, trackStableKey: entry.trackStableKey)
                 return
             }
             if playback.liveLyricsVersionID != version.lyricsVersionID {
                 guard (try? await playback.adoptCurrentLyricsVersion(versionID: version.lyricsVersionID)) == true else { return }
             }
+            if !version.isLocked {
+                guard await service.adoptTranslation(versionID: version.id, trackStableKey: entry.trackStableKey) else { return }
+            }
+            guard playback.liveTrackIdentity == identity,
+                  playback.liveLyricsVersionID == version.lyricsVersionID, !playback.isShowingSearchPreview else { return }
             await playback.selectSavedTranslationVersion(versionID: version.id)
-            service.adoptTranslation(versionID: version.id, trackStableKey: entry.trackStableKey)
         }
     }
 
@@ -974,6 +980,7 @@ private struct LibraryVersionRow<Actions: View>: View {
     let isCurrent: Bool
     var locked = false
     var archived = false
+    var draft = false
     var hasMenu = true
     let busy: Bool
     let preview: () -> Void
@@ -993,6 +1000,7 @@ private struct LibraryVersionRow<Actions: View>: View {
                     LibraryVersionLabel(kind: kind, id: id, originalTitle: title, compact: true, showsEdit: hovered, onEdit: rename)
                     if locked { Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary) }
                     if archived { Text("已归档").font(.caption2).foregroundStyle(.secondary) }
+                    else if draft { Text("待采用").font(.caption2).foregroundStyle(.secondary) }
                 }
                 Text(dateText + " · \(lineCount) 行").font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
@@ -1004,7 +1012,7 @@ private struct LibraryVersionRow<Actions: View>: View {
             Menu("操作") {
                 Button("预览", action: preview)
                 Button("编辑", action: edit).disabled(busy)
-                if !isCurrent { Button("采用", action: adopt).disabled(archived) }
+                if !isCurrent { Button("采用", action: adopt).disabled(archived || (draft && locked)) }
                 Button("名称与备注…") {
                     rename(.stored(kind: kind, versionID: id, originalTitle: title))
                 }
@@ -1518,6 +1526,7 @@ private struct LibraryLyricsRevisionSheet: View {
 private struct LibraryTranslationRevisionSheet: View {
     @ObservedObject var service: PersonalLyricsLibraryService
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var playback: PlaybackState
     @State private var draft: LibraryTranslationRevisionDraft
 
     init(service: PersonalLyricsLibraryService, initialDraft: LibraryTranslationRevisionDraft) {
@@ -1562,7 +1571,9 @@ private struct LibraryTranslationRevisionSheet: View {
                 Spacer()
                 if service.revisionBusy { ProgressView().controlSize(.small) }
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("保存为新版本") { service.saveTranslationRevision(draft) }
+                Button("保存为新版本") {
+                    service.saveTranslationRevision(draft, onSaved: playback.includeSavedTranslationRevision)
+                }
                     .buttonStyle(.borderedProminent)
                     .disabled(!draft.hasChanges || service.revisionBusy)
             }
@@ -1744,8 +1755,13 @@ struct PersonalLibrarySheets: ViewModifier {
                       playing.matches(identity: playback.liveTrackIdentity, lyricsID: playback.liveLyricsVersionID, preview: playback.isShowingSearchPreview),
                       playback.liveLyricsDocumentMatchesCurrentTrack,
                       let version = playback.translationVersions.first(where: { $0.record.id == id && $0.record.lyricsVersionID == playing.lyricsID }),
-                      version.isComplete, !version.isArchived, !version.isDraft else { return }
-                playback.selectTranslation(versionID: id)
+                      version.isComplete, !version.isArchived else { return }
+                if version.isDraft {
+                    guard !version.record.isLocked else { return }
+                    playback.adoptTranslation(versionID: id)
+                } else {
+                    playback.selectTranslation(versionID: id)
+                }
                 service.comparison = nil
             }) { draft in
                 pickedDraft = draft

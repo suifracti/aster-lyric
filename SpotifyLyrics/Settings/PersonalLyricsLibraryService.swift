@@ -78,8 +78,8 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         guard matching.count > 1,
               let detail = try await repository.loadPersonalLibraryTrackDetail(stableKey: identity.stableKey),
               detail.lyricsVersions.contains(where: { $0.id == lyricsID }) else { return nil }
-        let base = matching.first(where: { $0.record.id == selected }) ?? matching[0]
-        let allowed = matching.filter { $0.isComplete && !$0.isDraft && !$0.isArchived }.map { $0.record.id }
+        let base = matching.first(where: { $0.record.id == selected }) ?? matching.first(where: { !$0.isDraft }) ?? matching[0]
+        let allowed = matching.filter { $0.isComplete && !$0.isArchived && (!$0.isDraft || !$0.record.isLocked) }.map { $0.record.id }
         let playing = LibraryCompareRequest.Playing(identity: identity, lyricsID: lyricsID, selectedID: selected, adoptable: Set(allowed))
         return makeComparison(.translation(base.record.id), detail: detail, playing: playing,
                               available: Dictionary(uniqueKeysWithValues: matching.map { ($0.record.id, $0) }))
@@ -248,7 +248,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         return draft
     }
 
-    public func saveTranslationRevision(_ draft: LibraryTranslationRevisionDraft) {
+    public func saveTranslationRevision(_ draft: LibraryTranslationRevisionDraft, onSaved: ((StoredTranslationVersion) -> Void)? = nil) {
         guard !revisionBusy else { return }
         revisionBusy = true
         revisionError = nil
@@ -256,7 +256,8 @@ public final class PersonalLyricsLibraryService: ObservableObject {
             defer { revisionBusy = false }
             do {
                 let result = try await repository.saveManualEdit(draft.saveRequest())
-                guard result.translationVersion != nil else { throw LyricsEditingRepositoryError.sourceNotFound }
+                guard let version = result.translationVersion else { throw LyricsEditingRepositoryError.sourceNotFound }
+                onSaved?(version)
                 translationRevisionDraft = nil
                 refreshTrackDetail(stableKey: draft.lyricsSource.record.trackStableKey)
                 refresh()
@@ -526,15 +527,16 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         }
     }
 
-    public func adoptTranslation(versionID: UUID, trackStableKey: String) {
-        Task {
-            do {
-                try await repository.adoptTranslation(versionID: versionID)
-                refreshTrackDetail(stableKey: trackStableKey)
-                refresh()
-            } catch {
-                self.statusMessage = "采用翻译失败：\(error.localizedDescription)"
-            }
+    @discardableResult
+    public func adoptTranslation(versionID: UUID, trackStableKey: String) async -> Bool {
+        do {
+            try await repository.adoptTranslation(versionID: versionID)
+            refreshTrackDetail(stableKey: trackStableKey)
+            refresh()
+            return true
+        } catch {
+            statusMessage = "采用翻译失败：\(error.localizedDescription)"
+            return false
         }
     }
 

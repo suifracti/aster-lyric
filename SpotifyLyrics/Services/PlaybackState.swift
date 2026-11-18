@@ -999,6 +999,7 @@ public final class PlaybackState: ObservableObject {
     public func retranslateCurrentLyrics() { translationSession.retranslateCurrentLyrics() }
     public func selectTranslation(versionID: UUID) { translationSession.select(versionID: versionID) }
     public func selectSavedTranslationVersion(versionID: UUID) async { await translationSession.selectSavedVersion(versionID: versionID) }
+    func includeSavedTranslationRevision(_ version: StoredTranslationVersion) { translationSession.includeSavedRevision(version) }
     public func selectNoTranslationVersion() { translationSession.selectNone() }
     public var liveLyricsCandidates: [LyricsCandidate] {
         guard liveLyricsDocumentMatchesCurrentTrack else { return [] }

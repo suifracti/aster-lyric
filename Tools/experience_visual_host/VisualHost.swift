@@ -418,6 +418,10 @@ struct ExperienceVisualHostApp: App {
             LyricsEditorWindowView().environmentObject(playback).environmentObject(settings)
         }
         Settings { SettingsRootView().environmentObject(settings).environmentObject(playback).environmentObject(SettingsDataController()) }
+        DocumentGroup(newDocument: LyricBook()) { opened in
+            LyricBookDesk(book: opened.$document, fileURL: opened.fileURL)
+        }
+        .defaultSize(width: 780, height: 590)
     }
 }
 private struct ExperienceFixtureRoot: View {

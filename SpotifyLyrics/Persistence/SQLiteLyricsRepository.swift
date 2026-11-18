@@ -2150,7 +2150,8 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             isManuallyEdited: true,
             isLocked: translation.isLocked,
             status: .complete,
-            confidence: 1
+            confidence: 1,
+            isDraft: translation.isDraft
         )
 
         try withTransaction {
@@ -4337,7 +4338,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             let idPlaceholders = lyricsVersionIDs.map { _ in "?" }.joined(separator: ",")
 
             let transStmt = try prepare("""
-                SELECT id, is_locked, is_manually_edited, is_archived, status, updated_at, lyrics_version_id
+                SELECT id, is_locked, is_manually_edited, is_archived, status, updated_at, lyrics_version_id, is_draft
                 FROM translation_versions
                 WHERE lyrics_version_id IN (\(idPlaceholders))
                 ORDER BY is_locked DESC, is_archived ASC, updated_at DESC;
@@ -4358,10 +4359,11 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(transStmt, 5))
                 let lvidText = columnText(transStmt, index: 6)
                 let lvid = lvidText.flatMap { UUID(uuidString: $0) }
+                let isDraft = sqlite3_column_int(transStmt, 7) == 1
 
                 if isLocked { hasLockedTranslation = true }
                 if isManual { hasManualTranslation = true }
-                if activeTranslationVersionID == nil && !isArchived && (status == "complete" || isLocked) {
+                if activeTranslationVersionID == nil && !isArchived && !isDraft && (status == "complete" || isLocked) {
                     if lvid == activeLyricsVersionID || activeLyricsVersionID == nil {
                         activeTranslationVersionID = id
                     }
@@ -4564,7 +4566,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                        tv.target_language, tv.is_machine_generated, tv.is_manually_edited,
                        tv.is_locked, tv.is_archived, tv.status, tv.confidence,
                        tv.engine_id, tv.created_at, tv.updated_at,
-                       (SELECT COUNT(*) FROM translation_lines WHERE translation_version_id = tv.id)
+                       (SELECT COUNT(*) FROM translation_lines WHERE translation_version_id = tv.id), tv.is_draft
                 FROM translation_versions AS tv
                 WHERE tv.lyrics_version_id IN (\(idPlaceholders))
                 ORDER BY tv.is_locked DESC, tv.is_archived ASC, tv.updated_at DESC;
@@ -4574,7 +4576,6 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 try bindText(id.uuidString, at: Int32(idx + 1), to: transStmt)
             }
 
-            var isFirstTrans = true
             while sqlite3_step(transStmt) == SQLITE_ROW {
                 guard let idText = columnText(transStmt, index: 0),
                       let id = UUID(uuidString: idText),
@@ -4594,8 +4595,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(transStmt, 13))
                 let lineCount = Int(sqlite3_column_int(transStmt, 14))
 
-                let isCurrent = isFirstTrans && !isArchived
-                if isCurrent { isFirstTrans = false }
+                let isDraft = sqlite3_column_int(transStmt, 15) == 1
 
                 translationItems.append(PersonalTranslationVersionItem(
                     id: id,
@@ -4608,12 +4608,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                     isManuallyEdited: isManual,
                     isLocked: isLocked,
                     isArchived: isArchived,
-                    isCurrent: isCurrent,
+                    isCurrent: id == entry.activeTranslationVersionID,
                     status: status,
                     confidence: confidence,
                     engineID: engineID,
                     createdAt: createdAt,
-                    updatedAt: updatedAt
+                    updatedAt: updatedAt,
+                    draft: isDraft ? true : nil
                 ))
             }
         }
