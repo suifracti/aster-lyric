@@ -111,7 +111,7 @@ final class MenuBarPresentationTests: XCTestCase {
         XCTAssertTrue(window.makeFirstResponder(keyboardField), "keyboard focus should remain available")
     }
 
-    func testMenuBarFormattingKeepsCurrentLineAndSelectedReadings() {
+    func testMenuBarFormattingKeepsCurrentLineAndSelectedReadings() throws {
         var snapshot = MenuBarLyricsSnapshot(
             state: .synchronized(current: "Current lyric", next: "Next lyric"),
             statusText: "Lyric Island",
@@ -196,13 +196,40 @@ final class MenuBarPresentationTests: XCTestCase {
         XCTAssertTrue(help.contains("Song"))
         XCTAssertTrue(help.contains("Artist"))
         XCTAssertTrue(help.contains(longLine.trimmingCharacters(in: .whitespacesAndNewlines)))
-        let full = MenuBarFullLyricsSnapshot(
-            trackTitle: "Song",
-            artistName: "Artist",
-            lyricsText: "Current lyric\n当前中文\n\nNext lyric\n下一句中文"
-        )
+        let full = try XCTUnwrap(MenuBarFullLyricsSnapshot(
+            track: Track(title: "Song", artist: "Artist", album: "", duration: 60),
+            lines: [LyricLine(timestamp: 2, originalText: "Current lyric", translationText: "当前中文"),
+                    LyricLine(timestamp: 7, originalText: "Next lyric", translationText: "下一句中文")],
+            currentIndex: 0, synchronized: true
+        ))
         XCTAssertTrue(full.copyText.contains("Song"))
         XCTAssertTrue(full.copyText.contains("Next lyric"))
+    }
+
+    func testFullLyricsOpensTheDisplayedOccurrenceAndKeepsItsArchivedVersion() throws {
+        let lines = [
+            LyricLine(timestamp: 5, originalText: "また会おう", endTime: 8, translationText: "再会",
+                      performerID: "v1", backgroundText: "また"),
+            LyricLine(timestamp: 5.05, originalText: "また会おう", endTime: 8, performerID: "v2"),
+            LyricLine(timestamp: 21, originalText: "また会おう", endTime: 24, performerID: "v2")
+        ]
+        let track = Track(title: "Song", artist: "Artist", album: "", duration: 45)
+        let translation = UUID()
+        let passage = LibraryPassageTarget(trackKey: "recording", source: .translation(translation))
+        let sungTogether = try XCTUnwrap(MenuBarFullLyricsSnapshot(
+            track: track, lines: lines, currentIndex: 1, synchronized: true, passage: passage
+        ))
+        XCTAssertEqual(sungTogether.rows.map(\.id), [0, 2])
+        XCTAssertEqual(sungTogether.focusedLine, 0)
+        XCTAssertEqual(sungTogether.rows.first?.voiceLabel, "合唱")
+        XCTAssertTrue(sungTogether.copyText.contains("また会おう\n再会\n（また）"))
+        XCTAssertEqual(sungTogether.passage?.source, .translation(translation))
+        XCTAssertEqual(sungTogether.passage?.readingPosition?.lineIndex, 0)
+        let reprise = try XCTUnwrap(MenuBarFullLyricsSnapshot(
+            track: track, lines: lines, currentIndex: 2, synchronized: true, passage: passage
+        ))
+        XCTAssertEqual(reprise.passage?.readingPosition?.lineIndex, 2)
+        XCTAssertNil(MenuBarFullLyricsSnapshot(track: track, lines: [], currentIndex: nil, synchronized: false))
     }
 
     func testAppearanceBoundsAndReadingImageStayNativeAndCompact() {

@@ -81,7 +81,11 @@ public struct MenuBarLyricsPopoverView: View {
                         }
                         if let entry = snapshot.keptLine {
                             Button {
-                                controller.openSettings(at: .init(reading: entry.passage))
+                                if entry.lyricsVersionID != nil {
+                                    controller.openSettings(at: .init(reading: entry.passage))
+                                } else {
+                                    controller.showFullLyrics()
+                                }
                             } label: {
                                 Image(systemName: "book")
                             }
@@ -282,6 +286,14 @@ public struct MenuBarLyricsPopoverView: View {
                 .buttonStyle(.borderless)
                 .keyboardShortcut(.escape, modifiers: [])
                 Spacer()
+                if let passage = lyrics.passage {
+                    Button {
+                        controller.openSettings(at: .init(reading: passage))
+                    } label: {
+                        Label("在歌词库阅读", systemImage: "book")
+                    }
+                    .buttonStyle(.borderless)
+                }
                 Button {
                     NSPasteboard.general.clearContents()
                     didCopyFullLyrics = NSPasteboard.general.setString(lyrics.copyText, forType: .string)
@@ -297,14 +309,31 @@ public struct MenuBarLyricsPopoverView: View {
                 }
             }
             Divider()
-            ScrollView {
-                Text(lyrics.lyricsText)
-                    .font(.system(size: 15))
-                    .lineSpacing(6)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                    .padding(.trailing, 8)
+            ScrollViewReader { scroll in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(lyrics.rows) { row in
+                            VStack(alignment: .leading, spacing: 4) {
+                                if let voice = row.voiceLabel {
+                                    Text(voice).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                }
+                                PassageLineText(line: row.text, showsTranslation: true, showsReading: lyrics.showsReading)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 8).padding(.vertical, 6)
+                            .background(row.id == lyrics.focusedLine ? islandAccent.opacity(0.13) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 6))
+                            .accessibilityAddTraits(row.id == lyrics.focusedLine ? .isSelected : [])
+                            .id(row.id)
+                        }
+                    }
+                    .padding(.trailing, 6)
+                }
+                .task(id: lyrics.focusedLine) {
+                    guard let line = lyrics.focusedLine else { return }
+                    await Task.yield()
+                    if !Task.isCancelled { scroll.scrollTo(line, anchor: .center) }
+                }
             }
             .frame(height: 360)
             Text("保留打开时的歌词，可选择文字复制。")

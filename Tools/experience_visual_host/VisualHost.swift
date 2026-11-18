@@ -506,7 +506,8 @@ private struct ExperienceFixtureRoot: View {
                     _ = V3FavoriteLines.shared.toggle(text: "在晨光里打开那封信", translation: "I opened the letter at dawn.",
                         title: "没有寄出的信", artist: "南窗", trackKey: "workbench-fixture", artworkURL: nil)
                 }
-                if ["library", "search"].contains(where: { ExperienceArguments.value("--panel", fallback: "").contains($0) || ExperienceArguments.value("--navigation", fallback: "").contains($0) }) {
+                if ProcessInfo.processInfo.arguments.contains("--saved-reader-fixture")
+                    || ["library", "search"].contains(where: { ExperienceArguments.value("--panel", fallback: "").contains($0) || ExperienceArguments.value("--navigation", fallback: "").contains($0) }) {
                     let track = Track(id: "spotify:track:visualfixture", title: "夜を越えて · After the rain",
                         artist: "Visual Fixture", album: "Native rendering study", duration: 240,
                         spotifyId: "AAAAAAAAAAAAAAAAAAAAAA", artworkURL: ExperienceArtwork.make())

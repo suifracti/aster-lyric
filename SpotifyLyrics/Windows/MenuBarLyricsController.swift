@@ -54,9 +54,56 @@ public struct MenuBarLyricsSnapshot: Equatable, Sendable {
 /// Captured on the explicit read action, so selecting/copying text is stable
 /// while playback advances. This never changes the main window's preview.
 public struct MenuBarFullLyricsSnapshot: Equatable, Sendable {
+    struct Row: Identifiable, Equatable, Sendable {
+        let text: LibraryPassagePage.Line
+        let voiceLabel: String?
+        var id: Int { text.id }
+    }
+
     public let trackTitle: String
     public let artistName: String
-    public let lyricsText: String
+    let rows: [Row]
+    let focusedLine: Int?
+    let showsReading: Bool
+    let passage: LibraryPassageTarget?
+
+    init?(track: Track, lines: [LyricLine], currentIndex: Int?, synchronized: Bool,
+          showsReading: Bool = false, passage: LibraryPassageTarget? = nil) {
+        let voices = LyricsTimeline.VoicePresentation(in: lines, isSynchronized: synchronized)
+        let rows = lines.enumerated().compactMap { index, line -> Row? in
+            guard voices.duplicates[index] == nil else { return nil }
+            func nonempty(_ text: String?) -> String? {
+                let text = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return text?.isEmpty == false ? text : nil
+            }
+            let original = nonempty(line.originalText) ?? ""
+            let translation = nonempty(line.translationText)
+            let background = nonempty(line.backgroundText)
+            guard !original.isEmpty || translation != nil || background != nil else { return nil }
+            let readings = [nonempty(line.kanaText), nonempty(line.romajiText)].compactMap { $0 }
+            return Row(text: .init(id: index, original: original, translation: translation,
+                                   reading: readings.isEmpty ? nil : readings.joined(separator: " · "), background: background),
+                       voiceLabel: voices.labelAtChange(index))
+        }
+        guard !rows.isEmpty else { return nil }
+        let index = currentIndex.map { voices.duplicates[$0] ?? $0 }
+        let focusedLine = index.flatMap { index in rows.contains { $0.id == index } ? index : nil }
+        var destination = passage
+        destination?.readingPosition = .init(find: "", lineIndex: focusedLine)
+        self.trackTitle = track.title
+        self.artistName = track.artist
+        self.rows = rows
+        self.focusedLine = focusedLine
+        self.showsReading = showsReading
+        self.passage = destination
+    }
+
+    public var lyricsText: String {
+        rows.map { row in
+            [row.text.original, row.text.translation, row.text.background.map { "（\($0)）" }]
+                .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
+        }.joined(separator: "\n\n")
+    }
 
     public var copyText: String {
         [trackTitle, artistName, lyricsText].filter { !$0.isEmpty }.joined(separator: "\n\n")
@@ -725,17 +772,24 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
     public static func deriveFullLyricsSnapshot(from state: PlaybackState) -> MenuBarFullLyricsSnapshot? {
         guard state.hasLiveTrack, !state.isMockPreviewMode,
               state.liveLyricsDocumentMatchesCurrentTrack else { return nil }
-        let paragraphs = state.liveLyrics.compactMap { line -> String? in
-            let original = line.originalText.trimmingCharacters(in: .whitespacesAndNewlines)
-            let translation = line.translationText?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let text = [original, translation].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
-            return text.isEmpty ? nil : text
+        var passage: LibraryPassageTarget?
+        if let trackKey = state.liveTrackIdentity?.stableKey, let originalID = state.liveLyricsVersionID {
+            let source: LibraryPassageSource
+            if let translation = state.selectedTranslation, translation.isComplete,
+               translation.record.lyricsVersionID == originalID,
+               translation.record.sourceContentHash == state.lyricsSession.activeSourceContentHash {
+                source = .translation(translation.record.id)
+            } else {
+                source = .original(originalID)
+            }
+            passage = LibraryPassageTarget(trackKey: trackKey, source: source)
         }
-        guard !paragraphs.isEmpty else { return nil }
+        let preferences = state.preferences
         return MenuBarFullLyricsSnapshot(
-            trackTitle: state.currentTrack.title,
-            artistName: state.currentTrack.artist,
-            lyricsText: paragraphs.joined(separator: "\n\n")
+            track: state.currentTrack, lines: state.liveLyrics, currentIndex: state.liveCurrentLineIndex,
+            synchronized: state.liveLyricsAreSynchronized,
+            showsReading: preferences.showKana || preferences.showsRomajiLayer || preferences.showsPinyinLayer,
+            passage: passage
         )
     }
 
