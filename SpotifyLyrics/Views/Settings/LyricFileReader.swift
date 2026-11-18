@@ -93,6 +93,7 @@ struct LyricFileReader: View {
     @State private var filing = false
     @State private var filed: LibraryPassageTarget?
     @State private var saving = false
+    @State private var openingArchive = false
     @State private var error: String?
     @State private var showsReading = true
     @State private var showsTranslation = true
@@ -104,6 +105,8 @@ struct LyricFileReader: View {
     @State private var find = ""
     @State private var finding = false
     @State private var matchIndex = 0
+    @State private var topLine: Int?
+    @Namespace private var viewport
     @FocusState private var focusedFind: Bool
 
     private var title: String {
@@ -123,6 +126,7 @@ struct LyricFileReader: View {
         let voices = PassageVoicePresentation(lines: rows)
         let visible = voices.visibleLines(in: rows)
         let matches = find.isEmpty ? [] : visible.filter { $0.matches(find) }.map(\.id)
+        let current = finding && matches.indices.contains(matchIndex) ? matches[matchIndex] : nil
         return ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
@@ -181,8 +185,6 @@ struct LyricFileReader: View {
                             Text(byline.joined(separator: " · ")).font(.callout).foregroundStyle(.secondary).padding(.top, 6)
                         }
                         Rectangle().fill(WorkspacePalette.ink.opacity(0.55)).frame(height: 1).padding(.vertical, 18)
-                        let results = finding ? matches : []
-                        let current = results.indices.contains(matchIndex) ? results[matchIndex] : nil
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(visible) { row in
                                 let index = row.id
@@ -197,6 +199,13 @@ struct LyricFileReader: View {
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
                                 .background(index == current ? WorkspacePalette.selection : .clear)
+                                .background {
+                                    GeometryReader { geometry in
+                                        let bottom = geometry.frame(in: .named(viewport)).maxY
+                                        Color.clear.preference(key: FirstVisibleLyric.self,
+                                            value: bottom > 1 ? .init(id: index, bottom: bottom) : nil)
+                                    }
+                                }
                                 .id(index)
                             }
                         }
@@ -204,6 +213,8 @@ struct LyricFileReader: View {
                     .padding(.horizontal, 29).padding(.vertical, 22)
                     .frame(maxWidth: 760, alignment: .leading).frame(maxWidth: .infinity)
                 }
+                .coordinateSpace(name: viewport)
+                .onPreferenceChange(FirstVisibleLyric.self) { row in topLine = row?.id }
                 .onChange(of: find) { _, _ in
                     matchIndex = 0
                     if let first = matches.first { proxy.scrollTo(first, anchor: .center) }
@@ -218,11 +229,8 @@ struct LyricFileReader: View {
                                               originalLocked: file.locked, translationLanguage: language, translationSource: "providerEmbedded")
                     }
                     if let filed {
-                        Button("阅读已存版本") {
-                            SettingsNavigationRoute.shared.requestedLocation = .init(reading: filed)
-                            close?()
-                            openSettings()
-                        }
+                        Button("阅读已存版本") { openFiled(filed, focusedLine: current) }
+                            .disabled(openingArchive)
                     } else {
                         Button {
                             if let destination { fileWith(destination) }
@@ -262,6 +270,25 @@ struct LyricFileReader: View {
         guard !matches.isEmpty else { return }
         matchIndex = (matchIndex + delta + matches.count) % matches.count
         proxy.scrollTo(matches[matchIndex], anchor: .center)
+    }
+
+    private func openFiled(_ filed: LibraryPassageTarget, focusedLine: Int?) {
+        let projection = file.viewing(language)
+        let position = LibraryPassageTarget.ReadingPosition(find: finding ? find : "", lineIndex: focusedLine,
+                                                            topLineIndex: focusedLine == nil ? topLine : nil)
+        openingArchive = true
+        Task {
+            defer { openingArchive = false }
+            do {
+                let target = try await library.continueFiledLyricReading(filed, file: projection, position: position)
+                error = nil
+                SettingsNavigationRoute.shared.requestedLocation = .init(reading: target)
+                close?()
+                openSettings()
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
     }
 
     private func fileWith(_ entry: PersonalLyricsLibraryEntry) {

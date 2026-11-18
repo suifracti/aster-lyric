@@ -3996,6 +3996,30 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
 
     // MARK: - Personal Asset Definition & Library Query
 
+    /// Continue from the file's viewed language without changing any playback selection.
+    func continueFiledLyricReading(_ target: LibraryPassageTarget, file: LocalLyricsFile,
+                                   position: LibraryPassageTarget.ReadingPosition) throws -> LibraryPassageTarget {
+        var continued = target
+        continued.readingPosition = position
+        let text = file.lines.map { $0.translationText ?? "" }
+        guard case let .original(id) = target.source, text.contains(where: { !$0.isEmpty }) else { return continued }
+
+        try ensurePrepared()
+        guard let original = try fetchLyricsVersion(versionID: id),
+              try resolvedCanonicalStableKey(original.trackStableKey) == resolvedCanonicalStableKey(target.trackKey) else {
+            throw LyricsEditingRepositoryError.sourceNotFound
+        }
+        let language = file.initialTranslationLanguage ?? "und"
+        let sourceHash = LyricsPersistenceMapper.sourceContentHash(document: file.content)
+        let versions = try loadTranslationVersions(lyricsVersionID: id, targetLanguage: language, sourceContentHash: sourceHash)
+        if let match = versions.first(where: {
+            $0.isComplete && $0.isEmbeddedTranslation && $0.record.targetLanguage == language && $0.lines.map(\.translatedText) == text
+        }) {
+            continued.source = .translation(match.record.id)
+        }
+        return continued
+    }
+
     /// Returns tracks that have user local assets:
     /// - Manually edited or locally imported lyrics (`is_manually_edited = 1` or `source = 'local'` or `source = 'manual'`)
     /// - User locked lyrics version (`is_locked = 1`)

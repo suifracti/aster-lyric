@@ -435,6 +435,11 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         return target
     }
 
+    func continueFiledLyricReading(_ target: LibraryPassageTarget, file: LocalLyricsFile,
+                                   position: LibraryPassageTarget.ReadingPosition) async throws -> LibraryPassageTarget {
+        try await repository.continueFiledLyricReading(target, file: file, position: position)
+    }
+
     func entries(for query: String) -> [PersonalLyricsLibraryEntry] {
         loadedSearchQuery == query.trimmingCharacters(in: .whitespacesAndNewlines) ? entries : []
     }

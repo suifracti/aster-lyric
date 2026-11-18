@@ -1,6 +1,6 @@
 import SwiftUI
 
-private struct FirstVisibleLyric: PreferenceKey {
+struct FirstVisibleLyric: PreferenceKey {
     struct Row: Equatable {
         let id: Int
         let bottom: CGFloat
