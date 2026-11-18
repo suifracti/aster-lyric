@@ -8,6 +8,8 @@
 
 ## 2 构建与稳定签名
 
+工程含 Metal 着色器（`V3SceneShaders.metal`）。Xcode 26 起 Metal 编译器需要单独安装：`xcodebuild -downloadComponent MetalToolchain`，可用 `xcrun -sdk macosx metal -v` 检查。CI 在缺少时自动下载。
+
 构建触发与验证范围见 AGENTS。用于实际运行、Keychain ACL/TCC 的 Debug 构建必须核稳定签名：
 
 ```sh

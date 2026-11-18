@@ -260,6 +260,7 @@
 		7961F7366756AAE36F9E0657 /* V3Soundprint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F08A7A731F3B8EEC06885CF /* V3Soundprint.swift */; };
 		1105A1906693D1AF2CEEBC42 /* V3SpectrumOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 575AF9352293F29B428528FB /* V3SpectrumOverlay.swift */; };
 		AC936591B69E13C83D87B58C /* V3RainRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E196A8B9474C651A633F926 /* V3RainRoom.swift */; };
+		A1B2C3D4E5F60718293A4B5C /* V3SceneShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F60718293A4B5C6D /* V3SceneShaders.metal */; };
 		DA975609E99F9B7D88940D37 /* V3BackdropAmbience.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D0D30F2EEEB4975F8C197C7 /* V3BackdropAmbience.swift */; };
 		20B8349BBED22F3D7FE17023 /* V3MusicFollowers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A15CC0D12654E4F8C55A49B0 /* V3MusicFollowers.swift */; };
 		AC64F81C1FF0A05129ACA273 /* LyricsCreditOnly.swift in Sources */ = {isa = PBXBuildFile; fileRef = 691058B73179FA592C15242B /* LyricsCreditOnly.swift */; };
@@ -549,6 +550,7 @@
 		7F08A7A731F3B8EEC06885CF /* V3Soundprint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3Soundprint.swift; sourceTree = "<group>"; };
 		575AF9352293F29B428528FB /* V3SpectrumOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3SpectrumOverlay.swift; sourceTree = "<group>"; };
 		5E196A8B9474C651A633F926 /* V3RainRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3RainRoom.swift; sourceTree = "<group>"; };
+		B2C3D4E5F60718293A4B5C6D /* V3SceneShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = V3SceneShaders.metal; sourceTree = "<group>"; };
 		7D0D30F2EEEB4975F8C197C7 /* V3BackdropAmbience.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3BackdropAmbience.swift; sourceTree = "<group>"; };
 		A15CC0D12654E4F8C55A49B0 /* V3MusicFollowers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3MusicFollowers.swift; sourceTree = "<group>"; };
 		691058B73179FA592C15242B /* LyricsCreditOnly.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsCreditOnly.swift; sourceTree = "<group>"; };
@@ -776,6 +778,7 @@
 				67A7CF6CB7618D621BDD647B /* V3VUMeter.swift */,
 				7F08A7A731F3B8EEC06885CF /* V3Soundprint.swift */,
 				5E196A8B9474C651A633F926 /* V3RainRoom.swift */,
+				B2C3D4E5F60718293A4B5C6D /* V3SceneShaders.metal */,
 				118DEDA41F433714AD0B0910 /* V3SearchPanel.swift */,
 				35FDDBAC403CC53CC0FAC566 /* AppleMusicImmersiveV3LyricBar.swift */,
 				29670441C088A914F1A776E1 /* AppleMusicImmersiveV3QuickControls.swift */,
@@ -1218,6 +1221,7 @@
 				B1E8DDB9AA8A6D3EA696CAAA /* V3VUMeter.swift in Sources */,
 				7961F7366756AAE36F9E0657 /* V3Soundprint.swift in Sources */,
 				AC936591B69E13C83D87B58C /* V3RainRoom.swift in Sources */,
+				A1B2C3D4E5F60718293A4B5C /* V3SceneShaders.metal in Sources */,
 				A569E2C0D54C4AE25DACADD0 /* V3SearchPanel.swift in Sources */,
 				AF4738C40CC270950960061F /* AppleMusicImmersiveV3LyricBar.swift in Sources */,
 				0397361CF07CC824F9B93C85 /* AppleMusicImmersiveV3QuickControls.swift in Sources */,

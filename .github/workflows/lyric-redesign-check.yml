@@ -74,6 +74,11 @@ jobs:
           (root/'contracts.json').write_text(json.dumps(results,indent=2))
           raise SystemExit(0 if all(v==0 for v in results.values()) else 1)
           PY
+      - name: Make sure the Metal compiler is present (情境 shaders)
+        shell: bash
+        run: |
+          xcrun -sdk macosx metal -v > /tmp/lyric-native-result/metal.log 2>&1 \
+            || xcodebuild -downloadComponent MetalToolchain >> /tmp/lyric-native-result/metal.log 2>&1
       - name: Build the app and run the entire native XCTest target
         id: build
         continue-on-error: true

@@ -466,6 +466,10 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
   - 行宽：新增 `v3.lyricWidth.v1`，可选标准 1、宽 1.35、满幅 1.9，在文字面板设置；情境可以带自己的行宽。它同时放大 680 pt 的行宽上限和各版式 760/840/940 的上限。行在排版时读取静态的 `V3LyricWidth.scale`，所以在 lyricsColumn 里先赋值，并用 `.id(lyricWidthScale)` 让行宽变化时重建。
   - 封面交融：玻璃层在前景封面处开一个柔边的洞，只留 25% 的效果；背景层的色调都混入封面色（`v3Mixed`）；封面本身带一点情境的痕迹（雪夜四角结霜、雨夜水光、水面光纹、夜车掠过的反光、极光的彩边、星座压暗），见 `V3CoverBlend`。
   - 起雾的窗：清晰区改成覆盖整个窗口的渐变，雾的白度减半，不再出现一个椭圆形的洞。
+- **情境改用 GPU 着色器（2026-11-18，用户授权按需装工具）。** 实测播放中稳定后的 CPU：不开情境约 61%，Canvas 雨滴 64%，水面 57%；GPU 版雨滴 61%，水面 58%。所以换着色器不是为了性能，而是为了效果：真实的水珠物理（Heartfelt 式滑落和水痕，每颗按表面法线折射封面），以及每帧实时计算、会被水波推动的光纹。
+  - 文件：`SpotifyLyrics/Views/MainWindow/V3SceneShaders.metal`。只用生成型的 `colorEffect`，把封面作为 `.image` 参数传入。不对画面用 `layerEffect`：主窗口的歌词行（`TimedLyricHighlightView`）、视频背景（`V3CanvasVideoView`）、`V3AtmosphereFieldView` 和窗口可见性探针都是 AppKit 视图，栅格化后会消失或失效。
+  - 工具链：Xcode 26 需要另外执行 `xcodebuild -downloadComponent MetalToolchain`（本机已装 17F109）。CI 在原生构建前加了一步：缺编译器才下载。离屏宿主走同一个工程，会一起编出 `default.metallib`。
+  - Canvas 版的 `V3RainBeads` 和光纹贴图已删，`V3WaterLight` 只保留取色。
 - **换包前不要紧接在测试后复制 App。** `test-native.sh` 会把 SpotifyLyricsTests.xctest 放进 App 的 PlugIns 目录，签名校验因此失败。应先删掉产物，单独重新构建，校验通过后再复制。
 
 ## L-026 QQ 搜索主机失效（2026-11-13）

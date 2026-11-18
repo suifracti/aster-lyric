@@ -727,7 +727,7 @@ enum V3SceneHand {
 
 extension V3Room {
     /// The look drawn for this choice: 跟随天气 becomes the window the weather picks.
-    @MainActor func resolved(_ weather: V3WeatherWatcher = .shared) -> V3Room { self == .weather ? weather.room : self }
+    @MainActor func resolved(_ weather: V3WeatherWatcher? = nil) -> V3Room { self == .weather ? (weather ?? .shared).room : self }
 }
 
 /// Between the backdrop and the lyrics: the scene's light and what is behind the glass.
@@ -882,12 +882,12 @@ struct V3SceneGlassLayer: View {
                 switch scene {
                 case .rain:
                     V3MistedEdges(size: size, strength: 0.09)
-                    V3RainBeads(size: size, artworkURL: context.artworkURL, running: moving, heavy: chorus)
+                    V3RainLens(size: size, artworkURL: context.artworkURL, running: moving, heavy: chorus)
                     if chorus { V3ParticleView(kind: .rain, running: moving).opacity(0.55) }
                 case .fog:
                     V3FogGlass(size: size, thin: chorus, running: moving)
                 case .water:
-                    V3WaterLight(size: size, accent: context.accent, strength: 0.6 * light, running: moving)
+                    V3WaterCaustics(size: size, accent: context.accent, strength: 0.6 * light, running: moving)
                 case .clearNight:
                     V3MistedEdges(size: size, strength: 0.07)
                 case .snow:
@@ -1314,97 +1314,6 @@ func v3SceneLight(_ luminance: Double) -> Double { min(1, max(0.45, 1.25 - lumin
 
 // MARK: - 雨滴玻璃
 
-/// Water beads on the glass. Each larger drop is a tiny lens that shows the cover
-/// upside down, with a dark rim and a highlight; some slide down and leave a
-/// line of small beads behind.
-struct V3RainBeads: View {
-    let size: CGSize
-    let artworkURL: URL?
-    let running: Bool
-    var heavy = false
-    @State private var cover: NSImage?
-
-    private struct Bead { let x, y, r, phase, speed: CGFloat; let slides: Bool }
-    private static let beads: [Bead] = {
-        var g = SeededRandom(seed: 77)
-        return (0..<420).map { index in
-            let slides = index < 22
-            let big = g.next()
-            let r = slides ? 8 + 7 * g.next() : 1.6 + (big < 0.25 ? 4.5 + 4 * g.next() : 2.6 * g.next())
-            return Bead(x: g.next(), y: g.next(), r: r, phase: g.next(), speed: 0.02 + 0.05 * g.next(), slides: slides)
-        }
-    }()
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !running)) { timeline in
-            let t = CGFloat(timeline.date.timeIntervalSinceReferenceDate)
-            Canvas { context, canvas in
-                let image = cover.map { context.resolve(Image(nsImage: $0)) }
-                for (index, bead) in Self.beads.enumerated() where heavy || index % 3 != 2 {
-                    var x = bead.x * canvas.width
-                    var y = bead.y * canvas.height
-                    var r = bead.r
-                    if bead.slides {
-                        // Hang, then run: most of the time still, then a quick slide with a slight wobble.
-                        let cycle = (t * bead.speed * (heavy ? 1.8 : 1) + bead.phase).truncatingRemainder(dividingBy: 1)
-                        let run = max(0, (cycle - 0.55) / 0.45)
-                        let eased = run * run
-                        y = (bead.y * 0.5) * canvas.height + eased * canvas.height * 0.9
-                        x += sin(eased * 9 + bead.phase * 6) * 4
-                        if run > 0 {
-                            // The trail of beads it leaves.
-                            var trailY = (bead.y * 0.5) * canvas.height
-                            // A wet, slightly clearer track, then beads left along it.
-                            context.fill(Path(roundedRect: CGRect(x: x - r * 0.35, y: trailY, width: r * 0.7, height: max(0, y - trailY)), cornerRadius: r * 0.35),
-                                         with: .color(.white.opacity(0.05)))
-                            while trailY < y - r * 2 {
-                                let tr = 0.8 + 1.6 * abs(sin(trailY * 0.37 + bead.phase * 10))
-                                context.fill(Path(ellipseIn: CGRect(x: x - tr + sin(trailY * 0.2) * 1.5, y: trailY - tr, width: tr * 2, height: tr * 2.2)),
-                                             with: .color(.white.opacity(0.16)))
-                                trailY += 14 + 9 * abs(sin(trailY * 1.7))
-                            }
-                        }
-                        if y > canvas.height + r { continue }
-                    } else {
-                        // Small beads swell and dry slowly.
-                        let life = 0.55 + 0.45 * sin(t * 0.15 + bead.phase * 12)
-                        r *= life
-                    }
-                    let rect = CGRect(x: x - r, y: y - r * 1.08, width: r * 2, height: r * 2.16)
-                    let shape = Path(ellipseIn: rect)
-                    if r > 3, let image {
-                        // The lens: the cover, small and upside down, a little washed out like light through water.
-                        context.drawLayer { lens in
-                            lens.clip(to: shape)
-                            lens.opacity = 0.55
-                            lens.translateBy(x: x, y: y)
-                            lens.scaleBy(x: -1, y: -1)
-                            let span = r * 3.2
-                            lens.draw(image, in: CGRect(x: -span / 2, y: -span / 2, width: span, height: span))
-                            lens.fill(Path(CGRect(x: -span, y: -span, width: span * 2, height: span * 2)), with: .color(.white.opacity(0.08)))
-                        }
-                    } else {
-                        context.fill(shape, with: .color(.white.opacity(0.14)))
-                    }
-                    // A dark rim where the glass bends the light away, and a bright catch-light.
-                    context.fill(shape, with: .radialGradient(Gradient(stops: [.init(color: .clear, location: 0.55),
-                                                                                .init(color: .black.opacity(0.45), location: 1)]),
-                                                              center: CGPoint(x: x, y: y), startRadius: 0, endRadius: r * 1.1))
-                    context.fill(Path(ellipseIn: CGRect(x: x - r * 0.45, y: y - r * 0.62, width: r * 0.42, height: r * 0.3)),
-                                 with: .color(.white.opacity(0.75)))
-                    context.stroke(Path(ellipseIn: rect.insetBy(dx: r * 0.12, dy: r * 0.12)).trimmedPath(from: 0.55, to: 0.95),
-                                   with: .color(.white.opacity(0.25)), lineWidth: max(0.6, r * 0.12))
-                }
-            }
-        }
-        .frame(width: size.width, height: size.height)
-        .task(id: artworkURL) {
-            cover = nil
-            if let artworkURL { cover = await ArtworkImageLoader.shared.image(for: artworkURL) }
-        }
-    }
-}
-
 // MARK: - 起雾的窗
 
 /// Fog over the whole window: the picture behind is blurred and milky. Where
@@ -1532,40 +1441,8 @@ struct V3Aurora: View {
 
 // MARK: - 水面
 
-/// A seamless tile of caustic light, made once on the CPU (the classic water
-/// turbulence pattern), then drifted in two layers so it seems to move.
-enum V3CausticTile {
-    static let image: NSImage = {
-        let side = 256
-        var pixels = [UInt8](repeating: 0, count: side * side)
-        let tau = 2 * Double.pi
-        for py in 0..<side {
-            for px in 0..<side {
-                let p = (x: Double(px) / Double(side) * tau - 250, y: Double(py) / Double(side) * tau - 250)
-                var i = p
-                var c = 1.0
-                let intensity = 0.005
-                for n in 0..<5 {
-                    let t = 23.0 * (1 - 3.5 / Double(n + 1))
-                    i = (p.x + cos(t - i.x) + sin(t + i.y), p.y + sin(t - i.y) + cos(t + i.x))
-                    c += 1 / hypot(p.x / (sin(i.x + t) / intensity), p.y / (cos(i.y + t) / intensity))
-                }
-                c /= 5
-                c = 1.17 - pow(c, 1.4)
-                let v = min(1, pow(abs(c), 8))
-                pixels[py * side + px] = UInt8(v * 255)
-            }
-        }
-        let provider = CGDataProvider(data: Data(pixels) as CFData)!
-        let cg = CGImage(width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 8, bytesPerRow: side,
-                         space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGBitmapInfo(rawValue: 0),
-                         provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)!
-        return NSImage(cgImage: cg, size: NSSize(width: side, height: side))
-    }()
-}
-
-struct V3WaterLight: View {
-    /// Pool light: aqua, leaning towards the cover's hue when it has one.
+/// Pool light: aqua, leaning towards the cover's hue when it has one.
+enum V3WaterLight {
     static func tint(_ accent: Color) -> Color {
         let ns = NSColor(accent).usingColorSpace(.sRGB) ?? .white
         guard ns.saturationComponent >= 0.18 else { return Color(red: 0.45, green: 0.9, blue: 1) }
@@ -1574,56 +1451,6 @@ struct V3WaterLight: View {
         let aqua = 0.52
         let nudged = aqua + max(-0.06, min(0.06, (hue - aqua) * 0.25))
         return Color(hue: nudged, saturation: 0.55, brightness: 1)
-    }
-    let size: CGSize
-    let accent: Color
-    let strength: Double
-    let running: Bool
-
-    var body: some View {
-        let tint = V3WaterLight.tint(accent)
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !running)) { timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            Canvas { context, canvas in
-                let tile = context.resolve(Image(nsImage: V3CausticTile.image))
-                for (layer, (scale, dx, dy, alpha)) in [(2.2, 11.0, 6.0, 0.42), (3.0, -8.0, 9.0, 0.3)].enumerated() {
-                    let side = 256 * scale
-                    let ox = (t * dx).truncatingRemainder(dividingBy: side)
-                    let oy = (t * dy).truncatingRemainder(dividingBy: side)
-                    context.drawLayer { layerContext in
-                        layerContext.opacity = alpha * strength
-                        var y = oy - side
-                        while y < canvas.height {
-                            var x = ox - side
-                            while x < canvas.width {
-                                layerContext.draw(tile, in: CGRect(x: x, y: y, width: side, height: side))
-                                x += side
-                            }
-                            y += side
-                        }
-                        // Colour the white light lines; the dark between them stays dark.
-                        layerContext.blendMode = .multiply
-                        layerContext.fill(Path(CGRect(origin: .zero, size: canvas)), with: .color(tint))
-                    }
-                }
-                // Ripples: a bright ring with a dark one just inside, widening and fading.
-                for mark in V3SceneInput.shared.ripples {
-                    let age = t - mark.time
-                    guard age >= 0, age < 3.5 else { continue }
-                    let radius = CGFloat(age) * 150
-                    let fade = (1 - age / 3.5)
-                    for (offset, color, width) in [(0.0, Color.white, 3.0), (-8.0, Color.black, 4.0), (-22.0, Color.white, 1.5)] {
-                        let r = max(1, radius + CGFloat(offset))
-                        context.stroke(Path(ellipseIn: CGRect(x: mark.point.x - r, y: mark.point.y - r * 0.82, width: r * 2, height: r * 1.64)),
-                                       with: .color(color.opacity((color == .white ? 0.4 : 0.18) * fade * strength)),
-                                       lineWidth: CGFloat(width * (0.5 + fade)))
-                    }
-                }
-            }
-            .blur(radius: 0.8)
-            .blendMode(.plusLighter)
-        }
-        .frame(width: size.width, height: size.height)
     }
 }
 
@@ -1770,7 +1597,7 @@ private struct V3CoverBlend: View {
             case .fog:
                 V3MistedEdges(size: cover.size, strength: 0.22)
             case .water:
-                V3WaterLight(size: cover.size, accent: accent, strength: 0.35, running: !reduceMotion)
+                V3WaterCaustics(size: cover.size, accent: accent, strength: 0.35, running: !reduceMotion, origin: cover.origin)
             case .train:
                 V3PassingReflection(running: !reduceMotion)
             case .aurora:
@@ -1812,5 +1639,59 @@ private struct V3PassingReflection: View {
                     .blendMode(.screen)
             }
         }
+    }
+}
+
+// MARK: - GPU versions (V3SceneShaders.metal)
+
+/// 雨滴玻璃 on the GPU: thousands of beads and sliding drops, each bending the cover.
+struct V3RainLens: View {
+    let size: CGSize
+    let artworkURL: URL?
+    let running: Bool
+    var heavy = false
+    @State private var cover: NSImage?
+    private static let blank = NSImage(size: NSSize(width: 2, height: 2), flipped: false) { rect in
+        NSColor(white: 0.3, alpha: 1).setFill(); rect.fill(); return true
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !running)) { timeline in
+            let t = Float(timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3600))
+            Rectangle().fill(.white)
+                .colorEffect(ShaderLibrary.v3RainLens(.float2(size), .float(t), .float(heavy ? 1 : 0),
+                                                      .image(Image(nsImage: cover ?? Self.blank))))
+        }
+        .frame(width: size.width, height: size.height)
+        .task(id: artworkURL) {
+            cover = nil
+            if let artworkURL { cover = await ArtworkImageLoader.shared.image(for: artworkURL) }
+        }
+    }
+}
+
+/// 水面 on the GPU: caustic light computed every frame, with the ripples bending it.
+struct V3WaterCaustics: View {
+    let size: CGSize
+    let accent: Color
+    let strength: Double
+    let running: Bool
+    /// Ripples are given in this view's own coordinates; the cover passes its offset.
+    var origin: CGPoint = .zero
+
+    var body: some View {
+        let tint = V3WaterLight.tint(accent)
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !running)) { timeline in
+            let now = timeline.date.timeIntervalSinceReferenceDate
+            let t = Float(now.truncatingRemainder(dividingBy: 3600))
+            let ripples = V3SceneInput.shared.ripples.suffix(12).flatMap { mark -> [Float] in
+                [Float(mark.point.x - origin.x), Float(mark.point.y - origin.y), Float(now - mark.time)]
+            }
+            Rectangle().fill(.white)
+                .colorEffect(ShaderLibrary.v3Caustics(.float2(size), .float(t), .color(tint), .float(Float(strength)),
+                                                      .floatArray(ripples.isEmpty ? [0, 0, 99] : ripples)))
+                .blendMode(.plusLighter)
+        }
+        .frame(width: size.width, height: size.height)
     }
 }
