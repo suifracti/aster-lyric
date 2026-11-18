@@ -6,6 +6,7 @@ import Foundation
 @MainActor
 public final class SongSearchManager: ObservableObject {
     @Published public private(set) var state: SongSearchState = .idle
+    @Published public private(set) var queryText: String?
 
     public let trackSearchManager: TrackSearchManager
     private var stateObservation: AnyCancellable?
@@ -25,7 +26,33 @@ public final class SongSearchManager: ObservableObject {
         query: SongSearchQuery,
         debounceNanoseconds: UInt64 = 0
     ) -> Task<Void, Never>? {
-        trackSearchManager.search(query: query, debounceNanoseconds: debounceNanoseconds)
+        if queryText?.trimmingCharacters(in: .whitespacesAndNewlines) != query.text {
+            queryText = query.text
+        }
+        return trackSearchManager.search(query: query, debounceNanoseconds: debounceNanoseconds)
+    }
+
+    @discardableResult
+    func editQuery(_ text: String) -> Task<Void, Never>? {
+        guard queryText != text else { return nil }
+        queryText = text
+        let query = SongSearchQuery(text: text)
+        guard state.query != query else { return nil }
+        return trackSearchManager.search(query: query, debounceNanoseconds: 250_000_000)
+    }
+
+    func prepareQuery(suggestedTrack: Track?) {
+        if queryText == nil, let suggestedTrack {
+            editQuery(SongSearchQuery(track: suggestedTrack).text)
+        } else if state.query == nil {
+            submitQuery()
+        }
+    }
+
+    func submitQuery() {
+        let query = state.query ?? SongSearchQuery(text: queryText ?? "")
+        guard !query.isEmpty else { return }
+        search(query: query)
     }
 
     public func cancel() { trackSearchManager.cancel() }

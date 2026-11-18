@@ -357,7 +357,10 @@ final class DesktopPlaybackEventTests: XCTestCase {
             center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: update)
             await Task.yield()
         }
-        browser.jumpToQueuedTrack(at: browser.queueItems[1].offset) // Original third position, after hiding the second.
+        browser.filterText = "  \(ids[2].lowercased())  "
+        let result = try XCTUnwrap(browser.filteredTracks.first)
+        XCTAssertEqual(browser.filteredTracks.map(\.offset), [2])
+        browser.play(result) // Still the original third position after filtering and hiding the second.
         try await wait { provider.nextCount >= 3 && state.currentTrack.spotifyId == songs[2].id }
         XCTAssertEqual(provider.nextCount, 3)
         try await wait { !browser.isQueueLoading }

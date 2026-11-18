@@ -6,11 +6,11 @@ struct SongSearchPopover: View {
     @ObservedObject var playbackState: PlaybackState
     @Environment(\.openSettings) private var openSettings
     var embedded = false
-    @State private var query = ""
     @State private var isApplyingPreview = false
     @State private var isLockConfirmationPresented = false
     @State private var previewAdoptionMessage: String?
     @FocusState private var isSearchFieldFocused: Bool
+    private var query: String { manager.queryText ?? "" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -21,8 +21,9 @@ struct SongSearchPopover: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
 
-                TextField("搜索已存歌词、歌曲或艺人", text: $query)
+                TextField("搜索已存歌词、歌曲或艺人", text: Binding(get: { query }, set: { manager.editQuery($0) }))
                     .textFieldStyle(.plain)
+                    .accessibilityIdentifier("songSearch.query")
                     .focused($isSearchFieldFocused)
                     .onSubmit {
                         search()
@@ -30,7 +31,7 @@ struct SongSearchPopover: View {
 
                 if !query.isEmpty {
                     Button {
-                        query = ""
+                        manager.editQuery("")
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.tertiary)
@@ -81,18 +82,10 @@ struct SongSearchPopover: View {
         .tint(.primary)
         .frame(width: embedded ? nil : 440, height: embedded ? nil : 470, alignment: .top)
         .onAppear {
-            if let existing = manager.state.query?.text, !existing.isEmpty {
-                query = existing
-            } else if playbackState.hasLiveTrack {
-                query = SongSearchQuery(track: playbackState.currentTrack).text
-            }
+            manager.prepareQuery(suggestedTrack: playbackState.hasLiveTrack ? playbackState.currentTrack : nil)
             isSearchFieldFocused = true
         }
-        .onChange(of: query) { _, value in
-            let next = SongSearchQuery(text: value)
-            manager.search(query: next, debounceNanoseconds: 300_000_000)
-        }
-        .onChange(of: playbackState.playlistBrowser.source) { _, _ in if !query.isEmpty { search() } }
+        .onChange(of: playbackState.playlistBrowser.source) { _, _ in manager.prepareQuery(suggestedTrack: nil) }
     }
 
     private var spotifyAuthorizationSection: some View {
@@ -313,7 +306,7 @@ struct SongSearchPopover: View {
     }
 
     private func search() {
-        manager.search(query: SongSearchQuery(text: query))
+        manager.submitQuery()
     }
 
 

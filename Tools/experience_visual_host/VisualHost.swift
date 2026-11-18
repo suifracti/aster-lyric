@@ -428,6 +428,15 @@ struct ExperienceVisualHostApp: App {
                 .environmentObject(SettingsDataController())
         }
         .defaultSize(width: 1000, height: 680)
+        Window("搜索", id: "song-search") {
+            SongSearchPopover(manager: playback.songSearchManager, playbackState: playback, embedded: true)
+                .environmentObject(playback).environmentObject(settings)
+        }
+        .defaultSize(width: 760, height: 600)
+        Window("歌单", id: "playlist-browser") {
+            PlaylistBrowserWindow(state: playback).environmentObject(playback).environmentObject(settings)
+        }
+        .defaultSize(width: 760, height: 600)
         Window("歌词编辑", id: "lyrics-editor") {
             LyricsEditorWindowView().environmentObject(playback).environmentObject(settings)
         }
@@ -800,7 +809,7 @@ private struct ExperienceFixtureRoot: View {
                         root = AnyView(LyricBookDesk(book: .constant(book),
                             initialChapter: ProcessInfo.processInfo.arguments.contains("--songbook-page") ? track.id : nil))
                     } else if ExperienceArguments.surface == "music-order" {
-                        root = AnyView(V3PlaylistPanel(browser: playback.playlistBrowser, query: "").background(Color(nsColor: .windowBackgroundColor)))
+                        root = AnyView(V3PlaylistPanel(browser: playback.playlistBrowser).background(Color(nsColor: .windowBackgroundColor)))
                     } else if ExperienceArguments.surface == "playlist-picker" {
                         root = AnyView(PlaylistPickerPopover(model: playback.playlistBrowser.picker))
                     } else if ExperienceArguments.surface == "search-panel" {

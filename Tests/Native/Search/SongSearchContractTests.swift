@@ -85,6 +85,35 @@ private final class SongSearchFixedPlaybackProvider: PlaybackProvider {
 
 @MainActor
 final class SongSearchContractTests: XCTestCase {
+    func testOpeningAnotherSearchSurfaceKeepsTheQueryAndItsResults() async {
+        let manager = SongSearchManager(providers: [] as [TrackSearchProvider])
+        let playing = Track(title: "正在播放", artist: "样例", album: "", duration: 180)
+        var searches: [String] = []
+        let observation = manager.$state.sink { state in
+            if case .searching(let query) = state { searches.append(query.text) }
+        }
+        defer { observation.cancel() }
+
+        let request = manager.editQuery("夜のあと ")
+        manager.prepareQuery(suggestedTrack: playing)
+        await request?.value
+        manager.prepareQuery(suggestedTrack: playing)
+        XCTAssertEqual(manager.queryText, "夜のあと ")
+        XCTAssertEqual(searches, ["夜のあと"])
+        XCTAssertEqual(manager.state, .noResults(.init(text: "夜のあと")))
+
+        manager.cancel()
+        manager.prepareQuery(suggestedTrack: playing)
+        manager.prepareQuery(suggestedTrack: playing)
+        XCTAssertEqual(searches, ["夜のあと", "夜のあと"], "Two open surfaces must only rerun the cleared catalog query once")
+
+        manager.editQuery("")
+        manager.prepareQuery(suggestedTrack: playing)
+        XCTAssertEqual(manager.queryText, "")
+        XCTAssertEqual(manager.state, .idle)
+        XCTAssertEqual(searches.count, 2)
+    }
+
     func testMusicLibrarySearchKeepsTwoPerformancesAndCanOpenExactlyOneWithoutPlaying() async throws {
         let a = "ABCDEF0000000001", b = "ABCDEF0000000002"
         let music = AppleMusicPlaylistCatalog { script, _ in

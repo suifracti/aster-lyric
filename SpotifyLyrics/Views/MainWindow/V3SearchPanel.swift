@@ -53,6 +53,7 @@ struct V3SearchPanel: View {
                                 onViewLyrics: { selectedCandidate = nil; adoptionRequest = nil; selectedSongKey = result.searchMergeKey })
                         }
                         if case .searching = search.state { ProgressView().controlSize(.small) }
+                        if case .noResults = search.state { Text("没有找到歌曲").font(.caption).foregroundStyle(.secondary) }
                         if case .failed(_, let message) = search.state { Text(message).font(.caption).foregroundStyle(.secondary) }
                         if !state.songSearchSelectionMessage.isEmpty {
                             Text(state.songSearchSelectionMessage).font(.caption).foregroundStyle(.secondary)

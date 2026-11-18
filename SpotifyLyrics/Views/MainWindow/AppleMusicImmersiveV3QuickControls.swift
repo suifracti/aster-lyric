@@ -12,7 +12,6 @@ struct V3ToolbarQuickControls<Controls: View>: View {
     let openSearch: () -> Void
     let openPlaylists: () -> Void
     @ViewBuilder var controls: () -> Controls
-    @State private var query = ""
     @State private var selectedSearchResultKey: String?
     @State private var contentHeight: CGFloat = 520
     @Environment(\.v3ToolPanelTopInset) private var topInset
@@ -89,12 +88,12 @@ struct V3ToolbarQuickControls<Controls: View>: View {
 
     private var searchControls: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("搜索歌曲或艺人", text: $query)
+            TextField("搜索歌曲或艺人", text: Binding(get: { search.queryText ?? "" }, set: { search.editQuery($0) }))
                 .textFieldStyle(.roundedBorder)
                 .onSubmit {
                     if let selected = visibleSearchResults.first(where: { $0.searchMergeKey == selectedSearchResultKey }) {
                         selected.open(in: state, settings: openSettings)
-                    } else { search.search(query: SongSearchQuery(text: query)) }
+                    } else { search.submitQuery() }
                 }
                 .onKeyPress(.downArrow) { moveSearchSelection(1); return .handled }
                 .onKeyPress(.upArrow) { moveSearchSelection(-1); return .handled }
@@ -111,20 +110,19 @@ struct V3ToolbarQuickControls<Controls: View>: View {
                 ProgressView().controlSize(.small)
             } else if case .failed(_, let error) = search.state {
                 Text(error).font(.caption).foregroundStyle(.secondary).lineLimit(3)
-            } else {
+            } else if case .noResults = search.state {
                 Text("没有找到歌曲").font(.caption).foregroundStyle(.secondary)
             }
         }
         .onAppear {
-            query = state.hasLiveTrack ? SongSearchQuery(track: state.currentTrack).text : ""
+            search.prepareQuery(suggestedTrack: state.hasLiveTrack ? state.currentTrack : nil)
         }
-        .onChange(of: query) { _, value in
+        .onChange(of: search.queryText) { _, _ in
             selectedSearchResultKey = nil
-            search.search(query: SongSearchQuery(text: value), debounceNanoseconds: 250_000_000)
         }
         .onChange(of: state.playlistBrowser.source) { _, _ in
             selectedSearchResultKey = nil
-            if !query.isEmpty { search.search(query: SongSearchQuery(text: query)) }
+            search.prepareQuery(suggestedTrack: nil)
         }
     }
 

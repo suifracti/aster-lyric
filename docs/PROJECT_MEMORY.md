@@ -23,6 +23,7 @@
 | 已采用歌词突然被挡住、同一首重复入库、歌单已存却不打勾；改 Spotify ID | L-005；TrackIdentity、SQLiteLyricsRepository、PlaylistPickerTests |
 | Desktop 时长跳变、合作歌手待确认、错误的时长差提示 | L-006；SpotifyTrackArtistResolver、LyricsSearchManager |
 | 搜索慢、本地结果等网络、搜索 Apple Music 或旧译文、预加载同一首重复搜索 | L-007；searchCachedLibrary、TrackSearchManager、LyricsSessionController、JapaneseMeCabEngine |
+| 找歌重开后变回当前曲、弹出歌单后筛选丢失 | L-007、L-008；SongSearchManager.prepareQuery、PlaylistBrowserModel.filteredTracks |
 | 队列不更新、循环列表被裁掉、隐藏后点第三首多跳、Apple Music 歌单串到 Spotify | L-008；PlaylistBrowserModel、AppleMusicPlaylistCatalog、V3PlaylistQueuePreview |
 | 播放 App 的运行、连接与在线曲库授权容易混淆 | L-008；PlaybackConnectionCards、PlaybackState、SettingsLocation |
 | 别的播放器停止让当前歌词消失、切换来源误暂停或串掉播放模式 | L-008；PlaybackState.receiveDesktopUpdate、runProviderCommand、playbackSourceRevision |
@@ -167,6 +168,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 
 2026-11-18：找歌用已接收的当前曲快照；输入关键词不会再重新轮询或改变桌面播放器。Apple Music 选中时向系统「音乐」搜索本机资料库，同名现场版和录音室版以各自的持久 ID 保留。明确输入 Spotify 曲目链接仍可读取该曲的目录资料。搜索已存原词、旧译文和读音时只把出处与查询带给阅读页，目录结果不传整篇歌词。匹配到旧版时「读这句」打开对应版本，没放歌时也可阅读已存歌曲。隔离真窗从文件入库，再从「搜索」输入旧译独有词，点击「读这句」已读回那一行；不会把阅读当作播放。
 
+2026-11-19：悬停搜索、主窗搜索和独立窗口都从 `SongSearchManager` 读同一份输入。首次打开有在播曲时可用它填充，明确清空后继续留空。有查询结果或正在查时，打开另一入口不重新请求。切换资料库会取消旧查询，仍打开的入口用原输入重新查询一次。
+
 ## L-008 队列刷新保留稍后重复项，点击按原始 offset 前进
 
 启动时空队列、开始播放后打开仍为空，或循环歌单/隐藏行使跳转错位时，复用旧列表并刷新；刷新成功只去掉开头连续的当前歌曲，不能删掉稍后再次出现的同一首。`firstIndex` 的前缀裁剪只留在切歌通知路径。
@@ -184,6 +187,10 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 同一曲出现两次时，完整队列和悬停预览的「跳过这首」都把所点行的原始 offset 和歌曲 ID 交给 `PlaylistBrowserModel`。正常换歌会移掉经过的前缀并平移标记。队列刷新重排且无法辨认重复项时，撤销该标记，避免跳错。原生桩验证了 A–B–A 队列、末尾新增、两次 A 分别播放与跳过。连续相同 ID 的播放边界仍无法仅从现有换歌事件判断。
 
 2026-11-19：自动跟随时，非当前播放器的停止通知只更新它自己的连接状态。播放、暂停、前后切、进度与播放模式按最后接受的来源派发；切换来源后，旧命令迟到的错误或模式结果不再改写当前显示，旧队列跳转也不会续跑。「本曲结束后」仍能在同一播放器换歌时暂停，换到另一播放器时取消。原生定向测试 37 项通过，覆盖后台停止、迟到的暂停错误、新来源在旧写入期间切换模式、同源和跨源的定时；真实账户播放未参与验证。
+
+2026-11-19：歌单面板和独立歌单窗口共用所选位置、搜索框和筛选。独立窗可刷新；关键词匹配歌单名、歌名、艺人和专辑。筛选只隐藏不匹配的行，没有重新编号。歌单页顶的「播放首个结果」从可见第一首的原始位置开始。队列点击继续验证原始项和位置。
+
+隔离真窗核过原词/译文搜索结果带到独立窗、清空后主窗重开仍留空，以及歌单筛选与所选列表随窗口打开。24 项定向原生检查通过，队列样例隐藏第二首并筛取第三首后，仍向播放器桩前进三次。真实账户播放未参与验证。
 
 ## L-009 版本弹窗归主窗口，居中歌词库保留在后面
 

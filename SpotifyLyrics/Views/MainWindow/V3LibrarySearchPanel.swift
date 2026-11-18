@@ -30,22 +30,11 @@ struct V3LibrarySearchPanel: View {
     @V3ContentPlaybackState var state: PlaybackState
     @Environment(\.openWindow) private var openWindow
     @ObservedObject var library: PersonalLyricsLibraryService
+    @ObservedObject var search: SongSearchManager
     let browsing: PersonalLibraryBrowsing
     @State private var batchArchiveKey: String?
     @State private var listeningTrackKey: String?
     @State private var statisticsTimeRange: ListeningStatisticsTimeRange = .allTime
-    @State private var queries: [V3LibrarySearchPresentation.Tab: String] = [:]
-    private var query: String {
-        get {
-            let tab = presentation.tab ?? .library
-            return tab == .library ? browsing.scope.query : (queries[tab] ?? "")
-        }
-        nonmutating set {
-            let tab = presentation.tab ?? .library
-            if tab == .library { browsing.scope.query = newValue }
-            else { queries[tab] = newValue }
-        }
-    }
 
     private var libraryResults: (entries: [PersonalLyricsLibraryEntry], selectedKey: String?) {
         let scope = browsing.scope
@@ -87,9 +76,7 @@ struct V3LibrarySearchPanel: View {
                             } label: { Image(systemName: "arrow.clockwise") }
                             .buttonStyle(.borderless).help("刷新")
                         } else {
-                            TextField(presentation.tab == .search ? "搜索歌曲或艺人" : presentation.tab == .playlists ? "搜索歌单或歌曲" : "搜索歌词库", text: Binding(get: { query }, set: { query = $0 }))
-                                .textFieldStyle(.roundedBorder)
-                                .onSubmit { updateSearch(immediately: true) }
+                            searchField
                             managementMenu
                         }
                         Button("在新窗口打开", action: openInNewWindow)
@@ -101,9 +88,9 @@ struct V3LibrarySearchPanel: View {
                     Divider()
                     Group {
                         if presentation.tab == .playlists {
-                            V3PlaylistPanel(browser: state.playlistBrowser, query: query, currentTrackID: state.playlistTrackID, currentArtworkURL: state.currentTrack.artworkURL)
+                            V3PlaylistPanel(browser: state.playlistBrowser, currentTrackID: state.playlistTrackID, currentArtworkURL: state.currentTrack.artworkURL)
                         } else if presentation.tab == .search {
-                            V3SearchPanel(state: state, search: state.songSearchManager)
+                            V3SearchPanel(state: state, search: search)
                         } else if presentation.tab?.isListening == true {
                             listeningContent
                         } else {
@@ -125,17 +112,20 @@ struct V3LibrarySearchPanel: View {
             .onExitCommand { presentation.dismiss() }
             .onAppear {
                 if presentation.tab == .library { library.search(browsing.scope.query, immediately: true) }
-                if presentation.tab == .search, query.isEmpty, state.hasLiveTrack { query = SongSearchQuery(track: state.currentTrack).text }
+                if presentation.tab == .search { prepareSongSearch() }
             }
             .onChange(of: browsing.scope.filter) { _, _ in batchArchiveKey = nil }
-            .onChange(of: query) { _, _ in updateSearch() }
+            .onChange(of: browsing.scope.query) { _, query in
+                batchArchiveKey = nil
+                if presentation.tab == .library { library.search(query) }
+            }
             .onChange(of: state.playlistBrowser.source) { _, _ in
-                if presentation.tab == .search, !query.isEmpty { updateSearch() }
+                if presentation.tab == .search { prepareSongSearch() }
             }
             .onChange(of: presentation.tab) { _, tab in
                 listeningTrackKey = nil
                 if tab == .library { library.search(browsing.scope.query, immediately: true) }
-                else if tab == .search, query.isEmpty, state.hasLiveTrack { query = SongSearchQuery(track: state.currentTrack).text }
+                else if tab == .search { prepareSongSearch() }
             }
         }
     }
@@ -174,12 +164,24 @@ struct V3LibrarySearchPanel: View {
         }
     }
 
-    private func updateSearch(immediately: Bool = false) {
-        if presentation.tab == .search {
-            state.songSearchManager.search(query: SongSearchQuery(text: query), debounceNanoseconds: 250_000_000)
-        } else if presentation.tab == .library {
-            batchArchiveKey = nil
-            library.search(query, immediately: immediately)
+    private func prepareSongSearch() {
+        search.prepareQuery(suggestedTrack: state.hasLiveTrack ? state.currentTrack : nil)
+    }
+
+    @ViewBuilder
+    private var searchField: some View {
+        switch presentation.tab {
+        case .search:
+            TextField("搜索歌曲、艺人或已存歌词", text: Binding(get: { search.queryText ?? "" }, set: { search.editQuery($0) }))
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("songSearch.query")
+                .onSubmit { search.submitQuery() }
+        case .playlists:
+            PlaylistFilterField(browser: state.playlistBrowser)
+        default:
+            TextField("搜索歌词库", text: Binding(get: { browsing.scope.query }, set: { browsing.scope.query = $0 }))
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { library.search(browsing.scope.query, immediately: true) }
         }
     }
     private var managementMenu: some View {
@@ -190,8 +192,11 @@ struct V3LibrarySearchPanel: View {
                 Button("导入资产", action: library.presentImportDialog)
             }
             Button("刷新") {
-                if presentation.tab == .playlists { state.playlistBrowser.refresh() }
-                else { updateSearch(immediately: true) }
+                switch presentation.tab {
+                case .playlists: state.playlistBrowser.refresh()
+                case .search: search.submitQuery()
+                default: library.search(browsing.scope.query, immediately: true)
+                }
             }
             if presentation.tab != .playlists {
                 Menu("私人文件夹同步") {

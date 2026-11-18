@@ -394,10 +394,12 @@ A control never appears on both sides. Where the other side used to have it, sho
 - **搜索 tab:** two clearly named sections.
   - **「这首歌的歌词」:** provider candidates for the current song. Each shows the source, a 逐字 / 逐行 / 纯文本 badge, the duration difference and 预览 on hover. The action is 「采用此版本」.
   - **「其他歌曲」:** library and Spotify-catalog songs. The action is 「查看歌词」, plus a ▶ that plays the song.
+  - The hover panel, main panel and search window share one query and its results. Opening an existing search keeps the typed text. After clearing it, reopening stays empty.
   - The current song appears once, not in both sections. Local results show first; online results stream in.
 - **歌单 tab:**
   - **Left column:** 接下来播放 (from `/me/player/queue`), then 已点赞的歌曲, then the user's playlists (flat; Spotify gives no folders).
   - **Right column:** the selected playlist's tracks. Double-click a track, or press its ▶ (shown on row hover), to play it in that playlist's context (`PUT /me/player/play` with `context_uri` and an offset; the existing playback-write scope covers it). A 403 shows 「需要 Spotify Premium」.
+  - The main panel and playlist window share the selected list and search text. Both can filter by playlist name or the track's title, artist or album. 「播放首个结果」 starts at the first visible track's original position and playback continues in the playlist.
   - A ✓ marks each playlist that holds the current song. An empty circle appears only on row hover. Clicking either adds or removes the song, reusing the picker's membership logic.
   - Round 7 below has the row and queue details.
 - **New toolbar button 歌单** (`music.note.list`) between 搜索 and 译文.

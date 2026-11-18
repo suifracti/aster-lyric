@@ -521,7 +521,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
 
                 if librarySearch.isPresented {
-                    V3LibrarySearchPanel(presentation: $librarySearch, state: state, library: library, browsing: libraryOwner.browsing)
+                    V3LibrarySearchPanel(presentation: $librarySearch, state: state, library: library,
+                                         search: state.songSearchManager, browsing: libraryOwner.browsing)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
 

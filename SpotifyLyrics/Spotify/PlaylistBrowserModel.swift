@@ -16,6 +16,7 @@ public final class PlaylistBrowserModel: ObservableObject {
     @Published public private(set) var queue: [Track] = []
     @Published public private(set) var tracks: [SpotifyPlaylistTrack] = []
     @Published public private(set) var selectedID = queueID
+    @Published var filterText = ""
     @Published public private(set) var isLoading = false
     @Published public private(set) var isQueueLoading = false
     @Published public private(set) var hasLoadedQueue = false
@@ -31,6 +32,23 @@ public final class PlaylistBrowserModel: ObservableObject {
             return musicContinuation == nil ? "当前歌曲没有可读取的歌单顺序" : "已到这份歌单的末尾"
         }
         return "接下来没有待播歌曲"
+    }
+
+    private var filterQuery: String { filterText.trimmingCharacters(in: .whitespacesAndNewlines) }
+    var isFiltering: Bool { !filterQuery.isEmpty }
+
+    var filteredPlaylists: [PlaylistSummary] {
+        let query = filterQuery
+        return query.isEmpty ? picker.playlists : picker.playlists.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
+
+    var filteredTracks: [SpotifyPlaylistTrack] {
+        let query = filterQuery
+        guard !query.isEmpty else { return tracks }
+        return tracks.filter { item in
+            let track = item.track
+            return [track.title, track.artist, track.album].contains { $0.localizedCaseInsensitiveContains(query) }
+        }
     }
     private let service: SpotifyCatalogService
     private let music: AppleMusicPlaylistCatalog

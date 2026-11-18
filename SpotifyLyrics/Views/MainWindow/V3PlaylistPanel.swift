@@ -1,18 +1,54 @@
 import SwiftUI
 
+struct PlaylistFilterField: View {
+    @ObservedObject var browser: PlaylistBrowserModel
+
+    var body: some View {
+        HStack(spacing: 6) {
+            TextField("搜索歌单、歌曲或专辑", text: $browser.filterText)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("playlist.filter")
+            if !browser.filterText.isEmpty {
+                Button { browser.filterText = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("清空歌单搜索")
+            }
+        }
+    }
+}
+
+struct PlaylistBrowserWindow: View {
+    @V3ContentPlaybackState var state: PlaybackState
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                PlaylistFilterField(browser: state.playlistBrowser)
+                Button { state.playlistBrowser.refresh() } label: { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.borderless)
+                    .help("刷新歌单与队列")
+                    .accessibilityLabel("刷新歌单与队列")
+            }
+            .padding(12)
+            Divider()
+            V3PlaylistPanel(browser: state.playlistBrowser, currentTrackID: state.playlistTrackID,
+                            currentArtworkURL: state.currentTrack.artworkURL)
+        }
+    }
+}
+
 struct V3PlaylistPanel: View {
     @ObservedObject var browser: PlaylistBrowserModel
     @ObservedObject private var picker: PlaylistPickerModel
-    let query: String
     let currentTrackID: String?
     let currentArtworkURL: URL?
     @State private var playingAccent = Color.accentColor
     @State private var hoveredSidebarID: String?
     @State private var hoveredTrackOffset: Int?
-    init(browser: PlaylistBrowserModel, query: String, currentTrackID: String? = nil, currentArtworkURL: URL? = nil) {
+    init(browser: PlaylistBrowserModel, currentTrackID: String? = nil, currentArtworkURL: URL? = nil) {
         self.currentTrackID = currentTrackID
         self.currentArtworkURL = currentArtworkURL
-        self.browser = browser; self.query = query
+        self.browser = browser
         _picker = ObservedObject(wrappedValue: browser.picker)
 #if DEBUG
         // Offscreen fixture state only; never moves the user's pointer.
@@ -25,21 +61,16 @@ struct V3PlaylistPanel: View {
         }
 #endif
     }
-    private var playlists: [PlaylistSummary] {
-        picker.playlists.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
-    }
-    private var tracks: [SpotifyPlaylistTrack] {
-        browser.tracks.filter { query.isEmpty || $0.track.title.localizedCaseInsensitiveContains(query) || $0.track.artist.localizedCaseInsensitiveContains(query) }
-    }
     var body: some View {
-        GeometryReader { geometry in
+        let tracks = browser.filteredTracks
+        return GeometryReader { geometry in
             HStack(spacing: 0) {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         destination(browser.queueTitle, symbol: "list.bullet", id: PlaylistBrowserModel.queueID)
                         destination(picker.likedRowTitle, symbol: "heart.fill", id: PlaylistBrowserModel.likedID)
                         Divider().padding(.vertical, 6)
-                        ForEach(playlists) { playlist in
+                        ForEach(browser.filteredPlaylists) { playlist in
                             destination(playlist.name, symbol: "music.note.list", id: playlist.id, playlist: playlist)
                                 .onAppear { picker.ensureMembership(for: playlist) }
                                 .onChange(of: currentTrackID) { _, _ in picker.ensureMembership(for: playlist) }
@@ -51,10 +82,12 @@ struct V3PlaylistPanel: View {
                 }.frame(width: min(300, geometry.size.width * 0.43))
                 Divider()
                 VStack(alignment: .leading, spacing: 8) {
-                    selectedHeader
+                    selectedHeader(firstVisible: tracks.first)
                     if browser.selectedTracksAreLoading { ProgressView().controlSize(.small).padding() }
                     if let message = browser.emptyMessage {
                         Text(message).font(.caption).foregroundStyle(.secondary).padding(12)
+                    } else if browser.isFiltering, tracks.isEmpty, !browser.selectedTracksAreLoading {
+                        Text("此列表没有符合条件的歌曲").font(.caption).foregroundStyle(.secondary).padding(12)
                     }
                     ScrollView {
                         LazyVStack(spacing: 0) {
@@ -84,7 +117,7 @@ struct V3PlaylistPanel: View {
         if browser.selectedID == PlaylistBrowserModel.likedID { return picker.likedRowTitle }
         return picker.playlists.first { $0.id == browser.selectedID }?.name ?? "歌单"
     }
-    private var selectedHeader: some View {
+    private func selectedHeader(firstVisible: SpotifyPlaylistTrack?) -> some View {
         let playlist = picker.playlists.first { $0.id == browser.selectedID }
         let isQueue = browser.selectedID == PlaylistBrowserModel.queueID
         let isMusicOrder = isQueue && browser.queueContextName != nil
@@ -104,9 +137,9 @@ struct V3PlaylistPanel: View {
             }
             Spacer(minLength: 0)
             if !isQueue {
-                Button("播放", systemImage: "play.fill") {
-                    if let first = browser.tracks.first { browser.play(first) }
-                }.disabled(browser.tracks.isEmpty || browser.isLoading)
+                Button(browser.isFiltering ? "播放首个结果" : "播放", systemImage: "play.fill") {
+                    if let firstVisible { browser.play(firstVisible) }
+                }.disabled(firstVisible == nil || browser.isLoading)
             }
         }.padding(12)
     }
