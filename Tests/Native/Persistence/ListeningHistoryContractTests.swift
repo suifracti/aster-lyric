@@ -90,6 +90,27 @@ final class ListeningHistoryContractTests: XCTestCase {
         XCTAssertEqual(entries[1].stableKey, identityA.stableKey)
         XCTAssertEqual(entries[1].observedPlaybackDuration, 15)
         XCTAssertEqual(entries[1].artworkURL, trackA.artworkURL, "History cover must survive reload")
+        let historyArchive = try await restartedRepository.loadPersonalLibraryTrackDetail(stableKey: identityB.stableKey)
+        let detail = try XCTUnwrap(historyArchive, "An old listen without cover or lyrics must still open an archive")
+        XCTAssertEqual(detail.entry.trackStableKey, identityB.stableKey)
+        XCTAssertEqual(detail.entry.title, trackB.title)
+        XCTAssertTrue(detail.lyricsVersions.isEmpty)
+        let withoutAssets = try await restartedRepository.loadPersonalLibraryEntries(includeMissingLyrics: true)
+        XCTAssertFalse(withoutAssets.contains { $0.trackStableKey == identityB.stableKey }, "Viewing a history entry does not create a lyrics record")
+
+        let fileTrack = detail.entry.libraryTrack
+        let file = LyricsDocument(
+            identity: TrackIdentity(track: fileTrack), title: fileTrack.title, artist: fileTrack.artist,
+            album: fileTrack.album, duration: fileTrack.duration,
+            lines: [LyricLine(timestamp: 1, originalText: "Words filed from recent playback")],
+            isSynchronized: true, source: .manualImport, confidence: 1
+        )
+        let savedFile = try await restartedRepository.storeImportedFile(track: fileTrack, document: file, locked: true,
+                                                                        archiveKey: detail.entry.trackStableKey)
+        let fromHistory = try await repository.loadBestStored(track: trackB, identity: identityB)
+        XCTAssertEqual(fromHistory?.versionID, try XCTUnwrap(savedFile.versionID))
+        XCTAssertTrue(fromHistory?.isLockedOrEdited == true)
+
         let artStats = try await restartedRepository.loadListeningStatistics(for: .allTime)
         XCTAssertEqual(artStats.topSongs.first(where: { $0.stableKey == identityA.stableKey })?.artworkURL, trackA.artworkURL)
 

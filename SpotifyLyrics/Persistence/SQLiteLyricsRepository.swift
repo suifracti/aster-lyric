@@ -329,6 +329,29 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         return nil
     }
 
+    private func archiveTrack(stableKey: String) throws -> DatabaseTrackRecord? {
+        if let existing = try fetchTrack(stableKey: resolvedCanonicalStableKey(stableKey)) { return existing }
+
+        // Older history rows can predate any artwork or lyrics stored for the recording.
+        let statement = try prepare("""
+            SELECT title, artist, album, track_duration, started_at, last_observed_at
+            FROM listening_history_sessions WHERE track_stable_key = ?
+            ORDER BY last_observed_at DESC, started_at DESC, session_id DESC LIMIT 1;
+            """)
+        defer { sqlite3_finalize(statement) }
+        try bindText(stableKey, at: 1, to: statement)
+        guard try stepListeningHistoryRow(statement),
+              let title = columnText(statement, index: 0),
+              let artist = columnText(statement, index: 1),
+              let album = columnText(statement, index: 2) else { return nil }
+        return DatabaseTrackRecord(
+            stableKey: stableKey, spotifyID: nil, spotifyURI: nil, isrc: nil,
+            title: title, artistDisplay: artist, album: album, duration: sqlite3_column_double(statement, 3), artworkURL: nil,
+            createdAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 4)),
+            updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 5))
+        )
+    }
+
     public func loadListeningHistory(limit: Int) async throws -> [ListeningHistoryEntry] {
         try prepare()
         let statement = try prepare("""
@@ -556,7 +579,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         try prepare()
         guard document.source == (manuscriptID == nil ? .manualImport : .manualCreate) else { throw LyricsEditingRepositoryError.identityMismatch }
         if let archiveKey {
-            guard let record = try fetchTrack(stableKey: resolvedCanonicalStableKey(archiveKey)),
+            guard let record = try archiveTrack(stableKey: archiveKey),
                   TrackIdentity(track: record.libraryTrack) == TrackIdentity(track: track) else {
                 throw LyricsEditingRepositoryError.identityMismatch
             }
@@ -1282,8 +1305,14 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             }
             let canonicalSource = try resolvedCanonicalStableKey(sourceKey)
             let canonicalContext = try resolvedCanonicalStableKey(context.identity.stableKey)
-            guard canonicalSource == canonicalContext else {
-                throw TranslationRepositoryError.sourceContentMismatch
+            if canonicalSource != canonicalContext {
+                // The content checks above pin this result to the stored original version.
+                // A localized display title need not create a recording redirect just to save it.
+                guard let id = context.identity.spotifyTrackID, let recording = try fetchTrack(stableKey: canonicalSource),
+                      id == (TrackIdentity.canonicalSpotifyTrackID(recording.spotifyID)
+                             ?? TrackIdentity.canonicalSpotifyTrackID(recording.spotifyURI)) else {
+                    throw TranslationRepositoryError.sourceContentMismatch
+                }
             }
             if request.phase == .saved {
                 guard request.result == nil,
@@ -3481,7 +3510,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             """)
         defer { sqlite3_finalize(statement) }
         try bindText(stableKey, at: 1, to: statement)
-        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+        let result = sqlite3_step(statement)
+        if result == SQLITE_DONE { return nil }
+        guard result == SQLITE_ROW else { throw lastError(result) }
         return try trackRecord(from: statement)
     }
 
@@ -4483,44 +4514,21 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     public func loadPersonalLibraryTrackDetail(stableKey: String) throws -> PersonalLyricsLibraryTrackDetail? {
         try prepare()
         try reloadRedirectResolver()
-        let stableKey = try resolvedCanonicalStableKey(stableKey)
+        guard let track = try archiveTrack(stableKey: stableKey) else { return nil }
+        let stableKey = track.stableKey
         let family = try resolvedIdentityFamily(stableKey: stableKey)
-
-        let trackStmt = try prepare("""
-            SELECT stable_key, spotify_id, spotify_uri, isrc, title, artist_display,
-                   album, duration, artwork_url, updated_at
-            FROM tracks
-            WHERE stable_key = ? LIMIT 1;
-            """)
-        defer { sqlite3_finalize(trackStmt) }
-        try bindText(stableKey, at: 1, to: trackStmt)
-
-        guard sqlite3_step(trackStmt) == SQLITE_ROW,
-              let title = columnText(trackStmt, index: 4),
-              let artist = columnText(trackStmt, index: 5) else {
-            return nil
-        }
-
-        let spotifyID = columnText(trackStmt, index: 1)
-        let spotifyURI = columnText(trackStmt, index: 2)
-        let isrc = columnText(trackStmt, index: 3)
-        let album = columnText(trackStmt, index: 6)
-        let duration = sqlite3_column_double(trackStmt, 7)
-        let artworkURLText = columnText(trackStmt, index: 8)
-        let artworkURL = artworkURLText.flatMap { URL(string: $0) }
-        let trackUpdatedAt = Date(timeIntervalSince1970: sqlite3_column_double(trackStmt, 9))
 
         let entry = try compileLibraryEntry(
             stableKey: stableKey,
-            spotifyID: spotifyID,
-            spotifyURI: spotifyURI,
-            isrc: isrc,
-            title: title,
-            artist: artist,
-            album: album,
-            duration: duration,
-            artworkURL: artworkURL,
-            fallbackDate: trackUpdatedAt
+            spotifyID: track.spotifyID,
+            spotifyURI: track.spotifyURI,
+            isrc: track.isrc,
+            title: track.title,
+            artist: track.artistDisplay,
+            album: track.album,
+            duration: track.duration,
+            artworkURL: track.artworkURL.flatMap(URL.init(string:)),
+            fallbackDate: track.updatedAt
         )
 
         var lyricsItems: [PersonalLyricsVersionItem] = []
