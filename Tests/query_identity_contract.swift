@@ -293,9 +293,15 @@ struct QueryIdentityContract {
             duration: 168.75
         )
         let featuredOnlyDecision = LyricsSafeMatcher.decide(candidate: featuredOnlyCandidate, metadata: multiMetadata)
-        require(featuredOnlyDecision.tier == .candidates, "featured-only artist is selectable, not automatic")
+        require(featuredOnlyDecision.tier == .autoMedium && featuredOnlyDecision.reasons.contains("featuredArtistExactLength"),
+                "a credited guest, the complete title and millisecond length support the same recording")
         require(featuredOnlyDecision.explanation.contains { $0.contains("featuredArtistOnly") }, "featured-only explanation")
+        let roundedGuest = candidate(identity: multiMetadata.identity, title: featuredOnlyCandidate.title,
+            artist: "Mahiru", album: "KILL is LOVE", duration: 169)
+        let roundedGuestDecision = LyricsSafeMatcher.decide(candidate: roundedGuest, metadata: multiMetadata)
+        require(roundedGuestDecision.tier == .candidates, "a credited guest without precise length stays selectable")
 
+        let looseQuery = LyricsQueryVariant(rank: 9, strategy: .titleOnlyLoose, queryKind: .titleOnlyLoose, titleQuery: "Lemon", artistQuery: nil)
         let looseStrongCandidate = candidate(
             identity: TrackIdentity(track: plainTrack),
             title: "Lemon",
@@ -306,15 +312,13 @@ struct QueryIdentityContract {
         let looseDecision = LyricsSafeMatcher.decide(
             candidate: looseStrongCandidate,
             metadata: plainMetadata,
-            queryVariant: LyricsQueryVariant(
-                rank: 9,
-                strategy: .titleOnlyLoose,
-                queryKind: .titleOnlyLoose,
-                titleQuery: "Lemon",
-                artistQuery: nil
-            )
+            queryVariant: looseQuery
         )
-        require(looseDecision.tier == .candidates || looseDecision.tier == .reject, "loose query cannot auto adopt without identity evidence")
+        require(looseDecision.tier == .autoMedium, "confirmed title, primary artist and duration support a title-only result")
+        let unconfirmedLoose = candidate(identity: plainMetadata.identity, title: "Lemon", artist: "Kenshi Yonezu", album: "", duration: 0)
+        let unconfirmedLooseDecision = LyricsSafeMatcher.decide(candidate: unconfirmedLoose, metadata: plainMetadata, queryVariant: looseQuery)
+        require(unconfirmedLooseDecision.tier == .candidates || unconfirmedLooseDecision.tier == .reject,
+                "a title-only result without duration evidence stays available for review")
         require(looseDecision.explanation.contains { $0.contains("looseQuery") }, "loose query explanation")
         require(looseDecision.queryKind == .titleOnlyLoose, "decision keeps loose query kind")
 

@@ -700,7 +700,7 @@ public enum LyricsSafeMatcher {
         // same length: the extra words only name the version. Same singer,
         // length within a second and no version conflict make it the same
         // recording. Words that change the content (伴奏, Live, DJ…) do not.
-        if tier == .candidates, !hardReject, !versionConflict, reasons.contains("primaryArtistExact"),
+        if tier == .candidates, !hardReject, !versionConflict, !incompleteArtistSet, reasons.contains("primaryArtistExact"),
            metadataDuration > 0, candidateDuration > 0, abs(metadataDuration - candidateDuration) <= 1,
            Self.titleOnlyAddsVersionName(track: metadata.track.title, candidate: candidate.title) {
             tier = .autoMedium
@@ -821,17 +821,17 @@ public enum LyricsSafeMatcher {
                 .filter { $0 != "-" }
                 .joined(separator: " ")
         }
-        let left = key(lhs)
-        if !left.isEmpty && left == key(rhs) { return true }
+        let left = key(lhs), right = key(rhs)
+        if !left.isEmpty && left == right { return true }
         // Same characters, other punctuation: 如果真爱 - ２０２４ 说唱版 and
         // 如果真爱（2024说唱版） differ only in spaces, dashes and brackets.
-        func compact(_ title: String) -> String {
-            String(TrackTextNormalizer.normalize(title).unicodeScalars.filter { scalar in
-                !CharacterSet.whitespaces.contains(scalar) && !"-–—_()[]{}（）【】「」『』·・/,，.。:：".unicodeScalars.contains(scalar)
+        func compact(_ titleKey: String) -> String {
+            String(titleKey.unicodeScalars.filter { scalar in
+                !CharacterSet.whitespaces.contains(scalar) && !"_()[]{}（）【】「」『』·・/,，.。:：".unicodeScalars.contains(scalar)
             }.map(Character.init))
         }
-        let compactLeft = compact(lhs)
-        return compactLeft.count >= 2 && compactLeft == compact(rhs)
+        let compactLeft = compact(left)
+        return compactLeft.count >= 2 && compactLeft == compact(right)
     }
 
     private struct VersionTraitResult {

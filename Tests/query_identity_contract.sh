@@ -13,6 +13,8 @@ SOURCES=(
   "$ROOT_DIR/SpotifyLyrics/Lyrics/TrackAlias.swift"
   "$ROOT_DIR/SpotifyLyrics/Lyrics/TrackMetadata.swift"
   "$ROOT_DIR/SpotifyLyrics/Lyrics/TrackTextNormalizer.swift"
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/ReadingModels.swift"
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/ReadingScriptConversion.swift"
   "$ROOT_DIR/SpotifyLyrics/Lyrics/JapaneseRomanizer.swift"
   "$ROOT_DIR/SpotifyLyrics/Lyrics/JapaneseReadingPipeline.swift"
   "$ROOT_DIR/SpotifyLyrics/Lyrics/JapaneseKanaGenerator.swift"
