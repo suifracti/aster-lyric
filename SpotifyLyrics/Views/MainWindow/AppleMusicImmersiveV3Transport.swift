@@ -468,7 +468,8 @@ struct V3PlaybackButtons: View {
         HStack(spacing: compact ? 4 : 12) {
             heartButton
             if state.canPickPlaylists {
-                V3TransportIconButton(systemImage: "text.badge.plus", label: "添加到歌单", enabled: true, size: compact ? .compact : .regular) {
+                V3PlaylistAddButton(picker: state.playlistPicker, open: showsPlaylistPicker,
+                                    size: compact ? .compact : .regular) {
                     showsPlaylistPicker = true
                 }
                 .v3ToolPopover(isPresented: $showsPlaylistPicker, onAnchorPress: { showsPlaylistPicker.toggle() }, width: 380) {
@@ -498,7 +499,8 @@ struct V3PlaybackButtons: View {
     private var heartButton: some View {
         V3TransportIconButton(systemImage: state.isTrackLiked == true ? "heart.fill" : "heart",
                               label: state.isTrackLiked == true ? "取消喜欢 (S)" : "加入喜欢 (S)",
-                              enabled: state.hasLiveTrack, size: compact ? .compact : .regular) {
+                              enabled: state.hasLiveTrack, active: state.isTrackLiked == true,
+                              size: compact ? .compact : .regular) {
             state.toggleTrackLike()
         }
     }
@@ -536,19 +538,38 @@ struct V3PlayerModeButton: View {
     }
 }
 
+/// 添加到歌单 lights up in the cover colour while its picker is open and once the
+/// song is known to be in one of the user's playlists.
+private struct V3PlaylistAddButton: View {
+    @ObservedObject var picker: PlaylistPickerModel
+    let open: Bool
+    var size: IslandTransportButton.Size = .regular
+    let action: () -> Void
+    var body: some View {
+        V3TransportIconButton(systemImage: picker.currentTrackIsSaved ? "text.badge.checkmark" : "text.badge.plus",
+                              label: picker.currentTrackIsSaved ? "已在歌单中 · 添加到其他歌单" : "添加到歌单",
+                              enabled: true, active: open || picker.currentTrackIsSaved, size: size, action: action)
+    }
+}
+
 private struct V3TransportIconButton: View {
     let systemImage: String
     let label: String
     let enabled: Bool
     var prominent = false
+    /// An on state (liked) wears the cover colour, like shuffle and repeat.
+    var active = false
     var size: IslandTransportButton.Size = .regular
+    @Environment(\.v3CoverAccent) private var accent
     let action: () -> Void
 
     var body: some View {
-        // Same look as the window-edge and menu-bar transport.
+        // Same shapes as the window-edge and menu-bar transport; the play disc and on
+        // states take the same cover colour as the sung line and the played waveform.
         IslandTransportButton(
             systemImage: systemImage, label: label, enabled: enabled,
-            primary: prominent, size: size, tint: .white, glyph: .white, action: action
+            primary: prominent, size: size, tint: prominent || active ? accent : .white,
+            glyph: active ? accent : .white, action: action
         )
     }
 }

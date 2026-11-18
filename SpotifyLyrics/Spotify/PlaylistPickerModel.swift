@@ -318,6 +318,12 @@ public final class PlaylistPickerModel: ObservableObject {
         }
     }
 
+    /// The playing song is in at least one playlist checked so far.
+    public var currentTrackIsSaved: Bool {
+        guard let track = trackID() else { return false }
+        return membership.values.contains { $0.contains(track) }
+    }
+
     public func isMember(_ playlist: PlaylistSummary) -> Bool {
         guard let track = trackID() else { return false }
         return membership[playlist.id]?.contains(track) == true

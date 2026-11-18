@@ -1159,6 +1159,12 @@ public final class AppSettingsStore: ObservableObject {
     @Published public var v3LyricImagery = false {
         didSet { defaults.set(v3LyricImagery, forKey: "v3.lyricImagery.v1") }
     }
+    /// 跟随封面色: the sung line with its reading and translation, the played waveform,
+    /// the play disc, on-state buttons and the selected toolbar tool share the cover colour.
+    /// Off keeps them all white; the backdrop, rim light and edge lights are separate choices.
+    @Published public var v3FollowCoverColor = true {
+        didSet { defaults.set(v3FollowCoverColor, forKey: "v3.followCoverColor.v1") }
+    }
     /// 暂停褪色: the backdrop slowly loses its colour while paused.
     @Published public var v3PauseFadesColor = true {
         didSet { defaults.set(v3PauseFadesColor, forKey: "v3.pauseFadesColor.v1") }
@@ -1638,6 +1644,7 @@ public final class AppSettingsStore: ObservableObject {
         self.lyricsRestoreCensoredWords = defaults.object(forKey: "lyrics.restoreCensored.v1") as? Bool ?? true
         self.v3ChorusEmphasis = defaults.object(forKey: "v3.chorusEmphasis.v1") as? Bool ?? true
         self.v3PauseFadesColor = defaults.object(forKey: "v3.pauseFadesColor.v1") as? Bool ?? true
+        self.v3FollowCoverColor = defaults.object(forKey: "v3.followCoverColor.v1") as? Bool ?? true
         self.v3HidesSungLines = defaults.bool(forKey: "v3.hidesSungLines.v1")
         self.v3BackdropParallax = defaults.bool(forKey: "v3.backdropParallax.v1")
         self.v3DayTint = defaults.bool(forKey: "v3.dayTint.v1")

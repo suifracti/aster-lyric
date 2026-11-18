@@ -678,6 +678,8 @@ struct V3VisualControls {
                 }
                 if showsExplanations { backgroundMotionControls }
             }
+            Toggle("文字与按钮跟随封面色", isOn: $settings.v3FollowCoverColor)
+                .help("开：正在唱的一句和它的读音、译文、已播放的波形、播放键、已开启的按钮和工具栏选中项，都用同一个封面色。\n关：这些都用白色。背景、封面轮廓光和四边灯带不受影响。")
             V3ChipToggles("背景细节", items: [("颗粒", $settings.v3BackdropGrain),
                                             ("暂停褪色", $settings.v3PauseFadesColor),
                                             ("鼠标视差", $settings.v3BackdropParallax),

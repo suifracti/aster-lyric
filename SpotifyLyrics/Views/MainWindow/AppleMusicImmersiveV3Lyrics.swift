@@ -1724,10 +1724,14 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
         return text
     }
 
+    /// Reading, romaji, translation and backing voices of the sung line share its cover colour,
+    /// so the whole line reads as one colour; other lines stay white.
+    private var layerTint: Color { isActive ? coverAccent : .white }
+
     private func translationText(_ translation: String) -> some View {
         Text(translation)
             .font(.system(size: translationSize, weight: .medium, design: .rounded))
-            .foregroundStyle(.white.opacity(isActive ? 0.86 : ((previewPresentation ?? settings.v3ArtworkPresentation) == .ambientFeathered ? 0.76 : 0.54)))
+            .foregroundStyle(layerTint.opacity(isActive ? 0.86 : ((previewPresentation ?? settings.v3ArtworkPresentation) == .ambientFeathered ? 0.76 : 0.54)))
             .lineLimit(nil)
             .fixedSize(horizontal: false, vertical: true)
             .transition(.opacity)
@@ -1807,7 +1811,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                         baseFont: .system(size: baseSize, weight: rowWeight, design: .rounded),
                         rubyFont: .system(size: rubySize, weight: .regular, design: .rounded),
                         baseColor: isActive ? coverAccent : .white,
-                        rubyColor: .white.opacity(rubyOpacity),
+                        rubyColor: layerTint.opacity(rubyOpacity),
                         rubySpacing: 1,
                         tokenVerticalSpacing: 3,
                         maxWidth: readableLineWidth, highlightColor: coverAccent
@@ -1824,7 +1828,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                     baseFont: .system(size: baseSize, weight: rowWeight, design: .rounded),
                     annotationFont: .system(size: rubySize, weight: .regular, design: .rounded),
                     baseColor: isActive ? coverAccent : .white,
-                    annotationColor: .white.opacity(rubyOpacity),
+                    annotationColor: layerTint.opacity(rubyOpacity),
                     maxWidth: readableLineWidth
                 )
             } else if preferences.showOriginal {
@@ -1861,7 +1865,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                    !readingRepeatsOriginal, let kana = displayKanaText {
                     Text(kana)
                         .font(.system(size: auxiliarySize, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(rubyOpacity))
+                        .foregroundStyle(layerTint.opacity(rubyOpacity))
                         .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity)
@@ -1876,7 +1880,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
             if shouldShowRomaji, let romaji = distinctRomaji {
                 Text(romaji)
                     .font(.system(size: auxiliarySize, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(romajiOpacity))
+                    .foregroundStyle(layerTint.opacity(romajiOpacity))
                     .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
@@ -1891,7 +1895,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                 // sung line's reading and translation, quieter than the reading and translation layers.
                 Text(backing)
                     .font(.system(size: auxiliarySize, weight: .medium, design: .rounded).italic())
-                    .foregroundStyle(.white.opacity(isActive ? 0.62 : 0.36))
+                    .foregroundStyle(layerTint.opacity(isActive ? 0.62 : 0.36))
                     .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1935,7 +1939,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                     baseFont: baseFont,
                     rubyFont: rubyFont,
                     baseColor: isActive ? coverAccent : .white,
-                    rubyColor: .white.opacity(rubyOpacity),
+                    rubyColor: layerTint.opacity(rubyOpacity),
                     rubySpacing: 1,
                     tokenVerticalSpacing: 3,
                     maxWidth: readableLineWidth, highlightColor: coverAccent
@@ -1952,7 +1956,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                 baseFont: baseFont,
                 rubyFont: rubyFont,
                 baseColor: isActive ? coverAccent : .white,
-                rubyColor: .white.opacity(rubyOpacity),
+                rubyColor: layerTint.opacity(rubyOpacity),
                 rubySpacing: 1,
                 tokenVerticalSpacing: 3,
                 maxWidth: readableLineWidth,

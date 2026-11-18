@@ -665,7 +665,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .preferredColorScheme(.dark)
         .modifier(PersonalLibrarySheets(service: library))
         .v3NightGentle(enabled: settings.v3NightGentleEnabled)
-        .environment(\.v3CoverAccent, coverAccent ?? .white)
+        .environment(\.v3CoverAccent, uiAccent ?? .white)
         .tint(.primary)
         .task(id: state.liveTrackIdentity) {
             library.prefetchCurrentTrack(stableKey: state.liveTrackIdentity?.stableKey)
@@ -2233,6 +2233,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
     private var visualControls: V3VisualControls { V3VisualControls(settings: settings) }
 
+    /// The cover colour for text and controls, or nil when the user keeps them white.
+    private var uiAccent: Color? { settings.v3FollowCoverColor ? coverAccent : nil }
+
     private func toolbarEntry(_ title: String, symbol: String, selected: Bool = false) -> some View {
         Label(title, systemImage: symbol)
             .labelStyle(LyricIslandToolbarLabelStyle())
@@ -2240,7 +2243,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             .foregroundStyle(Color.primary.opacity(0.94))
             .padding(.horizontal, 10)
             .frame(height: settings.v3ToolbarStyle == .titleBar ? 26 : 36)
-            .background(selected ? Color.primary.opacity(0.14) : .clear, in: Capsule())
+            // The open tool wears the same cover colour as the sung line; the label stays
+            // primary so it reads on both the light and the dark bar.
+            .background(selected ? (uiAccent.map { $0.opacity(0.34) } ?? Color.primary.opacity(0.14)) : .clear, in: Capsule())
             .contentShape(Capsule())
     }
 

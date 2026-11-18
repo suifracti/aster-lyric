@@ -341,6 +341,7 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **跳转保持与单句循环冲突。** 循环靠 Spotify 报告的位置判断句尾，保持会把它挡住（`testLyricLineRepeatsUntilCancelledAndStopsOnTrackChange` 抓到）；来源 `lyric-line-loop` 不保持。
 - **脏词还原只做等长替换。** 走 `ReadingProjection` 的显示投影（和繁简转换同一处），逐字片段按原 UTF-16 范围重取文字；投影缓存键加上这个开关。
 - **顺带修正**：`testPinnedPlacement` 还在要求“永远不放左侧”，与 Round 14 的“右侧放不下就放左侧”冲突，已按现行为更新。
+- **界面跟随封面色（2026-11-18）。** 用户截图里当前句是封面色，读音、播放键、红心仍是白色，看着不统一。现在由 `v3FollowCoverColor`（`v3.followCoverColor.v1`，默认开）统一控制：当前句连同读音、罗马音、译文、和声，已播放的波形，播放圆键，已开启的红心、随机、循环和「添加到歌单」（选歌单时，或已知在某个歌单里），以及工具栏选中项的底色，都取主窗口的 `v3CoverAccent`。关掉后它们全部变白。背景、轮廓光、四边灯带不受这个开关影响。开关在画面面板「背景细节」上方。
 - **未在真窗口核对**：本轮 Spotify 不响应 Apple Events，视频背景、歌手照片、律动没能在播放中的歌上看到效果。另有三个源码约定脚本（`apple_music_immersive_v3_contract`、`capsule_lyrics_contract`、`capsule_v4_top_attached_contract`）在改动前就失败，与本轮无关。
 
 ## L-023 背景大小统一、繁简匹配、QQ/酷狗逐字与对唱
