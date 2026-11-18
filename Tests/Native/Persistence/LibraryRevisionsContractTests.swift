@@ -242,8 +242,12 @@ final class LibraryRevisionsContractTests: XCTestCase {
         let ttml = #"<tt xml:lang="ja" xmlns:ttm="urn:ttm"><body><div><p begin="1s"><span begin="1s" end="2s">海</span><span ttm:role="x-bg">声</span><span ttm:role="x-translation" xml:lang="zh">海边</span></p><p begin="4s">風</p></div></body></tt>"#
         let file = try LocalLyricsFile(data: Data(ttml.utf8), kind: .ttml, preferredLanguage: "zh-Hans")
         XCTAssertEqual(file.lines.map(\.originalText), ["海", "風"])
-        let choices = try await repo.localRecordingChoices()
-        let destination = try XCTUnwrap(choices.first { $0.stableKey == identity.stableKey })
+        let laterMetadata = Track(title: track.title, artist: track.artist, album: track.album, duration: 91,
+                                  spotifyId: track.spotifyId)
+        let choices = try await repo.localRecordingChoices(preferredRecording: TrackIdentity(track: laterMetadata).stableKey)
+        let destination = try XCTUnwrap(choices.preferred)
+        XCTAssertEqual(destination.stableKey, identity.stableKey)
+        XCTAssertEqual(choices.records.filter { $0.stableKey == destination.stableKey }, [destination])
         let imported = try await repo.importLyricFile(file, into: destination.libraryTrack, archiveKey: destination.stableKey)
         let duplicate = try await repo.importLyricFile(file, into: track)
         XCTAssertEqual(duplicate, imported)

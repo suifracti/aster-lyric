@@ -97,8 +97,14 @@ final class ListeningHistoryContractTests: XCTestCase {
         XCTAssertTrue(detail.lyricsVersions.isEmpty)
         let withoutAssets = try await restartedRepository.loadPersonalLibraryEntries(includeMissingLyrics: true)
         XCTAssertFalse(withoutAssets.contains { $0.trackStableKey == identityB.stableKey }, "Viewing a history entry does not create a lyrics record")
+        let ordinaryChoices = try await restartedRepository.localRecordingChoices()
+        XCTAssertFalse(ordinaryChoices.records.contains { $0.stableKey == identityB.stableKey })
+        let relatedChoices = try await restartedRepository.localRecordingChoices(preferredRecording: identityB.stableKey)
+        let destination = try XCTUnwrap(relatedChoices.preferred)
+        XCTAssertEqual(destination.stableKey, identityB.stableKey)
+        XCTAssertEqual(relatedChoices.records.filter { $0.stableKey == destination.stableKey }, [destination])
 
-        let fileTrack = detail.entry.libraryTrack
+        let fileTrack = destination.libraryTrack
         let file = LyricsDocument(
             identity: TrackIdentity(track: fileTrack), title: fileTrack.title, artist: fileTrack.artist,
             album: fileTrack.album, duration: fileTrack.duration,

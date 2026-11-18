@@ -3517,8 +3517,10 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     }
 
     /// Metadata only. Choosing where to file a lyric does not load every song's version history.
-    func localRecordingChoices() throws -> [DatabaseTrackRecord] {
+    func localRecordingChoices(preferredRecording: String? = nil) throws
+        -> (records: [DatabaseTrackRecord], preferred: DatabaseTrackRecord?) {
         try prepare()
+        let preferred = try preferredRecording.flatMap { try archiveTrack(stableKey: $0) }
         let statement = try prepare("""
             SELECT stable_key, spotify_id, spotify_uri, isrc, title, artist_display,
                    album, duration, artwork_url, created_at, updated_at
@@ -3528,10 +3530,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             """)
         defer { sqlite3_finalize(statement) }
         var recordings: [DatabaseTrackRecord] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        while try stepListeningHistoryRow(statement) {
             recordings.append(try trackRecord(from: statement))
         }
-        return recordings
+        if let preferred, !recordings.contains(where: { $0.stableKey == preferred.stableKey }) {
+            recordings.insert(preferred, at: 0)
+        }
+        return (recordings, preferred)
     }
 
     private func trackRecord(from statement: OpaquePointer) throws -> DatabaseTrackRecord {

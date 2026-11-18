@@ -442,8 +442,9 @@ struct LyricFileFilingSheet: View {
         .background(WorkspacePalette.paper)
         .task {
             do {
-                records = try await library.fileDestinations()
-                if let record = records.first(where: { $0.stableKey == preferredRecording }) {
+                let destinations = try await library.fileDestinations(preferredRecording: preferredRecording)
+                records = destinations.records
+                if let record = destinations.preferred {
                     chosen = record.stableKey
                     query = record.title
                 } else if records.isEmpty || (file.manuscriptID != nil && results.isEmpty) { newRecord = true }

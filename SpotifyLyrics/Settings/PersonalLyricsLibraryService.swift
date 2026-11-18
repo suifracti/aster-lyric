@@ -374,8 +374,9 @@ public final class PersonalLyricsLibraryService: ObservableObject {
             .map { LibraryPassageHit(entry: $0, source: nil, excerpt: nil, matchesMetadata: true) }
     }
 
-    func fileDestinations() async throws -> [DatabaseTrackRecord] {
-        try await repository.localRecordingChoices()
+    func fileDestinations(preferredRecording: String?) async throws
+        -> (records: [DatabaseTrackRecord], preferred: DatabaseTrackRecord?) {
+        try await repository.localRecordingChoices(preferredRecording: preferredRecording)
     }
 
     func fileLyrics(_ file: LocalLyricsFile, with track: Track, archiveKey: String? = nil) async throws -> LibraryPassageTarget {
