@@ -36,6 +36,7 @@ struct LibraryPassageReader: View {
     @State private var showsReading: Bool
     @State private var showsTranslation = true
     @State private var hoveredLine: Int?
+    @State private var selectingExcerpt = false
     @State private var recall: LyricRecallSession?
     @State private var recallNotice: String?
     @State private var returnedLine: Int?
@@ -72,7 +73,15 @@ struct LibraryPassageReader: View {
 
     var body: some View {
         Group {
-            if let page, let recall {
+            if let page, selectingExcerpt {
+                LyricBookExcerptPicker(page: page, source: target.source, initialLine: focusedLine ?? topLine,
+                    backTitle: "返回阅读", back: {
+                        let previousTop = topLine
+                        selectingExcerpt = false
+                        scrollToLine(previousTop ?? visibleFocus, restoreTop: previousTop != nil)
+                    })
+                    .padding(18)
+            } else if let page, let recall {
                 LyricRecallView(page: page, session: recall, voices: voices,
                                 showsTranslation: showsTranslation, showsReading: showsReading) { line in
                     updateMatches(preferred: line)
@@ -120,6 +129,11 @@ struct LibraryPassageReader: View {
             }
             .buttonStyle(.borderless).padding(.horizontal, 18).padding(.vertical, 10)
             Divider()
+            if let label = target.excerptLineLabel, page != nil {
+                Label("歌本摘段 · \(label)", systemImage: "quote.opening")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .padding(.horizontal, 18).padding(.top, 8)
+            }
             if let recallNotice {
                 Text(recallNotice).font(.callout).foregroundStyle(.secondary)
                     .padding(.horizontal, 18).padding(.top, 8)
@@ -148,6 +162,10 @@ struct LibraryPassageReader: View {
                                     PortableLyricsExportMenu { page.portableEdition }
                                     LyricBookOffer(title: page.entry.title) { [.init(page: page, source: target.source)] }
                                         .controlSize(.small).fixedSize()
+                                    if page.lines.count > 1 {
+                                        Button("摘一段", systemImage: "scissors") { selectingExcerpt = true }
+                                            .controlSize(.small).fixedSize()
+                                    }
                                     if page.lines.contains(where: { !$0.original.isEmpty }) {
                                         Button { startRecall(page, anchor: focusedLine) } label: {
                                             Label("接下一句", systemImage: "text.bubble")
@@ -202,6 +220,7 @@ struct LibraryPassageReader: View {
 
     private func row(_ line: LibraryPassagePage.Line, page: LibraryPassagePage) -> some View {
         let selected = visibleFocus == line.id
+        let partOfExcerpt = target.excerptRange?.contains(line.id) == true
         let sourceLine = selected && focusedLine != line.id
             ? page.lines.first(where: { $0.id == focusedLine }) ?? line : line
         return HStack(alignment: .top, spacing: 8) {
@@ -223,7 +242,7 @@ struct LibraryPassageReader: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(selected ? WorkspacePalette.selection : .clear, in: RoundedRectangle(cornerRadius: 7))
+        .background(WorkspacePalette.selection.opacity(selected ? 1 : partOfExcerpt ? 0.5 : 0), in: RoundedRectangle(cornerRadius: 7))
         .onHover { inside in
             if inside { hoveredLine = line.id } else if hoveredLine == line.id { hoveredLine = nil }
         }
@@ -244,6 +263,7 @@ struct LibraryPassageReader: View {
         topLine = nil
         failure = nil
         page = nil
+        selectingExcerpt = false
         recall = nil
         recallNotice = nil
         returnedLine = nil

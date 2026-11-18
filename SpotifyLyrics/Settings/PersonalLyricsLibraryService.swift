@@ -199,7 +199,8 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         guard !page.lines.isEmpty else { return }
         let resolved = LibraryPassageTarget(trackKey: page.entry.trackStableKey, source: page.resolvedSource ?? target.source,
                                             find: target.find, lineIndex: target.lineIndex, savedQuote: target.savedQuote,
-                                            readingPosition: position ?? target.readingPosition)
+                                            readingPosition: position ?? target.readingPosition,
+                                            excerptEndLineIndex: target.excerptEndLineIndex)
         let version = resolved.source.versionID.flatMap { id -> String? in
             let kind: String
             switch resolved.source {

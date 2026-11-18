@@ -49,23 +49,37 @@ struct LyricBook: FileDocument, Codable, Equatable, Sendable {
         var note = ""
 
         init(page: LibraryPassagePage, source: LibraryPassageSource, excerpt: LibraryPassagePage.Line? = nil) {
-            kind = excerpt == nil ? .song : .quote
-            title = page.entry.title; artist = page.entry.artist; album = page.entry.album ?? ""
-            edition = excerpt == nil ? page.edition : "摘句 · " + page.edition
             let rows = excerpt.map { [$0] } ?? page.lines
-            lines = rows.map(Self.bookLine)
-            if let excerpt {
-                let context = PassageVoicePresentation(lines: page.lines)
-                if let label = context.label(for: excerpt.id) { voices = .init(excerptLabel: label) }
-            } else {
-                let context = PassageVoicePresentation(lines: rows.enumerated().map { index, row in
-                    .init(id: index, original: row.original, translation: row.translation, reading: row.reading,
-                          background: row.background, startTime: row.startTime, endTime: row.endTime,
-                          performerID: row.performerID, romanization: row.romanization)
-                })
-                if !context.labels.isEmpty { voices = context }
+            self.init(page: page, rows: rows, kind: excerpt == nil ? .song : .quote,
+                      edition: excerpt == nil ? page.edition : "摘句 · " + page.edition,
+                      origin: Self.origin(for: page, source: source, excerpt: excerpt),
+                      voiceContext: PassageVoicePresentation(lines: page.lines))
+        }
+
+        init?(page: LibraryPassagePage, source: LibraryPassageSource, range: ClosedRange<Int>) {
+            let context = PassageVoicePresentation(lines: page.lines)
+            let rows = context.visibleLines(in: page.lines).filter { range.contains($0.id) }
+            guard let first = rows.first, let last = rows.last,
+                  first.id == range.lowerBound, last.id == range.upperBound else { return nil }
+            if first.id == last.id {
+                self.init(page: page, source: source, excerpt: first)
+                return
             }
-            origin = Self.origin(for: page, source: source, excerpt: excerpt)
+            var origin = Self.origin(for: page, source: source, excerpt: first)
+            origin.excerptEndLineIndex = last.id
+            self.init(page: page, rows: rows, kind: .quote, edition: "摘段 · " + page.edition,
+                      origin: origin, voiceContext: context)
+        }
+
+        private init(page: LibraryPassagePage, rows: [LibraryPassagePage.Line], kind: Kind,
+                     edition: String, origin: LibraryPassageTarget, voiceContext: PassageVoicePresentation) {
+            self.kind = kind
+            title = page.entry.title; artist = page.entry.artist; album = page.entry.album ?? ""
+            self.edition = edition
+            self.origin = origin
+            lines = rows.map(Self.bookLine)
+            let labels = PassageVoicePresentation(reindexing: voiceContext, lineIDs: rows.map(\.id))
+            if !labels.labels.isEmpty { voices = labels }
         }
 
         private static func bookLine(_ row: LibraryPassagePage.Line) -> Line {
@@ -111,8 +125,8 @@ struct LyricBook: FileDocument, Codable, Equatable, Sendable {
         }
 
         var byline: String {
-            let fields = kind == .quote ? [title, artist] : [artist, album]
-            return fields.filter { !$0.isEmpty }.joined(separator: " · ")
+            let fields = kind == .quote ? [title, origin.excerptLineLabel, artist] : [artist, album]
+            return fields.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
         }
     }
 

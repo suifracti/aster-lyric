@@ -973,6 +973,15 @@ public struct LibraryPassageTarget: Hashable, Identifiable, Codable, Sendable {
     var savedQuote: SavedQuote? = nil
     // The reader can move away from the bookmarked quote without moving its translation snapshot.
     var readingPosition: ReadingPosition? = nil
+    var excerptEndLineIndex: Int? = nil
+    var excerptRange: ClosedRange<Int>? {
+        guard let lineIndex, let excerptEndLineIndex, lineIndex >= 0,
+              lineIndex <= excerptEndLineIndex, excerptEndLineIndex < Int.max else { return nil }
+        return lineIndex...excerptEndLineIndex
+    }
+    var excerptLineLabel: String? {
+        excerptRange.map { "第 \($0.lowerBound + 1)–\($0.upperBound + 1) 行" }
+    }
     public var id: Self { self }
 }
 
@@ -1045,7 +1054,8 @@ struct LibraryPassagePage: Sendable {
         default: break
         }
         return .init(trackKey: entry.trackStableKey, source: source, find: target.find,
-                     lineIndex: target.lineIndex, savedQuote: target.savedQuote, readingPosition: position)
+                     lineIndex: target.lineIndex, savedQuote: target.savedQuote, readingPosition: position,
+                     excerptEndLineIndex: target.excerptEndLineIndex)
     }
 
     func originalOccurrence(of text: String, preferred: Int?) -> Int? {
@@ -1082,8 +1092,12 @@ struct PassageVoicePresentation: Codable, Equatable, Sendable {
         }
     }
 
-    init(excerptLabel: String?) {
-        labels[0] = excerptLabel
+    init(reindexing context: Self, lineIDs: [Int]) {
+        let newIndices = Dictionary(uniqueKeysWithValues: lineIDs.enumerated().map { ($0.element, $0.offset) })
+        for (index, id) in lineIDs.enumerated() {
+            labels[index] = context.labels[id]
+            aliases[index] = context.aliases[id].flatMap { newIndices[$0] }
+        }
     }
 
     func label(for id: Int) -> String? { labels[id] }

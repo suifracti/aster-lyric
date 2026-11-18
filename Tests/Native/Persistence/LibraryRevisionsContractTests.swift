@@ -135,6 +135,46 @@ final class LibraryRevisionsContractTests: XCTestCase {
         XCTAssertEqual(pdf.page(at: 1)?.annotations.filter { $0.type == "Link" }.count, 2)
     }
 
+    func testSongbookExcerptKeepsTheSecondChorusAndItsSavedEdition() async throws {
+        let text = """
+        <tt xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xml:lang="ja"><body><div>
+        <p begin="1s" end="2s" ttm:agent="v1">また会える</p>
+        <p begin="2s" end="3s" ttm:agent="v1">帰り道</p>
+        <p begin="8s" end="9s" ttm:agent="v1">また会える<span ttm:role="x-translation" xml:lang="zh-Hans">还会再见</span></p>
+        <p begin="8s" end="9s" ttm:agent="v2">また会える</p>
+        <p begin="9s" end="10s" ttm:agent="v2">帰り道<span ttm:role="x-bg">小声</span></p>
+        <p begin="10s" end="11s" ttm:agent="v1">この先へ</p></div></body></tt>
+        """
+        let file = try LocalLyricsFile(data: Data(text.utf8), kind: .ttml, preferredLanguage: "zh-Hans")
+        let track = Track(title: "帰り道", artist: "Fixture", album: "", duration: 60)
+        let repo = SQLiteLyricsRepository(databaseURL: NativeTestRuntime.root.appendingPathComponent("\(UUID()).sqlite3"))
+        let target = try await repo.importLyricFile(file, into: track)
+        let detail = try await repo.loadPersonalLibraryTrackDetail(stableKey: target.trackKey)
+        let translation = try XCTUnwrap(detail?.translationVersions.first)
+        let source = LibraryPassageSource.translation(translation.id)
+        let loaded = try await repo.readLibraryPassage(.init(trackKey: target.trackKey, source: source))
+        let page = try XCTUnwrap(loaded)
+        let first = try XCTUnwrap(LyricBook.Chapter(page: page, source: source, range: 0...1))
+        let second = try XCTUnwrap(LyricBook.Chapter(page: page, source: source, range: 2...4))
+        XCTAssertEqual(first.lines.map(\.original), second.lines.map(\.original))
+        XCTAssertEqual(second.readingRows.first?.voice, "合唱")
+        XCTAssertEqual(second.lines.first?.translation, "还会再见")
+        XCTAssertEqual(second.lines.last?.background, "小声")
+        var book = LyricBook()
+        XCTAssertNotEqual(book.add(first), book.add(second))
+        XCTAssertEqual(book.add(second), second.id)
+        let restored = try LyricBook(data: book.encoded())
+        let saved = try XCTUnwrap(restored.chapters.last)
+        XCTAssertEqual(saved.origin.source, source)
+        XCTAssertEqual(saved.origin.excerptRange, 2...4)
+        let reopened = try await repo.readLibraryPassage(saved.origin)
+        XCTAssertEqual(reopened?.lines.first(where: { $0.id == saved.origin.lineIndex })?.startTime, 8)
+        let pdf = try XCTUnwrap(PDFDocument(data: try LyricBookPrint.data(for: restored)))
+        let printed = (0..<pdf.pageCount).compactMap { pdf.page(at: $0)?.string }.joined()
+        XCTAssertTrue(printed.contains("还会再见"))
+        XCTAssertFalse(printed.contains("この先へ"))
+    }
+
     func testMovingAndRepeatingStanzasKeepsBlankSpaceAndTimingLabels() throws {
         let text = "\r\n[00:01.00]第一段🌿\r\n下一行\r\n \t\r\n回来\r\n\r\n回来\r\n"
         let draft = LyricManuscript(text: text)
