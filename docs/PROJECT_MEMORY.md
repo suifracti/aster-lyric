@@ -56,6 +56,7 @@
 | 状态栏双行词、日英混排少半句、收藏弹窗里正在唱的一句、没放歌时的菜单 | L-044；MenuBarTextFormatter.statusImage、WorkspaceShelfCard、KeepLyricButton |
 | 全屏歌词按 Esc 没反应，退出后留下大窗 | L-031；FullScreenLyricsWindowController、handleExitCommand |
 | 桌面歌词、灵动岛、菜单栏分散难找，调整一个外观时另一个预览被采用 | L-043；AppearanceSettingsView、AppearanceSurface、PresentationSelectionStore.apply |
+| 搜设置后还得找开关、状态栏字号搜不到 | L-043；AppearanceControl、WorkspaceLookupRow、SettingsHistory |
 | 设置里找歌或歌词、从金句或封面墙回到歌、没放音乐时继续整理、历史录音一直转圈 | L-043；SettingsWorkspace、SettingsHistory、selectedDetail(for:) |
 
 ## 默认自动执行：不等用户提醒
@@ -779,6 +780,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 2026-11-19：仅有播放记录、没有封面和歌词的旧歌也能打开空档案，歌曲资料按同一个历史录音键读取。浏览不写入歌曲表；从空档案明确存入文件或手稿时才建立原词记录。临时库从无封面的历史项打开、存锁定歌词，再通过同一播放录音键读回。
 
 外观按主窗口、桌面歌词、灵动岛和菜单栏四处切换，搜索和后退都能回到其中一处。可视地图只导航；显示开关和停靠按钮调用现有窗口控制器。改桌面歌词版本时曾把另一处尚在试看的灵动岛一起保存。现在 `apply(category:stableID:)` 只提交用户选中的位置，灵动岛也只在自己的呈现选择改变时收起。经典布局与实验工作台的文字和翻译入口在原处展开，沿用相同设置值。
+
+2026-11-19：`AppearanceControl` 把常用外观设置连到原页中的真实控件，支持「状态栏字号」或「桌面歌词暂停隐藏」这类连写搜索。设置历史保留地点和控件，现有页面滚到目标并加细边框；菜单栏弹窗继续复用同一套宽度、滚动和字号控件。隔离原生实测两处滚动与标记、原搜索的后退前进、暂停开关可改；定向测试 30 项通过、1 项跳过。
 
 
 「找回一句」与工作台调用同一套本地匹配。歌曲信息与歌词可以同时命中；独立译文、读音优先于原词里附带的相同文字，阅读页保留版本 UUID。⌘K 通过 App 的编辑菜单打开，菜单栏和 macOS 服务进入同一窗口。系统服务只读取调用方提供的选区 pasteboard。macOS 发现应用服务时需要应用已安装到 Applications 目录或其子目录。[Apple Services 实现说明](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/SysServices/Articles/providing.html)

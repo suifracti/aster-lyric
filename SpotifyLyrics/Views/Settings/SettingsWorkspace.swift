@@ -330,14 +330,20 @@ struct WorkspaceLookupRow: Identifiable {
         rows += favorites.filter {
             !quoteIDs.contains($0.id) && [$0.title, $0.artist].contains { $0.localizedStandardContains(term) }
         }.map(quote)
-        let surfaces = AppearanceSurface.allCases.filter { $0.matches(term) }
+        let controls = AppearanceControl.allCases.filter { $0.matches(term) }
+        rows += controls.map { control in
+            Self(id: "appearance.\(control.rawValue)", group: .tools, title: control.title, detail: "外观 › \(control.surface.title)",
+                 icon: control.surface.symbol, location: .init(appearance: control.surface, control: control))
+        }
+        let covered = Set(controls.map(\.surface))
+        let surfaces = AppearanceSurface.allCases.filter { !covered.contains($0) && $0.matches(term) }
         rows += surfaces.map { surface in
             Self(id: "surface." + surface.rawValue, group: .tools, title: surface.title, detail: surface.detail,
                  icon: surface.symbol, location: .init(appearance: surface))
         }
         let primary = SettingsCategory.primaryCases
         rows += (primary + SettingsCategory.allCases.filter { !primary.contains($0) }).filter {
-            $0.matches(term) && ($0 != .appearance || surfaces.isEmpty)
+            $0.matches(term) && ($0 != .appearance || (surfaces.isEmpty && controls.isEmpty))
         }.map(tool)
         return rows
     }

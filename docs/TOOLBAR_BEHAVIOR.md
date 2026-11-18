@@ -1089,7 +1089,7 @@ The three recommended batches are done. This round takes small items the pool ne
   - Stored in `Application Support/SpotifyLyrics/favorite-lines.json`, beside the database. The database and its schema are not touched.
   - The same words in another song are a separate entry; empty lines cannot be kept.
 - **整句亮 (H7):** a fourth chip in 歌词行. Lyrics with word timing are shown line by line, without the word-by-word fill. Off by default. Key `v3.wholeLineTiming.v1`. Display only: the stored lyrics keep their word timing.
-- **Settings search** already matches pages by keyword (H4 as far as it is done). The new names were added: 桌面歌词, 停靠, 程序坞, 暂停时隐藏, 全屏, 截图, 录屏; 金句, 收藏, 封面墙, 回顾卡.
+- **Settings search** matches pages and common appearance controls. Searches such as 「状态栏字号」「桌面歌词暂停隐藏」「灵动岛所在屏幕」 link to the named control in its existing appearance page. The page scrolls to the control and outlines it. Back returns to the previous query and result. A surface name still opens that surface's appearance page.
 
 **Checked:** 188 native tests pass, including saving and reopening the kept-lines file in a temporary folder. The app starts and plays with the build.
 

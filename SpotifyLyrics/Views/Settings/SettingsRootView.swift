@@ -193,19 +193,23 @@ struct SettingsLocation: Equatable {
     var archivePassage: LibraryPassageTarget?
     var passage: LibraryPassageTarget?
     var appearanceSurface: AppearanceSurface = .main
+    var appearanceControl: AppearanceControl?
     var opensSpotifyOnline = false
 
     var navigationTitle: String {
         if !query.isEmpty { return "搜索本机资料" }
         if passage != nil { return "阅读歌词" }
         if opensSpotifyOnline { return "Spotify 在线曲库" }
-        if page == .appearance { return "\(page.rawValue) › \(appearanceSurface.title)" }
+        if page == .appearance {
+            return [page.rawValue, appearanceSurface.title, appearanceControl?.title].compactMap { $0 }.joined(separator: " › ")
+        }
         return page.rawValue
     }
 
-    init(appearance surface: AppearanceSurface) {
+    init(appearance surface: AppearanceSurface, control: AppearanceControl? = nil) {
         self.init(.appearance)
         appearanceSurface = surface
+        appearanceControl = control
     }
 
     init(reading passage: LibraryPassageTarget) {
@@ -369,7 +373,8 @@ struct SettingsRootView: View {
                                        archivePassage: history.current.archivePassage, favoriteQuery: $favoriteQuery,
                                        backFromReading: history.canGoBack ? { history.back() } : nil,
                                        openArchiveFromReading: { history.openArchive(fromReading: $0) },
-                                       appearanceSurface: history.current.appearanceSurface, opensSpotifyOnline: history.current.opensSpotifyOnline,
+                                       appearanceSurface: history.current.appearanceSurface, appearanceControl: history.current.appearanceControl,
+                                       opensSpotifyOnline: history.current.opensSpotifyOnline,
                                        library: library, navigate: navigate,
                                        rememberSelection: { history.rememberLibrarySelection($0) })
                 } else {
@@ -430,6 +435,7 @@ private struct SettingsDetailView: View {
     let backFromReading: (() -> Void)?
     let openArchiveFromReading: (LibraryPassageTarget) -> Void
     let appearanceSurface: AppearanceSurface
+    let appearanceControl: AppearanceControl?
     let opensSpotifyOnline: Bool
     let library: PersonalLyricsLibraryService
     let navigate: (SettingsLocation) -> Void
@@ -449,7 +455,8 @@ private struct SettingsDetailView: View {
                     onOpenReading: { selection = .reading }
                 ).padding(16)
             case .appearance:
-                AppearanceSettingsView(surface: appearanceSurface, select: { navigate(.init(appearance: $0)) },
+                AppearanceSettingsView(surface: appearanceSurface, focused: appearanceControl,
+                                       select: { navigate(.init(appearance: $0)) },
                                        openVersions: { navigate(.init(.experienceLibrary)) })
             case .reading: ReadingSettingsView().padding(16)
             case .servicesAndSources: ServicesAndSourcesSettingsView(scope: .lyrics).padding(16)

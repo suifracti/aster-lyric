@@ -490,6 +490,7 @@ struct MenuBarAppearancePreview: View {
 
 struct MenuBarLyricsAppearanceControls: View {
     @ObservedObject var settings: AppSettingsStore
+    var focused: AppearanceControl? = nil
 
     private var fontSize: Double {
         Double(MenuBarLyricsAppearance(fontSize: settings.menuBarLyricsFontSize).effectiveFontSize)
@@ -497,51 +498,58 @@ struct MenuBarLyricsAppearanceControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Picker("占用宽度", selection: $settings.menuBarWidthMode) {
-                Text("随内容伸缩").tag("adaptive")
-                Text("固定宽度").tag("fixed")
-            }.pickerStyle(.segmented)
-            Text(settings.menuBarWidthMode == "fixed" ? "固定宽度" : "最大宽度")
-                .font(.system(size: 11, weight: .medium))
-            V3NumericSlider(value: $settings.menuBarWidth, in: 120...480, step: 1, unit: "pt")
-                .accessibilityLabel("菜单栏歌词占用宽度")
-            Picker("长句显示", selection: $settings.menuBarOverflow) {
+            VStack(alignment: .leading, spacing: 10) {
+                Picker(AppearanceControl.menuBarWidth.title, selection: $settings.menuBarWidthMode) {
+                    Text("随内容伸缩").tag("adaptive")
+                    Text("固定宽度").tag("fixed")
+                }.pickerStyle(.segmented)
+                Text(settings.menuBarWidthMode == "fixed" ? "固定宽度" : "最大宽度")
+                    .font(.system(size: 11, weight: .medium))
+                V3NumericSlider(value: $settings.menuBarWidth, in: 120...480, step: 1, unit: "pt")
+                    .accessibilityLabel("菜单栏歌词占用宽度")
+            }
+            .appearanceControl(.menuBarWidth, focused: focused)
+            Picker(AppearanceControl.menuBarOverflow.title, selection: $settings.menuBarOverflow) {
                 Text("滚动").tag("scroll")
                 Text("省略").tag("ellipsis")
             }.pickerStyle(.segmented)
+                .appearanceControl(.menuBarOverflow, focused: focused)
             Text("固定宽度能稳住其他图标的位置。滚动速度会配合换句，静止时悬停可看全文。")
                 .font(.caption).foregroundStyle(.secondary)
             Divider()
-
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 6) {
-                Toggle("原文", isOn: $settings.menuBarLyricsShowsOriginal)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                Toggle("译文", isOn: $settings.menuBarLyricsShowsTranslation)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                Toggle("假名", isOn: $settings.menuBarLyricsShowsKana)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                Toggle("罗马音 / 拼音", isOn: $settings.menuBarLyricsShowsRomaji)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+            VStack(alignment: .leading, spacing: 10) {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 6) {
+                    Toggle("原文", isOn: $settings.menuBarLyricsShowsOriginal)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    Toggle("译文", isOn: $settings.menuBarLyricsShowsTranslation)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    Toggle("假名", isOn: $settings.menuBarLyricsShowsKana)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    Toggle("罗马音 / 拼音", isOn: $settings.menuBarLyricsShowsRomaji)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .toggleStyle(.checkbox)
+                Picker("注音位置", selection: $settings.menuBarLyricsReadingsAbove) {
+                    Text("原文上方").tag(true)
+                    Text("同一行").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .disabled(!settings.menuBarLyricsShowsOriginal || (!settings.menuBarLyricsShowsKana && !settings.menuBarLyricsShowsRomaji))
             }
-            .toggleStyle(.checkbox)
-            Picker("注音位置", selection: $settings.menuBarLyricsReadingsAbove) {
-                Text("原文上方").tag(true)
-                Text("同一行").tag(false)
-            }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            .disabled(!settings.menuBarLyricsShowsOriginal || (!settings.menuBarLyricsShowsKana && !settings.menuBarLyricsShowsRomaji))
+            .appearanceControl(.menuBarLanguage, focused: focused)
             VStack(alignment: .leading, spacing: 5) {
-                Text("字号")
+                Text(AppearanceControl.menuBarFont.title)
                 V3NumericSlider(value: Binding(get: { fontSize }, set: { settings.menuBarLyricsFontSize = $0 }),
                                 in: 10...18, step: 1, unit: "pt")
                     .accessibilityLabel("状态栏歌词字号")
             }
+            .appearanceControl(.menuBarFont, focused: focused)
             Text("只显示已有读音，不自动调用 AI。上方注音适应系统菜单栏高度；内容为空时显示歌名。")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

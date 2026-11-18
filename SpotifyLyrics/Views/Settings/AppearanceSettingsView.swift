@@ -40,23 +40,77 @@ enum AppearanceSurface: String, CaseIterable, Identifiable {
         }
         let words = query.split(whereSeparator: { $0.isWhitespace })
         let text = "\(title) \(detail) \(keywords)"
-        let names: [String] = switch self {
+        return !words.isEmpty && words.allSatisfy { word in
+            if text.localizedStandardContains(String(word)) { return true }
+            return searchNames.contains { name in
+                word.hasPrefix(name) && text.localizedStandardContains(String(word.dropFirst(name.count)))
+            }
+        }
+    }
+
+    fileprivate var searchNames: [String] {
+        switch self {
         case .main: [title]
         case .desktop: [title, "悬浮歌词", "悬浮窗"]
         case .island: [title, "顶部胶囊"]
         case .menuBar: [title, "状态栏歌词", "菜单栏", "状态栏"]
         }
-        return !words.isEmpty && words.allSatisfy { word in
-            if text.localizedStandardContains(String(word)) { return true }
-            return names.contains { name in
-                word.hasPrefix(name) && text.localizedStandardContains(String(word.dropFirst(name.count)))
+    }
+}
+
+enum AppearanceControl: String, CaseIterable {
+    case mainLayout, fullScreenDisplay
+    case desktopDisplay, desktopDock, desktopFont, desktopOpacity, desktopPause, desktopCapture
+    case islandDisplay, islandStyle, islandCapture
+    case menuBarWidth, menuBarOverflow, menuBarLanguage, menuBarFont
+
+    private var entry: (surface: AppearanceSurface, title: String, aliases: String) {
+        switch self {
+        case .mainLayout: (.main, "主窗口布局", "主界面")
+        case .fullScreenDisplay: (.main, "全屏歌词开在另一块屏幕", "另一屏 副屏 第二块屏幕 外接显示器 双屏")
+        case .desktopDisplay: (.desktop, "显示器", "移动到 选屏 副屏 屏幕 跨屏")
+        case .desktopDock: (.desktop, "停靠位置", "顶部 屏幕顶部 底部 程序坞")
+        case .desktopFont: (.desktop, "字号", "字体大小 字变大")
+        case .desktopOpacity: (.desktop, "不透明度", "透明度 底色透明 背景透明")
+        case .desktopPause: (.desktop, "暂停时隐藏", "暂停隐藏 停播淡出")
+        case .desktopCapture: (.desktop, "截图和录屏时隐藏", "录屏隐藏 截图隐藏")
+        case .islandDisplay: (.island, "所在屏幕", "显示器 选屏 副屏 跟随主窗口")
+        case .islandStyle: (.island, "呈现方式", "样式 布局 灵动岛样式 胶囊样式")
+        case .islandCapture: (.island, "截图和录屏时隐藏", "录屏隐藏 截图隐藏")
+        case .menuBarWidth: (.menuBar, "占用宽度", "固定宽度 最大宽度 伸缩 不挤图标")
+        case .menuBarOverflow: (.menuBar, "长句显示", "滚动 省略 长句滚动 长句省略")
+        case .menuBarLanguage: (.menuBar, "文字与读音", "双行 原文 译文 翻译 假名 罗马音 拼音 注音 注音位置")
+        case .menuBarFont: (.menuBar, "字号", "字体大小 字变大")
+        }
+    }
+
+    var surface: AppearanceSurface { entry.surface }
+    var title: String { entry.title }
+
+    func matches(_ query: String) -> Bool {
+        let prefix = surface.searchNames.first { query.hasPrefix($0) }
+        let detail = prefix.map { String(query.dropFirst($0.count)) } ?? query
+        let words = detail.split(whereSeparator: \.isWhitespace)
+        let text = "\(title) \(entry.aliases)"
+        return !words.isEmpty && words.allSatisfy { text.localizedStandardContains(String($0)) }
+    }
+}
+
+extension View {
+    func appearanceControl(_ control: AppearanceControl, focused: AppearanceControl?) -> some View {
+        self.overlay {
+            if control == focused {
+                RoundedRectangle(cornerRadius: 7).strokeBorder(WorkspacePalette.ink.opacity(0.45))
+                    .padding(-4).allowsHitTesting(false).accessibilityHidden(true)
             }
         }
+        .id(control)
     }
 }
 
 struct AppearanceSettingsView: View {
     let surface: AppearanceSurface
+    let focused: AppearanceControl?
     let select: (AppearanceSurface) -> Void
     let openVersions: () -> Void
     @EnvironmentObject private var settings: AppSettingsStore
@@ -83,16 +137,23 @@ struct AppearanceSettingsView: View {
                 }
                 .padding(.horizontal, 22).padding(.top, 14).padding(.bottom, 12)
                 Divider()
-                Form {
-                    switch surface {
-                    case .main: mainControls
-                    case .desktop: desktopControls
-                    case .island: IslandAppearanceControls(selections: settings.presentationSelections)
-                    case .menuBar: menuBarControls
+                ScrollViewReader { proxy in
+                    Form {
+                        switch surface {
+                        case .main: mainControls
+                        case .desktop: desktopControls
+                        case .island: IslandAppearanceControls(selections: settings.presentationSelections, focused: focused)
+                        case .menuBar: menuBarControls
+                        }
+                    }
+                    .formStyle(.grouped).scrollContentBackground(.hidden)
+                    .id(surface)
+                    .task(id: focused) {
+                        guard let focused else { return }
+                        await Task.yield()
+                        if !Task.isCancelled { proxy.scrollTo(focused, anchor: .center) }
                     }
                 }
-                .formStyle(.grouped).scrollContentBackground(.hidden)
-                .id(surface)
             }
             .background(WorkspacePalette.paper)
         }
@@ -101,6 +162,7 @@ struct AppearanceSettingsView: View {
     @ViewBuilder private var mainControls: some View {
         Section("主窗口") {
             AppearanceLayoutPicker(settings: settings)
+                .appearanceControl(.mainLayout, focused: focused)
             if settings.mainWindowLayoutStyle == .appleMusicImmersiveV3 {
                 ToolbarPanelLink(title: "调整封面、背景与布局", panel: .picture)
             }
@@ -116,8 +178,9 @@ struct AppearanceSettingsView: View {
                     ForEach(ClassicCompanionPresentation.allCases) { Text($0.title).tag($0.rawValue) }
                 }
             }
-            Toggle("全屏歌词开在另一块屏幕", isOn: $settings.fullScreenPrefersOtherScreen)
+            Toggle(AppearanceControl.fullScreenDisplay.title, isOn: $settings.fullScreenPrefersOtherScreen)
                 .help("接入第二块屏幕时，主窗口留在原处。")
+                .appearanceControl(.fullScreenDisplay, focused: focused)
         }
     }
 
@@ -134,24 +197,27 @@ struct AppearanceSettingsView: View {
                 ForEach(FloatingLyricsInteractionMode.allCases, id: \.self) { Text($0.title).tag($0) }
             }
             LyricsDisplayControls(forIsland: false)
+                .appearanceControl(.desktopDisplay, focused: focused)
             HStack {
-                Text("停靠位置")
+                Text(AppearanceControl.desktopDock.title)
                 Spacer()
                 Button("屏幕顶部") { WindowManager.shared.dockFloatingLyrics(.top, state: playback) }
                 Button("程序坞上方") { WindowManager.shared.dockFloatingLyrics(.bottom, state: playback) }
             }
             .disabled(playback.showFullScreen)
             .help("在当前歌词屏幕上显示并移动桌面歌词。")
+            .appearanceControl(.desktopDock, focused: focused)
         }
         Section("文字与底色") {
             Picker("行数", selection: $settings.floatingDesktopLineMode) {
                 ForEach(FloatingDesktopLineMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
             }
             FloatingDesktopCompanionPicker(settings: settings)
-            LabeledContent("字号") {
+            LabeledContent(AppearanceControl.desktopFont.title) {
                 V3NumericSlider(value: $settings.floatingDesktopFontSize, in: 22...64, step: 1, unit: "pt")
                     .accessibilityLabel("桌面歌词字号")
             }
+            .appearanceControl(.desktopFont, focused: focused)
             Picker("底色", selection: $settings.floatingLyricsSurfaceStyleRawValue) {
                 ForEach(FloatingLyricsSurfaceStyle.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
             }
@@ -159,13 +225,17 @@ struct AppearanceSettingsView: View {
                 V3NumericSlider(value: $settings.floatingWindowOpacity, in: 0.45...1, step: 0.01, unit: "%", displayScale: 100)
                     .accessibilityLabel("桌面歌词透明度")
             }
+            .appearanceControl(.desktopOpacity, focused: focused)
             DisclosureGroup("配色与描边") { FloatingDesktopColorControls(settings: settings) }
         }
         Section("显示时机") {
             Toggle("桌面歌词保持置顶", isOn: $settings.floatingWindowAlwaysOnTop)
-            Toggle("暂停时隐藏", isOn: $settings.floatingHidesWhenPaused).help("暂停三秒后淡出，继续播放时回来。")
+            Toggle(AppearanceControl.desktopPause.title, isOn: $settings.floatingHidesWhenPaused)
+                .help("暂停三秒后淡出，继续播放时回来。")
+                .appearanceControl(.desktopPause, focused: focused)
             Toggle("其他应用全屏时隐藏", isOn: $settings.floatingHidesOverFullScreen)
             CaptureVisibilityToggle(settings: settings)
+                .appearanceControl(.desktopCapture, focused: focused)
         }
     }
 
@@ -173,7 +243,7 @@ struct AppearanceSettingsView: View {
         Section("菜单栏歌词") {
             Toggle("在系统菜单栏显示歌词", isOn: $settings.menuBarLyricsEnabled)
             MenuBarAppearancePreview(settings: settings, controller: .shared)
-            MenuBarLyricsAppearanceControls(settings: settings)
+            MenuBarLyricsAppearanceControls(settings: settings, focused: focused)
         }
     }
 }
@@ -182,7 +252,7 @@ struct AppearanceLayoutPicker: View {
     @ObservedObject var settings: AppSettingsStore
 
     var body: some View {
-        Picker("主窗口布局", selection: Binding(get: { settings.mainWindowLayoutStyle }, set: { style in
+        Picker(AppearanceControl.mainLayout.title, selection: Binding(get: { settings.mainWindowLayoutStyle }, set: { style in
             _ = settings.applyPresentationSelection(category: .mainWindow, stableID: style.presentationStableID)
         })) {
             ForEach(MainWindowLayoutStyle.userSelectableCases) { Text($0.title).tag($0) }
@@ -193,7 +263,7 @@ struct AppearanceLayoutPicker: View {
 private struct CaptureVisibilityToggle: View {
     @ObservedObject var settings: AppSettingsStore
     var body: some View {
-        Toggle("截图和录屏时隐藏", isOn: $settings.floatingHiddenFromCapture)
+        Toggle(AppearanceControl.desktopCapture.title, isOn: $settings.floatingHiddenFromCapture)
             .help("桌面歌词和灵动岛共用此选项。")
     }
 }
@@ -269,6 +339,7 @@ private struct AppearanceSurfaceMap: View {
 
 private struct IslandAppearanceControls: View {
     @ObservedObject var selections: PresentationSelectionStore
+    let focused: AppearanceControl?
     @EnvironmentObject private var settings: AppSettingsStore
     @EnvironmentObject private var playback: PlaybackState
     @State private var pose = PresentationPreviewCapsuleState.collapsed
@@ -281,14 +352,17 @@ private struct IslandAppearanceControls: View {
                 else { WindowManager.shared.hideCapsule() }
             })).disabled(playback.showFullScreen)
             LyricsDisplayControls(forIsland: true)
-            Picker("呈现方式", selection: Binding(get: { current }, set: { value in
+                .appearanceControl(.islandDisplay, focused: focused)
+            Picker(AppearanceControl.islandStyle.title, selection: Binding(get: { current }, set: { value in
                 _ = settings.applyPresentationSelection(category: .capsule, stableID: value)
             })) {
                 ForEach(selections.catalog.entries(for: .capsule).filter {
                     settings.canApplyPresentation(category: .capsule, stableID: $0.stableID)
                 }) { entry in Text(entry.displayName).tag(entry.stableID) }
             }
+            .appearanceControl(.islandStyle, focused: focused)
             CaptureVisibilityToggle(settings: settings)
+                .appearanceControl(.islandCapture, focused: focused)
         }
         if let entry = selections.catalog.metadata(for: current) {
             Section("试读") {
@@ -323,7 +397,7 @@ private struct LyricsDisplayControls: View {
     var body: some View {
         Group {
             if forIsland {
-                Picker("所在屏幕", selection: $settings.capsulePreferredDisplayID) {
+                Picker(AppearanceControl.islandDisplay.title, selection: $settings.capsulePreferredDisplayID) {
                     Text("跟随主窗口").tag("")
                     ForEach(displays) { display in Text(display.name).tag(display.id) }
                     if !settings.capsulePreferredDisplayID.isEmpty,
@@ -332,7 +406,7 @@ private struct LyricsDisplayControls: View {
                     }
                 }
             } else {
-                LabeledContent("显示器") {
+                LabeledContent(AppearanceControl.desktopDisplay.title) {
                     if displays.count > 1 {
                         Menu("移动到…") {
                             ForEach(displays) { display in

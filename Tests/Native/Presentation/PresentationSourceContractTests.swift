@@ -480,6 +480,31 @@ final class PresentationSourceContractTests: XCTestCase {
         XCTAssertEqual(history.current.query, "刘海")
     }
 
+    func testAppearanceSearchOpensTheNamedControlAndKeepsItInHistory() throws {
+        let examples: [(String, String, AppearanceSurface)] = [
+            ("状态栏字号", "字号", .menuBar),
+            ("菜单栏 长句滚动", "长句显示", .menuBar),
+            ("灵动岛所在屏幕", "所在屏幕", .island),
+            ("桌面歌词暂停隐藏", "暂停时隐藏", .desktop),
+            ("全屏歌词开在另一块屏幕", "全屏歌词开在另一块屏幕", .main)
+        ]
+        for (query, title, surface) in examples {
+            let row = try XCTUnwrap(WorkspaceLookupRow.matches(query, songs: [], favorites: []).first, query)
+            XCTAssertEqual(row.title, title, query)
+            XCTAssertEqual(row.location.appearanceSurface, surface, query)
+            XCTAssertEqual(row.location.navigationTitle, "外观 › \(surface.title) › \(title)", query)
+            var history = SettingsHistory()
+            history.search(query)
+            history.rememberSearchResult(row.id)
+            history.open(row.location)
+            history.back()
+            XCTAssertEqual(history.current.query, query)
+            XCTAssertEqual(history.current.resultID, row.id)
+            history.forward()
+            XCTAssertEqual(history.current, row.location)
+        }
+    }
+
     func testExperienceLibraryRouteAndPreviewAdaptersStayPresentationOnly() throws {
         let adapters = try source("SpotifyLyrics/Views/Debug/PresentationPreviewAdapters.swift")
         let releaseView = try source("SpotifyLyrics/Views/Settings/ExperienceLibrarySettingsView.swift")
