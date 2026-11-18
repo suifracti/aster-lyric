@@ -877,7 +877,7 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 
 2026-11-19：标准个人数据包在一个 SQLite 写事务内导入，任一曲失败就撤销本次全部写入。预览和提交都核对录音族和原词 UUID，接受已知的旧键重定向。私人文件夹的确认绑定所见文件内容，文件在预览后改变会要求重新检查，在写回前改变会保留新文件并提示本机已导入。两个歌词库入口共用状态文案。临时库复现了后曲失败却残留前曲、跨录音复用同版本 ID，并验证回滚后可重试；临时同步目录验证预览后替换、禁止旧版本写回和重新预览成功。使用 [macOS 文件协调](https://developer.apple.com/documentation/foundation/nsfilecoordinator/coordinate%28writingitemat%3Aoptions%3Aerror%3Abyaccessor%3A%29) 保护本机写回，未验证第三方云盘跨设备传输。
 
-2026-11-19 待核。隔离视觉宿主用空临时库，同时启动工作台和 `--saved-reader-fixture` 时出现 `migrationFailed(14, "duplicate column name: is_preferred")`。改用先由主窗样例完成入库，再打开原生歌本文档，验证顺利；尚未核实迁移本身及正式库行为。
+2026-11-19 隔离视觉宿主同时启动工作台和 `--saved-reader-fixture` 时遇到重复添加 `is_preferred`，定向原生测试又复现旧库升级时重复添加 `performer_id`，空库还产生了无内容的升级备份。播放和歌词库各用一个仓库连接。现在取得 SQLite 写锁后重读库版本，备份及所有迁移步骤由该连接负责，升级失败会整体回滚。备份通过独立读连接取得升级前的数据。新建空库无需备份，双窗口升级旧库只留一份。21 项歌词库原生测试通过，隔离工作台原路径启动成功。隔离用户目录另验证了 v5（含 WAL 提交和锁定歌词）、v10、v11、v12、v13 升级到 v14。真实用户库未参与。[SQLite 事务文档](https://www.sqlite.org/lang_transaction.html)
 
 ## L-048 把歌词文件当文档打开（2026-11-18）
 

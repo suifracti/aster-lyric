@@ -14,165 +14,32 @@ public enum DatabaseMigrator {
     public static func migrate(
         _ database: OpaquePointer,
         allowV4Migration: Bool = true,
-        allowV6Migration: Bool = true
+        allowV6Migration: Bool = true,
+        beforeUpgrade: (Int) throws -> Void = { _ in }
     ) throws {
         do {
-            try execute(database, sql: """
-                CREATE TABLE IF NOT EXISTS schema_migrations (
-                    version INTEGER PRIMARY KEY,
-                    applied_at REAL NOT NULL
-                );
-                """)
-
-            var version = try integerValue(database, sql: "PRAGMA user_version;")
-            guard version <= currentVersion else {
-                throw LyricsRepositoryError.unsupportedSchema(version)
-            }
-
-            if version < 1 {
-                try migrateV1(database)
-                version = 1
-            }
-            if version < 2 {
-                try migrateV2(database)
-                version = 2
-            }
-            if version < 3 {
-                try migrateV3(database)
-                version = 3
-            }
-            if version < 4 {
-                // A caller can deliberately open an existing production v3
-                // database in read-only-v4 compatibility mode. This is used
-                // while the redirect-first migration is being audited so a
-                // normal app launch cannot silently change the user's formal
-                // database before explicit confirmation.
-                if allowV4Migration {
-                    try migrateV4(database)
-                    version = 4
-                }
-            } else {
+            let observedVersion = try schemaVersion(database)
+            if observedVersion == currentVersion {
                 try validateV4(database)
+                return
             }
-            // v5, v6, v7 are additive local schemas. A formal v4 database is
-            // intentionally left untouched when the caller has not opted in
-            // to a disposable copy.
-            if version >= 4, version < 5, allowV4Migration,
-               try hasTable(database, name: "translation_versions"),
-               try hasTable(database, name: "lyrics_versions") {
-                try migrateV5(database)
-                version = 5
-            }
-            if version >= 5, version < 6, allowV6Migration,
-               try hasTable(database, name: "lyrics_versions"),
-               try hasTable(database, name: "lyric_lines") {
-                try migrateV6(database)
-                version = 6
-            }
-            if version >= 6, version < 7,
-               try hasTable(database, name: "lyrics_versions") {
-                try migrateV7(database)
-                version = 7
-            }
-            if version >= 7, version < 8,
-               try hasTable(database, name: "tracks") {
-                try migrateV8(database)
-                version = 8
-            }
-            if version >= 8, version < 9 {
-                try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
-                do {
-                    try execute(database, sql: "ALTER TABLE lyrics_versions ADD COLUMN is_preferred INTEGER NOT NULL DEFAULT 0;")
-                    try execute(database, sql: "CREATE UNIQUE INDEX lyrics_versions_one_preferred ON lyrics_versions(track_stable_key) WHERE is_preferred = 1;")
-                    try execute(database, sql: "INSERT INTO schema_migrations(version, applied_at) VALUES (9, strftime('%s','now')); PRAGMA user_version = 9;")
-                    try execute(database, sql: "COMMIT;")
-                } catch {
-                    _ = try? execute(database, sql: "ROLLBACK;")
-                    throw error
+
+            try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
+            do {
+                // Another connection may have upgraded while this one waited.
+                let version = try schemaVersion(database)
+                if version < currentVersion {
+                    try beforeUpgrade(version)
+                    try migrateLocked(
+                        database, from: version, allowV4Migration: allowV4Migration, allowV6Migration: allowV6Migration
+                    )
+                } else {
+                    try validateV4(database)
                 }
-                version = 9
-            }
-            if version >= 9, version < 10,
-               try hasTable(database, name: "translation_versions") {
-                try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
-                do {
-                    try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN provider_execution_metadata_json TEXT NOT NULL DEFAULT '';" )
-                    try execute(database, sql: "INSERT INTO schema_migrations(version, applied_at) VALUES (10, strftime('%s','now')); PRAGMA user_version = 10;")
-                    try execute(database, sql: "COMMIT;")
-                } catch {
-                    _ = try? execute(database, sql: "ROLLBACK;")
-                    throw error
-                }
-                version = 10
-            }
-            if version == 10 {
-                try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
-                do {
-                    try execute(database, sql: """
-                        CREATE TABLE translation_requests (
-                            request_key TEXT PRIMARY KEY,
-                            attempt_id TEXT NOT NULL,
-                            phase TEXT NOT NULL CHECK(phase IN ('prepared','dispatching','received','saved')),
-                            result_json TEXT,
-                            updated_at REAL NOT NULL
-                        );
-                        INSERT INTO schema_migrations(version, applied_at) VALUES (11, strftime('%s','now'));
-                        PRAGMA user_version = 11;
-                        """)
-                    try execute(database, sql: "COMMIT;")
-                } catch {
-                    _ = try? execute(database, sql: "ROLLBACK;")
-                    throw error
-                }
-            }
-            if try integerValue(database, sql: "PRAGMA user_version;") == 11 {
-                try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
-                do {
-                    try execute(database, sql: """
-                        CREATE TABLE lyrics_selection_revocations (
-                            track_stable_key TEXT PRIMARY KEY REFERENCES tracks(stable_key) ON DELETE CASCADE,
-                            revoked_version_id TEXT REFERENCES lyrics_versions(id) ON DELETE SET NULL,
-                            updated_at REAL NOT NULL
-                        );
-                        INSERT INTO schema_migrations(version, applied_at) VALUES (12, strftime('%s','now'));
-                        PRAGMA user_version = 12;
-                        """)
-                    try execute(database, sql: "COMMIT;")
-                } catch {
-                    _ = try? execute(database, sql: "ROLLBACK;")
-                    throw error
-                }
-            }
-            if try integerValue(database, sql: "PRAGMA user_version;") == 12 {
-                try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
-                do {
-                    try execute(database, sql: """
-                        ALTER TABLE translation_requests ADD COLUMN completion_version_id TEXT;
-                        CREATE UNIQUE INDEX translation_requests_completion_id
-                            ON translation_requests(completion_version_id) WHERE completion_version_id IS NOT NULL;
-                        INSERT INTO schema_migrations(version, applied_at) VALUES (13, strftime('%s','now'));
-                        PRAGMA user_version = 13;
-                        """)
-                    try execute(database, sql: "COMMIT;")
-                } catch {
-                    _ = try? execute(database, sql: "ROLLBACK;")
-                    throw error
-                }
-            }
-            if try integerValue(database, sql: "PRAGMA user_version;") == 13 {
-                try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
-                do {
-                    try execute(database, sql: """
-                        ALTER TABLE lyric_lines ADD COLUMN performer_id TEXT;
-                        ALTER TABLE lyric_lines ADD COLUMN background_text TEXT;
-                        INSERT INTO schema_migrations(version, applied_at) VALUES (14, strftime('%s','now'));
-                        PRAGMA user_version = 14;
-                        """)
-                    try execute(database, sql: "COMMIT;")
-                } catch {
-                    _ = try? execute(database, sql: "ROLLBACK;")
-                    throw error
-                }
+                try execute(database, sql: "COMMIT;")
+            } catch {
+                _ = try? execute(database, sql: "ROLLBACK;")
+                throw error
             }
         } catch let error as LyricsRepositoryError {
             // A corrupt/partially readable SQLite file must be reported as a
@@ -190,6 +57,136 @@ public enum DatabaseMigrator {
         }
     }
 
+    private static func schemaVersion(_ database: OpaquePointer) throws -> Int {
+        let version = try integerValue(database, sql: "PRAGMA user_version;")
+        guard version <= currentVersion else {
+            throw LyricsRepositoryError.unsupportedSchema(version)
+        }
+        return version
+    }
+
+    private static func migrateLocked(
+        _ database: OpaquePointer,
+        from initialVersion: Int,
+        allowV4Migration: Bool,
+        allowV6Migration: Bool
+    ) throws {
+        try execute(database, sql: """
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at REAL NOT NULL
+            );
+            """)
+
+        var version = initialVersion
+        if version < 1 {
+            try migrateV1(database)
+            version = 1
+        }
+        if version < 2 {
+            try migrateV2(database)
+            version = 2
+        }
+        if version < 3 {
+            try migrateV3(database)
+            version = 3
+        }
+        if version < 4 {
+            // A caller can deliberately open an existing production v3
+            // database in read-only-v4 compatibility mode. This is used
+            // while the redirect-first migration is being audited so a
+            // normal app launch cannot silently change the user's formal
+            // database before explicit confirmation.
+            if allowV4Migration {
+                try migrateV4(database)
+                version = 4
+            }
+        } else {
+            try validateV4(database)
+        }
+        // v5, v6, v7 are additive local schemas. A formal v4 database is
+        // intentionally left untouched when the caller has not opted in
+        // to a disposable copy.
+        if version >= 4, version < 5, allowV4Migration,
+           try hasTable(database, name: "translation_versions"),
+           try hasTable(database, name: "lyrics_versions") {
+            try migrateV5(database)
+            version = 5
+        }
+        if version >= 5, version < 6, allowV6Migration,
+           try hasTable(database, name: "lyrics_versions"),
+           try hasTable(database, name: "lyric_lines") {
+            try migrateV6(database)
+            version = 6
+        }
+        if version >= 6, version < 7,
+           try hasTable(database, name: "lyrics_versions") {
+            try migrateV7(database)
+            version = 7
+        }
+        if version >= 7, version < 8,
+           try hasTable(database, name: "tracks") {
+            try migrateV8(database)
+            version = 8
+        }
+        if version >= 8, version < 9 {
+            try execute(database, sql: "ALTER TABLE lyrics_versions ADD COLUMN is_preferred INTEGER NOT NULL DEFAULT 0;")
+            try execute(database, sql: "CREATE UNIQUE INDEX lyrics_versions_one_preferred ON lyrics_versions(track_stable_key) WHERE is_preferred = 1;")
+            try execute(database, sql: "INSERT INTO schema_migrations(version, applied_at) VALUES (9, strftime('%s','now')); PRAGMA user_version = 9;")
+            version = 9
+        }
+        if version >= 9, version < 10,
+           try hasTable(database, name: "translation_versions") {
+            try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN provider_execution_metadata_json TEXT NOT NULL DEFAULT '';" )
+            try execute(database, sql: "INSERT INTO schema_migrations(version, applied_at) VALUES (10, strftime('%s','now')); PRAGMA user_version = 10;")
+            version = 10
+        }
+        if version == 10 {
+            try execute(database, sql: """
+                CREATE TABLE translation_requests (
+                    request_key TEXT PRIMARY KEY,
+                    attempt_id TEXT NOT NULL,
+                    phase TEXT NOT NULL CHECK(phase IN ('prepared','dispatching','received','saved')),
+                    result_json TEXT,
+                    updated_at REAL NOT NULL
+                );
+                INSERT INTO schema_migrations(version, applied_at) VALUES (11, strftime('%s','now'));
+                PRAGMA user_version = 11;
+                """)
+            version = 11
+        }
+        if version == 11 {
+            try execute(database, sql: """
+                CREATE TABLE lyrics_selection_revocations (
+                    track_stable_key TEXT PRIMARY KEY REFERENCES tracks(stable_key) ON DELETE CASCADE,
+                    revoked_version_id TEXT REFERENCES lyrics_versions(id) ON DELETE SET NULL,
+                    updated_at REAL NOT NULL
+                );
+                INSERT INTO schema_migrations(version, applied_at) VALUES (12, strftime('%s','now'));
+                PRAGMA user_version = 12;
+                """)
+            version = 12
+        }
+        if version == 12 {
+            try execute(database, sql: """
+                ALTER TABLE translation_requests ADD COLUMN completion_version_id TEXT;
+                CREATE UNIQUE INDEX translation_requests_completion_id
+                    ON translation_requests(completion_version_id) WHERE completion_version_id IS NOT NULL;
+                INSERT INTO schema_migrations(version, applied_at) VALUES (13, strftime('%s','now'));
+                PRAGMA user_version = 13;
+                """)
+            version = 13
+        }
+        if version == 13 {
+            try execute(database, sql: """
+                ALTER TABLE lyric_lines ADD COLUMN performer_id TEXT;
+                ALTER TABLE lyric_lines ADD COLUMN background_text TEXT;
+                INSERT INTO schema_migrations(version, applied_at) VALUES (14, strftime('%s','now'));
+                PRAGMA user_version = 14;
+                """)
+        }
+    }
+
     /// The initial v4 redirect is also available as an in-memory fallback for
     /// an existing v3 database. It lets the repository preserve logical Water
     /// identity-family reads without writing v4 tables before migration is
@@ -203,84 +200,77 @@ public enum DatabaseMigrator {
     }
 
     private static func migrateV1(_ database: OpaquePointer) throws {
-        try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
-        do {
-            try execute(database, sql: """
-                CREATE TABLE IF NOT EXISTS tracks (
-                    stable_key TEXT PRIMARY KEY NOT NULL,
-                    spotify_id TEXT,
-                    spotify_uri TEXT,
-                    isrc TEXT,
-                    title TEXT NOT NULL,
-                    artist_display TEXT NOT NULL,
-                    album TEXT NOT NULL,
-                    duration REAL NOT NULL DEFAULT 0,
-                    artwork_url TEXT,
-                    created_at REAL NOT NULL,
-                    updated_at REAL NOT NULL
-                );
+        try execute(database, sql: """
+            CREATE TABLE IF NOT EXISTS tracks (
+                stable_key TEXT PRIMARY KEY NOT NULL,
+                spotify_id TEXT,
+                spotify_uri TEXT,
+                isrc TEXT,
+                title TEXT NOT NULL,
+                artist_display TEXT NOT NULL,
+                album TEXT NOT NULL,
+                duration REAL NOT NULL DEFAULT 0,
+                artwork_url TEXT,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            );
 
-                CREATE TABLE IF NOT EXISTS track_aliases (
-                    track_stable_key TEXT NOT NULL,
-                    field TEXT NOT NULL,
-                    kind TEXT NOT NULL,
-                    value TEXT NOT NULL,
-                    language TEXT,
-                    script TEXT NOT NULL,
-                    source TEXT NOT NULL,
-                    confidence REAL NOT NULL,
-                    is_official INTEGER NOT NULL DEFAULT 0,
-                    PRIMARY KEY (track_stable_key, field, kind, value),
-                    FOREIGN KEY (track_stable_key) REFERENCES tracks(stable_key) ON DELETE CASCADE
-                );
+            CREATE TABLE IF NOT EXISTS track_aliases (
+                track_stable_key TEXT NOT NULL,
+                field TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                value TEXT NOT NULL,
+                language TEXT,
+                script TEXT NOT NULL,
+                source TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                is_official INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (track_stable_key, field, kind, value),
+                FOREIGN KEY (track_stable_key) REFERENCES tracks(stable_key) ON DELETE CASCADE
+            );
 
-                CREATE TABLE IF NOT EXISTS lyrics_versions (
-                    id TEXT PRIMARY KEY NOT NULL,
-                    track_stable_key TEXT NOT NULL,
-                    source TEXT NOT NULL,
-                    provider_source_id TEXT NOT NULL DEFAULT '',
-                    language TEXT NOT NULL DEFAULT 'und',
-                    is_synced INTEGER NOT NULL DEFAULT 0,
-                    raw_text TEXT NOT NULL,
-                    content_hash TEXT NOT NULL,
-                    created_at REAL NOT NULL,
-                    updated_at REAL NOT NULL,
-                    is_machine_generated INTEGER NOT NULL DEFAULT 0,
-                    is_manually_edited INTEGER NOT NULL DEFAULT 0,
-                    is_locked INTEGER NOT NULL DEFAULT 0,
-                    confidence REAL NOT NULL,
-                    FOREIGN KEY (track_stable_key) REFERENCES tracks(stable_key) ON DELETE CASCADE
-                );
+            CREATE TABLE IF NOT EXISTS lyrics_versions (
+                id TEXT PRIMARY KEY NOT NULL,
+                track_stable_key TEXT NOT NULL,
+                source TEXT NOT NULL,
+                provider_source_id TEXT NOT NULL DEFAULT '',
+                language TEXT NOT NULL DEFAULT 'und',
+                is_synced INTEGER NOT NULL DEFAULT 0,
+                raw_text TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                is_machine_generated INTEGER NOT NULL DEFAULT 0,
+                is_manually_edited INTEGER NOT NULL DEFAULT 0,
+                is_locked INTEGER NOT NULL DEFAULT 0,
+                confidence REAL NOT NULL,
+                FOREIGN KEY (track_stable_key) REFERENCES tracks(stable_key) ON DELETE CASCADE
+            );
 
-                CREATE TABLE IF NOT EXISTS lyric_lines (
-                    lyrics_version_id TEXT NOT NULL,
-                    line_index INTEGER NOT NULL,
-                    start_time REAL,
-                    end_time REAL,
-                    original_text TEXT NOT NULL,
-                    kana_text TEXT,
-                    romaji_text TEXT,
-                    translation_text TEXT,
-                    PRIMARY KEY (lyrics_version_id, line_index),
-                    FOREIGN KEY (lyrics_version_id) REFERENCES lyrics_versions(id) ON DELETE CASCADE
-                );
+            CREATE TABLE IF NOT EXISTS lyric_lines (
+                lyrics_version_id TEXT NOT NULL,
+                line_index INTEGER NOT NULL,
+                start_time REAL,
+                end_time REAL,
+                original_text TEXT NOT NULL,
+                kana_text TEXT,
+                romaji_text TEXT,
+                translation_text TEXT,
+                PRIMARY KEY (lyrics_version_id, line_index),
+                FOREIGN KEY (lyrics_version_id) REFERENCES lyrics_versions(id) ON DELETE CASCADE
+            );
 
-                CREATE UNIQUE INDEX IF NOT EXISTS lyrics_versions_dedup
-                    ON lyrics_versions(track_stable_key, source, provider_source_id, content_hash);
-                CREATE INDEX IF NOT EXISTS lyrics_versions_best
-                    ON lyrics_versions(track_stable_key, is_locked, confidence, updated_at);
-                CREATE INDEX IF NOT EXISTS track_aliases_lookup
-                    ON track_aliases(track_stable_key, field, kind);
-                CREATE INDEX IF NOT EXISTS lyric_lines_version_order
-                    ON lyric_lines(lyrics_version_id, line_index);
-                """)
-            try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, strftime('%s','now'));")
-            try execute(database, sql: "PRAGMA user_version = 1;")
-            try execute(database, sql: "COMMIT;")
-        } catch {
-            _ = try? execute(database, sql: "ROLLBACK;")
-            throw error
-        }
+            CREATE UNIQUE INDEX IF NOT EXISTS lyrics_versions_dedup
+                ON lyrics_versions(track_stable_key, source, provider_source_id, content_hash);
+            CREATE INDEX IF NOT EXISTS lyrics_versions_best
+                ON lyrics_versions(track_stable_key, is_locked, confidence, updated_at);
+            CREATE INDEX IF NOT EXISTS track_aliases_lookup
+                ON track_aliases(track_stable_key, field, kind);
+            CREATE INDEX IF NOT EXISTS lyric_lines_version_order
+                ON lyric_lines(lyrics_version_id, line_index);
+            """)
+        try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, strftime('%s','now'));")
+        try execute(database, sql: "PRAGMA user_version = 1;")
     }
 
     private struct LegacyGroup {
@@ -290,208 +280,187 @@ public enum DatabaseMigrator {
     }
 
     private static func migrateV2(_ database: OpaquePointer) throws {
-        try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
-        do {
-            try execute(database, sql: """
-                CREATE TABLE IF NOT EXISTS translation_versions (
-                    id TEXT PRIMARY KEY NOT NULL,
-                    lyrics_version_id TEXT NOT NULL,
-                    source_kind TEXT NOT NULL,
-                    target_language TEXT NOT NULL,
-                    model TEXT NOT NULL DEFAULT '',
-                    base_url_host TEXT NOT NULL DEFAULT '',
-                    prompt_hash TEXT NOT NULL DEFAULT '',
-                    source_content_hash TEXT NOT NULL,
-                    created_at REAL NOT NULL,
-                    updated_at REAL NOT NULL,
-                    is_machine_generated INTEGER NOT NULL DEFAULT 0,
-                    is_manually_edited INTEGER NOT NULL DEFAULT 0,
-                    is_locked INTEGER NOT NULL DEFAULT 0,
-                    status TEXT NOT NULL,
-                    confidence REAL NOT NULL DEFAULT 0,
-                    FOREIGN KEY (lyrics_version_id) REFERENCES lyrics_versions(id) ON DELETE CASCADE
-                );
+        try execute(database, sql: """
+            CREATE TABLE IF NOT EXISTS translation_versions (
+                id TEXT PRIMARY KEY NOT NULL,
+                lyrics_version_id TEXT NOT NULL,
+                source_kind TEXT NOT NULL,
+                target_language TEXT NOT NULL,
+                model TEXT NOT NULL DEFAULT '',
+                base_url_host TEXT NOT NULL DEFAULT '',
+                prompt_hash TEXT NOT NULL DEFAULT '',
+                source_content_hash TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                is_machine_generated INTEGER NOT NULL DEFAULT 0,
+                is_manually_edited INTEGER NOT NULL DEFAULT 0,
+                is_locked INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL,
+                confidence REAL NOT NULL DEFAULT 0,
+                FOREIGN KEY (lyrics_version_id) REFERENCES lyrics_versions(id) ON DELETE CASCADE
+            );
 
-                CREATE TABLE IF NOT EXISTS translation_lines (
-                    translation_version_id TEXT NOT NULL,
-                    line_index INTEGER NOT NULL,
-                    translated_text TEXT NOT NULL,
-                    PRIMARY KEY (translation_version_id, line_index),
-                    FOREIGN KEY (translation_version_id) REFERENCES translation_versions(id) ON DELETE CASCADE
-                );
+            CREATE TABLE IF NOT EXISTS translation_lines (
+                translation_version_id TEXT NOT NULL,
+                line_index INTEGER NOT NULL,
+                translated_text TEXT NOT NULL,
+                PRIMARY KEY (translation_version_id, line_index),
+                FOREIGN KEY (translation_version_id) REFERENCES translation_versions(id) ON DELETE CASCADE
+            );
 
-                CREATE INDEX IF NOT EXISTS translation_versions_lookup
-                    ON translation_versions(lyrics_version_id, target_language, source_content_hash, status, updated_at);
-                CREATE INDEX IF NOT EXISTS translation_versions_selection
-                    ON translation_versions(lyrics_version_id, is_locked, updated_at);
-                CREATE INDEX IF NOT EXISTS translation_lines_version_order
-                    ON translation_lines(translation_version_id, line_index);
-                """)
+            CREATE INDEX IF NOT EXISTS translation_versions_lookup
+                ON translation_versions(lyrics_version_id, target_language, source_content_hash, status, updated_at);
+            CREATE INDEX IF NOT EXISTS translation_versions_selection
+                ON translation_versions(lyrics_version_id, is_locked, updated_at);
+            CREATE INDEX IF NOT EXISTS translation_lines_version_order
+                ON translation_lines(translation_version_id, line_index);
+            """)
 
-            for group in try legacyGroups(database) {
-                guard !group.lines.isEmpty else { continue }
-                let sourceHash = LyricsSourceContentHasher.hash(
-                    isSynchronized: group.isSynchronized,
-                    lines: group.lines
-                )
-                guard try !translationVersionExists(
-                    database,
-                    lyricsVersionID: group.versionID,
-                    sourceContentHash: sourceHash
-                ) else { continue }
+        for group in try legacyGroups(database) {
+            guard !group.lines.isEmpty else { continue }
+            let sourceHash = LyricsSourceContentHasher.hash(
+                isSynchronized: group.isSynchronized,
+                lines: group.lines
+            )
+            guard try !translationVersionExists(
+                database,
+                lyricsVersionID: group.versionID,
+                sourceContentHash: sourceHash
+            ) else { continue }
 
-                let versionID = UUID().uuidString
-                let complete = group.lines.allSatisfy { row in
-                    let originalBlank = row.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    let translationBlank = row.translationText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
-                    return originalBlank == translationBlank
-                }
-                try insertTranslationVersion(
-                    database,
-                    id: versionID,
-                    lyricsVersionID: group.versionID,
-                    sourceHash: sourceHash,
-                    status: complete ? "complete" : "incomplete"
-                )
-                for row in group.lines {
-                    try insertTranslationLine(
-                        database,
-                        versionID: versionID,
-                        index: row.lineIndex,
-                        text: row.translationText ?? ""
-                    )
-                }
+            let versionID = UUID().uuidString
+            let complete = group.lines.allSatisfy { row in
+                let originalBlank = row.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                let translationBlank = row.translationText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+                return originalBlank == translationBlank
             }
-
-            try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (2, strftime('%s','now'));")
-            try execute(database, sql: "PRAGMA user_version = 2;")
-            try execute(database, sql: "COMMIT;")
-        } catch {
-            _ = try? execute(database, sql: "ROLLBACK;")
-            throw error
+            try insertTranslationVersion(
+                database,
+                id: versionID,
+                lyricsVersionID: group.versionID,
+                sourceHash: sourceHash,
+                status: complete ? "complete" : "incomplete"
+            )
+            for row in group.lines {
+                try insertTranslationLine(
+                    database,
+                    versionID: versionID,
+                    index: row.lineIndex,
+                    text: row.translationText ?? ""
+                )
+            }
         }
+
+        try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (2, strftime('%s','now'));")
+        try execute(database, sql: "PRAGMA user_version = 2;")
     }
 
     private static func migrateV3(_ database: OpaquePointer) throws {
-        try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
-        do {
-            // These ALTERs run only while user_version is 2. If any statement
-            // fails, the transaction rolls back and the next launch retries
-            // the complete migration rather than leaving a half-versioned DB.
-            try execute(database, sql: "ALTER TABLE lyrics_versions ADD COLUMN parent_version_id TEXT;")
-            try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN parent_version_id TEXT;")
-            try execute(database, sql: """
-                CREATE TABLE IF NOT EXISTS lyric_reading_layers (
-                    lyrics_version_id TEXT NOT NULL,
-                    line_index INTEGER NOT NULL,
-                    kana_text TEXT,
-                    romaji_text TEXT,
-                    source TEXT NOT NULL,
-                    is_locked INTEGER NOT NULL DEFAULT 0,
-                    created_at REAL NOT NULL,
-                    updated_at REAL NOT NULL,
-                    PRIMARY KEY (lyrics_version_id, line_index),
-                    FOREIGN KEY (lyrics_version_id) REFERENCES lyrics_versions(id) ON DELETE CASCADE
-                );
+        // These ALTERs run only while user_version is 2. If any statement
+        // fails, the transaction rolls back and the next launch retries
+        // the complete migration rather than leaving a half-versioned DB.
+        try execute(database, sql: "ALTER TABLE lyrics_versions ADD COLUMN parent_version_id TEXT;")
+        try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN parent_version_id TEXT;")
+        try execute(database, sql: """
+            CREATE TABLE IF NOT EXISTS lyric_reading_layers (
+                lyrics_version_id TEXT NOT NULL,
+                line_index INTEGER NOT NULL,
+                kana_text TEXT,
+                romaji_text TEXT,
+                source TEXT NOT NULL,
+                is_locked INTEGER NOT NULL DEFAULT 0,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                PRIMARY KEY (lyrics_version_id, line_index),
+                FOREIGN KEY (lyrics_version_id) REFERENCES lyrics_versions(id) ON DELETE CASCADE
+            );
 
-                CREATE INDEX IF NOT EXISTS lyrics_versions_parent_lookup
-                    ON lyrics_versions(parent_version_id, updated_at);
-                CREATE INDEX IF NOT EXISTS translation_versions_parent_lookup
-                    ON translation_versions(parent_version_id, updated_at);
-                CREATE INDEX IF NOT EXISTS lyric_reading_layers_version_order
-                    ON lyric_reading_layers(lyrics_version_id, line_index);
-                """)
-            try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (3, strftime('%s','now'));")
-            try execute(database, sql: "PRAGMA user_version = 3;")
-            try execute(database, sql: "COMMIT;")
-        } catch {
-            _ = try? execute(database, sql: "ROLLBACK;")
-            throw error
-        }
+            CREATE INDEX IF NOT EXISTS lyrics_versions_parent_lookup
+                ON lyrics_versions(parent_version_id, updated_at);
+            CREATE INDEX IF NOT EXISTS translation_versions_parent_lookup
+                ON translation_versions(parent_version_id, updated_at);
+            CREATE INDEX IF NOT EXISTS lyric_reading_layers_version_order
+                ON lyric_reading_layers(lyrics_version_id, line_index);
+            """)
+        try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (3, strftime('%s','now'));")
+        try execute(database, sql: "PRAGMA user_version = 3;")
     }
 
     private static func migrateV4(_ database: OpaquePointer) throws {
-        try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
-        do {
-            // v4 is redirect-first. It adds logical identity metadata only;
-            // no Track, LyricsVersion, TranslationVersion, or UUID row is
-            // moved or deleted by this migration.
-            if try !hasColumn(database, table: "schema_migrations", column: "migration_id") {
-                try execute(database, sql: "ALTER TABLE schema_migrations ADD COLUMN migration_id TEXT;")
-            }
-            try execute(database, sql: """
-                UPDATE schema_migrations
-                SET migration_id = 'schema-v' || CAST(version AS TEXT)
-                WHERE migration_id IS NULL OR length(trim(migration_id)) = 0;
-
-                CREATE UNIQUE INDEX IF NOT EXISTS schema_migrations_migration_id
-                    ON schema_migrations(migration_id);
-
-                CREATE TABLE IF NOT EXISTS track_identity_redirects (
-                    source_stable_key TEXT PRIMARY KEY NOT NULL,
-                    canonical_stable_key TEXT NOT NULL,
-                    reason TEXT NOT NULL,
-                    evidence_kind TEXT NOT NULL,
-                    migration_id TEXT NOT NULL,
-                    created_at REAL NOT NULL,
-                    FOREIGN KEY (canonical_stable_key) REFERENCES tracks(stable_key)
-                );
-
-                CREATE INDEX IF NOT EXISTS track_identity_redirects_canonical
-                    ON track_identity_redirects(canonical_stable_key);
-
-                CREATE TABLE IF NOT EXISTS track_identity_merge_audit (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    migration_id TEXT NOT NULL,
-                    source_stable_key TEXT NOT NULL,
-                    canonical_stable_key TEXT NOT NULL,
-                    source_spotify_id TEXT,
-                    source_spotify_uri TEXT,
-                    source_isrc TEXT,
-                    source_title TEXT,
-                    source_artist_display TEXT,
-                    source_album TEXT,
-                    source_duration REAL,
-                    evidence TEXT NOT NULL,
-                    action TEXT NOT NULL,
-                    created_at REAL NOT NULL
-                );
-
-                CREATE INDEX IF NOT EXISTS track_identity_merge_audit_source
-                    ON track_identity_merge_audit(source_stable_key, created_at);
-                """)
-
-            try ensureRedirect(
-                database,
-                source: waterSourceStableKey,
-                canonical: waterCanonicalStableKey,
-                reason: waterRedirectReason,
-                evidenceKind: waterRedirectEvidence,
-                migrationID: v4MigrationID
-            )
-
-            let existingMigration = try scalarOptionalText(
-                database,
-                sql: "SELECT migration_id FROM schema_migrations WHERE version = 4 LIMIT 1;"
-            )
-            if let existingMigration, existingMigration != v4MigrationID {
-                throw LyricsRepositoryError.invalidData("schema v4 migration_id 冲突")
-            }
-            let migrationInsert = try prepare(database, sql: """
-                INSERT INTO schema_migrations(version, applied_at, migration_id)
-                VALUES (4, strftime('%s','now'), ?)
-                ON CONFLICT(version) DO UPDATE SET migration_id = excluded.migration_id;
-                """)
-            defer { sqlite3_finalize(migrationInsert) }
-            try bindText(v4MigrationID, at: 1, to: migrationInsert)
-            try stepDone(database, statement: migrationInsert)
-            try execute(database, sql: "PRAGMA user_version = 4;")
-            try validateV4(database)
-            try execute(database, sql: "COMMIT;")
-        } catch {
-            _ = try? execute(database, sql: "ROLLBACK;")
-            throw error
+        // v4 is redirect-first. It adds logical identity metadata only;
+        // no Track, LyricsVersion, TranslationVersion, or UUID row is
+        // moved or deleted by this migration.
+        if try !hasColumn(database, table: "schema_migrations", column: "migration_id") {
+            try execute(database, sql: "ALTER TABLE schema_migrations ADD COLUMN migration_id TEXT;")
         }
+        try execute(database, sql: """
+            UPDATE schema_migrations
+            SET migration_id = 'schema-v' || CAST(version AS TEXT)
+            WHERE migration_id IS NULL OR length(trim(migration_id)) = 0;
+
+            CREATE UNIQUE INDEX IF NOT EXISTS schema_migrations_migration_id
+                ON schema_migrations(migration_id);
+
+            CREATE TABLE IF NOT EXISTS track_identity_redirects (
+                source_stable_key TEXT PRIMARY KEY NOT NULL,
+                canonical_stable_key TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                evidence_kind TEXT NOT NULL,
+                migration_id TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                FOREIGN KEY (canonical_stable_key) REFERENCES tracks(stable_key)
+            );
+
+            CREATE INDEX IF NOT EXISTS track_identity_redirects_canonical
+                ON track_identity_redirects(canonical_stable_key);
+
+            CREATE TABLE IF NOT EXISTS track_identity_merge_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                migration_id TEXT NOT NULL,
+                source_stable_key TEXT NOT NULL,
+                canonical_stable_key TEXT NOT NULL,
+                source_spotify_id TEXT,
+                source_spotify_uri TEXT,
+                source_isrc TEXT,
+                source_title TEXT,
+                source_artist_display TEXT,
+                source_album TEXT,
+                source_duration REAL,
+                evidence TEXT NOT NULL,
+                action TEXT NOT NULL,
+                created_at REAL NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS track_identity_merge_audit_source
+                ON track_identity_merge_audit(source_stable_key, created_at);
+            """)
+
+        try ensureRedirect(
+            database,
+            source: waterSourceStableKey,
+            canonical: waterCanonicalStableKey,
+            reason: waterRedirectReason,
+            evidenceKind: waterRedirectEvidence,
+            migrationID: v4MigrationID
+        )
+
+        let existingMigration = try scalarOptionalText(
+            database,
+            sql: "SELECT migration_id FROM schema_migrations WHERE version = 4 LIMIT 1;"
+        )
+        if let existingMigration, existingMigration != v4MigrationID {
+            throw LyricsRepositoryError.invalidData("schema v4 migration_id 冲突")
+        }
+        let migrationInsert = try prepare(database, sql: """
+            INSERT INTO schema_migrations(version, applied_at, migration_id)
+            VALUES (4, strftime('%s','now'), ?)
+            ON CONFLICT(version) DO UPDATE SET migration_id = excluded.migration_id;
+            """)
+        defer { sqlite3_finalize(migrationInsert) }
+        try bindText(v4MigrationID, at: 1, to: migrationInsert)
+        try stepDone(database, statement: migrationInsert)
+        try execute(database, sql: "PRAGMA user_version = 4;")
+        try validateV4(database)
     }
 
     private static func validateV4(_ database: OpaquePointer) throws {
@@ -558,25 +527,18 @@ public enum DatabaseMigrator {
     /// or engine is guessed. The migration is transactional and only the
     /// temporary database is used by Phase 2.5 validation.
     private static func migrateV5(_ database: OpaquePointer) throws {
-        try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
-        do {
-            try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN engine_id TEXT NOT NULL DEFAULT '';")
-            try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN prompt_preset_id TEXT NOT NULL DEFAULT '';")
-            try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN profile_id TEXT;")
-            try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN profile_snapshot TEXT NOT NULL DEFAULT '';")
-            try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN temperature REAL NOT NULL DEFAULT 0.2;")
-            try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN workflow_id TEXT NOT NULL DEFAULT 'translationWorkflow.classicV1';")
-            try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN fallback_strategy TEXT NOT NULL DEFAULT 'none';")
-            try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0;")
-            try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0;")
-            try execute(database, sql: "CREATE INDEX IF NOT EXISTS translation_versions_engine_lookup ON translation_versions(lyrics_version_id, engine_id, prompt_preset_id, updated_at);")
-            try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (5, strftime('%s','now'));" )
-            try execute(database, sql: "PRAGMA user_version = 5;")
-            try execute(database, sql: "COMMIT;")
-        } catch {
-            _ = try? execute(database, sql: "ROLLBACK;")
-            throw error
-        }
+        try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN engine_id TEXT NOT NULL DEFAULT '';")
+        try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN prompt_preset_id TEXT NOT NULL DEFAULT '';")
+        try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN profile_id TEXT;")
+        try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN profile_snapshot TEXT NOT NULL DEFAULT '';")
+        try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN temperature REAL NOT NULL DEFAULT 0.2;")
+        try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN workflow_id TEXT NOT NULL DEFAULT 'translationWorkflow.classicV1';")
+        try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN fallback_strategy TEXT NOT NULL DEFAULT 'none';")
+        try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0;")
+        try execute(database, sql: "ALTER TABLE translation_versions ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0;")
+        try execute(database, sql: "CREATE INDEX IF NOT EXISTS translation_versions_engine_lookup ON translation_versions(lyrics_version_id, engine_id, prompt_preset_id, updated_at);")
+        try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (5, strftime('%s','now'));" )
+        try execute(database, sql: "PRAGMA user_version = 5;")
     }
 
     /// Reading versions are additive and intentionally live in their own
@@ -584,160 +546,139 @@ public enum DatabaseMigrator {
     /// as traceable legacy versions; it never edits lyric_lines or removes
     /// the compatibility columns.
     private static func migrateV6(_ database: OpaquePointer) throws {
-        try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
-        do {
-            try execute(database, sql: """
-                CREATE TABLE IF NOT EXISTS reading_versions (
-                    id TEXT PRIMARY KEY NOT NULL,
-                    lyrics_version_id TEXT NOT NULL,
-                    source_content_hash TEXT NOT NULL,
-                    engine_id TEXT NOT NULL,
-                    representation_id TEXT NOT NULL,
-                    source_kind TEXT NOT NULL DEFAULT 'generated',
-                    language TEXT NOT NULL DEFAULT 'und',
-                    created_at REAL NOT NULL,
-                    updated_at REAL NOT NULL,
-                    is_machine_generated INTEGER NOT NULL DEFAULT 0,
-                    is_manually_edited INTEGER NOT NULL DEFAULT 0,
-                    is_current INTEGER NOT NULL DEFAULT 0,
-                    is_locked INTEGER NOT NULL DEFAULT 0,
-                    is_archived INTEGER NOT NULL DEFAULT 0,
-                    parent_version_id TEXT,
-                    confidence REAL NOT NULL DEFAULT 0,
-                    warning_metadata TEXT NOT NULL DEFAULT '[]',
-                    context_hash TEXT NOT NULL DEFAULT '',
-                    FOREIGN KEY (lyrics_version_id) REFERENCES lyrics_versions(id) ON DELETE CASCADE,
-                    FOREIGN KEY (parent_version_id) REFERENCES reading_versions(id) ON DELETE SET NULL
-                );
+        try execute(database, sql: """
+            CREATE TABLE IF NOT EXISTS reading_versions (
+                id TEXT PRIMARY KEY NOT NULL,
+                lyrics_version_id TEXT NOT NULL,
+                source_content_hash TEXT NOT NULL,
+                engine_id TEXT NOT NULL,
+                representation_id TEXT NOT NULL,
+                source_kind TEXT NOT NULL DEFAULT 'generated',
+                language TEXT NOT NULL DEFAULT 'und',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                is_machine_generated INTEGER NOT NULL DEFAULT 0,
+                is_manually_edited INTEGER NOT NULL DEFAULT 0,
+                is_current INTEGER NOT NULL DEFAULT 0,
+                is_locked INTEGER NOT NULL DEFAULT 0,
+                is_archived INTEGER NOT NULL DEFAULT 0,
+                parent_version_id TEXT,
+                confidence REAL NOT NULL DEFAULT 0,
+                warning_metadata TEXT NOT NULL DEFAULT '[]',
+                context_hash TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (lyrics_version_id) REFERENCES lyrics_versions(id) ON DELETE CASCADE,
+                FOREIGN KEY (parent_version_id) REFERENCES reading_versions(id) ON DELETE SET NULL
+            );
 
-                CREATE TABLE IF NOT EXISTS reading_lines (
-                    reading_version_id TEXT NOT NULL,
-                    line_index INTEGER NOT NULL,
-                    original_text TEXT NOT NULL,
-                    reading_text TEXT,
-                    tokens_json TEXT NOT NULL DEFAULT '[]',
-                    language TEXT NOT NULL DEFAULT 'und',
-                    source TEXT NOT NULL DEFAULT 'unknown',
-                    confidence REAL NOT NULL DEFAULT 0,
-                    warning_metadata TEXT NOT NULL DEFAULT '[]',
-                    PRIMARY KEY (reading_version_id, line_index),
-                    FOREIGN KEY (reading_version_id) REFERENCES reading_versions(id) ON DELETE CASCADE
-                );
+            CREATE TABLE IF NOT EXISTS reading_lines (
+                reading_version_id TEXT NOT NULL,
+                line_index INTEGER NOT NULL,
+                original_text TEXT NOT NULL,
+                reading_text TEXT,
+                tokens_json TEXT NOT NULL DEFAULT '[]',
+                language TEXT NOT NULL DEFAULT 'und',
+                source TEXT NOT NULL DEFAULT 'unknown',
+                confidence REAL NOT NULL DEFAULT 0,
+                warning_metadata TEXT NOT NULL DEFAULT '[]',
+                PRIMARY KEY (reading_version_id, line_index),
+                FOREIGN KEY (reading_version_id) REFERENCES reading_versions(id) ON DELETE CASCADE
+            );
 
-                CREATE INDEX IF NOT EXISTS reading_versions_lookup
-                    ON reading_versions(lyrics_version_id, representation_id, source_content_hash, updated_at);
-                CREATE INDEX IF NOT EXISTS reading_versions_selection
-                    ON reading_versions(lyrics_version_id, representation_id, is_locked, is_current, is_archived, updated_at);
-                CREATE INDEX IF NOT EXISTS reading_lines_version_order
-                    ON reading_lines(reading_version_id, line_index);
-                """)
+            CREATE INDEX IF NOT EXISTS reading_versions_lookup
+                ON reading_versions(lyrics_version_id, representation_id, source_content_hash, updated_at);
+            CREATE INDEX IF NOT EXISTS reading_versions_selection
+                ON reading_versions(lyrics_version_id, representation_id, is_locked, is_current, is_archived, updated_at);
+            CREATE INDEX IF NOT EXISTS reading_lines_version_order
+                ON reading_lines(reading_version_id, line_index);
+            """)
 
-            for group in try legacyReadingGroups(database) {
-                guard !group.lines.isEmpty else { continue }
-                let sourceHash = LyricsSourceContentHasher.hash(
-                    isSynchronized: group.isSynchronized,
-                    lines: group.lines.map { line in
-                        DatabaseLyricLineRecord(
-                            lyricsVersionID: UUID(uuidString: group.versionID) ?? UUID(),
-                            lineIndex: line.lineIndex,
-                            startTime: line.startTime,
-                            endTime: line.endTime,
-                            originalText: line.original,
-                            kanaText: line.kana.isEmpty ? nil : line.kana,
-                            romajiText: line.romaji.isEmpty ? nil : line.romaji,
-                            translationText: nil
-                        )
-                    }
+        for group in try legacyReadingGroups(database) {
+            guard !group.lines.isEmpty else { continue }
+            let sourceHash = LyricsSourceContentHasher.hash(
+                isSynchronized: group.isSynchronized,
+                lines: group.lines.map { line in
+                    DatabaseLyricLineRecord(
+                        lyricsVersionID: UUID(uuidString: group.versionID) ?? UUID(),
+                        lineIndex: line.lineIndex,
+                        startTime: line.startTime,
+                        endTime: line.endTime,
+                        originalText: line.original,
+                        kanaText: line.kana.isEmpty ? nil : line.kana,
+                        romajiText: line.romaji.isEmpty ? nil : line.romaji,
+                        translationText: nil
+                    )
+                }
+            )
+            let language = group.language.lowercased().hasPrefix("ja") ? "ja" : "und"
+            if group.lines.contains(where: { !$0.kana.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                try insertLegacyReadingVersion(
+                    database,
+                    group: group,
+                    sourceHash: sourceHash,
+                    language: language,
+                    representationID: "readingRepresentation.kana.v1"
                 )
-                let language = group.language.lowercased().hasPrefix("ja") ? "ja" : "und"
-                if group.lines.contains(where: { !$0.kana.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
-                    try insertLegacyReadingVersion(
-                        database,
-                        group: group,
-                        sourceHash: sourceHash,
-                        language: language,
-                        representationID: "readingRepresentation.kana.v1"
-                    )
-                }
-                if group.lines.contains(where: { !$0.romaji.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
-                    try insertLegacyReadingVersion(
-                        database,
-                        group: group,
-                        sourceHash: sourceHash,
-                        language: language,
-                        representationID: "readingRepresentation.romaji.v1"
-                    )
-                }
             }
-
-            try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (6, strftime('%s','now'));")
-            try execute(database, sql: "PRAGMA user_version = 6;")
-            try execute(database, sql: "COMMIT;")
-        } catch {
-            _ = try? execute(database, sql: "ROLLBACK;")
-            throw error
+            if group.lines.contains(where: { !$0.romaji.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                try insertLegacyReadingVersion(
+                    database,
+                    group: group,
+                    sourceHash: sourceHash,
+                    language: language,
+                    representationID: "readingRepresentation.romaji.v1"
+                )
+            }
         }
+
+        try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (6, strftime('%s','now'));")
+        try execute(database, sql: "PRAGMA user_version = 6;")
     }
 
     /// Word / Syllable timing versions are immutable attachments that bind to
     /// an existing lyrics_version_id and base source_content_hash.
     private static func migrateV7(_ database: OpaquePointer) throws {
-        try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
-        do {
-            try execute(database, sql: """
-                CREATE TABLE IF NOT EXISTS lyrics_timing_versions (
-                    id TEXT PRIMARY KEY NOT NULL,
-                    lyrics_version_id TEXT NOT NULL,
-                    source TEXT NOT NULL,
-                    granularity TEXT NOT NULL,
-                    source_content_hash TEXT NOT NULL,
-                    spans_payload TEXT NOT NULL,
-                    created_at REAL NOT NULL,
-                    FOREIGN KEY (lyrics_version_id) REFERENCES lyrics_versions(id) ON DELETE CASCADE
-                );
+        try execute(database, sql: """
+            CREATE TABLE IF NOT EXISTS lyrics_timing_versions (
+                id TEXT PRIMARY KEY NOT NULL,
+                lyrics_version_id TEXT NOT NULL,
+                source TEXT NOT NULL,
+                granularity TEXT NOT NULL,
+                source_content_hash TEXT NOT NULL,
+                spans_payload TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                FOREIGN KEY (lyrics_version_id) REFERENCES lyrics_versions(id) ON DELETE CASCADE
+            );
 
-                CREATE INDEX IF NOT EXISTS lyrics_timing_versions_lookup
-                    ON lyrics_timing_versions(lyrics_version_id, source_content_hash, created_at);
-                """)
-            try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (7, strftime('%s','now'));")
-            try execute(database, sql: "PRAGMA user_version = 7;")
-            try execute(database, sql: "COMMIT;")
-        } catch {
-            _ = try? execute(database, sql: "ROLLBACK;")
-            throw error
-        }
+            CREATE INDEX IF NOT EXISTS lyrics_timing_versions_lookup
+                ON lyrics_timing_versions(lyrics_version_id, source_content_hash, created_at);
+            """)
+        try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (7, strftime('%s','now'));")
+        try execute(database, sql: "PRAGMA user_version = 7;")
     }
 
     /// Listening history stores only playback sessions observed by this app.
     /// It is independent from lyrics versions and can be added without
     /// changing any existing lyrics tables.
     private static func migrateV8(_ database: OpaquePointer) throws {
-        try execute(database, sql: "BEGIN IMMEDIATE TRANSACTION;")
-        do {
-            try execute(database, sql: """
-                CREATE TABLE IF NOT EXISTS listening_history_sessions (
-                    session_id TEXT PRIMARY KEY NOT NULL,
-                    track_stable_key TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    artist TEXT NOT NULL,
-                    album TEXT NOT NULL,
-                    started_at REAL NOT NULL,
-                    last_observed_at REAL NOT NULL,
-                    observed_playback_duration REAL NOT NULL DEFAULT 0,
-                    track_duration REAL,
-                    completion_ratio REAL
-                );
+        try execute(database, sql: """
+            CREATE TABLE IF NOT EXISTS listening_history_sessions (
+                session_id TEXT PRIMARY KEY NOT NULL,
+                track_stable_key TEXT NOT NULL,
+                title TEXT NOT NULL,
+                artist TEXT NOT NULL,
+                album TEXT NOT NULL,
+                started_at REAL NOT NULL,
+                last_observed_at REAL NOT NULL,
+                observed_playback_duration REAL NOT NULL DEFAULT 0,
+                track_duration REAL,
+                completion_ratio REAL
+            );
 
-                CREATE INDEX IF NOT EXISTS listening_history_recent
-                    ON listening_history_sessions(last_observed_at DESC, started_at DESC);
-                """)
-            try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (8, strftime('%s','now'));")
-            try execute(database, sql: "PRAGMA user_version = 8;")
-            try execute(database, sql: "COMMIT;")
-        } catch {
-            _ = try? execute(database, sql: "ROLLBACK;")
-            throw error
-        }
+            CREATE INDEX IF NOT EXISTS listening_history_recent
+                ON listening_history_sessions(last_observed_at DESC, started_at DESC);
+            """)
+        try execute(database, sql: "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (8, strftime('%s','now'));")
+        try execute(database, sql: "PRAGMA user_version = 8;")
     }
 
     private struct LegacyReadingGroup {

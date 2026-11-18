@@ -76,8 +76,6 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     public func prepare() throws {
         guard !prepared else { return }
 
-        let databaseAlreadyExisted = FileManager.default.fileExists(atPath: databaseURL.path)
-
         do {
             try FileManager.default.createDirectory(
                 at: databaseURL.deletingLastPathComponent(),
@@ -108,13 +106,16 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             }
             // Request reservations must commit durably before the engine runs.
             try execute("PRAGMA synchronous=FULL;")
-            let existingVersion = try scalarInt("PRAGMA user_version;")
-            // Existing user databases follow the same forward migration path as
-            // fresh installs. A consistent snapshot is required before any upgrade.
-            if databaseAlreadyExisted, existingVersion < DatabaseMigrator.currentVersion {
-                _ = try writeDatabaseSnapshot(label: "pre-v\(DatabaseMigrator.currentVersion)")
+            try DatabaseMigrator.migrate(handle) { version in
+                // A fresh file may already have been opened by another window.
+                if version == 0 {
+                    let hasTables = try scalarInt("""
+                        SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT GLOB 'sqlite_*');
+                        """) == 1
+                    guard hasTables else { return }
+                }
+                try writePreUpgradeSnapshot()
             }
-            try DatabaseMigrator.migrate(handle)
             guard try scalarInt("PRAGMA user_version;") == DatabaseMigrator.currentVersion else {
                 throw LyricsRepositoryError.migrationFailed(
                     DatabaseMigrator.currentVersion, "数据库升级未完成，原有数据已保留。"
@@ -2939,8 +2940,20 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         try stepDone(statement)
     }
 
-    private func writeDatabaseSnapshot(label: String) throws -> URL {
-        guard let database else { throw LyricsRepositoryError.unavailable("SQLite handle 已关闭") }
+    private func writePreUpgradeSnapshot() throws {
+        // Read the committed data through a separate connection while the
+        // migration holds the write lock.
+        var reader: OpaquePointer?
+        let result = sqlite3_open_v2(databaseURL.path, &reader, SQLITE_OPEN_READONLY, nil)
+        defer { if let reader { sqlite3_close(reader) } }
+        guard result == SQLITE_OK, let reader else {
+            throw LyricsRepositoryError.unavailable("数据库备份无法读取原库")
+        }
+        _ = try writeDatabaseSnapshot(label: "pre-v\(DatabaseMigrator.currentVersion)", source: reader)
+    }
+
+    private func writeDatabaseSnapshot(label: String, source: OpaquePointer? = nil) throws -> URL {
+        guard let source = source ?? database else { throw LyricsRepositoryError.unavailable("SQLite handle 已关闭") }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"
@@ -2964,7 +2977,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 throw LyricsRepositoryError.unavailable("数据库备份无法创建")
             }
             defer { sqlite3_close(backupDatabase) }
-            guard let backup = sqlite3_backup_init(backupDatabase, "main", database, "main") else {
+            guard let backup = sqlite3_backup_init(backupDatabase, "main", source, "main") else {
                 throw LyricsRepositoryError.unavailable("数据库备份初始化失败")
             }
             let step = sqlite3_backup_step(backup, -1)

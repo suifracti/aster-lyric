@@ -504,6 +504,54 @@ final class LibraryRevisionsContractTests: XCTestCase {
         XCTAssertEqual(translations.first?.record.id, translation.record.id)
     }
 
+    func testConcurrentLibraryStartupOnlyBacksUpAnExistingSchemaOnce() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let url = root.appendingPathComponent("lyrics.sqlite3")
+        try Data().write(to: url)
+
+        let first = SQLiteLyricsRepository(databaseURL: url)
+        let second = SQLiteLyricsRepository(databaseURL: url)
+        async let initializeFirst: Void = first.prepare()
+        async let initializeSecond: Void = second.prepare()
+        _ = try await (initializeFirst, initializeSecond)
+        let fresh = try await first.statistics()
+        XCTAssertTrue(fresh.backups.isEmpty)
+
+        let track = Track(title: "Saved before upgrade", artist: "Fixture", album: "", duration: 120)
+        let identity = TrackIdentity(track: track)
+        let document = LyricsDocument(identity: identity, title: track.title, artist: track.artist, duration: 120,
+            lines: [.init(timestamp: 0, originalText: "saved line")], isSynchronized: true, source: .local, confidence: 1)
+        let saved = try await first.save(track: track, identity: identity, document: document)
+        try executeSQL("""
+            ALTER TABLE lyric_lines DROP COLUMN performer_id;
+            ALTER TABLE lyric_lines DROP COLUMN background_text;
+            DELETE FROM schema_migrations WHERE version = 14;
+            PRAGMA user_version = 13;
+            """, at: url)
+
+        let upgrade = SQLiteLyricsRepository(databaseURL: url)
+        let otherWindow = SQLiteLyricsRepository(databaseURL: url)
+        async let upgradeFirst: Void = upgrade.prepare()
+        async let upgradeSecond: Void = otherWindow.prepare()
+        _ = try await (upgradeFirst, upgradeSecond)
+
+        let stats = try await upgrade.statistics()
+        XCTAssertEqual(stats.backups.count, 1)
+        let backup = try XCTUnwrap(stats.backups.first?.url)
+        var snapshot: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(backup.path, &snapshot, SQLITE_OPEN_READONLY, nil), SQLITE_OK)
+        defer { sqlite3_close(snapshot) }
+        var schema: OpaquePointer?
+        XCTAssertEqual(sqlite3_prepare_v2(snapshot, "PRAGMA user_version;", -1, &schema, nil), SQLITE_OK)
+        defer { sqlite3_finalize(schema) }
+        XCTAssertEqual(sqlite3_step(schema), SQLITE_ROW)
+        XCTAssertEqual(sqlite3_column_int(schema, 0), 13)
+        let recovered = try await otherWindow.loadBestStored(track: track, identity: identity)
+        XCTAssertEqual(recovered?.versionID, saved.versionID)
+        XCTAssertEqual(recovered?.document.lines.first?.originalText, "saved line")
+    }
+
     func testManualBackupIncludesWALWritesWhileAnotherWindowReads() async throws {
         let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
         let url = root.appendingPathComponent("live.sqlite3")
