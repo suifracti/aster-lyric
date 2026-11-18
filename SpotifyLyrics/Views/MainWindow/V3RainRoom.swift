@@ -1,12 +1,13 @@
 import CoreLocation
 import SwiftUI
 
-/// 情境 (A13, after Tauon's room, reworked 2026-11-18). The first 雨夜房间 drew
-/// the listening view at 62% as a monitor on a desk, which left the lyrics tiny.
-/// Now the listening view stays close to full size and is the glass (or page,
-/// photo, film frame) of the scene: the scene lives in a thin margin and on top
-/// of the glass, never under the pointer. Layout and hit-testing inside are
-/// unchanged, and switching scenes only redraws the surroundings.
+/// 情境 (A13, after Tauon's room; rebuilt 2026-11-18). The listening view is
+/// never shrunk or framed. A scene adds three layers to the existing picture:
+/// - back: between the backdrop and the lyrics (passing lights, stars, lamp and fire light);
+/// - cover: around the foreground cover (a polaroid mount, a film frame, a book plate);
+/// - glass: on top of everything, never catching the pointer (rain, frost, grain).
+/// Each scene also has its own chorus moment, and nothing it does is saved into
+/// the user's other picture settings.
 enum V3Room: String, CaseIterable, Identifiable, Sendable {
     case off = "", rain, train, snow, weather, book, polaroid, stars, film
     /// 跟随天气 on a dry night: the rain room's window without rain.
@@ -36,14 +37,14 @@ enum V3Room: String, CaseIterable, Identifiable, Sendable {
     var detail: String {
         switch self {
         case .off: return "只有听歌画面"
-        case .rain: return "画面是一扇夜里的木窗：雨顺着玻璃往下淌，台灯的暖光从右下角漫进来"
-        case .train: return "画面是夜车的车窗：窗外的灯一串串掠过，快慢跟着这首歌的节拍"
-        case .snow: return "画面是雪夜小屋的窗：窗外落雪，玻璃四角结霜，炉火在下方轻轻跳动"
-        case .weather: return "按你所在地现在的天气，在雨夜、雪夜和晴夜的窗之间切换；需要大致位置"
-        case .book: return "画面摊在一本书上：纸边、书脊的阴影，唱完一段翻一页"
-        case .polaroid: return "画面是一张拍立得，正在唱的一句手写在下方的白边上"
-        case .stars: return "每句歌词是一颗星，唱过的星连成线，一首歌唱完留下它自己的星图"
-        case .film: return "画面放在一条胶片上：两侧齿孔，颗粒、偶尔的划痕和放映机的轻微闪烁"
+        case .rain: return "雨顺着玻璃往下淌，窗棂的影子落在画面上，台灯从右下角照过来。副歌时雨更大，远处闪电"
+        case .train: return "窗外的灯从歌词后面掠过，快慢跟着这首歌的节拍。副歌时开上一座桥，城市灯火铺开"
+        case .snow: return "窗外落雪，玻璃四角结霜，炉火的光在下方跳动。副歌时雪下得更密"
+        case .weather: return "按你所在地现在的天气，在雨、雪和晴夜之间切换；需要大致位置"
+        case .book: return "画面像一页旧书：纸纹、台灯，封面成了插图。唱完一段翻一页，副歌那段会被标出来"
+        case .polaroid: return "封面成了一张拍立得，正在唱的一句手写在白边上。副歌时按一下快门；歌放完冲洗一张"
+        case .stars: return "每句歌词是一颗星，唱过的星连成线。副歌时划过流星；歌唱完留下它的星图"
+        case .film: return "封面嵌在胶片里，整幅画面带颗粒、划痕和放映机的闪烁。副歌时放映灯亮一下"
         case .clearNight: return "晴夜的窗"
         }
     }
@@ -94,112 +95,6 @@ struct V3RoomContext: Equatable {
             if lines[i - 1].originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || gap >= 7 { count += 1 }
         }
         return count
-    }
-}
-
-struct V3RoomModifier: ViewModifier {
-    let room: V3Room
-    let playing: Bool
-    var context = V3RoomContext()
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ObservedObject private var weather = V3WeatherWatcher.shared
-    @State private var bpm: Double?
-    /// The furthest line reached in the playing song, to decide whether it was really listened to.
-    @State private var reached = (key: "", line: -1)
-
-    /// The scene actually drawn: 跟随天气 becomes one of the windows; a room
-    /// opens during a chorus when the user leaves that on.
-    private var look: V3Room {
-        if room == .weather { return weather.room }
-        return room
-    }
-    private var opened: Bool { look.isRoom && context.opensOnChorus && context.chorus }
-
-    /// The margin the scene takes around the glass, in points.
-    static func margin(for size: CGSize) -> CGFloat {
-        min(54, max(22, min(size.width, size.height) * 0.06))
-    }
-
-    /// The glass keeps 82–92% of the window, so lyrics stay readable.
-    static func glass(in size: CGSize, room: V3Room) -> CGRect {
-        guard room != .off, size.width > 0, size.height > 0 else { return CGRect(origin: .zero, size: size) }
-        let m = margin(for: size)
-        let side: CGFloat, top: CGFloat, bottom: CGFloat
-        switch room {
-        case .film: (side, top, bottom) = (max(m, 34), m * 0.45, m * 0.45)
-        case .train: (side, top, bottom) = (m, m, m)
-        case .book: (side, top, bottom) = (m * 1.1, m * 0.8, m * 1.2)
-        case .polaroid: (side, top, bottom) = (m * 0.7, m * 0.7, max(56, size.height * 0.13))
-        case .stars: (side, top, bottom) = (m * 0.7, m * 0.7, m * 0.7)
-        default: (side, top, bottom) = (m, m, m * 1.35)
-        }
-        let scale = min((size.width - 2 * side) / size.width, (size.height - top - bottom) / size.height)
-        let width = size.width * scale, height = size.height * scale
-        return CGRect(x: (size.width - width) / 2, y: top + (size.height - top - bottom - height) / 2, width: width, height: height)
-    }
-
-    static func cornerRadius(_ room: V3Room) -> CGFloat {
-        switch room {
-        case .off: return 0
-        case .train: return 30
-        case .rain, .snow, .weather, .clearNight: return 6
-        case .film, .polaroid: return 3
-        case .book: return 2
-        case .stars: return 18
-        }
-    }
-
-    func body(content: Content) -> some View {
-        GeometryReader { geometry in
-            let size = geometry.size
-            let shown: V3Room = opened ? .off : look
-            let glass = Self.glass(in: size, room: shown)
-            let scale = glass.width / max(1, size.width)
-            let radius = Self.cornerRadius(shown)
-            let moving = playing && !reduceMotion
-            ZStack(alignment: .topLeading) {
-                V3RoomWall(room: look, size: size, glass: glass)
-                    .overlay { if look.isRoom { V3DaylightTint(room: look) } }
-                    .opacity(opened ? 0 : 1)
-                content
-                    .frame(width: size.width, height: size.height)
-                    .clipShape(RoundedRectangle(cornerRadius: radius / max(scale, 0.01), style: .continuous))
-                    .scaleEffect(scale, anchor: .topLeading)
-                    .offset(x: glass.minX, y: glass.minY)
-                V3RoomGlass(room: look, playing: moving, glass: glass, radius: radius, context: context,
-                            speed: (bpm ?? 110) / 110)
-                V3RoomFrame(room: look, size: size, glass: glass, radius: radius, context: context)
-                    .opacity(opened ? 0 : 1)
-                if look == .polaroid || look == .stars {
-                    // In the margin, clear of the listening view.
-                    V3KeepsakeTray(kind: look == .polaroid ? .polaroid : .stars)
-                        .position(x: glass.maxX - 18, y: look == .polaroid ? (glass.maxY + size.height) / 2 : min(size.height - 12, glass.maxY + glass.minY / 2))
-                }
-            }
-            .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.6, dampingFraction: 0.92), value: look)
-            .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 1.1, dampingFraction: 0.95), value: opened)
-        }
-        .onChange(of: room, initial: true) { _, next in weather.setActive(next == .weather) }
-        .onChange(of: context.lineIndex) { _, index in
-            guard let song = context.song, let index else { return }
-            if reached.key != song.trackKey { reached = (song.trackKey, index) } else { reached.line = max(reached.line, index) }
-        }
-        .onChange(of: context.song) { previous, _ in
-            // A song left after most of its lines were sung leaves a print behind.
-            guard let previous, room == .polaroid || room == .stars, reached.key == previous.trackKey,
-                  previous.lineCount > 0, Double(reached.line + 1) / Double(previous.lineCount) >= 0.6 else { return }
-            let kind: V3Keepsakes.Print.Kind = room == .polaroid ? .polaroid : .stars
-            reached = ("", -1)
-            Task { await V3Keepsakes.shared.develop(kind: kind, song: previous) }
-        }
-        // 夜行列车 runs at the song's tempo when Spotify has it in its cache.
-        .task(id: room == .train ? context.spotifyTrackID : nil) {
-            bpm = nil
-            guard room == .train, let id = context.spotifyTrackID else { return }
-            let found = await Task.detached(priority: .utility) { SpotifyTrackAnalysis.load(trackID: id).bpm }.value
-            if !Task.isCancelled { bpm = found.map { min(180, max(60, $0)) } }
-        }
     }
 }
 
@@ -304,85 +199,6 @@ final class V3WeatherWatcher: NSObject, ObservableObject, CLLocationManagerDeleg
     }
 }
 
-// MARK: - Wall: what is seen around the window
-
-private struct V3RoomWall: View {
-    let room: V3Room
-    let size: CGSize
-    let glass: CGRect
-
-    var body: some View {
-        ZStack {
-            switch room {
-            case .off:
-                Color.clear
-            case .rain, .clearNight, .weather:
-                LinearGradient(colors: [Color(red: 0.10, green: 0.10, blue: 0.13), Color(red: 0.05, green: 0.045, blue: 0.05)],
-                               startPoint: .top, endPoint: .bottom)
-                // The lamp is just out of view at the lower right; its light pools on the wall.
-                RadialGradient(colors: [Color(red: 1, green: 0.70, blue: 0.40).opacity(0.55), .clear],
-                               center: UnitPoint(x: 1.02, y: 0.98), startRadius: 0, endRadius: max(size.width, size.height) * 0.55)
-                // Cold light from the window spills a little onto the wall above it.
-                RadialGradient(colors: [Color(red: 0.45, green: 0.58, blue: 0.85).opacity(0.18), .clear],
-                               center: UnitPoint(x: 0.3, y: 0.0), startRadius: 0, endRadius: size.width * 0.5)
-            case .train:
-                LinearGradient(colors: [Color(red: 0.13, green: 0.14, blue: 0.17), Color(red: 0.07, green: 0.075, blue: 0.09)],
-                               startPoint: .top, endPoint: .bottom)
-                // The carriage's long ceiling light.
-                LinearGradient(colors: [Color(red: 0.9, green: 0.92, blue: 1).opacity(0.14), .clear], startPoint: .top, endPoint: .init(x: 0.5, y: 0.08))
-            case .snow:
-                LinearGradient(colors: [Color(red: 0.20, green: 0.12, blue: 0.08), Color(red: 0.09, green: 0.055, blue: 0.04)],
-                               startPoint: .top, endPoint: .bottom)
-                // Log seams.
-                Canvas { context, canvas in
-                    var y: CGFloat = 0
-                    while y < canvas.height {
-                        context.fill(Path(CGRect(x: 0, y: y, width: canvas.width, height: 1)), with: .color(.black.opacity(0.35)))
-                        context.fill(Path(CGRect(x: 0, y: y + 1, width: canvas.width, height: 1)), with: .color(.white.opacity(0.04)))
-                        y += 26
-                    }
-                }
-                V3Firelight(size: size)
-            case .film:
-                Color(red: 0.05, green: 0.04, blue: 0.03)
-            case .book:
-                // The desk the book lies open on.
-                LinearGradient(colors: [Color(red: 0.24, green: 0.16, blue: 0.10), Color(red: 0.12, green: 0.08, blue: 0.05)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
-                RadialGradient(colors: [Color(red: 1, green: 0.8, blue: 0.5).opacity(0.25), .clear],
-                               center: UnitPoint(x: 0.15, y: 0.0), startRadius: 0, endRadius: max(size.width, size.height) * 0.7)
-                ZStack(alignment: .topLeading) {
-                // The page block: a few page edges peeking out under the open page.
-                ForEach(0..<4, id: \.self) { index in
-                    let inset = CGFloat(index + 1) * 2.5
-                    Rectangle()
-                        .fill(Color(red: 0.93, green: 0.89, blue: 0.80).opacity(1 - Double(index) * 0.18))
-                        .frame(width: glass.width + inset * 2, height: glass.height + inset * 2)
-                        .offset(x: glass.minX - inset, y: glass.minY - inset * 0.4)
-                        .shadow(color: .black.opacity(index == 3 ? 0.5 : 0), radius: 10, y: 6)
-                }
-                }
-                .frame(width: size.width, height: size.height, alignment: .topLeading)
-            case .polaroid:
-                // A corkboard under a warm light.
-                LinearGradient(colors: [Color(red: 0.42, green: 0.31, blue: 0.21), Color(red: 0.26, green: 0.18, blue: 0.12)],
-                               startPoint: .top, endPoint: .bottom)
-                V3Speckle(seed: 5, count: 1400, color: .black, opacity: 0.18)
-                RadialGradient(colors: [.clear, .black.opacity(0.45)], center: .center,
-                               startRadius: min(size.width, size.height) * 0.3, endRadius: max(size.width, size.height) * 0.75)
-            case .stars:
-                LinearGradient(colors: [Color(red: 0.03, green: 0.04, blue: 0.10), Color(red: 0.06, green: 0.05, blue: 0.14)],
-                               startPoint: .top, endPoint: .bottom)
-                V3Speckle(seed: 9, count: 260, color: .white, opacity: 0.55)
-            }
-        }
-        .frame(width: size.width, height: size.height)
-        .opacity(room == .off ? 0 : 1)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}
-
 /// The fire is out of view below the window; only its moving light is seen.
 private struct V3Firelight: View {
     let size: CGSize
@@ -398,83 +214,20 @@ private struct V3Firelight: View {
     }
 }
 
-// MARK: - Glass: drawn over the listening view, never catching the pointer
-
-private struct V3RoomGlass: View {
-    let room: V3Room
-    let playing: Bool
-    let glass: CGRect
-    let radius: CGFloat
-    var context = V3RoomContext()
-    /// 夜行列车's speed: the song's tempo over 110 BPM.
-    var speed: Double = 1
-
-    var body: some View {
-        ZStack {
-            switch room {
-            case .off:
-                Color.clear
-            case .rain:
-                V3ParticleView(kind: .rain, running: playing).opacity(0.75)
-                // Breath on the cold glass along its edges.
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 26).blur(radius: 18)
-                // The lamp's warmth reaching the lower right of the pane.
-                RadialGradient(colors: [Color(red: 1, green: 0.72, blue: 0.42).opacity(0.16), .clear],
-                               center: UnitPoint(x: 1, y: 1), startRadius: 0, endRadius: glass.width * 0.45)
-                    .blendMode(.screen)
-            case .train:
-                V3PassingLights(playing: playing, size: glass.size, speed: speed)
-                // The double glazing's faint reflection of the carriage.
-                LinearGradient(colors: [.white.opacity(0.07), .clear, .clear, .white.opacity(0.04)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
-                    .blendMode(.screen)
-            case .snow:
-                V3ParticleView(kind: .snow, running: playing).opacity(0.85)
-                V3Frost(size: glass.size)
-            case .film:
-                V3FilmGrain(playing: playing, size: glass.size)
-            case .clearNight, .weather:
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 22).blur(radius: 16)
-                RadialGradient(colors: [Color(red: 1, green: 0.72, blue: 0.42).opacity(0.14), .clear],
-                               center: UnitPoint(x: 1, y: 1), startRadius: 0, endRadius: glass.width * 0.45)
-                    .blendMode(.screen)
-            case .book:
-                V3BookPage(size: glass.size, stanza: context.stanza, animate: playing)
-            case .polaroid:
-                // Faded print: lifted blacks and a warm cast.
-                Color(red: 1, green: 0.93, blue: 0.80).opacity(0.10).blendMode(.screen)
-                Color(red: 1, green: 0.88, blue: 0.70).opacity(0.12).blendMode(.multiply)
-                RadialGradient(colors: [.clear, .black.opacity(0.22)], center: .center,
-                               startRadius: min(glass.width, glass.height) * 0.4, endRadius: max(glass.width, glass.height) * 0.75)
-            case .stars:
-                V3Constellation(size: glass.size, seed: context.trackKey, count: context.lineCount,
-                                current: context.lineIndex, playing: playing)
-            }
-        }
-        .frame(width: glass.width, height: glass.height)
-        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-        .offset(x: glass.minX, y: glass.minY)
-        .opacity(room == .off ? 0 : 1)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}
-
-/// Lights outside the train window: blurred dots streaming past near the top and
-/// bottom of the pane, and every few seconds a street lamp sweeping across it.
-/// The middle of the pane, where the lyrics are, stays clear.
+/// Lights outside the train window, streaming past behind the lyrics: more of
+/// them low down, as a city seen from a train, and every few seconds a street
+/// lamp sweeping across the whole window.
 private struct V3PassingLights: View {
     let playing: Bool
     let size: CGSize
     var speed: Double = 1
+    /// 2 during the chorus: twice as many lights.
+    var density = 1
 
     private static let lamps: [(lane: CGFloat, phase: CGFloat, radius: CGFloat, warm: Bool, speed: CGFloat)] = {
         var generator = SeededRandom(seed: 11)
-        return (0..<34).map { _ in
-            let top = generator.next() < 0.55
-            let lane = top ? 0.02 + 0.13 * generator.next() : 0.86 + 0.12 * generator.next()
+        return (0..<48).map { _ in
+            let lane = 0.1 + 0.88 * sqrt(generator.next())
             return (lane, generator.next(), 2 + 6 * generator.next(), generator.next() > 0.3, 0.6 + 0.8 * generator.next())
         }
     }()
@@ -484,7 +237,7 @@ private struct V3PassingLights: View {
             let t = timeline.date.timeIntervalSinceReferenceDate
             Canvas { context, canvas in
                 let travel = canvas.width + 80
-                for lamp in Self.lamps {
+                for (index, lamp) in Self.lamps.enumerated() where density > 1 || index % 2 == 0 {
                     let distance = (CGFloat(t) * 140 * CGFloat(speed) * lamp.speed + lamp.phase * travel).truncatingRemainder(dividingBy: travel)
                     let x = canvas.width + 40 - distance
                     let y = canvas.height * lamp.lane
@@ -504,12 +257,8 @@ private struct V3PassingLights: View {
                         startPoint: CGPoint(x: band.minX, y: 0), endPoint: CGPoint(x: band.maxX, y: 0)))
                 }
             }
-            .blur(radius: 9)
+            .blur(radius: 10)
             .blendMode(.screen)
-            // Only the upper and lower edges of the pane; the lyrics in the middle stay clear.
-            .mask(LinearGradient(stops: [.init(color: .white, location: 0), .init(color: .clear, location: 0.2),
-                                         .init(color: .clear, location: 0.8), .init(color: .white, location: 1)],
-                                 startPoint: .top, endPoint: .bottom))
         }
         .frame(width: size.width, height: size.height)
     }
@@ -543,76 +292,6 @@ private struct V3Frost: View {
             .blur(radius: 1.2)
         }
         .frame(width: size.width, height: size.height)
-    }
-}
-
-// MARK: - Frame: the window's own edge
-
-private struct V3RoomFrame: View {
-    let room: V3Room
-    let size: CGSize
-    let glass: CGRect
-    let radius: CGFloat
-    var context = V3RoomContext()
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            switch room {
-            case .off:
-                Color.clear
-            case .rain, .clearNight, .weather:
-                woodenFrame(dark: Color(red: 0.16, green: 0.10, blue: 0.07), light: Color(red: 0.32, green: 0.21, blue: 0.13))
-            case .book:
-                Color.clear
-            case .polaroid:
-                V3PolaroidMount(size: size, glass: glass, line: context.currentLine)
-            case .stars:
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
-                    .frame(width: glass.width, height: glass.height)
-                    .offset(x: glass.minX, y: glass.minY)
-            case .snow:
-                woodenFrame(dark: Color(red: 0.72, green: 0.70, blue: 0.66), light: Color(red: 0.93, green: 0.92, blue: 0.89))
-            case .film:
-                V3FilmStrip(size: size, glass: glass, radius: radius)
-            case .train:
-                // Rubber seal and a brushed-metal surround with large rounded corners.
-                RoundedRectangle(cornerRadius: radius + 10, style: .continuous)
-                    .strokeBorder(LinearGradient(colors: [Color(white: 0.42), Color(white: 0.22)], startPoint: .top, endPoint: .bottom), lineWidth: 10)
-                    .frame(width: glass.width + 20, height: glass.height + 20)
-                    .offset(x: glass.minX - 10, y: glass.minY - 10)
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(Color.black.opacity(0.85), lineWidth: 3)
-                    .frame(width: glass.width, height: glass.height)
-                    .offset(x: glass.minX, y: glass.minY)
-            }
-        }
-        .frame(width: size.width, height: size.height, alignment: .topLeading)
-        .opacity(room == .off ? 0 : 1)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-
-    /// A painted or stained wooden casement, with a deeper sill below it.
-    @ViewBuilder private func woodenFrame(dark: Color, light: Color) -> some View {
-        let border: CGFloat = 12
-        let wood = LinearGradient(colors: [light, dark], startPoint: .top, endPoint: .bottom)
-        RoundedRectangle(cornerRadius: radius + 4, style: .continuous)
-            .strokeBorder(wood, lineWidth: border)
-            .frame(width: glass.width + border * 2, height: glass.height + border * 2)
-            .offset(x: glass.minX - border, y: glass.minY - border)
-        // A thin inner shadow where the glass sits in the frame.
-        RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .strokeBorder(Color.black.opacity(0.55), lineWidth: 2)
-            .frame(width: glass.width, height: glass.height)
-            .offset(x: glass.minX, y: glass.minY)
-        // The sill.
-        let sillTop = glass.maxY + border - 2
-        RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(LinearGradient(colors: [light, dark], startPoint: .top, endPoint: .bottom))
-            .frame(width: glass.width + border * 5, height: 9)
-            .shadow(color: .black.opacity(0.5), radius: 6, y: 4)
-            .offset(x: glass.minX - border * 2.5, y: sillTop)
     }
 }
 
@@ -661,34 +340,6 @@ private struct V3FilmGrain: View {
     }
 }
 
-/// Both edges of a 35 mm strip: sprocket holes, and the frame line between frames.
-private struct V3FilmStrip: View {
-    let size: CGSize
-    let glass: CGRect
-    let radius: CGFloat
-
-    var body: some View {
-        Canvas { context, canvas in
-            let lane = glass.minX
-            let hole = CGSize(width: min(14, lane * 0.38), height: min(10, lane * 0.28))
-            let pitch = hole.height * 2.1
-            var y = pitch / 2
-            while y < canvas.height {
-                for x in [lane / 2, canvas.width - lane / 2] {
-                    let rect = CGRect(x: x - hole.width / 2, y: y - hole.height / 2, width: hole.width, height: hole.height)
-                    context.fill(Path(roundedRect: rect, cornerRadius: 2), with: .color(Color(red: 0.86, green: 0.82, blue: 0.72).opacity(0.85)))
-                }
-                y += pitch
-            }
-            // Edge print, the kind of code stamped along real stock.
-            let code = Text("ASTER 400  ▸ 17  ▸ 18  ▸ 19").font(.system(size: 7, weight: .semibold, design: .monospaced))
-                .foregroundColor(Color(red: 1, green: 0.62, blue: 0.25).opacity(0.7))
-            context.draw(code, at: CGPoint(x: glass.minX + 60, y: glass.minY / 2 + 1), anchor: .leading)
-        }
-        .frame(width: size.width, height: size.height)
-    }
-}
-
 /// Fixed specks: dust on a corkboard, faint stars around the sky's frame.
 struct V3Speckle: View {
     let seed: UInt64
@@ -703,39 +354,6 @@ struct V3Speckle: View {
                 context.fill(Path(ellipseIn: CGRect(x: generator.next() * canvas.width, y: generator.next() * canvas.height, width: r * 2, height: r * 2)),
                              with: .color(color.opacity(opacity * (0.3 + 0.7 * Double(generator.next())))))
             }
-        }
-    }
-}
-
-/// 书页: paper grain, the gutter's shadow down the middle, and a page turning
-/// across the glass each time a new stanza starts.
-private struct V3BookPage: View {
-    let size: CGSize
-    let stanza: Int
-    let animate: Bool
-    @State private var turnedAt: Date?
-
-    var body: some View {
-        ZStack {
-            V3Speckle(seed: 31, count: 900, color: Color(red: 0.45, green: 0.35, blue: 0.2), opacity: 0.10)
-            Color(red: 1, green: 0.95, blue: 0.84).opacity(0.06).blendMode(.screen)
-            // The gutter: the two pages curve down into the spine.
-            LinearGradient(stops: [.init(color: .clear, location: 0.44), .init(color: .black.opacity(0.28), location: 0.5),
-                                   .init(color: .clear, location: 0.56)], startPoint: .leading, endPoint: .trailing)
-            LinearGradient(stops: [.init(color: .white.opacity(0.06), location: 0.38), .init(color: .clear, location: 0.47),
-                                   .init(color: .clear, location: 0.53), .init(color: .white.opacity(0.06), location: 0.62)],
-                           startPoint: .leading, endPoint: .trailing)
-            if let turnedAt {
-                TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
-                    let progress = min(1, timeline.date.timeIntervalSince(turnedAt) / 0.9)
-                    V3PageSweep(progress: progress).opacity(progress >= 1 ? 0 : 1)
-                }
-            }
-        }
-        .frame(width: size.width, height: size.height)
-        .onChange(of: stanza) { old, new in
-            guard animate, new > old else { return }
-            turnedAt = Date()
         }
     }
 }
@@ -758,51 +376,6 @@ private struct V3PageSweep: View {
             }
             .blendMode(.overlay)
         }
-    }
-}
-
-/// 拍立得: the white mount, wider at the bottom, where the line being sung is
-/// written by hand.
-struct V3PolaroidMount: View {
-    let size: CGSize
-    let glass: CGRect
-    let line: String
-
-    private static let handFontName: String? = ["Klee-Medium", "HannotateSC-W5", "KaitiSC-Regular", "BradleyHandITCTT-Bold"]
-        .first { NSFont(name: $0, size: 20) != nil }
-    static func handFont(size: CGFloat) -> Font {
-        handFontName.map { .custom($0, size: size) } ?? .system(size: size, weight: .regular, design: .serif).italic()
-    }
-    private static let handFont = handFont(size: 20)
-
-    var body: some View {
-        let border = min(glass.minX, glass.minY) * 0.85
-        let mount = CGRect(x: glass.minX - border, y: glass.minY - border, width: glass.width + border * 2,
-                           height: size.height - border * 0.5 - (glass.minY - border))
-        ZStack(alignment: .topLeading) {
-            // One white card with the photo's window cut out, so the glass stays clickable.
-            Path { path in
-                path.addRect(mount)
-                path.addRect(glass)
-            }
-            .fill(Color(red: 0.97, green: 0.96, blue: 0.93), style: FillStyle(eoFill: true))
-            .shadow(color: .black.opacity(0.4), radius: 14, y: 6)
-            // A strip of tape holding it to the board.
-            Rectangle().fill(Color(red: 0.95, green: 0.92, blue: 0.80).opacity(0.75))
-                .frame(width: 90, height: 22)
-                .rotationEffect(.degrees(-4))
-                .offset(x: mount.midX - 45, y: max(0, mount.minY - 11))
-            Text(line.isEmpty ? " " : line)
-                .font(Self.handFont)
-                .foregroundStyle(Color(red: 0.16, green: 0.17, blue: 0.24).opacity(0.86))
-                .lineLimit(1).minimumScaleFactor(0.5)
-                .frame(width: glass.width - 40, height: mount.maxY - glass.maxY, alignment: .center)
-                .offset(x: glass.minX + 20, y: glass.maxY)
-                .id(line)
-                .transition(.opacity)
-                .animation(.easeInOut(duration: 0.5), value: line)
-        }
-        .frame(width: size.width, height: size.height, alignment: .topLeading)
     }
 }
 
@@ -1001,7 +574,7 @@ struct V3PolaroidPrint: View {
             .frame(width: 420, height: 420).clipped()
             .overlay(Color(red: 1, green: 0.9, blue: 0.75).opacity(0.10).blendMode(.multiply))
             Text(print.line.isEmpty ? print.title : print.line)
-                .font(V3PolaroidMount.handFont(size: 24))
+                .font(V3SceneHand.font(size: 24))
                 .foregroundStyle(Color(red: 0.16, green: 0.17, blue: 0.24))
                 .lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.6)
                 .frame(width: 400, height: 76)
@@ -1126,5 +699,480 @@ private struct V3KeepsakeThumb: View {
         guard panel.runModal() == .OK, let target = panel.url else { return }
         try? FileManager.default.removeItem(at: target)
         try? FileManager.default.copyItem(at: source, to: target)
+    }
+}
+
+// MARK: - The three layers
+
+/// Handwriting for the polaroid: Klee, then 手札体, then 楷体, else an italic serif.
+enum V3SceneHand {
+    private static let name: String? = ["Klee-Medium", "HannotateSC-W5", "KaitiSC-Regular", "BradleyHandITCTT-Bold"]
+        .first { NSFont(name: $0, size: 20) != nil }
+    static func font(size: CGFloat) -> Font {
+        name.map { .custom($0, size: size) } ?? .system(size: size, weight: .regular, design: .serif).italic()
+    }
+}
+
+extension V3Room {
+    /// The look drawn for this choice: 跟随天气 becomes the window the weather picks.
+    @MainActor func resolved(_ weather: V3WeatherWatcher = .shared) -> V3Room { self == .weather ? weather.room : self }
+}
+
+/// Between the backdrop and the lyrics: the scene's light and what is behind the glass.
+struct V3SceneBackLayer: View {
+    let scene: V3Room
+    let context: V3RoomContext
+    let playing: Bool
+    var speed: Double = 1
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var moving: Bool { playing && !reduceMotion }
+    private var chorus: Bool { context.chorus && context.opensOnChorus }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+            ZStack {
+                switch scene {
+                case .off, .weather, .film:
+                    Color.clear
+                case .rain, .clearNight:
+                    // A cooler, darker night, the window's cross cast over the picture, and the lamp.
+                    Color(red: 0.05, green: 0.08, blue: 0.16).opacity(0.28).blendMode(.multiply)
+                    V3WindowShadow(size: size)
+                    RadialGradient(colors: [Color(red: 1, green: 0.70, blue: 0.40).opacity(0.30), .clear],
+                                   center: UnitPoint(x: 1.0, y: 1.0), startRadius: 0, endRadius: max(size.width, size.height) * 0.6)
+                        .blendMode(.screen)
+                    if scene == .clearNight { V3Speckle(seed: 41, count: 90, color: .white, opacity: 0.5).mask(LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .center)) }
+                    if scene == .rain, chorus { V3Lightning(running: moving) }
+                case .train:
+                    Color(red: 0.03, green: 0.04, blue: 0.08).opacity(0.35).blendMode(.multiply)
+                    V3PassingLights(playing: moving, size: size, speed: speed * (chorus ? 1.25 : 1), density: chorus ? 2 : 1)
+                    if chorus {
+                        // The bridge: the city spread out below.
+                        LinearGradient(colors: [.clear, Color(red: 1, green: 0.72, blue: 0.38).opacity(0.28)], startPoint: .center, endPoint: .bottom)
+                            .blendMode(.screen).transition(.opacity)
+                    }
+                case .snow:
+                    Color(red: 0.55, green: 0.65, blue: 0.85).opacity(0.10).blendMode(.screen)
+                    V3Firelight(size: size)
+                case .book:
+                    // Old paper under a lamp: sepia, grain, warm light from the upper left.
+                    Color(red: 0.62, green: 0.48, blue: 0.30).opacity(0.30).blendMode(.multiply)
+                    V3Speckle(seed: 31, count: 1500, color: Color(red: 0.95, green: 0.85, blue: 0.65), opacity: 0.10)
+                    RadialGradient(colors: [Color(red: 1, green: 0.85, blue: 0.6).opacity(0.28), .clear],
+                                   center: UnitPoint(x: 0.1, y: 0.0), startRadius: 0, endRadius: max(size.width, size.height) * 0.8)
+                        .blendMode(.screen)
+                case .polaroid:
+                    // A faded print: lifted blacks and a warm cast over the whole picture.
+                    Color(red: 1, green: 0.93, blue: 0.80).opacity(0.08).blendMode(.screen)
+                    Color(red: 1, green: 0.86, blue: 0.68).opacity(0.14).blendMode(.multiply)
+                case .stars:
+                    Color(red: 0.02, green: 0.03, blue: 0.10).opacity(0.55).blendMode(.multiply)
+                    V3Speckle(seed: 9, count: 320, color: .white, opacity: 0.55)
+                    V3Constellation(size: size, seed: context.trackKey, count: context.lineCount,
+                                    current: context.lineIndex, playing: moving)
+                    if chorus { V3ShootingStar(size: size, running: moving) }
+                }
+                if scene.isRoom { V3DaylightTint(room: scene) }
+            }
+            .frame(width: size.width, height: size.height)
+            .animation(.easeInOut(duration: 1.2), value: chorus)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// Over the foreground cover. Only the keepsake tray takes clicks.
+struct V3SceneCoverLayer: View {
+    let scene: V3Room
+    let context: V3RoomContext
+    /// The foreground cover, when one is shown and large enough.
+    let cover: CGRect?
+    /// The player card, which the polaroid's strip must not cover.
+    var player: CGRect = .null
+    @State private var shutterAt: Date?
+
+    var body: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+            ZStack(alignment: .topLeading) {
+                if let cover {
+                    switch scene {
+                    case .polaroid:
+                        V3PolaroidMount(cover: cover, line: context.currentLine, shutterAt: shutterAt,
+                                        room: V3PolaroidMount.room(below: cover, player: player))
+                    case .film: V3FilmFrame(cover: cover)
+                    case .book: V3BookPlate(cover: cover)
+                    default: EmptyView()
+                    }
+                }
+                if scene == .polaroid || scene == .stars {
+                    let anchor = cover.map { CGPoint(x: $0.maxX - 6, y: $0.maxY + (scene == .polaroid ? $0.width * 0.24 : 22)) }
+                        ?? CGPoint(x: 34, y: size.height - 30)
+                    V3KeepsakeTray(kind: scene == .polaroid ? .polaroid : .stars)
+                        .position(x: min(size.width - 20, anchor.x), y: min(size.height - 16, anchor.y))
+                }
+            }
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+        }
+        .onChange(of: context.chorus && context.opensOnChorus) { _, now in
+            if now, scene == .polaroid { shutterAt = Date() }
+        }
+    }
+}
+
+/// On top of everything, never catching the pointer.
+struct V3SceneGlassLayer: View {
+    let scene: V3Room
+    let context: V3RoomContext
+    let playing: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var turnedAt: Date?
+    @State private var flareAt: Date?
+    private var moving: Bool { playing && !reduceMotion }
+    private var chorus: Bool { context.chorus && context.opensOnChorus }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+            ZStack {
+                switch scene {
+                case .rain:
+                    V3ParticleView(kind: .rain, running: moving).opacity(chorus ? 0.95 : 0.6)
+                    if chorus { V3ParticleView(kind: .rain, running: moving).opacity(0.5).scaleEffect(1.3) }
+                    V3MistedEdges(size: size, strength: 0.09)
+                case .clearNight:
+                    V3MistedEdges(size: size, strength: 0.07)
+                case .snow:
+                    V3ParticleView(kind: .snow, running: moving).opacity(0.8)
+                    if chorus { V3ParticleView(kind: .snow, running: moving).opacity(0.6).scaleEffect(1.4) }
+                    V3Frost(size: size)
+                case .train:
+                    // The double glazing's faint reflection of the carriage.
+                    LinearGradient(colors: [.white.opacity(0.06), .clear, .clear, .white.opacity(0.03)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing).blendMode(.screen)
+                case .film:
+                    V3FilmGrain(playing: moving, size: size)
+                    if let flareAt { V3Flash(at: flareAt, color: Color(red: 1, green: 0.95, blue: 0.85), peak: 0.16, duration: 1.4) }
+                case .book:
+                    RadialGradient(colors: [.clear, Color(red: 0.25, green: 0.15, blue: 0.05).opacity(0.35)], center: .center,
+                                   startRadius: min(size.width, size.height) * 0.4, endRadius: max(size.width, size.height) * 0.75)
+                    if chorus {
+                        // The chorus is marked like a passage underlined in pencil: a warm wash at the edge.
+                        LinearGradient(colors: [Color(red: 1, green: 0.85, blue: 0.4).opacity(0.14), .clear], startPoint: .leading, endPoint: .init(x: 0.12, y: 0.5))
+                            .blendMode(.screen).transition(.opacity)
+                    }
+                    if let turnedAt {
+                        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
+                            let progress = min(1, timeline.date.timeIntervalSince(turnedAt) / 0.9)
+                            V3PageSweep(progress: progress).opacity(progress >= 1 ? 0 : 1)
+                        }
+                    }
+                case .off, .weather, .polaroid, .stars:
+                    Color.clear
+                }
+            }
+            .frame(width: size.width, height: size.height)
+            .animation(.easeInOut(duration: 1.2), value: chorus)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .onChange(of: context.stanza) { old, new in
+            if scene == .book, moving, new > old { turnedAt = Date() }
+        }
+        .onChange(of: chorus) { _, now in
+            if now, scene == .film { flareAt = Date() }
+        }
+    }
+}
+
+/// Keeps the scene's outside world running: the weather, the song's tempo, and the
+/// print left when a song played in 拍立得 or 星座 ends.
+struct V3SceneDriver: ViewModifier {
+    let scene: V3Room
+    let context: V3RoomContext
+    @Binding var bpm: Double?
+    @State private var reached = (key: "", line: -1)
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: scene, initial: true) { _, next in V3WeatherWatcher.shared.setActive(next == .weather) }
+            .task(id: scene == .train ? context.spotifyTrackID : nil) {
+                bpm = nil
+                guard scene == .train, let id = context.spotifyTrackID else { return }
+                let found = await Task.detached(priority: .utility) { SpotifyTrackAnalysis.load(trackID: id).bpm }.value
+                if !Task.isCancelled { bpm = found.map { min(180, max(60, $0)) } }
+            }
+            .onChange(of: context.lineIndex) { _, index in
+                guard let song = context.song, let index else { return }
+                if reached.key != song.trackKey { reached = (song.trackKey, index) } else { reached.line = max(reached.line, index) }
+            }
+            .onChange(of: context.song) { previous, _ in
+                guard let previous, scene == .polaroid || scene == .stars, reached.key == previous.trackKey,
+                      previous.lineCount > 0, Double(reached.line + 1) / Double(previous.lineCount) >= 0.6 else { return }
+                let kind: V3Keepsakes.Print.Kind = scene == .polaroid ? .polaroid : .stars
+                reached = ("", -1)
+                Task { await V3Keepsakes.shared.develop(kind: kind, song: previous) }
+            }
+    }
+}
+
+// MARK: - Pieces
+
+/// The window's cross, cast by the lamp onto the picture: two wide, soft bands
+/// with no hard edge, slightly off centre as if the lamp were to one side.
+private struct V3WindowShadow: View {
+    let size: CGSize
+    var body: some View {
+        ZStack {
+            LinearGradient(stops: [.init(color: .clear, location: 0.5), .init(color: .black.opacity(0.16), location: 0.6),
+                                   .init(color: .clear, location: 0.7)], startPoint: .leading, endPoint: .trailing)
+            LinearGradient(stops: [.init(color: .clear, location: 0.28), .init(color: .black.opacity(0.14), location: 0.38),
+                                   .init(color: .clear, location: 0.48)], startPoint: .top, endPoint: .bottom)
+        }
+        .frame(width: size.width, height: size.height)
+    }
+}
+
+/// Breath on cold glass, thickest at the corners and gone towards the middle.
+private struct V3MistedEdges: View {
+    let size: CGSize
+    let strength: Double
+    var body: some View {
+        RadialGradient(stops: [.init(color: .clear, location: 0.55), .init(color: .white.opacity(strength), location: 1)],
+                       center: .center, startRadius: 0, endRadius: hypot(size.width, size.height) / 2)
+            .frame(width: size.width, height: size.height)
+    }
+}
+
+/// A distant flash now and then during the chorus.
+private struct V3Lightning: View {
+    let running: Bool
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !running)) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 7.3)
+            let flash = t < 0.08 ? 0.22 : (t > 0.16 && t < 0.24) ? 0.14 : 0
+            Color(red: 0.85, green: 0.9, blue: 1).opacity(flash).blendMode(.screen)
+        }
+    }
+}
+
+/// One streak across the sky every few seconds during the chorus.
+private struct V3ShootingStar: View {
+    let size: CGSize
+    let running: Bool
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !running)) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
+            let cycle = t.truncatingRemainder(dividingBy: 6) / 1.1
+            Canvas { context, canvas in
+                guard cycle < 1 else { return }
+                var generator = SeededRandom(seed: UInt64(t / 6))
+                let start = CGPoint(x: canvas.width * (0.35 + 0.6 * generator.next()), y: canvas.height * 0.05 * generator.next())
+                let head = CGPoint(x: start.x - canvas.width * 0.35 * cycle, y: start.y + canvas.height * 0.25 * cycle)
+                let tail = CGPoint(x: head.x + canvas.width * 0.08, y: head.y - canvas.height * 0.057)
+                var path = Path(); path.move(to: tail); path.addLine(to: head)
+                context.stroke(path, with: .linearGradient(Gradient(colors: [.clear, .white.opacity(0.9 * (1 - cycle))]),
+                                                           startPoint: tail, endPoint: head), lineWidth: 1.6)
+            }
+            .frame(width: size.width, height: size.height)
+        }
+    }
+}
+
+/// A brief light that fades: the polaroid's shutter, the projector's lamp.
+private struct V3Flash: View {
+    let at: Date
+    let color: Color
+    let peak: Double
+    let duration: Double
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: Date().timeIntervalSince(at) > duration)) { timeline in
+            let progress = timeline.date.timeIntervalSince(at) / duration
+            color.opacity(progress < 1 ? peak * (1 - progress) * (1 - progress) : 0).blendMode(.screen)
+        }
+    }
+}
+
+/// 拍立得: the cover gets a white mount, wider below, with the sung line written
+/// on it by hand, and a strip of tape at the top.
+struct V3PolaroidMount: View {
+    let cover: CGRect
+    let line: String
+    let shutterAt: Date?
+    /// Space below the cover before the player card; nil when nothing is below.
+    var room: CGFloat? = nil
+
+    static func room(below cover: CGRect, player: CGRect) -> CGFloat? {
+        guard !player.isNull, player.minY >= cover.maxY - 1, player.minX < cover.maxX, player.maxX > cover.minX else { return nil }
+        return player.minY - cover.maxY - 4
+    }
+
+    var body: some View {
+        let border = max(8, cover.width * 0.055)
+        // Wider than the sides, as on a real print, but narrow enough to stay in the
+        // usual gap above the player card.
+        let caption = min(border * 2.4, max(20, room ?? .infinity))
+        let mount = CGRect(x: cover.minX - border, y: cover.minY - border,
+                           width: cover.width + border * 2, height: cover.height + border + caption)
+        ZStack(alignment: .topLeading) {
+            Path { path in path.addRect(mount); path.addRect(cover) }
+                .fill(Color(red: 0.97, green: 0.96, blue: 0.93), style: FillStyle(eoFill: true))
+                .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
+            Rectangle().fill(Color(red: 0.95, green: 0.92, blue: 0.80).opacity(0.8))
+                .frame(width: cover.width * 0.28, height: border * 1.7)
+                .rotationEffect(.degrees(-4))
+                .offset(x: mount.midX - cover.width * 0.14, y: mount.minY - border * 0.85)
+            Text(line.isEmpty ? " " : line)
+                .font(V3SceneHand.font(size: min(18, max(11, caption * 0.5))))
+                .foregroundStyle(Color(red: 0.16, green: 0.17, blue: 0.24).opacity(0.86))
+                .lineLimit(1).minimumScaleFactor(0.45)
+                .frame(width: cover.width - 8, height: caption)
+                .offset(x: cover.minX + 4, y: cover.maxY)
+                .id(line).transition(.opacity)
+                .animation(.easeInOut(duration: 0.5), value: line)
+            if let shutterAt {
+                V3Flash(at: shutterAt, color: .white, peak: 0.85, duration: 0.6)
+                    .frame(width: cover.width, height: cover.height).offset(x: cover.minX, y: cover.minY)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// 老电影: the cover sits in a strip of 35 mm film, holes above and below.
+private struct V3FilmFrame: View {
+    let cover: CGRect
+    var body: some View {
+        let band = max(14, cover.width * 0.09)
+        Canvas { context, _ in
+            for y in [cover.minY - band, cover.maxY] {
+                let strip = CGRect(x: cover.minX - band * 0.4, y: y, width: cover.width + band * 0.8, height: band)
+                context.fill(Path(roundedRect: strip, cornerRadius: 2), with: .color(Color(red: 0.07, green: 0.06, blue: 0.05).opacity(0.92)))
+                let hole = CGSize(width: band * 0.42, height: band * 0.5)
+                var x = strip.minX + hole.width
+                while x < strip.maxX - hole.width {
+                    context.fill(Path(roundedRect: CGRect(x: x, y: strip.midY - hole.height / 2, width: hole.width, height: hole.height), cornerRadius: 1.5),
+                                 with: .color(Color(red: 0.86, green: 0.82, blue: 0.72).opacity(0.8)))
+                    x += hole.width * 2
+                }
+            }
+            context.stroke(Path(cover), with: .color(.black.opacity(0.9)), lineWidth: 2)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// 书页: the cover becomes a plate tipped into the book, with a thin rule and a caption line.
+private struct V3BookPlate: View {
+    let cover: CGRect
+    var body: some View {
+        let inset: CGFloat = -10
+        ZStack(alignment: .topLeading) {
+            Rectangle().strokeBorder(Color(red: 0.92, green: 0.86, blue: 0.72).opacity(0.75), lineWidth: 1)
+                .frame(width: cover.width - inset * 2, height: cover.height - inset * 2)
+                .offset(x: cover.minX + inset, y: cover.minY + inset)
+            Rectangle().fill(Color(red: 0.62, green: 0.48, blue: 0.30).opacity(0.18)).blendMode(.multiply)
+                .frame(width: cover.width, height: cover.height).offset(x: cover.minX, y: cover.minY)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: - The 情境 panel
+
+/// Cards for each scene. Hovering a card previews it on the real picture;
+/// clicking keeps it.
+struct V3ScenePicker: View {
+    @ObservedObject var settings: AppSettingsStore
+    @Binding var preview: V3Room?
+    @ObservedObject private var weather = V3WeatherWatcher.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            V3PanelSection(title: "情境")
+            card(.off)
+            V3PanelSection(title: "窗")
+            grid(V3Room.rooms)
+            V3PanelSection(title: "材质")
+            grid(V3Room.materials)
+            let shown = preview ?? settings.v3Room
+            if shown != .off {
+                Text(shown == .weather ? shown.detail + "。现在：" + weather.room.title : shown.detail)
+                    .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
+                Toggle("副歌时刻", isOn: $settings.v3RoomOpensOnChorus)
+                    .help("唱到副歌时，情境有自己的变化：雨更大、开上桥、划过流星、按下快门……")
+            }
+        }
+        .onDisappear { preview = nil }
+    }
+
+    private func grid(_ scenes: [V3Room]) -> some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+            ForEach(scenes) { card($0) }
+        }
+    }
+
+    private func card(_ scene: V3Room) -> some View {
+        let selected = settings.v3Room == scene
+        return Button { settings.v3Room = scene; preview = nil } label: {
+            HStack(spacing: 9) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Self.swatch(scene))
+                    Image(systemName: Self.symbol(scene)).font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.92))
+                }
+                .frame(width: 38, height: 30)
+                Text(scene == .off ? "不使用情境" : scene.title).font(.system(size: 12.5, weight: .medium))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(5)
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color.primary.opacity(selected ? 0.13 : 0.04)))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Color.primary.opacity(selected ? 0.35 : 0), lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { inside in
+            if inside { preview = scene } else if preview == scene { preview = nil }
+        }
+        .accessibilityLabel(scene == .off ? "不使用情境" : scene.title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .help(scene.detail)
+    }
+
+    static func symbol(_ scene: V3Room) -> String {
+        switch scene {
+        case .off: return "circle.slash"
+        case .rain: return "cloud.rain"
+        case .train: return "tram"
+        case .snow: return "snowflake"
+        case .weather: return "location"
+        case .book: return "book"
+        case .polaroid: return "photo"
+        case .stars: return "sparkles"
+        case .film: return "film"
+        case .clearNight: return "moon.stars"
+        }
+    }
+
+    static func swatch(_ scene: V3Room) -> LinearGradient {
+        let colors: [Color]
+        switch scene {
+        case .off: colors = [Color(white: 0.45), Color(white: 0.3)]
+        case .rain, .clearNight: colors = [Color(red: 0.16, green: 0.22, blue: 0.38), Color(red: 0.55, green: 0.38, blue: 0.22)]
+        case .train: colors = [Color(red: 0.08, green: 0.1, blue: 0.2), Color(red: 0.75, green: 0.55, blue: 0.25)]
+        case .snow: colors = [Color(red: 0.55, green: 0.65, blue: 0.82), Color(red: 0.7, green: 0.38, blue: 0.18)]
+        case .weather: colors = [Color(red: 0.25, green: 0.45, blue: 0.7), Color(red: 0.4, green: 0.6, blue: 0.75)]
+        case .book: colors = [Color(red: 0.62, green: 0.5, blue: 0.32), Color(red: 0.38, green: 0.27, blue: 0.16)]
+        case .polaroid: colors = [Color(red: 0.85, green: 0.78, blue: 0.66), Color(red: 0.6, green: 0.5, blue: 0.42)]
+        case .stars: colors = [Color(red: 0.05, green: 0.06, blue: 0.2), Color(red: 0.2, green: 0.15, blue: 0.4)]
+        case .film: colors = [Color(red: 0.25, green: 0.2, blue: 0.15), Color(red: 0.08, green: 0.07, blue: 0.06)]
+        }
+        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }

@@ -8,7 +8,7 @@ import Foundation
 /// first-click catchers, the pinned NSPanel) must not make its own decisions.
 struct V3ToolbarModel: Equatable {
     enum Panel: String, CaseIterable, CustomStringConvertible {
-        case library, search, playlists, translation, text, picture, more
+        case library, search, playlists, translation, text, picture, scene, more
         var description: String { rawValue }
         var title: String {
             switch self {
@@ -18,6 +18,7 @@ struct V3ToolbarModel: Equatable {
             case .translation: return "译文"
             case .text: return "文字"
             case .picture: return "画面"
+            case .scene: return "情境"
             case .more: return "更多"
             }
         }
@@ -29,6 +30,7 @@ struct V3ToolbarModel: Equatable {
             case .translation: return "character.bubble"
             case .text: return "textformat"
             case .picture: return "photo"
+            case .scene: return "sparkles"
             case .more: return "ellipsis"
             }
         }

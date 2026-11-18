@@ -955,7 +955,13 @@ The user picked the first batch from the research pool (Obsidian 调研笔记 se
 - A 1.2 s cross-fade in each direction; the backdrop changes back when the chorus ends.
 - This is a temporary override of the clip layer only, separate from the hover preview. The saved material never changes.
 
-**情境** (2026-11-18, 更多 › 窗口 › 情境, off by default; replaces the 雨夜房间 switch).
+**情境, rebuilt** (2026-11-18, toolbar › 情境 between 画面 and 更多). Supersedes the framed version below; the view is never shrunk.
+- Cards grouped 窗 (雨夜窗边, 夜行列车, 雪夜小屋, 跟随天气) and 材质 (书页, 拍立得, 星座, 老电影). Hovering a card previews it on the real picture; clicking keeps it. The selected card's description and a 副歌时刻 switch sit below.
+- Each scene draws a back layer (behind the lyrics), a cover layer (around the foreground cover) and a glass layer (on top, no pointer). It never writes the user's other picture settings.
+- Chorus moments: heavier rain with distant lightning; the train crosses a bridge; denser snow; a shooting star; a polaroid shutter; the projector lamp; the chorus passage marked in the book.
+- 拍立得 and 星座 keep the tray for developed prints next to the cover.
+
+(Earlier, same day) **情境** (2026-11-18, 更多 › 窗口 › 情境, off by default; replaces the 雨夜房间 switch).
 - The listening view keeps 85–92% of the window and becomes the glass; the room lives in a thin margin and on the glass, never under the pointer.
 - 雨夜窗边: a wooden casement and sill, rain on the glass, misted edges, a lamp's warmth from the lower right.
 - 夜行列车: a rounded carriage window; blurred lights stream past along the top and bottom of the pane only, and a street lamp sweeps across every 9 s.

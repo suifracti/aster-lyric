@@ -244,7 +244,7 @@ final class V3ToolbarPresentationTests: XCTestCase {
     }
 
     func testClicksPinRepeatSwitchAndDismiss() {
-        XCTAssertEqual(V3ToolbarModel.Panel.allCases.map(\.title), ["歌词库", "搜索", "歌单", "译文", "文字", "画面", "更多"])
+        XCTAssertEqual(V3ToolbarModel.Panel.allCases.map(\.title), ["歌词库", "搜索", "歌单", "译文", "文字", "画面", "情境", "更多"])
         for panel in [V3ToolbarModel.Panel.translation, .text, .picture, .more] {
             var m = V3ToolbarModel()
             _ = m.pointerOnTrigger(panel, inside: true)

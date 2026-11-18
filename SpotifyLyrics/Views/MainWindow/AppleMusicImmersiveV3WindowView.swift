@@ -201,6 +201,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     @State private var librarySearch = V3LibrarySearchPresentation()
     @State private var toolbarBounds = CGRect.zero
     @State private var foregroundCover: V3ForegroundCoverFrame?
+    /// 情境 being tried from its panel; the saved scene otherwise.
+    @State private var scenePreview: V3Room?
+    @State private var sceneBPM: Double?
+    @ObservedObject private var sceneWeather = V3WeatherWatcher.shared
     @State private var lyricNotice: String?
     @State private var lyricNoticeTask: Task<Void, Never>?
     /// Visual-host preview only; real playback fills this from the session.
@@ -400,6 +404,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .blur(radius: librarySearch.isPresented ? 5 : 0)
                 }
+                if activeScene != .off {
+                    V3SceneBackLayer(scene: activeScene, context: roomContext, playing: state.isPlaying,
+                                     speed: (sceneBPM ?? 110) / 110)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .blur(radius: librarySearch.isPresented ? 5 : 0)
+                }
 
                 GeometryReader { canvasGeometry in
                     layout(for: canvasGeometry)
@@ -429,6 +439,15 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     V3CoverCaption(cover: cover,
                                    text: index.flatMap { state.lyrics.indices.contains($0) ? state.lyrics[$0].originalText : nil },
                                    lineIndex: index)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                }
+
+                if activeScene != .off, !librarySearch.isPresented {
+                    V3SceneCoverLayer(scene: activeScene, context: roomContext,
+                                      cover: foregroundCover.flatMap { $0.isLargeEnough ? $0.frame : nil },
+                                      player: playbackRegion)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                    V3SceneGlassLayer(scene: activeScene, context: roomContext, playing: state.isPlaying)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
 
@@ -588,7 +607,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     }
                 }
             }
-            .modifier(V3RoomModifier(room: isFocusMode ? .off : settings.v3Room, playing: state.isPlaying, context: roomContext))
+            .modifier(V3SceneDriver(scene: settings.v3Room, context: roomContext, bpm: $sceneBPM))
             .onChange(of: state.currentLineIndex, initial: true) { _, index in
                 // 人声包络: the light can follow these word starts when no sound is heard.
                 V3VocalOnsets.current = settings.v3MusicMotionEnabled && state.liveLyricsAreSynchronized
@@ -1925,15 +1944,21 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     /// faint resting toolbar while it is inside (so tools are discoverable
     /// without covering the lyrics), and full contrast near the top edge or
     /// while a panel is open. Positions never change between levels.
+    /// The 情境 drawn now: the one being tried, else the saved one; none in focus mode.
+    private var activeScene: V3Room {
+        guard !isFocusMode, !isCompositionPreview else { return .off }
+        return (scenePreview ?? settings.v3Room).resolved(sceneWeather)
+    }
+
     /// What the 情境 scene needs from the song; built only while one is chosen.
     private var roomContext: V3RoomContext {
-        guard settings.v3Room != .off else { return V3RoomContext() }
+        guard settings.v3Room != .off || scenePreview != nil else { return V3RoomContext() }
         let synced = state.lyricsAreSynchronized
         let index = synced ? state.currentLineIndex : nil
         let text = index.flatMap { state.lyrics.indices.contains($0) ? state.lyrics[$0].originalText : nil } ?? ""
         return V3RoomContext(chorus: chorusNow, lineIndex: index, lineCount: state.lyrics.count,
-                             stanza: settings.v3Room == .book ? V3RoomContext.stanza(of: index, in: state.lyrics) : 0,
-                             currentLine: settings.v3Room == .polaroid ? text : "",
+                             stanza: activeScene == .book ? V3RoomContext.stanza(of: index, in: state.lyrics) : 0,
+                             currentLine: activeScene == .polaroid ? text : "",
                              trackKey: TrackIdentity(track: state.currentTrack).stableKey,
                              spotifyTrackID: state.currentTrack.spotifyId.flatMap(SpotifyPublicArtwork.trackID(from:)),
                              opensOnChorus: settings.v3RoomOpensOnChorus,
@@ -2084,7 +2109,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             case .grouped:
                 HStack(spacing: 10) {
                     toolbarGroup([.library, .search, .playlists], showsSettings: false)
-                    toolbarGroup([.translation, .text, .picture, .more], showsSettings: true)
+                    toolbarGroup([.translation, .text, .picture, .scene, .more], showsSettings: true)
                 }
             case .radial:
                 radialToolbar
@@ -2241,6 +2266,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 V3DisclosureRow(title: "更多画面选项", isExpanded: $settings.v3PictureAdvancedExpanded) {
                     visualControls.pictureAdvancedControls(showsExplanations: false)
                 }
+            case .scene:
+                V3ScenePicker(settings: settings, preview: $scenePreview)
             case .more:
                 visualControls.toolbarStyleControls
                 // 恢复歌词时间 was the same action as 归零 on the offset row, which stays.
@@ -2309,19 +2336,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 Toggle("菜单栏歌词", isOn: $settings.menuBarLyricsEnabled)
                     .accessibilityIdentifier("menubar.lyrics.toggle")
                     .help("直接开启或关闭菜单栏歌词；播放面板仍可从菜单栏图标打开。")
-            }
-            V3PanelRow(title: "情境") {
-                Picker("情境", selection: $settings.v3Room) {
-                    Text(V3Room.off.title).tag(V3Room.off)
-                    Section("窗") { ForEach(V3Room.rooms) { Text($0.title).tag($0) } }
-                    Section("材质") { ForEach(V3Room.materials) { Text($0.title).tag($0) } }
-                }
-                .labelsHidden().pickerStyle(.menu).fixedSize()
-            }
-            .help((V3Room.rooms + V3Room.materials).map { $0.title + "：" + $0.detail }.joined(separator: "\n") + "\n画面保持接近原大小，里面的操作照常。")
-            if settings.v3Room.isRoom {
-                Toggle("副歌时开窗", isOn: $settings.v3RoomOpensOnChorus)
-                    .help("唱到副歌时窗框淡去、画面回到全尺寸，副歌结束再关上。")
             }
             V3PanelRow(title: "全屏歌词") {
                 Button(liveOnly ? "退出" : "打开") {

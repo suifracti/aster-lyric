@@ -628,16 +628,17 @@ final class PresentationSourceContractTests: XCTestCase {
 
 /// 情境 (2026-11-18): the listening view stays large, stanzas and weather map as described.
 final class V3RoomSceneTests: XCTestCase {
-    func testEverySceneKeepsMostOfTheWindowForTheLyrics() {
-        for size in [CGSize(width: 1077, height: 700), CGSize(width: 720, height: 480), CGSize(width: 1600, height: 1000)] {
-            for room in V3Room.rooms + V3Room.materials + [.clearNight] {
-                let glass = V3RoomModifier.glass(in: size, room: room)
-                XCTAssertGreaterThanOrEqual(glass.width / size.width, 0.8, "\(room) at \(size)")
-                XCTAssertLessThanOrEqual(glass.maxY, size.height)
-                XCTAssertGreaterThanOrEqual(glass.minX, 0)
-            }
-        }
-        XCTAssertEqual(V3RoomModifier.glass(in: CGSize(width: 800, height: 500), room: .off), CGRect(x: 0, y: 0, width: 800, height: 500))
+    @MainActor
+    func testScenesNeverShrinkTheViewAndWeatherResolvesToAWindow() throws {
+        // The scene is drawn in layers around the full-size view; the old shrinking modifier is gone.
+        let source = try String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../SpotifyLyrics/Views/MainWindow/V3RainRoom.swift").standardizedFileURL, encoding: .utf8)
+        XCTAssertFalse(source.contains("scaleEffect(scale"))
+        XCTAssertTrue(source.contains("struct V3SceneBackLayer") && source.contains("struct V3SceneGlassLayer"))
+        XCTAssertTrue(source.contains(".allowsHitTesting(false)"))
+        XCTAssertEqual(V3Room.rain.resolved(), .rain)
+        XCTAssertNotEqual(V3Room.weather.resolved(), .weather)
+        XCTAssertEqual(V3Room.rooms + V3Room.materials, [.rain, .train, .snow, .weather, .book, .polaroid, .stars, .film])
     }
 
     func testStanzasCountBlankLinesAndLongPauses() {
