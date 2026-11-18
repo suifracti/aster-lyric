@@ -245,6 +245,29 @@ final class MenuBarPresentationTests: XCTestCase {
         XCTAssertNil(MenuBarTextFormatter.bilingualImage(snapshot: snapshot, appearance: .init(showsTranslation: true)))
     }
 
+    func testMixedReadingImageFitsTheWholeOriginalOnOneRow() {
+        func image(for original: String) -> NSImage? {
+            let snapshot = MenuBarLyricsSnapshot(
+                state: .synchronized(current: original, next: nil), statusText: original,
+                trackTitle: nil, artistName: nil, currentLineText: original, nextLineText: nil,
+                isPlaying: true, hasLiveTrack: true, artworkURL: nil, currentKanaText: "ひかり"
+            )
+            return MenuBarTextFormatter.readingImage(snapshot: snapshot, appearance: .init(showsFullLine: true, showsKana: true))
+        }
+
+        let japanese = "光が差す"
+        let english = "keep the light on until we find our way home"
+        XCTAssertEqual(image(for: japanese + "\n" + english)?.size, image(for: japanese + " " + english)?.size)
+    }
+
+    func testMenuBarMarqueeReachesTheTailWithinTheCurrentLine() throws {
+        let animation = MenuBarTextFormatter.marqueeAnimation(distance: 185, remaining: 3)
+        let keyTimes = try XCTUnwrap(animation.keyTimes)
+        XCTAssertEqual((animation.values?[2] as? NSNumber)?.doubleValue, -185)
+        XCTAssertLessThan(keyTimes[2].doubleValue * animation.duration, 3)
+        XCTAssertEqual(keyTimes[3].doubleValue * animation.duration, 3, accuracy: 0.001)
+    }
+
     private func makeDefaults() throws -> (UserDefaults, String) {
         let suite = "SpotifyLyrics-Presentation-MenuBar-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

@@ -598,11 +598,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             .onChange(of: toolbarPanelIsPresented) { _, presented in
                 if !presented && !isPointerInToolbarRegion { toolsVisible = false }
             }
-            .onExitCommand {
-                showsListeningKeys = false
-                isFocusMode = false
-                dismissPinnedToolbarPanel()
-            }
+            .onExitCommand(perform: handleExitCommand)
             .onChange(of: settingsRoute.requestedToolbarPanel, initial: true) { _, panel in
                 guard !liveOnly, let panel else { return }
                 isFocusMode = false
@@ -1659,9 +1655,19 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             showLyricNotice(isFocusMode ? "专注模式" : "退出专注模式")
         case .help: showsListeningKeys.toggle(); showLyricNotice(showsListeningKeys ? "全部按键" : "关闭按键说明")
         case .escape:
-            showsListeningKeys = false; isFocusMode = false; dismissPinnedToolbarPanel()
-            showLyricNotice("返回听歌")
+            handleExitCommand()
+            if !liveOnly { showLyricNotice("返回听歌") }
         }
+    }
+
+    private func handleExitCommand() {
+        if liveOnly && !showsListeningKeys && !isFocusMode && !toolbarPanelIsPresented {
+            WindowManager.shared.hideFullScreen()
+            return
+        }
+        showsListeningKeys = false
+        isFocusMode = false
+        dismissPinnedToolbarPanel()
     }
 
     private var listeningKeyList: some View {
@@ -2278,9 +2284,13 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             }
             Toggle("雨夜房间", isOn: $settings.v3RainRoom)
                 .help("把听歌画面缩进雨夜书桌上的一台显示器里：窗外下雨，台灯暖光。画面里的操作照常。")
-            V3PanelRow(title: liveOnly ? "全屏歌词" : "全屏歌词") {
+            V3PanelRow(title: "全屏歌词") {
                 Button(liveOnly ? "退出" : "打开") {
-                    WindowManager.shared.toggleFullScreen(state: state, settings: settings)
+                    if liveOnly {
+                        WindowManager.shared.hideFullScreen()
+                    } else {
+                        WindowManager.shared.showFullScreen(state: state, settings: settings)
+                    }
                     isWindowMenuPresented = false
                 }
                 .controlSize(.small)

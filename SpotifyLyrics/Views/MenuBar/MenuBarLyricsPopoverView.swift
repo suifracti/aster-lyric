@@ -486,10 +486,10 @@ struct MenuBarLyricsAppearanceControls: View {
             V3NumericSlider(value: $settings.menuBarWidth, in: 120...480, step: 1, unit: "pt")
                 .accessibilityLabel("菜单栏歌词占用宽度")
             Picker("长句显示", selection: $settings.menuBarOverflow) {
-                Text("缓慢滚动").tag("scroll")
+                Text("滚动").tag("scroll")
                 Text("省略").tag("ellipsis")
             }.pickerStyle(.segmented)
-            Text("固定宽度不会随每句推挤其他图标。滚动只在播放且可见时运行；减少动态效果时静止，悬停可看全文。")
+            Text("固定宽度能稳住其他图标的位置。滚动速度会配合换句，静止时悬停可看全文。")
                 .font(.caption).foregroundStyle(.secondary)
             Divider()
 

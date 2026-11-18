@@ -51,7 +51,8 @@
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
 | 翻阅收藏、从副歌第二次出现的位置接下一句、搜到旧译文、收藏文件无法读取 | L-046 · LibraryPassageReader、LyricRecallSession、V3FavoriteLines |
 | 灵动岛挡刘海、只剩歌名、想停在一句读、换歌拖错进度 | L-045；CapsuleNotchGeometry、CapsuleLyricsView、vocalCountdownWindow |
-| 状态栏双行词、收藏弹窗里正在唱的一句、没放歌时的菜单 | L-044；MenuBarTextFormatter.statusImage、WorkspaceShelfCard、KeepLyricButton |
+| 状态栏双行词、日英混排少半句、收藏弹窗里正在唱的一句、没放歌时的菜单 | L-044；MenuBarTextFormatter.statusImage、WorkspaceShelfCard、KeepLyricButton |
+| 全屏歌词按 Esc 没反应，退出后留下大窗 | L-031；FullScreenLyricsWindowController、handleExitCommand |
 | 桌面歌词、灵动岛、菜单栏分散难找，调整一个外观时另一个预览被采用 | L-043；AppearanceSettingsView、AppearanceSurface、PresentationSelectionStore.apply |
 | 设置里找歌或歌词、从金句或封面墙回到歌、没放音乐时继续整理、历史录音一直转圈 | L-043；SettingsWorkspace、SettingsHistory、selectedDetail(for:) |
 
@@ -474,6 +475,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 
 - 2026-11-18 系统列出两块屏幕。用未显示的 AppKit 窗口跨两个实际显示区域，验证了灵动岛跟随主窗口、固定屏幕优先、指定屏缺席时回退并保留选择。另外复现并修好关闭窗口恢复后桌面歌词仍被旧屏幕编号挪走。桌面歌词外观可把窗口移到指定屏幕，按可用区域保留相对位置；灵动岛的固定选择单用显示器 UUID，旧屏幕编号继续用于恢复布局。这些检查没有拔插显示器或制造真实全屏切换。
 
+- 全屏歌词复用听歌区时，听歌快捷键会先接收 Esc。全屏和普通听歌区共用 `handleExitCommand`，先收起已打开的临时控件，全屏无临时控件时退出。全屏切换期间收到退出请求先记下，委托回调结束后再继续原生切换或收窗。隔离宿主用真实全屏窗口检查键盘和退出路径，确认窗口已从屏幕移除，避免只查 `showFullScreen`。
+
 ## L-032 和声、流动、动音量前先看状态（2026-11-15）
 
 - **加一个可选数据先看有没有 JSON 列**：和声存在逐字时间的 JSON（`spans_payload`）里，`LineTimingPayload.backgroundText` 可选，没有时不写进 JSON，所以旧数据的去重比较和旧版本读取都不变，不用升数据库版本。
@@ -718,6 +721,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 系统菜单栏的宽度有上限，原文和译文选中时各给一行。只有当前句已选的文字进图；选择字上读音时优先使用现有 ruby 排版。外观页调用和真实状态栏相同的模板图绘制函数。歌词、演唱状态或外观改变时更新缓存，滚动沿用原有图层；换行和换歌不需要反复重开弹窗。
 
 弹窗收藏采用屏幕所示的歌词与录音键。停播时从本机金句或歌词库进入工作台。播放与空闲的离屏检查使用临时数据库，截图宿主退出即清走自己产生的封面和工作目录。
+
+日英混排原文和注音进模板图前把内嵌换行合成空格，原始歌词仍保留换行。直接用 AppKit 测量含换行的字符串会给出最宽一行的宽度，第二行画进固定 22 pt 高度的图时被裁掉。播放时超宽句的滚动以实际下一句的时间为限，保留看到句尾的时间。暂停或开启减少动态效果时使用带省略号的紧凑图，系统提示和弹窗仍可以读全文。
 
 
 ## L-045 顶部灵动岛读句（2026-11-18）

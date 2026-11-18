@@ -643,19 +643,40 @@ private struct ExperienceFixtureRoot: View {
                 try? await Task.sleep(for:.seconds(1))
                 if ProcessInfo.processInfo.arguments.contains("--fullscreen-behavior-checks") {
                     let originalWindow = WindowManager.shared.fullScreenWindow!
+                    let windowNumber = originalWindow.windowNumber
                     precondition(originalWindow.level == .normal && originalWindow.collectionBehavior.contains(.fullScreenPrimary))
-                    WindowManager.shared.hideFullScreen()
-                    for _ in 0..<80 {
-                        if !WindowManager.shared.fullScreenWindowIsVisible { break }
-                        try? await Task.sleep(for: .milliseconds(100))
+                    @MainActor func waitForFullScreen(_ condition: @MainActor () -> Bool) async {
+                        for _ in 0..<60 {
+                            if condition() { return }
+                            try? await Task.sleep(for: .milliseconds(100))
+                        }
                     }
-                    precondition(!WindowManager.shared.fullScreenWindowIsVisible && !playback.showFullScreen)
+                    @MainActor func fullScreenIsHidden() -> Bool {
+                        guard !playback.showFullScreen, !originalWindow.isVisible else { return false }
+                        let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
+                        return !windows.contains { $0[kCGWindowNumber as String] as? Int == windowNumber }
+                    }
+                    let escape = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: originalWindow.windowNumber,
+                        context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53)!
+                    NSApp.sendEvent(escape)
+                    await waitForFullScreen(fullScreenIsHidden)
+                    let escaped = fullScreenIsHidden()
+                    print("FULLSCREEN_ESCAPE", escaped)
+                    if playback.showFullScreen {
+                        WindowManager.shared.hideFullScreen()
+                        await waitForFullScreen(fullScreenIsHidden)
+                    }
+
                     WindowManager.shared.showFullScreen(state: playback, settings: settings)
-                    for _ in 0..<80 {
-                        if originalWindow.styleMask.contains(.fullScreen) { break }
-                        try? await Task.sleep(for: .milliseconds(100))
-                    }
+                    await waitForFullScreen { originalWindow.styleMask.contains(.fullScreen) }
                     precondition(WindowManager.shared.fullScreenWindow === originalWindow && originalWindow.styleMask.contains(.fullScreen))
+                    WindowManager.shared.hideFullScreen()
+                    await waitForFullScreen(fullScreenIsHidden)
+                    let hidden = fullScreenIsHidden()
+                    print("FULLSCREEN_EXIT_WINDOW_HIDDEN", hidden)
+                    fflush(stdout)
+                    guard escaped && hidden else { exit(1) }
                     print("FULLSCREEN_BEHAVIOR_CHECKS_PASSED")
                     fflush(stdout)
                 }

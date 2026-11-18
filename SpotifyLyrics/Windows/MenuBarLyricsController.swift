@@ -85,6 +85,10 @@ public struct MenuBarLyricsAppearance: Equatable, Sendable {
 }
 
 public enum MenuBarTextFormatter {
+    private static func flattenNewlines(_ text: String) -> String {
+        text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).joined(separator: " ")
+    }
+
     public static func statusItemTitle(snapshot: MenuBarLyricsSnapshot, lyricsEnabled: Bool,
                                        appearance: MenuBarLyricsAppearance = .init()) -> String {
         guard lyricsEnabled else { return "" }
@@ -94,7 +98,7 @@ public enum MenuBarTextFormatter {
                         appearance.showsRomaji ? snapshot.currentRomajiText : nil]
         var parts: [String] = []
         for value in selected.compactMap({ $0 }) {
-            let singleLine = value.components(separatedBy: .newlines).joined(separator: " ")
+            let singleLine = flattenNewlines(value)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !singleLine.isEmpty && !parts.contains(singleLine) { parts.append(singleLine) }
         }
@@ -119,19 +123,19 @@ public enum MenuBarTextFormatter {
         let rubyAttributes: [NSAttributedString.Key: Any] = [.font: readingFont, .foregroundColor: NSColor.black]
         func annotation(kana: String?, romaji: String?) -> String {
             [appearance.showsKana ? kana : nil, appearance.showsRomaji ? romaji : nil]
-                .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                .compactMap { $0.map(flattenNewlines) }.filter { !$0.isEmpty }.joined(separator: " · ")
         }
         var pairs: [(String, String)] = []
         if let tokens = snapshot.currentRubyTokens, !tokens.isEmpty,
            tokens.map(\.surface).joined() == original {
-            pairs = tokens.map { ($0.surface, annotation(kana: $0.ruby, romaji: $0.romaji)) }
+            pairs = tokens.map { (flattenNewlines($0.surface), annotation(kana: $0.ruby, romaji: $0.romaji)) }
         }
         if pairs.isEmpty || pairs.allSatisfy({ $0.1.isEmpty }) {
-            pairs = [(original, annotation(kana: snapshot.currentKanaText, romaji: snapshot.currentRomajiText))]
+            pairs = [(flattenNewlines(original), annotation(kana: snapshot.currentKanaText, romaji: snapshot.currentRomajiText))]
         }
         guard pairs.contains(where: { !$0.1.isEmpty }) else { return nil }
         if appearance.showsTranslation, let translated = snapshot.currentTranslationText, !translated.isEmpty {
-            pairs.append((" · " + translated, ""))
+            pairs.append((" · " + flattenNewlines(translated), ""))
         }
         let widths = pairs.map { max(($0.0 as NSString).size(withAttributes: baseAttributes).width,
                                       ($0.1 as NSString).size(withAttributes: rubyAttributes).width) + 1 }
@@ -166,12 +170,12 @@ public enum MenuBarTextFormatter {
     @MainActor static func bilingualImage(snapshot: MenuBarLyricsSnapshot,
                                           appearance: MenuBarLyricsAppearance) -> NSImage? {
         guard appearance.showsOriginal, appearance.showsTranslation,
-              let original = snapshot.currentLineText?.split(whereSeparator: \.isNewline).joined(separator: " "),
-              let translation = snapshot.currentTranslationText?.split(whereSeparator: \.isNewline).joined(separator: " "),
+              let original = snapshot.currentLineText.map(flattenNewlines),
+              let translation = snapshot.currentTranslationText.map(flattenNewlines),
               !original.isEmpty, !translation.isEmpty, original != translation else { return nil }
         let readings = [appearance.showsKana ? snapshot.currentKanaText : nil,
                         appearance.showsRomaji ? snapshot.currentRomajiText : nil]
-            .compactMap { $0 }.filter { !$0.isEmpty }
+            .compactMap { $0.map(flattenNewlines) }.filter { !$0.isEmpty }
         let primaryFont = NSFont.systemFont(ofSize: min(11, appearance.effectiveFontSize), weight: .medium)
         let detailFont = NSFont.systemFont(ofSize: min(9, appearance.effectiveFontSize * 0.75))
         let label = ([translation] + readings).joined(separator: " · ")
@@ -208,6 +212,24 @@ public enum MenuBarTextFormatter {
 
     public static func statusItemSymbol(snapshot: MenuBarLyricsSnapshot) -> String {
         snapshot.hasLiveTrack && !snapshot.isPlaying ? "pause.fill" : "music.note"
+    }
+
+    static func marqueeAnimation(distance: CGFloat, remaining: TimeInterval?) -> CAKeyframeAnimation {
+        let normalTravel = max(2, Double(distance) / 22)
+        let window = remaining.map { max(0.1, $0) }
+        let lead = window.map { min(1.4, $0 * 0.15) } ?? 1.4
+        let hold = window.map { min(1.4, $0 * 0.25) } ?? 1.4
+        let travel = min(normalTravel, window.map { $0 - lead - hold } ?? normalTravel)
+        let duration = lead + travel * 2 + hold
+        let animation = CAKeyframeAnimation(keyPath: "transform.translation.x")
+        let end = NSNumber(value: -Double(distance))
+        animation.values = [0, 0, end, end, 0]
+        animation.keyTimes = [0, NSNumber(value: lead / duration),
+            NSNumber(value: (lead + travel) / duration), NSNumber(value: (lead + travel + hold) / duration), 1]
+        animation.duration = duration
+        animation.repeatCount = .infinity
+        animation.calculationMode = .linear
+        return animation
     }
 
     public static func statusItemHelp(snapshot: MenuBarLyricsSnapshot) -> String {
@@ -646,14 +668,15 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                                    accessibilityDescription: "Aster · Lyric")
             return
         }
-        let scrollRequested = appearance.overflow == "scroll"
+        let shouldScroll = appearance.overflow == "scroll" && currentSnapshot.isPlaying
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         var renderAppearance = appearance
-        renderAppearance.showsFullLine = scrollRequested
+        renderAppearance.showsFullLine = shouldScroll
         // The key changes on lyric/appearance changes, not on playback time.
         let tokenKey = currentSnapshot.currentRubyTokens?.map { "\($0.surface):\($0.ruby ?? ""): \($0.romaji ?? "")" }.joined(separator: "|") ?? ""
         let key = [fullTitle, tokenKey, MenuBarTextFormatter.statusItemSymbol(snapshot: currentSnapshot), String(appearance.fontSize), String(appearance.showsKana),
                    String(appearance.showsRomaji), String(appearance.readingsAbove),
-                   String(appearance.showsTranslation), String(appearance.showsOriginal), String(appearance.width), appearance.overflow].joined(separator: "\u{1F}")
+                   String(appearance.showsTranslation), String(appearance.showsOriginal), String(appearance.width), String(shouldScroll)].joined(separator: "\u{1F}")
         let image: NSImage
         if key == lastStatusImageKey, let cached = lastStatusImage { image = cached }
         else {
@@ -672,9 +695,20 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
             marqueeView = view
         }
         let frame = NSRect(x: 8, y: max(0, (button.bounds.height - 22) / 2), width: max(1, length - 16), height: 22)
-        view.configure(image: image, key: key, frame: frame,
-                       animate: scrollRequested && currentSnapshot.isPlaying
-                           && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        let lineKey = [key, currentSnapshot.trackKey ?? "", currentSnapshot.currentLineIndex.map(String.init) ?? ""].joined(separator: "\u{1F}")
+        let remaining = shouldScroll && image.size.width > frame.width ? remainingLineTime() : nil
+        view.configure(image: image, key: lineKey, frame: frame, animate: shouldScroll, remaining: remaining)
+    }
+
+    private func remainingLineTime() -> TimeInterval? {
+        guard let state = playbackState, let index = currentSnapshot.currentLineIndex else { return nil }
+        let clock = state.presentationClock
+        let now = ProcessInfo.processInfo.systemUptime
+        if let boundary = LyricsTimeline.nextBoundaryTime(lines: state.liveLyrics, currentIndex: index,
+                                                          isSynchronized: state.liveLyricsAreSynchronized) {
+            return max(0.1, boundary - clock.presentationTime(at: now) - PlaybackState.lineSwitchLead)
+        }
+        return clock.trackDuration > 0 ? max(0.1, clock.trackDuration - clock.playbackTime(at: now)) : nil
     }
 
     public static func deriveFullLyricsSnapshot(from state: PlaybackState) -> MenuBarFullLyricsSnapshot? {
@@ -898,6 +932,7 @@ private final class LyricIslandStatusTextView: NSView {
     private let imageView = NSImageView(frame: .zero)
     private var contentKey = ""
     private var requestedAnimation = false
+    private var lineDeadline: CFTimeInterval?
     private var observers: [NSObjectProtocol] = []
     private var animationDistance: CGFloat = 0
 
@@ -918,7 +953,7 @@ private final class LyricIslandStatusTextView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 22) }
 
-    func configure(image: NSImage, key: String, frame: NSRect, animate: Bool) {
+    func configure(image: NSImage, key: String, frame: NSRect, animate: Bool, remaining: TimeInterval?) {
         let contentChanged = contentKey != key || self.frame.size != frame.size
         if self.frame != frame { self.frame = frame }
         if contentChanged {
@@ -930,6 +965,7 @@ private final class LyricIslandStatusTextView: NSView {
             animationDistance = max(0, image.size.width - frame.width)
         }
         requestedAnimation = animate
+        lineDeadline = remaining.map { CACurrentMediaTime() + $0 }
         refreshAnimation()
     }
     override func viewDidMoveToWindow() {
@@ -954,23 +990,16 @@ private final class LyricIslandStatusTextView: NSView {
         let visible = window.map { $0.isVisible && $0.occlusionState.contains(.visible) } ?? false
         let active = requestedAnimation && visible && animationDistance > 1
         if !active {
-            if let presented = layer.presentation() { layer.transform = presented.transform }
+            if layer.animation(forKey: "lyric.marquee") != nil, let presented = layer.presentation() {
+                layer.transform = presented.transform
+            }
             layer.removeAnimation(forKey: "lyric.marquee")
             return
         }
         guard layer.animation(forKey: "lyric.marquee") == nil else { return }
         layer.transform = CATransform3DIdentity
-        let travel = max(2, Double(animationDistance) / 22) // Constant reading speed, even for a long line.
-        let hold = 1.4
-        let duration = 2 * (travel + hold)
-        let animation = CAKeyframeAnimation(keyPath: "transform.translation.x")
-        animation.values = [0, 0, -animationDistance, -animationDistance, 0]
-        animation.keyTimes = [0, NSNumber(value: hold / duration),
-            NSNumber(value: (hold + travel) / duration),
-            NSNumber(value: (hold * 2 + travel) / duration), 1]
-        animation.duration = duration
-        animation.repeatCount = .infinity
-        animation.calculationMode = .linear
+        let animation = MenuBarTextFormatter.marqueeAnimation(distance: animationDistance,
+            remaining: lineDeadline.map { $0 - CACurrentMediaTime() })
         layer.add(animation, forKey: "lyric.marquee")
     }
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }

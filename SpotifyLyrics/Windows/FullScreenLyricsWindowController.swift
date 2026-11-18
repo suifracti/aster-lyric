@@ -4,6 +4,7 @@ import SwiftUI
 
 private final class FullScreenLyricsWindow: NSWindow {
     var onExitRequested: (() -> Void)?
+
     override func cancelOperation(_ sender: Any?) {
         // Sheets and popovers have their own responder chains. Do not close
         // the underlying presentation while a sheet is being dismissed.
@@ -109,7 +110,9 @@ final class FullScreenLyricsWindowController: NSObject, ObservableObject, NSWind
     func windowDidEnterFullScreen(_ notification: Notification) {
         guard phase != .hidden else { return }
         phase = .visible
-        if exitRequested { hide() }
+        if exitRequested {
+            DispatchQueue.main.async { [weak self] in self?.hide() }
+        }
     }
 
     func windowWillExitFullScreen(_ notification: Notification) {
@@ -117,7 +120,12 @@ final class FullScreenLyricsWindowController: NSObject, ObservableObject, NSWind
         phase = .exiting
     }
 
-    func windowDidExitFullScreen(_ notification: Notification) { finishHide() }
+    func windowDidExitFullScreen(_ notification: Notification) {
+        // AppKit can still order the restored window front during this callback.
+        DispatchQueue.main.async { [weak self] in
+            self?.finishHide()
+        }
+    }
     func windowDidFailToEnterFullScreen(_ window: NSWindow) { finishHide() }
     func windowDidFailToExitFullScreen(_ window: NSWindow) {
         phase = .visible
