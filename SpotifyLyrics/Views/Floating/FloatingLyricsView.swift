@@ -201,25 +201,13 @@ struct FloatingLyricsView: View {
         let preferences = state.preferences
         let palette = FloatingDesktopPalette(settings: settings)
         let japanese = LyricsLanguageGate.allowsJapaneseReadings(language: state.liveLyricsLanguage, text: line.originalText)
+        let isPinyin = LyricsLanguageGate.usesPinyin(for: line, language: state.liveLyricsLanguage)
         let presentation = V3JapaneseReadingCache.resolvedPresentation(
             for: line, language: state.liveLyricsLanguage,
             userEntries: settings.readingUserDictionary.load(),
             trackStableKey: state.currentTrackIdentity?.stableKey,
             artistDisplay: state.currentTrack.artist, scriptConversion: .none
         )
-        let kana = japanese && preferences.showKana ? presentation.kanaText : nil
-        let isPinyin: Bool = {
-            if line.readingRepresentationID?.hasPrefix("readingRepresentation.pinyin") == true {
-                return true
-            }
-            if let lang = state.liveLyricsLanguage?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), !lang.isEmpty {
-                if lang.hasPrefix("ja") { return false }
-                if lang.hasPrefix("zh") { return true }
-            }
-            return LyricsLanguageGate.containsHan(line.originalText) && !LyricsLanguageGate.containsKana(line.originalText)
-        }()
-        let reading = (isPinyin ? preferences.showPinyin : japanese && preferences.showRomaji)
-            ? (presentation.romajiText ?? line.romajiText) : nil
         let conversion = settings.readingPreferences.scriptConversion
         let original: String = {
             let base = presentation.originalText
@@ -246,30 +234,37 @@ struct FloatingLyricsView: View {
                 romajiText: presentation.romajiText
             )
         }()
-        let primary = FloatingDesktopTypography.firstVisible([
-            preferences.showOriginal ? original : nil,
-            preferences.showTranslation ? line.translationText : nil, kana, reading
-        ]) ?? ""
-        let primaryIsOriginal = preferences.showOriginal && primary == original
-        let showRuby = (japanese && preferences.showKana) || (isPinyin && preferences.showPinyin)
+        let layers = LyricTextLayers(line: line, language: state.liveLyricsLanguage, preferences: preferences, resolved: effectivePresentation)
+        let primary = layers.primary ?? ""
+        let primaryIsOriginal = layers.original == primary
+        let showRuby = isPinyin ? preferences.showsPinyinLayer : (japanese && preferences.showKana)
         let hasRuby = primaryIsOriginal && showRuby && presentation.hasRuby
-        let next = preferences.showOriginal ? nextIndex.map { rows[$0].originalText } : nil
+        let lineMode = FloatingDesktopLineMode(rawValue: settings.floatingDesktopLineMode) ?? .double
+        let next = nextIndex.flatMap { nextIndex -> String? in
+            guard lineMode == .double else { return nil }
+            let nextLine = rows[nextIndex]
+            let resolved = V3JapaneseReadingCache.resolvedPresentation(for: nextLine, language: state.liveLyricsLanguage,
+                userEntries: settings.readingUserDictionary.load(), trackStableKey: state.liveTrackIdentity?.stableKey,
+                artistDisplay: state.currentTrack.artist, scriptConversion: .none)
+            let nextLayers = LyricTextLayers(line: nextLine, language: state.liveLyricsLanguage, preferences: preferences, resolved: resolved)
+            if let original = nextLayers.original { return ReadingScriptConverter.convert(original, using: conversion) }
+            return nextLayers.primary
+        }
         let chosen: String? = {
             switch settings.floatingDesktopCompanion {
             case "next": return next
-            case "kana": return hasRuby ? nil : kana
-            case "reading": return reading
-            default: return preferences.showTranslation ? line.translationText : nil
+            case "kana": return hasRuby ? nil : layers.kana
+            case "reading": return layers.phoneticReading
+            default: return layers.translation
             }
         }()
-        let lineMode = FloatingDesktopLineMode(rawValue: settings.floatingDesktopLineMode) ?? .double
         let companion = FloatingDesktopTypography.selectedCompanion(
             mode: lineMode,
             selection: settings.floatingDesktopCompanion,
             translation: chosen == primary ? nil : chosen,
             next: next,
-            kana: kana,
-            reading: reading
+            kana: hasRuby ? nil : layers.kana,
+            reading: layers.phoneticReading
         )
         let effectiveCompanion = (companion != nil && companion != primary) ? companion : nil
         let fontSize = FloatingDesktopTypography.fittedFontSize(
@@ -571,7 +566,7 @@ struct FloatingLyricsView: View {
         let prefs = state.preferences
         var count = prefs.showOriginal ? 1 : 0
         count += prefs.showTranslation ? 1 : 0
-        count += prefs.showRomaji ? 1 : 0
+        count += prefs.showsRomajiLayer || prefs.showsPinyinLayer ? 1 : 0
         count += prefs.showKana ? 1 : 0
         return max(1, count)
     }

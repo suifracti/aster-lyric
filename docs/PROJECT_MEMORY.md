@@ -42,6 +42,7 @@
 | 逐字上浮/长音发光动画跳回开头、状态栏弹窗改版、封面闪占位图或露出方形底板、暂停褪色、桌面歌词情境隐藏 | L-024；LyricLineView animateLift、MenuBarLyricsPopoverView、ArtworkView、v3PauseFadesColor、FloatingLyricsWindowController.observeContext |
 | 情境一开旧画面切不过去、光色不走封面色、同一首对唱在不同窗口不一样 | L-052；V3ListeningPresentation、V3RoomOverrides、LyricsTimeline.presentedLyrics |
 | 合唱被标成某个人独唱、桌面歌词或灵动岛看不出谁在唱 | L-052；LyricsTimeline.VoicePresentation |
+| 「只看译文」仍出现罗马音 / 拼音、隐藏原文后拼音消失 | L-052；LyricTextLayers、DisplayPreferences.usesInlinePinyin |
 | 粒子（雨雪雾、歌词意象）不显示、VU 表指针手感、新呈现一行放不下、分享卡排版跑偏、封面墙离屏图空白、声纹圈、频谱 | L-025；V3GlassWeather、V3ParticleHostView、V3VUMeter、V3LyricShareCard、ListeningCoverWall、V3Soundprint、V3SpectrumOverlay |
 | QQ 来源突然全部 http(500)、别人有词我们“暂无歌词正文” | L-026；QQExperimentalLyricsProvider.searchBases |
 | 某个来源一段时间连着超时/503、每首新歌都卡几秒、来源顺序要不要按统计调 | L-035；LyricsSourceHealth、LyricsSearchManager supplements |
@@ -914,5 +915,9 @@ TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、
 2026-11-19：原先合并了同唱行但仍显示其中一个声部。`LyricsTimeline.VoicePresentation` 同时给出显示行和声部标签。合唱显示「合唱」，恢复独唱时重新标出声部；不同词或稍后重唱仍保留，合并只用于有时间轴的视图。V3 主窗、全屏、经典歌词行、桌面歌词、灵动岛和菜单栏弹窗共用判定。灵动岛定住歌词会记住所定行的声部；狭窄的系统菜单栏通过提示显示，歌词本身沿用原宽度。原文档行、时间轴与收藏出处沿用原索引。
 
 隔离原生主窗在默认画面和雨滴玻璃中都显示一次同唱及单独的后续重唱；同一样例的离屏图核对桌面歌词、展开灵动岛和菜单栏弹窗的「合唱」。79 项定向原生检查通过。
+
+2026-11-19：「只看译文」保留原来的罗马音、拼音开关，渲染使用实际可见层。`LyricTextLayers` 给主窗、旧布局、桌面歌词与灵动岛同一份文字判定；窄表面取首个可见内容，下一句也遵循当前偏好。关闭原文时，已开启的拼音以普通读音行显示；原文与假名相同时，只看读音仍显示假名。系统菜单栏沿用独立文字设置，保存的歌词与读音版本不因显示改变。
+
+隔离原生核过只显示拼音的灵动岛（展开、收起）和全假名原句的主窗。桌面歌词指定读音作第二行时，离屏「只看译文」仍只显示译文；没有译文的灵动岛提示「该句暂无译文」。定向原生检查 9 项通过。视觉样例需要在创建设置对象前写入显示偏好，随后加载歌词才会以它们初始化各语言档案。
 
 本机 Xcode Debug 通过 6 项相关原生检查，涵盖多窗口情境解析、旧画面选择与读回、对唱及桌面歌词、真实词间时间断句、封面回补、错过通知时的切歌补读。对比 Claude 末尾 `c6c1104` 的 15 个可独立运行 Python 合同，7 个旧脚本在两边都失败；本轮更新现行场景合同的接线断言，现行原生用例验证行为。两个调用 Xcode 的包装脚本和一个需要测试参数的数据库矩阵未计入这次比较。

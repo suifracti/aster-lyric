@@ -45,6 +45,14 @@ public enum LyricsLanguageGate {
         containsKana(text) || containsHan(text)
     }
 
+    static func usesPinyin(for line: LyricLine, language: String?) -> Bool {
+        if line.readingRepresentationID?.hasPrefix("readingRepresentation.pinyin") == true { return true }
+        let text = line.readingSurfaceText ?? line.originalText
+        guard containsHan(text), !containsKana(text) else { return false }
+        let hint = language?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        return hint.hasPrefix("zh") || hint.isEmpty || hint == "und" || hint == "unknown"
+    }
+
     public static func containsKana(_ text: String) -> Bool {
         text.unicodeScalars.contains { scalar in
             (0x3040...0x309F).contains(scalar.value)

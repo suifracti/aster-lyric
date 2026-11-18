@@ -366,16 +366,30 @@ final class PresentationSourceContractTests: XCTestCase {
 
     func testListeningLayerPresetsLinkExistingFlagsAndKeepReadingStyle() {
         var preferences = DisplayPreferences(showRomaji: true, kanaDisplayMode: .inlineRuby)
+        let japanese = LyricLine(timestamp: 1, originalText: "灯りをたどって", translationText: "沿着灯光",
+                                  romajiText: "akari o tadotte", kanaText: "あかりをたどって")
+        let untranslated = LyricLine(timestamp: 2, originalText: "静かな夜", romajiText: "shizuka na yoru")
+        let chinese = LyricLine(timestamp: 1, originalText: "回到窗边", romajiText: "huí dào chuāng biān")
         preferences.listeningLayerPreset = .translationOnly
         XCTAssertFalse(preferences.showOriginal)
         XCTAssertTrue(preferences.showTranslation)
         XCTAssertFalse(preferences.showKana)
         XCTAssertTrue(preferences.showRomaji, "The reading sub-options are retained")
+        XCTAssertTrue(preferences.showPinyin)
+        XCTAssertFalse(preferences.showsRomajiLayer || preferences.showsPinyinLayer)
+        XCTAssertEqual(LyricTextLayers(line: japanese, language: "ja", preferences: preferences).primary, "沿着灯光")
+        XCTAssertNil(LyricTextLayers(line: untranslated, language: "ja", preferences: preferences).primary)
+        XCTAssertNil(LyricTextLayers(line: chinese, language: "zh-Hans", preferences: preferences).primary)
         preferences.listeningLayerPreset = .readingOnly
         XCTAssertFalse(preferences.showOriginal || preferences.showTranslation)
         XCTAssertEqual(preferences.kanaDisplayMode, .inlineRuby)
+        XCTAssertFalse(preferences.usesInlinePinyin, "Pinyin has no base text to annotate in reading-only mode")
+        XCTAssertEqual(LyricTextLayers(line: japanese, language: "ja", preferences: preferences).primary, "あかりをたどって")
+        XCTAssertEqual(LyricTextLayers(line: chinese, language: "zh-Hans", preferences: preferences).primary, "huí dào chuāng biān")
+        XCTAssertNil(LyricTextLayers(line: chinese, language: "ko", preferences: preferences).primary)
         preferences.listeningLayerPreset = .all
         XCTAssertTrue(preferences.showOriginal && preferences.showTranslation && preferences.showKana)
+        XCTAssertTrue(preferences.showsRomajiLayer && preferences.showsPinyinLayer && preferences.usesInlinePinyin)
         preferences.showTranslation = false
         XCTAssertEqual(preferences.listeningLayerPreset, .custom)
     }

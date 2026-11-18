@@ -1597,6 +1597,9 @@ public struct DisplayPreferences: Equatable {
     public var showTranslation: Bool = true
     public var showRomaji: Bool = true
     public var showPinyin: Bool = true
+    var showsRomajiLayer: Bool { showRomaji && listeningLayerPreset != .translationOnly }
+    var showsPinyinLayer: Bool { showPinyin && listeningLayerPreset != .translationOnly }
+    var usesInlinePinyin: Bool { showsPinyinLayer && showOriginal && kanaDisplayMode == .inlineRuby }
     private var storedKanaDisplayMode: KanaDisplayMode
     private var lastVisibleKanaDisplayMode: KanaDisplayMode
     public var fontSize: CGFloat = 18

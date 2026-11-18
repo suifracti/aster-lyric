@@ -87,7 +87,7 @@ struct CapsuleLyricsView: View {
         return [
             preferences.showOriginal,
             preferences.showTranslation,
-            preferences.showRomaji,
+            preferences.showsRomajiLayer || preferences.showsPinyinLayer,
             preferences.showKana
         ].filter { $0 }.count
     }
@@ -328,13 +328,16 @@ struct CapsuleLyricsView: View {
     private func preferredText(_ line: LyricLine?) -> String? {
         guard let line else { return nil }
         let preferences = state.preferences
-        let kana = preferences.showKana && LyricsLanguageGate.allowsJapaneseReadings(language: state.liveLyricsLanguage,
-                                                                                     text: line.originalText)
-        return [preferences.showOriginal ? (line.readingSurfaceText ?? line.originalText) : nil,
-                preferences.showTranslation ? line.translationText : nil,
-                kana ? line.kanaText.map(JapaneseRomanizer.displayKana) : nil,
-                preferences.showRomaji ? line.romajiText : nil]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty }
+        let language = state.liveLyricsLanguage
+        let fallback = !preferences.showOriginal && preferences.showsPinyinLayer
+            && LyricsLanguageGate.usesPinyin(for: line, language: language)
+            && line.romajiText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
+            ? V3ChinesePinyinCache.presentation(for: line.readingSurfaceText ?? line.originalText) : nil
+        return LyricTextLayers(line: line, language: language, preferences: preferences, resolved: fallback).primary
+    }
+
+    private var missingSelectedText: String {
+        state.preferences.listeningLayerPreset == .translationOnly ? "该句暂无译文" : "该句无所选文字"
     }
 
     /// Only call an instrumental gap when the recorded timings establish one.
@@ -592,7 +595,7 @@ struct CapsuleLyricsView: View {
         } else {
             HStack(spacing: 10) {
                 Image(systemName: "text.quote").foregroundStyle(islandAccent)
-                Text(live.status ?? "等待下一句").font(.callout).lineLimit(2)
+                Text(live.status ?? (line == nil ? "等待下一句" : missingSelectedText)).font(.callout).lineLimit(2)
                 Spacer()
                 Button("打开当前歌曲") { MenuBarLyricsController.shared.openCurrentLyrics() }
                     .buttonStyle(.plain).font(.caption).underline()
@@ -689,8 +692,8 @@ struct CapsuleLyricsView: View {
 
             Spacer(minLength: 6)
 
-            if let current = selection.current {
-                Text(current.originalText)
+            if let current = preferredText(selection.current) {
+                Text(current)
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -726,15 +729,15 @@ struct CapsuleLyricsView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                if let current = selection.current {
-                    Text(current.originalText)
+                if let current = preferredText(selection.current) {
+                    Text(current)
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .lineLimit(1)
                 } else if let status = selection.status {
                     CapsuleLyricsStatusView(status: status, compact: true)
                 }
-                if let following = selection.following {
-                    Text(following.originalText)
+                if let following = preferredText(selection.following) {
+                    Text(following)
                         .font(.system(size: 10, design: .rounded))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -772,7 +775,7 @@ struct CapsuleLyricsView: View {
                 transportButton("forward.end.fill", help: "下一首") { state.nextTrack() }
             }
 
-            if let current = selection.current {
+            if let current = selection.current, preferredText(current) != nil {
                 CapsuleLyricsRowView(
                     line: current,
                     preferences: state.preferences,
@@ -780,8 +783,8 @@ struct CapsuleLyricsView: View {
                     visibleLayerCount: visibleLayerCount,
                     language: state.liveLyricsLanguage
                 )
-            } else if let status = selection.status {
-                CapsuleLyricsStatusView(status: status, compact: false)
+            } else {
+                CapsuleLyricsStatusView(status: selection.status ?? missingSelectedText, compact: false)
             }
 
             HStack(spacing: 8) {
@@ -868,7 +871,7 @@ struct CapsuleLyricsView: View {
                 transportButton("forward.end.fill", help: "下一首") { state.nextTrack() }
             }
 
-            if let current = selection.current {
+            if let current = selection.current, preferredText(current) != nil {
                 LyricLineView(
                     line: current,
                     isActive: true,
@@ -881,7 +884,7 @@ struct CapsuleLyricsView: View {
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                if let following = selection.following {
+                if let following = selection.following, preferredText(following) != nil {
                     LyricLineView(
                         line: following,
                         isActive: false,
@@ -894,8 +897,8 @@ struct CapsuleLyricsView: View {
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-            } else if let status = selection.status {
-                CapsuleLyricsStatusView(status: status, compact: false)
+            } else {
+                CapsuleLyricsStatusView(status: selection.status ?? missingSelectedText, compact: false)
             }
 
             HStack(spacing: 8) {

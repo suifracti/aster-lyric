@@ -154,18 +154,7 @@ struct LyricLineView: View {
     }
 
     private var isPinyinProjection: Bool {
-        if let representation = line.readingRepresentationID, representation.hasPrefix("readingRepresentation.pinyin") {
-            return true
-        }
-        let text = effectiveOriginalText
-        guard LyricsLanguageGate.containsHan(text) && !LyricsLanguageGate.containsKana(text) else {
-            return false
-        }
-        if let lang = language?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), !lang.isEmpty {
-            if lang.hasPrefix("ja") { return false }
-            return true
-        }
-        return true
+        LyricsLanguageGate.usesPinyin(for: line, language: language)
     }
 
     private var pinyinPresentation: JapaneseRubyPresentation? {
@@ -179,25 +168,12 @@ struct LyricLineView: View {
     /// the same after katakana-to-hiragana normalization.
     private var distinctRomaji: String? {
         if isPinyinProjection {
-            guard settingsShowPinyin,
-                  preferences.kanaDisplayMode != .inlineRuby,
-                  let pinyin = (line.romajiText ?? pinyinPresentation?.romajiText)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !pinyin.isEmpty else { return nil }
-            return pinyin
+            guard preferences.showsPinyinLayer, !preferences.usesInlinePinyin else { return nil }
+            return LyricTextLayers(line: line, language: language, preferences: preferences,
+                                   resolved: pinyinPresentation).phoneticReading
         }
-        guard preferences.showRomaji,
-              LyricsLanguageGate.allowsJapaneseReadings(language: language, text: line.originalText),
-              let romaji = line.romajiText?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !romaji.isEmpty else {
-            return nil
-        }
-
-        if let kana = displayKanaText,
-           !kana.isEmpty,
-           normalizedDisplayText(romaji) == normalizedDisplayText(kana) {
-            return nil
-        }
-        return romaji
+        guard preferences.showsRomajiLayer else { return nil }
+        return LyricTextLayers(line: line, language: language, preferences: preferences).phoneticReading
     }
 
     private var hasVisibleRomaji: Bool {
@@ -255,7 +231,7 @@ struct LyricLineView: View {
                                 .transition(.opacity)
                         }
                     } else if preferences.kanaDisplayMode == .inlineRuby,
-                              (LyricsLanguageGate.allowsJapaneseReadings(language: language, text: line.originalText) || (isPinyinProjection && settingsShowPinyin)),
+                              (isPinyinProjection ? preferences.showsPinyinLayer : LyricsLanguageGate.allowsJapaneseReadings(language: language, text: line.originalText)),
                               shouldShowAuxiliary {
                         let kana = displayKanaText ?? ""
                         let tokens = line.rubyTokens ?? (isPinyinProjection ? pinyinPresentation?.rubyTokens : nil)
@@ -332,18 +308,6 @@ struct LyricLineView: View {
         }
     }
 
-    private func normalizedDisplayText(_ text: String) -> String {
-        JapaneseRomanizer.displayKana(text)
-            .split(whereSeparator: { $0.isWhitespace })
-            .joined()
-    }
-
-    private var settingsShowPinyin: Bool {
-        // Pinyin is a separate language layer, but the row remains reusable in
-        // the existing display pipeline. The shared display preference is
-        // intentionally optional for older fixtures.
-        preferences.showPinyin
-    }
 }
 
 /// Renders the kana as the primary line and keeps the original Kanji as a

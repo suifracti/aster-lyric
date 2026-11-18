@@ -628,7 +628,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
 
     private var rowSpacing: CGFloat {
         if readingScene == .linerNotes { return compact ? 16 : 20 }
-        let layerCount = (preferences.showRomaji ? 1 : 0)
+        let layerCount = (preferences.showsRomajiLayer || preferences.showsPinyinLayer ? 1 : 0)
             + (preferences.showTranslation ? 1 : 0)
         if !synchronized {
             return max(18, (compact ? 21 : 24) - CGFloat(max(0, layerCount - 1)))
@@ -927,13 +927,7 @@ final class V3JapaneseReadingCache: ObservableObject {
            line.readingRepresentationID?.hasPrefix("readingRepresentation.pinyin") == true {
             return JapaneseRubyPresentation(originalText: original, reading: nil, preferredRubyTokens: pinyinTokens, romajiText: line.romajiText)
         }
-        let lang = language?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        let isChinese: Bool = {
-            if lang?.hasPrefix("ja") == true { return false }
-            if lang?.hasPrefix("zh") == true { return true }
-            return LyricsLanguageGate.containsHan(original) && !LyricsLanguageGate.containsKana(original)
-        }()
-        if isChinese {
+        if LyricsLanguageGate.usesPinyin(for: line, language: language) {
             return V3ChinesePinyinCache.presentation(for: original)
         }
         guard LyricsLanguageGate.allowsJapaneseReadings(language: language, text: original) else {
@@ -1193,9 +1187,8 @@ enum V3LayoutPrewarmer {
             scriptConversion: scriptConversion
         )
 
-        let isPinyin = line.readingRepresentationID?.hasPrefix("readingRepresentation.pinyin") == true
-        let hasPinyin = isPinyin && preferences.showPinyin
-        let hasReading = hasPinyin ? true : preferences.showRomaji
+        let isPinyin = LyricsLanguageGate.usesPinyin(for: line, language: language)
+        let hasReading = isPinyin ? preferences.showsPinyinLayer : preferences.showsRomajiLayer
         let layerCount = 1 + (hasReading ? 1 : 0) + (preferences.showTranslation && line.translationText != nil ? 1 : 0)
         let sizeScale = max(0.7, preferences.fontSize / 18)
         let upperBound = (compact ? 34 : 42) * sizeScale
@@ -1205,7 +1198,7 @@ enum V3LayoutPrewarmer {
         let readableLineWidth = min(max(240, availableWidth), LyricsDesignTokens.readableLyricLineMaxWidth * presentationScale * lyricWidthScale)
 
         let effectiveText = presentation.originalText
-        let hasRuby = preferences.showOriginal && presentation.hasRuby && (isPinyin ? preferences.showPinyin : true) && preferences.kanaDisplayMode == .inlineRuby
+        let hasRuby = preferences.showOriginal && presentation.hasRuby && (isPinyin ? preferences.showsPinyinLayer : true) && preferences.kanaDisplayMode == .inlineRuby
 
         if let spans = line.timedSpans, !spans.isEmpty {
             let effectiveSpans = ReadingScriptConverter.convertSpans(
@@ -1331,13 +1324,11 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
     }
 
     private var isPinyinProjection: Bool {
-        guard let representation = line.readingRepresentationID else { return false }
-        return representation.hasPrefix("readingRepresentation.pinyin")
+        LyricsLanguageGate.usesPinyin(for: line, language: language)
     }
 
     private var layerCount: Int {
-        let hasPinyin = isPinyinProjection && preferences.showPinyin
-        let hasReading = hasPinyin ? true : preferences.showRomaji
+        let hasReading = isPinyinProjection ? preferences.showsPinyinLayer : preferences.showsRomajiLayer
         return 1 + (hasReading ? 1 : 0) + (preferences.showTranslation && line.translationText != nil ? 1 : 0)
     }
 
@@ -1515,8 +1506,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
     }
 
     private var layerCount: Int {
-        let hasPinyin = isPinyinProjection && preferences.showPinyin
-        let hasReading = hasPinyin ? true : preferences.showRomaji
+        let hasReading = isPinyinProjection ? preferences.showsPinyinLayer : preferences.showsRomajiLayer
         return 1 + (hasReading ? 1 : 0) + (preferences.showTranslation && line.translationText != nil ? 1 : 0)
     }
 
@@ -1664,15 +1654,14 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
     }
 
     private var isPinyinProjection: Bool {
-        guard let representation = line.readingRepresentationID else { return false }
-        return representation.hasPrefix("readingRepresentation.pinyin")
+        LyricsLanguageGate.usesPinyin(for: line, language: language)
     }
 
     private var inlineRubyTokens: [LyricRubyToken]? { rubyPresentation.rubyTokens }
 
     private var shouldRenderInlineRuby: Bool {
         preferences.showOriginal && shouldShowRuby && rubyPresentation.hasRuby
-            && (isPinyinProjection ? preferences.showPinyin : true)
+            && (isPinyinProjection ? preferences.showsPinyinLayer : true)
             && !readingRepeatsOriginal
     }
 
@@ -1684,26 +1673,8 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
     }
 
     private var distinctRomaji: String? {
-        if isPinyinProjection {
-            guard preferences.showPinyin,
-                  preferences.kanaDisplayMode != .inlineRuby,
-                  let pinyin = (line.romajiText ?? rubyPresentation.romajiText)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !pinyin.isEmpty else { return nil }
-            return pinyin
-        }
-
-        guard preferences.showRomaji,
-              LyricsLanguageGate.allowsJapaneseReadings(language: language, text: effectiveOriginalText),
-              let romaji = (line.romajiText ?? rubyPresentation.romajiText)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !romaji.isEmpty else { return nil }
-        // A malformed provider payload sometimes repeats the kana layer in
-        // `romajiText`. Do not show the same reading twice in independent-line
-        // mode; legitimate Latin Hepburn remains unchanged.
-        if let kana = displayKanaText,
-           normalizedDisplayText(romaji) == normalizedDisplayText(kana) {
-            return nil
-        }
-        return romaji
+        guard !isPinyinProjection || !preferences.usesInlinePinyin else { return nil }
+        return LyricTextLayers(line: line, language: language, preferences: preferences, resolved: rubyPresentation).phoneticReading
     }
 
     private func normalizedDisplayText(_ text: String) -> String {
@@ -1713,8 +1684,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
     }
 
     private var shouldShowRomaji: Bool {
-        preferences.listeningLayerPreset != .translationOnly
-            && (isPinyinProjection ? preferences.showPinyin : preferences.showRomaji)
+        isPinyinProjection ? preferences.showsPinyinLayer : preferences.showsRomajiLayer
     }
 
     private var rubyOpacity: Double {
@@ -1899,7 +1869,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                         .fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity)
                 }
-            } else if shouldShowKana, !readingRepeatsOriginal, let kana = displayKanaText {
+            } else if shouldShowKana, let kana = displayKanaText {
                 Text(kana)
                     .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
                     .foregroundStyle(isActive ? coverAccent : .white)
