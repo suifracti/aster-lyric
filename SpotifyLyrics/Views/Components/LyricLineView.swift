@@ -36,10 +36,23 @@ private struct LyricAgentPresentationMapKey: EnvironmentKey {
     static let defaultValue = LyricAgentPresentationMap(lines: [])
 }
 
+struct CompactLyricTiming {
+    let clock: LyricsPresentationClock
+    let tint: Color
+}
+
+private struct CompactLyricTimingKey: EnvironmentKey {
+    static let defaultValue: CompactLyricTiming? = nil
+}
+
 extension EnvironmentValues {
     var lyricAgentPresentationMap: LyricAgentPresentationMap {
         get { self[LyricAgentPresentationMapKey.self] }
         set { self[LyricAgentPresentationMapKey.self] = newValue }
+    }
+    var compactLyricTiming: CompactLyricTiming? {
+        get { self[CompactLyricTimingKey.self] }
+        set { self[CompactLyricTimingKey.self] = newValue }
     }
 }
 
@@ -54,6 +67,7 @@ struct LyricLineView: View {
     let language: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.rubyCorrectionAction) private var correctRuby
+    @Environment(\.compactLyricTiming) private var compactTiming
 
     init(
         line: LyricLine,
@@ -187,6 +201,24 @@ struct LyricLineView: View {
             || (preferences.showKana && displayKanaText != nil)
     }
 
+    private var wordTiming: CompactLyricTiming? {
+        isActive && isSynchronized && !reduceMotion ? compactTiming : nil
+    }
+
+    @ViewBuilder
+    private var originalLyricsText: some View {
+        let font = Font.system(size: primaryFontSize, weight: fontWeight, design: .rounded)
+        let color = LyricsDesignTokens.primaryText.opacity(effectiveOpacity)
+        if let timing = wordTiming,
+           let layout = WordTimedLyricText.layout(for: line, text: effectiveOriginalText, size: primaryFontSize,
+                                                  weight: .bold, design: "rounded", width: availableWidth),
+           layout.isSingleLine {
+            WordTimedLyricText(layout: layout, clock: timing.clock, font: font, base: color.opacity(0.54), tint: timing.tint)
+        } else {
+            Text(effectiveOriginalText).font(font).foregroundStyle(color).lineSpacing(isActive ? 3 : 2)
+        }
+    }
+
     @ViewBuilder
     var body: some View {
         if hasVisibleContent {
@@ -217,10 +249,7 @@ struct LyricLineView: View {
                     )
                 } else if preferences.showOriginal, !line.originalText.isEmpty {
                     if preferences.kanaDisplayMode == .independentLine {
-                        Text(effectiveOriginalText)
-                            .font(.system(size: primaryFontSize, weight: fontWeight, design: .rounded))
-                            .foregroundStyle(LyricsDesignTokens.primaryText.opacity(effectiveOpacity))
-                            .lineSpacing(isActive ? 3 : 2)
+                        originalLyricsText
 
                         if shouldShowAuxiliary, let kana = displayKanaText, !kana.isEmpty {
                             Text(kana)
@@ -236,10 +265,16 @@ struct LyricLineView: View {
                         let kana = displayKanaText ?? ""
                         let tokens = line.rubyTokens ?? (isPinyinProjection ? pinyinPresentation?.rubyTokens : nil)
                         if (displayKanaText != nil && !kana.isEmpty) || (isPinyinProjection && tokens != nil) {
+                            let timing = wordTiming
+                            let timedRuby = timing == nil ? nil : WordTimedLyricText.rubyLayout(
+                                for: line, text: effectiveOriginalText, size: primaryFontSize, tokens: tokens, kana: kana)
                             RubyLineView(
                                 originalText: effectiveOriginalText,
                                 kanaText: kana,
                                 tokens: tokens,
+                                presentationClock: timing?.clock,
+                                timedLayout: timedRuby,
+                                currentTime: timedRuby == nil ? nil : 0,
                                 baseFont: .system(
                                     size: primaryFontSize,
                                     weight: fontWeight,
@@ -251,20 +286,15 @@ struct LyricLineView: View {
                                     design: .rounded
                                 ),
                                 baseColor: LyricsDesignTokens.primaryText.opacity(effectiveOpacity),
-                                rubyColor: LyricsDesignTokens.secondaryText.opacity(rubyOpacity)
+                                rubyColor: LyricsDesignTokens.secondaryText.opacity(rubyOpacity),
+                                highlightColor: timing?.tint
                             )
                             .environment(\.rubyCorrectionAction, isPinyinProjection ? nil : correctRuby)
                         } else {
-                            Text(effectiveOriginalText)
-                                .font(.system(size: primaryFontSize, weight: fontWeight, design: .rounded))
-                                .foregroundStyle(LyricsDesignTokens.primaryText.opacity(effectiveOpacity))
-                                .lineSpacing(isActive ? 3 : 2)
+                            originalLyricsText
                         }
                     } else {
-                        Text(effectiveOriginalText)
-                                .font(.system(size: primaryFontSize, weight: fontWeight, design: .rounded))
-                            .foregroundStyle(LyricsDesignTokens.primaryText.opacity(effectiveOpacity))
-                            .lineSpacing(isActive ? 3 : 2)
+                        originalLyricsText
                     }
                 } else if preferences.kanaDisplayMode != .hidden,
                           LyricsLanguageGate.allowsJapaneseReadings(language: language, text: line.originalText),
@@ -1105,6 +1135,67 @@ private struct RubyTokenFlowLayout: Layout {
             size: size,
             baseline: baseline.isFinite && baseline >= 0 ? baseline : size.height
         )
+    }
+}
+
+/// Small live surfaces use the same measured spans and layer animation as the listening window.
+struct WordTimedLyricText: View {
+    let layout: TimedMultilineLayout
+    let clock: LyricsPresentationClock
+    let font: Font
+    let base: Color
+    let tint: Color
+    var selectable = false
+
+    static func layout(for line: LyricLine, text: String, size: CGFloat, weight: NSFont.Weight,
+                       design: String, width: CGFloat) -> TimedMultilineLayout? {
+        guard text == line.originalText || text == line.readingSurfaceText,
+              let spans = line.timedSpans, !spans.isEmpty, width.isFinite, width > 0 else { return nil }
+        let key = V3TimedLayoutCache.key(kind: "compact-\(design)-\(text)", line: line, fontSize: size,
+                                         weight: weight.rawValue, availableWidth: width)
+        return V3TimedLayoutCache.multiline(for: key) {
+            TimedTextComposer.computeMultilineLayout(originalText: text, spans: spans,
+                fontSize: size, weight: weight.rawValue, design: design, availableWidth: width)
+        }
+    }
+
+    static func rubyLayout(for line: LyricLine, text: String, size: CGFloat,
+                           tokens: [LyricRubyToken]?, kana: String) -> TimedRubyLayout? {
+        guard let spans = line.timedSpans, !spans.isEmpty else { return nil }
+        let weight = NSFont.Weight.bold.rawValue
+        let key = V3TimedLayoutCache.key(kind: "compactRuby", line: line, fontSize: size, weight: weight, rubyTokens: tokens)
+        return V3TimedLayoutCache.ruby(for: key) {
+            JapaneseRubyPresentation(originalText: text, reading: nil, preferredRubyTokens: tokens,
+                                     kanaText: kana, romajiText: line.romajiText)
+                .timedLayout(spans: spans, fontSize: size, weight: weight)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(layout.lines, id: \.lineIndex) { visualLine in
+                Group {
+                    if selectable { text(visualLine).textSelection(.enabled) }
+                    else { text(visualLine) }
+                }
+                .overlay {
+                    GeometryReader { geometry in
+                        TimedLyricHighlight(clock: clock, fragments: visualLine.fragments, totalWidth: visualLine.totalWidth) {
+                            Text(visualLine.displayText).font(font).foregroundStyle(tint)
+                                .fixedSize().frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
+                        }
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(layout.originalText)
+    }
+
+    private func text(_ line: TimedVisualLine) -> some View {
+        Text(line.displayText).font(font).foregroundStyle(base).fixedSize()
     }
 }
 

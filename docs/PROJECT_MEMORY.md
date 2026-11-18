@@ -48,6 +48,7 @@
 | 合唱被标成某个人独唱、桌面歌词或灵动岛看不出谁在唱 | L-052；LyricsTimeline.VoicePresentation |
 | 听歌有对唱，但阅读、文件或印本漏掉声部，合唱在档案里重复 | L-051；PassageVoicePresentation、LyricBook.Chapter.readingRows |
 | 单句循环只在主窗口有、切窗口找不到取消、拖进度被拉回 | L-052；PlaybackState.lyricLineLoopControl |
+| 状态栏弹窗和展开灵动岛只亮整句，看不到唱到哪个词 | L-052；WordTimedLyricText、TimedLyricHighlight、MenuBarLyricsSnapshot.currentTimedLine |
 | 「只看译文」仍出现罗马音 / 拼音、隐藏原文后拼音消失 | L-052；LyricTextLayers、DisplayPreferences.usesInlinePinyin |
 | 粒子（雨雪雾、歌词意象）不显示、VU 表指针手感、新呈现一行放不下、分享卡排版跑偏、封面墙离屏图空白、声纹圈、频谱 | L-025；V3GlassWeather、V3ParticleHostView、V3VUMeter、V3LyricShareCard、ListeningCoverWall、V3Soundprint、V3SpectrumOverlay |
 | 最小化后画面还在刷新、一个窗口关闭却让另一个不再获取天气、书页翻完还占用 | L-025；V3WindowVisibilityProbe、V3FlowLayer、V3SceneTransition、V3WeatherWatcher |
@@ -970,5 +971,7 @@ TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、
 2026-11-19：单句循环在桌面歌词悬停栏、各款展开灵动岛与菜单栏弹窗提供同一操作，主窗和全屏仍可点具体原词行。按钮每次带上所见的录音和歌词会话代际。小窗可以循环眼前的当前句或定住的句子，也能取消另一窗口设下的循环。主窗口的搜索预览没有循环入口，仍可在全屏或小窗操作播放中的版本。手动跳出循环范围会取消，范围内的跳转会继续循环。
 
 32 项播放事件用例通过，覆盖循环边界、预览隔离、换歌丢弃旧按钮和手动跳转。隔离原生菜单栏弹窗点过开始和取消；展开灵动岛取消了同一播放状态中已设的循环，再定住 16 秒处的歌词、把播放拖到 33 秒，从定句按钮跳回 16 秒。桌面歌词窗口用同一控制，悬停栏的指针交互未在隔离版中确认。
+
+2026-11-19：状态栏弹窗与展开灵动岛的原词接入真实逐词进度。`WordTimedLyricText` 复用 CoreText 分行、已测量的字位和 `TimedLyricHighlight`，按当前播放时钟及歌词偏移推进，暂停停在当前字。弹窗长句可以换行并复制整句；岛的单行版式、注音和定句沿用原有展示约束。逐行或时间文字不匹配时使用普通正文。隔离 App 对同句的 18 秒和 21 秒暂停画面显示不同的填色位置，原生混排用例核对内嵌换行、各行进度和不相符的正文。
 
 本机 Xcode Debug 通过 6 项相关原生检查，涵盖多窗口情境解析、旧画面选择与读回、对唱及桌面歌词、真实词间时间断句、封面回补、错过通知时的切歌补读。对比 Claude 末尾 `c6c1104` 的 15 个可独立运行 Python 合同，7 个旧脚本在两边都失败；本轮更新现行场景合同的接线断言，现行原生用例验证行为。两个调用 Xcode 的包装脚本和一个需要测试参数的数据库矩阵未计入这次比较。

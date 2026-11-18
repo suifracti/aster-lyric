@@ -232,6 +232,23 @@ final class MenuBarPresentationTests: XCTestCase {
         XCTAssertNil(MenuBarFullLyricsSnapshot(track: track, lines: [], currentIndex: nil, synchronized: false))
     }
 
+    func testCompactWordProgressUsesWrappedMixedScriptSpans() throws {
+        let line = LyricLine(timestamp: 2, originalText: "星空 Hello\nまたね", timedSpans: [
+            TimedTextSpan(id: 0, text: "星空", startTime: 2, endTime: 3, utf16Start: 0, utf16Length: 2),
+            TimedTextSpan(id: 1, text: "Hello", startTime: 3, endTime: 5, utf16Start: 3, utf16Length: 5),
+            TimedTextSpan(id: 2, text: "またね", startTime: 6, endTime: 7, utf16Start: 9, utf16Length: 3)
+        ])
+        let layout = try XCTUnwrap(WordTimedLyricText.layout(for: line, text: line.originalText,
+            size: 17, weight: .semibold, design: "default", width: 310))
+        XCTAssertEqual(layout.lines.map(\.displayText), ["星空 Hello", "またね"])
+        XCTAssertGreaterThan(layout.lines[0].fillFraction(at: 4), 0)
+        XCTAssertLessThan(layout.lines[0].fillFraction(at: 4), 1)
+        XCTAssertEqual(layout.lines[1].fillFraction(at: 4), 0)
+        XCTAssertEqual(layout.lines[1].fillFraction(at: 7), 1)
+        XCTAssertNil(WordTimedLyricText.layout(for: line, text: "不同的译文", size: 17,
+            weight: .semibold, design: "default", width: 310))
+    }
+
     func testAppearanceBoundsAndReadingImageStayNativeAndCompact() {
         XCTAssertEqual(MenuBarLyricsAppearance(fontSize: .nan).effectiveFontSize, 13)
         XCTAssertEqual(MenuBarLyricsAppearance(fontSize: .infinity).effectiveFontSize, 13)

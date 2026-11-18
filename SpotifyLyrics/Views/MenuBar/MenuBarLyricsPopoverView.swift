@@ -2,6 +2,8 @@ import SwiftUI
 import AppKit
 
 public struct MenuBarLyricsPopoverView: View {
+    private static let playbackWidth: CGFloat = 340
+    private static let playbackPadding: CGFloat = 16
     @ObservedObject var controller: MenuBarLyricsController
     @ObservedObject private var settings: AppSettingsStore
     @State private var islandAccent: Color = .accentColor
@@ -140,7 +142,7 @@ public struct MenuBarLyricsPopoverView: View {
                             .buttonStyle(.borderless).font(.caption)
                     }
                 }
-                .padding(16)
+                .padding(Self.playbackPadding)
                 .background(alignment: .top) { coverWash.id(snapshot.artworkURL) }
             } else {
                 VStack(alignment: .leading, spacing: 12) {
@@ -188,7 +190,7 @@ public struct MenuBarLyricsPopoverView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 6)
         }
-        .frame(width: 340)
+        .frame(width: Self.playbackWidth)
         .background(WorkspacePalette.paper)
     }
 
@@ -311,7 +313,7 @@ public struct MenuBarLyricsPopoverView: View {
                         Text(voice).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                             .accessibilityLabel("演唱：\(voice)")
                     }
-                    lyricText(current, translation: snapshot.currentTranslationText)
+                    lyricText(current, translation: snapshot.currentTranslationText, timedSnapshot: snapshot)
                 }
                 if let next, !next.isEmpty {
                     let voice = snapshot.nextVoiceLabel == snapshot.currentVoiceLabel ? nil : snapshot.nextVoiceLabel
@@ -350,14 +352,16 @@ public struct MenuBarLyricsPopoverView: View {
         }
     }
 
-    private func lyricText(_ original: String, translation: String?) -> some View {
+    private func lyricText(_ original: String, translation: String?, timedSnapshot: MenuBarLyricsSnapshot? = nil) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            Text(original)
-                .font(.system(size: 17, weight: .semibold))
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
+            if let timedSnapshot, let line = timedSnapshot.currentTimedLine,
+               let index = timedSnapshot.currentLineIndex, let trackKey = timedSnapshot.trackKey,
+               let state = controller.livePlaybackState, !reduceMotion {
+                MenuBarTimedOriginal(state: state, line: line, index: index, trackKey: trackKey, original: original,
+                                     width: Self.playbackWidth - 2 * Self.playbackPadding, tint: islandAccent)
+            } else {
+                MenuBarTimedOriginal.plainText(original)
+            }
             if let translation, !translation.isEmpty {
                 Text(translation)
                     .font(.system(size: 14))
@@ -426,6 +430,44 @@ public struct MenuBarLyricsPopoverView: View {
             .frame(width: 48, height: 48)
             .background(islandAccent.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+}
+
+/// Observe the clock only while this timed line is visible in the popover.
+private struct MenuBarTimedOriginal: View {
+    @ObservedObject var state: PlaybackState
+    let line: LyricLine
+    let index: Int
+    let trackKey: String
+    let original: String
+    let width: CGFloat
+    let tint: Color
+
+    static func plainText(_ original: String) -> some View {
+        Text(original).font(.system(size: 17, weight: .semibold)).lineSpacing(3)
+            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
+    }
+
+    var body: some View {
+        let live = state.liveLyrics
+        if state.hasLiveTrack, !state.isMockPreviewMode, state.liveLyricsAreSynchronized,
+           state.liveTrackIdentity?.stableKey == trackKey, live.indices.contains(index), live[index].id == line.id,
+           let layout = WordTimedLyricText.layout(for: line, text: line.originalText, size: 17,
+                                                weight: .semibold, design: "default", width: width) {
+            WordTimedLyricText(layout: layout, clock: state.presentationClock,
+                              font: .system(size: 17, weight: .semibold), base: .primary.opacity(0.52), tint: tint,
+                              selectable: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contextMenu {
+                    Button("复制整句") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(original, forType: .string)
+                    }
+                }
+        } else {
+            Self.plainText(original)
+        }
     }
 }
 

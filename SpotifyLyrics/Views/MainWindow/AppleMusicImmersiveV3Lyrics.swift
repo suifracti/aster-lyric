@@ -1110,7 +1110,7 @@ private final class V3TimedRubyLayoutBox: NSObject {
 /// Playback time updates frequently for word/syllable progress. Keep the
 /// CoreText geometry stable across those updates; the timed row still reads
 /// the live presentation clock for its fill progress.
-private enum V3TimedLayoutCache {
+enum V3TimedLayoutCache {
     private static let multilineCache: NSCache<NSString, V3TimedMultilineLayoutBox> = {
         let cache = NSCache<NSString, V3TimedMultilineLayoutBox>()
         cache.countLimit = 512

@@ -38,6 +38,7 @@ public struct MenuBarLyricsSnapshot: Equatable, Sendable {
     /// popover can scroll its three lines instead of swapping text.
     public var previousLineText: String? = nil
     public var currentLineIndex: Int? = nil
+    var currentTimedLine: LyricLine? = nil
     var trackKey: String? = nil
     var lyricsVersionID: UUID? = nil
     var translationVersionID: UUID? = nil
@@ -944,6 +945,9 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 snapshot.currentKanaText = lines[currentIndex].kanaText
                 snapshot.currentRomajiText = lines[currentIndex].romajiText
                 snapshot.currentLineIndex = currentIndex
+                if lines[currentIndex].timedSpans?.isEmpty == false {
+                    snapshot.currentTimedLine = lines[currentIndex]
+                }
                 snapshot.currentVoiceLabel = projection.voices.label(at: currentIndex)
                 snapshot.nextVoiceLabel = projection.voices.label(at: nextIndex)
                 if let previousIndex = projection.visible.first(where: { $0 < currentIndex }) {

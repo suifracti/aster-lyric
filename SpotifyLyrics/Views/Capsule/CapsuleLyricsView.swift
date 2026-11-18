@@ -170,6 +170,7 @@ struct CapsuleLyricsView: View {
             value: windowController.presentationState
         )
         .environment(\.lyricAgentPresentationMap, LyricAgentPresentationMap(lines: state.liveLyrics))
+        .environment(\.compactLyricTiming, expandedWordTiming)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("顶部灵动岛")
         .onChange(of: windowController.presentationState) { _, mode in
@@ -183,6 +184,14 @@ struct CapsuleLyricsView: View {
             windowController.setSeeking(false)
         }
         .lyricIslandSongTint(artworkURL: state.currentTrack.artworkURL, accent: $islandAccent)
+    }
+
+    private var expandedWordTiming: CompactLyricTiming? {
+        guard windowController.presentationState == .expanded, held == nil,
+              state.hasLiveTrack, !state.isMockPreviewMode, state.liveLyricsAreSynchronized else { return nil }
+        let foreground = NSColor(LyricsDesignTokens.primaryText)
+        let readableTint = foreground.blended(withFraction: 0.32, of: NSColor(islandAccent)) ?? foreground
+        return .init(clock: state.presentationClock, tint: Color(nsColor: readableTint))
     }
 
     @ViewBuilder
