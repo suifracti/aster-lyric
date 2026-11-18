@@ -53,10 +53,7 @@ struct LyricBook: FileDocument, Codable, Equatable, Sendable {
             title = page.entry.title; artist = page.entry.artist; album = page.entry.album ?? ""
             edition = excerpt == nil ? page.edition : "摘句 · " + page.edition
             let rows = excerpt.map { [$0] } ?? page.lines
-            lines = rows.map {
-                Line(original: $0.original, translation: $0.translation, reading: $0.reading,
-                     background: $0.background, romanization: $0.romanization, performer: $0.performerID)
-            }
+            lines = rows.map(Self.bookLine)
             if let excerpt {
                 let context = PassageVoicePresentation(lines: page.lines)
                 if let label = context.label(for: excerpt.id) { voices = .init(excerptLabel: label) }
@@ -68,6 +65,16 @@ struct LyricBook: FileDocument, Codable, Equatable, Sendable {
                 })
                 if !context.labels.isEmpty { voices = context }
             }
+            origin = Self.origin(for: page, source: source, excerpt: excerpt)
+        }
+
+        private static func bookLine(_ row: LibraryPassagePage.Line) -> Line {
+            Line(original: row.original, translation: row.translation, reading: row.reading,
+                 background: row.background, romanization: row.romanization, performer: row.performerID)
+        }
+
+        static func origin(for page: LibraryPassagePage, source: LibraryPassageSource,
+                           excerpt: LibraryPassagePage.Line? = nil) -> LibraryPassageTarget {
             let resolved = page.resolvedSource ?? source
             let exact: LibraryPassageSource
             switch resolved {
@@ -78,9 +85,9 @@ struct LyricBook: FileDocument, Codable, Equatable, Sendable {
                 !row.original.isEmpty && page.matchesOriginalVersion
                     ? LibraryPassageTarget.SavedQuote(originalVersionID: page.originalVersionID, translation: row.translation) : nil
             }
-            origin = LibraryPassageTarget(trackKey: page.entry.trackStableKey, source: exact,
-                                          find: excerpt == nil ? "" : lines.first?.mainText ?? "",
-                                          lineIndex: excerpt?.id, savedQuote: kept)
+            return LibraryPassageTarget(trackKey: page.entry.trackStableKey, source: exact,
+                                        find: excerpt.map(bookLine)?.mainText ?? "",
+                                        lineIndex: excerpt?.id, savedQuote: kept)
         }
 
         init(quote: V3FavoriteLines.Entry) {

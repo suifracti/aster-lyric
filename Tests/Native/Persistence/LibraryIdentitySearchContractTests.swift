@@ -130,6 +130,23 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         let selected = try await repository.loadPersonalLibraryTrackDetail(stableKey: identity.stableKey)
         XCTAssertEqual(selected?.entry.activeLyricsVersionID, replacementID)
 
+        let bookHits = try await library.bookSources(matching: "回声")
+        let hit = try XCTUnwrap(bookHits.first)
+        XCTAssertEqual(hit.source, .original(originalID))
+        let matchPage = try await library.readPassage(hit.readingTarget(for: "回声"), recordOpening: false)
+        let edition = try XCTUnwrap(matchPage)
+        let voice = PassageVoicePresentation(lines: edition.lines)
+        let hits = voice.visibleLines(in: edition.lines).filter { $0.matches("回声") }
+        XCTAssertEqual(hits.map(\.id), [0, 2])
+        let excerpt = LyricBook.Chapter(page: edition, source: .original(originalID), excerpt: hits[1])
+        let book = try LyricBook(data: LyricBook(chapters: [excerpt]).encoded())
+        XCTAssertEqual(book.chapters.first?.lines.map(\.original), ["回声"])
+        let collected = try XCTUnwrap(book.chapters.first?.origin)
+        XCTAssertEqual(collected.lineIndex, 2)
+        XCTAssertEqual(collected.source, .original(originalID))
+        let readBack = try await library.readPassage(collected, recordOpening: false)
+        XCTAssertEqual(readBack?.originalOccurrence(of: collected.find, preferred: collected.lineIndex), 2)
+
         let bookmark = LibraryPassageTarget(trackKey: identity.stableKey, source: .original(originalID),
             find: "回声", lineIndex: 0, savedQuote: .init(originalVersionID: originalID, translation: "收藏的译文"))
         let quoted = try await library.readPassage(bookmark)
