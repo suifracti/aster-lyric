@@ -206,6 +206,8 @@ declare -a CASES=(
   "settings-lyrics|--surface settings --settings-page 歌词与翻译 --appearance light"
   "settings-ai|--surface settings --settings-page 'AI 翻译' --appearance light"
   "settings-storage|--surface settings --settings-page 高级与数据 --sample-backup --appearance light --width 880 --height 600"
+  "quick-find|--surface quick-find --lookup 信 --appearance light --width 565 --height 425"
+  "quick-find-tools|--surface quick-find --lookup 歌词 --appearance dark --width 445 --height 360"
   "lyric-file|--surface lyric-file --appearance light --width 560 --height 530"
   "compare-translations|--surface compare --appearance light --width 710 --height 530"
   "compare-translations-narrow|--surface compare --appearance dark --width 480 --height 540"

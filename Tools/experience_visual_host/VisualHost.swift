@@ -698,7 +698,7 @@ private struct ExperienceFixtureRoot: View {
                     try? await Task.sleep(for: .milliseconds(800))
                 }
                 var extraWindow: NSWindow?
-                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker", "favorites", "reader", "lyric-file", "compare"].contains(ExperienceArguments.surface) {
+                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker", "favorites", "reader", "lyric-file", "compare", "quick-find"].contains(ExperienceArguments.surface) {
                     MenuBarLyricsController.shared.bind(playbackState: playback)
                     let root: AnyView
                     if ExperienceArguments.surface == "playlist-picker" {
@@ -714,6 +714,11 @@ private struct ExperienceFixtureRoot: View {
                         root = AnyView(TranslationProviderControls(settings: settings)
                             .padding(16).frame(width: 360)
                             .background(Color(nsColor: .windowBackgroundColor)))
+                    } else if ExperienceArguments.surface == "quick-find" {
+                        let (library, _) = try! await comparisonFixture()
+                        let launcher = QuickFindLauncher()
+                        launcher.show(query: ExperienceArguments.value("--lookup", fallback: "信"))
+                        root = AnyView(WorkspaceQuickFind(launcher: launcher, library: library))
                     } else if ExperienceArguments.surface == "compare" {
                         let (library, request) = try! await comparisonFixture()
                         root = AnyView(LibraryVersionCompareView(request: request, library: library, edit: { _ in }))

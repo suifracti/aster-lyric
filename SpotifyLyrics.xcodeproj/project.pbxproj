@@ -278,6 +278,7 @@
 		1F08C11A54AD54A4C45E749C /* LyricFileReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4E11A2DEDE70F2E0F48ECB /* LyricFileReader.swift */; };
 		9332236A1CE572A54740C8CE /* LibraryVersionComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = B52B6C92006CB595EE440048 /* LibraryVersionComparison.swift */; };
 		C0EAD72A39DBF51001F1F0D5 /* LibraryVersionCompareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB7897AB0B3E2046F4D44B7D /* LibraryVersionCompareView.swift */; };
+		AB9EAD42EB5CC5DEAFD10F91 /* WorkspaceQuickFind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C63E37EC5A1E94BBBE28F6 /* WorkspaceQuickFind.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -558,6 +559,7 @@
 		6E4E11A2DEDE70F2E0F48ECB /* LyricFileReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricFileReader.swift; sourceTree = "<group>"; };
 		B52B6C92006CB595EE440048 /* LibraryVersionComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lyrics/LibraryVersionComparison.swift; sourceTree = "<group>"; };
 		DB7897AB0B3E2046F4D44B7D /* LibraryVersionCompareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryVersionCompareView.swift; sourceTree = "<group>"; };
+		56C63E37EC5A1E94BBBE28F6 /* WorkspaceQuickFind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceQuickFind.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -725,6 +727,7 @@
 				D878152D0CF1CEB3707B44BF /* LibraryStorageSettingsView.swift */,
 				F57414EF02B03B082F419D79 /* LyricRecallView.swift */,
 				65306960D44D11ACCB0D8792 /* SettingsWorkspace.swift */,
+				56C63E37EC5A1E94BBBE28F6 /* WorkspaceQuickFind.swift */,
 				110000F82D83400100000000 /* ExperienceLibrarySettingsView.swift */,
 				110000A82D83400100000000 /* ReadingSettingsView.swift */,
 				110006042D83400100000000 /* ListeningHistoryView.swift */,
@@ -1265,6 +1268,7 @@
 				311E64C965DA010EA4EE0E08 /* LibraryStorageSettingsView.swift in Sources */,
 				4D7C7204CB61BC984163EAD7 /* LyricRecallView.swift in Sources */,
 				8382063FD9B58CD5BA37F60F /* SettingsWorkspace.swift in Sources */,
+				AB9EAD42EB5CC5DEAFD10F91 /* WorkspaceQuickFind.swift in Sources */,
 				110000A82D83400100000001 /* ReadingSettingsView.swift in Sources */,
 				110000622D83400100000001 /* AITranslationModels.swift in Sources */,
 				110000632D83400100000001 /* AITranslationConfiguration.swift in Sources */,

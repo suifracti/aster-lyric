@@ -32,7 +32,7 @@ final class LibraryRevisionsContractTests: XCTestCase {
         <p begin="1s" itunes:key="A">夢<span ttm:role="x-translation" xml:lang="en">dream</span><span ttm:role="x-translation" xml:lang="zh-Hans">第一个梦</span></p>
         </div></body></tt>
         """.utf8)
-        let track = Track(title: "多种语言", artist: "测试", album: "", duration: 9)
+        let track = Track(title: "夢", artist: "测试", album: "", duration: 9)
         let key = TrackIdentity(track: track).stableKey
         let english = try LocalLyricsFile(data: data, kind: .ttml, preferredLanguage: "en-GB")
         let chinese = try LocalLyricsFile(data: data, kind: .ttml, preferredLanguage: "zh-TW")
@@ -47,6 +47,13 @@ final class LibraryRevisionsContractTests: XCTestCase {
         let detail = try XCTUnwrap(found)
         XCTAssertEqual(detail.lyricsVersions.count, 1)
         XCTAssertEqual(Set(detail.translationVersions.map(\.targetLanguage)), ["en", "zh-Hant", "zh-Hans"])
+        let sameTitle = try await repo.searchLibraryPassages("夢")
+        XCTAssertEqual(sameTitle.first?.matchesMetadata, true)
+        XCTAssertNotNil(sameTitle.first?.source)
+        let searched = try await repo.searchLibraryPassages("第一个梦")
+        let targetID = try XCTUnwrap(detail.translationVersions.first { $0.targetLanguage == "zh-Hans" }?.id)
+        XCTAssertEqual(searched.first?.source, .translation(targetID))
+        XCTAssertEqual(searched.first?.excerpt, "第一个梦")
         let original = try XCTUnwrap(detail.lyricsVersions.first)
         let editable = try await repo.loadEditableVersion(versionID: original.id, track: track, identity: TrackIdentity(track: track))
         let hash = try XCTUnwrap(editable?.sourceContentHash)

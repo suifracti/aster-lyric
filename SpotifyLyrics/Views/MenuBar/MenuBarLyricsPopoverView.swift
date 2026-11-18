@@ -129,6 +129,7 @@ public struct MenuBarLyricsPopoverView: View {
             }
             Divider()
             HStack(spacing: 3) {
+                shortcut("找一句", icon: "magnifyingglass") { controller.openQuickFind() }
                 shortcut("工作台", icon: "square.grid.2x2") { controller.openSettings(at: .init(.workspace)) }
                 shortcut("歌词库", icon: "books.vertical") { controller.openLibrary() }
                 shortcut("主窗口", icon: "macwindow") { controller.openMainWindow() }

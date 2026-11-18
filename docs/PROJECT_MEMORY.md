@@ -10,6 +10,7 @@
 |---|---|
 | 改名、换界面、旧数据或人工歌词不能丢；改持久化/身份逻辑 | L-001 |
 | 清理缓存、查看备份占用、另一个窗口打开时也要备份最新歌词 | L-047 · SettingsDataController、writeDatabaseSnapshot、V3CanvasStore |
+| 从其他应用选字查歌词、⌘K 找回一句、搜到副歌却只打开歌曲档案 | L-043、L-046 · WorkspaceQuickFind、searchLibraryPassages |
 | 两份稿逐句对照、改译时借用另一版的句子、重复副歌错位 | L-049 · LibraryVersionComparison、LibraryTranslationRevisionDraft |
 | 从 Finder 打开歌词文件、给本机录音补稿、导入后已有版被换掉 | L-048 · LyricFileDocument、LocalLyricsFile、storeImportedFile |
 | 新包、截图、构建/签名、实际运行是哪份 | L-002；DEVELOPMENT_WORKFLOW.md |
@@ -691,6 +692,10 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 
 外观按主窗口、桌面歌词、灵动岛和菜单栏四处切换，搜索和后退都能回到其中一处。可视地图只导航；显示开关和停靠按钮调用现有窗口控制器。改桌面歌词版本时曾把另一处尚在试看的灵动岛一起保存。现在 `apply(category:stableID:)` 只提交用户选中的位置，灵动岛也只在自己的呈现选择改变时收起。经典布局与实验工作台的文字和翻译入口在原处展开，沿用相同设置值。
 
+
+「找回一句」与工作台调用同一套本地匹配。歌曲信息与歌词可以同时命中；独立译文、读音优先于原词里附带的相同文字，阅读页保留版本 UUID。⌘K 通过 App 的编辑菜单打开，菜单栏和 macOS 服务进入同一窗口。系统服务只读取调用方提供的选区 pasteboard。macOS 发现应用服务时需要应用已安装到 Applications 目录或其子目录。[Apple Services 实现说明](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/SysServices/Articles/providing.html)
+
+用短期安装在用户 Applications 目录的独立验收 App，经系统服务提交样例选区，回车读到了第二句的上下文，Esc 返回原搜索。在文档窗的编辑菜单读回启用的 ⌘K 项并实际点开。验收实例随后自行移除。
 
 ## L-044 状态栏跟随歌曲，也能回到自己的资料（2026-11-18）
 

@@ -1,9 +1,34 @@
+import AppKit
 import Foundation
 import SQLite3
 import XCTest
 @testable import SpotifyLyrics
 
 final class LibraryIdentitySearchContractTests: XCTestCase {
+    @MainActor
+    func testQuickFindUsesTheOfferedSelectionAndOpensTheExactSavedLine() throws {
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        board.setString("  记得这句话  ", forType: .string)
+        let service = QuickFindLauncher()
+        var opened = 0
+        service.connect { opened += 1 }
+        var issue: NSString?
+        service.findLyrics(board, userData: nil, error: &issue)
+        XCTAssertNil(issue)
+        XCTAssertEqual(service.request.query, "记得这句话")
+        XCTAssertEqual(opened, 1)
+        let version = UUID()
+        let favorite = V3FavoriteLines.Entry(text: "记得这句话", title: "一首歌", artist: "歌手",
+            trackKey: "recording", lyricsVersionID: version, lineIndex: 9)
+        let rows = WorkspaceLookupRow.matches(service.request.query, songs: [], favorites: [favorite])
+        XCTAssertEqual(rows.first?.location.passage?.source, .original(version))
+        XCTAssertEqual(rows.first?.location.passage?.lineIndex, 9)
+        XCTAssertTrue(WorkspaceLookupRow.matches("刘海", songs: [], favorites: []).contains {
+            $0.location.page == .appearance && $0.location.appearanceSurface == .island
+        })
+    }
+
     func testVersionComparisonKeepsTheSecondChorusAfterAnInsertionAndFindsTimingChanges() {
         func line(_ id: Int, _ text: String, _ time: Double) -> LibraryPassagePage.Line {
             .init(id: id, original: text, startTime: time)

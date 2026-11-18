@@ -40,6 +40,7 @@ struct SpotifyLyricsApp: App {
         DebugAcceptanceDataIsolation.prepareBeforeStateObjectsIfNeeded()
         DebugDatabaseSafety.failClosedForCommandLineV4IfNeeded()
 #endif
+        NSApplication.shared.servicesProvider = QuickFindLauncher.shared
         let settings = AppSettingsStore.shared
         let playback = PlaybackState(settings: settings)
         _appSettings = StateObject(wrappedValue: settings)
@@ -62,6 +63,22 @@ struct SpotifyLyricsApp: App {
     }
 
     var body: some Scene {
+        let openAction = openWindow
+        let _ = QuickFindLauncher.shared.connect {
+            openAction(id: "quick-find")
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        Group { appWindows }
+            .commands {
+                CommandGroup(after: .textEditing) {
+                    Button("找回一句…") { QuickFindLauncher.shared.show() }
+                        .keyboardShortcut("k", modifiers: .command)
+                }
+            }
+    }
+
+    @SceneBuilder
+    private var appWindows: some Scene {
         // The player is a single stateful surface. A WindowGroup can create
         // duplicate main windows, which makes shared playback/layout state
         // race while the user is resizing one of them.
@@ -168,6 +185,12 @@ struct SpotifyLyricsApp: App {
         }
         .defaultSize(width: 1_100, height: 720)
 #endif
+
+        Window("找回一句", id: "quick-find") {
+            WorkspaceQuickFind()
+        }
+        .defaultSize(width: 565, height: 430)
+        .defaultPosition(.center)
 
         DocumentGroup(viewing: LyricFileDocument.self) { opened in
             LyricDocumentWindow(document: opened.document, url: opened.fileURL)

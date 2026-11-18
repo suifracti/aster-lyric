@@ -876,6 +876,7 @@ public struct PersonalDataImportPreview: Equatable, Sendable, Codable {
 enum LibraryPassageSource: Hashable, Sendable {
     case selected
     case original(UUID)
+    case attached(UUID)
     case translation(UUID)
     case reading(UUID)
 
@@ -883,6 +884,7 @@ enum LibraryPassageSource: Hashable, Sendable {
         switch self {
         case .selected: return "歌词"
         case .original: return "原词"
+        case .attached: return "原词自带的译文或读音"
         case .translation: return "译文"
         case .reading: return "读音"
         }
@@ -902,6 +904,7 @@ struct LibraryPassageHit: Identifiable, Sendable {
     let entry: PersonalLyricsLibraryEntry
     let source: LibraryPassageSource?
     let excerpt: String?
+    var matchesMetadata = false
     var id: String { entry.trackStableKey }
 }
 

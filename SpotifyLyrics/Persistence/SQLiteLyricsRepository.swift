@@ -3903,14 +3903,14 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         try refreshLibrarySearchCache()
         let needle = Data(Self.normalizedLibrarySearchText(term).utf8)
         return librarySearchCache.values.compactMap { song in
-            if song.versions["metadata"]?.normalized.range(of: needle) != nil {
-                return LibraryPassageHit(entry: song.entry, source: nil, excerpt: nil)
+            let metadata = song.versions["metadata"]?.normalized.range(of: needle) != nil
+            guard let match = passageComponent(in: song, matching: needle) else {
+                return metadata ? LibraryPassageHit(entry: song.entry, source: nil, excerpt: nil, matchesMetadata: true) : nil
             }
-            guard let match = passageComponent(in: song, matching: needle) else { return nil }
             let excerpt = match.text.original.split { $0 == "\0" || $0.isNewline }.first {
                 $0.range(of: term, options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]) != nil
             }
-            return LibraryPassageHit(entry: song.entry, source: match.source, excerpt: excerpt.map(String.init))
+            return LibraryPassageHit(entry: song.entry, source: match.source, excerpt: excerpt.map(String.init), matchesMetadata: metadata)
         }.sorted {
             if $0.entry.lastModifiedAt != $1.entry.lastModifiedAt { return $0.entry.lastModifiedAt > $1.entry.lastModifiedAt }
             return $0.id < $1.id
@@ -3928,6 +3928,9 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             case "lyrics":
                 source = .original(id)
                 rank = id == song.entry.activeLyricsVersionID ? 0 : 3
+            case "attached":
+                source = .attached(id)
+                rank = id == song.entry.activeLyricsVersionID ? 6 : 7
             case "translation":
                 source = .translation(id)
                 rank = id == song.entry.activeTranslationVersionID ? 1 : 4
@@ -3973,7 +3976,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         switch source {
         case .selected:
             lyricsID = entry.activeLyricsVersionID ?? detail.lyricsVersions.max(by: { $0.updatedAt < $1.updatedAt })?.id
-        case let .original(id): lyricsID = id
+        case let .original(id), let .attached(id): lyricsID = id
         case let .translation(id):
             translation = detail.translationVersions.first { $0.id == id }
             lyricsID = translation?.lyricsVersionID
@@ -3985,13 +3988,14 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         let originals = try fetchLines(versionID: lyricsID)
         guard !originals.isEmpty else { return nil }
         let hash = LyricsSourceContentHasher.hash(isSynchronized: version.isSynced, lines: originals)
-        if translation == nil {
+        let attached = source == .attached(lyricsID)
+        if !attached && translation == nil {
             translation = detail.translationVersions.first { $0.lyricsVersionID == lyricsID && $0.id == entry.activeTranslationVersionID }
         }
         var translated: [Int: String] = [:]
         var hasStoredTranslation = false
         var pronunciation: [Int: String] = [:]
-        var edition = version.isCurrent ? "当前原词" : "已保存的原词"
+        var edition = attached ? "原词自带的译文与读音" : (version.isCurrent ? "当前原词" : "已保存的原词")
         if let translation {
             let valid = try loadTranslationVersions(lyricsVersionID: lyricsID, targetLanguage: translation.targetLanguage,
                                                     sourceContentHash: hash).first { $0.record.id == translation.id }
@@ -4028,7 +4032,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             // Versioned readings are separate assets from the legacy kana/romaji columns.
             // Follow the same choices as the song archive, including locked versions.
             let selectedReadings = detail.readingVersions.filter {
-                $0.lyricsVersionID == lyricsID && entry.activeReadingVersionIDs[$0.representationID] == $0.id
+                !attached && $0.lyricsVersionID == lyricsID && entry.activeReadingVersionIDs[$0.representationID] == $0.id
             }.sorted { $0.representationID < $1.representationID }
             var parts: [Int: [String]] = [:]
             for item in selectedReadings {
@@ -4122,10 +4126,11 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             SELECT 'metadata', title || ' ' || artist_display || ' ' || album || ' ' || COALESCE(spotify_id, '') || ' ' || COALESCE(spotify_uri, '') || ' ' || COALESCE(isrc, '') AS text, 0 AS is_reading FROM family
             UNION ALL SELECT 'metadata', value, 0 FROM track_aliases WHERE track_stable_key IN (SELECT stable_key FROM family)
             UNION ALL SELECT 'lyrics:' || id, raw_text, 0 FROM versions
-            UNION ALL SELECT 'lyrics:' || lyrics_version_id, original_text || ' ' || COALESCE(kana_text, '') || ' ' || COALESCE(romaji_text, '') || ' ' || COALESCE(translation_text, ''), 0
-                FROM lyric_lines WHERE lyrics_version_id IN (SELECT id FROM versions)
-            UNION ALL SELECT 'lyrics:' || lyrics_version_id, kana_text, 1 FROM lyric_lines WHERE lyrics_version_id IN (SELECT id FROM versions)
-            UNION ALL SELECT 'lyrics:' || lyrics_version_id, COALESCE(kana_text, '') || ' ' || COALESCE(romaji_text, ''), 1
+            UNION ALL SELECT 'lyrics:' || lyrics_version_id, original_text, 0 FROM lyric_lines WHERE lyrics_version_id IN (SELECT id FROM versions)
+            UNION ALL SELECT 'attached:' || lyrics_version_id, translation_text, 0 FROM lyric_lines WHERE lyrics_version_id IN (SELECT id FROM versions)
+            UNION ALL SELECT 'attached:' || lyrics_version_id, kana_text, 1 FROM lyric_lines WHERE lyrics_version_id IN (SELECT id FROM versions)
+            UNION ALL SELECT 'attached:' || lyrics_version_id, romaji_text, 1 FROM lyric_lines WHERE lyrics_version_id IN (SELECT id FROM versions)
+            UNION ALL SELECT 'attached:' || lyrics_version_id, COALESCE(kana_text, '') || ' ' || COALESCE(romaji_text, ''), 1
                 FROM lyric_reading_layers WHERE lyrics_version_id IN (SELECT id FROM versions)
             UNION ALL SELECT 'reading:' || rv.id, rl.reading_text, 1 FROM reading_lines rl JOIN reading_versions rv ON rv.id = rl.reading_version_id
                 WHERE rv.lyrics_version_id IN (SELECT id FROM versions)

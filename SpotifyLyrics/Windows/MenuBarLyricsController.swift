@@ -494,6 +494,11 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         }
     }
 
+    func openQuickFind() {
+        popover?.performClose(nil)
+        QuickFindLauncher.shared.show()
+    }
+
     func openSettings(at location: SettingsLocation) {
         SettingsNavigationRoute.shared.requestedLocation = location
         openSettings()
