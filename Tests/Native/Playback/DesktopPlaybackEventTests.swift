@@ -9,6 +9,7 @@ private final class EventPlaybackProvider: PlaybackProvider {
         track: ProviderTrack(id: "spotify:track:AAAAAAAAAAAAAAAAAAAAAA", title: "Initial", artist: "Fixture", album: "Cache", duration: 240),
         position: 10, isPlaying: true, sourceIdentity: .spotifyDesktop)
     var refreshes = 0
+    var calibration: PlaybackSnapshot?
     var artworkResult: URL?
     func artworkURL(for track: ProviderTrack, source: PlaybackSourceIdentity) async -> URL? { artworkResult ?? track.artworkURL }
     var modes = PlayerPlaybackModes(shuffle: false, repeatMode: .off)
@@ -35,6 +36,10 @@ private final class EventPlaybackProvider: PlaybackProvider {
             return await withCheckedContinuation { pending = $0 }
         }
         return snapshot
+    }
+    func calibratePosition() async -> PlaybackSnapshot {
+        if let calibration { return calibration }
+        return await refresh()
     }
     func play() async throws {}
     var pauseCount = 0
@@ -189,6 +194,25 @@ final class DesktopPlaybackEventTests: XCTestCase {
         await state.calibratePlaybackPositionIfNeeded()
         XCTAssertFalse(state.isPlaying)
         XCTAssertEqual(state.currentTime, 20, accuracy: 0.2)
+    }
+
+    func testPositionReadRecoversAMissedTrackNotification() async throws {
+        let (state, provider, _, _) = fixture()
+        state.startProvider()
+        try await wait { state.hasLiveTrack && state.isPlaying }
+        let original = state.currentTrackIdentity
+        provider.calibration = .desktopRecordingChanged(source: .spotifyDesktop)
+        provider.snapshot = PlaybackSnapshot(status: .ready,
+            track: ProviderTrack(id: "spotify:track:BBBBBBBBBBBBBBBBBBBBBB", title: "Next recording",
+                                 artist: "Fixture", album: "Second", duration: 220),
+            position: 61, isPlaying: true, sourceIdentity: .spotifyDesktop)
+
+        await state.calibratePlaybackPositionIfNeeded()
+
+        XCTAssertEqual(provider.refreshes, 2)
+        XCTAssertEqual(state.currentTrack.title, "Next recording")
+        XCTAssertNotEqual(state.currentTrackIdentity, original)
+        XCTAssertEqual(state.currentTime, 61, accuracy: 0.2)
     }
 
     func testSleepAtTrackEndPausesWhenTheNextSongArrives() async throws {

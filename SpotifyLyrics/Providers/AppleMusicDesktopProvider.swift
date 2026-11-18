@@ -79,9 +79,16 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
             end tell
             """
             let fields = (try await execute(script: script) ?? "").components(separatedBy: fieldSeparator)
-            guard fields.count == 3, "applemusic:" + fields[2].uppercased() == track.id,
+            guard fields.count == 3,
                   let position = Self.parseNumber(fields[1]), position.isFinite else {
                 return PlaybackSnapshot(status: .unavailable("等待 Apple Music 歌曲通知"), track: nil, position: 0, isPlaying: false, sourceIdentity: .appleMusic)
+            }
+            let observedID = "applemusic:" + fields[2].uppercased()
+            if observedID != track.id {
+                guard TrackIdentity.appleMusicPersistentID(observedID) != nil else {
+                    return PlaybackSnapshot(status: .unavailable("等待 Apple Music 歌曲通知"), sourceIdentity: .appleMusic)
+                }
+                return .desktopRecordingChanged(source: .appleMusic)
             }
             return PlaybackSnapshot(status: .ready, track: track, position: min(max(0, position), track.duration),
                                     isPlaying: fields[0].lowercased() == "playing", sourceIdentity: .appleMusic)

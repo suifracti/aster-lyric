@@ -20,6 +20,12 @@ extension ProviderTrack {
 }
 
 extension PlaybackSnapshot {
+    static func desktopRecordingChanged(source: PlaybackSourceIdentity) -> Self {
+        var snapshot = Self(status: .connecting, sourceIdentity: source)
+        snapshot.needsDesktopMetadata = true
+        return snapshot
+    }
+
     /// Position and metadata reads may omit an artwork URL already fetched
     /// for this recording. A new recording must resolve its own cover.
     func retainingArtwork(from previous: PlaybackSnapshot?) -> Self {

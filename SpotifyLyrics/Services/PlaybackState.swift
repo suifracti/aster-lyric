@@ -3117,10 +3117,18 @@ public final class PlaybackState: ObservableObject {
             // the state permanently disconnected.
             isRefreshingProvider = false
         }
-        let refreshStart = ProcessInfo.processInfo.systemUptime
+        var refreshStart = ProcessInfo.processInfo.systemUptime
+        let probe = calibrationOnly ? await provider.calibratePosition() : await provider.refresh()
+        let recoveringRecording = calibrationOnly && probe.needsDesktopMetadata && !Task.isCancelled
+            && generation == providerRefreshGeneration && probe.sourceIdentity == lastObservedDesktopSource
         let snapshot: PlaybackSnapshot
-        if calibrationOnly { snapshot = await provider.calibratePosition() }
-        else { snapshot = await provider.refresh() }
+        if recoveringRecording {
+            LyricsE2ELog.log("PLAYER position read detected a new recording; fetching desktop metadata")
+            refreshStart = ProcessInfo.processInfo.systemUptime
+            snapshot = await provider.refresh()
+        } else {
+            snapshot = probe
+        }
         let refreshEnd = ProcessInfo.processInfo.systemUptime
         let rtt = refreshEnd - refreshStart
         let latencyCompensatedMonotonic = refreshStart + min(rtt * 0.5, 0.15)
@@ -3132,9 +3140,10 @@ public final class PlaybackState: ObservableObject {
         // is not evidence that the player stopped or cleared its current song.
         let calibrationMatches = !calibrationOnly || (snapshot.status.isReady
             && snapshot.sourceIdentity == lastObservedDesktopSource
-            && snapshot.track?.desktopRecordingKey == desktopSnapshots[lastObservedDesktopSource]?.track?.desktopRecordingKey)
+            && (recoveringRecording || snapshot.track?.desktopRecordingKey == desktopSnapshots[lastObservedDesktopSource]?.track?.desktopRecordingKey))
         if shouldApply && calibrationMatches {
             synchronize(with: snapshot, observedAtMonotonic: latencyCompensatedMonotonic)
+            if recoveringRecording { loadDesktopArtworkIfNeeded(snapshot) }
         } else if let accepted = desktopSnapshots[lastObservedDesktopSource] {
             // A provider's own asynchronous read can have updated its cache or
             // command route before the generation check rejected that read.

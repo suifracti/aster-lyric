@@ -189,6 +189,8 @@ public struct PlaybackSnapshot: Equatable, Sendable {
     public let position: TimeInterval
     public let isPlaying: Bool
     public let sourceIdentity: PlaybackSourceIdentity
+    /// A position read saw a new recording ID and has no metadata for it yet.
+    var needsDesktopMetadata = false
 
     public init(
         status: PlaybackProviderState,

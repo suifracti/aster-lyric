@@ -78,9 +78,12 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
             end tell
             """
             let fields = (try await execute(script: script) ?? "").components(separatedBy: fieldSeparator)
-            guard fields.count == 3, fields[2] == track.id,
+            guard fields.count == 3, let observedID = TrackIdentity.spotifyRequestTrackID(fields[2]),
                   let position = Self.parseNumber(fields[1]), position.isFinite else {
                 return PlaybackSnapshot(status: .unavailable("等待 Spotify 歌曲通知"), track: nil, position: 0, isPlaying: false, sourceIdentity: .spotifyDesktop)
+            }
+            guard observedID == TrackIdentity.spotifyRequestTrackID(track.id) else {
+                return .desktopRecordingChanged(source: .spotifyDesktop)
             }
             return PlaybackSnapshot(status: .ready, track: track, position: min(max(0, position), track.duration),
                                     isPlaying: fields[0].lowercased() == "playing", sourceIdentity: .spotifyDesktop)

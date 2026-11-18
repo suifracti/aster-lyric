@@ -50,11 +50,15 @@ final class ProviderPositionCalibrationTests: XCTestCase {
         XCTAssertFalse(first[0].contains("artwork"))
         XCTAssertFalse(first[0].contains("name of"))
         XCTAssertTrue(first[0].contains("is not running"))
+        await scripts.set("playing\u{1e}61\u{1e}spotify:track:BBBBBBBBBBBBBBBBBBBBBB")
+        let changed = await provider.calibratePosition()
+        XCTAssertTrue(changed.needsDesktopMetadata)
+        XCTAssertNil(changed.track)
         running = false
         let stopped = await provider.calibratePosition()
         XCTAssertEqual(stopped.status, .notRunning)
         let after = await scripts.history()
-        XCTAssertEqual(after.count, 1)
+        XCTAssertEqual(after.count, 2)
     }
 
     func testMusicPausedCacheDoesNotPollAndAChangedRecordingCannotReceiveOldPosition() async throws {
@@ -70,8 +74,12 @@ final class ProviderPositionCalibrationTests: XCTestCase {
         let changed = await provider.calibratePosition()
         XCTAssertFalse(changed.status.isReady)
         XCTAssertNil(changed.track)
+        XCTAssertFalse(changed.needsDesktopMetadata)
+        await scripts.set("playing\u{1e}61\u{1e}01000000000000AB")
+        let newRecording = await provider.calibratePosition()
+        XCTAssertTrue(newRecording.needsDesktopMetadata)
         let reads = await scripts.history()
-        XCTAssertEqual(reads.count, 1)
+        XCTAssertEqual(reads.count, 2)
         XCTAssertFalse(reads[0].contains("artwork"))
         XCTAssertFalse(reads[0].contains("trackName"))
     }
