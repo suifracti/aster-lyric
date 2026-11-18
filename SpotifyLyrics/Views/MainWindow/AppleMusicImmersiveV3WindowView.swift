@@ -1936,7 +1936,16 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                              currentLine: settings.v3Room == .polaroid ? text : "",
                              trackKey: TrackIdentity(track: state.currentTrack).stableKey,
                              spotifyTrackID: state.currentTrack.spotifyId.flatMap(SpotifyPublicArtwork.trackID(from:)),
-                             opensOnChorus: settings.v3RoomOpensOnChorus)
+                             opensOnChorus: settings.v3RoomOpensOnChorus,
+                             song: [.polaroid, .stars].contains(settings.v3Room) ? roomSong : nil)
+    }
+
+    private var roomSong: V3RoomContext.Song {
+        let track = state.currentTrack
+        let hook = V3RoomContext.hook(in: state.lyrics)
+        return V3RoomContext.Song(trackKey: TrackIdentity(track: track).stableKey, title: track.title, artist: track.artist,
+                                  artworkURL: track.artworkURL, lineCount: state.lyrics.count,
+                                  hookLine: hook?.originalText ?? "", hookTranslation: hook?.translationText)
     }
 
     /// The line being sung is in a chorus (repeated lyrics).

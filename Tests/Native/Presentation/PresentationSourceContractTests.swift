@@ -659,3 +659,27 @@ final class V3RoomSceneTests: XCTestCase {
         XCTAssertEqual(V3WeatherWatcher.room(forWeatherCode: 45), .clearNight)
     }
 }
+
+final class V3KeepsakeTests: XCTestCase {
+    func testPrintsKeepTheSongsHookLine() {
+        let lines = ["一", "サビ", "二", "サビ", "", "三"].enumerated().map { LyricLine(timestamp: Double($0.offset * 3), originalText: $0.element) }
+        XCTAssertEqual(V3RoomContext.hook(in: lines)?.originalText, "サビ")
+        let plain = ["一", "二", "三", "四"].enumerated().map { LyricLine(timestamp: Double($0.offset), originalText: $0.element) }
+        XCTAssertEqual(V3RoomContext.hook(in: plain)?.originalText, "二")
+        XCTAssertNil(V3RoomContext.hook(in: []))
+    }
+
+    @MainActor
+    func testPrintsAreSavedNextToTheirIndexAndCanBeRemoved() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("keepsakes-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = V3Keepsakes(folder: folder)
+        let print = V3Keepsakes.Print(kind: .stars, title: "歌", artist: "人", trackKey: "k", line: "サビ")
+        store.add(print, png: Data([1, 2, 3]))
+        XCTAssertEqual(V3Keepsakes(folder: folder).prints.map(\.id), [print.id])
+        XCTAssertEqual(print.quote.text, "サビ")
+        store.remove(print)
+        XCTAssertTrue(V3Keepsakes(folder: folder).prints.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent(print.fileName).path))
+    }
+}

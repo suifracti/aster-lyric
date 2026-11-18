@@ -439,7 +439,7 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
   - 跟随天气用 CoreLocation 的降精度位置，四舍五入到 0.1°，请求 Open-Meteo 的 `weather_code`，30 分钟刷新一次。没有权限或没有回应时显示雨夜窗。Info-Additions.plist 加了 `NSLocationUsageDescription`。
   - 书页：遇到空行或间隔 ≥7 秒算新一段，每段开头翻一页。拍立得：当前句手写在下方白边，字体按 Klee、手札体、楷体顺序回退。星座：每句一颗星，按歌曲 stableKey 生成固定星图。
   - 雾窗歌词样式：唱完的句子先保持清晰，再用 3.2 秒被雾慢慢盖回。
-  - 还没做：拍立得放完后生成卡片收进歌本；星图保存。测试见 `V3RoomSceneTests`。
+  - 冲洗台（`V3Keepsakes`）：在拍立得或星座下，一首歌唱过六成以上再离开，会生成一张 PNG（拍立得卡或完整星图），和 index.json 一起放在 favorite-lines.json 旁边的 Keepsakes 目录，不写歌词库。卡片保留这首歌重复最多的一句，没有重复时取三分之一处那句。情境边距里的托盘可以把它收进歌本（摘句）、存为图片、在 Finder 中显示或删除。测试见 `V3RoomSceneTests` 和 `V3KeepsakeTests`。
 - **换包前不要紧接在测试后复制 App。** `test-native.sh` 会把 SpotifyLyricsTests.xctest 放进 App 的 PlugIns 目录，签名校验因此失败。应先删掉产物，单独重新构建，校验通过后再复制。
 
 ## L-026 QQ 搜索主机失效（2026-11-13）

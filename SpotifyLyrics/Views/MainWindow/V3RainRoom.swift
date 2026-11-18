@@ -60,6 +60,30 @@ struct V3RoomContext: Equatable {
     var trackKey = ""
     var spotifyTrackID: String?
     var opensOnChorus = true
+    /// The playing song, for the print made when it ends (拍立得, 星座).
+    var song: Song?
+
+    struct Song: Equatable {
+        var trackKey: String
+        var title: String
+        var artist: String
+        var artworkURL: URL?
+        var lineCount: Int
+        var hookLine: String
+        var hookTranslation: String?
+    }
+
+    /// The line a print keeps: the most repeated one (the hook), else the one a third of the way in.
+    static func hook(in lines: [LyricLine]) -> LyricLine? {
+        let sung = lines.filter { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard !sung.isEmpty else { return nil }
+        var counts: [String: Int] = [:]
+        for line in sung { counts[line.originalText, default: 0] += 1 }
+        if let best = counts.max(by: { $0.value == $1.value ? $0.key.count > $1.key.count : $0.value < $1.value }), best.value > 1 {
+            return sung.first { $0.originalText == best.key }
+        }
+        return sung[sung.count / 3]
+    }
 
     /// A new stanza starts after an empty line or a pause of seven seconds or more.
     static func stanza(of index: Int?, in lines: [LyricLine]) -> Int {
@@ -80,6 +104,8 @@ struct V3RoomModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var weather = V3WeatherWatcher.shared
     @State private var bpm: Double?
+    /// The furthest line reached in the playing song, to decide whether it was really listened to.
+    @State private var reached = (key: "", line: -1)
 
     /// The scene actually drawn: 跟随天气 becomes one of the windows; a room
     /// opens during a chorus when the user leaves that on.
@@ -144,12 +170,29 @@ struct V3RoomModifier: ViewModifier {
                             speed: (bpm ?? 110) / 110)
                 V3RoomFrame(room: look, size: size, glass: glass, radius: radius, context: context)
                     .opacity(opened ? 0 : 1)
+                if look == .polaroid || look == .stars {
+                    // In the margin, clear of the listening view.
+                    V3KeepsakeTray(kind: look == .polaroid ? .polaroid : .stars)
+                        .position(x: glass.maxX - 18, y: look == .polaroid ? (glass.maxY + size.height) / 2 : min(size.height - 12, glass.maxY + glass.minY / 2))
+                }
             }
             .frame(width: size.width, height: size.height, alignment: .topLeading)
             .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.6, dampingFraction: 0.92), value: look)
             .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 1.1, dampingFraction: 0.95), value: opened)
         }
         .onChange(of: room, initial: true) { _, next in weather.setActive(next == .weather) }
+        .onChange(of: context.lineIndex) { _, index in
+            guard let song = context.song, let index else { return }
+            if reached.key != song.trackKey { reached = (song.trackKey, index) } else { reached.line = max(reached.line, index) }
+        }
+        .onChange(of: context.song) { previous, _ in
+            // A song left after most of its lines were sung leaves a print behind.
+            guard let previous, room == .polaroid || room == .stars, reached.key == previous.trackKey,
+                  previous.lineCount > 0, Double(reached.line + 1) / Double(previous.lineCount) >= 0.6 else { return }
+            let kind: V3Keepsakes.Print.Kind = room == .polaroid ? .polaroid : .stars
+            reached = ("", -1)
+            Task { await V3Keepsakes.shared.develop(kind: kind, song: previous) }
+        }
         // 夜行列车 runs at the song's tempo when Spotify has it in its cache.
         .task(id: room == .train ? context.spotifyTrackID : nil) {
             bpm = nil
@@ -647,7 +690,7 @@ private struct V3FilmStrip: View {
 }
 
 /// Fixed specks: dust on a corkboard, faint stars around the sky's frame.
-private struct V3Speckle: View {
+struct V3Speckle: View {
     let seed: UInt64
     let count: Int
     let color: Color
@@ -720,18 +763,17 @@ private struct V3PageSweep: View {
 
 /// 拍立得: the white mount, wider at the bottom, where the line being sung is
 /// written by hand.
-private struct V3PolaroidMount: View {
+struct V3PolaroidMount: View {
     let size: CGSize
     let glass: CGRect
     let line: String
 
-    private static let handFont: Font = {
-        for name in ["Klee-Medium", "HannotateSC-W5", "KaitiSC-Regular", "BradleyHandITCTT-Bold"]
-            where NSFont(name: name, size: 20) != nil {
-            return .custom(name, size: 20)
-        }
-        return .system(size: 20, weight: .regular, design: .serif).italic()
-    }()
+    private static let handFontName: String? = ["Klee-Medium", "HannotateSC-W5", "KaitiSC-Regular", "BradleyHandITCTT-Bold"]
+        .first { NSFont(name: $0, size: 20) != nil }
+    static func handFont(size: CGFloat) -> Font {
+        handFontName.map { .custom($0, size: size) } ?? .system(size: size, weight: .regular, design: .serif).italic()
+    }
+    private static let handFont = handFont(size: 20)
 
     var body: some View {
         let border = min(glass.minX, glass.minY) * 0.85
@@ -774,7 +816,7 @@ private struct V3Constellation: View {
     let current: Int?
     let playing: Bool
 
-    private static func points(seed: String, count: Int) -> [CGPoint] {
+    static func points(seed: String, count: Int) -> [CGPoint] {
         var hash: UInt64 = 1469598103934665603
         for byte in seed.utf8 { hash = (hash ^ UInt64(byte)) &* 1099511628211 }
         var generator = SeededRandom(seed: hash)
@@ -794,34 +836,50 @@ private struct V3Constellation: View {
     }
 
     var body: some View {
-        let points = Self.points(seed: seed, count: count)
         TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: !playing)) { timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            Canvas { context, canvas in
-                let place = { (p: CGPoint) in CGPoint(x: p.x * canvas.width, y: p.y * canvas.height) }
-                let sung = current.map { min($0, points.count - 1) } ?? -1
-                if sung > 0 {
-                    var path = Path()
-                    path.move(to: place(points[0]))
-                    for index in 1...sung { path.addLine(to: place(points[index])) }
-                    context.stroke(path, with: .color(.white.opacity(0.35)), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
-                }
-                for (index, point) in points.enumerated() {
-                    let p = place(point)
-                    let lit = index <= sung
-                    let isNow = index == sung
-                    let r: CGFloat = isNow ? 4 + 1.2 * CGFloat(sin(t * 4)) : lit ? 2.4 : 1.3
-                    if lit {
-                        context.fill(Path(ellipseIn: CGRect(x: p.x - r * 3, y: p.y - r * 3, width: r * 6, height: r * 6)),
-                                     with: .radialGradient(Gradient(colors: [.white.opacity(isNow ? 0.45 : 0.22), .clear]),
-                                                           center: p, startRadius: 0, endRadius: r * 3))
-                    }
-                    context.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)),
-                                 with: .color(.white.opacity(lit ? 0.95 : 0.28)))
-                }
-            }
+            V3ConstellationChart(size: size, seed: seed, count: count, lit: current ?? -1,
+                                 twinkle: timeline.date.timeIntervalSinceReferenceDate)
         }
         .blendMode(.screen)
+        .frame(width: size.width, height: size.height)
+    }
+}
+
+/// One drawing of a song's stars, shared by the live scene and the saved chart.
+struct V3ConstellationChart: View {
+    let size: CGSize
+    let seed: String
+    let count: Int
+    /// The last sung line; stars up to it are lit and joined.
+    let lit: Int
+    /// The clock for the current star's twinkle; 0 draws it still.
+    let twinkle: TimeInterval
+
+    var body: some View {
+        let points = V3Constellation.points(seed: seed, count: count)
+        Canvas { context, canvas in
+            let place = { (p: CGPoint) in CGPoint(x: p.x * canvas.width, y: p.y * canvas.height) }
+            let sung = min(lit, points.count - 1)
+            if sung > 0 {
+                var path = Path()
+                path.move(to: place(points[0]))
+                for index in 1...sung { path.addLine(to: place(points[index])) }
+                context.stroke(path, with: .color(.white.opacity(0.35)), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+            }
+            for (index, point) in points.enumerated() {
+                let p = place(point)
+                let isLit = index <= sung
+                let isNow = index == sung && twinkle != 0
+                let r: CGFloat = isNow ? 4 + 1.2 * CGFloat(sin(twinkle * 4)) : isLit ? 2.4 : 1.3
+                if isLit {
+                    context.fill(Path(ellipseIn: CGRect(x: p.x - r * 3, y: p.y - r * 3, width: r * 6, height: r * 6)),
+                                 with: .radialGradient(Gradient(colors: [.white.opacity(isNow ? 0.45 : 0.22), .clear]),
+                                                       center: p, startRadius: 0, endRadius: r * 3))
+                }
+                context.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)),
+                             with: .color(.white.opacity(isLit ? 0.95 : 0.28)))
+            }
+        }
         .frame(width: size.width, height: size.height)
     }
 }
@@ -835,4 +893,238 @@ private struct SeededRandom {
         return CGFloat(state % 10_000) / 10_000
     }
     func peek() -> CGFloat { var copy = self; return copy.next() }
+}
+
+// MARK: - 冲洗台: keepsakes left behind by 拍立得 and 星座
+
+/// When a song played in 拍立得 or 星座 ends, a print is made: the polaroid
+/// with its line written on it, or the song's finished star chart. Prints are
+/// kept as PNG files next to the favourite lines, never in the lyrics database,
+/// and can be put into a songbook or saved elsewhere.
+@MainActor
+final class V3Keepsakes: ObservableObject {
+    struct Print: Codable, Identifiable, Equatable {
+        enum Kind: String, Codable { case polaroid, stars }
+        var id = UUID()
+        let kind: Kind
+        let title: String
+        let artist: String
+        let trackKey: String
+        let line: String
+        var translation: String?
+        var artworkURL: URL?
+        var createdAt = Date()
+        var fileName: String { id.uuidString + ".png" }
+
+        /// As a songbook quote: the line, with where it came from.
+        var quote: V3FavoriteLines.Entry {
+            V3FavoriteLines.Entry(text: line.isEmpty ? title : line, translation: translation, title: title,
+                                  artist: artist, trackKey: trackKey, artworkURL: artworkURL)
+        }
+    }
+
+    static let shared = V3Keepsakes(folder: defaultFolder)
+    static var defaultFolder: URL? {
+        V3FavoriteLines.defaultURL?.deletingLastPathComponent().appendingPathComponent("Keepsakes", isDirectory: true)
+    }
+
+    @Published private(set) var prints: [Print] = []
+    /// The newest print not yet looked at, for the tray's dot.
+    @Published var unseen = false
+    let folder: URL?
+
+    init(folder: URL?) {
+        self.folder = folder
+        guard let index = folder?.appendingPathComponent("index.json"),
+              let data = try? Data(contentsOf: index),
+              let saved = try? JSONDecoder().decode([Print].self, from: data) else { return }
+        prints = saved.filter { url(for: $0).map { FileManager.default.fileExists(atPath: $0.path) } ?? false }
+    }
+
+    func url(for print: Print) -> URL? { folder?.appendingPathComponent(print.fileName) }
+
+    func add(_ print: Print, png: Data) {
+        guard let folder, let url = url(for: print) else { return }
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try png.write(to: url, options: .atomic)
+            let next = [print] + prints
+            try JSONEncoder().encode(next).write(to: folder.appendingPathComponent("index.json"), options: .atomic)
+            prints = next
+            unseen = true
+        } catch {
+            LyricsE2ELog.log("KEEPSAKE save failed error=\(error.localizedDescription)")
+        }
+    }
+
+    func remove(_ print: Print) {
+        guard let folder else { return }
+        let next = prints.filter { $0.id != print.id }
+        guard (try? JSONEncoder().encode(next).write(to: folder.appendingPathComponent("index.json"), options: .atomic)) != nil else { return }
+        if let url = url(for: print) { try? FileManager.default.removeItem(at: url) }
+        prints = next
+    }
+
+    /// Renders and keeps the print for a song that just finished.
+    func develop(kind: Print.Kind, song: V3RoomContext.Song) async {
+        let artwork: NSImage? = kind == .polaroid ? await song.artworkURL.asyncMap { await ArtworkImageLoader.shared.image(for: $0) } ?? nil : nil
+        let print = Print(kind: kind, title: song.title, artist: song.artist, trackKey: song.trackKey,
+                          line: song.hookLine, translation: song.hookTranslation, artworkURL: song.artworkURL)
+        let view: AnyView = kind == .polaroid
+            ? AnyView(V3PolaroidPrint(print: print, artwork: artwork))
+            : AnyView(V3StarChartPrint(print: print, lineCount: song.lineCount))
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return }
+        add(print, png: png)
+    }
+}
+
+private extension Optional {
+    func asyncMap<T>(_ transform: (Wrapped) async -> T) async -> T? {
+        guard let value = self else { return nil }
+        return await transform(value)
+    }
+}
+
+/// The developed polaroid: cover, the song's line in handwriting, title and date.
+struct V3PolaroidPrint: View {
+    let print: V3Keepsakes.Print
+    let artwork: NSImage?
+    var body: some View {
+        VStack(spacing: 0) {
+            Group {
+                if let artwork { Image(nsImage: artwork).resizable().scaledToFill() }
+                else { LinearGradient(colors: [Color(white: 0.3), Color(white: 0.15)], startPoint: .top, endPoint: .bottom) }
+            }
+            .frame(width: 420, height: 420).clipped()
+            .overlay(Color(red: 1, green: 0.9, blue: 0.75).opacity(0.10).blendMode(.multiply))
+            Text(print.line.isEmpty ? print.title : print.line)
+                .font(V3PolaroidMount.handFont(size: 24))
+                .foregroundStyle(Color(red: 0.16, green: 0.17, blue: 0.24))
+                .lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.6)
+                .frame(width: 400, height: 76)
+            Text([print.title, print.artist, print.createdAt.formatted(date: .abbreviated, time: .omitted)]
+                .filter { !$0.isEmpty }.joined(separator: " · "))
+                .font(.system(size: 11, weight: .medium)).foregroundStyle(Color(white: 0.45))
+                .lineLimit(1).frame(width: 400)
+        }
+        .padding(EdgeInsets(top: 26, leading: 26, bottom: 30, trailing: 26))
+        .background(Color(red: 0.97, green: 0.96, blue: 0.93))
+    }
+}
+
+/// The finished star chart: every line lit and joined, with the song's name.
+struct V3StarChartPrint: View {
+    let print: V3Keepsakes.Print
+    let lineCount: Int
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            LinearGradient(colors: [Color(red: 0.03, green: 0.04, blue: 0.10), Color(red: 0.07, green: 0.05, blue: 0.16)],
+                           startPoint: .top, endPoint: .bottom)
+            V3Speckle(seed: 9, count: 420, color: .white, opacity: 0.5)
+            V3ConstellationChart(size: CGSize(width: 760, height: 620), seed: print.trackKey, count: lineCount,
+                                 lit: lineCount - 1, twinkle: 0)
+                .padding(.top, 40).padding(.horizontal, 40)
+                .frame(maxHeight: .infinity, alignment: .top)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(print.title).font(.system(size: 26, weight: .semibold, design: .serif)).foregroundStyle(.white)
+                Text([print.artist, print.createdAt.formatted(date: .abbreviated, time: .omitted)].filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.system(size: 13)).foregroundStyle(.white.opacity(0.6))
+            }
+            .padding(36)
+        }
+        .frame(width: 840, height: 840)
+    }
+}
+
+/// The tray in the scene's margin: the prints made so far.
+struct V3KeepsakeTray: View {
+    @ObservedObject var store = V3Keepsakes.shared
+    let kind: V3Keepsakes.Print.Kind
+    @State private var open = false
+
+    var body: some View {
+        Button { open.toggle(); store.unseen = false } label: {
+            Image(systemName: kind == .polaroid ? "photo.stack" : "sparkles")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(kind == .polaroid ? Color(white: 0.35) : .white.opacity(0.8))
+                .frame(width: 28, height: 24)
+                .overlay(alignment: .topTrailing) {
+                    if store.unseen { Circle().fill(Color.orange).frame(width: 7, height: 7).offset(x: -2, y: 2) }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(kind == .polaroid ? "冲洗好的拍立得" : "保存的星图")
+        .accessibilityLabel(kind == .polaroid ? "冲洗好的拍立得" : "保存的星图")
+        .popover(isPresented: $open, arrowEdge: .top) { V3KeepsakeList(store: store, kind: kind) }
+    }
+}
+
+private struct V3KeepsakeList: View {
+    @ObservedObject var store: V3Keepsakes
+    let kind: V3Keepsakes.Print.Kind
+
+    var body: some View {
+        let prints = store.prints.filter { $0.kind == kind }
+        VStack(alignment: .leading, spacing: 8) {
+            Text(kind == .polaroid ? "冲洗好的拍立得" : "星图").font(.headline)
+            if prints.isEmpty {
+                Text(kind == .polaroid ? "一首歌放完后，这里会冲洗出一张拍立得。" : "一首歌唱完后，它的星图会留在这里。")
+                    .font(.callout).foregroundStyle(.secondary).frame(width: 260, alignment: .leading)
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 10)], spacing: 10) {
+                        ForEach(prints) { print in
+                            V3KeepsakeThumb(store: store, print: print)
+                        }
+                    }
+                }
+                .frame(width: 360, height: min(420, CGFloat((prints.count + 2) / 3) * 150 + 10))
+            }
+        }
+        .padding(14)
+    }
+}
+
+private struct V3KeepsakeThumb: View {
+    let store: V3Keepsakes
+    let print: V3Keepsakes.Print
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Group {
+                if let url = store.url(for: print), let image = NSImage(contentsOf: url) {
+                    Image(nsImage: image).resizable().scaledToFit()
+                } else { Color.secondary.opacity(0.2) }
+            }
+            .frame(height: 112)
+            .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
+            Text(print.title).font(.caption).lineLimit(1)
+            HStack(spacing: 6) {
+                LyricBookOffer(label: "收进歌本", title: print.title, compact: true) { [LyricBook.Chapter(quote: print.quote)] }
+                    .buttonStyle(.borderless).menuStyle(.borderlessButton).fixedSize()
+                Button { save() } label: { Image(systemName: "square.and.arrow.down") }
+                    .buttonStyle(.borderless).help("存为图片…").accessibilityLabel("存为图片")
+                Menu {
+                    Button("在 Finder 中显示") { if let url = store.url(for: print) { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
+                    Button("删除", role: .destructive) { store.remove(print) }
+                } label: { Image(systemName: "ellipsis") }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            }
+            .font(.system(size: 12))
+        }
+    }
+
+    private func save() {
+        guard let source = store.url(for: print) else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "\(print.title)\(print.kind == .polaroid ? " 拍立得" : " 星图").png"
+        guard panel.runModal() == .OK, let target = panel.url else { return }
+        try? FileManager.default.removeItem(at: target)
+        try? FileManager.default.copyItem(at: source, to: target)
+    }
 }
