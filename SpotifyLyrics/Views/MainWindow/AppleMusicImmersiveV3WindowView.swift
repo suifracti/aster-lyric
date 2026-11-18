@@ -151,6 +151,7 @@ private final class V3PointerLocationBox {
 @MainActor
 final class V3LibraryOwner: ObservableObject {
     let service = PersonalLyricsLibraryService()
+    let browsing = PersonalLibraryBrowsing()
 }
 
 /// separate layouts; this view owns only the V3 canvas and its transient tools.
@@ -520,7 +521,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 }
 
                 if librarySearch.isPresented {
-                    V3LibrarySearchPanel(presentation: $librarySearch, state: state, library: library)
+                    V3LibrarySearchPanel(presentation: $librarySearch, state: state, library: library, browsing: libraryOwner.browsing)
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 }
 

@@ -295,6 +295,8 @@ struct SettingsRootView: View {
     @State private var library = PersonalLyricsLibraryService()
     @State private var favoriteQuery = ""
     @State private var statisticsTimeRange: ListeningStatisticsTimeRange = .allTime
+    @State private var libraryScope = PersonalLibraryScope.initial
+    @State private var missingLibraryScope = PersonalLibraryScope(filter: .missing)
     @FocusState private var searchFocused: Bool
 
     init(initialPage: String? = nil, initialSurface: AppearanceSurface = .main) {
@@ -373,6 +375,7 @@ struct SettingsRootView: View {
                                        trackKey: history.current.trackKey, passage: history.current.passage,
                                        archivePassage: history.current.archivePassage, favoriteQuery: $favoriteQuery,
                                        statisticsTimeRange: $statisticsTimeRange,
+                                       libraryScope: $libraryScope, missingLibraryScope: $missingLibraryScope,
                                        backFromReading: history.canGoBack ? { history.back() } : nil,
                                        openArchiveFromReading: { history.openArchive(fromReading: $0) },
                                        appearanceSurface: history.current.appearanceSurface, appearanceControl: history.current.appearanceControl,
@@ -435,6 +438,8 @@ private struct SettingsDetailView: View {
     let archivePassage: LibraryPassageTarget?
     @Binding var favoriteQuery: String
     @Binding var statisticsTimeRange: ListeningStatisticsTimeRange
+    @Binding var libraryScope: PersonalLibraryScope
+    @Binding var missingLibraryScope: PersonalLibraryScope
     let backFromReading: (() -> Void)?
     let openArchiveFromReading: (LibraryPassageTarget) -> Void
     let appearanceSurface: AppearanceSurface
@@ -473,7 +478,8 @@ private struct SettingsDetailView: View {
                         .id(passage)
                 } else {
                     PersonalLyricsLibraryView(embeddedInSettings: true, initialTrackKey: trackKey,
-                                              showingMissing: selection == .missingLyrics, initialPassage: archivePassage, service: library,
+                                              scope: selection == .missingLyrics ? $missingLibraryScope : $libraryScope,
+                                              initialPassage: archivePassage, service: library,
                                               onSelection: rememberSelection, readPassage: { navigate(.init(reading: $0)) },
                                               openArchive: { navigate(.init(archive: $0)) })
                 }

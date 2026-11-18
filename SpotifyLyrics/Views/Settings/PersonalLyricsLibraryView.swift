@@ -4,56 +4,45 @@ public struct PersonalLyricsLibraryView: View {
     @EnvironmentObject private var playback: PlaybackState
     @StateObject private var service: PersonalLyricsLibraryService
     @State private var selectedStableKey: String?
-    @State private var libraryFilter: LibraryFilter = ProcessInfo.processInfo.arguments.contains("--library-missing") ? .missing : .all
+    @State private var localScope = PersonalLibraryScope.initial
     @State private var showSyncFolder = false
     private let embeddedInSettings: Bool
     private let requestedTrackKey: String?
+    private let requestedScope: Binding<PersonalLibraryScope>?
     private let initialPassage: LibraryPassageTarget?
     private let onSelection: ((String?) -> Void)?
     private let readPassage: ((LibraryPassageTarget) -> Void)?
     private let openArchive: ((LibraryPassageTarget) -> Void)?
 
-    private enum LibraryFilter: String, CaseIterable, Identifiable {
-        case missing = "缺歌词", all = "全部", translations = "有译文", manual = "人工歌词 / 译文", locked = "锁定歌词 / 译文"
-        var id: Self { self }
-
-        func includes(_ entry: PersonalLyricsLibraryEntry) -> Bool {
-            switch self {
-            case .missing: return entry.needsLyrics
-            case .all: return true
-            case .translations: return entry.translationVersionCount > 0
-            case .manual: return entry.hasManualLyrics || entry.hasManualTranslation
-            case .locked: return entry.hasLockedLyrics || entry.hasLockedTranslation
-            }
-        }
-    }
+    private var scope: Binding<PersonalLibraryScope> { requestedScope ?? $localScope }
+    private var libraryQuery: String { scope.wrappedValue.query }
+    private var libraryFilter: PersonalLibraryFilter { scope.wrappedValue.filter }
+    private var matchingEntries: [PersonalLyricsLibraryEntry] { service.entries(for: libraryQuery) }
 
     private var visibleEntries: [PersonalLyricsLibraryEntry] {
-        service.entries.filter(libraryFilter.includes)
+        let currentKey = currentSongEntry?.trackStableKey
+        return matchingEntries.filter { libraryFilter.includes($0, currentTrackKey: currentKey) }
     }
 
     private var currentSongEntry: PersonalLyricsLibraryEntry? {
-        guard let identity = playback.currentTrackIdentity else { return nil }
-        return service.entries.first { entry in
-            entry.trackStableKey == identity.stableKey
-                || (playback.liveLyricsVersionID != nil && entry.activeLyricsVersionID == playback.liveLyricsVersionID)
-        }
+        PersonalLyricsLibraryEntry.current(in: matchingEntries, trackKey: playback.liveTrackIdentity?.stableKey,
+                                           lyricsVersionID: playback.liveLyricsVersionID)
     }
 
     public init() { self.init(embeddedInSettings: false) }
 
-    init(embeddedInSettings: Bool, initialTrackKey: String? = nil, showingMissing: Bool = false,
+    init(embeddedInSettings: Bool, initialTrackKey: String? = nil, scope: Binding<PersonalLibraryScope>? = nil,
          initialPassage: LibraryPassageTarget? = nil, service: PersonalLyricsLibraryService? = nil, onSelection: ((String?) -> Void)? = nil,
          readPassage: ((LibraryPassageTarget) -> Void)? = nil, openArchive: ((LibraryPassageTarget) -> Void)? = nil) {
         self.embeddedInSettings = embeddedInSettings
         self.requestedTrackKey = initialTrackKey
+        self.requestedScope = scope
         self.initialPassage = initialPassage
         self.readPassage = readPassage
         self.onSelection = onSelection
         self.openArchive = openArchive
         _service = StateObject(wrappedValue: service ?? PersonalLyricsLibraryService())
         _selectedStableKey = State(initialValue: initialTrackKey)
-        if showingMissing { _libraryFilter = State(initialValue: .missing) }
     }
 
     public var body: some View {
@@ -105,8 +94,9 @@ public struct PersonalLyricsLibraryView: View {
         .onChange(of: selectedStableKey) { _, key in onSelection?(key) }
         .modifier(PersonalLibrarySheets(service: service, openArchive: openArchive))
         .onAppear {
-            service.refresh()
+            service.search(libraryQuery, immediately: true)
         }
+        .onChange(of: libraryQuery) { _, query in service.search(query) }
     }
 
     private var embeddedSettingsBody: some View {
@@ -219,20 +209,21 @@ public struct PersonalLyricsLibraryView: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("搜索歌曲或内容，按回车查找", text: $service.searchQuery)
+                TextField("搜索歌曲或内容", text: Binding(get: { libraryQuery }, set: setQuery))
                     .textFieldStyle(.plain)
+                    .accessibilityIdentifier("personalLibrary.search")
                     .onSubmit {
-                        service.refresh()
+                        service.search(libraryQuery, immediately: true)
                     }
-                if !service.searchQuery.isEmpty {
+                if !libraryQuery.isEmpty {
                     Button {
-                        service.searchQuery = ""
-                        service.refresh()
+                        setQuery("")
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.borderless)
+                    .accessibilityLabel("清空搜索")
                 }
             }
             .padding(8)
@@ -255,8 +246,8 @@ public struct PersonalLyricsLibraryView: View {
 
             HStack {
                 Menu {
-                    Picker("筛选歌曲", selection: $libraryFilter) {
-                        ForEach(LibraryFilter.allCases) { filter in
+                    Picker("筛选歌曲", selection: Binding(get: { libraryFilter }, set: setFilter)) {
+                        ForEach(PersonalLibraryFilter.allCases) { filter in
                             Text(filter.rawValue).tag(filter)
                         }
                     }
@@ -264,7 +255,7 @@ public struct PersonalLyricsLibraryView: View {
                     Label(libraryFilter.rawValue, systemImage: "line.3.horizontal.decrease.circle")
                 }
                 .fixedSize()
-                LyricsBatchControls(playback: playback, entries: libraryFilter == .missing ? visibleEntries : [],
+                LyricsBatchControls(playback: playback, entries: libraryFilter == .missing && !service.isLoading ? visibleEntries : [],
                                     refresh: service.refresh, openTrack: { selectedStableKey = $0 })
                 Spacer()
                 Text("\(visibleEntries.count) 首")
@@ -276,7 +267,7 @@ public struct PersonalLyricsLibraryView: View {
 
             if let entry = currentSongEntry {
                 Button {
-                    libraryFilter = .all
+                    scope.wrappedValue.filter = .all
                     selectedStableKey = entry.trackStableKey
                 } label: {
                     Label("查看当前歌曲的已存版本", systemImage: "music.note.list")
@@ -302,10 +293,10 @@ public struct PersonalLyricsLibraryView: View {
                     Image(systemName: "tray")
                         .font(.system(size: 32))
                         .foregroundStyle(.tertiary)
-                    Text(service.searchQuery.isEmpty && libraryFilter == .all ? "还没有保存的歌词" : "没有符合条件的歌曲")
+                    Text(libraryQuery.isEmpty && libraryFilter == .all ? "还没有保存的歌词" : "没有符合条件的歌曲")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    Text(service.searchQuery.isEmpty && libraryFilter == .all
+                    Text(libraryQuery.isEmpty && libraryFilter == .all
                          ? "采用的歌词、保存的译文和人工编辑版本会收录在这里。"
                          : "试试其他搜索词，或切回全部歌曲。")
                         .font(.caption)
@@ -321,6 +312,20 @@ public struct PersonalLyricsLibraryView: View {
                 }
                 .listStyle(.sidebar)
             }
+        }
+    }
+
+    private func setQuery(_ query: String) {
+        guard query != libraryQuery else { return }
+        selectedStableKey = nil
+        scope.wrappedValue.query = query
+    }
+
+    private func setFilter(_ filter: PersonalLibraryFilter) {
+        scope.wrappedValue.filter = filter
+        if let key = selectedStableKey, let entry = matchingEntries.first(where: { $0.trackStableKey == key }),
+           !filter.includes(entry, currentTrackKey: currentSongEntry?.trackStableKey) {
+            selectedStableKey = nil
         }
     }
 
@@ -1371,9 +1376,11 @@ public struct UnifiedLibraryHistoryWindowView: View {
 
     @ViewBuilder
     private var contentArea: some View {
+        @Bindable var browsing = playback.libraryToolBrowsing
         switch playback.selectedLibraryToolTab {
         case .library:
             PersonalLyricsLibraryView(embeddedInSettings: false, initialTrackKey: playback.selectedLibraryToolArchive?.trackKey,
+                                      scope: $browsing.scope,
                                       initialPassage: playback.selectedLibraryToolArchive, service: library,
                                       onSelection: playback.selectLibraryToolTrack, readPassage: { reading = $0 }, openArchive: openArchive)
         case .history:

@@ -15,14 +15,15 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     @Published public private(set) var entries: [PersonalLyricsLibraryEntry] = []
     @Published public private(set) var isLoading = false
     @Published public private(set) var statusMessage: String = ""
-    @Published public var searchQuery: String = ""
+    private var searchQuery = ""
+    private var loadedSearchQuery: String?
 
     @Published public var selectedTrackDetail: PersonalLyricsLibraryTrackDetail?
     @Published private var currentTrackDetail: PersonalLyricsLibraryTrackDetail?
     private var currentTrackStableKey: String?
     private var currentTrackRequestID = UUID()
     private var detailRequestID = UUID()
-    private var listRequestID = UUID()
+    private var listTask: Task<Void, Never>?
     @Published private(set) var selectedTrackIssue: String?
     private var requestedTrackStableKey: String?
     @Published public var importPreview: PersonalLibraryImportPreview?
@@ -386,21 +387,36 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         return target
     }
 
-    public func refresh() {
-        let requestID = UUID()
-        listRequestID = requestID
+    func entries(for query: String) -> [PersonalLyricsLibraryEntry] {
+        loadedSearchQuery == query.trimmingCharacters(in: .whitespacesAndNewlines) ? entries : []
+    }
+
+    func search(_ query: String, immediately: Bool = false) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard immediately || searchQuery != trimmed || (loadedSearchQuery != trimmed && !isLoading) else { return }
+        searchQuery = trimmed
+        refresh(after: immediately || trimmed.isEmpty ? .zero : .milliseconds(180))
+    }
+
+    public func refresh() { refresh(after: .zero) }
+
+    private func refresh(after delay: Duration) {
+        listTask?.cancel()
         isLoading = true
         statusMessage = "正在加载歌词库..."
         let query = searchQuery
-        Task {
+        let repository = repository
+        listTask = Task { [weak self] in
             do {
+                if delay > .zero { try await Task.sleep(for: delay) }
                 let list = try await repository.loadPersonalLibraryEntries(searchQuery: query.isEmpty ? nil : query, includeMissingLyrics: true)
-                guard listRequestID == requestID else { return }
+                guard !Task.isCancelled, let self else { return }
+                self.loadedSearchQuery = query
                 self.entries = list
                 self.isLoading = false
-                self.statusMessage = list.isEmpty ? "个人歌词库为空" : "共 \(list.count) 首本地资产歌曲"
+                self.statusMessage = ""
             } catch {
-                guard listRequestID == requestID else { return }
+                guard !Task.isCancelled, let self else { return }
                 self.isLoading = false
                 self.statusMessage = "加载失败：\(error.localizedDescription)"
             }

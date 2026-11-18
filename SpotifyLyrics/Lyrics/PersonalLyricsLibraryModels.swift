@@ -1,4 +1,42 @@
 import Foundation
+import Observation
+
+enum PersonalLibraryFilter: String, CaseIterable, Identifiable {
+    case all = "全部"
+    case current = "当前歌曲"
+    case missing = "缺歌词"
+    case translations = "有译文"
+    case manual = "手动编辑"
+    case locked = "已锁定"
+
+    var id: Self { self }
+
+    func includes(_ entry: PersonalLyricsLibraryEntry, currentTrackKey: String?) -> Bool {
+        switch self {
+        case .all: return true
+        case .current: return entry.trackStableKey == currentTrackKey
+        case .missing: return entry.needsLyrics
+        case .translations: return entry.translationVersionCount > 0
+        case .manual: return entry.hasManualLyrics || entry.hasManualTranslation
+        case .locked: return entry.hasLockedLyrics || entry.hasLockedTranslation
+        }
+    }
+}
+
+struct PersonalLibraryScope: Equatable {
+    var query = ""
+    var filter: PersonalLibraryFilter = .all
+
+    static var initial: Self {
+        .init(filter: ProcessInfo.processInfo.arguments.contains("--library-missing") ? .missing : .all)
+    }
+}
+
+@MainActor @Observable
+final class PersonalLibraryBrowsing {
+    var scope = PersonalLibraryScope.initial
+    var selectedTrackKey: String?
+}
 
 // MARK: - Personal Lyrics Library Entry (Read Model Projection)
 
@@ -14,6 +52,12 @@ public struct PersonalLyricsLibraryEntry: Identifiable, Equatable, Sendable, Cod
     public let album: String?
     public let duration: Double
     public let artworkURL: URL?
+
+    static func current(in entries: [Self], trackKey: String?, lyricsVersionID: UUID?) -> Self? {
+        if let trackKey, let exact = entries.first(where: { $0.trackStableKey == trackKey }) { return exact }
+        guard let lyricsVersionID else { return nil }
+        return entries.first { $0.activeLyricsVersionID == lyricsVersionID }
+    }
 
     var libraryTrack: Track {
         Track(id: "library:\(trackStableKey)", title: title, artist: artist, album: album ?? "", duration: duration,

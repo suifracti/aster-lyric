@@ -70,6 +70,7 @@ public final class PlaybackState: ObservableObject {
     @Published public private(set) var listeningHistoryError: String?
     @Published public var selectedLibraryToolTab: LibraryToolTab = .library
     @Published private(set) var selectedLibraryToolArchive: LibraryPassageTarget?
+    let libraryToolBrowsing = PersonalLibraryBrowsing()
 
     // Auxiliary display states remain available to the existing window manager.
     @Published public var showFloatingWindow = false
@@ -843,6 +844,12 @@ public final class PlaybackState: ObservableObject {
     public func openLibraryTool(tab: LibraryToolTab = .library, trackKey: String? = nil) {
         if let trackKey { selectedLibraryToolArchive = .init(trackKey: trackKey) }
         selectedLibraryToolTab = tab
+    }
+
+    func openLibraryTool(scope: PersonalLibraryScope, trackKey: String?) {
+        libraryToolBrowsing.scope = scope
+        selectedLibraryToolArchive = trackKey.map { .init(trackKey: $0) }
+        selectedLibraryToolTab = .library
     }
 
     func openLibraryTool(archive target: LibraryPassageTarget) {

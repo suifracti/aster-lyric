@@ -5,6 +5,44 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class LibraryIdentitySearchContractTests: XCTestCase {
+    @MainActor
+    func testLibrarySearchOnlyExposesResultsForTheRequestedQuery() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("library.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await repository.prepare()
+        let library = PersonalLyricsLibraryService(repository: repository)
+        let first = Track(title: "窗边的回信", artist: "南窗", album: "", duration: 170)
+        let second = Track(title: "海边的回信", artist: "南窗", album: "", duration: 190)
+        for track in [first, second] {
+            try await (repository as any LyricsRepository).saveTrackMetadata(.bootstrap(from: track))
+        }
+
+        func waitForLoad() async throws {
+            for _ in 0..<100 {
+                if !library.isLoading { return }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTFail("The lyric library query did not finish")
+        }
+
+        library.search("窗边", immediately: true)
+        try await waitForLoad()
+        XCTAssertEqual(library.entries(for: " 窗边 ").map(\.title), [first.title])
+        XCTAssertTrue(library.entries(for: "海边").isEmpty)
+
+        library.search("没有这首歌")
+        library.search("海边")
+        XCTAssertTrue(library.entries(for: "海边").isEmpty, "The next query must not offer the previous song for batch completion")
+        try await waitForLoad()
+        let results = library.entries(for: "海边")
+        XCTAssertEqual(results.map(\.title), [second.title])
+        XCTAssertTrue(library.entries(for: "窗边").isEmpty)
+        let entry = try XCTUnwrap(results.first)
+        XCTAssertTrue(PersonalLibraryFilter.missing.includes(entry, currentTrackKey: nil))
+        XCTAssertFalse(PersonalLibraryFilter.locked.includes(entry, currentTrackKey: nil))
+    }
+
     func testMusicRecordingsWithIdenticalTitlesAndLengthsKeepIndependentLyrics() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("aster-music-identities-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

@@ -386,10 +386,11 @@ A control never appears on both sides. Where the other side used to have it, sho
 - **Personal data import:** all songs commit together. The preview flags assets attached to another recording or source version. Folder sync confirms the previewed file revision before import and before writing back. The library reports local import and folder write outcomes separately.
 - **Two columns:** a compact list on the left (about 300 pt) and the selected item's detail on the right. No grey inner box.
 - **歌词库 tab:**
-  - **Filter chips:** 全部 · 当前歌曲 · 缺歌词 · 有译文 · 手动编辑. Selecting 缺歌词 shows 全部补全.
+  - **Filters:** 全部 · 当前歌曲 · 缺歌词 · 有译文 · 手动编辑 · 已锁定. The main panel, separate library, and Settings use the same filters. Selecting 缺歌词 offers 全部补全 for the current search once its results are ready.
   - **Rows:** 44 pt high, 32 pt cover, title and artist, badges 词 N / 译 N.
   - **Right column:** that song's versions, grouped 原词 / 译文 / 读音 / 时间轴 like the hover panel, with 采用 / 预览 / 编辑.
   - Opens with the current song selected.
+  - Closing the panel remembers its search and filter. 「在新窗口打开」 takes the search, filter, and selected recording to the separate library, where the search can be changed independently.
 - **搜索 tab:** two clearly named sections.
   - **「这首歌的歌词」:** provider candidates for the current song. Each shows the source, a 逐字 / 逐行 / 纯文本 badge, the duration difference and 预览 on hover. The action is 「采用此版本」.
   - **「其他歌曲」:** library and Spotify-catalog songs. The action is 「查看歌词」, plus a ▶ that plays the song.

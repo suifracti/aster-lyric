@@ -30,33 +30,31 @@ struct V3LibrarySearchPanel: View {
     @V3ContentPlaybackState var state: PlaybackState
     @Environment(\.openWindow) private var openWindow
     @ObservedObject var library: PersonalLyricsLibraryService
-    @State private var selectedKey: String?
+    let browsing: PersonalLibraryBrowsing
+    @State private var batchArchiveKey: String?
     @State private var listeningTrackKey: String?
     @State private var statisticsTimeRange: ListeningStatisticsTimeRange = .allTime
     @State private var queries: [V3LibrarySearchPresentation.Tab: String] = [:]
     private var query: String {
-        get { queries[presentation.tab ?? .library] ?? "" }
-        nonmutating set { queries[presentation.tab ?? .library] = newValue }
-    }
-    @State private var filter: LibraryFilter = ProcessInfo.processInfo.arguments.contains("--library-missing") ? .missing : .all
-
-    private enum LibraryFilter: String, CaseIterable {
-        case all = "全部", current = "当前歌曲", missing = "缺歌词", translations = "有译文", manual = "手动编辑"
-    }
-    private var currentEntry: PersonalLyricsLibraryEntry? {
-        library.entries.first { $0.trackStableKey == state.liveTrackIdentity?.stableKey
-            || ($0.activeLyricsVersionID != nil && $0.activeLyricsVersionID == state.liveLyricsVersionID) }
-    }
-    private var entries: [PersonalLyricsLibraryEntry] {
-        library.entries.filter { entry in
-            switch filter {
-            case .all: return true
-            case .current: return entry.id == currentEntry?.id
-            case .missing: return entry.needsLyrics
-            case .translations: return entry.translationVersionCount > 0
-            case .manual: return entry.hasManualLyrics || entry.hasManualTranslation
-            }
+        get {
+            let tab = presentation.tab ?? .library
+            return tab == .library ? browsing.scope.query : (queries[tab] ?? "")
         }
+        nonmutating set {
+            let tab = presentation.tab ?? .library
+            if tab == .library { browsing.scope.query = newValue }
+            else { queries[tab] = newValue }
+        }
+    }
+
+    private var libraryResults: (entries: [PersonalLyricsLibraryEntry], selectedKey: String?) {
+        let scope = browsing.scope
+        let matches = library.entries(for: scope.query)
+        let current = PersonalLyricsLibraryEntry.current(in: matches, trackKey: state.liveTrackIdentity?.stableKey,
+                                                        lyricsVersionID: state.liveLyricsVersionID)
+        let entries = matches.filter { scope.filter.includes($0, currentTrackKey: current?.trackStableKey) }
+        let selected = entries.first { $0.id == browsing.selectedTrackKey }?.id
+        return (entries, batchArchiveKey ?? selected ?? entries.first { $0.id == current?.id }?.id ?? entries.first?.id)
     }
 
     var body: some View {
@@ -91,7 +89,7 @@ struct V3LibrarySearchPanel: View {
                         } else {
                             TextField(presentation.tab == .search ? "搜索歌曲或艺人" : presentation.tab == .playlists ? "搜索歌单或歌曲" : "搜索歌词库", text: Binding(get: { query }, set: { query = $0 }))
                                 .textFieldStyle(.roundedBorder)
-                                .onSubmit { updateSearch() }
+                                .onSubmit { updateSearch(immediately: true) }
                             managementMenu
                         }
                         Button("在新窗口打开", action: openInNewWindow)
@@ -126,18 +124,17 @@ struct V3LibrarySearchPanel: View {
             .frame(width: geometry.size.width, height: geometry.size.height)
             .onExitCommand { presentation.dismiss() }
             .onAppear {
-                library.refresh()
+                if presentation.tab == .library { library.search(browsing.scope.query, immediately: true) }
                 if presentation.tab == .search, query.isEmpty, state.hasLiveTrack { query = SongSearchQuery(track: state.currentTrack).text }
             }
-            .onChange(of: library.entries) { _, _ in if selectedKey == nil { selectInitialEntry() } }
-            .onChange(of: filter) { _, _ in selectInitialEntry() }
+            .onChange(of: browsing.scope.filter) { _, _ in batchArchiveKey = nil }
             .onChange(of: query) { _, _ in updateSearch() }
             .onChange(of: state.playlistBrowser.source) { _, _ in
                 if presentation.tab == .search, !query.isEmpty { updateSearch() }
             }
             .onChange(of: presentation.tab) { _, tab in
                 listeningTrackKey = nil
-                if tab == .library { library.searchQuery = query; library.refresh(); selectInitialEntry() }
+                if tab == .library { library.search(browsing.scope.query, immediately: true) }
                 else if tab == .search, query.isEmpty, state.hasLiveTrack { query = SongSearchQuery(track: state.currentTrack).text }
             }
         }
@@ -163,6 +160,7 @@ struct V3LibrarySearchPanel: View {
 
     private func openInNewWindow() {
         let tab = presentation.tab
+        let selectedKey = tab == .library ? libraryResults.selectedKey : nil
         presentation.dismiss()
         switch tab {
         case .search: openWindow(id: "song-search")
@@ -171,21 +169,18 @@ struct V3LibrarySearchPanel: View {
             if tab?.isListening == true, let listeningTrackKey { state.openLibraryTool(trackKey: listeningTrackKey) }
             else if tab == .history { state.openLibraryTool(tab: .history) }
             else if tab == .statistics { state.openLibraryTool(tab: .statistics) }
-            else { state.openLibraryTool(trackKey: selectedKey) }
+            else { state.openLibraryTool(scope: browsing.scope, trackKey: selectedKey) }
             openWindow(id: "personal-library-activity")
         }
     }
 
-    private func updateSearch() {
+    private func updateSearch(immediately: Bool = false) {
         if presentation.tab == .search {
             state.songSearchManager.search(query: SongSearchQuery(text: query), debounceNanoseconds: 250_000_000)
         } else if presentation.tab == .library {
-            library.searchQuery = query
-            library.refresh()
+            batchArchiveKey = nil
+            library.search(query, immediately: immediately)
         }
-    }
-    private func selectInitialEntry() {
-        selectedKey = entries.first(where: { $0.id == currentEntry?.id })?.id ?? entries.first?.id
     }
     private var managementMenu: some View {
         Menu {
@@ -196,7 +191,7 @@ struct V3LibrarySearchPanel: View {
             }
             Button("刷新") {
                 if presentation.tab == .playlists { state.playlistBrowser.refresh() }
-                else { library.refresh(); updateSearch() }
+                else { updateSearch(immediately: true) }
             }
             if presentation.tab != .playlists {
                 Menu("私人文件夹同步") {
@@ -209,26 +204,40 @@ struct V3LibrarySearchPanel: View {
         .menuStyle(.borderlessButton).fixedSize().help("管理歌词库")
     }
     private var libraryContent: some View {
-        GeometryReader { geometry in
+        let (entries, selectedKey) = libraryResults
+        let filter = browsing.scope.filter
+        return GeometryReader { geometry in
             HStack(spacing: 0) {
                 VStack(spacing: 8) {
-                    HStack(spacing: 4) {
-                        ForEach(LibraryFilter.allCases, id: \.self) { value in
-                            Button { filter = value } label: {
-                                Text(value.rawValue).font(.system(size: 10))
-                                    .padding(.horizontal, 5).padding(.vertical, 5)
-                                    .background(filter == value ? Color.primary.opacity(0.1) : .clear, in: Capsule())
-                                    .contentShape(Capsule())
-                            }.buttonStyle(.plain)
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 4) {
+                            ForEach(PersonalLibraryFilter.allCases) { value in
+                                Button { browsing.scope.filter = value } label: {
+                                    Text(value.rawValue).font(.system(size: 10))
+                                        .padding(.horizontal, 5).padding(.vertical, 5)
+                                        .background(filter == value ? Color.primary.opacity(0.1) : .clear, in: Capsule())
+                                        .contentShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(filter == value ? .isSelected : [])
+                            }
                         }
-                    }.padding(.top, 10)
-                    LyricsBatchControls(playback: state, entries: filter == .missing ? entries : [],
-                                        refresh: library.refresh, openTrack: { selectedKey = $0 })
+                        .padding(.horizontal, 8)
+                    }
+                    .scrollIndicators(.hidden)
+                    .padding(.top, 10)
+                    LyricsBatchControls(playback: state, entries: filter == .missing && !library.isLoading ? entries : [],
+                                        refresh: library.refresh, openTrack: { batchArchiveKey = $0 })
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(entries) { entry in
-                                Button { selectedKey = entry.id } label: { libraryRow(entry) }
-                                    .buttonStyle(.plain)
+                                Button {
+                                    batchArchiveKey = nil
+                                    browsing.selectedTrackKey = entry.id
+                                } label: {
+                                    libraryRow(entry, isSelected: selectedKey == entry.id)
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -244,6 +253,8 @@ struct V3LibrarySearchPanel: View {
                     if let selectedKey {
                         PersonalLibraryTrackDetailView(service: library, stableKey: selectedKey, compact: true, showsActions: true)
                             .padding(14)
+                    } else if library.isLoading {
+                        ProgressView("正在读取歌词库…").padding(24)
                     } else {
                         Text("没有符合条件的歌曲").foregroundStyle(.secondary).padding(24)
                     }
@@ -251,7 +262,7 @@ struct V3LibrarySearchPanel: View {
             }
         }
     }
-    private func libraryRow(_ entry: PersonalLyricsLibraryEntry) -> some View {
+    private func libraryRow(_ entry: PersonalLyricsLibraryEntry, isSelected: Bool) -> some View {
         HStack(spacing: 8) {
             AsyncImage(url: entry.artworkURL) { $0.resizable().scaledToFill() } placeholder: {
                 Image(systemName: "music.note").frame(maxWidth: .infinity, maxHeight: .infinity).background(.white.opacity(0.07))
@@ -267,7 +278,7 @@ struct V3LibrarySearchPanel: View {
         }
         .padding(.horizontal, 10).frame(height: 44)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selectedKey == entry.id ? Color.primary.opacity(0.09) : .clear)
+        .background(isSelected ? Color.primary.opacity(0.09) : .clear)
         .contentShape(Rectangle())
     }
 
