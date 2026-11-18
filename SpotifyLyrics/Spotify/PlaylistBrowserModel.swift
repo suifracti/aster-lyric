@@ -43,7 +43,7 @@ public final class PlaylistBrowserModel: ObservableObject {
     private var playTask: Task<Void, Never>?
     private var rawQueue: [Track] = []
     private var currentQueueTrackID: String?
-    private var queueSkipCounts: [String: Int] = [:]
+    private var skippedQueueOffsets: Set<Int> = []
     private enum ManualPlaybackIntent { case track(String), previous }
     private var manualPlaybackIntent: ManualPlaybackIntent?
 
@@ -51,9 +51,10 @@ public final class PlaylistBrowserModel: ObservableObject {
         guard supportsQueueEdits else { return nil }
         return TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString)
     }
-    public func skipQueuedTrack(_ track: Track) {
-        guard let id = queueKey(track) else { return }
-        queueSkipCounts[id, default: 0] += 1
+    public func skipQueuedTrack(_ item: SpotifyPlaylistTrack) {
+        guard rawQueue.indices.contains(item.offset),
+              let id = queueKey(item.track), queueKey(rawQueue[item.offset]) == id else { return }
+        skippedQueueOffsets.insert(item.offset)
         queue = queueItems.map(\.track)
         syncQueueSelection()
     }
@@ -68,30 +69,22 @@ public final class PlaylistBrowserModel: ObservableObject {
     public func finishPreviousPlaybackOnSameTrack() {
         if case .previous = manualPlaybackIntent { manualPlaybackIntent = nil }
     }
-    public func consumeQueueSkip(for track: Track) -> Bool {
-        guard let id = queueKey(track) else { return false }
+    private func consumeManualPlaybackIntent(arrivingAt id: String) -> Bool {
         switch manualPlaybackIntent {
         case .previous:
             manualPlaybackIntent = nil
-            return false
+            return true
         case .track(let requestedID) where requestedID == id:
             manualPlaybackIntent = nil
+            return true
+        default:
             return false
-        default: break
         }
-        guard let count = queueSkipCounts[id], count > 0 else { return false }
-        if count == 1 { queueSkipCounts.removeValue(forKey: id) }
-        else { queueSkipCounts[id] = count - 1 }
-        return true
     }
     public var queueItems: [SpotifyPlaylistTrack] {
         if source == .appleMusic { return musicContinuation?.tracks ?? [] }
-        var remaining = queueSkipCounts
         return rawQueue.enumerated().compactMap { offset, track in
-            if let id = queueKey(track), let count = remaining[id], count > 0 {
-                remaining[id] = count - 1
-                return nil
-            }
+            guard !skippedQueueOffsets.contains(offset) else { return nil }
             return SpotifyPlaylistTrack(track: track, offset: offset)
         }
     }
@@ -107,14 +100,11 @@ public final class PlaylistBrowserModel: ObservableObject {
             return
         }
         guard supportsQueueEdits, rawQueue.indices.contains(offset) else { return }
-        for track in rawQueue.prefix(offset + 1) {
-            guard let id = queueKey(track), let count = queueSkipCounts[id] else { continue }
-            if count == 1 { queueSkipCounts.removeValue(forKey: id) }
-            else { queueSkipCounts[id] = count - 1 }
-        }
+        skippedQueueOffsets = skippedQueueOffsets.filter { $0 > offset }
         advanceQueue(offset + 1)
     }
-    public func currentTrackChanged(to track: Track) {
+    @discardableResult
+    public func currentTrackChanged(to track: Track) -> Bool {
         if source == .appleMusic {
             let shouldRefresh = isQueueLoading || hasLoadedQueue
             queueTask?.cancel()
@@ -127,19 +117,45 @@ public final class PlaylistBrowserModel: ObservableObject {
             queueNotice = nil
             syncQueueSelection()
             if shouldRefresh { loadQueue() }
-            return
+            return false
         }
-        guard supportsQueueEdits else { return }
-        currentQueueTrackID = queueKey(track)
-        trimQueueThroughCurrentTrack()
+        guard supportsQueueEdits else { return false }
+        let id = queueKey(track)
+        if let id, currentQueueTrackID == id { return false }
+        currentQueueTrackID = id
+        let shouldSkip = advanceQueueSnapshot(to: id)
         queue = queueItems.map(\.track)
         syncQueueSelection()
+        queueTask?.cancel()
+        queueTask = nil
+        isQueueLoading = false
         loadQueue()
+        return shouldSkip
     }
-    private func trimQueueThroughCurrentTrack() {
-        guard let id = currentQueueTrackID,
-              let index = rawQueue.firstIndex(where: { queueKey($0) == id }) else { return }
-        rawQueue.removeFirst(index + 1)
+    private func advanceQueueSnapshot(to id: String?) -> Bool {
+        guard let id, !consumeManualPlaybackIntent(arrivingAt: id),
+              let index = rawQueue.firstIndex(where: { queueKey($0) == id }) else { return false }
+        let shouldSkip = skippedQueueOffsets.contains(index)
+        let count = index + 1
+        rawQueue.removeFirst(count)
+        skippedQueueOffsets = Set(skippedQueueOffsets.filter { $0 >= count }.map { $0 - count })
+        return shouldSkip
+    }
+    private func replaceQueueSnapshot(with upcoming: [Track]) {
+        if !skippedQueueOffsets.isEmpty {
+            let previousIDs = rawQueue.map(queueKey)
+            let nextIDs = upcoming.map(queueKey)
+            let prefixCount = zip(previousIDs, nextIDs).prefix { $0.0 == $0.1 }.count
+            let onlyTailChanged = prefixCount == min(previousIDs.count, nextIDs.count)
+            skippedQueueOffsets = Set(skippedQueueOffsets.compactMap { offset in
+                // Spotify identifies the song, so a reordered duplicate has no stable row identity.
+                if onlyTailChanged, offset < prefixCount { return offset }
+                guard let id = previousIDs[offset], previousIDs.filter({ $0 == id }).count == 1,
+                      let nextOffset = nextIDs.firstIndex(of: id), nextIDs.lastIndex(of: id) == nextOffset else { return nil }
+                return nextOffset
+            })
+        }
+        rawQueue = upcoming
     }
     private func syncQueueSelection() {
         if selectedID == Self.queueID { tracks = queueItems }
@@ -183,7 +199,7 @@ public final class PlaylistBrowserModel: ObservableObject {
         rawQueue = []
         musicContinuation = nil
         currentQueueTrackID = nil
-        queueSkipCounts = [:]
+        skippedQueueOffsets = []
         manualPlaybackIntent = nil
         queue = []
         if selectedID == Self.queueID { tracks = [] }
@@ -226,10 +242,11 @@ public final class PlaylistBrowserModel: ObservableObject {
                     try Task.checkCancellation()
                     let upcoming = try await service.upcomingTracks(accessToken: token, limit: nil)
                     try Task.checkCancellation()
-                    rawQueue = upcoming
-                    if let id = currentQueueTrackID {
-                        rawQueue.removeFirst(rawQueue.prefix { queueKey($0) == id }.count)
+                    var nextQueue = upcoming
+                    if let id = currentQueueTrackID, rawQueue.first.flatMap(queueKey) != id {
+                        nextQueue.removeFirst(nextQueue.prefix { queueKey($0) == id }.count)
                     }
+                    replaceQueueSnapshot(with: nextQueue)
                     queue = queueItems.map(\.track)
                     hasLoadedQueue = true
                     syncQueueSelection()
@@ -286,7 +303,6 @@ public final class PlaylistBrowserModel: ObservableObject {
         guard generation == sourceGeneration else { throw CancellationError() }
         try await service.enqueueTrack(id, accessToken: token)
         guard generation == sourceGeneration else { throw CancellationError() }
-        queueSkipCounts.removeValue(forKey: id)
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(1))
             if self?.sourceGeneration == generation { self?.loadQueue() }

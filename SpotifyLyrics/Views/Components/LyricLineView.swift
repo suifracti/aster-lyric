@@ -784,6 +784,8 @@ private struct RubyTokenBlock: View, Equatable {
                     correctRuby(surface, ruby)
                 }
                 .accessibilityLabel("修改「\(surface)」的读音：\(ruby)")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { correctRuby(surface, ruby) }
         } else {
             renderedText(ruby, font: rubyNSFont, fill: rubyColor)
                 .accessibilityLabel("「\(surface)」读音：\(ruby)")
@@ -838,6 +840,7 @@ private struct RubyTokenBlock: View, Equatable {
                                 }
                             }
                         }
+                        .accessibilityHidden(true)
                     )
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)

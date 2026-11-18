@@ -2085,15 +2085,20 @@ private struct AppleMusicImmersiveV3TimedRowView: View {
         let _ = Self.logTimedRowIfNeeded(text: layout.originalText, time: currentTime, fraction: firstFrac)
         #endif
 
-        if layout.isSingleLine, let singleLine = layout.lines.first {
-            timedVisualLine(singleLine)
-        } else {
-            VStack(alignment: textAlignment.lyricHorizontalAlignment, spacing: 0) {
-                ForEach(layout.lines, id: \.lineIndex) { visualLine in
-                    timedVisualLine(visualLine)
+        Group {
+            if layout.isSingleLine, let singleLine = layout.lines.first {
+                timedVisualLine(singleLine)
+            } else {
+                VStack(alignment: textAlignment.lyricHorizontalAlignment, spacing: 0) {
+                    ForEach(layout.lines, id: \.lineIndex) { visualLine in
+                        timedVisualLine(visualLine)
+                    }
                 }
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(layout.originalText)
+        .accessibilityAddTraits(.isStaticText)
     }
 
     @ViewBuilder
@@ -2135,6 +2140,7 @@ private struct AppleMusicImmersiveV3TimedRowView: View {
                             }
                         }
                     }
+                    .accessibilityHidden(true)
                 )
         } else {
             Text(text)

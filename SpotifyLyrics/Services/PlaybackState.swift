@@ -3201,8 +3201,7 @@ public final class PlaybackState: ObservableObject {
         updatePlaybackSourceIdentity(snapshot.sourceIdentity)
         let nextID = Self.playlistRequestTrackID(for: nextTrack, source: snapshot.sourceIdentity)
         if previousSource != snapshot.sourceIdentity || nextID != previousID {
-            playlistBrowser.currentTrackChanged(to: nextTrack)
-            if playlistBrowser.consumeQueueSkip(for: nextTrack) {
+            if playlistBrowser.currentTrackChanged(to: nextTrack) {
                 LyricsE2ELog.log("QUEUE skip consumed id=\(nextID ?? "unknown")")
                 runProviderCommand { try await $0.next() }
                 return

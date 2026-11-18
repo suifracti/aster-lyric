@@ -156,7 +156,7 @@ struct V3PlaylistPanel: View {
                     .buttonStyle(.plain)
             } else { trackRowLabel(item, playing: playing) }
             if browser.selectedID == PlaylistBrowserModel.queueID {
-                V3QueueSkipButton(browser: browser, track: item.track, hovered: hoveredTrackOffset == item.offset)
+                V3QueueSkipButton(browser: browser, item: item, hovered: hoveredTrackOffset == item.offset)
             } else {
                 V3QueueInsertButton(browser: browser, track: item.track, hovered: hoveredTrackOffset == item.offset)
                 Button { browser.play(item) } label: { Image(systemName: "play.fill") }
@@ -227,7 +227,7 @@ struct V3PlaylistQueuePreview: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                     }.buttonStyle(.plain)
-                    V3QueueSkipButton(browser: browser, track: track, hovered: hoveredRow == index)
+                    V3QueueSkipButton(browser: browser, item: item, hovered: hoveredRow == index)
                 }
                 .frame(height: 44)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -248,17 +248,17 @@ struct V3PlaylistQueuePreview: View {
 /// Queue rows are hidden locally and marked for a single skip when they become current.
 private struct V3QueueSkipButton: View {
     @ObservedObject var browser: PlaylistBrowserModel
-    let track: Track
+    let item: SpotifyPlaylistTrack
     let hovered: Bool
     var body: some View {
         if browser.supportsQueueEdits {
-            Button { browser.skipQueuedTrack(track) } label: {
+            Button { browser.skipQueuedTrack(item) } label: {
                 Image(systemName: "xmark").font(.system(size: 11, weight: .medium))
                     .frame(width: 24, height: 24).contentShape(Rectangle())
             }
             .buttonStyle(.plain).foregroundStyle(.secondary)
             .help("跳过这首").accessibilityLabel("跳过这首")
-            .disabled(TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString) == nil)
+            .disabled(TrackIdentity.spotifyRequestTrackID(item.track.spotifyId ?? item.track.spotifyURL?.absoluteString) == nil)
             .opacity(hovered ? 1 : 0).allowsHitTesting(hovered).accessibilityHidden(!hovered)
         }
     }

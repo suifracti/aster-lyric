@@ -498,7 +498,7 @@ final class PlaylistPickerTests: XCTestCase {
         let last = try XCTUnwrap(browser.queueItems.last)
         XCTAssertEqual(last.track.duration, 125.5)
         XCTAssertEqual(TrackIdentity.playbackID(for: last.track), "applemusic:" + song.lowercased())
-        browser.skipQueuedTrack(last.track)
+        browser.skipQueuedTrack(last)
         XCTAssertEqual(browser.queueItems.count, 2)
         browser.play(last)
         await fulfillment(of: [played], timeout: 1)

@@ -89,12 +89,15 @@ final class DesktopPlaybackEventTests: XCTestCase {
 
     func testMarkedQueueSongSkipsOnceThenPlaysNormally() async throws {
         let (state, provider, _, center) = fixture()
+        let queuedID = "BBBBBBBBBBBBBBBBBBBBBB"
+        let browser = useQueueFixture(for: state) { [queuedID] }
+        defer { PlaylistFixtureURLProtocol.response = nil }
         let original = provider.snapshot.track!
         provider.snapshot = PlaybackSnapshot(status: .ready, track: original, position: 80, isPlaying: true, sourceIdentity: .spotifyDesktop)
         state.startProvider(connectSpotify: false)
-        try await wait { state.hasLiveTrack }
-        let queued = ProviderTrack(id: "spotify:track:BBBBBBBBBBBBBBBBBBBBBB", title: "Event B", artist: "Fixture", album: "Cache", duration: 240)
-        state.playlistBrowser.skipQueuedTrack(Track(title: queued.title, artist: queued.artist, album: queued.album, duration: queued.duration, spotifyId: queued.id))
+        try await wait { state.hasLiveTrack && browser.hasLoadedQueue }
+        let queued = ProviderTrack(id: "spotify:track:" + queuedID, title: "Event B", artist: "Fixture", album: "Cache", duration: 240)
+        browser.skipQueuedTrack(try XCTUnwrap(browser.queueItems.first))
         state.nextTrack()
         try await wait { provider.nextCount == 1 }
         provider.snapshot = PlaybackSnapshot(status: .ready, track: queued, position: 0.1, isPlaying: true, sourceIdentity: .spotifyDesktop)
@@ -113,23 +116,13 @@ final class DesktopPlaybackEventTests: XCTestCase {
 
     func testQueueThirdPositionUsesThreeNextCallsIncludingHiddenSong() async throws {
         let (state, provider, _, center) = fixture()
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [PlaylistFixtureURLProtocol.self]
         let ids = ["BBBBBBBBBBBBBBBBBBBBBB", "CCCCCCCCCCCCCCCCCCCCCC", "DDDDDDDDDDDDDDDDDDDDDD"]
         let songs = ids.map { id in
             ProviderTrack(id: "spotify:track:" + id, title: id, artist: "Fixture", album: "Cache", duration: 240)
         }
         var queuedIDs: [String] = []
-        PlaylistFixtureURLProtocol.response = { _ in
-            (200, ["queue": queuedIDs.map { id in ["id": id, "name": id, "uri": "spotify:track:" + id,
-                "type": "track", "explicit": false, "duration_ms": 240000,
-                "artists": [["name": "Fixture"]], "album": ["name": "Cache", "images": []]] as [String: Any] }])
-        }
+        let browser = useQueueFixture(for: state) { queuedIDs }
         defer { PlaylistFixtureURLProtocol.response = nil }
-        let browser = PlaylistBrowserModel(service: SpotifyCatalogService(session: URLSession(configuration: configuration),
-            baseURL: URL(string: "https://playlist.test/v1")!), picker: state.playlistBrowser.picker,
-            accessToken: { _ in "fixture" }, advanceQueue: { [weak state] count in state?.advanceQueuedTracks(count) })
-        state.playlistBrowser = browser
         state.startProvider(connectSpotify: false)
         try await wait { state.hasLiveTrack && browser.hasLoadedQueue && !browser.isQueueLoading }
         XCTAssertTrue(browser.queue.isEmpty)
@@ -138,7 +131,7 @@ final class DesktopPlaybackEventTests: XCTestCase {
         XCTAssertFalse(browser.showsQueueLoading)
         try await wait { browser.queue.count == 4 }
         guard browser.queue.count == 4 else { return }
-        let hidden = browser.queue[1]
+        let hidden = browser.queueItems[1]
         browser.skipQueuedTrack(hidden)
         XCTAssertEqual(browser.queueItems.map(\.offset), [0, 2, 3])
         provider.onNext = {
@@ -153,9 +146,62 @@ final class DesktopPlaybackEventTests: XCTestCase {
         browser.jumpToQueuedTrack(at: browser.queueItems[1].offset) // Original third position, after hiding the second.
         try await wait { provider.nextCount >= 3 && state.currentTrack.spotifyId == songs[2].id }
         XCTAssertEqual(provider.nextCount, 3)
-        XCTAssertFalse(browser.consumeQueueSkip(for: hidden), "Passed songs use up their marks")
         try await wait { !browser.isQueueLoading }
         provider.onNext = nil
+    }
+
+    func testSkippingTheLaterRepeatKeepsTheFirstQueueOccurrenceVisible() async throws {
+        let (state, _, _, _) = fixture()
+        let repeatID = "BBBBBBBBBBBBBBBBBBBBBB"
+        let betweenID = "CCCCCCCCCCCCCCCCCCCCCC"
+        let tailID = "DDDDDDDDDDDDDDDDDDDDDD"
+        var queuedIDs = [repeatID, betweenID, repeatID, tailID]
+        let browser = useQueueFixture(for: state) { queuedIDs }
+        defer { PlaylistFixtureURLProtocol.response = nil }
+        browser.loadQueue()
+        try await wait { browser.hasLoadedQueue && !browser.isQueueLoading }
+        let initialRows = browser.queueItems
+        let first = try XCTUnwrap(initialRows.first { $0.offset == 0 })
+        let between = try XCTUnwrap(initialRows.first { $0.offset == 1 })
+        let later = try XCTUnwrap(initialRows.first { $0.offset == 2 })
+        browser.skipQueuedTrack(later)
+        XCTAssertEqual(browser.queueItems.map(\.offset), [0, 1, 3])
+
+        let appendedID = "EEEEEEEEEEEEEEEEEEEEEE"
+        queuedIDs.append(appendedID)
+        browser.loadQueue()
+        try await wait { !browser.isQueueLoading }
+        XCTAssertEqual(browser.queueItems.map(\.offset), [0, 1, 3, 4])
+
+        queuedIDs.removeFirst()
+        XCTAssertFalse(browser.currentTrackChanged(to: first.track))
+        try await wait { !browser.isQueueLoading }
+        XCTAssertEqual(browser.queueItems.map(\.offset), [0, 2, 3])
+
+        queuedIDs.removeFirst()
+        XCTAssertFalse(browser.currentTrackChanged(to: between.track))
+        try await wait { !browser.isQueueLoading }
+        XCTAssertEqual(browser.queueItems.map(\.offset), [1, 2])
+
+        queuedIDs.removeFirst()
+        XCTAssertTrue(browser.currentTrackChanged(to: later.track))
+        try await wait { !browser.isQueueLoading }
+        XCTAssertEqual(browser.queueItems.map(\.offset), [0, 1])
+    }
+
+    private func useQueueFixture(for state: PlaybackState, ids: @escaping () -> [String]) -> PlaylistBrowserModel {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PlaylistFixtureURLProtocol.self]
+        PlaylistFixtureURLProtocol.response = { _ in
+            (200, ["queue": ids().map { id in ["id": id, "name": id, "uri": "spotify:track:" + id,
+                "type": "track", "explicit": false, "duration_ms": 240000, "artists": [["name": "Fixture"]],
+                "album": ["name": "Cache", "images": []]] as [String: Any] }])
+        }
+        let browser = PlaylistBrowserModel(service: SpotifyCatalogService(session: URLSession(configuration: configuration),
+            baseURL: URL(string: "https://playlist.test/v1")!), picker: state.playlistBrowser.picker,
+            accessToken: { _ in "fixture" }, advanceQueue: { [weak state] count in state?.advanceQueuedTracks(count) })
+        state.playlistBrowser = browser
+        return browser
     }
 
     func testRepeatOneReachingDurationKeepsPlayingUntilDesktopPositionWraps() async throws {
