@@ -385,44 +385,6 @@ public struct JapaneseReadingResult: Equatable, Sendable {
 
 /// A shared, timing-neutral reading projection for the main and desktop surfaces.
 /// Partial confirmed annotations remain visible without inventing unknown readings.
-/// Text layers on narrow surfaces. Ruby layout and timing remain the renderer's responsibility.
-struct LyricTextLayers {
-    let original: String?
-    let translation: String?
-    let kana: String?
-    let phoneticReading: String?
-
-    init(line: LyricLine, language: String?, preferences: DisplayPreferences, resolved: JapaneseRubyPresentation? = nil) {
-        let source = line.readingSurfaceText ?? line.originalText
-        let isJapanese = LyricsLanguageGate.allowsJapaneseReadings(language: language, text: source)
-        let isPinyin = LyricsLanguageGate.usesPinyin(for: line, language: language)
-        let kanaText = isJapanese ? Self.nonempty((resolved?.kanaText ?? line.kanaText).map(JapaneseRomanizer.displayKana)) : nil
-        let reading = Self.nonempty(line.romajiText) ?? Self.nonempty(resolved?.romajiText)
-        original = preferences.showOriginal ? Self.nonempty(resolved?.originalText ?? source) : nil
-        translation = preferences.showTranslation ? Self.nonempty(line.translationText) : nil
-        kana = preferences.showKana ? kanaText : nil
-        if isPinyin && preferences.showsPinyinLayer {
-            phoneticReading = reading
-        } else if !isPinyin && isJapanese && preferences.showsRomajiLayer,
-                  reading.map(Self.normalizedReading) != kanaText.map(Self.normalizedReading) {
-            phoneticReading = reading
-        } else {
-            phoneticReading = nil
-        }
-    }
-
-    var primary: String? { original ?? translation ?? kana ?? phoneticReading }
-
-    private static func nonempty(_ text: String?) -> String? {
-        guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
-        return text
-    }
-
-    private static func normalizedReading(_ text: String) -> String {
-        JapaneseRomanizer.displayKana(text).split(whereSeparator: \.isWhitespace).joined()
-    }
-}
-
 struct JapaneseRubyPresentation {
     let originalText: String
     let kanaText: String?
