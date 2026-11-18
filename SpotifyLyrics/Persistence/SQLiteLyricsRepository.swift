@@ -3099,10 +3099,13 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
     /// New Spotify metadata keys join the existing recording without creating
     /// another Track row. Existing physical splits are handled by the one-off pass.
     private func redirectNewSpotifyKey(_ stableKey: String) throws {
-        guard stableKey.hasPrefix("spotify-id:"),
+        let prefix = "spotify-id:"
+        guard stableKey.hasPrefix(prefix),
               redirectResolver?.redirects[stableKey] == nil,
-              let prefix = stableKey.components(separatedBy: "|metadata:").first,
-              let id = TrackIdentity.canonicalSpotifyTrackID(String(prefix.dropFirst("spotify-id:".count))),
+              let separator = stableKey.range(of: "|metadata:"),
+              let id = TrackIdentity.canonicalSpotifyTrackID(String(stableKey[..<separator.lowerBound].dropFirst(prefix.count))),
+              let title = stableKey[separator.upperBound...].split(separator: "|", omittingEmptySubsequences: false).first,
+              !title.isEmpty,
               let database else { return }
         // Another repository object on the same database (the player and the
         // lyrics library each hold one) may already have written this
@@ -3118,38 +3121,24 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             try reloadRedirectResolver()
             return
         }
-        let query = try prepare("""
-            SELECT t.stable_key FROM tracks t
-            WHERE (lower(t.spotify_id) IN (?, ?) OR lower(t.spotify_uri) = ?)
-              AND NOT EXISTS (SELECT 1 FROM tracks WHERE stable_key = ?)
-            ORDER BY EXISTS (
-                SELECT 1 FROM lyrics_versions v WHERE v.track_stable_key = t.stable_key
-                  AND v.is_preferred = 1
-                  AND NOT EXISTS (SELECT 1 FROM lyrics_selection_revocations r WHERE r.track_stable_key = t.stable_key)
-            ) DESC, t.created_at ASC, t.stable_key ASC LIMIT 1;
-            """)
-        defer { sqlite3_finalize(query) }
         let uri = "spotify:track:\(id)"
-        try bindText(id, at: 1, to: query)
-        try bindText(uri, at: 2, to: query)
-        try bindText(uri, at: 3, to: query)
-        try bindText(stableKey, at: 4, to: query)
-        let result = sqlite3_step(query)
-        guard result == SQLITE_ROW || result == SQLITE_DONE else { throw lastError() }
-        guard result == SQLITE_ROW, let target = columnText(query, index: 0) else { return }
-        let canonical = try redirectResolver?.resolve(target) ?? target
+        guard let canonical = try sameTitleSpotifyRedirectTarget(sourceKey: stableKey, id: id, uri: uri, title: title) else { return }
         let now = Date().timeIntervalSince1970
         let insert = {
+            // A different connection may have inserted a physical row since the lookup.
+            guard try self.fetchTrack(stableKey: stableKey) == nil else { return }
             let redirect = try self.prepare("""
                 INSERT INTO track_identity_redirects(source_stable_key, canonical_stable_key,
                     reason, evidence_kind, migration_id, created_at)
-                VALUES (?, ?, 'same Spotify track ID', 'spotifyTrackIDExact', 'spotify-id-one-song-v1', ?);
+                VALUES (?, ?, 'same Spotify track ID', 'spotifyTrackIDExact', 'spotify-id-one-song-v1', ?)
+                ON CONFLICT(source_stable_key) DO NOTHING;
                 """)
             defer { sqlite3_finalize(redirect) }
             try self.bindText(stableKey, at: 1, to: redirect)
             try self.bindText(canonical, at: 2, to: redirect)
             try self.bindDouble(now, at: 3, to: redirect)
             try self.stepDone(redirect)
+            guard sqlite3_changes(database) > 0 else { return }
             // A new source has no physical Track row; the full source key and
             // Spotify identifiers are the audit evidence for this read/save.
             let audit = try self.prepare("""
@@ -3168,6 +3157,36 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         if sqlite3_get_autocommit(database) != 0 { try withTransaction(insert) }
         else { try insert() }
         try reloadRedirectResolver()
+    }
+
+    private func sameTitleSpotifyRedirectTarget(sourceKey: String, id: String, uri: String, title: Substring) throws -> String? {
+        let query = try prepare("""
+            SELECT t.stable_key, t.title FROM tracks t
+            WHERE (lower(t.spotify_id) IN (?, ?) OR lower(t.spotify_uri) = ?)
+              AND NOT EXISTS (SELECT 1 FROM tracks WHERE stable_key = ?)
+            ORDER BY EXISTS (
+                SELECT 1 FROM lyrics_versions v WHERE v.track_stable_key = t.stable_key
+                  AND v.is_preferred = 1
+                  AND NOT EXISTS (SELECT 1 FROM lyrics_selection_revocations r WHERE r.track_stable_key = t.stable_key)
+            ) DESC, t.created_at ASC, t.stable_key ASC;
+            """)
+        defer { sqlite3_finalize(query) }
+        try bindText(id, at: 1, to: query)
+        try bindText(uri, at: 2, to: query)
+        try bindText(uri, at: 3, to: query)
+        try bindText(sourceKey, at: 4, to: query)
+        while true {
+            let result = sqlite3_step(query)
+            if result == SQLITE_DONE { return nil }
+            guard result == SQLITE_ROW else { throw lastError() }
+            // During a skip, a track ID can briefly belong to the preceding song.
+            guard let key = columnText(query, index: 0), let rowTitle = columnText(query, index: 1),
+                  TrackIdentity.normalizedComponent(rowTitle) == title else { continue }
+            let canonical = try redirectResolver?.resolve(key) ?? key
+            if canonical == key { return canonical }
+            if let canonicalRow = try fetchTrack(stableKey: canonical),
+               TrackIdentity.normalizedComponent(canonicalRow.title) == title { return canonical }
+        }
     }
 
     private func resolvedCanonicalStableKey(_ stableKey: String) throws -> String {

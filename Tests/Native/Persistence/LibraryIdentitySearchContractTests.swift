@@ -275,6 +275,10 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         let replayIdentity = TrackIdentity(track: replay)
         let otherTitle = Track(title: "別の歌", artist: "はてなぷれいりすと", album: "", duration: 150.5, spotifyId: id)
         let otherIdentity = TrackIdentity(track: otherTitle)
+        let beforeMetadata = try await repo.loadBestStored(track: otherTitle, identity: otherIdentity)
+        XCTAssertNil(beforeMetadata, "A borrowed ID must not load the previous song even before a physical row exists")
+        let redirects = try await repo.redirectCount()
+        XCTAssertEqual(redirects, 0, "A transient snapshot must not persist a redirect to another title")
         var handle: OpaquePointer?
         XCTAssertEqual(sqlite3_open(databaseURL.path, &handle), SQLITE_OK)
         for (key, track) in [(replayIdentity.stableKey, replay), (otherIdentity.stableKey, otherTitle)] {
