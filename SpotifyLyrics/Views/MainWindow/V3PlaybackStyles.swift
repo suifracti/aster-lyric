@@ -613,6 +613,7 @@ private struct V3CrescentShape: Shape {
 
 struct V3PlayerBarOptions: Equatable {
     var progress: V3ProgressStyle = .standard
+    var chorusEmphasis = false
     var buttonsOnHover = false
     var titleMarquee = false
     var progressOnCover = false

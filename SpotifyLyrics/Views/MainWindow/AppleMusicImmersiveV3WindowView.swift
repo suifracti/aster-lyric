@@ -741,7 +741,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .environment(\.v3PlaybackInteractionChanged, playbackInteractionRelay)
         .environment(\.lyricIslandScene, compositionScene)
         .environment(\.v3PlayerBarOptions, V3PlayerBarOptions(
-            progress: presentation.progress, buttonsOnHover: settings.v3PlayerButtonsOnHover,
+            progress: presentation.progress, chorusEmphasis: settings.v3ChorusEmphasis,
+            buttonsOnHover: settings.v3PlayerButtonsOnHover,
             titleMarquee: settings.v3PlayerTitleMarquee,
             progressOnCover: settings.v3PlayerProgressOnCover && foregroundCover?.isLargeEnough == true))
         .environment(\.v3TitleMarquee, settings.v3PlayerTitleMarquee)
@@ -1056,12 +1057,15 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             VStack(spacing: 0) {
                 Spacer()
 
-                AppleMusicImmersiveV3FocusTransportControls(
-                    state: state,
-                    reduceMotion: reduceMotion
-                )
+                Group {
+                    if isCompositionPreview {
+                        compositionPreviewLabel
+                    } else {
+                        AppleMusicImmersiveV3FocusTransportControls(state: state, reduceMotion: reduceMotion)
+                            .modifier(playbackVisibility)
+                    }
+                }
                 .padding(.bottom, LyricsDesignTokens.Spacing.md)
-                .modifier(playbackVisibility)
             }
         }
     }
@@ -1404,10 +1408,16 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 .shadow(color: .black.opacity(0.55), radius: 5, y: 2)
                 .frame(width: reading.width, height: reading.height)
                 .position(x: reading.midX, y: reading.midY)
-            StageHUDView(state: state, width: hudWidth)
-                .modifier(playbackVisibility)
-                .frame(width: hudWidth, height: 96)
-                .position(x: canvasWidth / 2, y: canvasHeight - 60)
+            Group {
+                if isCompositionPreview {
+                    compositionPreviewLabel
+                } else {
+                    StageHUDView(state: state, width: hudWidth)
+                        .modifier(playbackVisibility)
+                }
+            }
+            .frame(width: hudWidth, height: 96)
+            .position(x: canvasWidth / 2, y: canvasHeight - 60)
         }
         .frame(width: canvasWidth, height: canvasHeight)
     }
