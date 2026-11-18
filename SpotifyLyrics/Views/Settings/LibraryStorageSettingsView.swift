@@ -75,6 +75,9 @@ struct LibraryStorageSettingsView: View {
                     Text("数据库备份包含歌曲、歌词版本、译文、读音与播放记录。金句保存在旁边的 favorite-lines.json 中。")
                         .font(.caption).foregroundStyle(.secondary)
                     LabeledContent("数据格式", value: "v\(stats.schemaVersion)")
+                    LabeledContent("网络封面与歌手照片", value: size(data.networkArtworkBytes))
+                    LabeledContent("Apple Music 本机封面", value: size(data.localArtworkBytes))
+                    LabeledContent("背景视频", value: size(data.canvasBytes))
                     HStack {
                         Button("在 Finder 中显示数据库") { data.revealDatabase() }
                         Button("重建本地歌词索引") { data.rebuildLocalIndex() }

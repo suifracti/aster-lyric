@@ -9,7 +9,7 @@
 | 用户说法或本次触及范围 | 到哪里找 |
 |---|---|
 | 改名、换界面、旧数据或人工歌词不能丢；改持久化/身份逻辑 | L-001 |
-| 清理缓存、查看备份占用、另一个窗口打开时也要备份最新歌词 | L-047 · SettingsDataController、writeDatabaseSnapshot、V3CanvasStore |
+| 清理缓存、Apple Music 封面未计入空间、另一个窗口打开时也要备份最新歌词 | L-047 · SettingsDataController、AppleMusicArtworkCache、writeDatabaseSnapshot |
 | 数据包导入一半报错、版本串到别首歌、确认旧的同步文件 | L-047 · previewTrackImport、importPersonalDataPackage、PersonalDataSyncStore |
 | 从其他应用选字查歌词、⌘K 找回一句、搜到副歌却只打开歌曲档案 | L-043、L-046 · WorkspaceQuickFind、searchLibraryPassages |
 | 两份稿逐句对照、改译时借用另一版的句子、重复副歌错位 | L-049 · LibraryVersionComparison、LibraryTranslationRevisionDraft |
@@ -883,6 +883,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 2026-11-19：标准个人数据包在一个 SQLite 写事务内导入，任一曲失败就撤销本次全部写入。预览和提交都核对录音族和原词 UUID，接受已知的旧键重定向。私人文件夹的确认绑定所见文件内容，文件在预览后改变会要求重新检查，在写回前改变会保留新文件并提示本机已导入。两个歌词库入口共用状态文案。临时库复现了后曲失败却残留前曲、跨录音复用同版本 ID，并验证回滚后可重试；临时同步目录验证预览后替换、禁止旧版本写回和重新预览成功。使用 [macOS 文件协调](https://developer.apple.com/documentation/foundation/nsfilecoordinator/coordinate%28writingitemat%3Aoptions%3Aerror%3Abyaccessor%3A%29) 保护本机写回，未验证第三方云盘跨设备传输。
 
 2026-11-19 隔离视觉宿主同时启动工作台和 `--saved-reader-fixture` 时遇到重复添加 `is_preferred`，定向原生测试又复现旧库升级时重复添加 `performer_id`，空库还产生了无内容的升级备份。播放和歌词库各用一个仓库连接。现在取得 SQLite 写锁后重读库版本，备份及所有迁移步骤由该连接负责，升级失败会整体回滚。备份通过独立读连接取得升级前的数据。新建空库无需备份，双窗口升级旧库只留一份。21 项歌词库原生测试通过，隔离工作台原路径启动成功。隔离用户目录另验证了 v5（含 WAL 提交和锁定歌词）、v10、v11、v12、v13 升级到 v14。真实用户库未参与。[SQLite 事务文档](https://www.sqlite.org/lang_transaction.html)
+
+同日纳入 Apple Music 本机封面。过去导出的文件在临时目录，网络 `URLCache` 算不到，也不随设置清理。现在保留正式文件路径，完成导出才由 `AppleMusicArtworkCache` 发布。新封面把同类缓存控制在 64 MiB，按最近使用时间腾出空间。设置只统计和清理符合原生成规则的普通文件，跳过其他文件及符号链接，调试使用隔离目录。网络缓存、Apple Music 本机封面、背景视频分别列出；清空后，测试的系统 URLCache 仍报告约 82 KB，本机封面独立读回为零。隔离设置实读 33 KB 本机封面和 82 KB 网络缓存；81 项定向原生测试通过，用播放器脚本桩和临时库走统计、清理与锁定资产保留。
 
 ## L-048 把歌词文件当文档打开（2026-11-18）
 

@@ -88,3 +88,91 @@ public final class ArtworkImageLoader {
         return image
     }
 }
+
+/// Apple Music exports file-backed artwork, so URLCache cannot account for it.
+@MainActor
+final class AppleMusicArtworkCache {
+    static let shared = AppleMusicArtworkCache(directory: LyricsQStorage.isolatedMediaCacheDirectory?
+        .appendingPathComponent("AppleMusicArtwork", isDirectory: true) ?? FileManager.default.temporaryDirectory)
+
+    private static let prefix = "applemusic_artwork_"
+    private static let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
+    private let directory: URL
+    private let diskBudget: Int64
+    private var generation = 0
+
+    init(directory: URL, diskBudget: Int64 = 64 << 20) {
+        self.directory = directory
+        self.diskBudget = diskBudget
+    }
+
+    func localFile(for trackID: String, export: (URL) async -> Bool) async -> URL? {
+        guard Self.isPersistentID(trackID) else { return nil }
+        let target = directory.appendingPathComponent(Self.prefix + trackID + ".jpg")
+        if let existing = cachedFile(target) {
+            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: existing.url.path)
+            return existing.url
+        }
+
+        // Publish the existing file URL only after Music has finished writing.
+        let temporary = directory.appendingPathComponent(".aster-apple-artwork-\(UUID()).partial")
+        let started = generation
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            guard await export(temporary), started == generation, !Task.isCancelled,
+                  let exported = cachedFile(temporary), exported.bytes <= diskBudget else { return nil }
+            if cachedFile(target) != nil { return target }
+            if let empty = cachedFile(target, allowEmpty: true) {
+                try FileManager.default.removeItem(at: empty.url)
+            }
+            try FileManager.default.moveItem(at: temporary, to: target)
+            prune(keeping: target)
+            return target
+        } catch {
+            return nil
+        }
+    }
+
+    func diskBytes() throws -> Int64 { try files().reduce(0) { $0 + $1.bytes } }
+
+    func clearCache() throws {
+        generation &+= 1
+        for file in try files() { try FileManager.default.removeItem(at: file.url) }
+    }
+
+    private struct File {
+        let url: URL
+        let bytes: Int64
+        let date: Date
+    }
+
+    private func files() throws -> [File] {
+        guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
+        return try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: Array(Self.keys),
+                                                            options: .skipsHiddenFiles).compactMap { url in
+            let name = url.deletingPathExtension().lastPathComponent
+            guard url.pathExtension == "jpg", name.hasPrefix(Self.prefix),
+                  Self.isPersistentID(String(name.dropFirst(Self.prefix.count))) else { return nil }
+            return cachedFile(url, allowEmpty: true)
+        }
+    }
+
+    private func cachedFile(_ url: URL, allowEmpty: Bool = false) -> File? {
+        guard let values = try? url.resourceValues(forKeys: Self.keys), values.isRegularFile == true,
+              values.isSymbolicLink != true, let bytes = values.fileSize, allowEmpty || bytes > 0 else { return nil }
+        return File(url: url, bytes: Int64(bytes), date: values.contentModificationDate ?? .distantPast)
+    }
+
+    private func prune(keeping target: URL) {
+        guard let files = try? files() else { return }
+        var total = files.reduce(0) { $0 + $1.bytes }
+        for file in files.sorted(by: { $0.date < $1.date }) where total > diskBudget && file.url != target {
+            if (try? FileManager.default.removeItem(at: file.url)) != nil { total -= file.bytes }
+        }
+    }
+
+    private static func isPersistentID(_ value: String) -> Bool {
+        TrackIdentity.appleMusicPersistentID("applemusic:" + value) == value.lowercased()
+    }
+}

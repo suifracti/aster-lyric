@@ -311,12 +311,14 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
     }
 
     private func resolveArtworkURL(trackID: String, hasArtwork: Bool) async -> URL? {
-        guard hasArtwork, !trackID.isEmpty else { return nil }
-        let path = artworkFilePath(for: trackID)
-        if FileManager.default.fileExists(atPath: path) {
-            return URL(fileURLWithPath: path)
+        guard hasArtwork else { return nil }
+        return await AppleMusicArtworkCache.shared.localFile(for: trackID) { destination in
+            await exportArtwork(trackID: trackID, to: destination)
         }
+    }
 
+    private func exportArtwork(trackID: String, to url: URL) async -> Bool {
+        let path = url.path.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         let exportScript = """
         if application "Music" is not running then return ""
         tell application "Music"
@@ -338,21 +340,7 @@ public final class AppleMusicDesktopProvider: PlaybackProvider {
             end try
         end tell
         """
-        do {
-            let res = try await execute(script: exportScript, timeout: 2)
-            if res == "ok", FileManager.default.fileExists(atPath: path) {
-                return URL(fileURLWithPath: path)
-            }
-        } catch {
-            // Ignore export failure, track can still display without artwork
-        }
-        return nil
-    }
-
-    private func artworkFilePath(for trackID: String) -> String {
-        let sanitized = trackID.filter { $0.isLetter || $0.isNumber }
-        let dir = NSTemporaryDirectory()
-        return (dir as NSString).appendingPathComponent("applemusic_artwork_\(sanitized).jpg")
+        return (try? await execute(script: exportScript, timeout: 2)) == "ok"
     }
 
     private func map(error: AppleScriptExecutionError) -> PlaybackProviderState {

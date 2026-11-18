@@ -8,8 +8,10 @@ public final class SettingsDataController: ObservableObject {
     @Published public private(set) var statusMessage = ""
     @Published public private(set) var isBusy = false
 
-    @Published private(set) var artworkBytes: Int64 = 0
+    @Published private(set) var networkArtworkBytes: Int64 = 0
+    @Published private(set) var localArtworkBytes: Int64 = 0
     @Published private(set) var canvasBytes: Int64 = 0
+    var artworkBytes: Int64 { networkArtworkBytes + localArtworkBytes }
 
     private let repository: any LyricsRepository
     private let localIndex: LocalLyricsIndex
@@ -38,6 +40,7 @@ public final class SettingsDataController: ObservableObject {
             try await repository.clearLyricsCache()
             try await V3CanvasStore.shared.clearCache()
             ArtworkImageLoader.shared.clearCache()
+            try AppleMusicArtworkCache.shared.clearCache()
             return "已清理封面与背景视频缓存。"
         }
     }
@@ -104,7 +107,8 @@ public final class SettingsDataController: ObservableObject {
             do {
                 result = try await operation()
                 statistics = try await repository.statistics()
-                artworkBytes = ArtworkImageLoader.shared.diskBytes
+                networkArtworkBytes = ArtworkImageLoader.shared.diskBytes
+                localArtworkBytes = try AppleMusicArtworkCache.shared.diskBytes()
                 canvasBytes = try await V3CanvasStore.shared.diskBytes()
                 statusMessage = result
             } catch {

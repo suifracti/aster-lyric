@@ -8,6 +8,66 @@ import XCTest
 /// tempo-timed line follow, censored words, lyric-end evidence, seek snap
 /// and seek hold.
 final class ListeningBatchOneTests: XCTestCase {
+    @MainActor
+    func testAppleMusicArtworkKeepsRecentCoversWithinItsBudget() async throws {
+        let directory = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let cache = AppleMusicArtworkCache(directory: directory, diskBudget: 60)
+        let legacy = directory.appendingPathComponent("applemusic_artwork_AAAAAAAAAAAAAAAA.jpg")
+        let unrelated = directory.appendingPathComponent("other.jpg")
+        let link = directory.appendingPathComponent("applemusic_artwork_CCCCCCCCCCCCCCCC.jpg")
+        try Data(repeating: 1, count: 40).write(to: legacy)
+        try Data(repeating: 2, count: 96).write(to: unrelated)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: unrelated)
+        XCTAssertEqual(try cache.diskBytes(), 40)
+        let hit = await cache.localFile(for: "AAAAAAAAAAAAAAAA") { _ in
+            XCTFail("An existing cover should not need AppleScript")
+            return false
+        }
+        XCTAssertEqual(hit, legacy)
+        let update = await cache.localFile(for: "BBBBBBBBBBBBBBBB") { staging in
+            (try? Data(repeating: 3, count: 40).write(to: staging)) != nil
+        }
+        let newest = try XCTUnwrap(update)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+        XCTAssertEqual(try cache.diskBytes(), 40)
+        XCTAssertEqual(try Data(contentsOf: newest).count, 40)
+        try cache.clearCache()
+        XCTAssertEqual(try cache.diskBytes(), 0)
+        XCTAssertEqual(try Data(contentsOf: unrelated).count, 96)
+        XCTAssertTrue(try FileManager.default.destinationOfSymbolicLink(atPath: link.path).hasSuffix("other.jpg"))
+    }
+
+    @MainActor
+    func testSettingsIncludesAndClearsLocalAppleMusicArtwork() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let provider = AppleMusicDesktopProvider(scriptRunner: { script, _ in
+            let prefix = "set targetPath to POSIX file \""
+            guard let line = script.components(separatedBy: .newlines)
+                .map({ $0.trimmingCharacters(in: .whitespaces) }).first(where: { $0.hasPrefix(prefix) }) else { return nil }
+            let staging = URL(fileURLWithPath: String(line.dropFirst(prefix.count).dropLast()))
+            try Data(repeating: 4, count: 8192).write(to: staging)
+            return "ok"
+        }, applicationIsInstalled: { true }, applicationIsRunning: { true })
+        let local = await provider.artworkURL(for: .init(id: "applemusic:DDDDDDDDDDDDDDDD", title: "Cover", artist: "Fixture", album: "", duration: 120),
+                                              source: .appleMusic)
+        let cover = try XCTUnwrap(local)
+        let data = SettingsDataController(repository: SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("local.sqlite3")))
+        data.refreshStatistics()
+        let startDeadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while data.isBusy && ContinuousClock.now < startDeadline { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNotNil(data.statistics)
+        XCTAssertEqual(data.localArtworkBytes, 8192)
+        XCTAssertEqual(data.artworkBytes, data.networkArtworkBytes + 8192)
+        data.clearLyricsCache()
+        let clearDeadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while data.isBusy && ContinuousClock.now < clearDeadline { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(data.localArtworkBytes, 0)
+        XCTAssertEqual(data.artworkBytes, data.networkArtworkBytes)
+        XCTAssertTrue(data.statusMessage.contains("已清理"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cover.path))
+    }
+
     func testCleaningCanvasRemovesOnlyDownloadedClips() async throws {
         let dir = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
