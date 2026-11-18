@@ -1075,13 +1075,20 @@ struct AppleMusicImmersiveV3BackdropView: View {
 
         // 歌手照片 when chosen and found; otherwise the cover.
         var sourceURL = track.artworkURL
+        var loadedPhoto: NSImage?
         if settings.v3BackdropSource == .artist, let photo = await V3ArtistImageStore.shared.imageURL(for: track) {
-            sourceURL = photo
+            // A photo that will not download falls back to the cover instead of a blank backdrop.
+            loadedPhoto = await ArtworkImageLoader.shared.image(for: photo)
+            if loadedPhoto != nil { sourceURL = photo }
         }
         guard !Task.isCancelled else { return }
         backdropImageURL = sourceURL
+        let loadedImage: NSImage?
+        if let loadedPhoto { loadedImage = loadedPhoto }
+        else if let sourceURL { loadedImage = await ArtworkImageLoader.shared.image(for: sourceURL) }
+        else { loadedImage = nil }
         guard let artworkURL = sourceURL,
-              let image = await ArtworkImageLoader.shared.image(for: artworkURL),
+              let image = loadedImage,
               let imageData = image.tiffRepresentation,
               !Task.isCancelled else {
             outgoingArtworkImage = nil

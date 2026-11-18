@@ -113,14 +113,28 @@ actor V3CanvasStore {
 /// Spotify's public oEmbed endpoint. Nothing about the user is sent.
 actor V3ArtistImageStore {
     static let shared = V3ArtistImageStore()
-    private var cache: [String: URL?] = [:]
+    private var cache: [String: URL] = [:]
+    /// A failed lookup used to be cached as "no photo" for the whole session, so one
+    /// network hiccup hid that artist's photo on every later song. Failures now only
+    /// pause retries briefly.
+    private var failedAt: [String: Date] = [:]
+    static let retryAfter: TimeInterval = 90
 
     func imageURL(for track: Track) async -> URL? {
         guard let artistID = await SpotifyTrackArtistResolver.shared.artistIDs(for: track).first else { return nil }
         if let known = cache[artistID] { return known }
-        let found = await Self.fetch(artistID: artistID)
-        cache[artistID] = found
-        return found
+        if let failed = failedAt[artistID], Date().timeIntervalSince(failed) < Self.retryAfter { return nil }
+        for attempt in 0..<2 {
+            if let found = await Self.fetch(artistID: artistID) {
+                cache[artistID] = found
+                failedAt.removeValue(forKey: artistID)
+                return found
+            }
+            guard attempt == 0, !Task.isCancelled else { break }
+            try? await Task.sleep(for: .milliseconds(1500))
+        }
+        if !Task.isCancelled { failedAt[artistID] = Date() }
+        return nil
     }
 
     private static func fetch(artistID: String) async -> URL? {
