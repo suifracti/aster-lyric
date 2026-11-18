@@ -74,6 +74,11 @@ public struct MenuBarLyricsPopoverView: View {
                             Text(snapshot.artistName ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer()
+                        if let loop = snapshot.lineLoop {
+                            LyricLineLoopButton(control: loop, accent: islandAccent) {
+                                controller.livePlaybackState?.useLyricLineLoopControl(loop)
+                            }
+                        }
                         if let entry = snapshot.keptLine {
                             Button {
                                 controller.openSettings(at: .init(reading: entry.passage))

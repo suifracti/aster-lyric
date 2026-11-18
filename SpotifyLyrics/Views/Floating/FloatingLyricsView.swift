@@ -78,6 +78,11 @@ struct FloatingLyricsView: View {
                     Button { state.nextTrack() } label: { Image(systemName: "forward.fill").frame(width: 24, height: 26) }
                         .help("下一首")
                         .accessibilityLabel("下一首")
+                    if let loop = lineLoopControl {
+                        LyricLineLoopButton(control: loop, accent: islandAccent) {
+                            state.useLyricLineLoopControl(loop)
+                        }
+                    }
                     HStack(spacing: 5) {
                         Image(systemName: windowController.interactionMode == .locked ? "lock.fill" : "line.3.horizontal")
                         Text(windowController.interactionMode == .locked ? "已锁定 · 解锁后可拖动" : "拖动移动")
@@ -129,6 +134,12 @@ struct FloatingLyricsView: View {
         .opacity(windowController.interactionMode == .passThrough || isHovering || windowController.isStylePanelVisible ? 1 : 0)
         .allowsHitTesting(windowController.interactionMode != .passThrough && (isHovering || windowController.isStylePanelVisible))
         .accessibilityHidden(windowController.interactionMode != .passThrough && !isHovering && !windowController.isStylePanelVisible)
+    }
+
+    private var lineLoopControl: PlaybackState.LyricLineLoopControl? {
+        let lines = state.liveLyrics
+        let current = LyricsTimeline.presentedLyrics(in: lines, currentIndex: state.liveCurrentLineIndex).current
+        return state.lyricLineLoopControl(for: current.map { lines[$0].id })
     }
 
     @ViewBuilder

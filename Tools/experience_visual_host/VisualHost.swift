@@ -557,7 +557,7 @@ private struct ExperienceFixtureRoot: View {
                 if let index = Int(ExperienceArguments.value("--loop-line", fallback: "")),
                    playback.liveLyrics.indices.contains(index), let identity = playback.currentTrackIdentity {
                     playback.toggleLyricLineLoop(lineID: playback.liveLyrics[index].id, documentIdentity: identity,
-                                                 documentRevision: playback.lyricsSession.revision)
+                                                 documentRevision: playback.liveLyricsSessionRevision, recording: playback.seekRecording)
                 }
                 if ProcessInfo.processInfo.arguments.contains("--sleep-timer") { playback.configureSleepTimer(.thirty) }
                 if ProcessInfo.processInfo.arguments.contains("--fullscreen-preview-isolation") {

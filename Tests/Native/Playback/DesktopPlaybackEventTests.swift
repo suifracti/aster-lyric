@@ -679,20 +679,49 @@ final class DesktopPlaybackEventTests: XCTestCase {
         state.startProvider()
         try await wait { state.hasLiveTrack }
         let identity = try XCTUnwrap(state.currentTrackIdentity)
-        let lines = [LyricLine(timestamp: 10, originalText: "One"), LyricLine(timestamp: 20, originalText: "Two")]
+        let lines = [LyricLine(timestamp: 10, originalText: "One"), LyricLine(timestamp: 20, originalText: "Two"),
+                     LyricLine(timestamp: 50, originalText: "")]
         state.lyricsSession.adopt(document: LyricsDocument(identity: identity, title: "Initial", artist: "Fixture",
             album: "Cache", duration: 240, lines: lines, isSynchronized: true, source: .manualCreate, confidence: 1))
-        state.toggleLyricLineLoop(lineID: lines[0].id, documentIdentity: identity, documentRevision: state.liveLyricsSessionRevision)
+        XCTAssertNil(state.lyricLineLoopControl(for: lines[2].id))
+        let preview = Track(title: "Unplayed search result", artist: "Fixture", album: "", duration: 180)
+        state.loadSearchResult(.init(id: "loop-preview", source: .local, track: preview, confidence: 1))
+        XCTAssertTrue(state.isShowingSearchPreview)
+        try await wait { MenuBarLyricsController.deriveSnapshot(from: state).lineLoop != nil }
+        let start = try XCTUnwrap(MenuBarLyricsController.deriveSnapshot(from: state).lineLoop)
+        XCTAssertFalse(start.isActive)
+        state.useLyricLineLoopControl(start)
         try await wait { provider.seeks.count == 1 }
+        XCTAssertTrue(state.isShowingSearchPreview)
+        XCTAssertEqual(state.loopedLyricLineID, lines[0].id)
+        XCTAssertEqual(state.lyricLineLoopSpan, 10...20)
+        let stop = try XCTUnwrap(state.lyricLineLoopControl(for: lines[1].id))
+        XCTAssertTrue(stop.isActive)
+        XCTAssertEqual(MenuBarLyricsController.deriveSnapshot(from: state).lineLoop, stop)
+        state.useLyricLineLoopControl(start)
+        XCTAssertEqual(state.loopedLyricLineID, lines[0].id)
         center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil,
             userInfo: ["Player State": "Playing", "Playback Position": 20])
         try await wait { provider.seeks.count == 2 }
         XCTAssertEqual(provider.seeks, [10, 10])
-        state.cancelLyricLineLoop()
+
+        state.seek(to: 15, source: "test-scrub")
+        XCTAssertEqual(state.loopedLyricLineID, lines[0].id)
+        state.useLyricLineLoopControl(stop)
         XCTAssertNil(state.loopedLyricLineID)
-        state.toggleLyricLineLoop(lineID: lines[0].id, documentIdentity: identity, documentRevision: state.liveLyricsSessionRevision)
+        state.clearSearchPreview()
+        state.toggleLyricLineLoop(lineID: lines[0].id, documentIdentity: identity,
+                                  documentRevision: state.liveLyricsSessionRevision, recording: state.seekRecording)
+        XCTAssertEqual(state.loopedLyricLineID, lines[0].id)
+        state.seek(to: 25, source: "test-scrub")
+        XCTAssertNil(state.loopedLyricLineID)
+        state.useLyricLineLoopControl(start)
+        XCTAssertEqual(state.loopedLyricLineID, lines[0].id)
         center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: payload())
         try await wait { state.currentTrack.title == "Event B" }
+        XCTAssertNil(state.loopedLyricLineID)
+        state.useLyricLineLoopControl(start)
+        state.useLyricLineLoopControl(stop)
         XCTAssertNil(state.loopedLyricLineID)
     }
 

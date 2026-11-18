@@ -41,6 +41,7 @@ public struct MenuBarLyricsSnapshot: Equatable, Sendable {
     var trackKey: String? = nil
     var lyricsVersionID: UUID? = nil
     var translationVersionID: UUID? = nil
+    var lineLoop: PlaybackState.LyricLineLoopControl? = nil
 
     var keptLine: V3FavoriteLines.Entry? {
         guard let trackKey, let currentLineText, !currentLineText.isEmpty else { return nil }
@@ -745,6 +746,9 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
         snapshot.lyricsVersionID = state.liveLyricsVersionID
         snapshot.translationVersionID = state.selectedTranslation?.quoteVersionID(
             originalID: snapshot.lyricsVersionID, lineIndex: snapshot.currentLineIndex, text: snapshot.currentTranslationText)
+        let lines = state.liveLyrics
+        let lineID = snapshot.currentLineIndex.flatMap { lines.indices.contains($0) ? lines[$0].id : nil }
+        snapshot.lineLoop = state.lyricLineLoopControl(for: lineID)
         return snapshot
     }
 

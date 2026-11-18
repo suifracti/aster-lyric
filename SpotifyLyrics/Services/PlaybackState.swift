@@ -89,8 +89,16 @@ public final class PlaybackState: ObservableObject {
     private let spotifyPlaybackModesWriter: (@MainActor (Bool?, PlayerRepeatMode?) async throws -> Void)?
     private var changingPlayerModes = false
     private var pendingPlayerModes: [Bool: PlayerPlaybackModes] = [:]
-    @Published public private(set) var loopedLyricLineID: UUID?
-    private var lyricLineLoop: (identity: TrackIdentity, revision: UInt64, start: TimeInterval, end: TimeInterval)?
+    struct LyricLineLoopControl: Equatable, Sendable {
+        fileprivate let lineID: UUID
+        fileprivate let recording: UInt64
+        fileprivate let revision: UInt64
+        let isActive: Bool
+
+        var title: String { isActive ? "取消单句循环" : "循环这一句" }
+    }
+
+    @Published private var lyricLineLoop: (control: LyricLineLoopControl, span: ClosedRange<TimeInterval>)?
 
     private let provider: PlaybackProvider
     private let desktopEvents: DesktopPlaybackEvents?
@@ -696,30 +704,63 @@ public final class PlaybackState: ObservableObject {
     }
 
     public func cancelLyricLineLoop() {
-        lyricLineLoop = nil
-        loopedLyricLineID = nil
+        if lyricLineLoop != nil { lyricLineLoop = nil }
     }
 
-    public func toggleLyricLineLoop(lineID: UUID, documentIdentity: TrackIdentity, documentRevision: UInt64) {
-        if loopedLyricLineID == lineID { cancelLyricLineLoop(); return }
-        guard canSeekDisplayedLyrics, !isShowingSearchPreview,
-              documentIdentity == currentTrackIdentity, documentRevision == lyricsSession.revision,
-              liveLyricsAreSynchronized,
-              let index = liveLyrics.firstIndex(where: { $0.id == lineID }),
-              let start = LyricsTimeline.validSeekTimestamp(for: liveLyrics[index],
-                  isSynchronized: true, duration: currentTrack.duration) else { return }
-        let end = liveLyrics.dropFirst(index + 1).first(where: { $0.timestamp > start })?.timestamp ?? currentTrack.duration
-        guard end > start else { return }
-        lyricLineLoop = (documentIdentity, documentRevision, start, end)
-        loopedLyricLineID = lineID
-        seek(to: max(0, start - presentationClock.presentationOffset), source: "lyric-line-loop")
-        playbackNotice = "循环这一句"
+    func toggleLyricLineLoop(lineID: UUID, documentIdentity: TrackIdentity, documentRevision: UInt64,
+                             recording: UInt64?) {
+        guard let recording, recording == seekRecording,
+              documentIdentity == currentTrackIdentity, documentRevision == liveLyricsSessionRevision,
+              let control = lyricLineLoopControl(for: lineID, stopCurrentFirst: false) else { return }
+        useLyricLineLoopControl(control)
     }
 
-    /// The looped line as a stretch of the song, for the progress bar.
+    /// Compact surfaces keep their stop button available even when reading another line.
+    func lyricLineLoopControl(for lineID: UUID?, stopCurrentFirst: Bool = true) -> LyricLineLoopControl? {
+        guard let recording = seekRecording else { return nil }
+        if let active = activeLyricLineLoop?.control, stopCurrentFirst || active.lineID == lineID {
+            return active
+        }
+        guard let lineID, lyricLineSpan(for: lineID) != nil else { return nil }
+        return LyricLineLoopControl(lineID: lineID, recording: recording,
+                                    revision: liveLyricsSessionRevision, isActive: false)
+    }
+
+    func useLyricLineLoopControl(_ control: LyricLineLoopControl) {
+        guard seekRecording == control.recording, liveLyricsSessionRevision == control.revision else { return }
+        if control.isActive {
+            if loopedLyricLineID == control.lineID { cancelLyricLineLoop() }
+            return
+        }
+        guard loopedLyricLineID != control.lineID, let span = lyricLineSpan(for: control.lineID) else { return }
+        let stop = LyricLineLoopControl(lineID: control.lineID, recording: control.recording,
+                                       revision: control.revision, isActive: true)
+        lyricLineLoop = (stop, span)
+        seek(to: max(0, span.lowerBound - presentationClock.presentationOffset), source: "lyric-line-loop")
+        playbackNotice = control.title
+    }
+
+    private func lyricLineSpan(for id: UUID) -> ClosedRange<TimeInterval>? {
+        let lines = liveLyrics
+        guard let index = lines.firstIndex(where: { $0.id == id }),
+              lines[index].originalText.contains(where: { !$0.isWhitespace }),
+              let start = LyricsTimeline.validSeekTimestamp(for: lines[index],
+                  isSynchronized: liveLyricsAreSynchronized, duration: currentTrack.duration) else { return nil }
+        let next = lines[(index + 1)...].first { $0.timestamp > start }?.timestamp ?? currentTrack.duration
+        let end = min(next, currentTrack.duration)
+        return end > start ? start...end : nil
+    }
+
+    private var activeLyricLineLoop: (control: LyricLineLoopControl, span: ClosedRange<TimeInterval>)? {
+        guard let loop = lyricLineLoop, seekRecording == loop.control.recording,
+              liveLyricsSessionRevision == loop.control.revision else { return nil }
+        return loop
+    }
+
+    public var loopedLyricLineID: UUID? { activeLyricLineLoop?.control.lineID }
+
     public var lyricLineLoopSpan: ClosedRange<TimeInterval>? {
-        guard loopedLyricLineID != nil, let loop = lyricLineLoop, loop.end > loop.start else { return nil }
-        return loop.start...loop.end
+        activeLyricLineLoop?.span
     }
 
     /// Where 上一句 / 下一句 lands. Back goes to the start of the line being
@@ -749,12 +790,12 @@ public final class PlaybackState: ObservableObject {
     }
 
     private func repeatLyricLineIfNeeded() -> Bool {
-        guard let loop = lyricLineLoop else { return false }
-        guard loop.identity == currentTrackIdentity, loop.revision == lyricsSession.revision else {
+        guard lyricLineLoop != nil else { return false }
+        guard let span = lyricLineLoopSpan else {
             cancelLyricLineLoop(); return false
         }
-        guard isPlaying, presentationTimeNow >= loop.end else { return false }
-        seek(to: max(0, loop.start - presentationClock.presentationOffset), source: "lyric-line-loop")
+        guard isPlaying, presentationTimeNow >= span.upperBound else { return false }
+        seek(to: max(0, span.lowerBound - presentationClock.presentationOffset), source: "lyric-line-loop")
         return true
     }
 
@@ -2187,6 +2228,10 @@ public final class PlaybackState: ObservableObject {
 
         listeningHistorySession?.noteExplicitSeek()
         let seekTime = time
+        if source != "lyric-line-loop", let span = lyricLineLoopSpan {
+            let lyricTime = seekTime + presentationClock.presentationOffset
+            if lyricTime < span.lowerBound || lyricTime >= span.upperBound { cancelLyricLineLoop() }
+        }
         let previousPosition = playbackPositionNow
         #if DEBUG
         Self.seekLogger.debug("accepted source=\(source, privacy: .public) time=\(String(format: "%.3f", seekTime), privacy: .public) identity=\(self.currentTrackIdentity?.stableKey ?? "none", privacy: .public)")
@@ -3300,6 +3345,7 @@ public final class PlaybackState: ObservableObject {
         let routeChanged = previousSource != snapshot.sourceIdentity || nextID != previousID
         if routeChanged {
             playbackRecordingRevision &+= 1
+            cancelLyricLineLoop()
             if playlistBrowser.currentTrackChanged(to: nextTrack) {
                 LyricsE2ELog.log("QUEUE skip consumed id=\(nextID ?? "unknown")")
                 runProviderCommand { try await $0.next() }

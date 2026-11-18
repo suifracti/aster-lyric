@@ -68,6 +68,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
         let instrumental: Bool
         let wordClock: LyricsPresentationClock?
         let loopedLineID: UUID?
+        let loopRecording: UInt64?
         let translationVersionID: UUID?
         let editableVersionID: UUID?
     }
@@ -90,7 +91,8 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
             preview: isPreview, instrumental: hasExplicitInstrumentalMark,
             wordClock: usesWordClock || LyricsTimeline.vocalCountdownWindow(lines: lines, currentIndex: index, isSynchronized: sync) != nil
                 ? state.presentationClock : nil,
-            loopedLineID: state.loopedLyricLineID, translationVersionID: isPreview ? nil : state.selectedTranslation?.record.id,
+            loopedLineID: state.loopedLyricLineID, loopRecording: isPreview ? nil : state.seekRecording,
+            translationVersionID: isPreview ? nil : state.selectedTranslation?.record.id,
             editableVersionID: editableVersionID)
     }
 
@@ -305,6 +307,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                     // reflow (observed as a permanent 100% CPU hang). A song
                     // is a small, bounded document, so eager placement is the
                     // safer tradeoff for this primary reading surface.
+                    let loopRecording = isPreview ? nil : state.seekRecording
                     AppleMusicImmersiveV3LyricsDocumentView(
                         lines: lines,
                         currentIndex: displayedIndex,
@@ -326,9 +329,10 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                         bigLineAvailableHeight: bigLine ? max(1, geometry.size.height - 32) : nil,
                         isPreview: isPreview,
                         loopedLineID: isPreview ? nil : state.loopedLyricLineID,
+                        loopRecording: loopRecording,
                         onToggleLoop: { lineID in
                             state.toggleLyricLineLoop(lineID: lineID, documentIdentity: seekDocumentIdentity,
-                                documentRevision: seekDocumentRevision)
+                                documentRevision: seekDocumentRevision, recording: loopRecording)
                         },
                         onSeek: { timestamp in
                             state.seekFromDisplayedLyrics(
@@ -578,6 +582,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     let bigLineAvailableHeight: CGFloat?
     let isPreview: Bool
     let loopedLineID: UUID?
+    let loopRecording: UInt64?
     let onToggleLoop: (UUID) -> Void
     let onSeek: (TimeInterval) -> Void
     let onRuby: ((String, String) -> Void)?
@@ -613,6 +618,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             && lhs.bigLineAvailableHeight == rhs.bigLineAvailableHeight
             && lhs.isPreview == rhs.isPreview
             && lhs.loopedLineID == rhs.loopedLineID
+            && lhs.loopRecording == rhs.loopRecording
             && (lhs.onEditLine != nil) == (rhs.onEditLine != nil)
     }
 
@@ -719,7 +725,9 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             if let onEditLine {
                 Button("编辑这一句", systemImage: "square.and.pencil") { onEditLine(index) }
             }
-            if !isPreview, LyricsTimeline.validSeekTimestamp(for: line, isSynchronized: synchronized, duration: duration) != nil {
+            if loopRecording != nil, line.originalText.contains(where: { !$0.isWhitespace }),
+               let start = LyricsTimeline.validSeekTimestamp(for: line, isSynchronized: synchronized, duration: duration),
+               start < duration {
                 Button(loopedLineID == line.id ? "取消循环" : "循环这一句", systemImage: "repeat") { onToggleLoop(line.id) }
                 Divider()
             }

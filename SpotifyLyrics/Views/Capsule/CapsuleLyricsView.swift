@@ -417,6 +417,7 @@ struct CapsuleLyricsView: View {
                         .font(.system(size: 10)).foregroundStyle(.white.opacity(0.68)).lineLimit(1)
                 }
                 Spacer(minLength: 4)
+                lineLoopButton(for: line)
                 if let line, let entry = held == nil ? quote(line, index: live.currentIndex) : pinnedLine?.entry {
                     Button {
                         pinnedLine = held == nil ? PinnedLine(line: line, entry: entry, voiceLabel: voice) : nil
@@ -768,6 +769,7 @@ struct CapsuleLyricsView: View {
                         .lineLimit(1)
                 }
                 Spacer()
+                lineLoopButton(for: selection.current)
                 transportButton("backward.end.fill", help: "上一首") { state.previousTrack() }
                 transportButton(state.isPlaying ? "pause.fill" : "play.fill", help: "播放/暂停") {
                     state.togglePlayPause()
@@ -864,6 +866,7 @@ struct CapsuleLyricsView: View {
                         .lineLimit(1)
                 }
                 Spacer()
+                lineLoopButton(for: selection.current)
                 transportButton("backward.end.fill", help: "上一首") { state.previousTrack() }
                 transportButton(state.isPlaying ? "pause.fill" : "play.fill", help: "播放/暂停") {
                     state.togglePlayPause()
@@ -930,6 +933,16 @@ struct CapsuleLyricsView: View {
             }
             .font(.system(size: 10, weight: .medium, design: .rounded))
             .buttonStyle(.borderless)
+        }
+    }
+
+    @ViewBuilder
+    private func lineLoopButton(for line: LyricLine?) -> some View {
+        let displayedID = preferredText(line) != nil ? line?.id : nil
+        if let loop = state.lyricLineLoopControl(for: displayedID) {
+            LyricLineLoopButton(control: loop, accent: islandAccent) {
+                state.useLyricLineLoopControl(loop)
+            }
         }
     }
 

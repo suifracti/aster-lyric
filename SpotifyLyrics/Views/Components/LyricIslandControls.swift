@@ -594,6 +594,26 @@ struct LyricIslandSceneSettingsPicker: View {
 
 // MARK: - Shared transport button
 
+struct LyricLineLoopButton: View {
+    let control: PlaybackState.LyricLineLoopControl
+    var accent: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "repeat")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(control.isActive ? AnyShapeStyle(accent) : AnyShapeStyle(.secondary))
+                .frame(width: 24, height: 26)
+                .background(control.isActive ? accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(control.title)
+        .accessibilityLabel(control.title)
+    }
+}
+
 /// One transport look for the main player card, the window-edge controls and
 /// the menu-bar popover: the centre action is a filled disc, the neighbours
 /// are bare glyphs that gain a soft halo on hover. Hit targets never shrink
