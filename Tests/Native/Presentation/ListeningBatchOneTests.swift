@@ -315,6 +315,26 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertNil(PlaybackState.heldPosition(reported: 30, isPlaying: true, pending: pending, now: 53), "held at most 2.2 s")
     }
 
+    func testProgressDraftCannotSeekTheNextRecording() {
+        var draft = PlaybackSeekDraft()
+        draft.begin(for: "first")
+        draft.update(30, for: "first")
+        XCTAssertEqual(draft.position(for: "first"), 30)
+        draft.update(55, for: "second")
+        XCTAssertNil(draft.position(for: "second"))
+        XCTAssertNil(draft.finish(for: "second"))
+
+        draft.update(22, for: "first")
+        draft.invalidate()
+        draft.update(70, for: "first")
+        XCTAssertNil(draft.finish(for: "first"), "Returning to the same recording still cancels the original drag")
+
+        draft.update(33, for: "second")
+        draft.begin(for: "second")
+        XCTAssertEqual(draft.finish(for: "second"), 33, "A native slider can write its value before starting an edit")
+        XCTAssertNil(draft.finish(for: "second"), "A completed drag commits only once")
+    }
+
     func testLyricImageryFindsPlainKeywordsOnly() {
         XCTAssertEqual(V3LyricImagery.detect(["窗外下着雨"]), .rain)
         XCTAssertEqual(V3LyricImagery.detect(["粉雪舞う季節"]), .snow)

@@ -146,6 +146,7 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
 
     func hide() {
         expansionInteraction.reset()
+        isSeeking = false
         menuIsPresented = false
         hitRegionTask?.cancel()
         hoverCollapseTask?.cancel()
@@ -215,6 +216,7 @@ final class CapsuleLyricsWindowController: NSObject, ObservableObject, NSWindowD
     func collapse() {
         guard isVisible else { return }
         menuIsPresented = false
+        isSeeking = false
         expansionInteraction.reset()
         cancelHoverCollapse()
         removeOutsideClickMonitors()

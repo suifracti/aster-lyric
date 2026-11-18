@@ -1,6 +1,40 @@
 import AppKit
 import SwiftUI
 
+/// A pending progress change belongs to the recording visible when it began.
+struct PlaybackSeekDraft {
+    private struct Gesture {
+        var trackKey: String?
+        var position: Double?
+    }
+    private var gesture: Gesture?
+
+    func position(for trackKey: String?) -> Double? {
+        guard let trackKey, gesture?.trackKey == trackKey else { return nil }
+        return gesture?.position
+    }
+
+    mutating func begin(for trackKey: String?) {
+        if gesture == nil || gesture?.trackKey != trackKey { gesture = Gesture(trackKey: trackKey) }
+    }
+
+    mutating func update(_ position: Double, for trackKey: String?) {
+        if gesture == nil { begin(for: trackKey) }
+        guard let trackKey, gesture?.trackKey == trackKey else { return }
+        gesture?.position = position
+    }
+
+    mutating func invalidate() {
+        if gesture != nil { gesture = Gesture(trackKey: nil) }
+    }
+
+    mutating func finish(for trackKey: String?) -> Double? {
+        let target = position(for: trackKey)
+        gesture = nil
+        return target
+    }
+}
+
 /// One interaction for numbers throughout the app. Playback seek bars do not use this.
 /// Text editing commits once, clamps to a finite range, and never writes a partial string.
 struct V3NumericSlider: View {

@@ -100,6 +100,7 @@ public struct MenuBarLyricsPopoverView: View {
                     if let state = controller.livePlaybackState, state.currentTrack.duration > 0 {
                         MenuBarProgressRail(state: state, accent: islandAccent,
                             synchronized: { if case .synchronized = snapshot.state { return true }; return false }())
+                            .id(snapshot.trackKey)
                     }
                     HStack(spacing: 14) {
                         transportButton("backward.fill", title: "上一首", enabled: snapshot.canControlPlayback) {
@@ -569,10 +570,12 @@ private struct MenuBarProgressRail: View {
     let state: PlaybackState
     let accent: Color
     let synchronized: Bool
-    @State private var draft: Double?
+    @State private var seekDraft = PlaybackSeekDraft()
     @State private var hovering = false
 
     private var duration: Double { max(0.1, state.currentTrack.duration) }
+    private var trackKey: String? { state.currentTrackIdentity?.stableKey }
+    private var draft: Double? { seekDraft.position(for: trackKey) }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 0.25, paused: !state.isPlaying || draft != nil)) { _ in
@@ -597,10 +600,13 @@ private struct MenuBarProgressRail: View {
                     .frame(maxHeight: .infinity)
                     .contentShape(Rectangle())
                     .gesture(DragGesture(minimumDistance: 0)
-                        .onChanged { value in draft = min(max(value.location.x / width, 0), 1) * duration }
+                        .onChanged { value in
+                            seekDraft.update(min(max(value.location.x / width, 0), 1) * duration, for: trackKey)
+                        }
                         .onEnded { _ in
-                            if let draft { state.seek(to: state.lyricSnappedSeekTarget(draft), source: "menu-bar-progress") }
-                            draft = nil
+                            if let target = seekDraft.finish(for: trackKey) {
+                                state.seek(to: state.lyricSnappedSeekTarget(target), source: "menu-bar-progress")
+                            }
                         })
                     .onHover { inside in withAnimation(.easeOut(duration: 0.14)) { hovering = inside } }
                     .animation(.easeOut(duration: 0.14), value: height)
@@ -622,5 +628,6 @@ private struct MenuBarProgressRail: View {
                 state.seek(to: min(max(position + step, 0), duration), source: "menu-bar-progress")
             }
         }
+        .onChange(of: trackKey) { _, _ in seekDraft.invalidate() }
     }
 }

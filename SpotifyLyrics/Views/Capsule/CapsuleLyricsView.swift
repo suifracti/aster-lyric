@@ -49,10 +49,11 @@ struct CapsuleLyricsView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var islandAccent: Color = .accentColor
-    @State private var draftPosition: Double?
+    @State private var seekDraft = PlaybackSeekDraft()
 
     @State private var pinnedLine: PinnedLine?
-    @State private var seekingTrackKey: String?
+    private var seekTrackKey: String? { state.currentTrackIdentity?.stableKey }
+    private var draftPosition: Double? { seekDraft.position(for: seekTrackKey) }
 
     private struct PinnedLine {
         let line: LyricLine
@@ -130,8 +131,21 @@ struct CapsuleLyricsView: View {
     private var progressBinding: Binding<Double> {
         Binding(
             get: { draftPosition ?? min(max(0, state.currentTime), duration) },
-            set: { draftPosition = min(max(0, $0), duration) }
+            set: { seekDraft.update(min(max(0, $0), duration), for: seekTrackKey) }
         )
+    }
+
+    private func editProgress(_ editing: Bool, source: String) {
+        windowController.setSeeking(editing)
+        if editing { seekDraft.begin(for: seekTrackKey) }
+        else if let target = seekDraft.finish(for: seekTrackKey) { state.seek(to: target, source: source) }
+    }
+
+    private var standardProgressSlider: some View {
+        Slider(value: progressBinding, in: 0...duration, onEditingChanged: { editProgress($0, source: "capsule-slider") })
+            .controlSize(.small)
+            .disabled(!state.canControlSpotify)
+            .accessibilityLabel("播放进度")
     }
 
     var body: some View {
@@ -160,11 +174,12 @@ struct CapsuleLyricsView: View {
         .accessibilityLabel("顶部灵动岛")
         .onChange(of: windowController.presentationState) { _, mode in
             if mode == .collapsed { pinnedLine = nil }
+            if mode != .expanded { seekDraft = PlaybackSeekDraft() }
         }
         .onChange(of: state.liveLyricsVersionID) { _, _ in pinnedLine = nil }
         .onChange(of: state.currentTrackIdentity) { _, _ in
             pinnedLine = nil
-            draftPosition = nil
+            seekDraft.invalidate()
             windowController.setSeeking(false)
         }
         .lyricIslandSongTint(artworkURL: state.currentTrack.artworkURL, accent: $islandAccent)
@@ -536,16 +551,7 @@ struct CapsuleLyricsView: View {
                 // while drawing the track ourselves so the progress remains
                 // legible against the near-black v4 island.
                 Slider(value: progressBinding, in: 0...duration, onEditingChanged: { editing in
-                    windowController.setSeeking(editing)
-                    if editing {
-                        seekingTrackKey = state.currentTrackIdentity?.stableKey
-                    } else {
-                        if let seekingTrackKey, seekingTrackKey == state.currentTrackIdentity?.stableKey, let draftPosition {
-                            state.seek(to: draftPosition, source: "capsule-v4-slider")
-                        }
-                        seekingTrackKey = nil
-                        self.draftPosition = nil
-                    }
+                    editProgress(editing, source: "capsule-v4-slider")
                 })
                 .controlSize(.mini)
                 .disabled(!state.canControlSpotify)
@@ -773,14 +779,7 @@ struct CapsuleLyricsView: View {
             }
 
             HStack(spacing: 8) {
-                Slider(value: progressBinding, in: 0...duration, onEditingChanged: { editing in
-                    windowController.setSeeking(editing)
-                    if !editing, let draftPosition {
-                        state.seek(to: draftPosition, source: "capsule-slider")
-                        self.draftPosition = nil
-                    }
-                })
-                .controlSize(.small)
+                standardProgressSlider
 
                 Text("\(formatTime(draftPosition ?? state.currentTime)) / \(formatTime(duration))")
                     .font(.system(size: 10, design: .monospaced))
@@ -894,14 +893,7 @@ struct CapsuleLyricsView: View {
             }
 
             HStack(spacing: 8) {
-                Slider(value: progressBinding, in: 0...duration, onEditingChanged: { editing in
-                    windowController.setSeeking(editing)
-                    if !editing, let draftPosition {
-                        state.seek(to: draftPosition, source: "capsule-slider")
-                        self.draftPosition = nil
-                    }
-                })
-                .controlSize(.small)
+                standardProgressSlider
 
                 Text("\(formatTime(draftPosition ?? state.currentTime)) / \(formatTime(duration))")
                     .font(.system(size: 10, design: .monospaced))
