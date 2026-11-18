@@ -573,6 +573,28 @@ public enum LyricsLoadState: Equatable {
 }
 
 public enum LyricsTimeline {
+    /// Two singers can carry separate timing rows for the same unison phrase.
+    /// Keep the source rows and return only their presentation aliases.
+    static func duetUnisonDuplicates(in lines: [LyricLine]) -> [Int: Int] {
+        var duplicates: [Int: Int] = [:]
+        for index in lines.indices.dropFirst() {
+            let first = lines[index - 1]
+            let second = lines[index]
+            let text = first.originalText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let firstSinger = first.performerID, let secondSinger = second.performerID,
+                  firstSinger != secondSinger, !text.isEmpty,
+                  text == second.originalText.trimmingCharacters(in: .whitespacesAndNewlines),
+                  abs(first.timestamp - second.timestamp) <= 0.15,
+                  let firstEnd = first.endTime, let secondEnd = second.endTime else { continue }
+            let overlap = min(firstEnd, secondEnd) - max(first.timestamp, second.timestamp)
+            let shortest = min(firstEnd - first.timestamp, secondEnd - second.timestamp)
+            if shortest > 0, overlap >= shortest * 0.8 {
+                duplicates[index] = duplicates[index - 1] ?? index - 1
+            }
+        }
+        return duplicates
+    }
+
     struct VocalCountdownWindow: Equatable {
         let lineIndex: Int
         let start: TimeInterval

@@ -655,6 +655,18 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertNil(FullScreenLyricsWindowController.targetIndex(home: 0, count: 0, prefersOther: true))
     }
 
+    func testDuetUnisonCoalescesOnlyTheSamePhraseAtTheSameMoment() {
+        let lines = [
+            LyricLine(timestamp: 59.558, originalText: "別の言葉", endTime: 61.251, performerID: "v2"),
+            LyricLine(timestamp: 59.674, originalText: "違う言葉", endTime: 61.314, performerID: "v1"),
+            LyricLine(timestamp: 61.385, originalText: "二人で歌う", endTime: 62.998, performerID: "v2"),
+            LyricLine(timestamp: 61.431, originalText: "二人で歌う", endTime: 62.931, performerID: "v1"),
+            LyricLine(timestamp: 64, originalText: "二人で歌う", endTime: 65.9, performerID: "v2")
+        ]
+        XCTAssertEqual(LyricsTimeline.duetUnisonDuplicates(in: lines), [3: 2])
+        XCTAssertEqual(lines[3].performerID, "v1")
+    }
+
     // MARK: 和声
 
     func testTTMLReadsMainVoiceTranslationsAndRomanizationFromTheFile() throws {

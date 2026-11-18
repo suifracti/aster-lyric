@@ -274,7 +274,9 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
         seekDocumentRevision: UInt64,
         seekDocumentSource: PlaybackState.LyricsSeekDocumentSource
     ) -> some View {
-        GeometryReader { geometry in
+        let duplicates = synchronized ? LyricsTimeline.duetUnisonDuplicates(in: lines) : [:]
+        let displayedIndex = currentIndex.map { duplicates[$0] ?? $0 }
+        return GeometryReader { geometry in
             ScrollViewReader { proxy in
                 let bigLine = settings.v3BigLineModeEnabled && synchronized
                 let savedVersion = isPreview ? nil : state.liveLyricsVersionID
@@ -294,7 +296,8 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                     // safer tradeoff for this primary reading surface.
                     AppleMusicImmersiveV3LyricsDocumentView(
                         lines: lines,
-                        currentIndex: currentIndex,
+                        currentIndex: displayedIndex,
+                        hiddenDuetRows: Set(duplicates.keys),
                         synchronized: synchronized,
                         language: language,
                         trackStableKey: trackStableKey,
@@ -405,13 +408,13 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                 .onReceive(V3JapaneseReadingCache.shared.$revision.dropFirst()) { _ in
                     // Reading layers arrive together; keep the active line at the same anchor.
                     DispatchQueue.main.async {
-                        scrollToCurrentLine(using: proxy, lines: lines, currentIndex: currentIndex,
+                        scrollToCurrentLine(using: proxy, lines: lines, currentIndex: displayedIndex,
                             synchronized: synchronized, animated: false, anchorY: scrollAnchor)
                     }
                 }
                 .onChange(of: settings.v3BigLineModeEnabled) { _, _ in
                     DispatchQueue.main.async {
-                        scrollToCurrentLine(using: proxy, lines: lines, currentIndex: currentIndex,
+                        scrollToCurrentLine(using: proxy, lines: lines, currentIndex: displayedIndex,
                             synchronized: synchronized, animated: false, anchorY: scrollAnchor)
                     }
                 }
@@ -419,14 +422,14 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                     scrollToCurrentLine(
                         using: proxy,
                         lines: lines,
-                        currentIndex: currentIndex,
+                        currentIndex: displayedIndex,
                         synchronized: synchronized,
                         animated: false,
                         anchorY: scrollAnchor
                     )
                     prewarmUpcoming(around: currentIndex, lines: lines, language: language, trackStableKey: trackStableKey, artistDisplay: artistDisplay)
                 }
-                .onChange(of: currentIndex) { _, newIndex in
+                .onChange(of: displayedIndex) { _, newIndex in
                     scrollToCurrentLine(
                         using: proxy,
                         lines: lines,
@@ -441,7 +444,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                     scrollToCurrentLine(
                         using: proxy,
                         lines: lines,
-                        currentIndex: currentIndex,
+                        currentIndex: displayedIndex,
                         synchronized: synchronized,
                         animated: false,
                         anchorY: scrollAnchor
@@ -452,7 +455,7 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
                     scrollToCurrentLine(
                         using: proxy,
                         lines: lines,
-                        currentIndex: currentIndex,
+                        currentIndex: displayedIndex,
                         synchronized: synchronized,
                         animated: true,
                         anchorY: scrollAnchor
@@ -538,6 +541,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
 
     let lines: [LyricLine]
     let currentIndex: Int?
+    let hiddenDuetRows: Set<Int>
     let synchronized: Bool
     let language: String?
     let trackStableKey: String?
@@ -569,6 +573,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     ) -> Bool {
         lhs.lines == rhs.lines
             && lhs.currentIndex == rhs.currentIndex
+            && lhs.hiddenDuetRows == rhs.hiddenDuetRows
             && lhs.synchronized == rhs.synchronized
             && lhs.language == rhs.language
             && lhs.trackStableKey == rhs.trackStableKey
@@ -612,7 +617,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
         let countdown = countdownWindow
         VStack(alignment: textAlignment.lyricHorizontalAlignment, spacing: rowSpacing) {
             ForEach(Array(lines.enumerated()).filter {
-                bigLineAvailableHeight == nil || $0.offset >= (currentIndex ?? 0)
+                !hiddenDuetRows.contains($0.offset) && (bigLineAvailableHeight == nil || $0.offset >= (currentIndex ?? 0))
             }, id: \.element.id) { index, line in
                 if let window = countdown, window.lineIndex == index {
                     V3VocalCountdown(window: window, clock: presentationClock)
@@ -623,7 +628,6 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
                     Text(name)
                         .font(.system(size: compact ? 10 : 11, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.5))
-                        .padding(.leading, voiceIndent(for: line))
                         .padding(.bottom, -rowSpacing * 0.6)
                         .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
                         .accessibilityLabel("演唱：\(name)")
@@ -642,17 +646,11 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
         .padding(.trailing, textAlignment == .trailing ? 0 : (compact ? 10 : 18) * (textAlignment == .center ? 0.5 : 1))
     }
 
-    /// The second voice of a duet is set in by 12% of the column (Lyrimuse
-    /// sets duets apart the same way), only for left-aligned lyrics.
-    private func voiceIndent(for line: LyricLine) -> CGFloat {
-        guard textAlignment == .leading, let voice = voices.voiceIndex(for: line.performerID), voice > 0 else { return 0 }
-        return availableWidth * 0.12
-    }
-
     private func singerChange(at index: Int) -> String? {
         guard lines.indices.contains(index), voices.voiceIndex(for: lines[index].performerID) != nil,
               let name = LyricAgentPresentationMap.displayName(lines[index].performerID) else { return nil }
-        if index > 0, lines[index - 1].performerID == lines[index].performerID { return nil }
+        if let previous = (0..<index).last(where: { !hiddenDuetRows.contains($0) }),
+           lines[previous].performerID == lines[index].performerID { return nil }
         return name
     }
 
@@ -666,7 +664,6 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     @ViewBuilder
     private func row(for line: LyricLine, index: Int) -> some View {
         let isActive = synchronized && currentIndex == index
-        let indent = voiceIndent(for: line)
         let chorusGlow = isActive && settings.v3ChorusEmphasis
             && LyricsChorus.contains(index, lines: lines, duration: duration)
         let distance = synchronized && currentIndex != nil
@@ -677,7 +674,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
             isActive: isActive,
             distance: readingScene == .linerNotes ? 0 : (readingScene == .focusedLyrics ? min(1, distance) : distance),
             isSynchronized: synchronized,
-            availableWidth: max(1, (bigLineAvailableHeight == nil ? availableWidth : availableWidth - 20) - indent),
+            availableWidth: max(1, bigLineAvailableHeight == nil ? availableWidth : availableWidth - 20),
             compact: compact,
             preferences: preferences,
             language: language,
@@ -690,7 +687,6 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
         .equatable()
         // 副歌: the sung line in the chorus carries the cover's colour as light.
         .shadow(color: chorusGlow ? coverAccent.opacity(0.55) : .clear, radius: 16)
-        .padding(.leading, indent)
         // 换句波浪: the rows below the new line trail and settle one after another.
         .modifier(V3WaveLag(trigger: currentIndex ?? -1, steps: index - (currentIndex ?? index),
                             enabled: synchronized && bigLineAvailableHeight == nil && readingScene != .linerNotes))
