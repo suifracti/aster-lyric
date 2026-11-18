@@ -17,6 +17,7 @@ struct LibraryCompareRequest: Identifiable, Sendable {
     let references: [LibraryCompareVersion]
     let firstReference: UUID
     let playing: Playing?
+    private let readingLineIndex: Int?
 
     struct Playing: Sendable {
         let identity: TrackIdentity
@@ -29,7 +30,8 @@ struct LibraryCompareRequest: Identifiable, Sendable {
         }
     }
 
-    init?(entry: PersonalLyricsLibraryEntry, baseID: UUID, versions: [LibraryCompareVersion], playing: Playing? = nil) {
+    init?(entry: PersonalLyricsLibraryEntry, baseID: UUID, versions: [LibraryCompareVersion],
+          playing: Playing? = nil, reading: LibraryPassageTarget? = nil) {
         guard let base = versions.first(where: { $0.id == baseID }) else { return nil }
         let references = versions.filter { $0.id != baseID }.sorted { $0.updatedAt > $1.updatedAt }
         guard let initial = references.first(where: { $0.id == base.parentID })
@@ -39,6 +41,14 @@ struct LibraryCompareRequest: Identifiable, Sendable {
         self.base = base
         self.references = references
         firstReference = initial.id
+        readingLineIndex = reading?.readingLine(for: baseID, trackKey: entry.id)
+    }
+
+    func readingRow(in comparison: LibraryVersionComparison, baseID: UUID, referenceID: UUID) -> LibraryVersionComparison.Row? {
+        guard let readingLineIndex else { return nil }
+        if baseID == base.id { return comparison.rows.first { $0.base?.id == readingLineIndex } }
+        if referenceID == base.id { return comparison.rows.first { $0.reference?.id == readingLineIndex } }
+        return nil
     }
 }
 

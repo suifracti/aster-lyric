@@ -276,6 +276,7 @@ public struct LibraryTranslationRevisionDraft: Identifiable {
     public let source: StoredTranslationVersion
     public var lines: [String]
     public var targetLanguage: String
+    var openingLineIndex: Int?
     private let originalLanguage: String
     private let originalLines: [String]
 

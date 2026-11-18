@@ -101,8 +101,8 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     @Published var translationDeletionCandidate: TranslationDeletion?
     @Published var comparison: LibraryCompareRequest?
 
-    func presentComparison(_ source: LibraryPassageSource, detail: PersonalLyricsLibraryTrackDetail) {
-        comparison = makeComparison(source, detail: detail)
+    func presentComparison(_ source: LibraryPassageSource, detail: PersonalLyricsLibraryTrackDetail, reading: LibraryPassageTarget? = nil) {
+        comparison = makeComparison(source, detail: detail, reading: reading)
     }
 
     func playingComparison(identity: TrackIdentity, lyricsID: UUID, selected: UUID?,
@@ -120,7 +120,8 @@ public final class PersonalLyricsLibraryService: ObservableObject {
 
     private func makeComparison(_ source: LibraryPassageSource, detail: PersonalLyricsLibraryTrackDetail,
                                 playing: LibraryCompareRequest.Playing? = nil,
-                                available: [UUID: StoredTranslationVersion]? = nil) -> LibraryCompareRequest? {
+                                available: [UUID: StoredTranslationVersion]? = nil,
+                                reading: LibraryPassageTarget? = nil) -> LibraryCompareRequest? {
         let choices: [LibraryCompareVersion], selected: UUID
         switch source {
         case let .original(id):
@@ -141,7 +142,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
             }
         default: return nil
         }
-        return .init(entry: detail.entry, baseID: selected, versions: choices, playing: playing)
+        return .init(entry: detail.entry, baseID: selected, versions: choices, playing: playing, reading: reading)
     }
 
     func compare(trackKey: String, base: LibraryCompareVersion, with reference: LibraryCompareVersion) async throws -> LibraryVersionComparison {
@@ -261,14 +262,16 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         }
     }
 
-    public func beginTranslationRevision(version: PersonalTranslationVersionItem, entry: PersonalLyricsLibraryEntry) {
+    public func beginTranslationRevision(version: PersonalTranslationVersionItem, entry: PersonalLyricsLibraryEntry,
+                                         reading: LibraryPassageTarget? = nil) {
         guard !revisionBusy else { return }
         revisionBusy = true
         revisionError = nil
         Task {
             defer { revisionBusy = false }
             do {
-                translationRevisionDraft = try await translationDraft(for: version, entry: entry)
+                translationRevisionDraft = try await translationDraft(for: version, entry: entry,
+                    openingLineIndex: reading?.readingLine(for: version.id, trackKey: entry.id))
             } catch {
                 statusMessage = "打开译文编辑失败：\(error.localizedDescription)"
             }
@@ -276,7 +279,8 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     }
 
     func translationDraft(for version: PersonalTranslationVersionItem, entry: PersonalLyricsLibraryEntry,
-                          picking indices: Set<Int> = [], from reference: PersonalTranslationVersionItem? = nil) async throws -> LibraryTranslationRevisionDraft {
+                          picking indices: Set<Int> = [], from reference: PersonalTranslationVersionItem? = nil,
+                          openingLineIndex: Int? = nil) async throws -> LibraryTranslationRevisionDraft {
         let track = entry.libraryTrack
         try await repository.prepare()
         guard let lyrics = try await repository.loadEditableVersion(versionID: version.lyricsVersionID, track: track,
@@ -293,6 +297,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         var draft = LibraryTranslationRevisionDraft(track: track, lyricsSource: lyrics, source: try await stored(version),
             preferredLanguage: defaults.string(forKey: AppSettingsStore.Key.aiTargetLanguage) ?? "zh-Hans")
         if let reference { try draft.takeLines(indices, from: await stored(reference)) }
+        draft.openingLineIndex = openingLineIndex.flatMap { draft.lines.indices.contains($0) ? $0 : nil }
         return draft
     }
 

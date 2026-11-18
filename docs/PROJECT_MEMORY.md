@@ -12,7 +12,7 @@
 | 清理缓存、Apple Music 封面未计入空间、另一个窗口打开时也要备份最新歌词 | L-047 · SettingsDataController、AppleMusicArtworkCache、writeDatabaseSnapshot |
 | 数据包导入一半报错、版本串到别首歌、确认旧的同步文件 | L-047 · previewTrackImport、importPersonalDataPackage、PersonalDataSyncStore |
 | 从其他应用选字查歌词、⌘K 找回一句、搜到副歌却只打开歌曲档案 | L-043、L-046 · WorkspaceQuickFind、searchLibraryPassages |
-| 两份稿逐句对照、改译时借用另一版的句子、重复副歌错位 | L-049 · LibraryVersionComparison、LibraryTranslationRevisionDraft |
+| 两份稿逐句对读、改译时借用另一版的句子、读到第二次副歌后对读或编辑却跳回开头 | L-049 · LibraryCompareRequest、LibraryVersionComparison、LibraryTranslationRevisionDraft |
 | 编辑器打开停在开头、重开丢草稿、试听跳到别首歌 | L-049 · prepareLyricsEditor、focusLine、auditionLyricsEditorLine |
 | 从 Finder 打开歌词文件、给本机录音补稿、导出手里的版本、入库后合声消失 | L-032、L-048 · LyricFileDocument、LocalLyricsFile、PortableLyricsEdition |
 | 没放歌时写手稿、从歌词库版本开稿、调整段落或接着修上一稿 | L-050 · LyricManuscript、LyricWritingDesk、ManuscriptStanzas |
@@ -292,6 +292,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 2026-11-19：V3 主进度条与封面进度原先直接用松手时的当前歌曲，边缘取同一个歌曲键也挡不住 A→B→A。改由 `PlaybackState.seekRecording` 区分播放录音的切换，主窗、全屏、经典、Direction D、边缘、封面、状态栏和灵动岛共用 `PlaybackSeekDraft`。同曲暂停、更新位置或收到封面保留这次拖动。Mac 原生滑条仍支持先写值再开始、键盘/辅助功能只提交一次，边缘胶囊也有独立的辅助功能调整入口。指令排队后若录音已换，播放器侧调用会跳过。桌面事件桩送出 A→B→A，原拖动无法提交。隔离真窗主进度从 18 调到 73 秒，界面读到 1:13，提供方只收到一次调用。
 
 同轮重新执行上次参与比较的 15 个 Python 入口。7 个失败中，拆分后的行、进度和预览检查重新指向当前实现；经典几何运行实际代码；背景迁移、试听选词与听歌统计/历史读失败恢复改用真模块 XCTest。已逐一执行 13 个独立命令和 2 个迁移包装命令，均通过。关联原生检查 130 项通过，1 项按原条件跳过。
+
+2026-11-19 后续复查 13 个独立 Python 入口。只剩 `v3_redesign_contract.py` 仍引用双行菜单栏改造前的 `animationDistance`。断言改为检查两行按各自图宽计算、沿用既有的滚动速度规则并调用动画，复跑通过。其余 12 个独立入口已直接通过。调用 Xcode 的入口和需要数据库参数的矩阵另由各自检查覆盖。
 
 ## L-016 一套界面贴合功能：行式面板、折叠、统一播放栏（Round 14）
 
@@ -927,6 +929,8 @@ TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、
 2026-11-19：播放入口按采用的原词版本和原始行序定位编辑器。V3 右键「编辑这一句」可跳到任意可见原词行，同文副歌仍按行区分。编辑稿记住所选行，重开会保留未保存稿，切到另一首前可明确选择放弃。试听、播放及打点核对编辑稿所属录音和会话，试听按稿里原始时间，标记用实时录音时钟。隔离原生从 34 行的样例右键第二次副歌，选中第 28 行，试听读回 162 秒。播放器桩核了同句多次出现、重开、标记不自动前进与切歌后试听被拒。
 
 两个 V3 歌词滚动与布局合约原先仍在拆分后的窗口文件找视图。现对准 `AppleMusicImmersiveV3Lyrics.swift`，检查按折叠后的可见行序滚动，保留对普通 `VStack` 和读取行序的位置断言。
+
+2026-11-19：从阅读页进入版本档案再对读时，沿录音、版本 UUID 与原始行号定位，互换底稿和参照稿后仍跟随原来那版。刚读的句子若在两版相同，对读会展开全文定位。选择参照译文带入编辑时，从对应原词行打开，仍保存为独立人工子稿。隔离真窗从 30 行样例命中第 20 行的第二次副歌，档案「对读译文」标出刚才阅读的位置，带入后编辑器第 20 行显示参照译文。65 项定向原生检查通过、1 项环境跳过，覆盖换底稿后同文副歌的原行号和保留已采用版本。
 
 ## L-050 写手稿、编排段落和存人工版本（2026-11-18）
 

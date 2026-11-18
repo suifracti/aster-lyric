@@ -168,6 +168,17 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         let selected = try await repository.loadPersonalLibraryTrackDetail(stableKey: identity.stableKey)
         XCTAssertEqual(selected?.entry.activeLyricsVersionID, replacementID)
 
+        let detail = try XCTUnwrap(selected)
+        let archive = opened.archiveTarget(from: target, position: secondChorus)
+        library.presentComparison(.original(originalID), detail: detail, reading: archive)
+        let request = try XCTUnwrap(library.comparison)
+        let alternate = try XCTUnwrap(request.references.first)
+        let comparison = try await library.compare(trackKey: identity.stableKey, base: request.base, with: alternate)
+        let focus = request.readingRow(in: comparison, baseID: request.base.id, referenceID: alternate.id)
+        XCTAssertEqual(focus?.base?.id, 2)
+        let swapped = try await library.compare(trackKey: identity.stableKey, base: alternate, with: request.base)
+        XCTAssertEqual(request.readingRow(in: swapped, baseID: alternate.id, referenceID: request.base.id)?.reference?.id, 2)
+
         let bookHits = try await library.bookSources(matching: "回声")
         let hit = try XCTUnwrap(bookHits.first)
         XCTAssertEqual(hit.source, .original(originalID))

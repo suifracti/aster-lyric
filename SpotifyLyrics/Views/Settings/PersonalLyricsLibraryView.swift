@@ -724,7 +724,7 @@ public struct PersonalLibraryTrackDetailView: View {
                     if let translation {
                         Menu("修订") {
                             Button("修订这份译文", systemImage: "character.bubble") {
-                                presentSheet { service.beginTranslationRevision(version: translation, entry: entry) }
+                                presentSheet { service.beginTranslationRevision(version: translation, entry: entry, reading: preferredPassage) }
                             }
                             Button("修订这份原词", systemImage: "pencil") {
                                 presentSheet { service.beginRevision(versionID: original, entry: entry) }
@@ -774,13 +774,13 @@ public struct PersonalLibraryTrackDetailView: View {
 
     private func compareOriginal(_ id: UUID, _ detail: PersonalLyricsLibraryTrackDetail) -> some View {
         Button("对读原词", systemImage: "rectangle.split.2x1") {
-            presentSheet { service.presentComparison(.original(id), detail: detail) }
+            presentSheet { service.presentComparison(.original(id), detail: detail, reading: preferredPassage) }
         }
     }
 
     private func compareTranslation(_ id: UUID, _ detail: PersonalLyricsLibraryTrackDetail) -> some View {
         Button("对读译文", systemImage: "rectangle.split.2x1") {
-            presentSheet { service.presentComparison(.translation(id), detail: detail) }
+            presentSheet { service.presentComparison(.translation(id), detail: detail, reading: preferredPassage) }
         }
     }
 
@@ -869,7 +869,7 @@ public struct PersonalLibraryTrackDetailView: View {
             adopt: { adoptLyrics(lv, entry: entry) }) {
                 if detail.lyricsVersions.count > 1 {
                     Button("逐句对读…", systemImage: "rectangle.split.2x1") {
-                        presentSheet { service.presentComparison(.original(lv.id), detail: detail) }
+                        presentSheet { service.presentComparison(.original(lv.id), detail: detail, reading: preferredPassage) }
                     }
                 }
                 Button(lv.isLocked ? "解锁" : "锁定") {
@@ -888,12 +888,12 @@ public struct PersonalLibraryTrackDetailView: View {
             isCurrent: compact ? playback.selectedTranslation?.record.id == tv.id : tv.isCurrent,
             locked: tv.isLocked, archived: tv.isArchived, draft: tv.isDraft, readingVersion: tv.id == preferredSource?.versionID, busy: service.revisionBusy,
             preview: { showVersion(.translation(tv.id), entry: entry) },
-            edit: { presentSheet { service.beginTranslationRevision(version: tv, entry: entry) } },
+            edit: { presentSheet { service.beginTranslationRevision(version: tv, entry: entry, reading: preferredPassage) } },
             rename: { draft in presentSheet { service.versionLabelDraft = draft } },
             adopt: { adoptTranslation(tv, entry: entry) }) {
                 if detail.translationVersions.count > 1 {
                     Button("逐句对读…", systemImage: "rectangle.split.2x1") {
-                        presentSheet { service.presentComparison(.translation(tv.id), detail: detail) }
+                        presentSheet { service.presentComparison(.translation(tv.id), detail: detail, reading: preferredPassage) }
                     }
                 }
                 Button(tv.isLocked ? "解锁" : "锁定") {
@@ -1764,22 +1764,31 @@ private struct LibraryTranslationRevisionSheet: View {
             }
             Text("保存后可在歌曲档案选择采用这份新稿。")
                 .font(.callout).foregroundStyle(.secondary)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(draft.lines.indices, id: \.self) { index in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(sourceLine(at: index))
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                            TextField("译文", text: $draft.lines[index], axis: .vertical)
-                                .lineLimit(1...5)
-                                .textFieldStyle(.roundedBorder)
-                                .accessibilityLabel("第 \(index + 1) 行译文")
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        ForEach(draft.lines.indices, id: \.self) { index in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(sourceLine(at: index))
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                                TextField("译文", text: $draft.lines[index], axis: .vertical)
+                                    .lineLimit(1...5)
+                                    .textFieldStyle(.roundedBorder)
+                                    .accessibilityLabel("第 \(index + 1) 行译文")
+                            }
+                            .padding(.vertical, 12)
+                            .overlay(alignment: .bottom) { Divider() }
+                            .background(draft.openingLineIndex == index ? WorkspacePalette.selection : .clear)
+                            .id(index)
                         }
-                        .padding(.vertical, 12)
-                        .overlay(alignment: .bottom) { Divider() }
                     }
+                }
+                .task {
+                    guard let line = draft.openingLineIndex else { return }
+                    await Task.yield()
+                    if !Task.isCancelled { proxy.scrollTo(line, anchor: .center) }
                 }
             }
             .frame(maxHeight: .infinity)

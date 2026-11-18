@@ -982,6 +982,12 @@ public struct LibraryPassageTarget: Hashable, Identifiable, Codable, Sendable {
     var excerptLineLabel: String? {
         excerptRange.map { "第 \($0.lowerBound + 1)–\($0.upperBound + 1) 行" }
     }
+
+    func readingLine(for versionID: UUID, trackKey: String) -> Int? {
+        guard self.trackKey == trackKey, source.versionID == versionID else { return nil }
+        return readingPosition?.lineIndex ?? readingPosition?.topLineIndex ?? lineIndex
+    }
+
     public var id: Self { self }
 }
 

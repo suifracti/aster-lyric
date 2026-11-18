@@ -33,6 +33,10 @@ struct LibraryVersionCompareView: View {
     private var pair: Pair { Pair(base: baseID, peer: peerID) }
     private var selected: Set<Int> { picks[pair] ?? [] }
 
+    private func readingRow(in comparison: LibraryVersionComparison) -> LibraryVersionComparison.Row? {
+        request.readingRow(in: comparison, baseID: baseID, referenceID: peerID)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
@@ -83,6 +87,10 @@ struct LibraryVersionCompareView: View {
             do {
                 let loaded = try await library.compare(trackKey: request.entry.trackStableKey, base: base, with: reference)
                 try Task.checkCancellation()
+                if let row = readingRow(in: loaded) {
+                    focusedRow = row.id
+                    if row.change == .same { onlyDifferences = false }
+                }
                 comparison = loaded
             } catch where !Task.isCancelled { issue = error.localizedDescription }
             catch { }
@@ -109,6 +117,7 @@ struct LibraryVersionCompareView: View {
     private func pages(_ comparison: LibraryVersionComparison) -> some View {
         let differences = comparison.rows.filter { $0.change != .same }
         let visible = onlyDifferences ? differences : comparison.rows
+        let reading = readingRow(in: comparison)
         return ScrollViewReader { proxy in
             HStack(spacing: 10) {
                 Text("\(differences.count) 处不同").font(.caption.monospacedDigit())
@@ -126,21 +135,30 @@ struct LibraryVersionCompareView: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(visible) { row in
-                                rowView(row, wide: bounds.size.width >= 620, canPick: comparison.canPickTranslationLines)
+                                rowView(row, wide: bounds.size.width >= 620, canPick: comparison.canPickTranslationLines,
+                                        isReadingRow: row.id == reading?.id)
                                     .id(row.id)
                                 Divider()
                             }
                         }
                     }
                 }
+                .task(id: pair) {
+                    guard let reading, !onlyDifferences || reading.change != .same else { return }
+                    await Task.yield()
+                    if !Task.isCancelled { proxy.scrollTo(reading.id, anchor: .center) }
+                }
             }
         }
     }
 
-    private func rowView(_ row: LibraryVersionComparison.Row, wide: Bool, canPick: Bool) -> some View {
+    private func rowView(_ row: LibraryVersionComparison.Row, wide: Bool, canPick: Bool, isReadingRow: Bool) -> some View {
         let sameOriginalText = row.base?.original == row.reference?.original
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
+                if isReadingRow {
+                    Label("刚才阅读", systemImage: "bookmark").font(.caption).foregroundStyle(.secondary)
+                }
                 Text(row.change.rawValue).font(.caption.weight(.semibold)).foregroundStyle(WorkspacePalette.ink)
                 if translations, sameOriginalText, let source = row.base?.original, !source.isEmpty {
                     Text(source).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
@@ -246,11 +264,14 @@ struct LibraryVersionCompareView: View {
     private func prepareDraft() {
         guard !preparing, let base = base.translation, let reference = reference?.translation else { return }
         let indices = selected
+        let focusedLine = comparison?.rows.first { $0.id == focusedRow }?.base?.id
+        let openingLine = focusedLine.flatMap { indices.contains($0) ? $0 : nil } ?? indices.min()
         preparing = true
         Task {
             defer { preparing = false }
             do {
-                let draft = try await library.translationDraft(for: base, entry: request.entry, picking: indices, from: reference)
+                let draft = try await library.translationDraft(for: base, entry: request.entry, picking: indices,
+                                                               from: reference, openingLineIndex: openingLine)
                 if library.comparison?.id == request.id { edit(draft) }
             } catch { issue = error.localizedDescription }
         }
