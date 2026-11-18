@@ -152,6 +152,7 @@ public final class PlaybackState: ObservableObject {
     }
     private var isRefreshingProvider = false
     private var providerRefreshGeneration: UInt64 = 0
+    private var playbackSourceRevision: UInt64 = 0
     private var refreshRequestedWhileBusy = false
     private var providerRefreshTask: Task<Void, Never>?
     private var lyricsPreloadTask: Task<Void, Never>?
@@ -1295,15 +1296,18 @@ public final class PlaybackState: ObservableObject {
         case .appleMusic: guard update.source == .appleMusic else { return }
         case .auto:
             // A paused background player must not steal the playing player's session.
-            guard update.source == lastObservedDesktopSource || update.isPlaying || !isPlaying else { return }
+            guard update.isStopped || update.source == lastObservedDesktopSource || update.isPlaying || !isPlaying else { return }
         }
         guard let snapshot = update.snapshot(previous: desktopSnapshots[update.source],
             estimatedPosition: update.source == lastObservedDesktopSource ? playbackPositionNow : (desktopSnapshots[update.source]?.position ?? 0)) else { return }
-        providerRefreshGeneration &+= 1
-        refreshRequestedWhileBusy = false
         if update.isStopped {
             desktopSnapshots[update.source] = nil
             noteConnection(for: update.source, status: .noTrack)
+            guard !hasLiveTrack || update.source == lastObservedDesktopSource else { return }
+        }
+        providerRefreshGeneration &+= 1
+        refreshRequestedWhileBusy = false
+        if update.isStopped {
             providerStatus = .noTrack
             clearLiveTrackIfNeeded()
         } else {
@@ -1740,15 +1744,16 @@ public final class PlaybackState: ObservableObject {
                 let token = try await spotifyAuthorizationManager.accessToken(requiredScopes: SpotifyOAuthConfiguration.playbackScopes)
                 modes = try await spotifyLibraryService.playbackModes(accessToken: token)
             }
-        } else { modes = try await provider.playbackModes(shuffle: nil, repeatMode: nil) }
+        } else { modes = try await playerProvider(for: source).playbackModes(shuffle: nil, repeatMode: nil) }
         return modes
     }
 
     public func refreshPlayerModes() {
         guard hasLiveTrack, !changingPlayerModes else { return }
         let source = playbackSourceIdentity
+        let sourceRevision = playbackSourceRevision
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard let self, self.playbackSourceRevision == sourceRevision else { return }
             let modes: PlayerPlaybackModes?
             do { modes = try await self.readPlayerModes(source: source) }
             catch {
@@ -1759,7 +1764,7 @@ public final class PlaybackState: ObservableObject {
                 modes = self.playerModes
                 LyricsE2ELog.log("PLAYER modes unavailable source=\(source) error=\(error.localizedDescription) kept=\(String(describing: modes))")
             }
-            guard self.playbackSourceIdentity == source, !self.changingPlayerModes else { return }
+            guard self.playbackSourceRevision == sourceRevision, !self.changingPlayerModes else { return }
             if self.playerModes != modes { self.playerModes = modes }
             LyricsE2ELog.log("PLAYER modes source=\(source) shuffle=\(String(describing: modes?.shuffle)) repeat=\(String(describing: modes?.repeatMode)) smart=\(String(describing: modes?.smartShuffle))")
         }
@@ -1781,16 +1786,23 @@ public final class PlaybackState: ObservableObject {
         }
         changingPlayerModes = true
         let source = playbackSourceIdentity
+        let sourceRevision = playbackSourceRevision
         Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { self.changingPlayerModes = false; self.pendingPlayerModes.removeAll() }
+            defer {
+                if self.playbackSourceRevision == sourceRevision {
+                    self.changingPlayerModes = false
+                    self.pendingPlayerModes.removeAll()
+                }
+            }
             var confirmed = before
             var next: (Bool, PlayerPlaybackModes)? = (shuffle, target)
             while let (isShuffle, desired) = next {
-                guard self.playbackSourceIdentity == source else { return }
+                guard self.playbackSourceRevision == sourceRevision else { return }
                 do {
-                    let (written, notice) = try await self.writePlayerMode(shuffle: isShuffle, target: desired, source: source)
-                    guard self.playbackSourceIdentity == source else { return }
+                    let (written, notice) = try await self.writePlayerMode(shuffle: isShuffle, target: desired,
+                        source: source, sourceRevision: sourceRevision)
+                    guard self.playbackSourceRevision == sourceRevision else { return }
                     if isShuffle { confirmed.shuffle = written.shuffle; confirmed.smartShuffle = written.smartShuffle }
                     else { confirmed.repeatMode = written.repeatMode }
                     // A completed write must not overwrite a newer tap's immediate display.
@@ -1801,7 +1813,7 @@ public final class PlaybackState: ObservableObject {
                     }
                     LyricsE2ELog.log("PLAYER mode wrote shuffle=\(isShuffle) state=\(written)")
                 } catch {
-                    guard self.playbackSourceIdentity == source else { return }
+                    guard self.playbackSourceRevision == sourceRevision else { return }
                     self.playerModes = confirmed
                     self.playbackNotice = error.localizedDescription
                     LyricsE2ELog.log("PLAYER mode write failed shuffle=\(isShuffle) error=\(error.localizedDescription)")
@@ -1816,7 +1828,7 @@ public final class PlaybackState: ObservableObject {
     }
 
     private func writePlayerMode(shuffle: Bool, target: PlayerPlaybackModes,
-                                 source: PlaybackSourceIdentity) async throws -> (PlayerPlaybackModes, String?) {
+                                 source: PlaybackSourceIdentity, sourceRevision: UInt64) async throws -> (PlayerPlaybackModes, String?) {
         let nextShuffle = target.shuffle ?? false
         let nextRepeat = target.repeatMode ?? .off
         var current = target
@@ -1828,6 +1840,7 @@ public final class PlaybackState: ObservableObject {
                     try await writer(shuffle ? nextShuffle : nil, shuffle ? nil : nextRepeat)
                 } else {
                     let token = try await spotifyAuthorizationManager.accessToken(requiredScopes: SpotifyOAuthConfiguration.playbackWriteScopes)
+                    guard playbackSourceRevision == sourceRevision else { throw CancellationError() }
                     try await spotifyLibraryService.setPlaybackModes(shuffle: shuffle ? nextShuffle : nil,
                         repeatMode: shuffle ? nil : nextRepeat, accessToken: token)
                 }
@@ -1841,11 +1854,12 @@ public final class PlaybackState: ObservableObject {
                 }
             }
             if useScript {
+                guard playbackSourceRevision == sourceRevision else { throw CancellationError() }
                 if !shuffle && nextRepeat == .one {
                     modeNotice = "单曲循环需要在设置里补充 Spotify 授权"
                 }
                 let scriptRepeat: PlayerRepeatMode = nextRepeat == .one ? .off : nextRepeat
-                _ = try await provider.playbackModes(shuffle: shuffle ? nextShuffle : nil,
+                _ = try await playerProvider(for: source).playbackModes(shuffle: shuffle ? nextShuffle : nil,
                     repeatMode: shuffle ? nil : scriptRepeat)
                 if shuffle { current.shuffle = nextShuffle; current.smartShuffle = false }
                 else { current.repeatMode = scriptRepeat }
@@ -1858,7 +1872,7 @@ public final class PlaybackState: ObservableObject {
                 else { current.repeatMode = nextRepeat }
             }
         } else {
-            current = try await provider.playbackModes(shuffle: shuffle ? nextShuffle : nil,
+            current = try await playerProvider(for: source).playbackModes(shuffle: shuffle ? nextShuffle : nil,
                 repeatMode: shuffle ? nil : nextRepeat)
         }
         return (current, modeNotice)
@@ -1867,8 +1881,7 @@ public final class PlaybackState: ObservableObject {
     private func trackLikeValue(track: Track, source: PlaybackSourceIdentity, set value: Bool? = nil) async throws -> Bool {
         guard let id = track.spotifyId else { throw PlaybackProviderError.noTrack }
         if source == .appleMusic {
-            let active = (provider as? ActivePlaybackProvider)?.activeProvider ?? provider
-            guard let music = active as? AppleMusicDesktopProvider else { throw PlaybackProviderError.noTrack }
+            guard let music = playerProvider(for: source) as? AppleMusicDesktopProvider else { throw PlaybackProviderError.noTrack }
             return try await music.trackFavorite(id: id, set: value)
         }
         guard source == .spotifyDesktop else { throw PlaybackProviderError.noTrack }
@@ -1974,9 +1987,10 @@ public final class PlaybackState: ObservableObject {
 
     func advanceQueuedTracks(_ count: Int) {
         guard playbackSourceIdentity == .spotifyDesktop else { return }
+        let sourceRevision = playbackSourceRevision
         runProviderCommand { [weak self] provider in
             for _ in 0..<count {
-                guard self?.playbackSourceIdentity == .spotifyDesktop else { throw CancellationError() }
+                guard self?.playbackSourceRevision == sourceRevision else { throw CancellationError() }
                 try await provider.next()
             }
         }
@@ -2036,26 +2050,13 @@ public final class PlaybackState: ObservableObject {
         }
 
         guard canControlSpotify else { return }
-        invalidateProviderRefresh()
-        let commandGeneration = providerRefreshGeneration
         let position = playbackPositionNow
         let shouldPlay = !isPlaying
         isPlaying = shouldPlay
         resetPlaybackAnchor(to: position, source: .pauseResume)
-        providerRefreshTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                if shouldPlay {
-                    try await self.provider.play()
-                } else {
-                    try await self.provider.pause()
-                }
-                if shouldPlay && self.providerRefreshGeneration == commandGeneration {
-                    await self.refreshProvider()
-                }
-            } catch {
-                self.handleProviderError(error)
-            }
+        runProviderCommand(refreshAfter: shouldPlay ? .zero : nil) { provider in
+            if shouldPlay { try await provider.play() }
+            else { try await provider.pause() }
         }
     }
 
@@ -2136,7 +2137,6 @@ public final class PlaybackState: ObservableObject {
 
         guard canControlSpotify else { return }
         let recording = seekRecording
-        invalidateProviderRefresh()
         runProviderCommand { [weak self] provider in
             guard let self, self.seekRecording == recording else { return }
             try await provider.seek(to: seekTime)
@@ -3269,8 +3269,6 @@ public final class PlaybackState: ObservableObject {
             hasLiveTrack = true
             isMockPreviewMode = false
             currentTrack = nextTrack
-            playerModes = nil
-            refreshPlayerModes()
             songSearchSelectionMessage = ""
             LyricsE2ELog.log("Playback trackChange identity=\(nextIdentity.stableKey) title=\(nextTrack.title) artist=\(nextTrack.artist) duration=\(nextTrack.duration)")
 #if DEBUG
@@ -3294,6 +3292,7 @@ public final class PlaybackState: ObservableObject {
             // background view receives the new artwork URL and rekeys itself.
             currentTrack = nextTrack
         }
+        if identityChanged || previousSource != snapshot.sourceIdentity { refreshPlayerModes() }
 
         let previousPosition = playbackPositionNow
         let wasPlaying = isPlaying
@@ -3403,6 +3402,11 @@ public final class PlaybackState: ObservableObject {
     private func updatePlaybackSourceIdentity(_ next: PlaybackSourceIdentity) {
         guard playbackSourceIdentity != next else { return }
         let previous = playbackSourceIdentity
+        playbackSourceRevision &+= 1
+        changingPlayerModes = false
+        pendingPlayerModes.removeAll()
+        if playerModes != nil { playerModes = nil }
+        if sleepTimer.option == .trackEnd { configureSleepTimer(.off) }
         playbackSourceIdentity = next
         if next == .appleMusic || next == .spotifyDesktop { lastPlaylistSource = next }
         updatePlayerCatalog()
@@ -3460,21 +3464,34 @@ public final class PlaybackState: ObservableObject {
         publishListeningHistory(session.entry)
     }
 
-    private func runProviderCommand(_ command: @escaping @MainActor (PlaybackProvider) async throws -> Void) {
+    private func playerProvider(for source: PlaybackSourceIdentity) -> PlaybackProvider {
+        guard let active = provider as? ActivePlaybackProvider else { return provider }
+        switch source {
+        case .spotifyDesktop: return active.spotifyProvider
+        case .appleMusic: return active.appleMusicProvider
+        default: return provider
+        }
+    }
+
+    private func runProviderCommand(refreshAfter delay: Duration? = .milliseconds(250),
+                                    _ command: @escaping @MainActor (PlaybackProvider) async throws -> Void) {
         invalidateProviderRefresh()
         let commandGeneration = providerRefreshGeneration
-        let source = playbackSourceIdentity
-        let commandProvider = (provider as? ActivePlaybackProvider)?.activeProvider ?? provider
+        let sourceRevision = playbackSourceRevision
+        let commandProvider = playerProvider(for: playbackSourceIdentity)
         providerRefreshTask = Task { @MainActor [weak self] in
-            guard let self, self.playbackSourceIdentity == source else { return }
+            guard let self, !Task.isCancelled, self.playbackSourceRevision == sourceRevision else { return }
             do {
                 try await command(commandProvider)
-                try? await Task.sleep(nanoseconds: 250_000_000)
-                guard !Task.isCancelled, self.providerRefreshGeneration == commandGeneration else { return }
+                guard let delay else { return }
+                if delay > .zero { try await Task.sleep(for: delay) }
+                guard !Task.isCancelled, self.playbackSourceRevision == sourceRevision,
+                      self.providerRefreshGeneration == commandGeneration else { return }
                 await self.refreshProvider()
             } catch is CancellationError { return }
             catch {
-                guard self.playbackSourceIdentity == source else { return }
+                guard !Task.isCancelled, self.playbackSourceRevision == sourceRevision,
+                      self.providerRefreshGeneration == commandGeneration else { return }
                 self.playlistBrowser.cancelManualPlaybackIntent()
                 self.handleProviderError(error)
             }

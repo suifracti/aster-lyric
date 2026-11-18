@@ -53,7 +53,12 @@ private final class EventPlaybackProvider: PlaybackProvider {
     }
     func play() async throws {}
     var pauseCount = 0
-    func pause() async throws { pauseCount += 1 }
+    var holdPause = false
+    var pendingPause: CheckedContinuation<Void, Error>?
+    func pause() async throws {
+        pauseCount += 1
+        if holdPause { try await withCheckedThrowingContinuation { pendingPause = $0 } }
+    }
     var nextCount = 0
     var onNext: (() async -> Void)?
     func next() async throws { nextCount += 1; await onNext?() }
@@ -425,6 +430,74 @@ final class DesktopPlaybackEventTests: XCTestCase {
         XCTAssertEqual(state.sleepTimer.option, .off)
     }
 
+    func testStoppedBackgroundPlayerKeepsTheCurrentPausedSong() async throws {
+        let (state, provider, _, center) = fixture()
+        provider.snapshot = .init(status: .ready, track: provider.snapshot.track, position: 10,
+                                  isPlaying: false, sourceIdentity: .spotifyDesktop)
+        state.startProvider(connectSpotify: false)
+        try await wait { state.hasLiveTrack }
+
+        center.post(name: DesktopPlaybackEvents.musicPlayerInfo, object: nil, userInfo: ["Player State": "Stopped"])
+        try await wait { state.desktopConnectionStatus[.appleMusic] == .noTrack }
+        XCTAssertEqual(state.playbackSourceIdentity, .spotifyDesktop)
+        XCTAssertEqual(state.currentTrack.title, "Initial")
+        XCTAssertTrue(state.hasLiveTrack)
+        XCTAssertFalse(state.isPlaying)
+    }
+
+    func testSleepAtTrackEndDoesNotPauseAnotherPlayer() async throws {
+        let (state, provider, _, center) = fixture()
+        state.startProvider(connectSpotify: false)
+        try await wait { state.hasLiveTrack && state.isPlaying }
+        state.configureSleepTimer(.trackEnd)
+
+        center.post(name: DesktopPlaybackEvents.musicPlayerInfo, object: nil, userInfo: musicPayload)
+        try await wait { state.playbackSourceIdentity == .appleMusic }
+        XCTAssertEqual(state.sleepTimer.option, .off)
+        XCTAssertTrue(state.isPlaying)
+        XCTAssertEqual(provider.pauseCount, 0)
+    }
+
+    func testLatePauseErrorCannotClearTheSongAfterSwitchingPlayer() async throws {
+        let (state, provider, _, center) = fixture()
+        state.startProvider(connectSpotify: false)
+        try await wait { state.hasLiveTrack && state.isPlaying }
+        provider.holdPause = true
+        state.togglePlayPause()
+        try await wait { provider.pendingPause != nil }
+        defer { provider.pendingPause?.resume(); provider.pendingPause = nil }
+
+        center.post(name: DesktopPlaybackEvents.musicPlayerInfo, object: nil, userInfo: musicPayload)
+        try await wait { state.playbackSourceIdentity == .appleMusic && state.isPlaying }
+        provider.pendingPause?.resume(throwing: PlaybackProviderError.commandFailed("old Spotify pause"))
+        provider.pendingPause = nil
+        try await Task.sleep(for: .milliseconds(20))
+
+        XCTAssertEqual(state.playbackSourceIdentity, .appleMusic)
+        XCTAssertEqual(state.currentTrack.title, "Music recording")
+        XCTAssertTrue(state.isPlaying)
+    }
+
+    func testPlaybackModeCanBeChangedWhileThePreviousPlayerWriteFinishes() async throws {
+        let (state, provider, _, center) = fixture()
+        state.startProvider(connectSpotify: false)
+        try await wait { state.playerModes != nil }
+        provider.holdModeWrite = true
+        state.togglePlayerMode(shuffle: false)
+        try await wait { provider.heldModeWrite != nil }
+        defer { provider.heldModeWrite?.resume(); provider.heldModeWrite = nil }
+
+        center.post(name: DesktopPlaybackEvents.musicPlayerInfo, object: nil, userInfo: musicPayload)
+        try await wait { state.playbackSourceIdentity == .appleMusic && state.playerModes != nil }
+        state.togglePlayerMode(shuffle: true)
+        try await wait { provider.nativeShuffleWrites == [true] }
+        provider.heldModeWrite?.resume()
+        provider.heldModeWrite = nil
+        try await wait { !provider.webRepeatWrites.isEmpty }
+        XCTAssertEqual(state.playerModes?.shuffle, true)
+        XCTAssertEqual(state.playerModes?.repeatMode, .off)
+    }
+
     func testThreeRapidRepeatTapsSendOnlyTheFinalPendingMode() async throws {
         let (state, provider, _, _) = fixture()
         state.startProvider()
@@ -578,6 +651,11 @@ final class DesktopPlaybackEventTests: XCTestCase {
         ["Player State": state, "Track ID": "spotify:track:BBBBBBBBBBBBBBBBBBBBBB",
          "Name": title, "Artist": "Fixture", "Album": "Cache", "Duration": 240_000,
          "Playback Position": position]
+    }
+
+    private var musicPayload: [AnyHashable: Any] {
+        ["Player State": "Playing", "PersistentID": "ABCD", "Name": "Music recording", "Artist": "Fixture",
+         "Album": "Cache", "Total Time": 240_000, "Player Position": 32]
     }
 
     private func fixture(running: @escaping (PlaybackSourceIdentity) -> Bool = { _ in true },

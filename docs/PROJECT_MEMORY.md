@@ -23,6 +23,7 @@
 | 搜索慢、本地结果等网络、搜索 Apple Music 或旧译文、预加载同一首重复搜索 | L-007；searchCachedLibrary、TrackSearchManager、LyricsSessionController、JapaneseMeCabEngine |
 | 队列不更新、循环列表被裁掉、隐藏后点第三首多跳、Apple Music 歌单串到 Spotify | L-008；PlaylistBrowserModel、AppleMusicPlaylistCatalog、V3PlaylistQueuePreview |
 | 播放 App 的运行、连接与在线曲库授权容易混淆 | L-008；PlaybackConnectionCards、PlaybackState、SettingsLocation |
+| 别的播放器停止让当前歌词消失、切换来源误暂停或串掉播放模式 | L-008；PlaybackState.receiveDesktopUpdate、runProviderCommand、playbackSourceRevision |
 | 版本弹窗挂在悬浮窗、关后黑着、大歌词库关闭或丢选择 | L-009；PersonalLyricsLibraryService、PersonalLibrarySheets |
 | 有歌词源译文却不显示、部分行没有译文、重复补存 | L-010；TranslationSessionController.synchronize 与 chooseVersion |
 | TTML 自带翻译或罗马音却没显示、无时间轴的文件被当成同步歌词 | L-032、L-048 · TTMLParser、AMLLLyricsProvider |
@@ -175,6 +176,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 同日《Complain》唱完后，Spotify 已播《哀、愛さ》，星弦停在旧曲终点；现场日志在此期间仍有播放模式响应，到再下一首才收到有效切歌。Spotify 与 Apple Music 的轻量位置校准原先发现新 ID 就弃掉并一直等通知。现在已验证的新录音 ID 触发普通元数据读取，用同来源的新快照进入既有切歌流程。通知在途先到时仍丢弃迟到读数，超时或格式错误继续保留当前记录。原生脚本桩分别核了两种 ID 和无通知的切歌回退。
 
 同一曲出现两次时，完整队列和悬停预览的「跳过这首」都把所点行的原始 offset 和歌曲 ID 交给 `PlaylistBrowserModel`。正常换歌会移掉经过的前缀并平移标记。队列刷新重排且无法辨认重复项时，撤销该标记，避免跳错。原生桩验证了 A–B–A 队列、末尾新增、两次 A 分别播放与跳过。连续相同 ID 的播放边界仍无法仅从现有换歌事件判断。
+
+2026-11-19：自动跟随时，非当前播放器的停止通知只更新它自己的连接状态。播放、暂停、前后切、进度与播放模式按最后接受的来源派发；切换来源后，旧命令迟到的错误或模式结果不再改写当前显示，旧队列跳转也不会续跑。「本曲结束后」仍能在同一播放器换歌时暂停，换到另一播放器时取消。原生定向测试 37 项通过，覆盖后台停止、迟到的暂停错误、新来源在旧写入期间切换模式、同源和跨源的定时；真实账户播放未参与验证。
 
 ## L-009 版本弹窗归主窗口，居中歌词库保留在后面
 

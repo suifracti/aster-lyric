@@ -363,6 +363,7 @@ A control never appears on both sides. Where the other side used to have it, sho
 **3. Sleep timer.**
 - In the 更多 panel: 「睡眠定时」 with 关闭 / 15 分钟 / 30 分钟 / 60 分钟 / 本曲结束后.
 - When it fires, pause playback through the existing play/pause path.
+- 「本曲结束后」 follows the current player across the same player's song boundary. Switching players cancels that option.
 - While active, show the remaining time on that row. It resets after it fires.
 - No volume fade.
 
