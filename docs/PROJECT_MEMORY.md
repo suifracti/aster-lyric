@@ -49,6 +49,7 @@
 | 别人有逐字我们只有逐行、已存逐行不会升级成逐字、行切换比别人慢一点 | L-041；probeNetworkProviders lineTimingHeld、LyricsWordTimingUpgrade、TimedLineBounds（QRC/KRC/YRC 行尾）、scheduleWordTimingUpgrade、PlaybackState.lineSwitchLead、scheduleLineBoundaryWake |
 | AI 译文读起来像照日文断行切开、主语缺失、太书面、和我自己的译法不像 | L-042；`personalV2Instructions` full-audit-v3-r1、Codex 合同里的跨行条款 |
 | 缺歌词里同一首歌的重复记录（时长错、借用别首的 ID）、批量补全拿错时长去搜 | L-039；PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere、needsLyrics |
+| 批量补词在切换歌词库窗口时停掉、只看到查找次数 | L-039；PlaybackState.lyricsBatch、LyricsBatchControls、LyricsSessionController.completeBatchLyrics |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
 | 翻阅收藏、从副歌第二次出现的位置接下一句、搜到旧译文、收藏文件无法读取 | L-046 · LibraryPassageReader、LyricRecallSession、V3FavoriteLines |
 | 灵动岛挡刘海、只剩歌名、想停在一句读、换歌拖错进度 | L-045；CapsuleNotchGeometry、CapsuleLyricsView、vocalCountdownWindow |
@@ -658,6 +659,7 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
   - **ID 被不同歌名共用**：ID 不可信，改看同歌名同歌手的另一行有没有歌词。
   - **ID 不同的同名录音不算覆盖**：GIJIKOI 原版（234.659 秒）与韩语版（216.875 秒）不能互相覆盖，没有 ID 的行也不按歌名合并。
 - **教训**：用库里的时长做在线重查前，先确认那一行不是幽灵记录：查同 ID、同歌名的其他行。Spotify 目录时长才是准的。
+- **批量补词接续（2026-11-19）**：主窗口和独立歌词库观察同一个 `PlaybackState.lyricsBatch`，切换窗口时继续，明确停止后保留已完成结果。保存状态取自 SQLite 写入结果，区分同步、纯文本、待核对、无新增、无匹配和失败。隔离 macOS App 从主窗口开始，独立歌词库接到 1/3，最后显示 3/3 条已存同步歌词，从结果点进歌曲确认版本已采用。原生定向测试 29 通过、1 跳过，覆盖停止、重复启动和保存结果。
 
 
 ## L-040 歌名和歌手都对时总显示最佳候选（2026-11-15）

@@ -30,7 +30,6 @@ struct V3LibrarySearchPanel: View {
     @V3ContentPlaybackState var state: PlaybackState
     @Environment(\.openWindow) private var openWindow
     @ObservedObject var library: PersonalLyricsLibraryService
-    @StateObject private var batch = LyricsBatchCompletion()
     @State private var selectedKey: String?
     @State private var historyTrackKey: String?
     @State private var queries: [V3LibrarySearchPresentation.Tab: String] = [:]
@@ -139,8 +138,6 @@ struct V3LibrarySearchPanel: View {
                 if tab == .library { library.searchQuery = query; library.refresh(); selectInitialEntry() }
                 else if tab == .search, query.isEmpty, state.hasLiveTrack { query = SongSearchQuery(track: state.currentTrack).text }
             }
-            .onChange(of: batch.isRunning) { _, running in if !running { library.refresh() } }
-            .onDisappear { batch.stop() }
         }
     }
     private var recentPlaybackContent: some View {
@@ -216,15 +213,8 @@ struct V3LibrarySearchPanel: View {
                             }.buttonStyle(.plain)
                         }
                     }.padding(.top, 10)
-                    if batch.isRunning {
-                        HStack { Text("\(batch.completed) / \(batch.total)").monospacedDigit(); Button("停止") { batch.stop() } }
-                    } else if filter == .missing {
-                        Button("全部补全") {
-                            batch.start(tracks: entries.filter { !$0.hasManualLyrics && !$0.hasLockedLyrics }.map(\.libraryTrack)) {
-                                await state.completeMissingLyrics(track: $0)
-                            }
-                        }.disabled(entries.isEmpty)
-                    }
+                    LyricsBatchControls(playback: state, entries: filter == .missing ? entries : [],
+                                        refresh: library.refresh, openTrack: { selectedKey = $0 })
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(entries) { entry in

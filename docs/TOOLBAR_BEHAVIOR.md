@@ -353,9 +353,10 @@ A control never appears on both sides. Where the other side used to have it, sho
 - 文字 panel: a small caption 「当前：日语设置」 shows which set is active.
 
 **2. Fill in missing lyrics from the library.**
-- 歌词库 gets a filter 「缺歌词」 that lists tracks with no stored lyrics.
+- 歌词库 gets a filter 「缺歌词」 for tracks with no saved lyrics and tracks with only automatically adopted plain text.
 - Next to it, a 「全部补全」 button searches them one by one with the normal free-source search and auto-adopt rules.
-- Show progress as 「12 / 66」. A stop button cancels.
+- The main and separate library windows share one batch. Leaving either view lets it continue. Both show progress and offer an explicit stop button.
+- 「结果」 keeps the latest run's per-track outcomes until the next run, including tracks completed before a stop. Selecting a result opens that track's library details.
 - Never call AI translation or any paid service; manual or locked lyrics are untouched.
 - Each search is logged to source-stats with `batch: true`.
 

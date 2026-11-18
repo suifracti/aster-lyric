@@ -3,7 +3,6 @@ import SwiftUI
 public struct PersonalLyricsLibraryView: View {
     @EnvironmentObject private var playback: PlaybackState
     @StateObject private var service: PersonalLyricsLibraryService
-    @StateObject private var batch = LyricsBatchCompletion()
     @State private var selectedStableKey: String?
     @State private var libraryFilter: LibraryFilter = ProcessInfo.processInfo.arguments.contains("--library-missing") ? .missing : .all
     @State private var showSyncFolder = false
@@ -104,8 +103,6 @@ public struct PersonalLyricsLibraryView: View {
         }
         .onChange(of: requestedTrackKey) { _, key in selectedStableKey = key }
         .onChange(of: selectedStableKey) { _, key in onSelection?(key) }
-        .onChange(of: batch.isRunning) { _, running in if !running { service.refresh() } }
-        .onDisappear { batch.stop() }
         .modifier(PersonalLibrarySheets(service: service, openArchive: openArchive))
         .onAppear {
             service.refresh()
@@ -266,16 +263,8 @@ public struct PersonalLyricsLibraryView: View {
                     Label(libraryFilter.rawValue, systemImage: "line.3.horizontal.decrease.circle")
                 }
                 .fixedSize()
-                if batch.isRunning {
-                    Text("\(batch.completed) / \(batch.total)").font(.caption).monospacedDigit()
-                    Button("停止") { batch.stop() }
-                } else if libraryFilter == .missing {
-                    Button("全部补全") {
-                        let tracks = visibleEntries.filter { !$0.hasLockedLyrics && !$0.hasManualLyrics }
-                            .map(\.libraryTrack)
-                        batch.start(tracks: tracks) { await playback.completeMissingLyrics(track: $0) }
-                    }.disabled(visibleEntries.isEmpty)
-                }
+                LyricsBatchControls(playback: playback, entries: libraryFilter == .missing ? visibleEntries : [],
+                                    refresh: service.refresh, openTrack: { selectedStableKey = $0 })
                 Spacer()
                 Text("\(visibleEntries.count) 首")
                     .font(.caption)
@@ -1242,6 +1231,86 @@ public struct PersonalDataImportPreviewSheet: View {
         .padding(6)
         .background(Color.secondary.opacity(0.1))
         .cornerRadius(5)
+    }
+}
+
+/// Every library view reads the same running task and result list.
+struct LyricsBatchControls: View {
+    let playback: PlaybackState
+    @ObservedObject private var batch: LyricsBatchCompletion
+    let entries: [PersonalLyricsLibraryEntry]
+    let refresh: () -> Void
+    let openTrack: (String) -> Void
+    @State private var showsResults = false
+
+    init(playback: PlaybackState, entries: [PersonalLyricsLibraryEntry],
+         refresh: @escaping () -> Void, openTrack: @escaping (String) -> Void) {
+        self.playback = playback
+        self.batch = playback.lyricsBatch
+        self.entries = entries
+        self.refresh = refresh
+        self.openTrack = openTrack
+    }
+
+    var body: some View {
+        HStack(spacing: 7) {
+            if batch.isRunning {
+                Button(batch.wasStopped ? "停止中" : "停止") { batch.stop() }.disabled(batch.wasStopped)
+            } else if !entries.isEmpty {
+                Button("全部补全") {
+                    batch.start(entries: entries) { [weak playback] track in
+                        await playback?.completeMissingLyrics(track: track)
+                    }
+                }
+                .help("依次为当前列表查找歌词")
+            }
+            if batch.total > 0 {
+                Button(batch.isRunning ? "\(batch.completed)/\(batch.total)" : "结果") { showsResults.toggle() }
+                    .monospacedDigit().help("查看补词结果").accessibilityLabel("查看补词结果")
+                    .accessibilityValue(batch.isRunning ? "\(batch.completed) / \(batch.total)" : "")
+                    .popover(isPresented: $showsResults) { results }
+            }
+        }
+        .controlSize(.small)
+        .onChange(of: batch.isRunning) { _, running in if !running { refresh() } }
+    }
+
+    private var results: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(batch.isRunning ? (batch.wasStopped ? "正在停止" : "正在补词") : (batch.wasStopped ? "已停止" : "本次补词"))
+                .font(.headline)
+            Text("已查 \(batch.completed) / \(batch.total) 首").font(.caption.monospacedDigit())
+            if let title = batch.currentTitle {
+                Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            if !batch.results.isEmpty {
+                Divider()
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(batch.results) { result in
+                            Button {
+                                showsResults = false
+                                openTrack(result.id)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(result.title).lineLimit(1)
+                                        Text(result.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    }
+                                    Spacer(minLength: 6)
+                                    Text(result.outcome.rawValue).font(.caption).foregroundStyle(.secondary).fixedSize()
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 6).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(height: min(250, CGFloat(batch.results.count) * 43))
+            }
+        }
+        .frame(width: 305).padding(13)
     }
 }
 

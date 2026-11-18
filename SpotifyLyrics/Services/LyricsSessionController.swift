@@ -54,6 +54,7 @@ public final class LyricsSessionController: ObservableObject {
     private let sourceStats: LyricsSourceStats
     private let isPreload: Bool
     private let isBatch: Bool
+    private var batchSaveDisposition: LyricsPersistenceSaveDisposition?
     private static var attemptedPreloadSpotifyIDs: Set<String> = []
     private static var preloadedRecordingIDs: Set<String> = []
     private var requestTask: Task<Void, Never>?
@@ -161,6 +162,20 @@ public final class LyricsSessionController: ObservableObject {
         }
     }
 
+    func completeBatchLyrics(track: Track) async -> LyricsBatchCompletion.Outcome? {
+        await loadForPreloading(track: track)
+        if batchSaveDisposition == .inserted { return isSynchronized ? .timedSaved : .plainSaved }
+        guard !Task.isCancelled else { return nil }
+        if isNoSelection || batchSaveDisposition == .skippedLocked || batchSaveDisposition == .duplicate { return .unchanged }
+        if case .candidates = state { return .review }
+        if case .failed = state { return .failed }
+        if batchSaveDisposition != nil || persistenceStatusMessage != nil || sourceFailureSummary != nil { return .failed }
+        switch state {
+        case .noLyrics, .noMatch: return .noMatch
+        default: return .unchanged
+        }
+    }
+
     public func begin(
         track: Track,
         identity: TrackIdentity,
@@ -173,6 +188,7 @@ public final class LyricsSessionController: ObservableObject {
         let retainsCurrentProjection = forceRefresh && activeIdentity == identity && activeLyricsVersionID != nil && !lyrics.isEmpty
         cancelCurrentRequest()
         automaticSelection = nil
+        batchSaveDisposition = nil
         automaticSelectionHash = nil
         revision &+= 1
         let requestRevision = revision
@@ -1370,10 +1386,12 @@ public final class LyricsSessionController: ObservableObject {
         } else {
             saved = try await repository.save(track: track, identity: identity, document: document)
         }
-        if let saved, saved.versionID != nil,
-           activeIdentity == identity, revision == expectedRevision {
-            activeLyricsVersionID = saved.versionID
-            activeSourceContentHash = saved.sourceContentHash
+        if activeIdentity == identity, revision == expectedRevision {
+            if isBatch { batchSaveDisposition = saved?.disposition }
+            if let saved, saved.versionID != nil {
+                activeLyricsVersionID = saved.versionID
+                activeSourceContentHash = saved.sourceContentHash
+            }
         }
         return saved
     }

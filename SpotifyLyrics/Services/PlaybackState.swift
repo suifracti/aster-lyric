@@ -31,6 +31,7 @@ public final class PlaybackProgress {
 @MainActor
 public final class PlaybackState: ObservableObject {
     public let sleepTimer = SleepTimerController()
+    let lyricsBatch = LyricsBatchCompletion()
 #if DEBUG
     private static let seekLogger = Logger(subsystem: "com.spotifylyrics.app", category: "seek")
 #endif
@@ -1696,10 +1697,10 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
-    public func completeMissingLyrics(track: Track) async {
+    func completeMissingLyrics(track: Track) async -> LyricsBatchCompletion.Outcome? {
         let session = LyricsSessionController(providers: preloadLyricsProviders,
             repository: lyricsRepository, spotifyArtistResolver: .shared, sourceHealth: .shared, isBatch: true)
-        await session.loadForPreloading(track: track)
+        return await session.completeBatchLyrics(track: track)
     }
 
     private func preloadUpcomingLyrics() {

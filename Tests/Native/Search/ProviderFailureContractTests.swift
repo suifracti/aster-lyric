@@ -1105,6 +1105,39 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertTrue(LyricsWordTimingUpgrade.hasWordTiming(document))
     }
 
+    @MainActor
+    func testBatchResultDistinguishesSavedLyricsFromNoMatchAndSourceFailure() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("batch.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
+        try await repository.prepare()
+        let timed = Track(title: "Timed fixture", artist: "Test", album: "", duration: 180)
+        let plain = Track(title: "Plain fixture", artist: "Test", album: "", duration: 180)
+        let missing = Track(title: "Missing fixture", artist: "Test", album: "", duration: 180)
+        func complete(_ track: Track, result: LyricsLookupResult) async -> LyricsBatchCompletion.Outcome? {
+            let provider = ProviderFailureFixedLyricsProvider(name: "Offline batch fixture", result: result)
+            return await LyricsSessionController(providers: [provider], repository: repository, isBatch: true)
+                .completeBatchLyrics(track: track)
+        }
+        func match(_ track: Track, synced: Bool) -> LyricsLookupResult {
+            .match(LyricsDocument(identity: TrackIdentity(track: track), title: track.title, artist: track.artist,
+                duration: track.duration, lines: [LyricLine(timestamp: 1, originalText: "test lyrics")],
+                isSynchronized: synced, source: .lrclib, confidence: 1))
+        }
+        let timedOutcome = await complete(timed, result: match(timed, synced: true))
+        let plainOutcome = await complete(plain, result: match(plain, synced: false))
+        XCTAssertEqual(timedOutcome, .timedSaved)
+        XCTAssertEqual(plainOutcome, .plainSaved)
+        let saved = try await repository.loadBestStored(track: timed, identity: TrackIdentity(track: timed))
+        XCTAssertNotNil(saved?.versionID)
+        let alreadyAvailable = await complete(timed, result: .failed(.networkUnavailable))
+        XCTAssertEqual(alreadyAvailable, .unchanged)
+        let noMatch = await complete(missing, result: .noMatch)
+        XCTAssertEqual(noMatch, .noMatch)
+        let failed = await complete(missing, result: .failed(.networkUnavailable))
+        XCTAssertEqual(failed, .failed)
+    }
+
     func testStoredLineTimingWaitsPastTheGraceForWordTiming() async {
         let (track, identity, lineTimed, wordTimed) = wordTimingFixture()
         let manager = LyricsSearchManager(providers: [

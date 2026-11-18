@@ -219,17 +219,26 @@ final class PresentationSourceContractTests: XCTestCase {
         let tracks = [Track(title: "Missing one", artist: "Artist", album: "Fixture", duration: 180),
                       Track(title: "Missing two", artist: "Artist", album: "Fixture", duration: 180)]
         for track in tracks { try await (repository as any LyricsRepository).saveTrackMetadata(.bootstrap(from: track)) }
-        let missing = try await repository.loadPersonalLibraryEntries(includeMissingLyrics: true)
+        let missing = try await repository.loadPersonalLibraryEntries(includeMissingLyrics: true).sorted { $0.title < $1.title }
         XCTAssertEqual(missing.filter { $0.lyricsVersionCount == 0 }.count, 2)
         let batch = LyricsBatchCompletion()
         var searched: [String] = []
-        batch.start(tracks: tracks) { track in
+        batch.start(entries: missing + missing) { track in
             searched.append(track.title)
             batch.stop()
+            return .timedSaved
+        }
+        batch.start(entries: missing) { _ in
+            XCTFail("Starting again from another library view must not replace the running batch")
+            return .failed
         }
         for _ in 0..<20 { if !batch.isRunning { break }; await Task.yield() }
         XCTAssertEqual(searched, ["Missing one"])
         XCTAssertFalse(batch.isRunning)
+        XCTAssertTrue(batch.wasStopped)
+        XCTAssertEqual(batch.total, 2)
+        XCTAssertEqual(batch.results.map(\.id), missing.prefix(1).map(\.trackStableKey))
+        XCTAssertEqual(batch.results.map(\.outcome), [.timedSaved], "A save that finished as the job stopped remains visible")
     }
 
     @MainActor
