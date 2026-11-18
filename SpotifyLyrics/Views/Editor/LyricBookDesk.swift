@@ -329,23 +329,54 @@ struct LyricBookDesk: View {
 struct LyricBookOffer: View {
     var label = "编成歌本"
     var title = ""
+    /// Line rows use an icon beside the bookmark; headers and menus keep the text label.
+    var compact = false
     let chapters: () -> [LyricBook.Chapter]
     @ObservedObject private var windows = LyricBookWindows.shared
     @Environment(\.newDocument) private var newDocument
+    @State private var addedTo: String?
 
     var body: some View {
-        if windows.destinations.isEmpty {
-            Button(label, systemImage: "book.closed", action: openNew)
-        } else {
-            Menu {
-                Button("新建歌本", action: openNew)
-                Section("加入打开的歌本") {
-                    ForEach(windows.destinations) { destination in
-                        Button(destination.title) { destination.add(chapters()) }
+        Group {
+            if windows.destinations.isEmpty {
+                Button(action: openNew) { face }
+            } else {
+                Menu {
+                    Button("新建歌本", action: openNew)
+                    Section("加入打开的歌本") {
+                        ForEach(windows.destinations) { destination in
+                            Button(destination.title) { add(to: destination) }
+                        }
                     }
-                }
-            } label: { Label(label, systemImage: "book.closed") }
+                } label: { face }
+                .menuIndicator(compact ? .hidden : .visible)
+            }
         }
+        .help(addedTo.map { "已收进《\($0)》" } ?? label)
+        .accessibilityLabel(addedTo.map { "已收进《\($0)》" } ?? label)
+        .task(id: addedTo) {
+            guard addedTo != nil else { return }
+            try? await Task.sleep(for: .seconds(1.8))
+            if !Task.isCancelled { addedTo = nil }
+        }
+    }
+
+    @ViewBuilder private var face: some View {
+        let symbol = addedTo == nil ? "book.closed" : "checkmark"
+        if compact {
+            Image(systemName: symbol).frame(width: 25, height: 25).contentShape(Rectangle())
+        } else {
+            Label(addedTo.map { "已收进《\($0)》" } ?? label, systemImage: symbol)
+        }
+    }
+
+    private func add(to destination: LyricBookWindows.Destination) {
+        let chapters = chapters()
+        guard !chapters.isEmpty else { return }
+        destination.add(chapters)
+        addedTo = destination.title.isEmpty ? "歌本" : destination.title
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                             userInfo: [.announcement: "已收进《\(addedTo ?? "歌本")》", .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     private func openNew() {
@@ -356,7 +387,7 @@ struct LyricBookOffer: View {
 }
 
 @MainActor
-private final class LyricBookWindows: ObservableObject {
+fileprivate final class LyricBookWindows: ObservableObject {
     struct Destination: Identifiable {
         let id: UUID
         let title: String

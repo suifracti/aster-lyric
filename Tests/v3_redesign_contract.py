@@ -114,7 +114,7 @@ notes=window[window.index('private func linerNotesLayout'):window.index('private
 assert 'coverColumnWidth / 1.4 * coverScale' in notes
 assert 'coverWidth * min(1,' not in notes
 menu=(ROOT/'SpotifyLyrics/Windows/MenuBarLyricsController.swift').read_text()
-assert 'Double(animationDistance) / 22' in menu and 'min(60, max(2' not in menu
+assert 'max(2, Double(distance) / 22)' in menu and 'marqueeAnimation(distance: animationDistance' in menu and 'min(60, max(2' not in menu
 assert 'Double(input)' in controls and 'formatter.number(from: draft)' not in controls
 print('PASS empty playback footprint, finite cover scaling, full numeric input and constant marquee speed guards')
 

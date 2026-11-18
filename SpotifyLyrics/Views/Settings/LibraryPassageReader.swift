@@ -139,6 +139,15 @@ struct LibraryPassageReader: View {
                                 lyricsVersionID: page.originalVersionID, lineIndex: line.id)
                     .opacity(hoveredLine == line.id || selected ? 1 : 0.45)
             }
+            if [line.original, line.translation, line.reading, line.background].compactMap({ $0 }).contains(where: { !$0.isEmpty }) {
+                // The found line can go straight into a songbook, keeping its version and line number.
+                LyricBookOffer(label: "收录这句", title: page.entry.title, compact: true) {
+                    [.init(page: page, source: target.source, excerpt: line)]
+                }
+                .buttonStyle(.plain).menuStyle(.borderlessButton).fixedSize()
+                .opacity(hoveredLine == line.id || selected ? 1 : 0)
+                .allowsHitTesting(hoveredLine == line.id || selected)
+            }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
         .background(selected ? WorkspacePalette.selection : .clear, in: RoundedRectangle(cornerRadius: 7))

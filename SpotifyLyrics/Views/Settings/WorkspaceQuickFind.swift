@@ -64,8 +64,10 @@ struct WorkspaceQuickFind: View {
         VStack(spacing: 0) {
             if let reading {
                 VStack(alignment: .leading, spacing: 0) {
-                    Button { backToSearch() } label: { Label("返回查找", systemImage: "chevron.left") }
-                        .buttonStyle(.borderless).keyboardShortcut(.cancelAction)
+                    Button { backToSearch() } label: {
+                        Label(term.isEmpty ? "返回查找" : "返回「\(term)」", systemImage: "chevron.left").lineLimit(1)
+                    }
+                        .buttonStyle(.borderless).keyboardShortcut(.cancelAction).help("Esc 返回查找结果")
                         .padding(.horizontal, 17).padding(.vertical, 9)
                     Divider()
                     LibraryPassageReader(target: reading, library: library, openArchive: {
