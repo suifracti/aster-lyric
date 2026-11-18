@@ -1,4 +1,5 @@
 import AppKit
+import SQLite3
 import XCTest
 @testable import SpotifyLyrics
 
@@ -11,7 +12,16 @@ private final class EventPlaybackProvider: PlaybackProvider {
     var refreshes = 0
     var calibration: PlaybackSnapshot?
     var artworkResult: URL?
-    func artworkURL(for track: ProviderTrack, source: PlaybackSourceIdentity) async -> URL? { artworkResult ?? track.artworkURL }
+    var holdArtworkRead = false
+    var pendingArtwork: CheckedContinuation<URL?, Never>?
+    var finishedArtworkReads = 0
+    func artworkURL(for track: ProviderTrack, source: PlaybackSourceIdentity) async -> URL? {
+        let result: URL?
+        if holdArtworkRead { result = await withCheckedContinuation { pendingArtwork = $0 } }
+        else { result = artworkResult ?? track.artworkURL }
+        finishedArtworkReads += 1
+        return result
+    }
     var modes = PlayerPlaybackModes(shuffle: false, repeatMode: .off)
     var modeReadFails = false
     var nativeShuffleWrites: [Bool] = []
@@ -60,6 +70,44 @@ private struct EventOfflineLyrics: LyricsProvider {
 
 @MainActor
 final class DesktopPlaybackEventTests: XCTestCase {
+    func testStartupRecoversMissingArtworkBeforeThePlayerSendsANotification() async throws {
+        let (state, provider, _, _) = fixture()
+        provider.snapshot = PlaybackSnapshot(status: .ready, track: provider.snapshot.track,
+            position: 10, isPlaying: false, sourceIdentity: .spotifyDesktop)
+        let artwork = try XCTUnwrap(URL(string: "https://example.invalid/startup.jpg"))
+        provider.artworkResult = artwork
+        state.startProvider(connectSpotify: false)
+        try await wait { state.currentTrack.artworkURL == artwork }
+        XCTAssertTrue(state.hasLiveTrack)
+        XCTAssertEqual(provider.finishedArtworkReads, 1)
+        XCTAssertEqual(state.currentTime, 10, accuracy: 0.2)
+    }
+
+    func testLateArtworkLookupKeepsTheArtworkReceivedByThePlayer() async throws {
+        let (state, provider, _, center) = fixture()
+        let opening = try XCTUnwrap(provider.snapshot.track).withArtworkURL(URL(string: "https://example.invalid/initial.jpg")!)
+        provider.snapshot = PlaybackSnapshot(status: .ready, track: opening,
+            position: 10, isPlaying: false, sourceIdentity: .spotifyDesktop)
+        state.startProvider(connectSpotify: false)
+        try await wait { state.hasLiveTrack }
+
+        provider.holdArtworkRead = true
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: payload(position: 32))
+        try await wait { provider.pendingArtwork != nil }
+        let pending = try XCTUnwrap(provider.pendingArtwork)
+        defer { if provider.pendingArtwork != nil { pending.resume(returning: nil) } }
+        let direct = URL(string: "https://example.invalid/direct.jpg")!
+        var fresh = payload(position: 34)
+        fresh["Artwork URL"] = direct.absoluteString
+        center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: fresh)
+        try await wait { state.currentTrack.artworkURL == direct }
+
+        provider.pendingArtwork = nil
+        pending.resume(returning: URL(string: "https://example.invalid/late.jpg"))
+        try await wait { provider.finishedArtworkReads == 1 }
+        XCTAssertEqual(state.currentTrack.artworkURL, direct)
+    }
+
     func testCheckingPlaybackConnectionPreservesTheCurrentRecordingDuringAScriptFailure() async throws {
         let (state, provider, _, _) = fixture()
         state.startProvider(connectSpotify: false)
@@ -110,7 +158,7 @@ final class DesktopPlaybackEventTests: XCTestCase {
         try await wait { state.currentTrack.spotifyId == original.id }
         provider.snapshot = PlaybackSnapshot(status: .ready, track: queued, position: 0.1, isPlaying: true, sourceIdentity: .spotifyDesktop)
         center.post(name: DesktopPlaybackEvents.spotifyPlaybackChanged, object: nil, userInfo: payload(position: 0.1))
-        try await wait { state.currentTrack.spotifyId == queued.id }
+        try await wait { state.currentTrack.spotifyId == queued.id && !browser.isQueueLoading }
         XCTAssertEqual(provider.nextCount, 2)
     }
 
@@ -496,12 +544,13 @@ final class DesktopPlaybackEventTests: XCTestCase {
         XCTAssertEqual(provider.refreshes, initialRefreshes)
     }
 
-    func testLightSourceAdoptionSurvivesColdStartPauseAndMetadataRefresh() async throws {
+    func testKnownLocalizedRecordingKeepsAdoptedLyricsThroughColdStartAndRefresh() async throws {
         let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
         let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("test.sqlite3"),
             alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
         try await repo.prepare()
-        // Real notification/catalog mismatch, 2026-10-21: one Spotify ID, two titles/albums.
+        // The archive already links the two known localized titles. A new
+        // cross-title redirect is never inferred from a desktop ID alone.
         let id = "spotify:track:4cTnxwbzLd90onQ9bKm9V6"
         let saved = Track(title: "些細な幸福だけで灯っていた。", artist: "kyiku", album: "やどり", duration: 246.49, spotifyId: id)
         let identity = TrackIdentity(track: saved)
@@ -511,6 +560,18 @@ final class DesktopPlaybackEventTests: XCTestCase {
         let version = try await repo.save(track: saved, identity: identity, document: document)
         let versionID = try XCTUnwrap(version.versionID)
         try await repo.adoptLyricsVersion(trackStableKey: identity.stableKey, lyricsVersionID: versionID)
+        let observed = TrackIdentity(title: "Light source", artist: "kyiku",
+            album: "Even if it was a small prayer", duration: 246.49, spotifyTrackID: id)
+        var database: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(repo.databaseURL.path, &database, SQLITE_OPEN_READWRITE, nil), SQLITE_OK)
+        let connection = try XCTUnwrap(database)
+        let redirect = """
+            INSERT INTO track_identity_redirects VALUES
+              ('\(observed.stableKey)', '\(identity.stableKey)', 'fixture', 'fixture', 'fixture', 1);
+            """
+        let inserted = sqlite3_exec(connection, redirect, nil, nil, nil)
+        sqlite3_close(connection)
+        XCTAssertEqual(inserted, SQLITE_OK)
         let reopened = SQLiteLyricsRepository(databaseURL: repo.databaseURL,
             alignmentProvenanceDirectory: root.appendingPathComponent("provenance"))
         let (state, provider, _, center) = fixture(repository: reopened)
@@ -518,8 +579,9 @@ final class DesktopPlaybackEventTests: XCTestCase {
             track: ProviderTrack(id: id, title: "Light source", artist: "kyiku", album: "Even if it was a small prayer", duration: 246.49),
             position: 10, isPlaying: true, sourceIdentity: .spotifyDesktop)
         state.startProvider()
-        try await wait { state.liveLyricsVersionID == versionID }
+        try await wait { state.liveLyricsVersionID == versionID && provider.finishedArtworkReads == 1 }
         let revision = state.lyricsSession.revision
+        XCTAssertNil(state.currentTrack.artworkURL)
         let artwork = URL(string: "https://example.com/light-source-artwork.jpg")!
         provider.artworkResult = artwork
         for (status, title, artist, album) in [("Paused", saved.title, "kyiku", saved.album),
@@ -543,7 +605,6 @@ final class DesktopPlaybackEventTests: XCTestCase {
         XCTAssertEqual(state.currentTrack.artworkURL, artwork, "a same-recording position read can omit artwork already resolved by the notification path")
         XCTAssertEqual(state.liveLyricsVersionID, versionID)
         // The observed key must still resolve the adopted asset for editor/offset/version actions.
-        let observed = TrackIdentity(title: "Light source", artist: "kyiku", album: "Even if it was a small prayer", duration: 246.49, spotifyTrackID: id)
         let editable = try await reopened.loadEditableVersion(versionID: versionID, track: saved, identity: observed)
         XCTAssertEqual(editable?.record.id, versionID)
         // Music's existing persistent IDs are stored in spotify_id, with no schema change.

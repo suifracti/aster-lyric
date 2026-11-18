@@ -31,6 +31,22 @@ final class ProviderPositionCalibrationTests: XCTestCase {
         XCTAssertFalse(calls[0].contains("player position"), "asset reads do not poll playback state")
     }
 
+    func testMissingDesktopArtworkUsesAcceptedRecordingIDForPublicFallback() async throws {
+        let id = "AbCdEfGhIjKlMnOpQrStUv"
+        let scripts = CalibrationScriptFixture("spotify:track:OTHER\u{1e}https://example.invalid/wrong.jpg")
+        let artwork = try XCTUnwrap(URL(string: "https://example.invalid/fallback.jpg"))
+        var requestedIDs: [String] = []
+        let provider = SpotifyDesktopProvider(scriptRunner: { script, _ in await scripts.run(script) },
+            applicationIsInstalled: { true }, applicationIsRunning: { true }, publicArtworkLookup: { trackID in
+                requestedIDs.append(trackID)
+                return artwork
+            })
+        let track = try XCTUnwrap(snapshot(source: .spotifyDesktop, id: "spotify:track:\(id)").track)
+        let fallback = await provider.artworkURL(for: track, source: .spotifyDesktop)
+        XCTAssertEqual(fallback, artwork)
+        XCTAssertEqual(requestedIDs, [id])
+    }
+
     private func snapshot(source: PlaybackSourceIdentity, id: String, playing: Bool = true) -> PlaybackSnapshot {
         PlaybackSnapshot(status: .ready, track: ProviderTrack(id: id, title: "Cached", artist: "Fixture", album: "Album", duration: 200),
                          position: 12, isPlaying: playing, sourceIdentity: source)

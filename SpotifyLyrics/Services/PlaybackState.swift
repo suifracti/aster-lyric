@@ -98,6 +98,7 @@ public final class PlaybackState: ObservableObject {
     private var lastObservedDesktopSource: PlaybackSourceIdentity = .unknown
     private var desktopArtworkTask: Task<Void, Never>?
     private var desktopArtworkKey: String?
+    private var desktopArtworkRetried = false
     /// Shared lyrics session (product auto-align reuses adopt/save paths).
     public let lyricsSession: LyricsSessionController
     private let searchPreviewSession: LyricsSessionController
@@ -1291,34 +1292,43 @@ public final class PlaybackState: ObservableObject {
             providerStatus = .noTrack
             clearLiveTrackIfNeeded()
         } else {
-            synchronize(with: snapshot)
-            loadDesktopArtworkIfNeeded(snapshot)
+            synchronize(with: snapshot, canRetryArtwork: true)
         }
     }
 
-    private func loadDesktopArtworkIfNeeded(_ snapshot: PlaybackSnapshot) {
-        guard let track = snapshot.track, track.artworkURL == nil else { return }
+    private func updateDesktopArtwork(for snapshot: PlaybackSnapshot, canRetry: Bool) {
+        guard snapshot.sourceIdentity == .spotifyDesktop || snapshot.sourceIdentity == .appleMusic,
+              let track = snapshot.track else { return }
         let recordingKey = track.desktopRecordingKey
         let key = snapshot.sourceIdentity.rawValue + ":" + recordingKey
-        guard desktopArtworkKey != key else { return }
-        desktopArtworkKey = key
-        desktopArtworkTask?.cancel()
+        if desktopArtworkKey != key {
+            desktopArtworkTask?.cancel()
+            desktopArtworkTask = nil
+            desktopArtworkKey = key
+            desktopArtworkRetried = false
+        } else if track.artworkURL == nil {
+            // A later player notification may arrive after an unsuccessful
+            // startup read. Position calibration does not retry asset reads.
+            guard canRetry, desktopArtworkTask == nil, !desktopArtworkRetried else { return }
+            desktopArtworkRetried = true
+        }
+        if track.artworkURL != nil {
+            desktopArtworkTask?.cancel()
+            desktopArtworkTask = nil
+            return
+        }
+
         let provider = provider
         desktopArtworkTask = Task { @MainActor [weak self] in
-            var artwork = await provider.artworkURL(for: track, source: snapshot.sourceIdentity)
+            let artwork = await provider.artworkURL(for: track, source: snapshot.sourceIdentity)
             LyricsE2ELog.log("ARTWORK desktop id=\(track.id ?? "none") found=\(artwork != nil) cancelled=\(Task.isCancelled)")
-            // Spotify Desktop sometimes gives no artwork address (it does when it
-            // stops answering Apple Events well). The song's public oEmbed has it.
-            if artwork == nil, snapshot.sourceIdentity == .spotifyDesktop, !Task.isCancelled,
-               let id = track.id.flatMap(SpotifyPublicArtwork.trackID(from:)) {
-                artwork = await SpotifyPublicArtwork.coverURL(trackID: id)
-                LyricsE2ELog.log("ARTWORK oembed id=\(id) found=\(artwork != nil)")
-            }
+            guard !Task.isCancelled, let self, self.desktopArtworkKey == key else { return }
+            self.desktopArtworkTask = nil
             guard let url = artwork,
-                  !Task.isCancelled, let self,
                   self.hasLiveTrack, self.lastObservedDesktopSource == snapshot.sourceIdentity,
                   let accepted = self.desktopSnapshots[snapshot.sourceIdentity],
-                  let latestTrack = accepted.track, latestTrack.desktopRecordingKey == recordingKey else { return }
+                  let latestTrack = accepted.track, latestTrack.desktopRecordingKey == recordingKey,
+                  latestTrack.artworkURL == nil else { return }
             let enriched = latestTrack.withArtworkURL(url)
             let updated = PlaybackSnapshot(status: accepted.status, track: enriched,
                 position: accepted.position, isPlaying: accepted.isPlaying, sourceIdentity: accepted.sourceIdentity)
@@ -3146,7 +3156,6 @@ public final class PlaybackState: ObservableObject {
             && (recoveringRecording || snapshot.track?.desktopRecordingKey == desktopSnapshots[lastObservedDesktopSource]?.track?.desktopRecordingKey))
         if shouldApply && calibrationMatches {
             synchronize(with: snapshot, observedAtMonotonic: latencyCompensatedMonotonic)
-            if recoveringRecording { loadDesktopArtworkIfNeeded(snapshot) }
         } else if let accepted = desktopSnapshots[lastObservedDesktopSource] {
             // A provider's own asynchronous read can have updated its cache or
             // command route before the generation check rejected that read.
@@ -3162,7 +3171,8 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
-    private func synchronize(with incoming: PlaybackSnapshot, observedAtMonotonic: TimeInterval? = nil) {
+    private func synchronize(with incoming: PlaybackSnapshot, observedAtMonotonic: TimeInterval? = nil,
+                             canRetryArtwork: Bool = false) {
         guard !isMockPreviewMode else { return }
         let snapshot = incoming.retainingArtwork(from: desktopSnapshots[incoming.sourceIdentity])
         noteConnection(for: snapshot.sourceIdentity, status: snapshot.status)
@@ -3324,12 +3334,14 @@ public final class PlaybackState: ObservableObject {
         if wasPlaying != snapshot.isPlaying || identityChanged {
             AutomaticAlignmentJobController.shared.notePlaybackContextChanged()
         }
+        updateDesktopArtwork(for: snapshot, canRetry: canRetryArtwork)
     }
 
     private func clearLiveTrackIfNeeded() {
         guard !isMockPreviewMode else { return }
         cancelLyricLineLoop()
         desktopArtworkTask?.cancel()
+        desktopArtworkTask = nil
         desktopArtworkKey = nil
         lastObservedDesktopSource = .unknown
         lyricsOffsetScopeBinding?.clear()

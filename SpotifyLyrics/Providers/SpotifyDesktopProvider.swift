@@ -13,6 +13,7 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
     private var lastDesktopSnapshot: PlaybackSnapshot?
     private let applicationIsInstalled: @MainActor () -> Bool
     private let applicationIsRunning: @MainActor () -> Bool
+    private let publicArtworkLookup: (@MainActor (String) async -> URL?)?
 
     private static let refreshScriptTimeout: TimeInterval = 3
     private static let commandScriptTimeout: TimeInterval = 5
@@ -23,17 +24,19 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
                 script: script,
                 timeout: timeout
             )
-        })
+        }, publicArtworkLookup: SpotifyPublicArtwork.coverURL(trackID:))
     }
 
     /// Test seam for the parser and connection state contract. Production
     /// calls use the bounded, serial AppleScript process runner above.
     init(scriptRunner: @escaping @Sendable (String, TimeInterval) async throws -> String?,
          applicationIsInstalled: (@MainActor () -> Bool)? = nil,
-         applicationIsRunning: (@MainActor () -> Bool)? = nil) {
+         applicationIsRunning: (@MainActor () -> Bool)? = nil,
+         publicArtworkLookup: (@MainActor (String) async -> URL?)? = nil) {
         self.scriptRunner = scriptRunner
         self.applicationIsInstalled = applicationIsInstalled ?? { FileManager.default.fileExists(atPath: Self.applicationPath) }
         self.applicationIsRunning = applicationIsRunning ?? { !NSRunningApplication.runningApplications(withBundleIdentifier: Self.bundleIdentifier).isEmpty }
+        self.publicArtworkLookup = publicArtworkLookup
     }
 
     public func refresh() async -> PlaybackSnapshot {
@@ -46,7 +49,7 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
         lastDesktopSnapshot = snapshot.status.isReady ? snapshot : nil
     }
 
-    /// One asset read after a track notification, never a status polling loop.
+    /// A one-off lookup for the recording accepted by playback state.
     public func artworkURL(for track: ProviderTrack, source: PlaybackSourceIdentity) async -> URL? {
         guard source == .spotifyDesktop, isRunning, let id = track.id else { return nil }
         let script = """
@@ -55,11 +58,16 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
             return (id of current track as text) & (character id 30) & (artwork url of current track as text)
         end tell
         """
-        guard let raw = try? await execute(script: script),
-              !Task.isCancelled else { return nil }
-        let fields = raw.components(separatedBy: fieldSeparator)
-        guard fields.count == 2, fields[0] == id else { return nil }
-        return Self.parseURL(fields[1])
+        let raw = try? await execute(script: script)
+        guard !Task.isCancelled, isRunning else { return nil }
+        if let fields = raw?.components(separatedBy: fieldSeparator),
+           fields.count == 2, fields[0] == id, let url = Self.parseURL(fields[1]) {
+            return url
+        }
+        guard let publicArtworkLookup, let trackID = SpotifyPublicArtwork.trackID(from: id) else { return nil }
+        let artwork = await publicArtworkLookup(trackID)
+        LyricsE2ELog.log("ARTWORK oembed id=\(trackID) found=\(artwork != nil)")
+        return artwork
     }
 
     public func calibratePosition() async -> PlaybackSnapshot {
