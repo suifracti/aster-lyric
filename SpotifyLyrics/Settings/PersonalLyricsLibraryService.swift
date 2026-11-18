@@ -162,10 +162,10 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         versionPreview = VersionPreview(title: "", text: "", passage: target)
     }
 
-    func readPassage(_ target: LibraryPassageTarget) async throws -> LibraryPassagePage? {
+    func readPassage(_ target: LibraryPassageTarget, recordOpening: Bool = true) async throws -> LibraryPassagePage? {
         let page = try await repository.readLibraryPassage(target)
         try Task.checkCancellation()
-        if let page { rememberOpenedRecord(page.entry) }
+        if let page, recordOpening { rememberOpenedRecord(page.entry) }
         return page
     }
 
@@ -359,6 +359,13 @@ public final class PersonalLyricsLibraryService: ObservableObject {
 
     func searchPassages(matching query: String) async throws -> [LibraryPassageHit] {
         try await repository.searchLibraryPassages(query)
+    }
+
+    func bookSources(matching query: String) async throws -> [LibraryPassageHit] {
+        if !query.isEmpty { return try await searchPassages(matching: query).filter { $0.entry.lyricsVersionCount > 0 } }
+        let entries = try await repository.loadPersonalLibraryEntries()
+        return entries.filter { $0.lyricsVersionCount > 0 }
+            .map { LibraryPassageHit(entry: $0, source: nil, excerpt: nil, matchesMetadata: true) }
     }
 
     func fileDestinations() async throws -> [DatabaseTrackRecord] {

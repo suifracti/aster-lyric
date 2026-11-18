@@ -90,9 +90,11 @@ struct LibraryPassageReader: View {
                                 Text(page.entry.title).font(.system(size: 26, weight: .semibold, design: .serif))
                                     .textSelection(.enabled).accessibilityAddTraits(.isHeader)
                                 HStack {
-                                    Text(page.entry.artist).font(.callout).foregroundStyle(.secondary)
+                                    Text(page.entry.artist).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                                     Spacer()
                                     PortableLyricsExportMenu { page.portableEdition }
+                                    LyricBookOffer(title: page.entry.title) { [.init(page: page, source: target.source)] }
+                                        .controlSize(.small).fixedSize()
                                     if page.lines.contains(where: { !$0.original.isEmpty }) {
                                         Button { startRecall(page, anchor: focusedLine) } label: {
                                             Label("接下一句", systemImage: "text.bubble")
@@ -146,6 +148,9 @@ struct LibraryPassageReader: View {
         .contextMenu {
             if !line.original.isEmpty {
                 Button("从这句接下去", systemImage: "text.bubble") { startRecall(page, anchor: line.id) }
+            }
+            if [line.original, line.translation, line.reading, line.background].compactMap({ $0 }).contains(where: { !$0.isEmpty }) {
+                LyricBookOffer(label: "收录这句", title: page.entry.title) { [.init(page: page, source: target.source, excerpt: line)] }
             }
         }
     }

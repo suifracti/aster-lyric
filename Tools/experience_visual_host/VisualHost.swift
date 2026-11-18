@@ -714,10 +714,21 @@ private struct ExperienceFixtureRoot: View {
                     try? await Task.sleep(for: .milliseconds(800))
                 }
                 var extraWindow: NSWindow?
-                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker", "music-order", "favorites", "reader", "lyric-file", "compare", "quick-find", "manuscript", "stanzas"].contains(ExperienceArguments.surface) {
+                if ["menubar", "settings", "models", "search-panel", "search-full", "playlist-picker", "music-order", "favorites", "reader", "lyric-file", "compare", "quick-find", "manuscript", "stanzas", "songbook"].contains(ExperienceArguments.surface) {
                     MenuBarLyricsController.shared.bind(playbackState: playback)
                     let root: AnyView
-                    if ExperienceArguments.surface == "music-order" {
+                    if ExperienceArguments.surface == "songbook" {
+                        let (library, request) = try! await comparisonFixture()
+                        let source = LibraryPassageSource.translation(request.base.id)
+                        let page = try! await library.readPassage(.init(trackKey: request.entry.trackStableKey, source: source))!
+                        var track = LyricBook.Chapter(page: page, source: source)
+                        track.note = "反复读到这里时，才发现信封上那处空白。"
+                        let quote = LyricBook.Chapter(page: page, source: source, excerpt: page.lines[2])
+                        var book = LyricBook(title: "留给窗边的歌", author: "南窗", chapters: [track, quote])
+                        book.introduction = "给在雨声里读书的夜晚，也留下一些没有寄出的信。"
+                        root = AnyView(LyricBookDesk(book: .constant(book),
+                            initialChapter: ProcessInfo.processInfo.arguments.contains("--songbook-page") ? track.id : nil))
+                    } else if ExperienceArguments.surface == "music-order" {
                         root = AnyView(V3PlaylistPanel(browser: playback.playlistBrowser, query: "").background(Color(nsColor: .windowBackgroundColor)))
                     } else if ExperienceArguments.surface == "playlist-picker" {
                         root = AnyView(PlaylistPickerPopover(model: playback.playlistBrowser.picker))

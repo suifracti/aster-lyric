@@ -20,6 +20,12 @@
 			<key>LSItemContentTypes</key><array><string>com.suifracti.aster-lyric.manuscript</string></array>
 		</dict>
 		<dict>
+			<key>CFBundleTypeName</key><string>歌本</string>
+			<key>CFBundleTypeRole</key><string>Editor</string>
+			<key>LSHandlerRank</key><string>Owner</string>
+			<key>LSItemContentTypes</key><array><string>com.suifracti.aster-lyric.songbook</string></array>
+		</dict>
+		<dict>
 			<key>CFBundleTypeName</key><string>歌词文件</string>
 			<key>CFBundleTypeRole</key><string>Viewer</string>
 			<key>LSHandlerRank</key><string>Alternate</string>
@@ -34,6 +40,12 @@
 			<key>UTTypeDescription</key><string>歌词手稿</string>
 			<key>UTTypeConformsTo</key><array><string>public.text</string></array>
 			<key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>asterdraft</string></array></dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>com.suifracti.aster-lyric.songbook</string>
+			<key>UTTypeDescription</key><string>歌本</string>
+			<key>UTTypeConformsTo</key><array><string>public.json</string></array>
+			<key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>asterbook</string></array></dict>
 		</dict>
 	</array>
 	<key>UTImportedTypeDeclarations</key>

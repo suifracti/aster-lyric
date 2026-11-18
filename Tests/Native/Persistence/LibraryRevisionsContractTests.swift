@@ -1,9 +1,36 @@
 import Foundation
 import SQLite3
 import XCTest
+import PDFKit
 @testable import SpotifyLyrics
 
 final class LibraryRevisionsContractTests: XCTestCase {
+    func testPortableSongbookRetainsRepeatedPassagesAndPrintsTheLastLine() throws {
+        let version = UUID()
+        let first = V3FavoriteLines.Entry(text: "回到这里", translation: "Here again", title: "慢车", artist: "南窗",
+                                          trackKey: "one", lyricsVersionID: version, lineIndex: 2)
+        var later = first
+        later.id = UUID()
+        later.lineIndex = 19
+        var book = LyricBook(title: "旅途中读的歌", author: "星弦")
+        let opening = book.add(.init(quote: first))
+        XCTAssertEqual(book.add(.init(quote: first)), opening)
+        let closing = book.add(.init(quote: later))
+        XCTAssertNotEqual(opening, closing)
+        book.move(closing, by: -1)
+        XCTAssertEqual(book.chapters.map(\.origin.lineIndex), [19, 2])
+        book.chapters[0].note = "写在返程"
+        book.chapters[0].lines += (1...110).map { .init(original: "第\($0)行在路上") }
+        book.chapters[0].lines.append(.init(original: "末页仍有整句"))
+        let restored = try LyricBook(data: book.encoded())
+        XCTAssertEqual(restored, book)
+        let pdf = try XCTUnwrap(PDFDocument(data: try LyricBookPrint.data(for: restored)))
+        XCTAssertGreaterThan(pdf.pageCount, 4)
+        let printed = (0..<pdf.pageCount).compactMap { pdf.page(at: $0)?.string }.joined(separator: "\n")
+        for text in ["旅途中读的歌", "写在返程", "末页仍有整句", "Here again"] { XCTAssertTrue(printed.contains(text), text) }
+        XCTAssertEqual(pdf.page(at: 1)?.annotations.filter { $0.type == "Link" }.count, 2)
+    }
+
     func testMovingAndRepeatingStanzasKeepsBlankSpaceAndTimingLabels() throws {
         let text = "\r\n[00:01.00]第一段🌿\r\n下一行\r\n \t\r\n回来\r\n\r\n回来\r\n"
         let draft = LyricManuscript(text: text)

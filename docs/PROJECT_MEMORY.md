@@ -14,6 +14,7 @@
 | 两份稿逐句对照、改译时借用另一版的句子、重复副歌错位 | L-049 · LibraryVersionComparison、LibraryTranslationRevisionDraft |
 | 从 Finder 打开歌词文件、给本机录音补稿、导出手里的版本、入库后合声消失 | L-032、L-048 · LyricFileDocument、LocalLyricsFile、PortableLyricsEdition |
 | 没放歌时写手稿、调整段落或接着修上一稿 | L-050 · LyricManuscript、LyricWritingDesk、ManuscriptStanzas |
+| 从原词、译文或金句编歌本、保存原出处、导出带目录的 PDF | L-051 · LyricBook、LyricBookDesk、LyricBookPrint |
 | 新包、截图、构建/签名、实际运行是哪份 | L-002；DEVELOPMENT_WORKFLOW.md |
 | 极简、减少按钮、保留旧功能 | L-003；TOOLBAR_BEHAVIOR.md |
 | 找回旧环境光、模糊/缩放参数、样式合并；改 renderer/偏好 | L-004；AppSettingsStore.swift 与 authenticAmbientArtworkLayers |
@@ -760,3 +761,12 @@ TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、
 归档以录音、手稿 ID 和正文指纹去重，局部时间也计入指纹。同一手稿再次归档时关联到它在这份录音中引用的父稿，其他录音不能借用。外部 TXT、LRC 和 TTML 继续用独立的阅读窗口；手稿 UTI 属于 `public.text`，这样系统不会把它交给通用纯文本阅读器。
 
 真实窗口验收在私有目录打开一份手稿，重复第二段，经文件菜单保存并回读正文，移动首段再存入同一录音。两版之间的父稿和原有采用选择均已读回。从已存稿打开阅读页后，通过启用的 ⌘N 菜单项新建了空白手稿。
+
+
+## L-051 歌本保存已有版本，A5 印页带可跳转的目录（2026-11-18）
+
+工作台、歌词阅读页、单行菜单和金句都能编歌本。打开已有歌本时可直接收录进去。歌曲按本次阅读的原词、译文或读音版本保留一份精简正文。摘句带录音键、版本 UUID 与行号，同一副歌的两个位置可以各自收录。母库变动后，本机歌本仍能阅读其收录时的文字。歌本文档自身只保存文本、顺序、封面和编者按。
+
+排版使用 Core Text 按实际字形分页，长歌词可跨页。整首歌单独起页，连续摘句共用页面，A5 PDF 目录可直接跳到对应篇目。选到的原词、译文、读音和和声共用歌本的显示选项。导出前只生成内存数据。本机保存或打印由系统面板负责。
+
+隔离真窗从 Finder 打开歌本，调整两首顺序，在收录窗口加入带出处的金句，经系统「存储」读回。系统面板导出 13 页 A5 PDF，抽查封面、目录、正文与末页。原生测试覆盖重复摘句、版本出处、PDF 跳转和跨页末句，明暗色离屏图覆盖封面与章节页。

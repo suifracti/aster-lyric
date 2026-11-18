@@ -879,7 +879,7 @@ public struct PersonalDataImportPreview: Equatable, Sendable, Codable {
     }
 }
 
-enum LibraryPassageSource: Hashable, Sendable {
+enum LibraryPassageSource: Hashable, Codable, Sendable {
     case selected
     case original(UUID)
     case attached(UUID)
@@ -897,7 +897,7 @@ enum LibraryPassageSource: Hashable, Sendable {
     }
 }
 
-public struct LibraryPassageTarget: Hashable, Identifiable, Sendable {
+public struct LibraryPassageTarget: Hashable, Identifiable, Codable, Sendable {
     let trackKey: String
     var source: LibraryPassageSource = .selected
     var find: String = ""

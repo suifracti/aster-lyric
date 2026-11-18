@@ -29,6 +29,10 @@ struct FavoriteLinesView: View {
                 Text("收藏的金句").font(.system(size: 26, weight: .semibold, design: .serif))
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
+                if !entries.isEmpty {
+                    LyricBookOffer(title: query.isEmpty ? "收藏的金句" : query) { entries.map(LyricBook.Chapter.init(quote:)) }
+                        .help("收进当前列表中的 \(entries.count) 句").controlSize(.small).fixedSize()
+                }
                 if !store.entries.isEmpty {
                     Picker("查看方式", selection: $asBook) {
                         Text("翻阅").tag(true)
@@ -172,6 +176,7 @@ struct FavoriteLinesView: View {
             if let openTrack {
                 Button("打开歌曲档案", systemImage: "music.note") { select(entry); openTrack(entry.trackKey) }
             }
+            LyricBookOffer(label: "收录这句", title: entry.title) { [.init(quote: entry)] }
             Button("复制原句", systemImage: "doc.on.doc") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(entry.text, forType: .string)

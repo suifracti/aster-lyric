@@ -27,7 +27,7 @@ struct LyricFileDocument: FileDocument {
     @MainActor static func choose(multiple: Bool) -> [URL] {
         let panel = NSOpenPanel()
         panel.message = "打开本地歌词"
-        panel.allowedContentTypes = readableContentTypes + [LyricManuscript.manuscriptType]
+        panel.allowedContentTypes = readableContentTypes + [LyricManuscript.manuscriptType, LyricBook.bookType]
         panel.allowsMultipleSelection = multiple
         panel.canChooseDirectories = false
         return panel.runModal() == .OK ? panel.urls : []

@@ -282,6 +282,10 @@
 		83E5437AF1A14EDB1F1A703B /* PortableLyricsEdition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D7BB930725D9BFC4E334E0 /* PortableLyricsEdition.swift */; };
 		B18B610D474328FCC8E0FDDE /* LyricManuscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0209A18F3B89D1B941B7E245 /* LyricManuscript.swift */; };
 		0D1F9D3CFAD240DF3C2C48A0 /* LyricWritingDesk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5463A2BA9B7B55AA5A4C422D /* LyricWritingDesk.swift */; };
+		2C16575041CF3965E5FE53EF /* LyricBook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08FFCB4454579AA10A208F3F /* LyricBook.swift */; };
+		0EE7632A8D14755E8E769271 /* LyricBookPrint.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E2035E8BA56FB9A2683E19 /* LyricBookPrint.swift */; };
+		9E2DD2812586A48DFBABFFC5 /* LyricBookDesk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3278F5F017EFC4C01ECDB3B9 /* LyricBookDesk.swift */; };
+		E0344A1381D163C4152A2ECF /* LyricBookPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61A751E17C36770F17898D26 /* LyricBookPicker.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -566,6 +570,10 @@
 		18D7BB930725D9BFC4E334E0 /* PortableLyricsEdition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortableLyricsEdition.swift; sourceTree = "<group>"; };
 		0209A18F3B89D1B941B7E245 /* LyricManuscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricManuscript.swift; sourceTree = "<group>"; };
 		5463A2BA9B7B55AA5A4C422D /* LyricWritingDesk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricWritingDesk.swift; sourceTree = "<group>"; };
+		08FFCB4454579AA10A208F3F /* LyricBook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricBook.swift; sourceTree = "<group>"; };
+		B6E2035E8BA56FB9A2683E19 /* LyricBookPrint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricBookPrint.swift; sourceTree = "<group>"; };
+		3278F5F017EFC4C01ECDB3B9 /* LyricBookDesk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricBookDesk.swift; sourceTree = "<group>"; };
+		61A751E17C36770F17898D26 /* LyricBookPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricBookPicker.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -691,6 +699,8 @@
 				110000712D83400100000000 /* TextLyricsImport.swift */,
 				7C969ACC8BEA0FCFAB31779E /* LocalLyricsFile.swift */,
 				0209A18F3B89D1B941B7E245 /* LyricManuscript.swift */,
+				B6E2035E8BA56FB9A2683E19 /* LyricBookPrint.swift */,
+				08FFCB4454579AA10A208F3F /* LyricBook.swift */,
 				18D7BB930725D9BFC4E334E0 /* PortableLyricsEdition.swift */,
 			);
 			path = Editor;
@@ -721,6 +731,8 @@
 			children = (
 				1100006D2D83400100000000 /* LyricsEditorWindowView.swift */,
 				5463A2BA9B7B55AA5A4C422D /* LyricWritingDesk.swift */,
+				61A751E17C36770F17898D26 /* LyricBookPicker.swift */,
+				3278F5F017EFC4C01ECDB3B9 /* LyricBookDesk.swift */,
 			);
 			path = Editor;
 			sourceTree = "<group>";
@@ -1293,12 +1305,16 @@
 				1100006C2D83400100000001 /* LyricsEditorSessionController.swift in Sources */,
 				1100006D2D83400100000001 /* LyricsEditorWindowView.swift in Sources */,
 				0D1F9D3CFAD240DF3C2C48A0 /* LyricWritingDesk.swift in Sources */,
+				E0344A1381D163C4152A2ECF /* LyricBookPicker.swift in Sources */,
+				9E2DD2812586A48DFBABFFC5 /* LyricBookDesk.swift in Sources */,
 				1100006E2D83400100000001 /* LyricsEditorModels.swift in Sources */,
 				1100006F2D83400100000001 /* LyricsTimelineValidator.swift in Sources */,
 				110000702D83400100000001 /* LRCImportExport.swift in Sources */,
 				110000712D83400100000001 /* TextLyricsImport.swift in Sources */,
 				76742E4922C17A4F57B4463F /* LocalLyricsFile.swift in Sources */,
 				B18B610D474328FCC8E0FDDE /* LyricManuscript.swift in Sources */,
+				0EE7632A8D14755E8E769271 /* LyricBookPrint.swift in Sources */,
+				2C16575041CF3965E5FE53EF /* LyricBook.swift in Sources */,
 				83E5437AF1A14EDB1F1A703B /* PortableLyricsEdition.swift in Sources */,
 				110000722D83400100000001 /* ManualLyricsActionsView.swift in Sources */,
 				110000E22D83400100000001 /* AlignmentProvenanceStore.swift in Sources */,

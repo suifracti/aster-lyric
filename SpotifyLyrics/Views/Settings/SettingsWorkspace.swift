@@ -34,12 +34,10 @@ struct SettingsWorkspace: View {
                     Text("我的工作台").font(.system(size: 29, weight: .semibold, design: .serif))
                         .accessibilityAddTraits(.isHeader)
                     Spacer()
-                    Button { newDocument(LyricManuscript()) } label: {
-                        Label("写手稿", systemImage: "square.and.pencil")
-                    }.help("新建歌词手稿")
-                    Button { openFiles(LyricFileDocument.choose(multiple: true)) } label: {
-                        Label("打开歌词…", systemImage: "doc.text")
-                    }.help("打开 TXT、LRC 或 TTML 文件，也可以从 Finder 拖到这里")
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 7) { fileActions }.fixedSize()
+                        Menu { fileActions } label: { Label("文件", systemImage: "folder") }.fixedSize()
+                    }
                 }
                 WorkspaceShelfCard(navigate: navigate)
                 if let record = try? JSONDecoder().decode(LastOpenedLyricsRecord.self, from: lastOpenedData) {
@@ -97,7 +95,10 @@ struct SettingsWorkspace: View {
         }
         .background(WorkspacePalette.paper)
         .dropDestination(for: URL.self) { urls, _ in
-            let files = urls.filter { $0.isFileURL && LocalLyricsFileKind(rawValue: $0.pathExtension.lowercased()) != nil }
+            let files = urls.filter { url in
+                let type = url.pathExtension.lowercased()
+                return url.isFileURL && (LocalLyricsFileKind(rawValue: type) != nil || ["asterdraft", "asterbook"].contains(type))
+            }
             guard !files.isEmpty else { return false }
             openFiles(files)
             return true
@@ -108,9 +109,17 @@ struct SettingsWorkspace: View {
                     .padding(5).allowsHitTesting(false)
             }
         }
-        .alert("无法打开歌词文件", isPresented: Binding(get: { openingError != nil }, set: { if !$0 { openingError = nil } })) {
+        .alert("无法打开文件", isPresented: Binding(get: { openingError != nil }, set: { if !$0 { openingError = nil } })) {
             Button("好") { openingError = nil }
         } message: { Text(openingError ?? "") }
+    }
+
+    @ViewBuilder
+    private var fileActions: some View {
+        Button("写手稿", systemImage: "square.and.pencil") { newDocument(LyricManuscript()) }
+        Button("编歌本", systemImage: "book.closed") { newDocument(LyricBook()) }
+        Button("打开文件…", systemImage: "doc.text") { openFiles(LyricFileDocument.choose(multiple: true)) }
+            .help("打开 TXT、LRC、TTML、手稿或歌本，也可以从 Finder 拖到这里")
     }
 
     private func openFiles(_ urls: [URL]) {
