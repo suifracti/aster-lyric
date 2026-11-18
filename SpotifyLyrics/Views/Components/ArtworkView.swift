@@ -10,15 +10,40 @@ struct ArtworkView: View {
     /// album-cover radius without changing the shared component's default.
     var cornerRadiusRatio: CGFloat = 0.18
     var preservesCompleteArtwork: Bool = false
+    var reportsForegroundFrame: Bool = false
     @State private var remoteArtwork: NSImage?
     /// The cover being replaced, kept underneath until the new one is clear.
     @State private var outgoingArtwork: NSImage?
     @State private var developed = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var cardSize: CGSize {
+        let slot = CGSize(width: size, height: size)
+        guard preservesCompleteArtwork, let artwork = remoteArtwork,
+              artwork.size.width > 0, artwork.size.height > 0 else { return slot }
+        let scale = size / max(artwork.size.width, artwork.size.height)
+        return CGSize(width: artwork.size.width * scale, height: artwork.size.height * scale)
+    }
+
     var body: some View {
-        ZStack {
-            fallbackArtwork
+        // Keep the layout slot stable while reporting the visible cover to the
+        // progress halo, caption and scene effects inside that slot.
+        artworkCard
+            .v3ReportsForegroundCover(cornerRadiusRatio: cornerRadiusRatio, enabled: reportsForegroundFrame)
+            .frame(width: size, height: size)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(track.album.isEmpty ? "专辑封面" : "专辑封面，\(track.album)")
+            .task(id: "\(effectiveArtworkURL?.absoluteString ?? "no-artwork")|\(debugForceNoArtwork ? "debug-no-artwork" : "artwork")") {
+                await loadArtwork()
+            }
+    }
+
+    private var artworkCard: some View {
+        let dimensions = cardSize
+        let shape = RoundedRectangle(cornerRadius: min(dimensions.width, dimensions.height) * cornerRadiusRatio,
+                                     style: .continuous)
+        return ZStack {
+            if (remoteArtwork == nil || !developed) && outgoingArtwork == nil { fallbackArtwork }
 
             if let outgoingArtwork {
                 Image(nsImage: outgoingArtwork)
@@ -46,29 +71,26 @@ struct ArtworkView: View {
                 }
             }
         }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * cornerRadiusRatio, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: size * cornerRadiusRatio, style: .continuous)
-                .stroke(LyricsDesignTokens.controlBorder, lineWidth: 1)
-        }
+        .frame(width: dimensions.width, height: dimensions.height)
+        .clipShape(shape)
+        .overlay { shape.strokeBorder(LyricsDesignTokens.controlBorder, lineWidth: 1) }
         .shadow(color: .black.opacity(showsAlbumLabel ? 0.28 : 0.18), radius: size * 0.08, y: size * 0.04)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(track.album.isEmpty ? "专辑封面" : "专辑封面，\(track.album)")
-        .task(id: "\(effectiveArtworkURL?.absoluteString ?? "no-artwork")|\(debugForceNoArtwork ? "debug-no-artwork" : "artwork")") {
-            // A song without artwork never keeps the previous song's image.
-            let next = debugForceNoArtwork ? nil : await ArtworkImageLoader.shared.image(for: effectiveArtworkURL)
-            guard !Task.isCancelled else { return }
-            guard let next else { outgoingArtwork = nil; remoteArtwork = nil; developed = true; return }
-            if next === remoteArtwork { outgoingArtwork = nil; developed = true; return }
-            outgoingArtwork = remoteArtwork
-            developed = false
-            remoteArtwork = next
-            try? await Task.sleep(nanoseconds: 30_000_000)
-            withAnimation(reduceMotion ? .easeInOut(duration: 0.25) : .easeOut(duration: 0.75)) { developed = true }
-            try? await Task.sleep(nanoseconds: 800_000_000)
-            if !Task.isCancelled { outgoingArtwork = nil }
-        }
+    }
+
+    private func loadArtwork() async {
+        // A song without artwork never keeps the previous song's image.
+        let next = debugForceNoArtwork ? nil : await ArtworkImageLoader.shared.image(for: effectiveArtworkURL)
+        guard !Task.isCancelled else { return }
+        guard let next else { outgoingArtwork = nil; remoteArtwork = nil; developed = true; return }
+        if next === remoteArtwork { outgoingArtwork = nil; developed = true; return }
+        outgoingArtwork = remoteArtwork
+        developed = false
+        remoteArtwork = next
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        guard !Task.isCancelled else { return }
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.25) : .easeOut(duration: 0.75)) { developed = true }
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        if !Task.isCancelled { outgoingArtwork = nil }
     }
 
     /// Debug-only fixture for visual validation. It forces the same formal
@@ -93,7 +115,7 @@ struct ArtworkView: View {
 
     private var fallbackArtwork: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: size * 0.18, style: .continuous)
+            Rectangle()
                 .fill(
                     LinearGradient(
                         colors: [

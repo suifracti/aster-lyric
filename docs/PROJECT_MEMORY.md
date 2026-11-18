@@ -36,7 +36,7 @@
 | 已采用的歌突然“歌词暂不可用”、合作歌手写法不同（假名/罗马字）进了核对 | L-021；redirectNewSpotifyKey、retryingStore、nameReadingKey |
 | 视频背景（Canvas）、歌手照片背景、按封面配色、随音乐律动、拖进度吸附、跳转回弹、脏词显示 | L-022；SpotifyLocalCache、V3BackdropMedia、CoverColorRoute、V3MusicPulse、LyricCensorRestorer |
 | 不同画面背景大小不一样、取景切了没效果、繁体歌名对不上简体来源、别人有逐字/对唱我们没有 | L-023；V3BackdropArtworkGeometry、v3SharedBackdropComplete、TrackTextNormalizer.normalize、KRCParser、QRCParser |
-| 逐字上浮/长音发光动画跳回开头、状态栏弹窗改版、换歌封面闪占位图、暂停褪色、桌面歌词情境隐藏 | L-024；LyricLineView animateLift、MenuBarLyricsPopoverView、ArtworkView、v3PauseFadesColor、FloatingLyricsWindowController.observeContext |
+| 逐字上浮/长音发光动画跳回开头、状态栏弹窗改版、封面闪占位图或露出方形底板、暂停褪色、桌面歌词情境隐藏 | L-024；LyricLineView animateLift、MenuBarLyricsPopoverView、ArtworkView、v3PauseFadesColor、FloatingLyricsWindowController.observeContext |
 | 情境一开旧画面切不过去、光色不走封面色、同一首对唱在不同窗口不一样 | L-052；V3ListeningPresentation、V3RoomOverrides、LyricsTimeline.presentedLyrics |
 | 粒子（雨雪雾、歌词意象）不显示、VU 表指针手感、新呈现一行放不下、分享卡排版跑偏、封面墙离屏图空白、声纹圈、频谱 | L-025；V3GlassWeather、V3ParticleHostView、V3VUMeter、V3LyricShareCard、ListeningCoverWall、V3Soundprint、V3SpectrumOverlay |
 | QQ 来源突然全部 http(500)、别人有词我们“暂无歌词正文” | L-026；QQExperimentalLyricsProvider.searchBases |
@@ -412,6 +412,7 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
 - **离屏截图宿主里 SwiftUI `.blur` 不生效。** 状态栏弹窗顶部第一版用模糊封面，离屏图里封面上的字清清楚楚。改成把封面缩到 12 像素再放大当色场：不依赖渲染器，也没有模糊开销。离屏宿主的深色弹窗本来就是白底（改动前也一样），深色效果要看真实 App。
 - **本 App 的电脑操作被策略禁止**（`request_access` 返回 policyDenied），状态栏弹窗打不开做真窗口核对；只能用 `Scripts/ui-snapshots.sh <dir> menubar-light menubar-dark`。主窗口仍可用 `screencapture -l` 拍。
 - **换歌时封面闪一下占位图**：`ArtworkView` 原来先把图置空再加载。现在保留旧图，新图载入后从轻微模糊中显出，再移除旧图；新歌没有封面时照旧不保留旧图。任务键只用封面地址，同一张专辑换歌不再重播。
+- **非正方形前景封面露出方形底板（2026-11-18）。** Spotify 的 Superfly 这张封面原图为 568×640。`ArtworkView` 在方形槽里用 fit 放图，却把占位渐变、整体裁切、边框和效果几何留在方形槽上。现在保持原图取景和固定布局槽，圆角、边框、题句、进度与情境效果都跟随实际封面矩形；切歌显影期间仍保留原有交接，缺封面时用同一层圆角裁切绘制占位图。
 - **暂停褪色**用一层灰色 `.blendMode(.saturation)`，只在暂停 1.5 秒后才插入。播放时不存在这层，不多一次全窗合成。跳转造成的短暂停顿不会触发。
 - **桌面歌词情境隐藏**：CGWindowList 的第 0 层窗口要在桌面歌词所在屏幕上覆盖全屏。只看宽高，会把另一块同分辨率的屏幕也判成全屏。用显卡的屏幕矩形与窗口矩形比较四条边，两者都以主屏左上角为原点。隐藏期间保留鼠标穿透设置。见 Apple 的 [CGDisplayBounds](https://developer.apple.com/documentation/coregraphics/cgdisplaybounds(_:)) 与 [kCGWindowBounds](https://developer.apple.com/documentation/coregraphics/kcgwindowbounds)。
 - **侧拉工具栏**：右缘 76 pt 内触发，竖列居中，从窗外滑入；悬停面板改为 `preferredEdge: .minX`，即向左打开（`V3ToolPopoverAnchor` 里按样式判断）。`v3_toolbar_model_contract` 断言了样式清单，加样式要一并更新。

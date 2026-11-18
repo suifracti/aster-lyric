@@ -381,18 +381,22 @@ struct V3ForegroundCoverPreferenceKey: PreferenceKey {
 
 extension View {
     /// Reports this cover's drawn frame, including any scale applied outside.
-    func v3ReportsForegroundCover(cornerRadiusRatio: CGFloat) -> some View {
-        background(GeometryReader { geometry in
-            let frame = geometry.frame(in: .named("v3-window-canvas"))
-            // Whole points: a resize or scale animation should not publish
-            // a new value for every sub-point step.
-            let rounded = CGRect(x: frame.minX.rounded(), y: frame.minY.rounded(),
-                                 width: frame.width.rounded(), height: frame.height.rounded())
-            Color.clear.preference(key: V3ForegroundCoverPreferenceKey.self,
-                value: V3ForegroundCoverFrame(frame: rounded, cornerRadius: (rounded.width * cornerRadiusRatio).rounded()))
-        })
-        // 封面呼吸 rides on every foreground cover; the reported frame stays the resting one.
-        .modifier(V3CoverBreath())
+    @ViewBuilder func v3ReportsForegroundCover(cornerRadiusRatio: CGFloat, enabled: Bool) -> some View {
+        if enabled {
+            background(GeometryReader { geometry in
+                let frame = geometry.frame(in: .named("v3-window-canvas"))
+                // Whole points keep resize and scale animations from publishing sub-point changes.
+                let rounded = CGRect(x: frame.minX.rounded(), y: frame.minY.rounded(),
+                                     width: frame.width.rounded(), height: frame.height.rounded())
+                Color.clear.preference(key: V3ForegroundCoverPreferenceKey.self,
+                    value: V3ForegroundCoverFrame(frame: rounded,
+                        cornerRadius: (min(rounded.width, rounded.height) * cornerRadiusRatio).rounded()))
+            })
+            // 封面呼吸 keeps the reported frame at its resting size.
+            .modifier(V3CoverBreath())
+        } else {
+            self
+        }
     }
 }
 

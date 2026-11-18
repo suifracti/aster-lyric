@@ -1126,8 +1126,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             HStack {
                 ArtworkView(track: compositionTrack, size: coverSize,
                             showsAlbumLabel: false, cornerRadiusRatio: 0.025,
-                            preservesCompleteArtwork: true)
-                    .v3ReportsForegroundCover(cornerRadiusRatio: 0.025)
+                            preservesCompleteArtwork: true, reportsForegroundFrame: true)
                     .shadow(color: .black.opacity(0.24), radius: 14, y: 8)
             }
             .frame(maxWidth: .infinity)
@@ -1167,9 +1166,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         let cover = ArtworkView(
             track: compositionTrack, size: metrics.coverSize,
             showsAlbumLabel: false, cornerRadiusRatio: foregroundArtworkCornerRadiusRatio,
-            preservesCompleteArtwork: true
+            preservesCompleteArtwork: true, reportsForegroundFrame: true
         )
-        .v3ReportsForegroundCover(cornerRadiusRatio: foregroundArtworkCornerRadiusRatio)
         .scaleEffect(
             immersiveCoverScale(
                 size: metrics.coverSize,
@@ -1439,9 +1437,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     size: coverSize,
                     showsAlbumLabel: false,
                     cornerRadiusRatio: foregroundArtworkCornerRadiusRatio,
-                    preservesCompleteArtwork: true
+                    preservesCompleteArtwork: true, reportsForegroundFrame: true
                 )
-                .v3ReportsForegroundCover(cornerRadiusRatio: foregroundArtworkCornerRadiusRatio)
                 .shadow(color: Color.black.opacity(0.32), radius: 20, x: 0, y: 8)
 
                 VStack(spacing: 4) {
@@ -1539,9 +1536,8 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     size: coverSize,
                     showsAlbumLabel: false,
                     cornerRadiusRatio: 0.06,
-                    preservesCompleteArtwork: true
+                    preservesCompleteArtwork: true, reportsForegroundFrame: true
                 )
-                .v3ReportsForegroundCover(cornerRadiusRatio: 0.06)
                 // Scale the artwork itself, preserving the column's bounds.
                 .scaleEffect(visualScale)
                 .frame(width: cardWidth, alignment: .center)
