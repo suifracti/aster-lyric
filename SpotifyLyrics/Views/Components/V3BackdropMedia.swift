@@ -284,6 +284,37 @@ final class V3BackdropBrightness: ObservableObject {
     /// Average luminance (0–1) of the clip on show, nil when no clip is shown.
     @Published private(set) var clipLuminance: Double?
     private var measured: URL?
+    /// The cover image's own mean luminance. The colour palette's brightness reads far
+    /// lower than the picture (a pale beige cover measured 0.65 here), so the backdrop,
+    /// which is that cover blurred, is judged from the image itself.
+    @Published private(set) var coverLuminance: (url: URL, value: Double)?
+    private var coverMeasured: URL?
+
+    func cover(_ url: URL?) {
+        guard url != coverMeasured else { return }
+        coverMeasured = url
+        guard let url else { coverLuminance = nil; return }
+        Task {
+            guard let image = await ArtworkImageLoader.shared.image(for: url) else { return }
+            var rect = CGRect(origin: .zero, size: image.size)
+            guard let cg = image.cgImage(forProposedRect: &rect, context: nil, hints: nil),
+                  let mean = Self.mean(cg), self.coverMeasured == url else { return }
+            self.coverLuminance = (url, mean)
+        }
+    }
+
+    nonisolated static func mean(_ image: CGImage) -> Double? {
+        let side = 16
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        guard let context = CGContext(data: &pixels, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+        var total = 0.0
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            total += (0.2126 * Double(pixels[i]) + 0.7152 * Double(pixels[i + 1]) + 0.0722 * Double(pixels[i + 2])) / 255
+        }
+        return total / Double(side * side)
+    }
 
     func clip(_ file: URL?) {
         guard file != measured else { return }

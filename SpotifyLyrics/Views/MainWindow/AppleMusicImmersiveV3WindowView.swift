@@ -208,7 +208,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     /// How bright the picture behind the lyrics is: a playing Canvas clip (under its
     /// own 26% veil) when one is shown, else the cover.
     private var backgroundLuminance: Double {
-        backdropBrightness.clipLuminance.map { $0 * 0.74 } ?? coverLuminance
+        if let clip = backdropBrightness.clipLuminance { return clip * 0.74 }
+        if let cover = backdropBrightness.coverLuminance, cover.url == compositionTrack.artworkURL { return cover.value }
+        return coverLuminance
     }
     /// 亮背景保护「只调文字」: dark ink over a bright picture; the picture is left alone.
     private var lyricInk: V3LyricInk {
@@ -772,6 +774,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .tint(.primary)
         .task(id: state.liveTrackIdentity) {
             library.prefetchCurrentTrack(stableKey: state.liveTrackIdentity?.stableKey)
+        }
+        .onChange(of: compositionTrack.artworkURL, initial: true) { _, url in
+            if !isCompositionPreview { backdropBrightness.cover(url) }
         }
         .task(id: compositionTrack.artworkURL) {
             guard let url = compositionTrack.artworkURL else { coverColors = nil; return }
