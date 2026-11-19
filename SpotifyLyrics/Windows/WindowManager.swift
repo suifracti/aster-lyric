@@ -29,6 +29,7 @@ public final class WindowManager: ObservableObject {
     private var floatingController: FloatingLyricsWindowController?
     private var capsuleController: CapsuleLyricsWindowController?
     private var listeningLyricsWindow: NSWindow?
+    private var libraryVersionsWindow: VersionsWindow?
     private var returnToMainAfterFullScreen = false
     private var fullScreenController: FullScreenLyricsWindowController?
     private var fullScreenAuxiliaryVisibilitySnapshot: FullScreenAuxiliaryVisibilitySnapshot?
@@ -87,6 +88,42 @@ public final class WindowManager: ObservableObject {
         if window.isMiniaturized { window.deminiaturize(nil) }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func showLibraryVersions(_ request: PersonalLyricsLibraryService.VersionSearch,
+                             library: PersonalLyricsLibraryService, playback: PlaybackState) {
+        let window: VersionsWindow
+        if let libraryVersionsWindow {
+            window = libraryVersionsWindow
+        } else {
+            let screen = NSApp.keyWindow?.screen ?? NSScreen.main
+            let available = screen?.visibleFrame.size ?? NSSize(width: 1200, height: 800)
+            let size = NSSize(width: min(1120, available.width * 0.92),
+                              height: min(720, available.height * 0.87))
+            window = VersionsWindow(contentRect: NSRect(origin: .zero, size: size),
+                                    styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                                    backing: .buffered, defer: false)
+            window.title = "歌词版本"
+            window.identifier = .init("lyric-versions")
+            window.contentMinSize = NSSize(width: 680, height: 420)
+            window.collectionBehavior.insert(.fullScreenPrimary)
+            window.isReleasedWhenClosed = false
+            window.center()
+            libraryVersionsWindow = window
+        }
+        window.contentView = NSHostingView(rootView: LibraryVersionsWorkspace(
+            request: request, library: library, playback: playback, close: { [weak window] in window?.close() }
+        ))
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private final class VersionsWindow: NSWindow {
+        override func close() {
+            super.close()
+            contentView = nil
+        }
     }
 
     func dockFloatingLyrics(_ place: FloatingLyricsDock, state: PlaybackState) {

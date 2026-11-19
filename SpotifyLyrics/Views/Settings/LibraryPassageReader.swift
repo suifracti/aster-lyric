@@ -392,12 +392,14 @@ struct PassageLineText: View {
     let showsTranslation: Bool
     let showsReading: Bool
     var voiceLabel: String? = nil
+    var markedOriginal: AttributedString? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let voiceLabel { PassageVoiceLabel(text: voiceLabel) }
             if !line.original.isEmpty {
-                Text(line.original).font(.system(size: 17, weight: .medium, design: .serif))
+                Text(markedOriginal ?? AttributedString(line.original))
+                    .font(.system(size: 17, weight: .medium, design: .serif))
             }
             if let backing = line.background, !backing.isEmpty {
                 Label(backing, systemImage: "person.2").labelStyle(.titleAndIcon)

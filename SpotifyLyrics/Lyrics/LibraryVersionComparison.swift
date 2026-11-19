@@ -7,7 +7,6 @@ struct LibraryCompareVersion: Identifiable, Sendable {
     let isCurrent: Bool
     let parentID: UUID?
     var translation: PersonalTranslationVersionItem?
-    var candidatePage: LibraryPassagePage? = nil
     var source: LibraryPassageSource { translation == nil ? .original(id) : .translation(id) }
 }
 
@@ -50,6 +49,61 @@ struct LibraryCompareRequest: Identifiable, Sendable {
         if baseID == base.id { return comparison.rows.first { $0.base?.id == readingLineIndex } }
         if referenceID == base.id { return comparison.rows.first { $0.reference?.id == readingLineIndex } }
         return nil
+    }
+
+    func readingLine(for original: UUID) -> Int? {
+        original == base.id ? readingLineIndex : nil
+    }
+}
+
+struct LibraryOriginalComparison: Sendable {
+    typealias Line = LibraryPassagePage.Line
+    enum Difference: String, CaseIterable, Identifiable, Sendable {
+        case text = "正文", timing = "时间", layers = "附文与声部"
+        var id: Self { self }
+    }
+
+    struct Row: Identifiable, Sendable {
+        let id: Int
+        let lines: [Line?]
+        let voiceLabels: [String?]
+
+        func differs(in kinds: Set<Difference>) -> Bool {
+            guard let first = lines.compactMap({ $0 }).first else { return false }
+            if kinds.contains(.text), lines.contains(where: { $0?.original != first.original }) { return true }
+            return lines.compactMap { $0 }.contains { line in
+                if kinds.contains(.timing),
+                   line.startTime != first.startTime || line.endTime != first.endTime || line.timedSpans != first.timedSpans {
+                    return true
+                }
+                return kinds.contains(.layers) && (line.translation != first.translation || line.reading != first.reading
+                    || line.romanization != first.romanization || line.background != first.background
+                    || line.performerID != first.performerID)
+            }
+        }
+    }
+
+    let rows: [Row]
+
+    init(editions: [[Line]], alignment: LibraryVersionComparison.Alignment) {
+        var groups = (editions.first ?? []).map { [Optional($0)] }
+        for (index, lines) in editions.dropFirst().enumerated() {
+            let anchors = groups.enumerated().compactMap { index, group -> Line? in
+                guard let line = group.compactMap({ $0 }).first else { return nil }
+                return Line(id: index, original: line.original, startTime: line.startTime)
+            }
+            let paired = LibraryVersionComparison.align(anchors, lines, translations: false,
+                                                        sameOriginal: false, alignment: alignment)
+            groups = paired.map { row in
+                let previous = row.base.map { groups[$0.id] } ?? Array(repeating: nil, count: index + 1)
+                return previous + [row.reference]
+            }
+        }
+        let voices = editions.map { PassageVoicePresentation(lines: $0) }
+        rows = groups.enumerated().map { index, lines in
+            let labels = zip(lines, voices).map { line, voice in line.flatMap { voice.label(for: $0.id) } }
+            return Row(id: index, lines: lines, voiceLabels: labels)
+        }
     }
 }
 

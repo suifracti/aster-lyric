@@ -1107,7 +1107,6 @@ struct LyricsCandidatePreviewSheet: View {
     let onCancelLocked: () -> Void
     var embedded = false
     var adoptionRequest: UUID? = nil
-    var onCompare: (() -> Void)? = nil
     var onAdopted: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var isSaving = false
@@ -1132,16 +1131,17 @@ struct LyricsCandidatePreviewSheet: View {
                     }
                 }
                 Spacer()
-                Text(showsTiming ? candidate.timingTitle : "纯文本")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                if let onCompare {
-                    Button("对读版本", systemImage: "rectangle.split.2x1", action: onCompare)
-                        .buttonStyle(.bordered).controlSize(.small)
+                if !embedded {
+                    Text(candidate.timingTitle).font(.caption.weight(.medium)).foregroundStyle(.secondary)
                 }
             }
 
-            if !embedded { Text("候选预览").font(.headline) }
+            if embedded {
+                Text(LibraryLineTiming.explanation(candidate.timingTitle))
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("候选预览").font(.headline)
+            }
             if let notice = candidate.arrangementNotice {
                 Text(notice).font(.caption).foregroundStyle(.secondary)
             }
@@ -1172,6 +1172,9 @@ struct LyricsCandidatePreviewSheet: View {
                                 }
                                 Text(line.originalText.isEmpty ? "（空白原文）" : line.originalText)
                                     .frame(maxWidth: .infinity, alignment: .leading)
+                                if embedded, showsTiming, line.hasValidTimedSpans() {
+                                    LibraryLineTiming(start: line.timestamp, end: line.endTime, spans: line.timedSpans)
+                                }
                                 if let translation = line.translationText, !translation.isEmpty {
                                     Text(translation)
                                         .font(.callout)

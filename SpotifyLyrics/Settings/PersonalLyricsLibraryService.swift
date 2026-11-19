@@ -103,11 +103,17 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     struct VersionSearch: Identifiable {
         let id = UUID()
         let detail: PersonalLyricsLibraryTrackDetail
+        var initialComparison: LibraryCompareRequest? = nil
     }
     @Published var versionSearch: VersionSearch?
 
     func presentComparison(_ source: LibraryPassageSource, detail: PersonalLyricsLibraryTrackDetail, reading: LibraryPassageTarget? = nil) {
-        comparison = makeComparison(source, detail: detail, reading: reading)
+        let request = makeComparison(source, detail: detail, reading: reading)
+        if case .original = source, let request {
+            versionSearch = .init(detail: detail, initialComparison: request)
+        } else {
+            comparison = request
+        }
     }
 
     func playingComparison(identity: TrackIdentity, lyricsID: UUID, selected: UUID?,
@@ -132,7 +138,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         case let .original(id):
             selected = id
             choices = detail.lyricsVersions.map {
-                .init(id: $0.id, title: versionTitle("lyrics", $0.id, DatabaseSourceIdentifier.displayName(for: $0.source)),
+                .init(id: $0.id, title: originalVersionTitle($0),
                       updatedAt: $0.updatedAt, isCurrent: $0.isCurrent, parentID: $0.parentVersionID)
             }
         case let .translation(id):
@@ -150,59 +156,15 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         return .init(entry: detail.entry, baseID: selected, versions: choices, playing: playing, reading: reading)
     }
 
-    func compare(trackKey: String, base: LibraryCompareVersion, with reference: LibraryCompareVersion,
-                 alignment: LibraryVersionComparison.Alignment = .text) async throws -> LibraryVersionComparison {
-        let pair: (LibraryPassagePage, LibraryPassagePage)
-        if let candidate = base.candidatePage, let alternative = reference.candidatePage {
-            pair = (candidate, alternative)
-        } else if let candidate = base.candidatePage {
-            guard let other = try await repository.readLibraryPassage(.init(trackKey: trackKey, source: reference.source)) else {
-                throw LyricsEditingRepositoryError.sourceNotFound
-            }
-            pair = (candidate, other)
-        } else if let candidate = reference.candidatePage {
-            guard let other = try await repository.readLibraryPassage(.init(trackKey: trackKey, source: base.source)) else {
-                throw LyricsEditingRepositoryError.sourceNotFound
-            }
-            pair = (other, candidate)
-        } else {
-            guard let stored = try await repository.readPassagePair(trackKey: trackKey, base: base.source, reference: reference.source) else {
-                throw LyricsEditingRepositoryError.sourceNotFound
-            }
-            pair = stored
+    func compare(trackKey: String, base: LibraryCompareVersion, with reference: LibraryCompareVersion) async throws -> LibraryVersionComparison {
+        guard let pair = try await repository.readPassagePair(trackKey: trackKey, base: base.source, reference: reference.source) else {
+            throw LyricsEditingRepositoryError.sourceNotFound
         }
         try Task.checkCancellation()
         let translations = base.translation != nil
         return await Task.detached(priority: .userInitiated) {
-            LibraryVersionComparison(base: pair.0, reference: pair.1, translations: translations, alignment: alignment)
+            LibraryVersionComparison(base: pair.0, reference: pair.1, translations: translations)
         }.value
-    }
-
-    func comparison(with candidate: LyricsCandidate, alternatives: [LyricsCandidate],
-                    detail: PersonalLyricsLibraryTrackDetail) -> LibraryCompareRequest? {
-        let base = comparisonVersion(candidate, entry: detail.entry)
-        let saved = detail.lyricsVersions.map {
-            let title = versionTitle("lyrics", $0.id, DatabaseSourceIdentifier.displayName(for: $0.source))
-            return LibraryCompareVersion(id: $0.id, title: title + " · " + detail.timingTitle(for: $0),
-                updatedAt: $0.updatedAt, isCurrent: $0.isCurrent, parentID: $0.parentVersionID)
-        }
-        let online = alternatives.filter { $0.id != candidate.id }.map { comparisonVersion($0, entry: detail.entry) }
-        return .init(entry: detail.entry, baseID: base.id, versions: [base] + saved + online)
-    }
-
-    private func comparisonVersion(_ candidate: LyricsCandidate, entry: PersonalLyricsLibraryEntry) -> LibraryCompareVersion {
-        let id = UUID()
-        let provider = candidate.archiveSourceLabel
-        let document = candidate.makeDocument()
-        let page = LibraryPassagePage(entry: entry, originalVersionID: id, edition: provider,
-            lines: document.lines.enumerated().map { index, line in
-                .init(id: index, original: line.originalText, translation: line.translationText,
-                      reading: line.kanaText, background: line.backgroundText,
-                      startTime: document.isSynchronized ? line.timestamp : nil, endTime: line.endTime,
-                      timedSpans: line.timedSpans, performerID: line.performerID, romanization: line.romajiText)
-            }, matchesOriginalVersion: false, language: candidate.language)
-        return LibraryCompareVersion(id: id, title: provider + " · " + candidate.timingTitle, updatedAt: .now,
-            isCurrent: false, parentID: nil, candidatePage: page)
     }
 
     struct VersionPreview: Identifiable {
@@ -243,6 +205,10 @@ public final class PersonalLyricsLibraryService: ObservableObject {
     func readingEditionTitle(_ edition: LibraryPassageEdition) -> String {
         guard let id = edition.source.versionID else { return edition.title }
         return versionTitle(edition.kind.rawValue, id, edition.title)
+    }
+
+    func originalVersionTitle(_ version: PersonalLyricsVersionItem) -> String {
+        versionTitle("lyrics", version.id, DatabaseSourceIdentifier.displayName(for: version.source))
     }
 
     private func versionTitle(_ kind: String, _ id: UUID, _ fallback: String) -> String {

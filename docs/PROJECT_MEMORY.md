@@ -49,6 +49,7 @@
 | 合唱被标成某个人独唱、桌面歌词或灵动岛看不出谁在唱 | L-052；LyricsTimeline.VoicePresentation |
 | 别的播放器有声部或逐字、想找同一首的其他版本、提前翻译歌单或查缓存 | L-053；LyrimuseLyricsCache、LibraryVersionSearchSheet、TranslationSessionController |
 | 查找其他版本等很久、预览和对读叠窗、歌名和署名错配；片假名缺注音 | L-053 版本窗口接续；LibraryVersionComparison、JapaneseRubyPresentation |
+| 对比窗太小、想自己勾多份原词、辨认逐行和逐字 | L-053 多版本对读；LibraryVersionsWorkspace、LibraryOriginalComparison、LibraryLineTiming |
 | 听歌有对唱，但阅读、文件或印本漏掉声部，合唱在档案里重复 | L-051；PassageVoicePresentation、LyricBook.Chapter.readingRows |
 | 单句循环只在主窗口有、切窗口找不到取消、拖进度被拉回 | L-052；PlaybackState.lyricLineLoopControl |
 | 预览别首歌词时调偏移却改到正在播放的歌词 | L-052；LyricsPresentationOffsetTarget、V3LyricActions.calibrateLyrics |
@@ -1043,3 +1044,4 @@ TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、
 - **版本窗口接续。** 旧的「查找其他版本」等全部来源和别名探测结束才显示在线稿。现使用现有候选回调逐批回填，继续搜索时可预览、对读，已知别名也参与检索。候选与原词对读用同一个窗口和工作台样式，可换底稿、参照稿及对齐方式。按正文保序匹配，相似短句仍可成对，标题与不同种类的署名保留为各稿独有。按时间与行号由用户明确选。译文挑句仍按同一原词行号。
 - **《Online》封面与逐字。** 现场日志中封面补读结束为空，直接请求同一大小写 Spotify ID 的 oEmbed 和两种封面尺寸均可用。封面补读会辨认 URI、裸 ID 和精确歌曲链接，跳过 AppleScript 空值与相对地址，解析不到则直接按已接收 ID 查公开封面。同一录音复用成功地址。只读抽查已存原词 73 行，有 61 行与本机 85 行逐字稿在一秒内同文。实时会话从本机确认过的逐字稿优先补轴，沿用原词、译文和行身份。若本机无合适时间轴，后台搜索可以继续查其他别名及可接入的逐字候选。
 - **片假名注音。** `JapaneseRubyPresentation` 的共享显示投影把片假名片段转成平假名 ruby，保留原文与原始时间区间。它跟随原有注音显示和排版偏好，已有注音优先。
+- **多版本对读。** 「查找其他版本」与档案「对读原词」共用 `LibraryVersionsWorkspace`，是可调整大小和全屏的原生窗口。候选逐批到账，点击预览及勾选对比分别操作，可任意勾选已存和候选版本。多列沿现有对齐策略排成同一组行，能横向滚动、换底稿并多选差异项目。逐行显示句时，逐字可展开字词的区间。纯文本参与时可按正文或行号对齐。译文对读、选句与人工稿保存仍走原有入口。

@@ -1449,130 +1449,224 @@ private struct LyricsBatchReviewSheet: View {
     }
 }
 
-private struct LibraryVersionSearchSheet: View {
-    let detail: PersonalLyricsLibraryTrackDetail
-    @ObservedObject var library: PersonalLyricsLibraryService
-    let playback: PlaybackState
-    @Environment(\.dismiss) private var dismiss
-    @State private var candidates: [LyricsCandidate] = []
-    @State private var selectedID: String?
-    @State private var comparison: LibraryCompareRequest?
-    @State private var searching = true
-    @State private var searchID = UUID()
+struct LibraryVersionsWorkspace: View {
+    enum Edition: Identifiable {
+        enum ID: Hashable { case saved(UUID), candidate(String) }
+        case saved(PersonalLyricsVersionItem, title: String, timing: String)
+        case candidate(LyricsCandidate)
 
-    private var selected: LyricsCandidate? {
-        candidates.first { $0.id == selectedID } ?? candidates.first
+        var id: ID {
+            switch self {
+            case .saved(let version, _, _): return .saved(version.id)
+            case .candidate(let candidate): return .candidate(candidate.id)
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .saved(_, let title, _): return title
+            case .candidate(let candidate): return candidate.archiveSourceLabel
+            }
+        }
+
+        var timing: String {
+            switch self {
+            case .saved(_, _, let timing): return timing
+            case .candidate(let candidate): return candidate.timingTitle
+            }
+        }
+
+        var isCurrent: Bool {
+            if case .saved(let version, _, _) = self { return version.isCurrent }
+            return false
+        }
+
+        var subtitle: String {
+            switch self {
+            case .saved(let version, _, _):
+                return [timing, "\(version.lineCount) 行", isCurrent ? "当前采用" : nil]
+                    .compactMap { $0 }.joined(separator: " · ")
+            case .candidate(let candidate):
+                return [timing, "\(candidate.lines.count) 行",
+                        LyricAgentPresentationMap(lines: candidate.lines).isActive ? "有声部" : nil]
+                    .compactMap { $0 }.joined(separator: " · ")
+            }
+        }
+    }
+
+    let request: PersonalLyricsLibraryService.VersionSearch
+    let library: PersonalLyricsLibraryService
+    let playback: PlaybackState
+    let close: () -> Void
+    @State private var candidates: [LyricsCandidate] = []
+    @State private var previewID: Edition.ID?
+    @State private var checked: [Edition.ID]
+    @State private var comparing: Bool
+    @State private var searching: Bool
+    @State private var searchID: UUID?
+
+    init(request: PersonalLyricsLibraryService.VersionSearch, library: PersonalLyricsLibraryService,
+         playback: PlaybackState, close: @escaping () -> Void) {
+        self.request = request
+        self.library = library
+        self.playback = playback
+        self.close = close
+        let initial = request.initialComparison
+        _previewID = State(initialValue: initial.map { .saved($0.base.id) })
+        _checked = State(initialValue: initial.map { [.saved($0.base.id), .saved($0.firstReference)] } ?? [])
+        _comparing = State(initialValue: initial != nil)
+        _searching = State(initialValue: initial == nil)
+        _searchID = State(initialValue: initial == nil ? UUID() : nil)
+    }
+
+    private var detail: PersonalLyricsLibraryTrackDetail { request.detail }
+
+    private var saved: [Edition] {
+        detail.lyricsVersions.map { version in
+            .saved(version, title: library.originalVersionTitle(version),
+                   timing: detail.timingTitle(for: version))
+        }
+    }
+
+    private var online: [Edition] { candidates.map(Edition.candidate) }
+    private var editions: [Edition] { saved + online }
+    private var selected: Edition? {
+        editions.first { $0.id == previewID } ?? online.first ?? saved.first(where: \.isCurrent) ?? saved.first
+    }
+    private var checkedEditions: [Edition] {
+        let byID = Dictionary(uniqueKeysWithValues: editions.map { ($0.id, $0) })
+        return checked.compactMap { byID[$0] }
     }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("歌词版本", systemImage: "quote.bubble")
-                        .font(.headline).foregroundStyle(WorkspacePalette.ink)
-                    Text(detail.entry.title + " · " + detail.entry.artist)
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(detail.entry.title).font(.title2.weight(.semibold)).lineLimit(1)
+                    Text(detail.entry.artist).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
                 if searching {
                     ProgressView().controlSize(.small)
                     Text("正在查找更多来源").font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Button("重新搜索", systemImage: "arrow.clockwise") { restartSearch() }
-                        .labelStyle(.iconOnly).help("重新搜索")
+                    Button(searchID == nil ? "查找其他版本" : "重新搜索", systemImage: "arrow.clockwise") {
+                        searching = true
+                        searchID = UUID()
+                    }.buttonStyle(.bordered)
                 }
-                Button("关闭", systemImage: "xmark") { dismiss() }
-                    .labelStyle(.iconOnly).help("关闭").keyboardShortcut(.cancelAction)
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 18).padding(.vertical, 12)
+            .padding(.horizontal, 20).padding(.vertical, 12)
             Divider()
 
-            if let comparison {
-                LibraryVersionCompareView(request: comparison, library: library,
-                    back: { self.comparison = nil }, edit: { _ in })
-                    .id(comparison.id)
-            } else {
-                HStack(spacing: 0) {
-                    sourceList.frame(width: 192)
-                    Divider()
-                    if let selected {
-                        preview(selected).id(selected.id)
-                    } else {
-                        ContentUnavailableView(
-                            searching ? "等待第一个可预览版本" : "没有找到其他歌词版本",
-                            systemImage: "text.magnifyingglass"
-                        )
-                    }
+            HSplitView {
+                sourceList.frame(minWidth: 210, idealWidth: 244, maxWidth: 320)
+                if comparing {
+                    LibraryMultiCompareView(editions: checkedEditions, track: detail.entry,
+                        library: library, initialComparison: request.initialComparison) { comparing = false }
+                        .frame(minWidth: 440, maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    previewArea.frame(minWidth: 440, maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
-        .frame(minWidth: 690, idealWidth: 740, minHeight: 440, idealHeight: 510)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(WorkspacePalette.paper)
         .tint(WorkspacePalette.ink)
+        .onExitCommand(perform: close)
         .task(id: searchID) {
+            guard searchID != nil else { return }
             let results = await playback.searchArchiveLyricsVersions(for: detail.entry.libraryTrack) { incoming in
                 let merged = Dictionary((candidates + incoming).map { ($0.id, $0) },
                                         uniquingKeysWith: { _, newest in newest })
-                candidates = LyricsCandidate.removingDuplicateLyrics(merged.values.sorted(by: LyricsCandidate.hasPrecedence))
-                if selectedID == nil { selectedID = candidates.first?.id }
+                let distinct = LyricsCandidate.removingDuplicateLyrics(merged.values.sorted(by: LyricsCandidate.hasPrecedence))
+                candidates = retainingChecked(from: distinct)
             }
             guard !Task.isCancelled else { return }
-            candidates = results
-            if !results.contains(where: { $0.id == selectedID }) { selectedID = results.first?.id }
+            candidates = retainingChecked(from: results)
             searching = false
         }
     }
 
+    private func retainingChecked(from results: [LyricsCandidate]) -> [LyricsCandidate] {
+        let ids = Set(results.map(\.id))
+        return results + candidates.filter { checked.contains(.candidate($0.id)) && !ids.contains($0.id) }
+    }
+
     private var sourceList: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 5) {
-                if let current = detail.lyricsVersions.first(where: \.isCurrent) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("当前采用").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                        Text(DatabaseSourceIdentifier.displayName(for: current.source)).font(.callout.weight(.medium))
-                        Text(detail.timingTitle(for: current)).font(.caption).foregroundStyle(.secondary)
-                    }.padding(9)
-                    Divider()
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    if !saved.isEmpty { sourceSection("已保存", editions: saved) }
+                    if !online.isEmpty { sourceSection("候选版本", editions: online) }
+                }.padding(10)
+            }
+            Divider()
+            VStack(spacing: 7) {
+                Button("对比 \(checked.count) 个版本", systemImage: "rectangle.split.2x1") { comparing = true }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(checked.count < 2 || comparing)
+                if checked.count < 2 && !comparing {
+                    Text("勾选至少两个版本").font(.caption).foregroundStyle(.secondary)
                 }
-                ForEach(candidates) { candidate in
-                    Button { selectedID = candidate.id } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(candidate.archiveSourceLabel).font(.callout.weight(.semibold)).lineLimit(1)
-                            Text([candidate.timingTitle,
-                                  LyricAgentPresentationMap(lines: candidate.lines).isActive ? "有声部" : nil,
-                                  "\(candidate.lines.count) 行"].compactMap { $0 }.joined(separator: " · "))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        .padding(9).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(selected?.id == candidate.id ? WorkspacePalette.selection : .clear,
-                                    in: RoundedRectangle(cornerRadius: 8))
-                        .contentShape(Rectangle())
-                    }.buttonStyle(.plain)
-                }
-            }.padding(8)
+            }.padding(12)
         }
     }
 
-    private func preview(_ candidate: LyricsCandidate) -> some View {
-        LyricsCandidatePreviewSheet(candidate: candidate, onAdopt: {
-            let result = try await library.adoptBatchCandidate(candidate, for: detail.entry)
-            if let id = result.versionID,
-               try await library.isCurrentTrack(stableKey: detail.entry.trackStableKey,
-                                                 playbackIdentity: playback.liveTrackIdentity),
-               !playback.isShowingSearchPreview {
-                _ = try await playback.adoptCurrentLyricsVersion(versionID: id)
+    @ViewBuilder private func sourceSection(_ title: String, editions: [Edition]) -> some View {
+        Text(title).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            .padding(.horizontal, 8).padding(.top, 7)
+        ForEach(editions) { edition in
+            HStack(spacing: 8) {
+                Toggle(isOn: Binding(get: { checked.contains(edition.id) }, set: { on in
+                    if on {
+                        if !checked.contains(edition.id) { checked.append(edition.id) }
+                    } else {
+                        checked.removeAll { $0 == edition.id }
+                    }
+                })) {
+                    Text("对比 \(edition.title) · \(edition.timing)")
+                }.toggleStyle(.checkbox).labelsHidden()
+                Button {
+                    previewID = edition.id
+                    comparing = false
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(edition.title).font(.callout.weight(.semibold)).lineLimit(1)
+                        Text(edition.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }.buttonStyle(.plain).help("预览 \(edition.title)")
             }
-            return result
-        }, onConfirmLocked: { nil }, onCancelLocked: {}, embedded: true,
-           onCompare: detail.lyricsVersions.isEmpty && candidates.count < 2 ? nil : {
-               comparison = library.comparison(with: candidate, alternatives: candidates, detail: detail)
-           }, onAdopted: { dismiss() })
+            .padding(8)
+            .background(!comparing && selected?.id == edition.id ? WorkspacePalette.selection : .clear,
+                        in: RoundedRectangle(cornerRadius: 8))
+        }
     }
 
-    private func restartSearch() {
-        searching = true
-        searchID = UUID()
+    @ViewBuilder private var previewArea: some View {
+        if let selected {
+            switch selected {
+            case .candidate(let candidate):
+                LyricsCandidatePreviewSheet(candidate: candidate, onAdopt: {
+                    let result = try await library.adoptBatchCandidate(candidate, for: detail.entry)
+                    if let id = result.versionID,
+                       try await library.isCurrentTrack(stableKey: detail.entry.trackStableKey,
+                                                         playbackIdentity: playback.liveTrackIdentity),
+                       !playback.isShowingSearchPreview {
+                        _ = try await playback.adoptCurrentLyricsVersion(versionID: id)
+                    }
+                    return result
+                }, onConfirmLocked: { nil }, onCancelLocked: {}, embedded: true, onAdopted: close)
+                .id(selected.id)
+            case .saved:
+                LibrarySavedVersionPreview(edition: selected, track: detail.entry, library: library).id(selected.id)
+            }
+        } else {
+            ContentUnavailableView(searching ? "等待第一个可预览版本" : "没有找到歌词版本",
+                                   systemImage: "text.magnifyingglass")
+        }
     }
 }
 
@@ -2112,8 +2206,10 @@ struct PersonalLibrarySheets: ViewModifier {
     @State private var archiveAfterPreview: LibraryPassageTarget?
     func body(content: Content) -> some View {
         content
-        .sheet(item: $service.versionSearch) { request in
-            LibraryVersionSearchSheet(detail: request.detail, library: service, playback: playback)
+        .onChange(of: service.versionSearch?.id) { _, _ in
+            guard let request = service.versionSearch else { return }
+            service.versionSearch = nil
+            WindowManager.shared.showLibraryVersions(request, library: service, playback: playback)
         }
         .sheet(item: $service.comparison, onDismiss: {
             if let draft = pickedDraft {

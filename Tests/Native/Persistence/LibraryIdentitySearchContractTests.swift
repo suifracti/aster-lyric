@@ -171,13 +171,19 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         let detail = try XCTUnwrap(selected)
         let archive = opened.archiveTarget(from: target, position: secondChorus)
         library.presentComparison(.original(originalID), detail: detail, reading: archive)
-        let request = try XCTUnwrap(library.comparison)
-        let alternate = try XCTUnwrap(request.references.first)
-        let comparison = try await library.compare(trackKey: identity.stableKey, base: request.base, with: alternate)
-        let focus = request.readingRow(in: comparison, baseID: request.base.id, referenceID: alternate.id)
-        XCTAssertEqual(focus?.base?.id, 2)
-        let swapped = try await library.compare(trackKey: identity.stableKey, base: alternate, with: request.base)
-        XCTAssertEqual(request.readingRow(in: swapped, baseID: alternate.id, referenceID: request.base.id)?.reference?.id, 2)
+        let request = try XCTUnwrap(library.versionSearch?.initialComparison)
+        XCTAssertEqual(request.base.id, originalID)
+        XCTAssertEqual(request.firstReference, replacementID)
+        let line = try XCTUnwrap(request.readingLine(for: originalID))
+        XCTAssertEqual(line, 2)
+        let alternatePage = try await library.readPassage(.init(trackKey: identity.stableKey, source: .original(replacementID)),
+                                                          recordOpening: false)
+        let alternate = try XCTUnwrap(alternatePage)
+        for (column, editions) in [[opened.lines, alternate.lines], [alternate.lines, opened.lines]].enumerated() {
+            let rows = LibraryOriginalComparison(editions: editions, alignment: .text).rows
+            let focus = rows.first { $0.lines[column]?.id == line }?.lines[column]
+            XCTAssertEqual(focus?.startTime, opened.lines[line].startTime)
+        }
 
         let bookHits = try await library.bookSources(matching: "回声")
         let hit = try XCTUnwrap(bookHits.first)
@@ -307,6 +313,24 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         XCTAssertEqual(time.map(\.change), text.map(\.change))
         let line = LibraryVersionComparison.align(base, peer, translations: false, sameOriginal: false, alignment: .line)
         XCTAssertEqual(line.map(\.change), [.text, .text, .same])
+    }
+
+    func testMultipleVersionsShareOneGridAndCompareTimingSeparatelyFromText() {
+        typealias Line = LibraryPassagePage.Line
+        let base = [Line(id: 0, original: "天亮了", startTime: 1),
+                    Line(id: 1, original: "再见", startTime: 7)]
+        let next = [Line(id: 0, original: "天亮了", translation: "Dawn", startTime: 1.5),
+                    Line(id: 1, original: "等一下", startTime: 3),
+                    Line(id: 2, original: "再见", startTime: 7)]
+        let third = [Line(id: 0, original: "天亮了", startTime: 1),
+                     Line(id: 1, original: "等一下", startTime: 3),
+                     Line(id: 2, original: "再见", startTime: 7)]
+        let rows = LibraryOriginalComparison(editions: [base, next, third], alignment: .text).rows
+        XCTAssertEqual(rows.map { $0.lines.map { $0?.id } }, [[0, 0, 0], [nil, 1, 1], [1, 2, 2]])
+        XCTAssertTrue(rows[0].differs(in: [.timing, .layers]))
+        XCTAssertTrue(rows[0].differs(in: [.timing]))
+        XCTAssertFalse(rows[0].differs(in: [.text]))
+        XCTAssertTrue(rows[1].differs(in: [.text]))
     }
 
     func testIdentityGroupingSearchExportAndCrossKeySelection() async throws {
