@@ -151,29 +151,35 @@ public enum TimedLyricsCompanionMerger {
         let companions = LRCParser.timedTextLines(in: content)
         guard !companions.isEmpty else { return lines }
 
-        var consumed = Set<Int>()
-        return lines.map { source in
-            var bestIndex: Int?
-            var bestDistance = TimeInterval.greatestFiniteMagnitude
-            for index in companions.indices where !consumed.contains(index) {
-                let distance = abs(companions[index].timestamp - source.timestamp)
+        let creditAware = layer == .translation
+        let originalCredits = creditAware ? lines.map { LyricsCreditOnly.isCredit($0.originalText) } : []
+        let companionCredits = creditAware ? companions.map { LyricsCreditOnly.isCredit($0.text) } : []
+        var matches: [(line: Int, companion: Int, distance: TimeInterval)] = []
+        for line in lines.indices {
+            for index in companions.indices {
+                let distance = abs(companions[index].timestamp - lines[line].timestamp)
                 guard distance <= tolerance else { continue }
-                if distance < bestDistance {
-                    bestIndex = index
-                    bestDistance = distance
-                }
+                if creditAware, distance > 0, originalCredits[line] != companionCredits[index] { continue }
+                matches.append((line, index, distance))
             }
-            guard let bestIndex else { return source }
-            consumed.insert(bestIndex)
-            var merged = source
+        }
+        // A nearby line must not consume a companion that has an exact
+        // timestamp elsewhere, such as a title just after the credits.
+        matches.sort { ($0.distance, $0.line, $0.companion) < ($1.distance, $1.line, $1.companion) }
+        var merged = lines
+        var assigned = Set<Int>()
+        var consumed = Set<Int>()
+        for match in matches where !assigned.contains(match.line) && !consumed.contains(match.companion) {
+            assigned.insert(match.line)
+            consumed.insert(match.companion)
             switch layer {
             case .translation:
-                merged.translationText = companions[bestIndex].text
+                merged[match.line].translationText = companions[match.companion].text
             case .romaji:
-                merged.romajiText = companions[bestIndex].text
+                merged[match.line].romajiText = companions[match.companion].text
             }
-            return merged
         }
+        return merged
     }
 }
 

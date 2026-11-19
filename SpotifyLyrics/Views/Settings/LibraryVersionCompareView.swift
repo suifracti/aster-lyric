@@ -5,6 +5,7 @@ struct LibraryVersionCompareView: View {
     let library: PersonalLyricsLibraryService
     let edit: (LibraryTranslationRevisionDraft) -> Void
     let adopt: ((UUID) -> Void)?
+    let close: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @State private var baseID: UUID
     @State private var peerID: UUID
@@ -17,11 +18,13 @@ struct LibraryVersionCompareView: View {
     @State private var preparing = false
 
     init(request: LibraryCompareRequest, library: PersonalLyricsLibraryService, adopt: ((UUID) -> Void)? = nil,
+         close: (() -> Void)? = nil,
          edit: @escaping (LibraryTranslationRevisionDraft) -> Void) {
         self.request = request
         self.library = library
         self.edit = edit
         self.adopt = adopt
+        self.close = close
         _baseID = State(initialValue: request.base.id)
         _peerID = State(initialValue: request.firstReference)
     }
@@ -39,11 +42,12 @@ struct LibraryVersionCompareView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Label("译文对读", systemImage: "rectangle.split.2x1")
-                        .font(.callout.weight(.medium)).foregroundStyle(WorkspacePalette.ink)
-                    Spacer()
-                    Button("关闭") { dismiss() }.buttonStyle(.plain).keyboardShortcut(.cancelAction)
+                if close == nil {
+                    HStack {
+                        Text("译文对读").font(.callout.weight(.medium)).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("关闭") { dismiss() }.buttonStyle(.plain).keyboardShortcut(.cancelAction)
+                    }
                 }
                 Text(request.entry.title).font(.title2.weight(.semibold)).textSelection(.enabled)
                 HStack(alignment: .top, spacing: 14) {
@@ -76,9 +80,10 @@ struct LibraryVersionCompareView: View {
                 }.padding(.horizontal, 18).padding(.vertical, 10)
             }
         }
-        .frame(minWidth: 450, idealWidth: 730, minHeight: 390, idealHeight: 560)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(WorkspacePalette.paper)
         .tint(WorkspacePalette.ink)
+        .onExitCommand { if let close { close() } else { dismiss() } }
         .task(id: pair) {
             comparison = nil
             issue = nil
@@ -104,12 +109,12 @@ struct LibraryVersionCompareView: View {
                 Picker(role, selection: selection) {
                     ForEach(versions) { item in Text("\(item.title) · \(metadata(item))").tag(item.id) }
                 }.pickerStyle(.inline)
-            } label: { Text(version.title).font(.headline).lineLimit(2) }
+            } label: { Text(version.title).font(.callout.weight(.semibold)).lineLimit(2).foregroundStyle(.primary) }
             .menuStyle(.borderlessButton).fixedSize(horizontal: false, vertical: true).disabled(preparing)
             .accessibilityLabel("选择" + role)
             Text(metadata(version)).font(.caption).foregroundStyle(.secondary)
             if let playing = request.playing, let adopt, playing.adoptable.contains(version.id), !version.isCurrent {
-                Button("采用" + role) { adopt(version.id) }.controlSize(.small).disabled(preparing)
+                Button("采用" + role) { adopt(version.id) }.buttonStyle(.bordered).controlSize(.small).disabled(preparing)
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -123,6 +128,17 @@ struct LibraryVersionCompareView: View {
                 Text("\(differences.count) 处不同").font(.caption.monospacedDigit())
                 Spacer()
                 Toggle("只看不同", isOn: $onlyDifferences).toggleStyle(.checkbox).controlSize(.small)
+                Button("末句") {
+                    guard let last = comparison.rows.last(where: { row in
+                        !(row.base?.original ?? row.reference?.original ?? "").isEmpty
+                    }) else { return }
+                    if last.change == .same { onlyDifferences = false }
+                    focusedRow = last.id
+                    Task { @MainActor in
+                        await Task.yield()
+                        proxy.scrollTo(last.id, anchor: .bottom)
+                    }
+                }.help("跳到全歌最后一句")
                 Button { jump(-1, differences, proxy) } label: { Image(systemName: "chevron.up") }.accessibilityLabel("上一处不同").disabled(differences.isEmpty)
                 Button { jump(1, differences, proxy) } label: { Image(systemName: "chevron.down") }.accessibilityLabel("下一处不同").disabled(differences.isEmpty)
             }.buttonStyle(.borderless).padding(.horizontal, 20).frame(height: 34)
@@ -159,36 +175,36 @@ struct LibraryVersionCompareView: View {
                 if isReadingRow {
                     Label("刚才阅读", systemImage: "bookmark").font(.caption).foregroundStyle(.secondary)
                 }
-                Text(row.change.rawValue).font(.caption.weight(.semibold)).foregroundStyle(WorkspacePalette.ink)
+                Text("\(((row.base ?? row.reference)?.id ?? 0) + 1)")
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 if sameOriginalText, let source = row.base?.original, !source.isEmpty {
                     Text(source).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                 }
                 Spacer(minLength: 0)
                 if canPick, let base = row.base, let reference = row.reference,
+                   !suspectCredit(reference, version: self.reference),
                    (base.translation ?? "") != (reference.translation ?? "") {
-                    Button {
-                        if selected.contains(base.id) { picks[pair, default: []].remove(base.id) }
-                        else { picks[pair, default: []].insert(base.id) }
-                    } label: {
-                        Label(selected.contains(base.id) ? "已选这句" : "选这句",
-                              systemImage: selected.contains(base.id) ? "checkmark.circle.fill" : "arrow.left.circle")
-                    }.controlSize(.small).disabled(preparing)
+                    let choice = (reference.translation ?? "").isEmpty ? "选参照稿的空白" : "选参照稿这句"
+                    Toggle(choice, isOn: Binding(get: { selected.contains(base.id) }, set: { on in
+                        if on { picks[pair, default: []].insert(base.id) }
+                        else { picks[pair, default: []].remove(base.id) }
+                    })).toggleStyle(.checkbox).controlSize(.small).disabled(preparing)
                     .help("把参照稿的这一句带入译文编辑")
                 }
             }
             let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 18)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             layout {
-                column(row.base, comparedWith: row.reference, title: "底稿", label: !wide,
+                column(row.base, version: base, title: "底稿", label: !wide,
                        showOriginal: !sameOriginalText, voice: row.baseVoice)
-                column(row.reference, comparedWith: row.base, title: "参照", label: !wide,
+                column(row.reference, version: reference, title: "参照", label: !wide,
                        showOriginal: !sameOriginalText, voice: row.referenceVoice)
             }
         }
         .padding(.vertical, 11).padding(.horizontal, 20)
-        .background(focusedRow == row.id ? WorkspacePalette.selection : .clear)
+        .background(focusedRow == row.id ? WorkspacePalette.selection.opacity(0.55) : .clear)
     }
 
-    private func column(_ line: LibraryPassagePage.Line?, comparedWith other: LibraryPassagePage.Line?,
+    private func column(_ line: LibraryPassagePage.Line?, version: LibraryCompareVersion?,
                         title: String, label: Bool, showOriginal: Bool, voice: String?) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             if label { Text(title).font(.caption).foregroundStyle(.secondary).frame(width: 28, alignment: .leading) }
@@ -197,12 +213,21 @@ struct LibraryVersionCompareView: View {
                     if let voice { PassageVoiceLabel(text: voice) }
                     if showOriginal, !line.original.isEmpty { Text(line.original).font(.caption).foregroundStyle(.secondary) }
                     if let text = line.translation, !text.isEmpty {
-                        Text(LibraryDifferenceText.marked(text, against: other?.translation))
-                            .font(.system(size: 16, design: .serif))
+                        Text(text).font(.system(size: 17)).foregroundStyle(.primary.opacity(0.87))
+                        if suspectCredit(line, version: version) {
+                            Label("词源译文可能对错行", systemImage: "exclamationmark.circle")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     } else { Text("此句暂无译文").font(.callout).foregroundStyle(.secondary) }
                 } else { Text("—").foregroundStyle(.tertiary).accessibilityLabel("这一稿没有对应行") }
             }.textSelection(.enabled)
         }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func suspectCredit(_ line: LibraryPassagePage.Line, version: LibraryCompareVersion?) -> Bool {
+        guard version?.translation?.sourceKind == AITranslationSourceKind.providerEmbedded.rawValue,
+              LyricsCreditOnly.isCredit(line.original), let translation = line.translation, !translation.isEmpty else { return false }
+        return !LyricsCreditOnly.isCredit(translation)
     }
 
     private func metadata(_ version: LibraryCompareVersion) -> String {

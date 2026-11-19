@@ -2202,7 +2202,6 @@ struct PersonalLibrarySheets: ViewModifier {
     @ObservedObject var service: PersonalLyricsLibraryService
     var openArchive: ((LibraryPassageTarget) -> Void)? = nil
     @EnvironmentObject private var playback: PlaybackState
-    @State private var pickedDraft: LibraryTranslationRevisionDraft?
     @State private var archiveAfterPreview: LibraryPassageTarget?
     func body(content: Content) -> some View {
         content
@@ -2211,13 +2210,12 @@ struct PersonalLibrarySheets: ViewModifier {
             service.versionSearch = nil
             WindowManager.shared.showLibraryVersions(request, library: service, playback: playback)
         }
-        .sheet(item: $service.comparison, onDismiss: {
-            if let draft = pickedDraft {
-                pickedDraft = nil
-                service.translationRevisionDraft = draft
+        .onChange(of: service.comparison?.id) { previous, _ in
+            guard let request = service.comparison else {
+                if let previous { WindowManager.shared.closeTranslationComparison(id: previous) }
+                return
             }
-        }) { request in
-            LibraryVersionCompareView(request: request, library: service, adopt: { id in
+            WindowManager.shared.showTranslationComparison(request, library: service, adopt: { id in
                 guard let playing = request.playing,
                       playing.matches(identity: playback.liveTrackIdentity, lyricsID: playback.liveLyricsVersionID, preview: playback.isShowingSearchPreview),
                       playback.liveLyricsDocumentMatchesCurrentTrack,
@@ -2230,10 +2228,10 @@ struct PersonalLibrarySheets: ViewModifier {
                     playback.selectTranslation(versionID: id)
                 }
                 service.comparison = nil
-            }) { draft in
-                pickedDraft = draft
-                service.comparison = nil
-            }
+            }, edit: { draft in
+                WindowManager.shared.closeTranslationComparison(id: request.id)
+                service.translationRevisionDraft = draft
+            })
         }
         .sheet(item: $service.versionPreview, onDismiss: {
             guard let archive = archiveAfterPreview else { return }

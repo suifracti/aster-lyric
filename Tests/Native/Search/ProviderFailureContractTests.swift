@@ -260,6 +260,18 @@ private final class PetitLyricsFixtureURLProtocol: URLProtocol, @unchecked Senda
 
 @MainActor
 final class ProviderFailureContractTests: XCTestCase {
+    func testTimedCompanionPrefersTheExactTitleTimeOverAnEarlierCredit() {
+        let verse = [
+            LyricLine(timestamp: 0.325, originalText: "作曲：样例"),
+            LyricLine(timestamp: 0.651, originalText: "タイトル"),
+            LyricLine(timestamp: 1, originalText: "短い声"),
+            LyricLine(timestamp: 1.19, originalText: "遠い空")
+        ]
+        let companion = "[00:00.651]标题\n[00:01.180]远方的天空"
+        let merged = TimedLyricsCompanionMerger.merge(companion, into: verse, layer: .translation)
+        XCTAssertEqual(merged.map(\.translationText), [nil, "标题", nil, "远方的天空"])
+    }
+
     /// Real cases, 2026-11: lyrics existed but the artist was written differently.
     /// Imagination (feat. Raguma) by Kage.Jp: NetEase writes the guest in
     /// kana. Same lead artist, album and length: adopted without review.
