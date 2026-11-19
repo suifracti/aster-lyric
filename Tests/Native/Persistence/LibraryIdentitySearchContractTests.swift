@@ -181,7 +181,7 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         let alternate = try XCTUnwrap(alternatePage)
         for (column, editions) in [[opened.lines, alternate.lines], [alternate.lines, opened.lines]].enumerated() {
             let rows = LibraryOriginalComparison(editions: editions, alignment: .text).rows
-            let focus = rows.first { $0.lines[column]?.id == line }?.lines[column]
+            let focus = rows.first { $0.lines[column].contains { $0.id == line } }?.lines[column].first { $0.id == line }
             XCTAssertEqual(focus?.startTime, opened.lines[line].startTime)
         }
 
@@ -326,11 +326,29 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
                      Line(id: 1, original: "等一下", startTime: 3),
                      Line(id: 2, original: "再见", startTime: 7)]
         let rows = LibraryOriginalComparison(editions: [base, next, third], alignment: .text).rows
-        XCTAssertEqual(rows.map { $0.lines.map { $0?.id } }, [[0, 0, 0], [nil, 1, 1], [1, 2, 2]])
+        XCTAssertEqual(rows.map { $0.lines.map { $0.map(\.id) } }, [[[0], [0], [0]], [[], [1], [1]], [[1], [2], [2]]])
         XCTAssertTrue(rows[0].differs(in: [.timing, .layers]))
         XCTAssertTrue(rows[0].differs(in: [.timing]))
         XCTAssertFalse(rows[0].differs(in: [.text]))
         XCTAssertTrue(rows[1].differs(in: [.text]))
+    }
+
+    func testOriginalComparisonAlignsCreditRolesAndSplitPhrasesAcrossThreeVersions() {
+        typealias Line = LibraryPassagePage.Line
+        let base = [Line(id: 0, original: "作曲：山田 太郎", startTime: 0.325),
+                    Line(id: 1, original: "君のいる夜が当たり前じゃない", startTime: 10),
+                    Line(id: 2, original: "窓を開ける", startTime: 15)]
+        let word = [Line(id: 0, original: "曲：Taro Yamada", startTime: 0.666),
+                    Line(id: 1, original: "編曲：山田", startTime: 0.675),
+                    Line(id: 2, original: "君のいる夜が", startTime: 9.96),
+                    Line(id: 3, original: "当たり前じゃない", startTime: 13),
+                    Line(id: 4, original: "窓を開ける", startTime: 14.94)]
+        let plain = [Line(id: 0, original: "君のいる"),
+                    Line(id: 1, original: "夜が当たり前じゃない"),
+                    Line(id: 2, original: "窓を開ける。")]
+        let rows = LibraryOriginalComparison(editions: [base, word, plain], alignment: .text).rows
+        XCTAssertEqual(rows.map { $0.lines.map { $0.map(\.id) } },
+                       [[[0], [0], []], [[], [1], []], [[1], [2, 3], [0, 1]], [[2], [4], [2]]])
     }
 
     func testIdentityGroupingSearchExportAndCrossKeySelection() async throws {

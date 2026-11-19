@@ -187,6 +187,32 @@ public final class NetEaseExperimentalLyricsProvider: LyricsProvider, @unchecked
         )
     }
 
+    func realignedTranslation(for source: StoredEditableLyricsVersion) async throws -> [String] {
+        let id = source.record.providerSourceID
+        guard source.document.source == .neteaseExperimental, source.document.isSynchronized,
+              id.hasPrefix("netease:"), let songID = Int(id.dropFirst("netease:".count)), songID > 0,
+              let payload = try await fetchLyric(songID: songID), let translation = payload.tlyric else {
+            throw LyricsEditingRepositoryError.invalidTranslation("这份原词没有可核对的网易云译文时间轴")
+        }
+        let identity = source.document.identity
+        let candidates = [LRCParser.parse(payload.lrc, identity: identity, source: .neteaseExperimental),
+                          payload.yrc.flatMap { YRCParser.parse($0, identity: identity, source: .neteaseExperimental) }]
+        guard let matching = candidates.compactMap({ $0 }).first(where: { document in
+            document.isSynchronized && document.lines.count == source.lines.count &&
+                zip(document.lines, source.lines).allSatisfy { fresh, saved in
+                    fresh.originalText == saved.originalText && saved.startTime.map { abs($0 - fresh.timestamp) < 0.10 } == true
+                }
+        }) else {
+            throw LyricsEditingRepositoryError.invalidTranslation("在线原词与这份存稿的正文或时间不一致，无法确认行对应")
+        }
+        let lines = TimedLyricsCompanionMerger.merge(translation, into: matching.lines, layer: .translation)
+        let texts = lines.map { $0.translationText ?? "" }
+        guard texts.contains(where: { !$0.isEmpty }) else {
+            throw LyricsEditingRepositoryError.invalidTranslation("词源没有返回可对齐的译文")
+        }
+        return texts
+    }
+
     private func parse(
         lyric: NetEaseLyricPayload,
         track: Track,

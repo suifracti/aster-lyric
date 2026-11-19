@@ -146,10 +146,14 @@ public final class PersonalLyricsLibraryService: ObservableObject {
             choices = detail.translationVersions.compactMap { item in
                 let stored = available?[item.id]
                 if available != nil && stored == nil { return nil }
-                let name = stored?.record.translationSourceTitle ?? AITranslationSourceKind(rawValue: item.sourceKind)?.displayName ?? "译文"
+                let original = detail.lyricsVersions.first { $0.id == item.lyricsVersionID }
+                let canRealign = item.sourceKind == AITranslationSourceKind.providerEmbedded.rawValue &&
+                    item.engineID != DatabaseTranslationVersionRecord.alignedProviderEngine &&
+                    original?.isSynced == true && original?.providerSourceID.hasPrefix("netease:") == true
+                let name = stored?.record.translationSourceTitle ?? item.sourceTitle
                 let current = playing.map { $0.selectedID == item.id } ?? item.isCurrent
                 return .init(id: item.id, title: versionTitle("translation", item.id, name), updatedAt: item.updatedAt,
-                             isCurrent: current, parentID: item.parentVersionID, translation: item)
+                             isCurrent: current, parentID: item.parentVersionID, translation: item, canRealignSource: canRealign)
             }
         default: return nil
         }
@@ -165,6 +169,26 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         return await Task.detached(priority: .userInitiated) {
             LibraryVersionComparison(base: pair.0, reference: pair.1, translations: translations)
         }.value
+    }
+
+    func realignSourceTranslation(_ version: PersonalTranslationVersionItem,
+                                  entry: PersonalLyricsLibraryEntry) async throws -> LibraryCompareVersion {
+        let track = entry.libraryTrack
+        guard version.sourceKind == AITranslationSourceKind.providerEmbedded.rawValue,
+              let source = try await repository.loadEditableVersion(versionID: version.lyricsVersionID,
+                track: track, identity: TrackIdentity(track: track)) else {
+            throw LyricsEditingRepositoryError.sourceNotFound
+        }
+        let texts = try await NetEaseExperimentalLyricsProvider().realignedTranslation(for: source)
+        try Task.checkCancellation()
+        let aligned = try await repository.saveAlignedProviderTranslation(source: source, language: version.targetLanguage, texts: texts)
+        guard let detail = try await repository.loadPersonalLibraryTrackDetail(stableKey: entry.trackStableKey),
+              let item = detail.translationVersions.first(where: { $0.id == aligned.record.id }) else {
+            throw TranslationRepositoryError.versionNotFound
+        }
+        refreshTrackDetail(stableKey: entry.trackStableKey)
+        return .init(id: item.id, title: aligned.record.translationSourceTitle, updatedAt: item.updatedAt,
+                     isCurrent: item.isCurrent, parentID: item.parentVersionID, translation: item)
     }
 
     struct VersionPreview: Identifiable {

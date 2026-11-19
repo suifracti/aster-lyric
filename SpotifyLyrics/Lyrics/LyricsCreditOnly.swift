@@ -13,6 +13,18 @@ enum LyricsCreditOnly {
         credit.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
     }
 
+    static func role(_ text: String) -> String? {
+        guard let match = credit.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range(at: 1), in: text) else { return nil }
+        let label = text[range].lowercased()
+        switch label {
+        case "作词", "作詞", "词", "詞", "填词", "填詞", "lyrics", "lyrics by", "lyricist": return "作词"
+        case "作曲", "曲", "composer", "composed by": return "作曲"
+        case "编曲", "編曲", "arranged by", "arranger": return "编曲"
+        default: return label
+        }
+    }
+
     /// True when there is at least one line and every non-empty line is a
     /// credit, or the song's own "Title - Artist" heading that precedes them.
     static func matches(_ texts: [String]) -> Bool {

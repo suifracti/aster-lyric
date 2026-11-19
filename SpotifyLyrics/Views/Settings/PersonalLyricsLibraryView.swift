@@ -773,7 +773,7 @@ public struct PersonalLibraryTrackDetailView: View {
         let original = detail.lyricsVersions.count > 1 ? original : nil
         let translation = detail.translationVersions.count > 1 ? translation?.id : nil
         if let original, let translation {
-            Menu("逐句对读") {
+            Menu("对比版本") {
                 compareOriginal(original, detail)
                 compareTranslation(translation, detail)
             }.fixedSize()
@@ -782,13 +782,13 @@ public struct PersonalLibraryTrackDetailView: View {
     }
 
     private func compareOriginal(_ id: UUID, _ detail: PersonalLyricsLibraryTrackDetail) -> some View {
-        Button("对读原词", systemImage: "rectangle.split.2x1") {
+        Button("对比原词", systemImage: "rectangle.split.2x1") {
             presentSheet { service.presentComparison(.original(id), detail: detail, reading: preferredPassage) }
         }
     }
 
     private func compareTranslation(_ id: UUID, _ detail: PersonalLyricsLibraryTrackDetail) -> some View {
-        Button("对读译文", systemImage: "rectangle.split.2x1") {
+        Button("对比译文", systemImage: "rectangle.split.2x1") {
             presentSheet { service.presentComparison(.translation(id), detail: detail, reading: preferredPassage) }
         }
     }
@@ -878,7 +878,7 @@ public struct PersonalLibraryTrackDetailView: View {
             rename: { draft in presentSheet { service.versionLabelDraft = draft } },
             adopt: { adoptLyrics(lv, entry: entry) }) {
                 if detail.lyricsVersions.count > 1 {
-                    Button("逐句对读…", systemImage: "rectangle.split.2x1") {
+                    Button("对比原词…", systemImage: "rectangle.split.2x1") {
                         presentSheet { service.presentComparison(.original(lv.id), detail: detail, reading: preferredPassage) }
                     }
                 }
@@ -891,7 +891,7 @@ public struct PersonalLibraryTrackDetailView: View {
     private func translationVersionCard(_ tv: PersonalTranslationVersionItem, detail: PersonalLyricsLibraryTrackDetail) -> some View {
         let entry = detail.entry
         return LibraryVersionRow(kind: "translation", id: tv.id,
-            title: [AITranslationSourceKind(rawValue: tv.sourceKind)?.displayName ?? "译文",
+            title: [tv.sourceTitle,
                     tv.targetLanguage == "und" ? nil : LyricSourceTranslation.displayName(tv.targetLanguage)]
                 .compactMap { $0 }.joined(separator: " · "),
             date: tv.updatedAt, lineCount: tv.lineCount,
@@ -902,7 +902,7 @@ public struct PersonalLibraryTrackDetailView: View {
             rename: { draft in presentSheet { service.versionLabelDraft = draft } },
             adopt: { adoptTranslation(tv, entry: entry) }) {
                 if detail.translationVersions.count > 1 {
-                    Button("逐句对读…", systemImage: "rectangle.split.2x1") {
+                    Button("对比译文…", systemImage: "rectangle.split.2x1") {
                         presentSheet { service.presentComparison(.translation(tv.id), detail: detail, reading: preferredPassage) }
                     }
                 }

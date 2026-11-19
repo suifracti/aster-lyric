@@ -265,6 +265,11 @@ public struct PersonalTranslationVersionItem: Identifiable, Equatable, Sendable,
 
     public var isDraft: Bool { draft == true }
 
+    var sourceTitle: String {
+        if engineID == DatabaseTranslationVersionRecord.alignedProviderEngine { return "歌词源译文 · 已对齐" }
+        return AITranslationSourceKind(rawValue: sourceKind)?.displayName ?? "译文"
+    }
+
     public init(
         id: UUID,
         lyricsVersionID: UUID,

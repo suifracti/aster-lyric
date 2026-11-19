@@ -16,6 +16,9 @@ struct LibraryVersionCompareView: View {
     @State private var focusedRow: Int?
     @State private var picks: [Pair: Set<Int>] = [:]
     @State private var preparing = false
+    @State private var alignedVersions: [LibraryCompareVersion] = []
+    @State private var alignmentRequest: UUID?
+    @State private var alignmentMessage: String?
 
     init(request: LibraryCompareRequest, library: PersonalLyricsLibraryService, adopt: ((UUID) -> Void)? = nil,
          close: (() -> Void)? = nil,
@@ -29,7 +32,7 @@ struct LibraryVersionCompareView: View {
         _peerID = State(initialValue: request.firstReference)
     }
 
-    private var versions: [LibraryCompareVersion] { [request.base] + request.references }
+    private var versions: [LibraryCompareVersion] { [request.base] + request.references + alignedVersions }
     private var base: LibraryCompareVersion { versions.first { $0.id == baseID } ?? request.base }
     private var reference: LibraryCompareVersion? { versions.first { $0.id == peerID } }
     private var pair: Pair { Pair(base: baseID, peer: peerID) }
@@ -44,7 +47,7 @@ struct LibraryVersionCompareView: View {
             VStack(alignment: .leading, spacing: 12) {
                 if close == nil {
                     HStack {
-                        Text("译文对读").font(.callout.weight(.medium)).foregroundStyle(.secondary)
+                        Text("对比译文").font(.callout.weight(.medium)).foregroundStyle(.secondary)
                         Spacer()
                         Button("关闭") { dismiss() }.buttonStyle(.plain).keyboardShortcut(.cancelAction)
                     }
@@ -63,6 +66,9 @@ struct LibraryVersionCompareView: View {
                         }))
                     }
                 }.fixedSize(horizontal: false, vertical: true)
+                if let alignmentMessage {
+                    Text(alignmentMessage).font(.caption).foregroundStyle(.secondary)
+                }
             }
             .padding(.horizontal, 20).padding(.vertical, 14)
             Divider()
@@ -84,6 +90,23 @@ struct LibraryVersionCompareView: View {
         .background(WorkspacePalette.paper)
         .tint(WorkspacePalette.ink)
         .onExitCommand { if let close { close() } else { dismiss() } }
+        .task(id: alignmentRequest) {
+            guard let alignmentRequest,
+                  let option = versions.first(where: { $0.id == alignmentRequest }),
+                  let version = option.translation else { return }
+            let usesBase = baseID == alignmentRequest
+            alignmentMessage = "正在按词源时间对齐…"
+            defer { self.alignmentRequest = nil }
+            do {
+                let aligned = try await library.realignSourceTranslation(version, entry: request.entry)
+                try Task.checkCancellation()
+                if !versions.contains(where: { $0.id == aligned.id }) { alignedVersions.append(aligned) }
+                if usesBase { baseID = aligned.id } else { peerID = aligned.id }
+                alignmentMessage = "已保存对齐版，可对比或使用其中的译文"
+            } catch where !Task.isCancelled {
+                alignmentMessage = error.localizedDescription
+            } catch { }
+        }
         .task(id: pair) {
             comparison = nil
             issue = nil
@@ -110,12 +133,19 @@ struct LibraryVersionCompareView: View {
                     ForEach(versions) { item in Text("\(item.title) · \(metadata(item))").tag(item.id) }
                 }.pickerStyle(.inline)
             } label: { Text(version.title).font(.callout.weight(.semibold)).lineLimit(2).foregroundStyle(.primary) }
-            .menuStyle(.borderlessButton).fixedSize(horizontal: false, vertical: true).disabled(preparing)
+            .menuStyle(.borderlessButton).fixedSize(horizontal: false, vertical: true).disabled(preparing || alignmentRequest != nil)
             .accessibilityLabel("选择" + role)
             Text(metadata(version)).font(.caption).foregroundStyle(.secondary)
-            if let playing = request.playing, let adopt, playing.adoptable.contains(version.id), !version.isCurrent {
-                Button("采用" + role) { adopt(version.id) }.buttonStyle(.bordered).controlSize(.small).disabled(preparing)
+            HStack {
+                if let playing = request.playing, let adopt, playing.adoptable.contains(version.id), !version.isCurrent {
+                    Button("采用" + role) { adopt(version.id) }.disabled(preparing || alignmentRequest != nil)
+                }
+                if version.canRealignSource {
+                    Button("重新对齐词源译文") { alignmentRequest = version.id }
+                        .disabled(preparing || alignmentRequest != nil)
+                }
             }
+            .buttonStyle(.bordered).controlSize(.small)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -169,7 +199,8 @@ struct LibraryVersionCompareView: View {
     }
 
     private func rowView(_ row: LibraryVersionComparison.Row, wide: Bool, canPick: Bool, isReadingRow: Bool) -> some View {
-        let sameOriginalText = row.base?.original == row.reference?.original
+        let sameOriginalText = row.baseLines.count == 1 && row.referenceLines.count == 1 &&
+            row.base?.original == row.reference?.original
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 if isReadingRow {
@@ -194,9 +225,9 @@ struct LibraryVersionCompareView: View {
             }
             let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 18)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             layout {
-                column(row.base, version: base, title: "底稿", label: !wide,
+                column(row.baseLines, version: base, title: "底稿", label: !wide,
                        showOriginal: !sameOriginalText, voice: row.baseVoice)
-                column(row.reference, version: reference, title: "参照", label: !wide,
+                column(row.referenceLines, version: reference, title: "参照", label: !wide,
                        showOriginal: !sameOriginalText, voice: row.referenceVoice)
             }
         }
@@ -204,22 +235,27 @@ struct LibraryVersionCompareView: View {
         .background(focusedRow == row.id ? WorkspacePalette.selection.opacity(0.55) : .clear)
     }
 
-    private func column(_ line: LibraryPassagePage.Line?, version: LibraryCompareVersion?,
+    private func column(_ lines: [LibraryPassagePage.Line], version: LibraryCompareVersion?,
                         title: String, label: Bool, showOriginal: Bool, voice: String?) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             if label { Text(title).font(.caption).foregroundStyle(.secondary).frame(width: 28, alignment: .leading) }
-            VStack(alignment: .leading, spacing: 4) {
-                if let line {
-                    if let voice { PassageVoiceLabel(text: voice) }
-                    if showOriginal, !line.original.isEmpty { Text(line.original).font(.caption).foregroundStyle(.secondary) }
-                    if let text = line.translation, !text.isEmpty {
-                        Text(text).font(.system(size: 17)).foregroundStyle(.primary.opacity(0.87))
-                        if suspectCredit(line, version: version) {
-                            Label("词源译文可能对错行", systemImage: "exclamationmark.circle")
-                                .font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {
+                if let voice { PassageVoiceLabel(text: voice) }
+                if lines.isEmpty { Text("—").foregroundStyle(.tertiary).accessibilityLabel("这一稿没有对应行") }
+                ForEach(lines) { line in
+                    VStack(alignment: .leading, spacing: 4) {
+                        if showOriginal, !line.original.isEmpty { Text(line.original).font(.caption).foregroundStyle(.secondary) }
+                        if let text = line.translation, !text.isEmpty {
+                            Text(text).font(.system(size: 17)).foregroundStyle(.primary.opacity(0.87))
+                            if suspectCredit(line, version: version) {
+                                Label("词源译文可能对错行", systemImage: "exclamationmark.circle")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } else {
+                            Text("此句暂无译文").font(.callout).foregroundStyle(.secondary)
                         }
-                    } else { Text("此句暂无译文").font(.callout).foregroundStyle(.secondary) }
-                } else { Text("—").foregroundStyle(.tertiary).accessibilityLabel("这一稿没有对应行") }
+                    }
+                }
             }.textSelection(.enabled)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -406,7 +442,7 @@ struct LibraryMultiCompareView: View {
     private func readingRow(in comparison: LibraryOriginalComparison) -> LibraryOriginalComparison.Row? {
         for (column, edition) in ordered.enumerated() {
             guard case .saved(let id) = edition.id, let index = initialComparison?.readingLine(for: id) else { continue }
-            return comparison.rows.first { $0.lines[column]?.id == index }
+            return comparison.rows.first { $0.lines[column].contains { $0.id == index } }
         }
         return nil
     }
@@ -446,9 +482,11 @@ struct LibraryMultiCompareView: View {
                             ForEach(visible) { row in
                                 HStack(alignment: .top, spacing: 0) {
                                     ForEach(columns.indices, id: \.self) { index in
-                                        comparisonCell(row.lines[index], voice: row.voiceLabels[index], against:
-                                            index == 0 ? row.lines.dropFirst().compactMap { $0 }.first { $0.original != row.lines[0]?.original }
-                                                : row.lines[0])
+                                        let group = row.lines[index]
+                                        let peer = index == 0
+                                            ? row.lines.dropFirst().first { !$0.isEmpty && $0.map(\.original) != group.map(\.original) }
+                                            : row.lines.first
+                                        comparisonCell(group, voices: row.voiceLabels[index], against: peer ?? [])
                                             .frame(width: width, alignment: .topLeading)
                                     }
                                 }
@@ -488,21 +526,26 @@ struct LibraryMultiCompareView: View {
         }
     }
 
-    private func comparisonCell(_ line: LibraryPassagePage.Line?, voice: String?, against base: LibraryPassagePage.Line?) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            if let line {
-                if differences.contains(.timing) {
-                    LibraryLineTiming(start: line.startTime, end: line.endTime, spans: line.timedSpans)
-                }
-                let showLayers = differences.contains(.layers)
-                PassageLineText(line: line, showsTranslation: showLayers, showsReading: showLayers,
-                                voiceLabel: showLayers ? voice : nil,
-                                markedOriginal: differences.contains(.text) ? LibraryDifferenceText.marked(line.original, against: base?.original) : nil)
-                if showLayers, let romanization = line.romanization, romanization != line.reading {
-                    Text(romanization).font(.caption).foregroundStyle(.secondary)
-                }
-            } else {
+    private func comparisonCell(_ lines: [LibraryPassagePage.Line], voices: [String?],
+                                against peer: [LibraryPassagePage.Line]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if lines.isEmpty {
                 Text("—").foregroundStyle(.tertiary).accessibilityLabel("这一稿没有对应行")
+            }
+            ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
+                VStack(alignment: .leading, spacing: 5) {
+                    if differences.contains(.timing) {
+                        LibraryLineTiming(start: line.startTime, end: line.endTime, spans: line.timedSpans)
+                    }
+                    let showLayers = differences.contains(.layers)
+                    let highlight = differences.contains(.text) && lines.count == peer.count
+                        ? LibraryDifferenceText.marked(line.original, against: peer[index].original) : nil
+                    PassageLineText(line: line, showsTranslation: showLayers, showsReading: showLayers,
+                                    voiceLabel: showLayers ? voices[index] : nil, markedOriginal: highlight)
+                    if showLayers, let romanization = line.romanization, romanization != line.reading {
+                        Text(romanization).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)

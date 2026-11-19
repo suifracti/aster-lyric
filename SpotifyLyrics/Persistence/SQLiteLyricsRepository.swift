@@ -1525,6 +1525,28 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         }
     }
 
+    func saveAlignedProviderTranslation(source: StoredEditableLyricsVersion, language: String,
+                                        texts: [String]) throws -> StoredTranslationVersion {
+        try ensurePrepared()
+        return try withTransaction {
+            try Task.checkCancellation()
+            let id = source.record.id
+            let hash = source.sourceContentHash
+            let engine = DatabaseTranslationVersionRecord.alignedProviderEngine
+            if let existing = try loadTranslationVersions(lyricsVersionID: id, targetLanguage: language, sourceContentHash: hash)
+                .first(where: { $0.record.engineID == engine && !$0.isArchived &&
+                    $0.record.targetLanguage == language && $0.lines.map(\.translatedText) == texts }) {
+                return existing
+            }
+            let draft = AITranslationDraft(lines: texts.enumerated().map { .init(index: $0.offset, translation: $0.element) },
+                targetLanguage: language, model: "词源译文 · 已对齐", baseURLHost: "", promptHash: "",
+                sourceContentHash: hash, sourceKind: .providerEmbedded, isMachineGenerated: false,
+                engineID: engine, isDraft: true)
+            return try insertValidatedTranslation(versionID: UUID(), lyricsVersionID: id, sourceContentHash: hash,
+                originalLines: source.lines.map(\.originalText), draft: draft)
+        }
+    }
+
     /// Caller owns the write transaction; never starts a nested transaction.
     private func insertValidatedTranslation(versionID: UUID, lyricsVersionID: UUID,
                                             sourceContentHash: String, originalLines: [String],

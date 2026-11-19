@@ -7,6 +7,7 @@ struct LibraryCompareVersion: Identifiable, Sendable {
     let isCurrent: Bool
     let parentID: UUID?
     var translation: PersonalTranslationVersionItem?
+    var canRealignSource = false
     var source: LibraryPassageSource { translation == nil ? .original(id) : .translation(id) }
 }
 
@@ -46,8 +47,8 @@ struct LibraryCompareRequest: Identifiable, Sendable {
 
     func readingRow(in comparison: LibraryVersionComparison, baseID: UUID, referenceID: UUID) -> LibraryVersionComparison.Row? {
         guard let readingLineIndex else { return nil }
-        if baseID == base.id { return comparison.rows.first { $0.base?.id == readingLineIndex } }
-        if referenceID == base.id { return comparison.rows.first { $0.reference?.id == readingLineIndex } }
+        if baseID == base.id { return comparison.rows.first { $0.baseLines.contains { $0.id == readingLineIndex } } }
+        if referenceID == base.id { return comparison.rows.first { $0.referenceLines.contains { $0.id == readingLineIndex } } }
         return nil
     }
 
@@ -65,20 +66,21 @@ struct LibraryOriginalComparison: Sendable {
 
     struct Row: Identifiable, Sendable {
         let id: Int
-        let lines: [Line?]
-        let voiceLabels: [String?]
+        let lines: [[Line]]
+        let voiceLabels: [[String?]]
 
         func differs(in kinds: Set<Difference>) -> Bool {
-            guard let first = lines.compactMap({ $0 }).first else { return false }
-            if kinds.contains(.text), lines.contains(where: { $0?.original != first.original }) { return true }
-            return lines.compactMap { $0 }.contains { line in
+            guard let first = lines.first(where: { !$0.isEmpty }) else { return false }
+            return lines.contains { group in
+                if kinds.contains(.text) && group.map(\.original) != first.map(\.original) { return true }
+                guard !group.isEmpty else { return false }
                 if kinds.contains(.timing),
-                   line.startTime != first.startTime || line.endTime != first.endTime || line.timedSpans != first.timedSpans {
-                    return true
-                }
-                return kinds.contains(.layers) && (line.translation != first.translation || line.reading != first.reading
-                    || line.romanization != first.romanization || line.background != first.background
-                    || line.performerID != first.performerID)
+                   group.map(\.startTime) != first.map(\.startTime) ||
+                    group.map(\.endTime) != first.map(\.endTime) ||
+                    group.map(\.timedSpans) != first.map(\.timedSpans) { return true }
+                return kinds.contains(.layers) && (group.map(\.translation) != first.map(\.translation)
+                    || group.map(\.reading) != first.map(\.reading) || group.map(\.romanization) != first.map(\.romanization)
+                    || group.map(\.background) != first.map(\.background) || group.map(\.performerID) != first.map(\.performerID))
             }
         }
     }
@@ -86,24 +88,131 @@ struct LibraryOriginalComparison: Sendable {
     let rows: [Row]
 
     init(editions: [[Line]], alignment: LibraryVersionComparison.Alignment) {
-        var groups = (editions.first ?? []).map { [Optional($0)] }
+        var groups = (editions.first ?? []).map { [[$0]] }
         for (index, lines) in editions.dropFirst().enumerated() {
-            let anchors = groups.enumerated().compactMap { index, group -> Line? in
-                guard let line = group.compactMap({ $0 }).first else { return nil }
-                return Line(id: index, original: line.original, startTime: line.startTime)
+            let spine = groups.enumerated().map { offset, group in
+                let anchor = group.first(where: { !$0.isEmpty }) ?? []
+                return Line(id: offset, original: anchor.map(\.original).joined(), startTime: anchor.first?.startTime)
             }
-            let paired = LibraryVersionComparison.align(anchors, lines, translations: false,
-                                                        sameOriginal: false, alignment: alignment)
-            groups = paired.map { row in
-                let previous = row.base.map { groups[$0.id] } ?? Array(repeating: nil, count: index + 1)
-                return previous + [row.reference]
+            let matched = Self.match(spine, lines, alignment: alignment)
+            groups = matched.map { left, right in
+                var row = Array(repeating: [Line](), count: index + 1)
+                for group in groups[left] {
+                    for column in group.indices { row[column].append(contentsOf: group[column]) }
+                }
+                return row + [Array(lines[right])]
             }
         }
         let voices = editions.map { PassageVoicePresentation(lines: $0) }
         rows = groups.enumerated().map { index, lines in
-            let labels = zip(lines, voices).map { line, voice in line.flatMap { voice.label(for: $0.id) } }
+            let labels = zip(lines, voices).map { group, voice in group.map { voice.label(for: $0.id) } }
             return Row(id: index, lines: lines, voiceLabels: labels)
         }
+    }
+
+    private struct Span {
+        let key: String
+        let credit: String?
+        let start: TimeInterval?
+    }
+
+    private static func spans(_ lines: [Line]) -> [[Span]] {
+        let normalized = lines.map { line in
+            String(line.original.folding(options: [.widthInsensitive, .caseInsensitive], locale: nil)
+                .unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })
+        }
+        let roles = lines.map { LyricsCreditOnly.role($0.original) }
+        return lines.indices.map { start in
+            var result = [Span(key: normalized[start], credit: roles[start], start: lines[start].startTime)]
+            guard roles[start] == nil, !normalized[start].isEmpty else { return result }
+            var key = normalized[start]
+            for end in (start + 1)..<min(start + 4, lines.count) {
+                guard roles[end] == nil, !normalized[end].isEmpty else { break }
+                key += normalized[end]
+                result.append(Span(key: key, credit: nil, start: lines[start].startTime))
+            }
+            return result
+        }
+    }
+
+    /// Keep the order of both versions. An exact phrase can cross up to four
+    /// adjacent lines, and it outranks a fuzzy match to just one of its fragments.
+    fileprivate static func match(_ base: [Line], _ peer: [Line],
+                              alignment: LibraryVersionComparison.Alignment) -> [(Range<Int>, Range<Int>)] {
+        if alignment == .line || base.count * peer.count > 250_000 {
+            var left = 0, right = 0
+            return LibraryVersionComparison.align(base, peer, translations: false, sameOriginal: false, alignment: alignment)
+                .map { row in
+                    let nextLeft = left + (row.base == nil ? 0 : 1)
+                    let nextRight = right + (row.reference == nil ? 0 : 1)
+                    defer { left = nextLeft; right = nextRight }
+                    return (left..<nextLeft, right..<nextRight)
+                }
+        }
+
+        let left = spans(base), right = spans(peer)
+        struct Step { var score = 0; var left = 0; var right = 0 }
+        let width = peer.count + 1
+        var table = Array(repeating: Step(), count: (base.count + 1) * width)
+        for i in stride(from: base.count, through: 0, by: -1) {
+            for j in stride(from: peer.count, through: 0, by: -1) {
+                if i == base.count && j == peer.count { continue }
+                let index = i * width + j
+                var choice = i < base.count ? Step(score: table[index + width].score, left: 1) :
+                    Step(score: table[index + 1].score, right: 1)
+                if j < peer.count, table[index + 1].score > choice.score {
+                    choice = Step(score: table[index + 1].score, right: 1)
+                }
+                if i < base.count && j < peer.count {
+                    for (a, lhs) in left[i].enumerated() {
+                        for (b, rhs) in right[j].enumerated() {
+                            let split = a + b > 0
+                            let score = matchScore(lhs, rhs, split: split, alignment: alignment)
+                            guard score > 0 else { continue }
+                            let total = table[(i + a + 1) * width + j + b + 1].score + score - (a + b) * 18
+                            if total > choice.score {
+                                choice = Step(score: total, left: a + 1, right: b + 1)
+                            }
+                        }
+                    }
+                }
+                table[index] = choice
+            }
+        }
+
+        var result: [(Range<Int>, Range<Int>)] = []
+        var i = 0, j = 0
+        while i < base.count || j < peer.count {
+            let step = table[i * width + j]
+            result.append((i..<(i + step.left), j..<(j + step.right)))
+            i += step.left
+            j += step.right
+        }
+        return result
+    }
+
+    private static func matchScore(_ left: Span, _ right: Span, split: Bool,
+                                   alignment: LibraryVersionComparison.Alignment) -> Int {
+        if left.credit != nil || right.credit != nil { return left.credit == right.credit ? 220 : 0 }
+        if left.key.isEmpty || right.key.isEmpty { return left.key == right.key ? 20 : 0 }
+        let difference = left.start.flatMap { a in right.start.flatMap { b in
+            a.isFinite && b.isFinite ? abs(a - b) : nil
+        } }
+        let penalty = difference.map { Int(min($0, 10) * 5) } ?? 0
+        if left.key == right.key && (alignment != .time || difference.map({ $0 <= 3 }) != false) {
+            return 240 + min(left.key.count, 40) - penalty
+        }
+        guard !split else { return 0 }
+        if alignment == .time {
+            return difference.map { $0 <= 0.75 ? 60 - penalty : 0 } ?? 0
+        }
+        let length = max(left.key.count, right.key.count)
+        guard min(left.key.count, right.key.count) >= 4,
+              min(left.key.count, right.key.count) * 5 >= length * 3,
+              difference.map({ $0 < 2 }) == true || left.key.prefix(2) == right.key.prefix(2)
+                || left.key.suffix(2) == right.key.suffix(2) else { return 0 }
+        let common = left.key.count - LibraryVersionComparison.changedCharacters(in: left.key, comparedWith: right.key).count
+        return common * 5 >= length * 3 ? 80 - penalty : 0
     }
 }
 
@@ -126,6 +235,11 @@ struct LibraryVersionComparison: Sendable {
         let change: Change
         let baseVoice: String?
         let referenceVoice: String?
+        var baseContinuation: [Line] = []
+        var referenceContinuation: [Line] = []
+
+        var baseLines: [Line] { base.map { [$0] + baseContinuation } ?? [] }
+        var referenceLines: [Line] { reference.map { [$0] + referenceContinuation } ?? [] }
     }
 
     let rows: [Row]
@@ -151,8 +265,23 @@ struct LibraryVersionComparison: Sendable {
     init(base: LibraryPassagePage, reference: LibraryPassagePage, translations: Bool, alignment: Alignment = .text) {
         let sameOriginal = base.originalVersionID == reference.originalVersionID &&
             base.matchesOriginalVersion && reference.matchesOriginalVersion
-        rows = Self.align(base.lines, reference.lines, translations: translations, sameOriginal: sameOriginal,
-                          alignment: alignment)
+        if translations && !sameOriginal {
+            rows = LibraryOriginalComparison.match(base.lines, reference.lines, alignment: alignment).enumerated().map { index, pair in
+                let left = base.lines[pair.0], right = reference.lines[pair.1]
+                let change: Change
+                if left.isEmpty { change = .onlyReference }
+                else if right.isEmpty { change = .onlyBase }
+                else if left.map(\.original) != right.map(\.original) ||
+                    left.map({ $0.translation ?? "" }) != right.map({ $0.translation ?? "" }) { change = .text }
+                else { change = .same }
+                return Row(id: index, base: left.first, reference: right.first, change: change,
+                           baseVoice: nil, referenceVoice: nil,
+                           baseContinuation: Array(left.dropFirst()), referenceContinuation: Array(right.dropFirst()))
+            }
+        } else {
+            rows = Self.align(base.lines, reference.lines, translations: translations, sameOriginal: sameOriginal,
+                              alignment: alignment)
+        }
         canPickTranslationLines = translations && sameOriginal
     }
 

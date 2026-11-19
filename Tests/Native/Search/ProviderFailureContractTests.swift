@@ -272,6 +272,44 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertEqual(merged.map(\.translationText), [nil, "标题", nil, "远方的天空"])
     }
 
+    func testRealigningStoredProviderTranslationKeepsTheOldEditionAndDeduplicates() async throws {
+        let track = Track(title: "タイトル", artist: "Fixture", album: "", duration: 20)
+        let identity = TrackIdentity(track: track)
+        let doc = LyricsDocument(identity: identity, lines: [
+            LyricLine(timestamp: 0.325, originalText: "作曲：样例", translationText: "标题"),
+            LyricLine(timestamp: 0.651, originalText: "タイトル"),
+            LyricLine(timestamp: 1.5, originalText: "遠い空", translationText: "远方的天空")
+        ], source: .neteaseExperimental, confidence: 1, providerSourceID: "netease:9402")
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("align.sqlite3"))
+        try await repository.prepare()
+        let saved = try await repository.save(track: track, identity: identity, document: doc)
+        let id = try XCTUnwrap(saved.versionID)
+        let loaded = try await repository.loadEditableVersion(versionID: id, track: track, identity: identity)
+        let source = try XCTUnwrap(loaded)
+        try await repository.preserveEmbeddedTranslation(lyricsVersionID: id, sourceContentHash: source.sourceContentHash)
+        let body = try JSONSerialization.data(withJSONObject: [
+            "lrc": ["lyric": "[00:00.325]作曲：样例\n[00:00.651]タイトル\n[00:01.500]遠い空"],
+            "tlyric": ["lyric": "[00:00.651]标题\n[00:01.500]远方的天空"]
+        ])
+        ProviderFailureNetEaseFixtureURLProtocol.store.reset(searchBody: Data(), lyricBodies: ["9402": body])
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [ProviderFailureNetEaseFixtureURLProtocol.self]
+        let provider = NetEaseExperimentalLyricsProvider(session: URLSession(configuration: config))
+        let texts = try await provider.realignedTranslation(for: source)
+        XCTAssertEqual(texts, ["", "标题", "远方的天空"])
+        let aligned = try await repository.saveAlignedProviderTranslation(source: source, language: "und", texts: texts)
+        let repeated = try await repository.saveAlignedProviderTranslation(source: source, language: "und", texts: texts)
+        XCTAssertEqual(aligned.record.id, repeated.record.id)
+        XCTAssertTrue(aligned.isDraft)
+        let versions = try await repository.loadTranslationVersions(lyricsVersionID: id, targetLanguage: "und",
+                                                                    sourceContentHash: source.sourceContentHash)
+        XCTAssertEqual(versions.count, 2)
+        XCTAssertEqual(versions.first(where: { $0.record.id != aligned.record.id })?.lines.map(\.translatedText),
+                       ["标题", "", "远方的天空"])
+    }
+
     /// Real cases, 2026-11: lyrics existed but the artist was written differently.
     /// Imagination (feat. Raguma) by Kage.Jp: NetEase writes the guest in
     /// kana. Same lead artist, album and length: adopted without review.

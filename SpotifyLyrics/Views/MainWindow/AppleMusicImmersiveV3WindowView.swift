@@ -2030,18 +2030,18 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     let request = try await library.playingComparison(identity: identity, lyricsID: sourceID,
                         selected: state.selectedTranslation?.record.id, versions: state.translationVersions)
                     guard state.liveTrackIdentity == identity, state.liveLyricsVersionID == sourceID, !state.isShowingSearchPreview else { return }
-                    guard let request else { state.showNotice("这版原词还没有两份可对读的译文"); return }
+                    guard let request else { state.showNotice("这版原词还没有两份可比较的译文"); return }
                     dismissPinnedToolbarPanel()
                     library.comparison = request
-                } catch { state.showNotice("暂时读不到这两份译文") }
+                } catch { state.showNotice("暂时无法打开这两份译文") }
             }
         } label: {
-            Label("逐句对读", systemImage: "rectangle.split.2x1")
+            Label("对比译文", systemImage: "rectangle.split.2x1")
         }
         .buttonStyle(.borderless)
         .disabled(openingTranslationComparison || state.isShowingSearchPreview || !state.liveLyricsDocumentMatchesCurrentTrack ||
                   state.liveLyricsVersionID == nil || state.translationVersions.count < 2)
-        .help("对读已存译文、挑句修订或采用一稿")
+        .help("并排比较已存译文，可挑句修订或采用一份译文")
     }
 
     private func closeStalePlayingComparison() {

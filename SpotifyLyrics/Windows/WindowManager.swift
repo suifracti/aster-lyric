@@ -104,7 +104,7 @@ public final class WindowManager: ObservableObject {
     func showTranslationComparison(_ request: LibraryCompareRequest, library: PersonalLyricsLibraryService,
                                    adopt: @escaping (UUID) -> Void, edit: @escaping (LibraryTranslationRevisionDraft) -> Void) {
         translationComparisonWindow?.close()
-        let window = translationComparisonWindow ?? VersionsWindow(title: "译文对读", identifier: "translation-compare")
+        let window = translationComparisonWindow ?? VersionsWindow(title: "对比译文", identifier: "translation-compare")
         translationComparisonWindow = window
         translationComparisonID = request.id
         window.didClose = { [weak library] in
