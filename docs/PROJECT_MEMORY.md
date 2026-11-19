@@ -65,6 +65,7 @@
 | 已存纯文本永远升级不到时间轴、只按歌名搜到的全对结果仍要核对、「原名 - 英文名」 | L-038；plainAlreadyHeld/waitsForTiming、looseQueryConfirmed、titleBilingualPair、publisherPageExact |
 | 别人有逐字我们只有逐行、已存逐行不会升级成逐字、行切换比别人慢一点 | L-041；probeNetworkProviders lineTimingHeld、LyricsWordTimingUpgrade、TimedLineBounds（QRC/KRC/YRC 行尾）、scheduleWordTimingUpgrade、PlaybackState.lineSwitchLead、scheduleLineBoundaryWake |
 | AI 译文读起来像照日文断行切开、主语缺失、太书面、和我自己的译法不像 | L-042；`personalV2Instructions` full-audit-v3-r1、Codex 合同里的跨行条款 |
+| AI 整首翻译提示词太长、换了提示词后继续使用已发请求 | L-042 末尾短版接续；AITranslationPromptBuilder、TranslationSessionController |
 | 缺歌词里同一首歌的重复记录（时长错、借用别首的 ID）、批量补全拿错时长去搜 | L-039；PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere、needsLyrics |
 | 批量补词切换窗口时停掉、只看到次数、需要核对却看不到候选 | L-039；PlaybackState.lyricsBatch、LyricsBatchControls、LyricsSessionController.completeBatchLyrics |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
@@ -834,6 +835,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
   - 剩余差别多是用户个人的意译取舍（如「满溢而出的爱意」），不再泛化成规则。
   - 共约 29 次翻译请求。临时测试与语料文件已删，结果只记在这里。
 
+- **2026-11-19 默认提示词缩短。** 以用户贴出的 45 行请求估算，同一份 JSON 的总请求从 8,506 字符降至约 3,100。固定版去掉重复规则和大段例句，保留全曲语境、语体、相邻行重组和逐行返回。自定义译风照原样发送。Codex 传输协议的行 ID 与校验沿用，已发请求仍使用相同日志键，精确关联的完整旧结果可继续作为候选。缩短后尚未付费评估译质。
+
 
 
 ## L-043 工作台与歌曲档案（2026-11-18）
@@ -1031,3 +1034,4 @@ TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、
 - 对唱由词源声部标注驱动。《シュガーラッシュ》的普通在线候选缺少这些标注。手动「查找其他版本」可以读同一 Spotify 录音的 Lyrimuse 本机 YRC 和声部索引，核过 76 行、75 行有逐字时间，两个独唱声部加合唱。合唱保留独立标签。已核过的缓存先显示，在线候选继续加载。YRC 字词内的文本括号照原样显示。
 - 《革命道中 - On The Way》的 LRCLIB 版本只有逐行。真实 QQ 结果有 51 行逐字。匹配仅接受 QQ 的括号并列曲名、同一英文半标题、相符歌手及 1 秒内的时长。原词列表与预览标时间能力，候选可和其他候选或已存版本并排看正文、附文、时间和声部差异，采用走现有歌曲身份与锁定规则。
 - 预译接下来两首、播放队列及所选歌单都用 `TranslationSessionController` 的串行批次，复用同版原词、目标语言、模型及译风对应的结果和请求日志。取消时停止继续派发，结果可到歌词库「翻译缓存」找。译文面板预览当前歌曲已存译文，Codex 打开最近持久会话，其他已保存会话的 CLI 从终端续接。
+- **同日对唱接续。** 已存稿优先命中使手动版本入口里的声部没有进入播放。实时会话先显示原稿，再按同一 Spotify ID、词句和时间补充能确认的声部，分行不同但确认为同一声部的相邻短句可以匹配。锁定和人工改过的稿沿用原数据，补充声部只改变显示，版本 ID、时间、译文与收藏出处照旧。实际《シュガーラッシュ》65 行 LRCLIB 旧稿在隔离会话补出 50 行，20 行合唱、17 行声部一和 13 行声部二。其余行留空。完整逐字稿仍走版本选择；本机索引在磁盘版本变化时才重新解码。

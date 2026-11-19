@@ -676,9 +676,11 @@ public final class TranslationSessionController: ObservableObject {
                     }
                 }
                 guard !Task.isCancelled, self?.context?.key == key, self?.requestGeneration == loadGeneration else { return }
+                var recoveredID: UUID?
                 if let request = previousRequest, request.phase == .received || request.phase == .saved {
                     let saved = try await repository.completeTranslationRequest(key: request.key, attemptID: request.attemptID,
                         context: completion)
+                    if !usedLegacyStyle { recoveredID = saved.record.id }
                     versions.removeAll { $0.record.id == saved.record.id }
                     versions.insert(saved, at: 0)
                     previousRequest = try await repository.loadTranslationRequest(key: request.key)
@@ -691,7 +693,8 @@ public final class TranslationSessionController: ObservableObject {
                           self.requestGeneration == loadGeneration else { return }
                     self.availableVersions = versions
                     self.pendingCandidate = versions.first(where: {
-                        $0.isComplete && $0.isDraft && !$0.isArchived && !$0.record.isManuallyEdited && self.matchesRequest($0, context: context)
+                        $0.isComplete && $0.isDraft && !$0.isArchived && !$0.record.isManuallyEdited
+                            && ($0.record.id == recoveredID || self.matchesRequest($0, context: context))
                     })
                     if self.manualNoSelection.contains(key) {
                         self.selectedVersion = nil
@@ -707,8 +710,13 @@ public final class TranslationSessionController: ObservableObject {
                         self.state = .loaded(selected.record.id)
                         self.errorMessage = nil
                         if interrupted { self.progressMessage = "上次翻译已中断，结果未知；保留旧译文，不会自动重发。可主动重试。" }
-                    } else if let candidate = self.pendingCandidate, self.canUseAutomatically(context) {
-                        self.useExistingCandidateAutomatically(candidate, context: context, generation: loadGeneration)
+                    } else if let candidate = self.pendingCandidate {
+                        if self.canUseAutomatically(context) {
+                            self.useExistingCandidateAutomatically(candidate, context: context, generation: loadGeneration)
+                        } else {
+                            self.state = .candidateReady(candidate.record.id)
+                            self.errorMessage = nil
+                        }
                     } else if interrupted || previousRequest?.phase == .saved {
                         self.state = .failed(usedLegacyStyle && !interrupted
                             ? "旧风格的结果已在译文版本中。点重新翻译可使用当前风格。"
@@ -838,8 +846,7 @@ public final class TranslationSessionController: ObservableObject {
            let pendingCandidate,
            pendingCandidate.record.lyricsVersionID == context.lyricsVersionID,
            pendingCandidate.record.sourceContentHash == context.sourceContentHash,
-           !pendingCandidate.record.isArchived,
-           matchesRequest(pendingCandidate, context: context) {
+           !pendingCandidate.record.isArchived {
             // Reuse the complete result; explicit regeneration is the only
             // action allowed to create another paid request.
             if canUseAutomatically(context) { useExistingCandidateAutomatically(pendingCandidate, context: context, generation: requestGeneration) }

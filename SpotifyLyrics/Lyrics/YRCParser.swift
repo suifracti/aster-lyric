@@ -169,9 +169,7 @@ public enum YRCParser {
     }
 }
 
-/// Imports a matching recording from an existing Lyrimuse file cache when
-/// the reader explicitly searches alternate versions. No account or service
-/// access is needed.
+/// Reads an exact recording from an existing Lyrimuse file cache.
 enum LyrimuseLyricsCache {
     private struct Recording: Decodable {
         let spotify_track_id: String?
@@ -180,16 +178,48 @@ enum LyrimuseLyricsCache {
         struct Speakers: Decodable { let yrc: [String]? }
     }
 
-    static func candidate(for track: Track, root: URL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".config/lyrimuse", isDirectory: true)) -> LyricsCandidate? {
-        guard let id = TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString),
-              let data = read(root.appendingPathComponent("lyrimuse-enrich-index.json"), limit: 24 << 20),
-              let recordings = try? JSONDecoder().decode([String: Recording].self, from: data) else { return nil }
-        let matches = recordings.filter { $0.value.spotify_track_id == id }.sorted { $0.key < $1.key }
+    /// The same cache serves alternate-version search and live voice lookup.
+    /// Decode a large index once per on-disk revision, away from the UI.
+    private actor RecordingIndex {
+        static let shared = RecordingIndex()
+        private var root: URL?
+        private var modifiedAt: Date?
+        private var size: Int?
+        private var recordings = [String: [String: Recording]]()
+
+        func candidate(for track: Track, root: URL, voicesOnly: Bool) -> LyricsCandidate? {
+            guard let id = TrackIdentity.spotifyRequestTrackID(track.spotifyId ?? track.spotifyURL?.absoluteString) else { return nil }
+            let file = root.appendingPathComponent("lyrimuse-enrich-index.json")
+            guard let values = try? file.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]) else { return nil }
+            if self.root != root || modifiedAt != values.contentModificationDate || size != values.fileSize {
+                guard let data = read(file, limit: 24 << 20),
+                      let index = try? JSONDecoder().decode([String: Recording].self, from: data) else { return nil }
+                recordings = [:]
+                for (key, record) in index {
+                    if let id = record.spotify_track_id { recordings[id, default: [:]][key] = record }
+                }
+                self.root = root
+                modifiedAt = values.contentModificationDate
+                size = values.fileSize
+            }
+            return LyrimuseLyricsCache.candidate(for: track, root: root, id: id, matches: recordings[id] ?? [:],
+                                                voicesOnly: voicesOnly)
+        }
+    }
+
+    static func lookup(for track: Track, root: URL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".config/lyrimuse", isDirectory: true), voicesOnly: Bool = false) async -> LyricsCandidate? {
+        return await RecordingIndex.shared.candidate(for: track, root: root, voicesOnly: voicesOnly)
+    }
+
+    private static func candidate(for track: Track, root: URL, id: String, matches: [String: Recording],
+                                  voicesOnly: Bool) -> LyricsCandidate? {
         let identity = TrackIdentity(track: track)
-        for (key, record) in matches {
+        for (key, record) in matches.sorted(by: { $0.key < $1.key }) {
             guard !Task.isCancelled, let duration = record.duration_secs, duration.isFinite,
                   duration > 0, track.duration <= 0 || abs(track.duration - duration) <= 2 else { continue }
+            let roles = record.lyrics_speakers?.yrc ?? []
+            if voicesOnly, Set(roles.filter { $0.hasPrefix("v") }).count < 2 { continue }
             let names = key.split(separator: "|", omittingEmptySubsequences: false)
             guard names.count == 3, !names.joined().contains("/"),
                   TrackTextNormalizer.normalize(String(names[1])) == TrackTextNormalizer.normalize(track.title) else { continue }
@@ -203,13 +233,14 @@ enum LyrimuseLyricsCache {
                   zip(lines, lines.dropFirst()).allSatisfy({ $0.timestamp <= $1.timestamp }),
                   last.timestamp <= duration + 0.5,
                   lines.contains(where: { $0.hasValidTimedSpans() }) else { continue }
-            if let roles = record.lyrics_speakers?.yrc, roles.count == lines.count,
+            if roles.count == lines.count,
                roles.allSatisfy({ ["", "v1", "v2", "v3", "合"].contains($0) }) {
                 for i in lines.indices where !roles[i].isEmpty {
                     lines[i].performerID = roles[i] == "合" ? LyricAgentPresentationMap.ensembleID : roles[i]
                 }
             }
-            if let translated = read(base.appendingPathExtension("tr.lrc"), limit: 1 << 20),
+            if voicesOnly, !LyricAgentPresentationMap(lines: lines).isActive { continue }
+            if !voicesOnly, let translated = read(base.appendingPathExtension("tr.lrc"), limit: 1 << 20),
                let content = String(data: translated, encoding: .utf8) {
                 lines = TimedLyricsCompanionMerger.merge(content, into: lines, layer: .translation)
                 for index in lines.indices {
@@ -218,7 +249,7 @@ enum LyrimuseLyricsCache {
                     }
                 }
             }
-            if let romanized = read(base.appendingPathExtension("roma.lrc"), limit: 1 << 20),
+            if !voicesOnly, let romanized = read(base.appendingPathExtension("roma.lrc"), limit: 1 << 20),
                let content = String(data: romanized, encoding: .utf8) {
                 lines = TimedLyricsCompanionMerger.merge(content, into: lines, layer: .romaji)
             }
@@ -234,5 +265,44 @@ enum LyrimuseLyricsCache {
         let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
         guard values?.isRegularFile == true, let size = values?.fileSize, (1...limit).contains(size) else { return nil }
         return try? Data(contentsOf: url)
+    }
+
+    /// Recover confirmed roles onto existing display rows. A line can absorb
+    /// adjacent reference fragments only when they all have the same role.
+    static func voiceAnnotations(for document: LyricsDocument, from reference: LyricsCandidate) -> [UUID: String] {
+        guard document.isSynchronized, reference.identity == document.identity,
+              LyricAgentPresentationMap(lines: reference.lines).isActive else { return [:] }
+        func words(_ text: String) -> String {
+            let folded = text.folding(options: [.caseInsensitive, .widthInsensitive], locale: nil)
+            return String(folded.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })
+        }
+        let rows = reference.lines.map { (time: $0.timestamp, text: words($0.originalText), role: $0.performerID) }
+        var result = [UUID: String]()
+        for line in document.lines where line.performerID == nil {
+            let text = words(line.originalText)
+            guard !text.isEmpty else { continue }
+            var matches: [(distance: TimeInterval, role: String?)] = []
+            for index in rows.indices where abs(rows[index].time - line.timestamp) <= 1 {
+                let first = rows[index]
+                var joined = ""
+                var role = first.role
+                for row in rows[index...].prefix(3) {
+                    guard !row.text.isEmpty else { break }
+                    joined += row.text
+                    if row.role != role { role = nil }
+                    if text == joined {
+                        matches.append((abs(first.time - line.timestamp), role))
+                        break
+                    }
+                    if !text.hasPrefix(joined) { break }
+                }
+            }
+            if let closest = matches.min(by: { $0.distance < $1.distance }),
+               let role = closest.role,
+               !matches.contains(where: { $0.distance <= closest.distance + 0.12 && $0.role != role }) {
+                result[line.id] = role
+            }
+        }
+        return result
     }
 }

@@ -260,7 +260,7 @@ final class AITranslationContractTests: XCTestCase {
             request.phase = .received
             request.result = AITranslationDraft(lines: [AITranslationLine(index: 0, translation: "synthetic recovered new")],
                 targetLanguage: config.targetLanguage, model: config.model, baseURLHost: "fixture",
-                promptHash: try AITranslationPromptBuilder().build(context: context, configuration: config).promptHash,
+                promptHash: "previous built-in prompt",
                 sourceContentHash: hash, engineID: config.engineID, providerReasoningSetting: config.providerReasoningSetting)
             try await repo.updateTranslationRequest(request)
             let fake = NeverDispatchService()
@@ -281,6 +281,10 @@ final class AITranslationContractTests: XCTestCase {
             XCTAssertTrue(controller.selectedVersion?.record.id == protected.record.id, "recovery overwrote manual/locked adopted version")
             XCTAssertTrue(controller.project(onto: document.lines).first?.translationText == "synthetic protected old")
             guard let candidate = versions.first(where: { $0.record.id != protected.record.id }) else { throw ContractFailure(message: "new candidate missing") }
+            if kind == "manual" {
+                XCTAssertEqual(controller.pendingCandidate?.record.id, candidate.record.id,
+                               "the exact journal result stays available after built-in prompt wording changes")
+            }
             XCTAssertTrue(candidate.record.isDraft && !candidate.record.isArchived && candidate.record.parentVersionID == nil,
                 "independent AI generation must remain a draft with no fabricated translation parent")
             XCTAssertTrue(candidate.record.lyricsVersionID == versionID && candidate.record.sourceContentHash == hash)

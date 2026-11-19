@@ -1709,6 +1709,51 @@ final class LyricsTimingAndEarlyDisplayTests: XCTestCase {
         "言えなかった言葉をそっと胸にしまう", "雨上がりの街に二人の影が伸びてゆく", "繰り返せない藍と知ったんだ"
     ]
 
+    @MainActor
+    func testPlaybackAddsVoiceLabelsToTheStoredEditionWithoutReplacingIt() async throws {
+        let directory = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = directory.appendingPathComponent("reference", isDirectory: true)
+        let folder = root.appendingPathComponent("lyrics", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let id = "0123456789ABCDEFGHIJKL"
+        let track = Track(title: "Fixture", artist: "Singers", album: "Studio", duration: 16, spotifyId: id)
+        let identity = TrackIdentity(track: track)
+        let index = ["Singers|Fixture|Studio": ["spotify_track_id": id, "duration_secs": 16,
+            "lyrics_speakers": ["yrc": ["合", "v1", "v1", "v2", "v1", "v2"]]]]
+        try JSONSerialization.data(withJSONObject: index).write(to: root.appendingPathComponent("lyrimuse-enrich-index.json"))
+        try """
+        [1000,300](1000,300,0)Together
+        [3000,300](3000,300,0)Open
+        [3600,300](3600,300,0)the door
+        [6000,300](6000,300,0)Wait
+        [9000,300](9000,300,0)One
+        [9300,300](9300,300,0)Two
+        """.write(to: folder.appendingPathComponent("Singers - Fixture - Studio.yrc"), atomically: true, encoding: .utf8)
+        let lines = [
+            LyricLine(timestamp: 1.1, originalText: "Together!", translationText: "译文"),
+            LyricLine(timestamp: 3.05, originalText: "Open the door"),
+            LyricLine(timestamp: 6.1, originalText: "Wait"),
+            LyricLine(timestamp: 9.0, originalText: "One Two"),
+            LyricLine(timestamp: 13.0, originalText: "Wait")
+        ]
+        let document = LyricsDocument(identity: identity, title: track.title, artist: track.artist, album: track.album,
+            duration: track.duration, lines: lines, isSynchronized: true, source: .lrclib, confidence: 1)
+        let repo = SQLiteLyricsRepository(databaseURL: directory.appendingPathComponent("lyrics.sqlite3"))
+        try await repo.prepare()
+        let saved = try await repo.save(track: track, identity: identity, document: document)
+        let session = LyricsSessionController(providers: [], repository: repo)
+        session.localVoiceReference = { await LyrimuseLyricsCache.lookup(for: $0, root: root, voicesOnly: true) }
+        await session.loadForPreloading(track: track)
+        XCTAssertEqual(session.activeLyricsVersionID, saved.versionID)
+        let projected = session.addingConfirmedVoices(to: session.lyrics)
+        XCTAssertEqual(projected.map(\.id), session.lyrics.map(\.id))
+        XCTAssertEqual(projected.map(\.performerID), ["合唱", "v1", "v2", nil, nil])
+        let original = try await repo.loadBestStored(track: track, identity: identity)
+        XCTAssertTrue(original?.document.lines.allSatisfy({ $0.performerID == nil }) == true)
+        XCTAssertEqual(projected.map(\.originalText), lines.map(\.originalText))
+    }
+
     func testPublisherNamesShowLessKissBeforeWaitingForPublisherLyrics() async {
         let track = Track(title: "Less Kiss", artist: "TakaseToya", album: "The 1st of the 13th month",
                           duration: 192.209, spotifyId: "6uBs5b437BtvJmVh2yi1RE")

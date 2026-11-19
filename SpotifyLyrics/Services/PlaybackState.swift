@@ -203,6 +203,7 @@ public final class PlaybackState: ObservableObject {
         let sourceContentHash: String?
         let lineCount: Int
         let readingRevision: UInt64
+        let voiceAnnotationRevision: UInt64
         var restoresCensoredWords = false
     }
     private struct PendingManualLyricsAdoption {
@@ -273,6 +274,9 @@ public final class PlaybackState: ObservableObject {
             spotifyArtistResolver: lyricsProvider == nil ? .shared : nil,
             sourceHealth: lyricsProvider == nil ? .shared : nil
         )
+        if lyricsProvider == nil {
+            session.localVoiceReference = { await LyrimuseLyricsCache.lookup(for: $0, voicesOnly: true) }
+        }
         let previewSession = LyricsSessionController(
             providers: lyricsProviders,
             repository: resolvedRepository,
@@ -1178,7 +1182,7 @@ public final class PlaybackState: ObservableObject {
         let identity = TrackIdentity(track: track)
         let manager = LyricsSearchManager(providers: preloadLyricsProviders, spotifyArtistResolver: .shared)
         async let online = manager.search(track: track, identity: identity, collectCandidatesOnly: true)
-        let reference = await Task.detached(priority: .userInitiated) { LyrimuseLyricsCache.candidate(for: track) }.value
+        let reference = await LyrimuseLyricsCache.lookup(for: track)
         if let reference, !Task.isCancelled { onLocal(reference) }
         let outcome = await online
         guard !Task.isCancelled else { return [] }
@@ -3281,6 +3285,7 @@ public final class PlaybackState: ObservableObject {
             sourceContentHash: session.activeSourceContentHash,
             lineCount: base.count,
             readingRevision: session === lyricsSession ? readingSession.currentRevision : 0,
+            voiceAnnotationRevision: session.voiceAnnotationRevision,
             restoresCensoredWords: session === lyricsSession && readingSession.restoresCensoredWords
         )
         if let cache, cache.key == key {
@@ -3295,7 +3300,8 @@ public final class PlaybackState: ObservableObject {
                 lyricsVersionID: session.activeLyricsVersionID,
                 sourceContentHash: session.activeSourceContentHash
             )
-            projected = session === lyricsSession ? readingSession.project(onto: translated) : translated
+            projected = session === lyricsSession
+                ? session.addingConfirmedVoices(to: readingSession.project(onto: translated)) : translated
         } else {
             projected = base
         }

@@ -72,8 +72,7 @@ final class SearchSourceContractTests: XCTestCase {
         XCTAssertEqual(runCount(), 5, "a failure is retried, never remembered")
     }
 
-    /// The user's saved preset is 我的风格 (full-audit-v3-r6). It must resolve
-    /// to that guidance, not fall back silently to another style.
+    /// Existing 我的风格 preferences should send the shorter built-in guidance.
     func testSavedPersonalStyleResolvesToTheAuditedGuidance() throws {
         let saved = "translationPrompt.personalV2.v2"
         XCTAssertEqual(TranslationPromptPresetID(rawValue: saved), .personalV2)
@@ -88,7 +87,8 @@ final class SearchSourceContractTests: XCTestCase {
         for engine in [TranslationEngineID.codexChatGPT.rawValue, TranslationEngineID.deepSeekAPI.rawValue] {
             configuration.engineID = engine
             let prompt = try builder.build(context: context, configuration: configuration)
-            XCTAssertTrue(prompt.system.contains("full-audit-v3-r6"), engine)
+            XCTAssertTrue(prompt.system.contains("通读整首，先弄清场景"), engine)
+            XCTAssertLessThan(prompt.system.count, 1700, engine)
             XCTAssertTrue(prompt.system.contains("【多语种】"), engine)
             // v3: a sentence split across lines may be regrouped so each
             // Chinese line reads naturally; no contract line may forbid it.
@@ -115,17 +115,16 @@ final class SearchSourceContractTests: XCTestCase {
             configuration.engineID = engine
             let edited = try builder.build(context: context, configuration: configuration)
             XCTAssertTrue(edited.system.contains("我自己的译法") || edited.user.contains("我自己的译法"), engine)
-            XCTAssertFalse(edited.system.contains("full-audit-v3-r6"), engine)
+            XCTAssertFalse(edited.system.contains("通读整首，先弄清场景"), engine)
             XCTAssertFalse(edited.system.contains(TranslationPromptPresetCatalog.personalV2LanguageNote), engine)
         }
         configuration.personalStyleOverride = ""
-        XCTAssertTrue(try builder.build(context: context, configuration: configuration).system.contains("full-audit-v3-r6")
-                      || (try builder.build(context: context, configuration: configuration).user.contains("full-audit-v3-r6")))
+        XCTAssertTrue(try builder.build(context: context, configuration: configuration).system.contains("通读整首，先弄清场景"))
         configuration.promptPresetID = TranslationPromptPresetID.naturalSong.rawValue
         let natural = try builder.build(context: context, configuration: configuration)
         XCTAssertTrue(natural.system.contains("Natural song style v2"), "the other styles stay selectable")
         configuration.promptPresetID = "translationPrompt.unknown.v9"
-        XCTAssertTrue(try builder.build(context: context, configuration: configuration).system.contains("full-audit-v3-r6"),
+        XCTAssertTrue(try builder.build(context: context, configuration: configuration).system.contains("通读整首，先弄清场景"),
                       "an unknown saved value falls back to the user's style")
     }
 

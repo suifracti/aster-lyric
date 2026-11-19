@@ -658,7 +658,7 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
                     ? voices.label(at: index) : voices.labelAtChange(index) {
                     Text(name)
                         .font(.system(size: compact ? 10 : 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(.white.opacity(index == currentIndex ? 0.92 : 0.62))
                         .padding(.bottom, -rowSpacing * 0.6)
                         .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
                         .accessibilityLabel("演唱：\(name)")

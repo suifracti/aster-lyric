@@ -274,7 +274,7 @@ final class ListeningBatchOneTests: XCTestCase {
                           TrackTextNormalizer.normalize("曾经", foldsChineseScript: false))
     }
 
-    func testWordTimedCacheKeepsParenthesesAndDistinguishesEnsemble() throws {
+    func testWordTimedCacheKeepsParenthesesAndDistinguishesEnsemble() async throws {
         let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let lyrics = root.appendingPathComponent("lyrics", isDirectory: true)
@@ -289,14 +289,16 @@ final class ListeningBatchOneTests: XCTestCase {
         [3000,600](3000,600,0)C
         [5000,600](5000,600,0)D
         """.write(to: lyrics.appendingPathComponent("Singers - Fixture - Studio.yrc"), atomically: true, encoding: .utf8)
-        let edition = try XCTUnwrap(LyrimuseLyricsCache.candidate(for: track, root: root))
+        let match = await LyrimuseLyricsCache.lookup(for: track, root: root)
+        let edition = try XCTUnwrap(match)
         XCTAssertEqual(edition.lines.first?.originalText, "A(test) B")
         XCTAssertEqual(edition.timingTitle, "逐字")
         let voices = LyricsTimeline.VoicePresentation(in: edition.lines)
         XCTAssertEqual([voices.label(at: 0), voices.label(at: 1), voices.label(at: 2)], ["合唱", "声部 1", "声部 2"])
         let other = Track(title: track.title, artist: track.artist, album: track.album, duration: 13,
                           spotifyId: track.spotifyId)
-        XCTAssertNil(LyrimuseLyricsCache.candidate(for: other, root: root))
+        let differentRecording = await LyrimuseLyricsCache.lookup(for: other, root: root)
+        XCTAssertNil(differentRecording)
     }
 
     func testQQDisplayAliasKeepsWordTimedStudioCandidate() {

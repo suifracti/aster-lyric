@@ -54,6 +54,9 @@ public final class LyricsSessionController: ObservableObject {
     private let sourceStats: LyricsSourceStats
     private let isPreload: Bool
     private let isBatch: Bool
+    var localVoiceReference: (@Sendable (Track) async -> LyricsCandidate?)?
+    private var confirmedVoiceAnnotations: [UUID: String] = [:]
+    private(set) var voiceAnnotationRevision: UInt64 = 0
     private var batchSaveDisposition: LyricsPersistenceSaveDisposition?
     private static var attemptedPreloadRecordingIDs: Set<String> = []
     private static var preloadedRecordingIDs: Set<String> = []
@@ -471,6 +474,9 @@ public final class LyricsSessionController: ObservableObject {
             // Loading an already persisted choice is read-only. Do not send it
             // back through the automatic-save path when track search is off.
             if !automaticallySearch, cachedReference != nil {
+                if didApply, cachedReference?.isLockedOrEdited != true {
+                    await self?.refreshLocalVoices(for: track, revision: requestRevision)
+                }
                 return
             }
 
@@ -518,6 +524,10 @@ public final class LyricsSessionController: ObservableObject {
                     self?.scheduleWordTimingUpgrade(track: track, identity: identity, revision: requestRevision,
                                                     held: held, aliases: aliases)
                 }
+            }
+
+            if didApply, !reviewOnly, cachedReference?.isLockedOrEdited != true {
+                await self?.refreshLocalVoices(for: track, revision: requestRevision)
             }
 
             if didApply,
@@ -1233,7 +1243,34 @@ public final class LyricsSessionController: ObservableObject {
         }
     }
 
+    private func refreshLocalVoices(for track: Track, revision expectedRevision: UInt64) async {
+        guard !Task.isCancelled, revision == expectedRevision, let localVoiceReference,
+              let document = activeDocument, document.isSynchronized,
+              !document.lines.contains(where: { $0.performerID != nil }),
+              let reference = await localVoiceReference(track),
+              !Task.isCancelled, revision == expectedRevision else { return }
+        let annotations = LyrimuseLyricsCache.voiceAnnotations(for: document, from: reference)
+        guard !annotations.isEmpty else { return }
+        objectWillChange.send()
+        confirmedVoiceAnnotations = annotations
+        voiceAnnotationRevision &+= 1
+    }
+
+    func addingConfirmedVoices(to lines: [LyricLine]) -> [LyricLine] {
+        guard !confirmedVoiceAnnotations.isEmpty else { return lines }
+        return lines.map { line in
+            guard line.performerID == nil, let voice = confirmedVoiceAnnotations[line.id] else { return line }
+            var annotated = line
+            annotated.performerID = voice
+            return annotated
+        }
+    }
+
     private func cancelCurrentRequest() {
+        if !confirmedVoiceAnnotations.isEmpty {
+            confirmedVoiceAnnotations = [:]
+            voiceAnnotationRevision &+= 1
+        }
         isSearchInProgress = false
         isSearchingAdditionalVersions = false
         additionalVersionsMessage = ""
