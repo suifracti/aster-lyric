@@ -1203,6 +1203,17 @@ final class ListeningBatchOneTests: XCTestCase {
         while store.knownReasoningEfforts(model: "gpt-6-astra") == nil && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertEqual(store.knownReasoningEfforts(model: "gpt-6-astra"), ["low", "medium", "high", "xhigh", "max", "ultra"])
         XCTAssertNil(store.knownReasoningEfforts(model: "gpt-unknown"))
+        let firstRead = try XCTUnwrap(store.cachedAt)
+        var configured = codex
+        configured.model = "gpt-6-astra"
+        configured.codexReasoningEffort = "ultra"
+        store.refresh(configured)
+        XCTAssertEqual(store.status, .loading)
+        let refreshDeadline = Date().addingTimeInterval(2)
+        while store.status == .loading && Date() < refreshDeadline { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertGreaterThan(try XCTUnwrap(store.cachedAt), firstRead, "identical results still record a fresh read")
+        XCTAssertEqual(store.restored(codex).codexReasoningEffort, "ultra")
+        XCTAssertEqual(TranslationReasoningPolicy.recordedCodexEffortLabel("effort=ultra"), "超高（Ultra）")
 
         let settings = AppSettingsStore(defaults: defaults)
         _ = settings.translationModelSettings

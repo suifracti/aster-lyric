@@ -66,6 +66,7 @@
 | 别人有逐字我们只有逐行、已存逐行不会升级成逐字、行切换比别人慢一点 | L-041；probeNetworkProviders lineTimingHeld、LyricsWordTimingUpgrade、TimedLineBounds（QRC/KRC/YRC 行尾）、scheduleWordTimingUpgrade、PlaybackState.lineSwitchLead、scheduleLineBoundaryWake |
 | AI 译文读起来像照日文断行切开、主语缺失、太书面、和我自己的译法不像 | L-042；`personalV2Instructions` full-audit-v3-r1、Codex 合同里的跨行条款 |
 | AI 整首翻译提示词太长、换了提示词后继续使用已发请求 | L-042 末尾短版接续；AITranslationPromptBuilder、TranslationSessionController |
+| AI 模型刷新看起来没反应、Codex 档位名字和星弦不同 | L-042 末尾模型目录接续；TranslationModelSettingsStore、TranslationReasoningPolicy |
 | 缺歌词里同一首歌的重复记录（时长错、借用别首的 ID）、批量补全拿错时长去搜 | L-039；PersonalLyricsLibraryEntry.markingRowsCoveredElsewhere、needsLyrics |
 | 批量补词切换窗口时停掉、只看到次数、需要核对却看不到候选 | L-039；PlaybackState.lyricsBatch、LyricsBatchControls、LyricsSessionController.completeBatchLyrics |
 | 加歌词源、日文独立歌曲找不到词、酷狗酷我是否已接、哪个源慢 | L-013；PetitLyricsProvider、LyricsProviderConfiguration、supplementProviderNames |
@@ -836,6 +837,7 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
   - 共约 29 次翻译请求。临时测试与语料文件已删，结果只记在这里。
 
 - **2026-11-19 默认提示词缩短。** 以用户贴出的 45 行请求估算，同一份 JSON 的总请求从 8,506 字符降至约 3,100。固定版去掉重复规则和大段例句，保留全曲语境、语体、相邻行重组和逐行返回。自定义译风照原样发送。Codex 传输协议的行 ID 与校验沿用，已发请求仍使用相同日志键，精确关联的完整旧结果可继续作为候选。缩短后尚未付费评估译质。
+- **同日模型目录与档位。** App 刷新日志走完 `initialize → account/read → model/list`，约 3 秒。本机 Codex CLI 0.169.1 的元数据探测也返回 10 个模型。原面板成功后列表相同时没有反馈。复用目录缓存时间显示读取结果，刷新中显示进度。GPT-6.2-Sol 设置和最近六次已记录翻译都是 `ultra`，此前界面只写「超高」。现在档位菜单显示原生档位名称，翻译中标发起时选择，预览展示该译文存储的模型和档位。Codex 每次请求仍按 `turn/start.effort` 指定档位。本轮只读目录和旧请求元数据，无模型调用。
 
 
 

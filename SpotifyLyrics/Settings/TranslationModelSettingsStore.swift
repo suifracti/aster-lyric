@@ -223,6 +223,21 @@ public final class TranslationModelSettingsStore: ObservableObject {
 
 /// No cross-provider scale conversion or model-name inference.
 public enum TranslationReasoningPolicy {
+    static func displayLabel(_ value: String, provider: String) -> String {
+        let labels = ["none": "不思考", "minimal": "极低", "low": "低", "medium": "中",
+                      "high": "高", "xhigh": "很高", "max": "最高", "ultra": "超高"]
+        guard let label = labels[value] else { return value }
+        guard provider == TranslationEngineID.codexChatGPT.rawValue else { return label }
+        return label + "（" + (value == "xhigh" ? "Extra High" : value.capitalized) + "）"
+    }
+
+    static func recordedCodexEffortLabel(_ setting: String) -> String? {
+        guard setting.hasPrefix("effort=") else { return nil }
+        let value = String(setting.dropFirst("effort=".count))
+        guard !value.isEmpty, value != "model-default" else { return nil }
+        return displayLabel(value, provider: TranslationEngineID.codexChatGPT.rawValue)
+    }
+
     public static func value(_ c:AITranslationConfiguration) -> String {
         switch TranslationEngineID(rawValue:c.engineID) {
         case .codexChatGPT:return c.codexReasoningEffort

@@ -859,11 +859,16 @@ public final class TranslationSessionController: ObservableObject {
         pendingCandidate = nil
         state = .loading
         errorMessage = nil
-        progressMessage = engine?.metadata.stableID == TranslationEngineID.appleSystem.rawValue
-            ? "正在检查 Apple 语言支持并准备系统翻译…"
-            : (engine?.metadata.stableID == TranslationEngineID.codexChatGPT.rawValue
-                ? "正在通过 Codex 会话准备整首歌词翻译…"
-                : "正在请求整首歌词翻译…")
+        switch TranslationEngineID(rawValue: context.configuration.engineID) {
+        case .appleSystem:
+            progressMessage = "正在检查 Apple 语言支持并准备系统翻译…"
+        case .codexChatGPT:
+            let effort = context.configuration.codexReasoningEffort
+            let label = effort.isEmpty ? "Codex 默认" : TranslationReasoningPolicy.displayLabel(effort, provider: context.configuration.engineID)
+            progressMessage = "本次请求 · \(context.configuration.model) · \(label)"
+        default:
+            progressMessage = "正在请求整首歌词翻译…"
+        }
         let engine = self.engine
         let acceptanceBudget = self.acceptanceBudget
         requestTask = Task { [weak self, repository] in

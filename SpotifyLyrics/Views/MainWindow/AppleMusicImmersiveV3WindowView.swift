@@ -106,7 +106,7 @@ private struct TranslationConversationButtons: View {
             if let version {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(state.currentTrack.title).font(.headline).lineLimit(2)
-                    Text([version.record.translationSourceTitle, version.record.model].filter { !$0.isEmpty }.joined(separator: " · "))
+                    Text(versionDetails(version))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     Divider()
                     ScrollView {
@@ -116,6 +116,16 @@ private struct TranslationConversationButtons: View {
                 }.padding(14).frame(width: 345, height: 300)
             }
         }
+    }
+
+    private func versionDetails(_ version: StoredTranslationVersion) -> String {
+        let record = version.record
+        var details = [record.translationSourceTitle, record.model].filter { !$0.isEmpty }
+        if record.engineID == TranslationEngineID.codexChatGPT.rawValue,
+           let effort = TranslationReasoningPolicy.recordedCodexEffortLabel(record.providerExecutionMetadata.reasoningSetting) {
+            details.append(effort)
+        }
+        return details.joined(separator: " · ")
     }
 
     private func openCodex() {

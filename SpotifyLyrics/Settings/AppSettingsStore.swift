@@ -809,6 +809,8 @@ public final class AppSettingsStore: ObservableObject {
             .store(in: &providerModelObservers)
         store.$status.sink { [weak self] in self?.aiModelDirectoryStatus = $0 }
             .store(in: &providerModelObservers)
+        store.$cachedAt.sink { [weak self] in self?.aiModelDirectoryCachedAt = $0 }
+            .store(in: &providerModelObservers)
         store.$selectionNotice.sink { [weak self] in self?.aiModelSelectionNotice = $0 }
             .store(in: &providerModelObservers)
         let restored = store.restored(aiTranslationConfiguration)
@@ -1696,6 +1698,7 @@ public final class AppSettingsStore: ObservableObject {
     /// settings page can be browsed without touching Keychain.
     @Published public private(set) var aiModelDirectoryStatus: TranslationModelDirectoryStatus
     @Published public private(set) var aiCachedModels: [TranslationModelDescriptor]
+    @Published private(set) var aiModelDirectoryCachedAt: Date?
     @Published public private(set) var aiModelSelectionNotice = ""
 
     public init(defaults: UserDefaults = .lyricsQ) {

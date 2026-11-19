@@ -994,13 +994,7 @@ struct TranslationProviderControls: View {
                 .disabled(settings.aiModelDirectoryStatus == .loading || provider == TranslationEngineID.appleSystem.rawValue)
                 .accessibilityLabel("刷新 AI 模型")
             }
-            switch settings.aiModelDirectoryStatus {
-            case .unauthorized, .endpointUnsupported, .empty:
-                Text(settings.aiModelDirectoryStatus.userFacingTitle).font(.caption).foregroundStyle(.orange)
-            case .unavailable(let error):
-                Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
-            default: EmptyView()
-            }
+            modelDirectoryFeedback
             DisclosureGroup("手动填写模型 ID") {
                 TextField("此服务的模型 ID", text: modelBinding)
                     .textFieldStyle(.roundedBorder)
@@ -1022,23 +1016,39 @@ struct TranslationProviderControls: View {
                     .disabled(provider == TranslationEngineID.appleSystem.rawValue)
                     .onAppear { _ = settings.translationModelSettings }
                     .accessibilityIdentifier("ai.model")
-                    Button { settings.refreshAIModelDirectory() } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .rotationEffect(.degrees(settings.aiModelDirectoryStatus == .loading ? 180 : 0))
+                    if settings.aiModelDirectoryStatus == .loading {
+                        ProgressView().controlSize(.small).accessibilityLabel("正在刷新模型列表")
+                    } else {
+                        Button { settings.refreshAIModelDirectory() } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(provider == TranslationEngineID.appleSystem.rawValue)
+                        .help("刷新模型和支持的思考档位")
+                        .accessibilityLabel("刷新 AI 模型")
                     }
-                    .buttonStyle(.borderless)
-                    .disabled(settings.aiModelDirectoryStatus == .loading || provider == TranslationEngineID.appleSystem.rawValue)
-                    .help(settings.aiModelDirectoryStatus == .loading ? "刷新中…" : "刷新模型列表")
-                    .accessibilityLabel("刷新 AI 模型")
                 }
             }
-            switch settings.aiModelDirectoryStatus {
-            case .unauthorized, .endpointUnsupported, .empty:
-                Text(settings.aiModelDirectoryStatus.userFacingTitle).font(.caption).foregroundStyle(.orange)
-            case .unavailable(let error):
-                Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
-            default: EmptyView()
+            modelDirectoryFeedback
+        }
+    }
+
+    @ViewBuilder
+    private var modelDirectoryFeedback: some View {
+        switch settings.aiModelDirectoryStatus {
+        case .loading:
+            Text("正在刷新模型列表…").font(.caption).foregroundStyle(.secondary)
+        case .loaded(let models):
+            if let date = settings.aiModelDirectoryCachedAt {
+                Text("已读取 \(models.count) 个模型 · \(date.formatted(date: .omitted, time: .standard))")
+                    .font(.caption).foregroundStyle(.secondary)
             }
+        case .unauthorized, .endpointUnsupported, .empty:
+            Text(settings.aiModelDirectoryStatus.userFacingTitle).font(.caption).foregroundStyle(.orange)
+        case .unavailable(let error):
+            Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+        case .idle, .manualFallback:
+            EmptyView()
         }
     }
 
@@ -1112,29 +1122,43 @@ struct TranslationProviderControls: View {
             let options = advertisedReasoningOptions ?? []
             let value = reasoningBinding.wrappedValue
             choiceMenu(current: options.contains(value) ? reasoningLabel(value) : reasoningSelectionLabel,
-                       options: (provider == TranslationEngineID.openAIAPI.rawValue ? [("模型默认", "")] : [])
+                       options: defaultReasoningOption
                             + options.map { (reasoningLabel($0), $0) },
                        selected: value) { reasoningBinding.wrappedValue = $0 }
-                .disabled(!supportsReasoningControl || options.isEmpty)
+                .disabled(!supportsReasoningControl || (options.isEmpty && defaultReasoningOption.isEmpty))
+                .help(provider == TranslationEngineID.codexChatGPT.rawValue
+                      ? "用于星弦发出的新请求。Codex 输入框的档位用于在那里发送消息。"
+                      : "用于此服务的新请求")
                 .accessibilityIdentifier("ai.reasoningEffort")
         }
     }
 
     var reasoningPicker: some View {
         Picker("思考强度", selection: reasoningBinding) {
-            if !(advertisedReasoningOptions ?? []).contains(reasoningBinding.wrappedValue) {
+            if let option = defaultReasoningOption.first {
+                Text(option.0).tag(option.1)
+            }
+            if !(advertisedReasoningOptions ?? []).contains(reasoningBinding.wrappedValue),
+               !defaultReasoningOption.contains(where: { $0.1 == reasoningBinding.wrappedValue }) {
                 Text(reasoningSelectionLabel).tag(reasoningBinding.wrappedValue)
             }
             ForEach(advertisedReasoningOptions ?? [], id: \.self) { effort in
                 Text(reasoningLabel(effort)).tag(effort)
             }
         }
-        .disabled(!supportsReasoningControl || (advertisedReasoningOptions ?? []).isEmpty)
+        .disabled(!supportsReasoningControl || ((advertisedReasoningOptions ?? []).isEmpty && defaultReasoningOption.isEmpty))
         .accessibilityIdentifier("ai.reasoningEffort")
     }
 
     private var provider: String { settings.aiTranslationConfiguration.engineID }
     private var family: String { TranslationEngineCatalog.topLevelID(for: provider) }
+    private var defaultReasoningOption: [(String, String)] {
+        switch TranslationEngineID(rawValue: provider) {
+        case .codexChatGPT: return [("Codex 默认", "")]
+        case .openAIAPI: return [("模型默认", "")]
+        default: return []
+        }
+    }
     var modelBinding: Binding<String> {
         Binding(get: { settings.aiTranslationConfiguration.model }, set: { model in
             settings.aiTranslationConfiguration = settings.translationModelSettings.selectingModel(
@@ -1206,7 +1230,7 @@ struct TranslationProviderControls: View {
 
     private var reasoningSelectionLabel: String {
         let value = reasoningBinding.wrappedValue
-        guard !value.isEmpty else { return provider == TranslationEngineID.openAIAPI.rawValue ? "模型默认" : "待选择" }
+        guard !value.isEmpty else { return defaultReasoningOption.first?.0 ?? "待选择" }
         if let custom = customReasoningOverride, custom.value == value { return custom.label }
         if advertisedReasoningOptions?.contains(value) == true { return reasoningLabel(value) }
         let status: String
@@ -1219,8 +1243,7 @@ struct TranslationProviderControls: View {
     }
 
     private func reasoningLabel(_ value: String) -> String {
-        ["none": "不思考", "minimal": "极低", "low": "低", "medium": "中", "high": "高",
-         "xhigh": "很高", "max": "最高", "ultra": "超高"][value] ?? value
+        TranslationReasoningPolicy.displayLabel(value, provider: provider)
     }
 
     var body: some View {
@@ -1252,14 +1275,10 @@ struct TranslationProviderControls: View {
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
                     HStack {
-                        Text(settings.aiModelDirectoryStatus.userFacingTitle)
-                            .font(.caption).foregroundStyle(.secondary)
+                        modelDirectoryFeedback
                         Spacer()
                         Button("刷新模型") { settings.refreshAIModelDirectory() }
                             .disabled(settings.aiModelDirectoryStatus == .loading)
-                    }
-                    if case .unavailable(let reason) = settings.aiModelDirectoryStatus {
-                        Text(reason).font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 if settings.aiTranslationConfiguration.model.isEmpty {
