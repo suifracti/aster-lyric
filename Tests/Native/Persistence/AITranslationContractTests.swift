@@ -3,6 +3,17 @@ import XCTest
 @testable import SpotifyLyrics
 
 final class AITranslationContractTests: XCTestCase {
+    func testDefaultPersonalStyleKeepsWordplayAndCreditsOnTheirOwnLines() throws {
+        let context = AITranslationContext(title: "Fixture", artist: "Fixture", album: "", sourceLanguage: "ja",
+            targetLanguage: "zh-Hans", style: "natural", lines: [.init(index: 0, original: "言葉")])
+        for engine in [TranslationEngineID.openAICompatible, .codexChatGPT] {
+            let config = AITranslationConfiguration(model: "fixture", engineID: engine.rawValue)
+            let prompt = try AITranslationPromptBuilder().build(context: context, configuration: config)
+            XCTAssertTrue(prompt.system.contains("保留后文会用到的原字和含义"))
+            XCTAssertTrue(prompt.system.contains("词曲署名、歌名各留原行"))
+        }
+    }
+
     func testMultilingualPrompt() throws {
         let line = AITranslationSourceLine(index: 0, original: "A self-authored fixture")
         for engine in [TranslationEngineID.openAICompatible, .codexChatGPT, .geminiCLI] {
