@@ -272,3 +272,81 @@ final class V3CanvasVideoNSView: NSView {
         file = nil
     }
 }
+
+// MARK: - How bright the picture behind the lyrics really is
+
+/// The cover's brightness says nothing about a Canvas clip playing over it. When
+/// a clip is shown, a frame from it is measured once and published here, so
+/// reading protection and the lyric colour follow what is actually on screen.
+@MainActor
+final class V3BackdropBrightness: ObservableObject {
+    static let shared = V3BackdropBrightness()
+    /// Average luminance (0–1) of the clip on show, nil when no clip is shown.
+    @Published private(set) var clipLuminance: Double?
+    private var measured: URL?
+
+    func clip(_ file: URL?) {
+        guard file != measured else { return }
+        measured = file
+        clipLuminance = nil
+        guard let file else { return }
+        Task.detached(priority: .utility) {
+            let value = Self.luminance(of: file)
+            await MainActor.run { [weak self] in
+                guard let self, self.measured == file else { return }
+                LyricsE2ELog.log("BACKDROP clip luminance=\(value.map { String(format: "%.2f", $0) } ?? "-") file=\(file.lastPathComponent)")
+                self.clipLuminance = value
+            }
+        }
+    }
+
+    nonisolated static func luminance(of file: URL) -> Double? {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file))
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 64, height: 64)
+        var samples: [Double] = []
+        for second in [0.5, 2.0, 4.0] {
+            guard let image = try? generator.copyCGImage(at: CMTime(seconds: second, preferredTimescale: 600), actualTime: nil),
+                  let value = average(image) else { continue }
+            samples.append(value)
+        }
+        return samples.isEmpty ? nil : samples.reduce(0, +) / Double(samples.count)
+    }
+
+    nonisolated static func average(_ image: CGImage) -> Double? {
+        let side = 16
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        guard let context = CGContext(data: &pixels, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+        var values: [Double] = []
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            values.append((0.2126 * Double(pixels[i]) + 0.7152 * Double(pixels[i + 1]) + 0.0722 * Double(pixels[i + 2])) / 255)
+        }
+        // Lyrics are unreadable where the picture is brightest, not on average:
+        // use the brightness of the brighter quarter.
+        values.sort()
+        let top = values[(values.count * 3 / 4)...]
+        return top.reduce(0, +) / Double(top.count)
+    }
+}
+
+/// Lyric colour that stays readable: the cover's colour, lightened towards white
+/// until it stands clear of the picture behind it (and of a picture in its own hue).
+enum V3ReadableAccent {
+    static func color(_ accent: Color, background luminance: Double) -> Color {
+        let ns = NSColor(accent).usingColorSpace(.sRGB) ?? .white
+        func lum(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> Double { 0.2126 * Double(r) + 0.7152 * Double(g) + 0.0722 * Double(b) }
+        // White text sits on a picture at most this bright; the accent should be at least as clear.
+        let needed = min(0.92, max(0.62, luminance + 0.42))
+        var mix: CGFloat = 0
+        while mix < 1 {
+            let r = ns.redComponent + (1 - ns.redComponent) * mix
+            let g = ns.greenComponent + (1 - ns.greenComponent) * mix
+            let b = ns.blueComponent + (1 - ns.blueComponent) * mix
+            if lum(r, g, b) >= needed { return Color(red: Double(r), green: Double(g), blue: Double(b)) }
+            mix += 0.05
+        }
+        return .white
+    }
+}

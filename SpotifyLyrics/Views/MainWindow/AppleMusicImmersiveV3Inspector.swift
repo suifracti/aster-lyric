@@ -830,8 +830,9 @@ struct V3VisualControls {
                                           ("换气", $settings.v3BreathIn)])
                 .help("大字：当前句约两倍大，其他行缩小变淡，适合远处跟唱。\n副歌加强：从歌词里找出重复的段落当作副歌，进度条上标成浅色段，唱到副歌时画面亮一档、当前句带封面色的光。\n换气：间奏或长空隙（4 秒以上）快结束时，下一句提前两秒慢慢亮起来。")
             V3ChipToggles("", items: [("只看前方", $settings.v3HidesSungLines),
-                                      ("整句亮", $settings.v3WholeLineTiming)])
-                .help("只看前方：唱过的歌词隐去，只留当前句和后面的；只对带时间的歌词有效。\n整句亮：有逐字时间的歌词也按整句显示，不逐字填色。")
+                                      ("整句亮", $settings.v3WholeLineTiming),
+                                      ("当前译文放大", $settings.v3ActiveTranslationLarger)])
+                .help("只看前方：唱过的歌词隐去，只留当前句和后面的；只对带时间的歌词有效。\n整句亮：有逐字时间的歌词也按整句显示，不逐字填色。\n当前译文放大：正在唱的那句译文放大到原文的一半多、加粗，其他行的译文保持小字。")
             V3SegmentedPicker("行宽", selection: roomBinding(\.lyricWidth, \.v3LyricWidth, .lyricWidth), options: V3LyricWidth.options)
                 .help("标准：保持适合阅读的行长。宽：一行能放更多字。满幅：歌词可以铺满窗口宽度（情境也可能带上自己的行宽）。")
             V3SegmentedPicker("对齐", selection: Binding(get: { presentation.lyricsPosition }, set: {
@@ -843,8 +844,8 @@ struct V3VisualControls {
             V3SegmentedPicker("清晰度", selection: $settings.v3ReadingProtection,
                               options: V3ReadingProtection.allCases.map { ($0.title, $0) })
                 .help("文字阴影只作用于歌词；柔和光晕随封面明暗调整。")
-            Toggle("亮封面自动加阴影", isOn: $settings.v3BrightCoverShadowEnabled)
-                .help("封面、舞台遇亮封面且清晰度为关闭时自动加文字阴影；关闭后「关闭」保持完全不加。")
+            Toggle("亮背景自动保护", isOn: $settings.v3BrightCoverShadowEnabled)
+                .help("背景亮的时候（包括封面视频），自动把背景压暗一点、给歌词加阴影，封面色的歌词也会自动调亮到看得清。前景封面不受影响。关闭后保持原样。")
             V3DisclosureRow(title: "读音与更多", isExpanded: $settings.v3TextAdvancedExpanded) {
                 readingTypeControls
                 V3NumericSlider("当前句光", value: $settings.v3CurrentLineGlow, in: 0...1, step: 0.01, unit: "%", displayScale: 100)

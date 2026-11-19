@@ -788,12 +788,12 @@ public final class AppSettingsStore: ObservableObject {
     public func v3EffectiveReadingProtection(scene: V3ListeningScene?,
                                              renderer: V3ArtworkPresentation,
                                              coverLuminance: Double) -> V3ReadingProtection {
-        guard v3BrightCoverShadowEnabled,
-              v3ReadingProtection == .off,
-              scene == .coverPhoto,
-              renderer == .ambient || renderer == .classicGaussian || renderer == .stage,
-              coverLuminance > 0.45 else { return v3ReadingProtection }
-        return .shadow
+        guard v3BrightCoverShadowEnabled, v3ReadingProtection == .off else { return v3ReadingProtection }
+        // 封面 and 舞台 show the cover nearly as is, so they protect from a fairly bright cover;
+        // every other picture (including a bright Canvas clip) from a clearly bright one.
+        let showsCoverAsIs = scene == .coverPhoto
+            && (renderer == .ambient || renderer == .classicGaussian || renderer == .stage)
+        return coverLuminance > (showsCoverAsIs ? 0.45 : 0.42) ? .shadow : v3ReadingProtection
     }
 
 
@@ -963,6 +963,10 @@ public final class AppSettingsStore: ObservableObject {
     }
     @Published public var floatingDesktopOutlineColorHex: String {
         didSet { defaults.set(floatingDesktopOutlineColorHex, forKey: Key.floatingDesktopOutlineColorHex) }
+    }
+    /// 桌面歌词「柔和衬底」: a soft dark cloud behind the lines for bright desktops.
+    @Published public var floatingDesktopSoftBacking = true {
+        didSet { defaults.set(floatingDesktopSoftBacking, forKey: "desktopLyrics.softBacking.v1") }
     }
     @Published public var floatingDesktopOutlineWidth: Double {
         didSet { defaults.set(floatingDesktopOutlineWidth, forKey: Key.floatingDesktopOutlineWidth) }
@@ -1179,6 +1183,11 @@ public final class AppSettingsStore: ObservableObject {
             if v3Room != oldValue { v3RoomOverrides = [] }
             defaults.set(v3Room.rawValue, forKey: "v3.room.v1")
         }
+    }
+    /// 当前句译文放大: the translation of the line being sung grows to about 0.56 of the
+    /// original; the other lines keep their small translation, so the page keeps its hierarchy.
+    @Published public var v3ActiveTranslationLarger = true {
+        didSet { defaults.set(v3ActiveTranslationLarger, forKey: "v3.activeTranslationLarger.v1") }
     }
     /// 行宽: 1 standard, 1.35 wide, 1.9 the full window.
     @Published public var v3LyricWidth: Double = 1 {
@@ -1763,6 +1772,7 @@ public final class AppSettingsStore: ObservableObject {
         self.v3RoomRestyles = defaults.object(forKey: "v3.roomRestyles.v1") as? Bool ?? true
         self.v3RoomOverrides = V3RoomOverrides(rawValue: defaults.integer(forKey: "v3.roomOverrides.v1"))
         self.v3LyricWidth = defaults.object(forKey: "v3.lyricWidth.v1") as? Double ?? 1
+        self.v3ActiveTranslationLarger = defaults.object(forKey: "v3.activeTranslationLarger.v1") as? Bool ?? true
         self.v3ChorusSwapsMaterial = defaults.object(forKey: "v3.chorusSwapsMaterial.v1") as? Bool ?? false
         self.v3SpectrumStyle = V3SpectrumStyle(rawValue: defaults.string(forKey: "v3.spectrumStyle.v1") ?? "") ?? .off
         self.floatingHiddenFromCapture = defaults.bool(forKey: "floating.hiddenFromCapture.v1")
@@ -1896,6 +1906,7 @@ public final class AppSettingsStore: ObservableObject {
         floatingDesktopTranslationColorHex = defaults.object(forKey: Key.floatingDesktopTranslationColorHex) as? String ?? ""
         floatingDesktopOutlineColorHex = defaults.object(forKey: Key.floatingDesktopOutlineColorHex) as? String ?? ""
         floatingDesktopOutlineWidth = defaults.object(forKey: Key.floatingDesktopOutlineWidth) as? Double ?? 1.25
+        floatingDesktopSoftBacking = defaults.object(forKey: "desktopLyrics.softBacking.v1") as? Bool ?? true
         floatingDesktopKeepsTextOpaque = defaults.object(forKey: Key.floatingDesktopKeepsTextOpaque) as? Bool ?? true
         floatingWindowOpacity = defaults.object(forKey: Key.floatingWindowOpacity) as? Double ?? 0.96
         floatingLyricsPresentationRawValue = defaults.string(forKey: Key.floatingLyricsPresentation)

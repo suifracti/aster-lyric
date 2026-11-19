@@ -112,6 +112,12 @@ struct AppleMusicImmersiveV3BackdropView: View {
         V3BackdropArtworkGeometry.imageScale(requested: artworkSizeScale, complete: showsCompleteArtwork)
     }
 
+    /// The clip actually on screen, for measuring how bright the picture is.
+    private var shownCanvasFile: URL? {
+        guard let clip = currentCanvas, clip.isReady, canvasShownNow else { return nil }
+        return clip.file
+    }
+
     var body: some View {
         ZStack {
             neutralBackground
@@ -148,6 +154,10 @@ struct AppleMusicImmersiveV3BackdropView: View {
             // 副歌: the picture a step brighter while the chorus plays.
             Color.white.opacity(inChorus && !isArtworkPreview ? 0.07 : 0)
                 .blendMode(.screen)
+                .onChange(of: shownCanvasFile, initial: true) { _, file in
+                    guard !isArtworkPreview else { return }
+                    V3BackdropBrightness.shared.clip(file)
+                }
                 .animation(accessibilityReduceMotion ? nil : .easeInOut(duration: 0.9), value: inChorus)
             if pausedFade {
                 // Takes the colour out, keeps the light and dark of the picture.

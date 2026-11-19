@@ -1009,3 +1009,35 @@ final class V3SceneLayerTests: XCTestCase {
         XCTAssertEqual(V3ListeningPresentation(settings: reopened, room: .off).lyricStyle, .typewriter)
     }
 }
+
+final class V3LyricReadabilityTests: XCTestCase {
+    private func luminance(_ color: Color) -> Double {
+        let ns = NSColor(color).usingColorSpace(.sRGB)!
+        return 0.2126 * Double(ns.redComponent) + 0.7152 * Double(ns.greenComponent) + 0.0722 * Double(ns.blueComponent)
+    }
+
+    func testCoverColourIsLightenedUntilItReadsOverTheBackground() {
+        let deepBlue = Color(red: 0.15, green: 0.35, blue: 0.75)
+        XCTAssertGreaterThanOrEqual(luminance(V3ReadableAccent.color(deepBlue, background: 0.2)), 0.62)
+        // Over a bright orange picture the same colour must be lighter still.
+        let bright = V3ReadableAccent.color(deepBlue, background: 0.45)
+        XCTAssertGreaterThanOrEqual(luminance(bright), 0.86)
+        // Already light colours are kept as they are.
+        let pale = Color(red: 0.85, green: 0.9, blue: 0.95)
+        XCTAssertEqual(luminance(V3ReadableAccent.color(pale, background: 0.1)), luminance(pale), accuracy: 0.01)
+    }
+
+    @MainActor
+    func testABrightPictureProtectsTheLyricsInEveryLayout() throws {
+        let suite = "readability-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        settings.v3ReadingProtection = .off
+        XCTAssertEqual(settings.v3EffectiveReadingProtection(scene: .originalAmbient, renderer: .authenticAmbient, coverLuminance: 0.6), .shadow)
+        XCTAssertEqual(settings.v3EffectiveReadingProtection(scene: .originalAmbient, renderer: .authenticAmbient, coverLuminance: 0.3), .off)
+        XCTAssertEqual(settings.v3EffectiveReadingProtection(scene: .coverPhoto, renderer: .ambient, coverLuminance: 0.5), .shadow)
+        settings.v3BrightCoverShadowEnabled = false
+        XCTAssertEqual(settings.v3EffectiveReadingProtection(scene: .originalAmbient, renderer: .authenticAmbient, coverLuminance: 0.9), .off)
+    }
+}

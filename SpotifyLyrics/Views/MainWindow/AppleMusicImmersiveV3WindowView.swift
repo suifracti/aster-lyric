@@ -204,6 +204,17 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private var displayedCoverColors: CoverColors? { coverColors?.url == compositionTrack.artworkURL ? coverColors : nil }
     private var coverAccent: Color? { displayedCoverColors?.accent }
     private var coverLuminance: Double { displayedCoverColors?.luminance ?? 0 }
+    @ObservedObject private var backdropBrightness = V3BackdropBrightness.shared
+    /// How bright the picture behind the lyrics is: a playing Canvas clip (under its
+    /// own 26% veil) when one is shown, else the cover.
+    private var backgroundLuminance: Double {
+        backdropBrightness.clipLuminance.map { $0 * 0.74 } ?? coverLuminance
+    }
+    /// 亮背景: a quiet darkening of a bright picture so white and coloured lyrics both read.
+    private var brightBackgroundScrim: Double {
+        guard settings.v3BrightCoverShadowEnabled, !isCompositionPreview else { return 0 }
+        return min(0.45, max(0, (backgroundLuminance - 0.35) * 1.1))
+    }
     @State private var analyzedCover: (url: URL, subject: V3ArtworkSubject.Analysis)?
     private var subjectArtworkURL: URL? { usesArtworkSubjectPlacement ? compositionTrack.artworkURL : nil }
     @State private var showsListeningKeys = false
@@ -254,7 +265,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private var compositionReadingProtection: V3ReadingProtection {
         settings.v3EffectiveReadingProtection(scene: compositionScene,
                                               renderer: compositionStyle,
-                                              coverLuminance: coverLuminance)
+                                              coverLuminance: backgroundLuminance)
     }
     private typealias ToolbarPopover = V3ToolbarModel.Panel
     private enum InspectorSurfaceStyle: Equatable { case hoverGlass, pinnedGlass }
@@ -409,6 +420,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 .modifier(V3BackdropAmbience(parallax: settings.v3BackdropParallax && !isFocusMode,
                                              dayTint: settings.v3DayTint))
                 .blur(radius: librarySearch.isPresented ? 5 : 0)
+
+                // 亮背景: darken a bright picture just enough for the lyrics; the foreground cover is untouched.
+                Color.black.opacity(brightBackgroundScrim)
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .allowsHitTesting(false)
+                    .animation(.easeInOut(duration: 0.8), value: brightBackgroundScrim)
 
                 if settings.v3AmbientLyricMotion != .off, usesAmbientLight, !isFocusMode, !isCompositionPreview {
                     V3AmbientMotionLayer(state: state, motion: settings.v3AmbientLyricMotion,
@@ -743,7 +760,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .preferredColorScheme(.dark)
         .modifier(PersonalLibrarySheets(service: library))
         .v3NightGentle(enabled: settings.v3NightGentleEnabled)
-        .environment(\.v3CoverAccent, uiAccent ?? .white)
+        // The cover's colour, lightened where needed to stay clear of the picture behind.
+        .environment(\.v3CoverAccent, uiAccent.map {
+            V3ReadableAccent.color($0, background: backgroundLuminance * (1 - brightBackgroundScrim))
+        } ?? .white)
         .tint(.primary)
         .task(id: state.liveTrackIdentity) {
             library.prefetchCurrentTrack(stableKey: state.liveTrackIdentity?.stableKey)

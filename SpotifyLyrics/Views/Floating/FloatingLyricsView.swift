@@ -392,6 +392,17 @@ struct FloatingLyricsView: View {
             }
             .frame(width: width, alignment: .center)
             .padding(.horizontal, 16).padding(.vertical, 8)
+            // 柔和衬底: a blurred shadow-coloured cloud behind the lines, with no edge, so
+            // white lyrics still read over a white window or a bright wallpaper.
+            .background {
+                if settings.floatingDesktopSoftBacking {
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(palette.outline.opacity(0.34))
+                        .padding(.horizontal, 10)
+                        .blur(radius: 22)
+                        .allowsHitTesting(false)
+                }
+            }
             .frame(maxHeight: .infinity, alignment: .center)
             .transaction { $0.animation = nil }
         }
@@ -877,6 +888,8 @@ struct FloatingDesktopColorControls: View {
             colorPicker("假名 / 读音", value: $settings.floatingDesktopRubyColorHex, fallback: "E5F3FF")
             colorPicker("译文", value: $settings.floatingDesktopTranslationColorHex, fallback: "FFFFFF")
             colorPicker("文字描边", value: $settings.floatingDesktopOutlineColorHex, fallback: "10131A")
+            Toggle("柔和衬底", isOn: $settings.floatingDesktopSoftBacking)
+                .help("在歌词后面垫一层没有边框的柔和暗影，白字放在浅色窗口或亮壁纸上也看得清。颜色跟随文字描边。")
             VStack(alignment: .leading, spacing: 6) {
                 Text("描边宽度")
                 V3NumericSlider(value: $settings.floatingDesktopOutlineWidth, in: 0...3, step: 0.25, unit: "pt")

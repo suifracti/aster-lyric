@@ -1579,7 +1579,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
             if let backing = backgroundLine { auxiliary.append((backing, preferredAuxiliarySize * ratio)) }
             if shouldShowRomaji, let romaji = distinctRomaji { auxiliary.append((romaji, preferredAuxiliarySize * ratio)) }
             if preferences.showTranslation, let translation = line.translationText {
-                auxiliary.append((translation, max(14, preferredAuxiliarySize * 0.94) * ratio))
+                auxiliary.append((translation, activeTranslationSize(max(14, preferredAuxiliarySize * 0.94)) * ratio))
             }
             for (text, fontSize) in auxiliary where !text.isEmpty {
                 main.height += 8 + V3BigLineLayout.text(text, size: fontSize, width: readableLineWidth).height
@@ -1592,7 +1592,12 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
     private var fittedRatio: CGFloat { bigLineAvailableHeight == nil ? 1 : baseSize / preferredBaseSize }
     private var rubySize: CGFloat { preferredRubySize * fittedRatio }
     private var auxiliarySize: CGFloat { preferredAuxiliarySize * fittedRatio }
-    private var translationSize: CGFloat { max(14, preferredAuxiliarySize * 0.94) * fittedRatio }
+    private var translationSize: CGFloat { activeTranslationSize(max(14, preferredAuxiliarySize * 0.94)) * fittedRatio }
+    /// 当前句译文放大: only the sung line's translation grows, to about 0.56 of its original.
+    private func activeTranslationSize(_ small: CGFloat) -> CGFloat {
+        guard isActive, settings.v3ActiveTranslationLarger else { return small }
+        return max(small, min(30, preferredBaseSize * 0.56))
+    }
 
     private var shouldShowRuby: Bool {
         preferences.kanaDisplayMode == .inlineRuby
@@ -1737,8 +1742,8 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
 
     private func translationText(_ translation: String) -> some View {
         Text(translation)
-            .font(.system(size: translationSize, weight: .medium, design: .rounded))
-            .foregroundStyle(layerTint.opacity(isActive ? 0.86 : ((previewPresentation ?? settings.v3ArtworkPresentation) == .ambientFeathered ? 0.76 : 0.54)))
+            .font(.system(size: translationSize, weight: isActive && settings.v3ActiveTranslationLarger ? .semibold : .medium, design: .rounded))
+            .foregroundStyle(layerTint.opacity(isActive ? 0.94 : ((previewPresentation ?? settings.v3ArtworkPresentation) == .ambientFeathered ? 0.76 : 0.54)))
             .lineLimit(nil)
             .fixedSize(horizontal: false, vertical: true)
             .transition(.opacity)

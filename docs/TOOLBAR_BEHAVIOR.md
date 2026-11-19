@@ -1322,3 +1322,8 @@ TTML 带有多种译文时，文档窗右上角显示当前语言，可就地切
 阅读页「摘一段」和歌本搜索「选一段」共用选段。点选起止行即可将连续歌词收进一个篇目，目录标明原稿的行号。篇目菜单回到同一份原稿，标出整段并定位到开头。
 
 从已存版本收录的全文、摘段或单句，歌本正文和印本带上收录时的演唱者、声部或合唱标记。旧歌本里的声部编号按可读名称显示。
+
+**亮背景自动保护与当前句译文** (2026-11-19, 文字 panel; desktop lyrics colours).
+- The picture's real brightness is measured, including a playing Canvas clip (its brighter quarter). A bright picture is darkened slightly, lyrics get the text shadow in every layout, and the cover-coloured line is lightened until it reads. The foreground cover is never darkened. The switch is 「亮背景自动保护」 (formerly 亮封面自动加阴影).
+- 当前译文放大 (on by default): only the sung line's translation grows to about 0.56 of the original and turns semibold; other lines keep the small translation.
+- Desktop lyrics 柔和衬底 (on by default): a borderless blurred shadow behind the lines, in the outline colour.
