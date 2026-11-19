@@ -13,8 +13,11 @@ struct V3ToolbarQuickControls<Controls: View>: View {
     let openPlaylists: () -> Void
     @ViewBuilder var controls: () -> Controls
     @State private var selectedSearchResultKey: String?
+    @State private var searchScope: SearchScope = .all
     @State private var contentHeight: CGFloat = 520
     @Environment(\.v3ToolPanelTopInset) private var topInset
+
+    private enum SearchScope: String, CaseIterable { case all = "全部", saved = "已保存", network = "在线" }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -23,13 +26,13 @@ struct V3ToolbarQuickControls<Controls: View>: View {
                 HStack {
                     Text(panel == .playlists ? state.playlistBrowser.queueTitle : panel.title).font(.system(size: 12, weight: .semibold))
                     Spacer()
-                    if panel == .playlists { Button("全部", action: openPlaylists).buttonStyle(.plain).foregroundStyle(.secondary) }
+                    if panel == .playlists { Button("浏览歌单", action: openPlaylists).buttonStyle(.plain).foregroundStyle(.secondary) }
                     if panel == .library { Button("打开歌词库", action: openLibrary).buttonStyle(.plain).foregroundStyle(.secondary) }
                     if panel == .search { Button("全部结果", action: openSearch).buttonStyle(.plain).foregroundStyle(.secondary) }
                 }
                 switch panel {
                 case .library:
-                    Text("\(state.liveLyricsSource?.displayName ?? "暂无歌词") · \(state.liveLyricsVersionID == nil ? "未采用版本" : "已采用版本") · \(state.liveLyrics.count) 行")
+                    Text("\(state.liveLyricsSource?.displayName ?? "暂无歌词") · \(state.liveLyricsTimingTitle) · \(state.liveLyrics.count) 行")
                         .font(.caption).foregroundStyle(.secondary)
                     PersonalLibraryTrackDetailView(service: library,
                         stableKey: state.liveTrackIdentity?.stableKey ?? "", compact: true,
@@ -39,6 +42,9 @@ struct V3ToolbarQuickControls<Controls: View>: View {
 
                 case .playlists:
                     V3PlaylistQueuePreview(browser: state.playlistBrowser)
+                    Divider()
+                    TranslationBatchButton(state: state, browser: state.playlistBrowser)
+                    TranslationBatchStatus(state: state)
                 case .search:
                     searchControls
 
@@ -88,17 +94,28 @@ struct V3ToolbarQuickControls<Controls: View>: View {
 
     private var searchControls: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("搜索歌曲或艺人", text: Binding(get: { search.queryText ?? "" }, set: { search.editQuery($0) }))
-                .textFieldStyle(.roundedBorder)
-                .onSubmit {
-                    if let selected = visibleSearchResults.first(where: { $0.searchMergeKey == selectedSearchResultKey }) {
-                        selected.open(in: state, settings: openSettings)
-                    } else { search.submitQuery() }
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("歌名、艺人或一句歌词", text: Binding(get: { search.queryText ?? "" }, set: { search.editQuery($0) }))
+                    .textFieldStyle(.plain)
+                    .onSubmit {
+                        if let selected = visibleSearchResults.first(where: { $0.searchMergeKey == selectedSearchResultKey }) {
+                            selected.open(in: state, settings: openSettings)
+                        } else { search.submitQuery() }
+                    }
+                    .onKeyPress(.downArrow) { moveSearchSelection(1); return .handled }
+                    .onKeyPress(.upArrow) { moveSearchSelection(-1); return .handled }
+                if search.queryText?.isEmpty == false {
+                    Button { search.editQuery("") } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain).accessibilityLabel("清空搜索")
                 }
-                .onKeyPress(.downArrow) { moveSearchSelection(1); return .handled }
-                .onKeyPress(.upArrow) { moveSearchSelection(-1); return .handled }
-            if case .results(_, let results) = search.state {
-                ForEach(SongSearchResultGroup.panelGroups(results)) { group in
+            }.padding(8).background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+            if case .results = search.state {
+                V3SegmentedPicker("结果来源", selection: $searchScope,
+                                  options: SearchScope.allCases.map { ($0.rawValue, $0) },
+                                  showsLabel: false, height: 25)
+                if searchGroups.isEmpty { Text("这个范围没有结果").font(.caption).foregroundStyle(.secondary).padding(.vertical, 6) }
+                ForEach(searchGroups) { group in
                     Text(group.title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     ForEach(group.results) { result in
                         SongSearchResultRow(result: result, state: state,
@@ -120,6 +137,7 @@ struct V3ToolbarQuickControls<Controls: View>: View {
         .onChange(of: search.queryText) { _, _ in
             selectedSearchResultKey = nil
         }
+        .onChange(of: searchScope) { _, _ in selectedSearchResultKey = nil }
         .onChange(of: state.playlistBrowser.source) { _, _ in
             selectedSearchResultKey = nil
             search.prepareQuery(suggestedTrack: nil)
@@ -127,8 +145,18 @@ struct V3ToolbarQuickControls<Controls: View>: View {
     }
 
     private var visibleSearchResults: [SongSearchResult] {
+        searchGroups.flatMap(\.results)
+    }
+
+    private var searchGroups: [SongSearchResultGroup] {
         guard case .results(_, let results) = search.state else { return [] }
-        return SongSearchResultGroup.panelGroups(results).flatMap(\.results)
+        return SongSearchResultGroup.panelGroups(results).filter { group in
+            switch searchScope {
+            case .all: true
+            case .saved: group.results.first?.isSavedLocally == true
+            case .network: group.title == "在线"
+            }
+        }
     }
 
     private func moveSearchSelection(_ direction: Int) {

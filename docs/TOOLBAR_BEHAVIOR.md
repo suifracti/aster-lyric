@@ -8,6 +8,12 @@ This file is the contract for the toolbar and its panels. Claude decides the UI;
 
 To change a rule, update this file and the tests first, and attach before/after snapshots. Keep the tests to the rules written here.
 
+## 歌词版本与批量译文（2026-11-19）
+
+- 歌词库歌曲详情的「查找其他版本」直接按这首录音搜索，可先预览和对读，再决定采用。原词列表与候选标出逐字、逐行或纯文本，声部与合唱用词源的标注。
+- 「译文」提供当前歌曲的已存译文预览、对话入口和翻译缓存。「批量翻译」在译文和歌单入口共用，可准备接下来两首、播放队列或所选歌单，显示进度并可停止。
+- 搜索可切换全部、本地和在线，歌名与歌手、专辑分行。歌单小面板突出下一首，完整浏览器显示当前队列或所选歌单。
+
 ## Design principle (user, 2026-10-21)
 **Minimal while listening, yet beautiful and complete.**
 - **What shows:** at rest, the screen shows only lyrics and the picture.

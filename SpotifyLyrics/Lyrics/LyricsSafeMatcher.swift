@@ -155,8 +155,13 @@ public enum LyricsSafeMatcher {
                 && ($0.alias.isOfficial || $0.alias.source == .user)
         })
 
+        let qqLocalizedDisplayTitle = candidate.source == .qqExperimental && candidate.duration > 0
+            && metadata.track.duration > 0 && abs(candidate.duration - metadata.track.duration) <= 1
+            && Self.hasQQParentheticalTitle(candidate.title, matching: metadata.track.title)
         if candidateTitle == metadataTitle, !candidateTitle.isEmpty {
             add("titleExact", 0.30)
+        } else if qqLocalizedDisplayTitle {
+            add("titleTypographyExact", 0.28)
         } else if titlesHaveSameTypography(candidate.title, metadata.track.title) {
             // Keep every word (including version labels); only a standalone
             // dash separator is equivalent to the existing bracket separators.
@@ -248,8 +253,12 @@ public enum LyricsSafeMatcher {
         let spotifyCreditedArtistReadingMatches = (metadata.verifiedSpotifyArtists + metadata.aliases
             .filter { $0.field == .artist && $0.source == .spotifyMetadata && $0.isOfficial }
             .map(\.value)).contains { artistsHaveSameReading($0, candidateArtists.primary) }
+        let qqArtistNames = qqLocalizedDisplayTitle
+            ? TrackTextNormalizer.parentheticalArtistNames(candidateArtists.primary).map(TrackTextNormalizer.normalizeArtistToken)
+            : []
         let metadataPrimaryMatches = metadataArtists.contains {
-            TrackTextNormalizer.normalizeArtistToken($0.primary) == candidatePrimary && !candidatePrimary.isEmpty
+            let key = TrackTextNormalizer.normalizeArtistToken($0.primary)
+            return !key.isEmpty && (key == candidatePrimary || qqArtistNames.contains(key))
         }
         let metadataFeaturedArtists = Set(metadataArtists
             .flatMap(\.featured)
@@ -756,6 +765,22 @@ public enum LyricsSafeMatcher {
     /// A parallel title is accepted only when Japanese + Latin both express
     /// the whole title. A suffix such as Live/Another ver. fails this check;
     /// the existing recording/ID checks still run afterward.
+    private static func hasQQParentheticalTitle(_ displayed: String, matching title: String) -> Bool {
+        let text = displayed.folding(options: .widthInsensitive, locale: nil)
+        guard text.hasSuffix(")"), let start = text.lastIndex(of: "(") else { return false }
+        let primary = text[..<start].trimmingCharacters(in: .whitespaces)
+        let alternate = String(text[text.index(after: start)..<text.index(before: text.endIndex)])
+        guard TrackTextNormalizer.normalize(primary) == TrackTextNormalizer.normalize(title),
+              let (original, english) = parallelTitleParts(primary),
+              let (localized, repeated) = parallelTitleParts(alternate),
+              ScriptDetector.detect(original) == .kanjiHiraganaKatakana,
+              ScriptDetector.detect(localized) == .kanjiHiraganaKatakana,
+              ScriptDetector.detect(english) == .latin,
+              TrackTextNormalizer.normalize(english) == TrackTextNormalizer.normalize(repeated),
+              TrackTextNormalizer.extractVersionTags(fromTitle: alternate).isEmpty else { return false }
+        return true
+    }
+
     private static func titlesHaveCompleteParallelForm(_ lhs: String, _ rhs: String) -> Bool {
         func forms(_ raw: String) -> [String]? {
             let text = raw.folding(options: [.widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))

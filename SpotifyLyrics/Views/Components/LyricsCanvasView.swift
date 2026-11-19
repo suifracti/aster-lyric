@@ -1115,16 +1115,18 @@ struct LyricsCandidatePreviewSheet: View {
     private var showsTiming: Bool { candidate.isSynchronized && !candidate.requiresTextOnlyPreview }
 
     var body: some View {
+        let lines = candidate.previewLines
+        let voices = LyricsTimeline.VoicePresentation(in: lines, isSynchronized: showsTiming)
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(candidate.title)
                         .font(.title2.weight(.semibold))
-                    Text("\(candidate.artist) · \(candidate.source.displayName)")
+                    Text("\(candidate.artist) · \(candidate.providerName ?? candidate.source.displayName)")
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text(showsTiming ? "含时间轴" : "纯文本")
+                Text(showsTiming ? candidate.timingTitle : "纯文本")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
             }
@@ -1148,13 +1150,16 @@ struct LyricsCandidatePreviewSheet: View {
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(Array(candidate.previewLines.enumerated()), id: \.element.id) { index, line in
+                    ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
                         HStack(alignment: .top, spacing: 12) {
                             Text(showsTiming ? previewTimeLabel(line.timestamp) : "#\(index + 1)")
                                 .font(.caption.monospacedDigit())
                                 .foregroundStyle(.secondary)
                                 .frame(width: 48, alignment: .trailing)
                             VStack(alignment: .leading, spacing: 4) {
+                                if let voice = voices.labelAtChange(index) {
+                                    Label(voice, systemImage: "person.wave.2").font(.caption).foregroundStyle(.secondary)
+                                }
                                 Text(line.originalText.isEmpty ? "（空白原文）" : line.originalText)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 if let translation = line.translationText, !translation.isEmpty {

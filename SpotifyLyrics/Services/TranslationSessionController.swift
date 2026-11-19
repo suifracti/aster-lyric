@@ -27,6 +27,20 @@ public enum TranslationSessionState: Equatable, Sendable {
 /// complete, source-hash-validated versions.
 @MainActor
 public final class TranslationSessionController: ObservableObject {
+    struct BatchProgress {
+        let title: String
+        let total: Int
+        var currentTrack = ""
+        var translated = 0
+        var cached = 0
+        var missingLyrics = 0
+        var failed = 0
+        var lastError: String?
+        var running = true
+        var cancelled = false
+        var finished: Int { translated + cached + missingLyrics + failed }
+    }
+    @Published private(set) var batchProgress: BatchProgress?
     @Published public private(set) var state: TranslationSessionState = .idle
     @Published public private(set) var selectedVersion: StoredTranslationVersion?
     /// 「AI 翻译」 in 当前译文: show only AI translations, for every song;
@@ -45,6 +59,7 @@ public final class TranslationSessionController: ObservableObject {
     private let acceptanceBudget: TranslationAcceptanceRequestBudget?
     private var engine: (any TranslationEngine)?
     private var requestTask: Task<Void, Never>?
+    private var batchTask: Task<Void, Never>?
     private var context: TranslationContext?
     private var inFlightKey: RequestKey?
     private var manualSelection: [SourceKey: UUID] = [:]
@@ -55,7 +70,10 @@ public final class TranslationSessionController: ObservableObject {
 
     private func observeTermination() {
         terminationObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.cancel() }
+            MainActor.assumeIsolated {
+                self?.cancel()
+                self?.cancelBatch()
+            }
         }
     }
 
@@ -216,6 +234,86 @@ public final class TranslationSessionController: ObservableObject {
 
     public func setEngine(_ engine: any TranslationEngine) {
         self.engine = engine
+    }
+
+    static func uniqueBatchTracks(_ tracks: [Track]) -> [Track] {
+        var seen = Set<String>()
+        return tracks.filter {
+            seen.insert(TrackIdentity.playbackID(for: $0) ?? TrackIdentity(track: $0).stableKey).inserted
+        }
+    }
+
+    func startBatch(title: String, tracks: [Track], configuration: AITranslationConfiguration,
+                    loadLyrics: @escaping @MainActor (Track) async throws -> StoredLyricsDocument?) {
+        let tracks = Self.uniqueBatchTracks(tracks)
+        guard batchTask == nil, !tracks.isEmpty, configuration.isConfigured, let engine else { return }
+        batchProgress = BatchProgress(title: title, total: tracks.count)
+        batchTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                self.batchProgress?.running = false
+                self.batchProgress?.cancelled = Task.isCancelled
+                self.batchProgress?.currentTrack = ""
+                self.batchTask = nil
+            }
+            for track in tracks {
+                guard !Task.isCancelled else { break }
+                self.batchProgress?.currentTrack = track.title
+                do {
+                    guard let stored = try await loadLyrics(track), let id = stored.versionID,
+                          let hash = stored.sourceContentHash, !stored.document.lines.isEmpty else {
+                        try Task.checkCancellation()
+                        self.batchProgress?.missingLyrics += 1
+                        continue
+                    }
+                    let context = TranslationContext(identity: stored.document.identity, lyricsVersionID: id,
+                        sourceContentHash: hash, document: stored.document, configuration: configuration)
+                    let reused = try await self.prepareBatchTranslation(context, engine: engine)
+                    if reused { self.batchProgress?.cached += 1 }
+                    else { self.batchProgress?.translated += 1 }
+                    if let live = self.context, live.key.versionID == id, live.sourceContentHash == hash, self.inFlightKey == nil {
+                        self.loadExistingOrAutoTranslate(live, allowAutomaticRequest: false)
+                    }
+                } catch {
+                    guard !Task.isCancelled else { break }
+                    self.batchProgress?.failed += 1
+                    self.batchProgress?.lastError = "\(track.title) · \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func cancelBatch() { batchTask?.cancel() }
+
+    /// Return true when a saved or received result can be reused. Batch reads
+    /// and writes the same request journal as the live translation session.
+    private func prepareBatchTranslation(_ context: TranslationContext, engine: any TranslationEngine) async throws -> Bool {
+        let configuration = context.configuration
+        let versions = try await repository.loadTranslationVersions(lyricsVersionID: context.lyricsVersionID,
+            targetLanguage: configuration.targetLanguage, sourceContentHash: context.sourceContentHash)
+        if versions.contains(where: { $0.isComplete && !$0.isArchived && self.matchesRequest($0, context: context) }) {
+            return true
+        }
+        var completion = Self.completionContext(context)
+        var key = try completion.requestKey()
+        var previous = try await repository.loadTranslationRequest(key: key)
+        if previous == nil || previous?.phase == .prepared, let oldHash = configuration.legacyPersonalPromptHash {
+            let legacy = Self.completionContext(context, promptHash: oldHash)
+            if let request = try await repository.loadTranslationRequest(key: legacy.requestKey()), request.phase != .prepared {
+                previous = request
+                completion = legacy
+                key = request.key
+            }
+        }
+        if let previous, previous.phase == .received || previous.phase == .saved {
+            _ = try await repository.completeTranslationRequest(key: key, attemptID: previous.attemptID, context: completion)
+            return true
+        }
+        let request = try await AITranslationRequestExecution.run(engine: engine, repository: repository, key: key,
+            explicitRetry: false, context: context.aiContext, sourceHash: context.sourceContentHash,
+            configuration: configuration, budget: acceptanceBudget, trackKey: context.identity.stableKey)
+        _ = try await repository.completeTranslationRequest(key: key, attemptID: request.attemptID, context: completion)
+        return false
     }
 
     /// Re-reads the selected/source-matched versions after another session

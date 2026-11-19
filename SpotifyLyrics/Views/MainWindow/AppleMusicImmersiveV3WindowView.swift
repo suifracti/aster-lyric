@@ -59,6 +59,82 @@ private struct V3PlaybackRegionAnchorPreferenceKey: PreferenceKey {
     }
 }
 
+private struct TranslationConversationButtons: View {
+    @ObservedObject var state: PlaybackState
+    let provider: String
+    @State private var showPreview = false
+    @State private var notice = ""
+
+    private var version: StoredTranslationVersion? {
+        [state.translationSessionPendingCandidate, state.selectedTranslation].compactMap { $0 }
+            .first { $0.record.engineID == provider }
+            ?? state.translationVersions.first { $0.record.engineID == provider && $0.isComplete && !$0.isArchived }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                if provider == TranslationEngineID.codexChatGPT.rawValue {
+                    Button("打开 Codex 对话", systemImage: "bubble.left.and.text.bubble.right") { openCodex() }
+                        .help("打开此服务最近的翻译对话")
+                    Menu {
+                        Button("显示对话文件夹") {
+                            if let url = try? CodexTranslationWorkspace.folder() { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                        }
+                    } label: { Image(systemName: "ellipsis") }
+                    .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("更多对话操作")
+                } else if let command = AIConversationStore.shared.terminalResumeCommand(for: provider) {
+                    Button("在终端续接", systemImage: "terminal") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(command, forType: .string)
+                        if let terminal = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
+                            NSWorkspace.shared.openApplication(at: terminal, configuration: .init()) { _, _ in }
+                        }
+                        notice = "续接命令已复制。"
+                    }
+                }
+                Spacer(minLength: 0)
+                if version != nil {
+                    Button("预览译文", systemImage: "eye") { showPreview = true }
+                }
+            }.buttonStyle(.borderless)
+            if !notice.isEmpty { Text(notice).foregroundStyle(.secondary) }
+        }
+        .font(.caption)
+        .onChange(of: provider) { _, _ in notice = "" }
+        .popover(isPresented: $showPreview, arrowEdge: .bottom) {
+            if let version {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(state.currentTrack.title).font(.headline).lineLimit(2)
+                    Text([version.record.translationSourceTitle, version.record.model].filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    Divider()
+                    ScrollView {
+                        Text(version.lines.map(\.translatedText).joined(separator: "\n"))
+                            .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }.padding(14).frame(width: 345, height: 300)
+            }
+        }
+    }
+
+    private func openCodex() {
+        guard state.translationState != .loading, state.translationBatchProgress?.running != true else {
+            notice = "翻译结束后可打开对话。"
+            return
+        }
+        guard let id = AIConversationStore.shared.latestConversationID(for: provider),
+              UUID(uuidString: id) != nil, let url = URL(string: "codex://threads/" + id) else {
+            notice = "还没有可打开的 Codex 对话。"
+            return
+        }
+        Task {
+            await Task.detached { AIConversationStore.shared.releaseCodexClient() }.value
+            if !NSWorkspace.shared.open(url) { notice = "系统找不到可打开该对话的 Codex 应用。" }
+        }
+    }
+}
+
 private extension View {
     func reportsV3PlaybackRegion() -> some View {
         anchorPreference(
@@ -1884,9 +1960,18 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if settings.aiTranslationConfiguration.engineID == TranslationEngineID.codexChatGPT.rawValue {
-                codexConversationNote
+            HStack {
+                TranslationBatchButton(state: state, browser: state.playlistBrowser)
+                    .task { state.playlistBrowser.loadQueue() }
+                Spacer()
+                Button("翻译缓存", systemImage: "tray.full") {
+                    var location = SettingsLocation(.library)
+                    location.opensTranslationCache = true
+                    MenuBarLyricsController.shared.openSettings(at: location)
+                }.buttonStyle(.borderless)
             }
+            TranslationBatchStatus(state: state)
+            TranslationConversationButtons(state: state, provider: settings.aiTranslationConfiguration.engineID)
             if !compact && !allowsTranslationRequests {
                 Text("没有剩余模型请求预算；苹果系统翻译及已保存版本仍可使用。")
                     .font(.caption).foregroundStyle(.secondary)
@@ -2377,27 +2462,6 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             case .library, .search, .playlists: EmptyView()
             }
         }
-    }
-
-    /// Where the ChatGPT translation runs, and why a deep 思考强度 takes long.
-    private var codexConversationNote: some View {
-        let effort = settings.aiTranslationConfiguration.codexReasoningEffort
-        return VStack(alignment: .leading, spacing: 4) {
-            if ["high", "xhigh", "max"].contains(effort) {
-                Label("思考强度越高越慢：整首可能要等几分钟。想快一些可以选「低」或「中」。", systemImage: "hourglass")
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Label("对话在 ChatGPT 的 Codex 里，名为「Aster · Lyric · 翻译与读音」，归在「\(CodexTranslationWorkspace.url.lastPathComponent)」文件夹下。",
-                      systemImage: "bubble.left.and.text.bubble.right")
-                Button("显示文件夹") {
-                    if let url = try? CodexTranslationWorkspace.folder() { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                }
-                .buttonStyle(.borderless)
-            }
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var visualControls: V3VisualControls { V3VisualControls(settings: settings, displayedPresentation: presentation) }

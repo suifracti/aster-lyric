@@ -7,6 +7,7 @@ struct LibraryCompareVersion: Identifiable, Sendable {
     let isCurrent: Bool
     let parentID: UUID?
     var translation: PersonalTranslationVersionItem?
+    var candidatePage: LibraryPassagePage? = nil
     var source: LibraryPassageSource { translation == nil ? .original(id) : .translation(id) }
 }
 

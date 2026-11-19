@@ -371,27 +371,29 @@ struct SongSearchResultRow: View {
                 }
                 .frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 6))
             }.buttonStyle(.plain).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 Button(action: viewLyrics) {
-                    (Text(result.track.title).fontWeight(.semibold)
-                        + Text(" · " + result.track.artist + (result.track.album.isEmpty ? "" : " · " + result.track.album)))
-                        .font(.system(size: 13)).foregroundStyle(.primary).lineLimit(1)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(result.track.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                        Text([result.track.artist, result.track.album]
+                            .filter { !$0.isEmpty && $0 != result.track.title }.joined(separator: " · "))
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
                         .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                 }.buttonStyle(.plain)
                     .accessibilityLabel("\(result.track.title)，\(result.track.artist)")
                     .accessibilityHint(actionTitle)
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 HStack(spacing: 5) {
-                    Text(result.isSavedLocally ? "本地已存" : result.source.displayName).lineLimit(1)
-                    Text(formatDuration(result.catalogMetadata?.duration ?? result.track.duration)).monospacedDigit()
                     ForEach(result.savedLayerLabels, id: \.self) { label in
                         Text(label).padding(.horizontal, 3)
                             .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
                     }
+                    Text(formatDuration(result.catalogMetadata?.duration ?? result.track.duration)).monospacedDigit()
                     Spacer(minLength: 0)
                     if isAdopted { Image(systemName: "checkmark.circle.fill").foregroundStyle(.primary).accessibilityLabel("当前采用的歌词") }
-                    Button(actionTitle, action: viewLyrics)
-                        .buttonStyle(.plain).foregroundStyle(.primary).fixedSize()
+                    Button(action: viewLyrics) { Image(systemName: "text.alignleft") }
+                        .buttonStyle(.borderless).help(actionTitle).accessibilityLabel(actionTitle)
                     if let playTitle = state.searchPlaybackTitle(for: result.track) {
                         V3QueueInsertButton(browser: state.playlistBrowser, track: result.track, hovered: hovered)
                         Button { state.playSearchTrack(result.track) } label: { Image(systemName: "play.fill") }
@@ -473,7 +475,7 @@ extension SongSearchResult {
     var isSavedLocally: Bool { savedLibraryEntry != nil || source == .local }
     var savedLayerLabels: [String] {
         guard let entry = savedLibraryEntry else { return source == .local ? ["词"] : [] }
-        return [(entry.lyricsVersionCount > 0 ? "词" : nil),
+        return [(entry.lyricsVersionCount > 0 ? (entry.hasFineTiming ? "逐字" : "词") : nil),
                 (entry.translationVersionCount > 0 ? "译" : nil),
                 (entry.readingVersionCount > 0 ? "读" : nil)].compactMap { $0 }
     }

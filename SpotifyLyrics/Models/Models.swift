@@ -1464,6 +1464,7 @@ public struct LyricLine: Identifiable, Equatable, Hashable, Sendable {
 /// performer IDs. IDs remain opaque source identities; the bounded offsets are
 /// visual organization only and never imply a singer role or gender.
 public struct LyricAgentPresentationMap: Equatable, Sendable {
+    static let ensembleID = "合唱"
     public let agentIDs: [String]
 
     public var isActive: Bool {
@@ -1477,7 +1478,7 @@ public struct LyricAgentPresentationMap: Equatable, Sendable {
         for line in lines {
             guard let performerID = line.performerID else { continue }
             let trimmed = performerID.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty, !seen.contains(trimmed) { seen.append(trimmed) }
+            if !trimmed.isEmpty, trimmed != Self.ensembleID, !seen.contains(trimmed) { seen.append(trimmed) }
         }
         agentIDs = seen
     }

@@ -47,6 +47,7 @@
 | 情境一开旧画面切不过去、光色不走封面色、同一首对唱在不同窗口不一样 | L-052；V3ListeningPresentation、V3RoomOverrides、LyricsTimeline.presentedLyrics |
 | 选过新画面后找不到柔和光晕或独立色场、体验版本库打开错分类 | L-052；V3SceneFamily.olderPictures、SettingsLocation.versionsFor |
 | 合唱被标成某个人独唱、桌面歌词或灵动岛看不出谁在唱 | L-052；LyricsTimeline.VoicePresentation |
+| 别的播放器有声部或逐字、想找同一首的其他版本、提前翻译歌单或查缓存 | L-053；LyrimuseLyricsCache、LibraryVersionSearchSheet、TranslationSessionController |
 | 听歌有对唱，但阅读、文件或印本漏掉声部，合唱在档案里重复 | L-051；PassageVoicePresentation、LyricBook.Chapter.readingRows |
 | 单句循环只在主窗口有、切窗口找不到取消、拖进度被拉回 | L-052；PlaybackState.lyricLineLoopControl |
 | 预览别首歌词时调偏移却改到正在播放的歌词 | L-052；LyricsPresentationOffsetTarget、V3LyricActions.calibrateLyrics |
@@ -1024,3 +1025,9 @@ TXT、LRC、TTML 共用系统的只读文档窗口。Finder「打开方式」、
 2026-11-19：透明桌面歌词暂停时原来会切到不带高亮的另一套视图。现在同一行用 `TimedLyricHighlight` 按时钟填色，播放和暂停共用视图，只有超宽行的横向滚动仍需动画刷新。旧版桌面卡片、经典主窗口接入 `CompactLyricTiming`，原词允许换行；展开灵动岛保持原来的单行约束。`synchronizedLivePresentationClock` 只给当前有同步稿的实时录音，经典主窗试听其它录音时不使用实时逐词时钟。隔离原生窗口离屏图复现旧版暂停全白，候选的透明版在 18 和 21 秒停在不同字位，旧版桌面卡片与经典主窗的 18 秒图也显示部分高亮。48 项定向原生检查通过、1 项环境跳过，签名构建通过。
 
 本机 Xcode Debug 通过 6 项相关原生检查，涵盖多窗口情境解析、旧画面选择与读回、对唱及桌面歌词、真实词间时间断句、封面回补、错过通知时的切歌补读。对比 Claude 末尾 `c6c1104` 的 15 个可独立运行 Python 合同，7 个旧脚本在两边都失败；本轮更新现行场景合同的接线断言，现行原生用例验证行为。两个调用 Xcode 的包装脚本和一个需要测试参数的数据库矩阵未计入这次比较。
+
+## L-053 逐字与声部版本、译文预览与批量缓存（2026-11-19）
+
+- 对唱由词源声部标注驱动。《シュガーラッシュ》的普通在线候选缺少这些标注。手动「查找其他版本」可以读同一 Spotify 录音的 Lyrimuse 本机 YRC 和声部索引，核过 76 行、75 行有逐字时间，两个独唱声部加合唱。合唱保留独立标签。已核过的缓存先显示，在线候选继续加载。YRC 字词内的文本括号照原样显示。
+- 《革命道中 - On The Way》的 LRCLIB 版本只有逐行。真实 QQ 结果有 51 行逐字。匹配仅接受 QQ 的括号并列曲名、同一英文半标题、相符歌手及 1 秒内的时长。原词列表与预览标时间能力，候选可和其他候选或已存版本并排看正文、附文、时间和声部差异，采用走现有歌曲身份与锁定规则。
+- 预译接下来两首、播放队列及所选歌单都用 `TranslationSessionController` 的串行批次，复用同版原词、目标语言、模型及译风对应的结果和请求日志。取消时停止继续派发，结果可到歌词库「翻译缓存」找。译文面板预览当前歌曲已存译文，Codex 打开最近持久会话，其他已保存会话的 CLI 从终端续接。

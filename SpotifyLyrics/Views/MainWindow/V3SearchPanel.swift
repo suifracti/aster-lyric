@@ -88,7 +88,7 @@ struct V3SearchPanel: View {
             HStack {
                 Text(candidate.providerName ?? candidate.source.displayName).font(.system(size: 12, weight: .medium))
                 Spacer()
-                Text(candidate.lines.contains { $0.timedSpans?.isEmpty == false } ? "逐字" : candidate.isSynchronized ? "逐行" : "纯文本")
+                Text(candidate.timingTitle)
                     .font(.system(size: 10)).padding(3).background(Color.primary.opacity(0.08), in: Capsule())
             }
             Text(catalogDuration.map { String(format: "时长差 %+.1fs", candidate.duration - $0) } ?? "时长差未知")

@@ -540,7 +540,14 @@ final class AIConversationStore: @unchecked Sendable {
     func threadID(for provider: String) -> String? {
         defaults.string(forKey: "ai.conversationThread.v1." + provider)
     }
+    func latestConversationID(for provider: String) -> String? {
+        defaults.string(forKey: "ai.conversationLatest.v1." + provider) ?? threadID(for: provider)
+    }
+    func rememberLatest(_ id: String, for provider: String) {
+        defaults.set(id, forKey: "ai.conversationLatest.v1." + provider)
+    }
     func remember(_ id: String, for provider: String) {
+        rememberLatest(id, for: provider)
         defaults.set(id, forKey: "ai.conversationThread.v1." + provider)
         setArchived(false, for: provider)
     }
@@ -1002,6 +1009,7 @@ final class CodexAppServerClient: @unchecked Sendable {
             throw AITranslationError.codexUnavailable("所选模型与实际会话模型不一致；未发送翻译请求")
         }
         if persistent {
+            conversationStore?.rememberLatest(threadID, for: provider)
             if reuseConversation { conversationStore?.remember(threadID, for: provider) }
             _ = try? request(method: "thread/name/set", params: ["threadId": threadID, "name": "Aster · Lyric · 翻译与读音"])
         }

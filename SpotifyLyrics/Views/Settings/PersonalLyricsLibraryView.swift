@@ -529,6 +529,7 @@ public struct PersonalLibraryTrackDetailView: View {
                 }
                 Group {
                     VStack(alignment: .leading, spacing: 20) {
+                        if compact { versionSearchButton(detail) }
                         if let searchMatch {
                             matchedPassageButton(target: searchMatch.target, excerpt: searchMatch.excerpt)
                         }
@@ -708,6 +709,7 @@ public struct PersonalLibraryTrackDetailView: View {
                     Button("读歌词", systemImage: "book") { showPassage(target) }
                 }
                 compareAction(detail, original: original, translation: translation)
+                versionSearchButton(detail)
                 Menu("更多") {
                     Button("查看时间轴", systemImage: "waveform") { selectedSection = .timing }
                     Button("歌词来源设置", systemImage: "magnifyingglass") {
@@ -742,6 +744,13 @@ public struct PersonalLibraryTrackDetailView: View {
                 }
             }
         }.controlSize(.small)
+    }
+
+    private func versionSearchButton(_ detail: PersonalLyricsLibraryTrackDetail) -> some View {
+        Button("查找其他版本", systemImage: "magnifyingglass") {
+            presentSheet { service.versionSearch = .init(detail: detail) }
+        }
+        .controlSize(.small)
     }
 
     private func headerOriginal(in detail: PersonalLyricsLibraryTrackDetail) -> UUID? {
@@ -862,7 +871,8 @@ public struct PersonalLibraryTrackDetailView: View {
         return LibraryVersionRow(kind: "lyrics", id: lv.id,
             title: librarySourceName(lv.source), date: lv.updatedAt, lineCount: lv.lineCount,
             isCurrent: compact ? playback.liveLyricsVersionID == lv.id : lv.isCurrent,
-            locked: lv.isLocked, readingVersion: lv.id == preferredSource?.versionID, busy: service.revisionBusy,
+            locked: lv.isLocked, readingVersion: lv.id == preferredSource?.versionID,
+            details: detail.timingTitle(for: lv), busy: service.revisionBusy,
             preview: { showVersion(.original(lv.id), entry: entry) },
             edit: { presentSheet { service.beginRevision(versionID: lv.id, entry: entry) } },
             rename: { draft in presentSheet { service.versionLabelDraft = draft } },
@@ -1012,6 +1022,7 @@ private struct LibraryVersionRow<Actions: View>: View {
     var draft = false
     var readingVersion = false
     var hasMenu = true
+    var details: String? = nil
     let busy: Bool
     let preview: () -> Void
     let edit: () -> Void
@@ -1032,7 +1043,8 @@ private struct LibraryVersionRow<Actions: View>: View {
                     if archived { Text("已归档").font(.caption2).foregroundStyle(.secondary) }
                     else if draft { Text("待采用").font(.caption2).foregroundStyle(.secondary) }
                 }
-                Text(dateText + " · \(lineCount) 行").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text([details, "\(lineCount) 行", dateText].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 4)
             if readingVersion { Text("刚才阅读").font(.caption).foregroundStyle(WorkspacePalette.ink) }
@@ -1434,6 +1446,96 @@ private struct LyricsBatchReviewSheet: View {
         }
         .frame(width: 620, height: 600)
         .interactiveDismissDisabled(isSaving)
+    }
+}
+
+private struct LibraryVersionSearchSheet: View {
+    let detail: PersonalLyricsLibraryTrackDetail
+    @ObservedObject var library: PersonalLyricsLibraryService
+    let playback: PlaybackState
+    @Environment(\.dismiss) private var dismiss
+    @State private var search: [LyricsCandidate]?
+    @State private var selectedID: String?
+    @State private var comparison: LibraryCompareRequest?
+    @State private var searchingOnline = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("其他歌词版本").font(.headline)
+                    Text(detail.entry.title + " · " + detail.entry.artist).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if search != nil && searchingOnline {
+                    ProgressView().controlSize(.small).accessibilityLabel("正在查找在线版本")
+                }
+                Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)
+            }.padding(14)
+            Divider()
+            if let search {
+                if search.isEmpty {
+                    ContentUnavailableView("没有找到可对照的版本", systemImage: "text.magnifyingglass")
+                } else {
+                    HSplitView {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(search) { candidate in
+                                    Button { selectedID = candidate.id } label: {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(candidate.providerName ?? candidate.source.displayName).font(.headline)
+                                            Text([candidate.timingTitle,
+                                                  LyricAgentPresentationMap(lines: candidate.lines).isActive ? "有声部" : nil,
+                                                  "\(candidate.lines.count) 行"].compactMap { $0 }.joined(separator: " · "))
+                                                .font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        .padding(9).frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(selectedID == candidate.id ? WorkspacePalette.selection : .clear,
+                                                    in: RoundedRectangle(cornerRadius: 8))
+                                        .contentShape(Rectangle())
+                                    }.buttonStyle(.plain)
+                                }
+                            }.padding(8)
+                        }.frame(minWidth: 205, idealWidth: 230)
+                        if let candidate = search.first(where: { $0.id == selectedID }) ?? search.first {
+                            VStack(alignment: .trailing, spacing: 0) {
+                                if !detail.lyricsVersions.isEmpty || search.count > 1 {
+                                    Button("并排对比版本", systemImage: "rectangle.split.2x1") {
+                                        comparison = library.comparison(with: candidate, alternatives: search, detail: detail)
+                                    }.padding([.top, .trailing], 12)
+                                }
+                                LyricsCandidatePreviewSheet(candidate: candidate, onAdopt: {
+                                    let result = try await library.adoptBatchCandidate(candidate, for: detail.entry)
+                                    if let id = result.versionID,
+                                       try await library.isCurrentTrack(stableKey: detail.entry.trackStableKey,
+                                                                         playbackIdentity: playback.liveTrackIdentity),
+                                       !playback.isShowingSearchPreview {
+                                        _ = try await playback.adoptCurrentLyricsVersion(versionID: id)
+                                    }
+                                    return result
+                                }, onConfirmLocked: { nil }, onCancelLocked: {}, embedded: true)
+                                .id(candidate.id)
+                            }.frame(minWidth: 490)
+                        }
+                    }
+                }
+            } else {
+                ProgressView("正在查找这首歌的版本…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(width: 790, height: 570)
+        .task {
+            let results = await playback.searchArchiveLyricsVersions(for: detail.entry.libraryTrack) { local in
+                search = [local]
+                selectedID = local.id
+            }
+            guard !Task.isCancelled else { return }
+            searchingOnline = false
+            search = results
+            if !results.contains(where: { $0.id == selectedID }) { selectedID = results.first?.id }
+        }
+        .sheet(item: $comparison) { LibraryVersionCompareView(request: $0, library: library, edit: { _ in }) }
     }
 }
 
@@ -1973,6 +2075,9 @@ struct PersonalLibrarySheets: ViewModifier {
     @State private var archiveAfterPreview: LibraryPassageTarget?
     func body(content: Content) -> some View {
         content
+        .sheet(item: $service.versionSearch) { request in
+            LibraryVersionSearchSheet(detail: request.detail, library: service, playback: playback)
+        }
         .sheet(item: $service.comparison, onDismiss: {
             if let draft = pickedDraft {
                 pickedDraft = nil

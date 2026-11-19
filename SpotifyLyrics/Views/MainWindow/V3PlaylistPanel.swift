@@ -24,12 +24,16 @@ struct PlaylistBrowserWindow: View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 PlaylistFilterField(browser: state.playlistBrowser)
+                TranslationBatchButton(state: state, browser: state.playlistBrowser)
                 Button { state.playlistBrowser.refresh() } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.borderless)
                     .help("刷新歌单与队列")
                     .accessibilityLabel("刷新歌单与队列")
             }
             .padding(12)
+            if state.translationBatchProgress != nil {
+                TranslationBatchStatus(state: state).padding([.horizontal, .bottom], 12)
+            }
             Divider()
             V3PlaylistPanel(browser: state.playlistBrowser, currentTrackID: state.playlistTrackID,
                             currentArtworkURL: state.currentTrack.artworkURL)
@@ -83,6 +87,7 @@ struct V3PlaylistPanel: View {
                 Divider()
                 VStack(alignment: .leading, spacing: 8) {
                     selectedHeader(firstVisible: tracks.first)
+                    Divider().padding(.horizontal, 12)
                     if browser.selectedTracksAreLoading { ProgressView().controlSize(.small).padding() }
                     if let message = browser.emptyMessage {
                         Text(message).font(.caption).foregroundStyle(.secondary).padding(12)
@@ -130,9 +135,10 @@ struct V3PlaylistPanel: View {
                     .background(Color.primary.opacity(0.07)) }
             }.frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 4) {
-                Text(selectedTitle).font(.headline).lineLimit(2)
+                Text(selectedTitle).font(.title3.weight(.semibold)).lineLimit(2)
                 Text([browser.source == .appleMusic ? "Apple Music" : browser.source == .spotifyDesktop ? "Spotify" : nil,
-                      isMusicOrder ? "按歌单顺序" : nil, isMusicOrder ? "后续 \(count) 首" : "\(count) 首"].compactMap { $0 }.joined(separator: " · "))
+                      isMusicOrder ? "按歌单顺序" : nil,
+                      browser.isFiltering ? "\(browser.filteredTracks.count) 首匹配" : "\(count) 首"].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer(minLength: 0)
@@ -243,7 +249,7 @@ struct V3PlaylistQueuePreview: View {
             if let context = browser.queueContextName {
                 Text(context).font(.caption).foregroundStyle(.secondary).lineLimit(1).padding(.bottom, 5)
             }
-            ForEach(Array(browser.queueItems.prefix(5))) { item in
+            ForEach(Array(browser.queueItems.prefix(5).enumerated()), id: \.element.id) { position, item in
                 let index = item.offset
                 let track = item.track
                 HStack(spacing: 8) {
@@ -252,10 +258,15 @@ struct V3PlaylistQueuePreview: View {
                             CachedArtwork(url: track.artworkURL) { Image(systemName: "music.note") }
                                 .frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 4))
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(track.title).lineLimit(1)
+                                Text(track.title).fontWeight(position == 0 ? .semibold : .medium).lineLimit(1)
                                 Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                             }
                             Spacer(minLength: 0)
+                            if position == 0 {
+                                Text("下一首").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                                    .padding(.horizontal, 6).padding(.vertical, 3)
+                                    .background(.primary.opacity(0.06), in: Capsule())
+                            }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -275,6 +286,73 @@ struct V3PlaylistQueuePreview: View {
         }
         .onAppear { browser.loadQueue() }
         .onChange(of: browser.source) { _, _ in browser.loadQueue() }
+    }
+}
+
+struct TranslationBatchButton: View {
+    @ObservedObject var state: PlaybackState
+    @ObservedObject var browser: PlaylistBrowserModel
+    @State private var pending: Request?
+    @State private var showsConfirmation = false
+
+    private struct Request {
+        let title: String
+        let tracks: [Track]
+    }
+
+    var body: some View {
+        Menu("批量翻译", systemImage: "character.bubble") {
+            let queue = browser.queueItems.map(\.track)
+            Button("提前翻译接下来 2 首") { offer("接下来 2 首", Array(queue.prefix(2))) }.disabled(queue.isEmpty)
+            Button("翻译播放队列") { offer(browser.queueTitle, queue) }.disabled(queue.isEmpty)
+            Button("翻译所选歌单") {
+                offer(browser.picker.playlists.first { $0.id == browser.selectedID }?.name ?? "所选歌单",
+                      browser.tracks.map(\.track))
+            }.disabled(browser.selectedID == PlaylistBrowserModel.queueID || browser.selectedTracksAreLoading || browser.tracks.isEmpty)
+        }
+        .disabled(!state.canStartTranslationBatch)
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .confirmationDialog(pending?.title ?? "批量翻译", isPresented: $showsConfirmation, titleVisibility: .visible) {
+            Button("开始翻译") {
+                if let pending { state.translateBatch(title: pending.title, tracks: pending.tracks) }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("共 \(pending?.tracks.count ?? 0) 首。会先复用当前模型与译风的缓存，只为缺少完整译文的歌曲发请求。")
+        }
+    }
+
+    private func offer(_ title: String, _ tracks: [Track]) {
+        pending = .init(title: title, tracks: TranslationSessionController.uniqueBatchTracks(tracks))
+        showsConfirmation = true
+    }
+}
+
+struct TranslationBatchStatus: View {
+    @ObservedObject var state: PlaybackState
+
+    var body: some View {
+        if let batch = state.translationBatchProgress {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text(batch.title).font(.caption.weight(.semibold)).lineLimit(1)
+                    Spacer()
+                    Text("\(batch.finished)/\(batch.total)").monospacedDigit()
+                    if batch.running { Button("停止") { state.cancelTranslationBatch() }.buttonStyle(.borderless) }
+                    else if batch.cancelled { Text("已停止").foregroundStyle(.secondary) }
+                }
+                if batch.running {
+                    ProgressView(value: Double(batch.finished), total: Double(batch.total))
+                    Text(batch.currentTrack).lineLimit(1)
+                }
+                Text("新译 \(batch.translated) · 缓存 \(batch.cached) · 缺词 \(batch.missingLyrics) · 失败 \(batch.failed)")
+                    .foregroundStyle(.secondary)
+                if let error = batch.lastError {
+                    Text(error).foregroundStyle(.secondary).lineLimit(2).textSelection(.enabled)
+                }
+            }.font(.caption)
+        }
     }
 }
 

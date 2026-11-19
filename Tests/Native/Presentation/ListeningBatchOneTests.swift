@@ -274,6 +274,47 @@ final class ListeningBatchOneTests: XCTestCase {
                           TrackTextNormalizer.normalize("曾经", foldsChineseScript: false))
     }
 
+    func testWordTimedCacheKeepsParenthesesAndDistinguishesEnsemble() throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let lyrics = root.appendingPathComponent("lyrics", isDirectory: true)
+        try FileManager.default.createDirectory(at: lyrics, withIntermediateDirectories: true)
+        let track = Track(title: "Fixture", artist: "Singers", album: "Studio", duration: 10,
+                          spotifyId: "0123456789ABCDEFGHIJKL")
+        let index = ["Singers|Fixture|Studio": ["spotify_track_id": track.spotifyId!, "duration_secs": 10,
+            "lyrics_speakers": ["yrc": ["合", "v1", "v2"]]]]
+        try JSONSerialization.data(withJSONObject: index).write(to: root.appendingPathComponent("lyrimuse-enrich-index.json"))
+        try """
+        [1000,600](1000,300,0)A(test)(1300,300,0) B
+        [3000,600](3000,600,0)C
+        [5000,600](5000,600,0)D
+        """.write(to: lyrics.appendingPathComponent("Singers - Fixture - Studio.yrc"), atomically: true, encoding: .utf8)
+        let edition = try XCTUnwrap(LyrimuseLyricsCache.candidate(for: track, root: root))
+        XCTAssertEqual(edition.lines.first?.originalText, "A(test) B")
+        XCTAssertEqual(edition.timingTitle, "逐字")
+        let voices = LyricsTimeline.VoicePresentation(in: edition.lines)
+        XCTAssertEqual([voices.label(at: 0), voices.label(at: 1), voices.label(at: 2)], ["合唱", "声部 1", "声部 2"])
+        let other = Track(title: track.title, artist: track.artist, album: track.album, duration: 13,
+                          spotifyId: track.spotifyId)
+        XCTAssertNil(LyrimuseLyricsCache.candidate(for: other, root: root))
+    }
+
+    func testQQDisplayAliasKeepsWordTimedStudioCandidate() {
+        let track = Track(title: "革命道中 - On The Way", artist: "AiNA THE END", album: "", duration: 197.668)
+        let identity = TrackIdentity(track: track)
+        let metadata = TrackMetadata(identity: identity, track: track)
+        func decision(title: String, artist: String) -> LyricsMatchDecision {
+            let lines = QRCParser.parseLines("[1000,600]A(1000,300) B(1300,300)\n[180000,300]C(180000,300)")
+            let edition = LyricsCandidate(id: "fixture", identity: identity, title: title, artist: artist, album: "",
+                duration: 197, lines: lines, isSynchronized: true, source: .qqExperimental, confidence: 1)
+            return LyricsSafeMatcher.decide(candidate: edition, metadata: metadata)
+        }
+        let title = "革命道中 - On The Way (革命途中 - On The Way)"
+        let correct = decision(title: title, artist: "AiNA THE END (アイナ・ジ・エンド)")
+        XCTAssertTrue(correct.tier == .autoHigh || correct.tier == .autoMedium, "\(correct.explanation)")
+        XCTAssertTrue(decision(title: title, artist: "Different Singer (別人)").hardReject)
+    }
+
     // MARK: Kugou KRC
 
     private let krcSample = """

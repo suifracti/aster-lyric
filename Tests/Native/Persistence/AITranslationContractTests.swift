@@ -177,6 +177,55 @@ final class AITranslationContractTests: XCTestCase {
     }
 
     @MainActor
+    func testBatchReusesTheSavedResultForTheSameRecording() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("batch.sqlite3"))
+        try await repo.prepare()
+        let track = Track(title: "Synthetic batch", artist: "Fixture", album: "", duration: 10)
+        let identity = TrackIdentity(track: track)
+        let document = LyricsDocument(identity: identity, title: track.title, artist: track.artist, album: track.album,
+            duration: 10, lines: [.init(timestamp: 1, originalText: "synthetic original")],
+            isSynchronized: true, source: .lrclib, confidence: 1)
+        _ = try await repo.save(track: track, identity: identity, document: document)
+        let saved = try await repo.loadBestStored(track: track, identity: identity)
+        let source = try XCTUnwrap(saved)
+        let engine = BatchTranslationStub()
+        let controller = TranslationSessionController(repository: repo, service: engine, acceptanceBudget: nil)
+        let config = AITranslationConfiguration(model: "fixture", engineID: TranslationEngineID.codexChatGPT.rawValue)
+        for expectedCacheHits in [0, 1] {
+            controller.startBatch(title: "Fixture", tracks: [track, track], configuration: config) { _ in source }
+            let deadline = Date().addingTimeInterval(2)
+            while controller.batchProgress?.running == true, Date() < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            let progress = try XCTUnwrap(controller.batchProgress)
+            XCTAssertFalse(progress.running)
+            XCTAssertEqual(progress.total, 1)
+            XCTAssertEqual(progress.cached, expectedCacheHits, progress.lastError ?? "")
+            XCTAssertEqual(progress.translated, 1 - expectedCacheHits, progress.lastError ?? "")
+        }
+        let calls = await engine.calls
+        XCTAssertEqual(calls, 1)
+        let versions = try await repo.loadTranslationVersions(lyricsVersionID: XCTUnwrap(source.versionID),
+            targetLanguage: config.targetLanguage, sourceContentHash: XCTUnwrap(source.sourceContentHash))
+        XCTAssertEqual(versions.count, 1)
+
+        controller.startBatch(title: "Fixture", tracks: [track], configuration: config) { _ in
+            try await Task.sleep(for: .seconds(1))
+            return source
+        }
+        controller.cancelBatch()
+        let deadline = Date().addingTimeInterval(2)
+        while controller.batchProgress?.running == true, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(controller.batchProgress?.cancelled, true)
+        XCTAssertEqual(controller.batchProgress?.failed, 0)
+    }
+
+    @MainActor
     func testProtectedRecovery() async throws {
         let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -493,6 +542,19 @@ private struct SyntheticCodexTransport: CodexTranslationTransport {
             tokenUsage: AITranslationTokenUsage(inputTokens: 6, outputTokens: 4, totalTokens: 10))
     }
 }
+private actor BatchTranslationStub: AITranslationService {
+    private(set) var calls = 0
+    func translate(context: AITranslationContext, sourceContentHash: String, configuration: AITranslationConfiguration) async throws -> AITranslationDraft {
+        calls += 1
+        let prompt = try AITranslationPromptBuilder().build(context: context, configuration: configuration)
+        return .init(lines: context.lines.map { .init(index: $0.index, translation: "synthetic translated") },
+            targetLanguage: configuration.targetLanguage, model: configuration.model, baseURLHost: "fixture",
+            promptHash: prompt.promptHash, sourceContentHash: sourceContentHash, engineID: configuration.engineID,
+            providerReasoningSetting: configuration.providerReasoningSetting)
+    }
+    func testConnection(configuration: AITranslationConfiguration) async throws {}
+}
+
 private actor NeverDispatchService: AITranslationService {
     private(set) var calls = 0
     func translate(context: AITranslationContext, sourceContentHash: String, configuration: AITranslationConfiguration) async throws -> AITranslationDraft {

@@ -1123,6 +1123,29 @@ public final class PlaybackState: ObservableObject {
 
     public func translateCurrentLyrics() { translationSession.translateCurrentLyrics() }
     public func retranslateCurrentLyrics() { translationSession.retranslateCurrentLyrics() }
+    var translationBatchProgress: TranslationSessionController.BatchProgress? { translationSession.batchProgress }
+    var canStartTranslationBatch: Bool {
+        let configuration = settingsStore.aiTranslationConfiguration
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested, !DebugAcceptanceDataIsolation.allowsExplicitTranslation,
+           configuration.engineID != TranslationEngineID.appleSystem.rawValue { return false }
+#endif
+        return configuration.isConfigured && translationBatchProgress?.running != true
+    }
+    func translateBatch(title: String, tracks: [Track]) {
+        guard canStartTranslationBatch else { return }
+        let configuration = settingsStore.aiTranslationConfiguration
+        translationSession.setEngine(TranslationEngineRegistry.make(stableID: configuration.engineID))
+        translationSession.startBatch(title: title, tracks: tracks, configuration: configuration) { [weak self] track in
+            guard let self else { return nil }
+            let identity = TrackIdentity(track: track)
+            try await self.lyricsRepository.prepare()
+            if let stored = try await self.lyricsRepository.loadBestStored(track: track, identity: identity) { return stored }
+            _ = await self.completeMissingLyrics(track: track)
+            return try await self.lyricsRepository.loadBestStored(track: track, identity: identity)
+        }
+    }
+    func cancelTranslationBatch() { translationSession.cancelBatch() }
     public func selectTranslation(versionID: UUID) { translationSession.select(versionID: versionID) }
     public func selectSavedTranslationVersion(versionID: UUID) async { await translationSession.selectSavedVersion(versionID: versionID) }
     func includeSavedTranslationRevision(_ version: StoredTranslationVersion) { translationSession.includeSavedRevision(version) }
@@ -1150,8 +1173,28 @@ public final class PlaybackState: ObservableObject {
               currentTrackIdentity == identity else { return }
         lyricsSession.searchAdditionalVersions(track: currentTrack, identity: identity)
     }
+
+    func searchArchiveLyricsVersions(for track: Track, onLocal: (LyricsCandidate) -> Void) async -> [LyricsCandidate] {
+        let identity = TrackIdentity(track: track)
+        let manager = LyricsSearchManager(providers: preloadLyricsProviders, spotifyArtistResolver: .shared)
+        async let online = manager.search(track: track, identity: identity, collectCandidatesOnly: true)
+        let reference = await Task.detached(priority: .userInitiated) { LyrimuseLyricsCache.candidate(for: track) }.value
+        if let reference, !Task.isCancelled { onLocal(reference) }
+        let outcome = await online
+        guard !Task.isCancelled else { return [] }
+        let results = outcome.alternatives + (reference.map { [$0] } ?? [])
+        return LyricsCandidate.removingDuplicateLyrics(results.sorted(by: LyricsCandidate.hasPrecedence))
+    }
     public var originalLiveLyrics: [LyricLine] {
         liveLyricsDocumentMatchesCurrentTrack ? (lyricsSession.activeDocument?.lines ?? []) : []
+    }
+
+    var liveLyricsTimingTitle: String {
+        guard liveLyricsDocumentMatchesCurrentTrack, let document = lyricsSession.activeDocument else { return "暂无时间轴" }
+        if document.lines.contains(where: { $0.hasValidTimedSpans(lineStartIsMeaningful: document.isSynchronized) }) {
+            return "逐字"
+        }
+        return document.isSynchronized ? "逐行" : "纯文本"
     }
     public func lockSelectedTranslation() { translationSession.lockSelected() }
     public func deleteSelectedTranslation() { translationSession.deleteSelected() }

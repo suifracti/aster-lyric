@@ -388,6 +388,11 @@ public struct PersonalLyricsLibraryTrackDetail: Equatable, Sendable, Codable {
     public let readingVersions: [PersonalReadingVersionItem]
     public let timingVersions: [PersonalTimingVersionItem]
 
+    func timingTitle(for version: PersonalLyricsVersionItem) -> String {
+        if timingVersions.contains(where: { $0.lyricsVersionID == version.id }) { return "逐字" }
+        return version.isSynced ? "逐行" : "纯文本"
+    }
+
     public init(
         entry: PersonalLyricsLibraryEntry,
         lyricsVersions: [PersonalLyricsVersionItem],

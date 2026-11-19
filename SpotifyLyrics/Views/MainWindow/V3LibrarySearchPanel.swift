@@ -78,6 +78,9 @@ struct V3LibrarySearchPanel: View {
                         } else {
                             searchField
                             managementMenu
+                            if presentation.tab == .playlists {
+                                TranslationBatchButton(state: state, browser: state.playlistBrowser)
+                            }
                         }
                         Button("在新窗口打开", action: openInNewWindow)
                         .font(.caption).buttonStyle(.borderless)
@@ -88,7 +91,13 @@ struct V3LibrarySearchPanel: View {
                     Divider()
                     Group {
                         if presentation.tab == .playlists {
-                            V3PlaylistPanel(browser: state.playlistBrowser, currentTrackID: state.playlistTrackID, currentArtworkURL: state.currentTrack.artworkURL)
+                            VStack(alignment: .leading, spacing: 0) {
+                                if state.translationBatchProgress != nil {
+                                    TranslationBatchStatus(state: state).padding(10)
+                                    Divider()
+                                }
+                                V3PlaylistPanel(browser: state.playlistBrowser, currentTrackID: state.playlistTrackID, currentArtworkURL: state.currentTrack.artworkURL)
+                            }
                         } else if presentation.tab == .search {
                             V3SearchPanel(state: state, search: search)
                         } else if presentation.tab?.isListening == true {

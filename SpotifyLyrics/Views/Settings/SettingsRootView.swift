@@ -196,11 +196,13 @@ struct SettingsLocation: Equatable {
     var appearanceControl: AppearanceControl?
     var presentationCategory: PresentationCategory?
     var opensSpotifyOnline = false
+    var opensTranslationCache = false
 
     var navigationTitle: String {
         if !query.isEmpty { return "搜索本机资料" }
         if passage != nil { return "阅读歌词" }
         if opensSpotifyOnline { return "Spotify 在线曲库" }
+        if opensTranslationCache { return "翻译缓存" }
         if page == .appearance {
             return [page.rawValue, appearanceSurface.title, appearanceControl?.title].compactMap { $0 }.joined(separator: " › ")
         }
@@ -312,6 +314,9 @@ struct SettingsRootView: View {
     }
 
     private func navigate(_ destination: SettingsLocation) {
+        if destination.opensTranslationCache {
+            libraryScope = .init(query: "", filter: .translations)
+        }
         searchFocused = false
         history.open(destination)
     }
@@ -1317,7 +1322,7 @@ private struct ProviderConversationControls: View {
                 .help("下一次翻译会开启新对话；已有服务记录会保留。")
                 if canControlVisibility {
                     Button("查看对话") {
-                        guard let id = AIConversationStore.shared.threadID(for: provider),
+                        guard let id = AIConversationStore.shared.latestConversationID(for: provider),
                               let url = URL(string: "codex://threads/\(id)") else {
                             conversationNotice = "尚未建立 Codex 对话。"
                             return

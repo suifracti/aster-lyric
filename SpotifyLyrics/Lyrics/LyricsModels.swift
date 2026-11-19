@@ -276,19 +276,20 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
     }
 
     /// One provider can list the same lyrics twice under different catalogue
-    /// ids (a single and its album entry). Identical text from one source is
-    /// one choice, so keep only the entry that already sorts first.
+    /// ids (a single and its album entry). Keep timing and vocal editions
+    /// separate even if they share the same words.
     public static func removingDuplicateLyrics(_ candidates: [LyricsCandidate]) -> [LyricsCandidate] {
         guard candidates.count > 1 else { return candidates }
         var seen = Set<String>()
         var unique: [LyricsCandidate] = []
         unique.reserveCapacity(candidates.count)
         for candidate in candidates {
-            var fingerprint = candidate.source.rawValue
+            var fingerprint = candidate.source.rawValue + "\u{1E}" + candidate.timingTitle
             for line in candidate.lines {
                 let text = line.originalText.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { continue }
                 fingerprint += "\u{1F}" + text
+                if let performer = line.performerID { fingerprint += "\u{1E}" + performer }
             }
             if seen.insert(fingerprint).inserted { unique.append(candidate) }
         }
@@ -359,7 +360,16 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
     }
 
     public var timelineLabel: String {
-        isSynchronized ? "含逐行时间轴" : "纯文本 / 无时间轴"
+        let timing = timingTitle
+        return timing == "纯文本" ? "纯文本 / 无时间轴" : "含\(timing)时间轴"
+    }
+}
+
+extension LyricsCandidate {
+    var timingTitle: String {
+        if requiresTextOnlyPreview { return "纯文本" }
+        if lines.contains(where: { $0.hasValidTimedSpans(lineStartIsMeaningful: isSynchronized) }) { return "逐字" }
+        return isSynchronized ? "逐行" : "纯文本"
     }
 }
 
@@ -585,13 +595,13 @@ public enum LyricsTimeline {
             var labels: [Int: String] = [:]
             var changes: [Int: String] = [:]
             var previousLabel: String?
-            if voices.isActive {
-                for index in lines.indices where duplicates[index] == nil {
-                    let label = unisons.contains(index) ? "合唱" : voices.singerLabel(for: lines[index].performerID)
-                    labels[index] = label
-                    if label != previousLabel { changes[index] = label }
-                    previousLabel = label
-                }
+            for index in lines.indices where duplicates[index] == nil {
+                let performer = lines[index].performerID
+                let isEnsemble = unisons.contains(index) || performer == LyricAgentPresentationMap.ensembleID
+                let label = isEnsemble ? LyricAgentPresentationMap.ensembleID : voices.singerLabel(for: performer)
+                labels[index] = label
+                if label != previousLabel { changes[index] = label }
+                previousLabel = label
             }
             self.labels = labels
             self.changes = changes

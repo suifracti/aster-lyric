@@ -217,13 +217,32 @@ private func withProviderJob<T>(_ operation: (URL) async throws -> T) async thro
 }
 
 private func providerConversationDirectory(_ provider: String) throws -> URL {
-    let directory = URL(fileURLWithPath: TranslationCLIHost.homeDirectory, isDirectory: true)
-        .appendingPathComponent("Library/Application Support/SpotifyLyrics/AIConversations", isDirectory: true)
-        .appendingPathComponent(provider, isDirectory: true)
+    let directory = providerConversationURL(provider)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
         attributes: [.posixPermissions: 0o700])
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
     return directory
+}
+
+private func providerConversationURL(_ provider: String) -> URL {
+    URL(fileURLWithPath: TranslationCLIHost.homeDirectory, isDirectory: true)
+        .appendingPathComponent("Library/Application Support/SpotifyLyrics/AIConversations", isDirectory: true)
+        .appendingPathComponent(provider, isDirectory: true)
+}
+
+extension AIConversationStore {
+    func terminalResumeCommand(for provider: String) -> String? {
+        guard let id = latestConversationID(for: provider), validatedProviderConversationID(id) != nil else { return nil }
+        let command: String
+        switch TranslationEngineID(rawValue: provider) {
+        case .grokBuild: command = "grok --resume"
+        case .geminiCLI: command = "gemini --resume"
+        case .antigravityCLI: command = "agy --conversation"
+        default: return nil
+        }
+        func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'" }
+        return "cd " + quote(providerConversationURL(provider).path) + " && " + command + " " + quote(id)
+    }
 }
 
 private func validatedProviderConversationID(_ value: String) -> String? {
