@@ -50,6 +50,7 @@ enum SpotifyCanvasLocator {
         let uri = "spotify:track:" + trackID
         guard let key = cacheKey(trackURI: uri) else { return nil }
         for database in databases {
+            guard !Task.isCancelled else { return nil }
             guard let value = LevelDBFileReader(directory: database).value(forKey: key),
                   let url = canvasURL(fromValue: value, trackURI: uri) else { continue }
             return url
@@ -152,6 +153,7 @@ struct LevelDBFileReader {
             if best == nil || version.sequence > best!.sequence { best = version }
         }
         for name in names {
+            guard !Task.isCancelled else { return nil }
             let url = directory.appendingPathComponent(name)
             if name.hasSuffix(".ldb") || name.hasSuffix(".sst") {
                 Self.tableLookup(url, key: key).forEach(consider)
@@ -256,7 +258,15 @@ struct LevelDBFileReader {
     }
 
     private static func compare(_ lhs: ArraySlice<UInt8>, _ rhs: [UInt8]) -> Int {
-        for (a, b) in zip(lhs, rhs) where a != b { return a < b ? -1 : 1 }
+        let count = min(lhs.count, rhs.count)
+        if count > 0 {
+            let order = lhs.withUnsafeBufferPointer { left in
+                rhs.withUnsafeBufferPointer { right in
+                    memcmp(left.baseAddress!, right.baseAddress!, count)
+                }
+            }
+            if order != 0 { return Int(order) }
+        }
         return lhs.count == rhs.count ? 0 : (lhs.count < rhs.count ? -1 : 1)
     }
 
@@ -317,51 +327,73 @@ struct LevelDBFileReader {
 enum Snappy {
     static func decompress(_ input: [UInt8]) -> [UInt8]? {
         guard let (length, start) = ProtobufBytes.varint(input, at: 0), length <= UInt64(64 << 20) else { return nil }
-        var output: [UInt8] = []
-        output.reserveCapacity(Int(length))
+        if length == 0 { return start == input.count ? [] : nil }
+        var output = [UInt8](repeating: 0, count: Int(length))
+        let decoded = input.withUnsafeBufferPointer { source in
+            output.withUnsafeMutableBufferPointer { destination in
+                decode(source, at: start, into: destination)
+            }
+        }
+        return decoded ? output : nil
+    }
+
+    private static func decode(_ input: UnsafeBufferPointer<UInt8>, at start: Int,
+                               into output: UnsafeMutableBufferPointer<UInt8>) -> Bool {
+        guard let source = input.baseAddress, let destination = output.baseAddress else { return false }
         var index = start
+        var written = 0
         while index < input.count {
-            let tag = input[index]; index += 1
+            let tag = source[index]
+            index += 1
+            let offset: Int
+            let count: Int
             switch tag & 3 {
             case 0:
                 var literal = Int(tag >> 2) + 1
                 if literal > 60 {
                     let extra = literal - 60
-                    guard index + extra <= input.count else { return nil }
+                    guard index + extra <= input.count else { return false }
                     literal = 0
-                    for byte in 0..<extra { literal |= Int(input[index + byte]) << (8 * byte) }
+                    for byte in 0..<extra { literal |= Int(source[index + byte]) << (8 * byte) }
                     literal += 1
                     index += extra
                 }
-                guard index + literal <= input.count else { return nil }
-                output += input[index..<(index + literal)]
+                guard literal <= input.count - index, literal <= output.count - written else { return false }
+                destination.advanced(by: written).update(from: source.advanced(by: index), count: literal)
                 index += literal
+                written += literal
+                continue
             case 1:
-                guard index < input.count else { return nil }
-                let count = 4 + Int((tag >> 2) & 7)
-                let offset = Int(tag >> 5) << 8 | Int(input[index]); index += 1
-                guard copy(&output, offset: offset, count: count) else { return nil }
+                guard index < input.count else { return false }
+                count = 4 + Int((tag >> 2) & 7)
+                offset = Int(tag >> 5) << 8 | Int(source[index])
+                index += 1
             case 2:
-                guard index + 2 <= input.count else { return nil }
-                let offset = Int(input[index]) | Int(input[index + 1]) << 8; index += 2
-                guard copy(&output, offset: offset, count: Int(tag >> 2) + 1) else { return nil }
+                guard index + 2 <= input.count else { return false }
+                count = Int(tag >> 2) + 1
+                offset = Int(source[index]) | Int(source[index + 1]) << 8
+                index += 2
             default:
-                guard index + 4 <= input.count else { return nil }
-                var offset = 0
-                for byte in 0..<4 { offset |= Int(input[index + byte]) << (8 * byte) }
+                guard index + 4 <= input.count else { return false }
+                count = Int(tag >> 2) + 1
+                offset = Int(source[index]) | Int(source[index + 1]) << 8
+                    | Int(source[index + 2]) << 16 | Int(source[index + 3]) << 24
                 index += 4
-                guard copy(&output, offset: offset, count: Int(tag >> 2) + 1) else { return nil }
+            }
+            guard offset > 0, offset <= written, count <= output.count - written else { return false }
+            let copySource = destination.advanced(by: written - offset)
+            let end = written + count
+            // Snappy copies may repeat newly written bytes. Each chunk ends
+            // before its destination, then doubles the available prefix.
+            var available = offset
+            while written < end {
+                let chunk = min(available, end - written)
+                destination.advanced(by: written).update(from: copySource, count: chunk)
+                written += chunk
+                available += chunk
             }
         }
-        return output.count == Int(length) ? output : nil
-    }
-
-    /// Copies may overlap what they write (a run), so byte by byte.
-    private static func copy(_ output: inout [UInt8], offset: Int, count: Int) -> Bool {
-        guard offset > 0, offset <= output.count else { return false }
-        let start = output.count - offset
-        for position in 0..<count { output.append(output[start + position]) }
-        return true
+        return written == output.count
     }
 }
 

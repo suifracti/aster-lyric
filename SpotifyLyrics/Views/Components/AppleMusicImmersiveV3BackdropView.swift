@@ -242,6 +242,7 @@ struct AppleMusicImmersiveV3BackdropView: View {
         guard showsCanvas, let id = spotifyTrackID else { return }
         for attempt in 0..<12 {
             if let remote = await V3CanvasStore.shared.remoteClip(trackID: id) {
+                guard !Task.isCancelled else { return }
                 let local = await V3CanvasStore.shared.localFile(for: remote)
                 guard !Task.isCancelled else { return }
                 if let local {

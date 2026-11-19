@@ -90,7 +90,10 @@ final class ListeningBatchOneTests: XCTestCase {
         // tag (7 - 4) << 2 | 1 = 13. The copy overlaps what it writes.
         let fixed: [UInt8] = [9, 0x04, 0x61, 0x62, 13, 2]
         XCTAssertEqual(Snappy.decompress(fixed).map { String(decoding: $0, as: UTF8.self) }, "ababababa")
+        XCTAssertEqual(Snappy.decompress([6, 0, 0x61, 18, 1, 0]), Array("aaaaaa".utf8))
+        XCTAssertEqual(Snappy.decompress([4, 4, 0x61, 0x62, 7, 2, 0, 0, 0]), Array("abab".utf8))
         XCTAssertNil(Snappy.decompress([5, 0x04, 0x61, 0x62]), "a short result is rejected")
+        XCTAssertNil(Snappy.decompress([2, 0, 0x61, 18, 1, 0]), "a copy cannot exceed the declared output")
     }
 
     func testBlockEntriesSharePrefixes() {

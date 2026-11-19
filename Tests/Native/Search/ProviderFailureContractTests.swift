@@ -1709,6 +1709,39 @@ final class LyricsTimingAndEarlyDisplayTests: XCTestCase {
         "言えなかった言葉をそっと胸にしまう", "雨上がりの街に二人の影が伸びてゆく", "繰り返せない藍と知ったんだ"
     ]
 
+    func testPublisherNamesShowLessKissBeforeWaitingForPublisherLyrics() async {
+        let track = Track(title: "Less Kiss", artist: "TakaseToya", album: "The 1st of the 13th month",
+                          duration: 192.209, spotifyId: "6uBs5b437BtvJmVh2yi1RE")
+        let identity = TrackIdentity(track: track)
+        let lines = verses.enumerated().map {
+            LyricLine(timestamp: Double($0.offset) * 32 + 10, originalText: $0.element, translationText: "译文")
+        }
+        let studio = LyricsCandidate(id: "studio", identity: identity, title: "レスなキス", artist: "高瀬統也",
+            album: "13月1日", duration: 192.24, lines: lines, source: .neteaseExperimental, confidence: 0.7)
+        let live = LyricsCandidate(id: "live", identity: identity, title: "レスなキス (LIVE TOUR 2024)",
+            artist: "高瀬統也", album: "Love°C JAPAN TOUR 2024", duration: 213.658, lines: lines,
+            source: .neteaseExperimental, confidence: 0.9)
+        let shown = ShownAt()
+        let started = Date()
+        let manager = LyricsSearchManager(providers: [
+            ProviderFailureFixedLyricsProvider(name: "NetEase Experimental", result: .candidates([live, studio])),
+            ProviderFailureDelayedLyricsProvider(name: "LinkCore / TuneCore", delay: 2_000_000_000, result: .noMatch)
+        ])
+        let outcome = await manager.search(track: track, identity: identity, onProvisional: { _ in
+            await shown.mark(Date().timeIntervalSince(started))
+        })
+        guard case .match(let document) = outcome.result else { return XCTFail("expected studio lyrics, got \(outcome.result)") }
+        let firstShown = await shown.value
+        XCTAssertLessThan(firstShown ?? 99, 1)
+        XCTAssertFalse(outcome.diagnostics.contains { $0.provider.hasPrefix("LinkCore") })
+        XCTAssertEqual(document.title, studio.title)
+
+        let otherRelease = Track(title: track.title, artist: track.artist, album: track.album,
+                                 duration: track.duration, spotifyId: "22p5rvi48A5EhnXKvgqDSz")
+        let unrelated = LyricsSafeMatcher.decide(candidate: studio, metadata: .bootstrap(from: otherRelease))
+        XCTAssertEqual(unrelated.tier, .reject)
+    }
+
     @MainActor
     func testJapaneseTitleCompanionFillsOnlyAlignedTranslationsOnBothSelectionPaths() async throws {
         for playbackDuration in [217.0, 200.0] {

@@ -33,7 +33,12 @@ actor V3CanvasStore {
 
     /// The clip's address for this track, read from the Spotify cache.
     func remoteClip(trackID: String) async -> URL? {
-        await Task.detached(priority: .utility) { SpotifyCanvasLocator.canvasURL(trackID: trackID) }.value
+        let lookup = Task.detached(priority: .utility) { SpotifyCanvasLocator.canvasURL(trackID: trackID) }
+        return await withTaskCancellationHandler {
+            await lookup.value
+        } onCancel: {
+            lookup.cancel()
+        }
     }
 
     func localFile(for remote: URL) async -> URL? {
