@@ -1041,3 +1041,28 @@ final class V3LyricReadabilityTests: XCTestCase {
         XCTAssertEqual(settings.v3EffectiveReadingProtection(scene: .originalAmbient, renderer: .authenticAmbient, coverLuminance: 0.9), .off)
     }
 }
+
+final class V3TickScheduleTests: XCTestCase {
+    func testTicksAtTheIntervalAndStopsWhilePaused() {
+        let start = Date(timeIntervalSinceReferenceDate: 1000)
+        var running = V3TickSchedule(interval: 0.5).entries(from: start, mode: .normal)
+        let first = (0..<4).compactMap { _ in running.next() }.map { $0.timeIntervalSince(start) }
+        XCTAssertEqual(first, [0, 0.5, 1.0, 1.5])
+        var paused = V3TickSchedule(interval: 0.5, paused: true).entries(from: start, mode: .normal)
+        XCTAssertEqual(paused.next(), start)
+        XCTAssertNil(paused.next(), "a paused schedule asks for no further updates")
+    }
+
+    func testSlowTimelinesDoNotUseTheFrameDrivenSchedule() throws {
+        // `.animation(minimumInterval:)` still asked for an update every frame (2026-11-19);
+        // clocks and slow progress use the tick schedule instead.
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../SpotifyLyrics").standardizedFileURL
+        for file in ["Views/MainWindow/AppleMusicImmersiveV3Transport.swift", "Views/MainWindow/V3PlaybackStyles.swift",
+                     "Views/MenuBar/MenuBarLyricsPopoverView.swift", "Views/MainWindow/V3Soundprint.swift"] {
+            let text = try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8)
+            XCTAssertNil(text.range(of: #"TimelineView\(\.animation\(minimumInterval: (0\.[1-9][0-9]*|[1-9][0-9]*(\.[0-9]+)?)\s*[,)]"#, options: .regularExpression), file)
+        }
+        let window = try String(contentsOf: root.appendingPathComponent("Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"), encoding: .utf8)
+        XCTAssertTrue(window.contains("V3AnimationIsland {\n        AppleMusicImmersiveV3LyricsViewport("), "the lyrics stay behind their own layout boundary")
+    }
+}

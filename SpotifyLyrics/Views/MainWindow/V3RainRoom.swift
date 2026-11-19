@@ -231,7 +231,7 @@ private struct V3Firelight: View {
     let running: Bool
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 12.0, paused: !running)) { timeline in
+        TimelineView(.v3Every(1.0 / 12.0, paused: !running)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
             let flicker = 0.42 + 0.08 * sin(t * 7.1) + 0.06 * sin(t * 12.7 + 1.3) + 0.04 * sin(t * 3.3)
             RadialGradient(colors: [Color(red: 1, green: 0.55, blue: 0.22).opacity(flicker), .clear],
@@ -328,7 +328,7 @@ private struct V3FilmGrain: View {
     let size: CGSize
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 12.0, paused: !playing)) { timeline in
+        TimelineView(.v3Every(1.0 / 12.0, paused: !playing)) { timeline in
             let frame = UInt64(timeline.date.timeIntervalSinceReferenceDate * 12)
             ZStack {
                 Canvas { context, canvas in
@@ -1797,3 +1797,5 @@ struct V3WaterCaustics: View {
         .frame(width: size.width, height: size.height)
     }
 }
+
+

@@ -14,7 +14,7 @@ struct V3PlaybackFractionReader<Content: View>: View {
     @Environment(\.v3WindowVisible) private var visible
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: interval, paused: !state.isPlaying || !visible)) { _ in
+        TimelineView(.v3Every(interval, paused: !state.isPlaying || !visible)) { _ in
             content(Self.fraction(state))
         }
     }

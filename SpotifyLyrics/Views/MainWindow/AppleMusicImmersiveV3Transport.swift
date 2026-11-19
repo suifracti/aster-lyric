@@ -85,7 +85,7 @@ private struct AppleMusicImmersiveV3PlaybackProgress: View {
         Group {
             if options.progress == .waveform {
                 // The bars change colour as the song plays; a few times a second is enough.
-                TimelineView(.animation(minimumInterval: 0.25, paused: !state.isPlaying || isEditing)) { _ in
+                TimelineView(.v3Every(0.25, paused: !state.isPlaying || isEditing)) { _ in
                     progressRail
                 }
             } else if isEmphasized {
@@ -401,7 +401,8 @@ private struct V3TransportClockLabel: View {
 
     var body: some View {
         V3AnimationIsland {
-            TimelineView(.animation(minimumInterval: 0.25, paused: !playbackVisible || !state.isPlaying)) { _ in
+            // m:ss changes once a second; ticking twice keeps it from lagging a whole second.
+            TimelineView(.v3Every(0.5, paused: !playbackVisible || !state.isPlaying)) { _ in
                 Text(Self.formatTime(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime)))
             }
         }

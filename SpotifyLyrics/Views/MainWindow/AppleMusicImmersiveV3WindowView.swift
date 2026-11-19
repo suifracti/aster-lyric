@@ -1647,6 +1647,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     ) -> some View {
         // Rows read 行宽 when they lay out; set it before they do, and rebuild them when it changes.
         return VStack(spacing: 8) {
+        // The lyrics are the heaviest part of the window: every line, its readings and
+        // one highlight view per word. The window itself lays out almost every frame
+        // (hover, overlays, small clocks); behind this boundary those passes only place
+        // the lyrics, and the lyrics re-render when they change. Measured 2026-11-19:
+        // the column alone was about three quarters of the window's main-thread time.
+        V3AnimationIsland {
         AppleMusicImmersiveV3LyricsViewport(
             state: state,
             availableWidth: max(1, width - (compact ? 22 : 34)),
@@ -1675,6 +1681,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .environment(\.v3ResolvedReadingProtection, compositionReadingProtection)
         .environment(\.lyricsCandidateBrightCover, coverLuminance > 0.6)
         .environment(\.lyricTextAlignment, compositionLyricsPosition == "center" ? .center : compositionLyricsPosition == "right" ? .trailing : .leading)
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .overlay(alignment: .bottomLeading) {

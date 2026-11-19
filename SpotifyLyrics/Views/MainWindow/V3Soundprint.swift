@@ -65,7 +65,7 @@ struct V3SoundprintRing: View {
 
     var body: some View {
         let listening = settings.v3MusicMotionEnabled && state.isPlaying && visible
-        TimelineView(.animation(minimumInterval: 0.1, paused: !listening)) { _ in
+        TimelineView(.v3Every(0.1, paused: !listening)) { _ in
             Canvas { ctx, _ in
                 let duration = max(1, state.currentTrack.duration)
                 let fraction = min(1, max(0, state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime) / duration))

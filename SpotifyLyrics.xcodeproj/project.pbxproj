@@ -243,6 +243,7 @@
 		DF21E96E6A4E08F95E5BD7D0 /* V3PlaylistPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4192699E3CE13AFF565B3821 /* V3PlaylistPanel.swift */; };
 		A60F090600000000000007B1 /* V3PlaybackStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60F090600000000000007B0 /* V3PlaybackStyles.swift */; };
 		E2DB54FBA5EBC7345D14030D /* V3AnimationIsland.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00FC2B2BF3EFEEE824C385EE /* V3AnimationIsland.swift */; };
+		C3D4E5F60718293A4B5C6D7E /* V3TickSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F60718293A4B5C6D7E8F /* V3TickSchedule.swift */; };
 		3315F23098FEBB035649E39B /* V3PanelGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = C140F38276CD374A993F5B22 /* V3PanelGlass.swift */; };
 		3F93C6CEC5F0C50BFD8DFAD7 /* SpotifyLocalCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B2982DD38CC16476A5FE34D /* SpotifyLocalCache.swift */; };
 		1F3AAA6A26CAB37EE98F5312 /* V3BackdropMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA56EE83873FAB67D1E6F5D6 /* V3BackdropMedia.swift */; };
@@ -533,6 +534,7 @@
 		4192699E3CE13AFF565B3821 /* V3PlaylistPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3PlaylistPanel.swift; sourceTree = "<group>"; };
 		A60F090600000000000007B0 /* V3PlaybackStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3PlaybackStyles.swift; sourceTree = "<group>"; };
 		00FC2B2BF3EFEEE824C385EE /* V3AnimationIsland.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3AnimationIsland.swift; sourceTree = "<group>"; };
+		D4E5F60718293A4B5C6D7E8F /* V3TickSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3TickSchedule.swift; sourceTree = "<group>"; };
 		C140F38276CD374A993F5B22 /* V3PanelGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/Components/V3PanelGlass.swift; sourceTree = "<group>"; };
 		8B2982DD38CC16476A5FE34D /* SpotifyLocalCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyLocalCache.swift; sourceTree = "<group>"; };
 		FA56EE83873FAB67D1E6F5D6 /* V3BackdropMedia.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V3BackdropMedia.swift; sourceTree = "<group>"; };
@@ -800,6 +802,7 @@
 				110001092D83400100000000 /* AssistExplainSheet.swift */,
 				110000092D83400100000000 /* LyricLineView.swift */,
 				00FC2B2BF3EFEEE824C385EE /* V3AnimationIsland.swift */,
+				D4E5F60718293A4B5C6D7E8F /* V3TickSchedule.swift */,
 				1100000A2D83400100000000 /* TrackHeaderView.swift */,
 				1100000B2D83400100000000 /* LyricsPreferencesPopover.swift */,
 				1100001A2D83400100000000 /* TrackBackdropView.swift */,
@@ -1114,6 +1117,7 @@
 				110001092D83400100000001 /* AssistExplainSheet.swift in Sources */,
 				110000092D83400100000001 /* LyricLineView.swift in Sources */,
 				E2DB54FBA5EBC7345D14030D /* V3AnimationIsland.swift in Sources */,
+				C3D4E5F60718293A4B5C6D7E /* V3TickSchedule.swift in Sources */,
 				1100000A2D83400100000001 /* TrackHeaderView.swift in Sources */,
 				1100000B2D83400100000001 /* LyricsPreferencesPopover.swift in Sources */,
 				1100000C2D83400100000001 /* LyricsDesignTokens.swift in Sources */,

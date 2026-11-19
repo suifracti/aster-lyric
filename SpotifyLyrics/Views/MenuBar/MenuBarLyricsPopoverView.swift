@@ -654,7 +654,7 @@ private struct MenuBarProgressRail: View {
     private var draft: Double? { seekDraft.position(for: state.seekRecording) }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.25, paused: !state.isPlaying || draft != nil)) { _ in
+        TimelineView(.v3Every(0.25, paused: !state.isPlaying || draft != nil)) { _ in
             let position = draft ?? min(max(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime), 0), duration)
             VStack(spacing: 3) {
                 GeometryReader { geometry in
