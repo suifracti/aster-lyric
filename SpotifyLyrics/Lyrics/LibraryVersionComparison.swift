@@ -55,6 +55,10 @@ struct LibraryCompareRequest: Identifiable, Sendable {
 
 struct LibraryVersionComparison: Sendable {
     typealias Line = LibraryPassagePage.Line
+    enum Alignment: String, CaseIterable, Identifiable, Sendable {
+        case text = "按正文", time = "按时间", line = "按行号"
+        var id: Self { self }
+    }
     enum Change: String, Sendable {
         case same = "相同", text = "文字不同", layer = "附文不同", timing = "时间不同"
         case voice = "声部不同"
@@ -90,16 +94,18 @@ struct LibraryVersionComparison: Sendable {
         })
     }
 
-    init(base: LibraryPassagePage, reference: LibraryPassagePage, translations: Bool) {
+    init(base: LibraryPassagePage, reference: LibraryPassagePage, translations: Bool, alignment: Alignment = .text) {
         let sameOriginal = base.originalVersionID == reference.originalVersionID &&
             base.matchesOriginalVersion && reference.matchesOriginalVersion
-        rows = Self.align(base.lines, reference.lines, translations: translations, sameOriginal: sameOriginal)
+        rows = Self.align(base.lines, reference.lines, translations: translations, sameOriginal: sameOriginal,
+                          alignment: alignment)
         canPickTranslationLines = translations && sameOriginal
     }
 
     /// Equal original lines anchor two different editions in order. On the same
     /// source, row indices distinguish identical choruses even when a translation is blank.
-    static func align(_ base: [Line], _ reference: [Line], translations: Bool, sameOriginal: Bool) -> [Row] {
+    static func align(_ base: [Line], _ reference: [Line], translations: Bool, sameOriginal: Bool,
+                      alignment: Alignment = .text) -> [Row] {
         let baseVoices = PassageVoicePresentation(lines: base)
         let referenceVoices = PassageVoicePresentation(lines: reference)
         var rows: [Row] = []
@@ -121,7 +127,7 @@ struct LibraryVersionComparison: Sendable {
                             baseVoice: baseVoice, referenceVoice: referenceVoice))
         }
 
-        if sameOriginal {
+        if sameOriginal || alignment == .line {
             let a = Dictionary(uniqueKeysWithValues: base.map { ($0.id, $0) })
             let b = Dictionary(uniqueKeysWithValues: reference.map { ($0.id, $0) })
             for id in Set(a.keys).union(b.keys).sorted() { append(a[id], b[id]) }
@@ -129,9 +135,41 @@ struct LibraryVersionComparison: Sendable {
         }
 
         func anchor(_ line: Line) -> String {
-            (line.original.isEmpty ? line.translation ?? "" : line.original).trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = line.original.isEmpty ? line.translation ?? "" : line.original
+            let folded = text.folding(options: [.widthInsensitive, .caseInsensitive], locale: nil)
+            return String(folded
+                .unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })
+        }
+        func credit(_ line: Line) -> String? {
+            guard let separator = line.original.firstIndex(where: { $0 == "：" || $0 == ":" }) else { return nil }
+            switch line.original[..<separator].trimmingCharacters(in: .whitespaces) {
+            case "词", "詞", "作词", "作詞": return "作词"
+            case "曲", "作曲": return "作曲"
+            case "编曲", "編曲": return "编曲"
+            default: return nil
+            }
         }
         let baseKeys = base.map(anchor), referenceKeys = reference.map(anchor)
+        if alignment == .time {
+            var a = 0, b = 0
+            while a < base.count || b < reference.count {
+                let left = a < base.count ? base[a] : nil
+                let right = b < reference.count ? reference[b] : nil
+                if let start = left?.startTime, let other = right?.startTime,
+                   abs(start - other) <= 0.75, (min(start, other) > 0 || baseKeys[a] == referenceKeys[b]) {
+                    append(left, right)
+                    a += 1
+                    b += 1
+                } else if let left, right == nil || (left.startTime ?? -.infinity) <= (right?.startTime ?? -.infinity) {
+                    append(left, nil)
+                    a += 1
+                } else {
+                    append(nil, right)
+                    b += 1
+                }
+            }
+            return rows
+        }
         var removed = Set<Int>(), added = Set<Int>()
         if Set(baseKeys).isDisjoint(with: referenceKeys) {
             removed = Set(baseKeys.indices)
@@ -149,10 +187,25 @@ struct LibraryVersionComparison: Sendable {
             let baseStart = baseIndex, referenceStart = referenceIndex
             while removed.contains(baseIndex) { baseIndex += 1 }
             while added.contains(referenceIndex) { referenceIndex += 1 }
-            for offset in 0..<max(baseIndex - baseStart, referenceIndex - referenceStart) {
-                append(baseStart + offset < baseIndex ? base[baseStart + offset] : nil,
-                       referenceStart + offset < referenceIndex ? reference[referenceStart + offset] : nil)
+            var next = referenceStart
+            for index in baseStart..<baseIndex {
+                let key = baseKeys[index]
+                let role = credit(base[index])
+                let match = (next..<min(referenceIndex, next + 8)).first { peer in
+                    let other = referenceKeys[peer]
+                    guard role == credit(reference[peer]), min(key.count, other.count) >= 4 else { return false }
+                    let common = key.count - changedCharacters(in: key, comparedWith: other).count
+                    return common * 5 >= max(key.count, other.count) * 3
+                }
+                if let match {
+                    for peer in next..<match { append(nil, reference[peer]) }
+                    append(base[index], reference[match])
+                    next = match + 1
+                } else {
+                    append(base[index], nil)
+                }
             }
+            for peer in next..<referenceIndex { append(nil, reference[peer]) }
             guard baseIndex < base.count, referenceIndex < reference.count else { break }
             append(base[baseIndex], reference[referenceIndex])
             baseIndex += 1

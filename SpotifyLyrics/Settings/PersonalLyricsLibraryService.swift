@@ -150,7 +150,8 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         return .init(entry: detail.entry, baseID: selected, versions: choices, playing: playing, reading: reading)
     }
 
-    func compare(trackKey: String, base: LibraryCompareVersion, with reference: LibraryCompareVersion) async throws -> LibraryVersionComparison {
+    func compare(trackKey: String, base: LibraryCompareVersion, with reference: LibraryCompareVersion,
+                 alignment: LibraryVersionComparison.Alignment = .text) async throws -> LibraryVersionComparison {
         let pair: (LibraryPassagePage, LibraryPassagePage)
         if let candidate = base.candidatePage, let alternative = reference.candidatePage {
             pair = (candidate, alternative)
@@ -173,7 +174,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
         try Task.checkCancellation()
         let translations = base.translation != nil
         return await Task.detached(priority: .userInitiated) {
-            LibraryVersionComparison(base: pair.0, reference: pair.1, translations: translations)
+            LibraryVersionComparison(base: pair.0, reference: pair.1, translations: translations, alignment: alignment)
         }.value
     }
 
@@ -191,7 +192,7 @@ public final class PersonalLyricsLibraryService: ObservableObject {
 
     private func comparisonVersion(_ candidate: LyricsCandidate, entry: PersonalLyricsLibraryEntry) -> LibraryCompareVersion {
         let id = UUID()
-        let provider = candidate.providerName ?? candidate.source.displayName
+        let provider = candidate.archiveSourceLabel
         let document = candidate.makeDocument()
         let page = LibraryPassagePage(entry: entry, originalVersionID: id, edition: provider,
             lines: document.lines.enumerated().map { index, line in

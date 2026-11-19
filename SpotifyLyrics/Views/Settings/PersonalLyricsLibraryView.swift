@@ -1454,88 +1454,125 @@ private struct LibraryVersionSearchSheet: View {
     @ObservedObject var library: PersonalLyricsLibraryService
     let playback: PlaybackState
     @Environment(\.dismiss) private var dismiss
-    @State private var search: [LyricsCandidate]?
+    @State private var candidates: [LyricsCandidate] = []
     @State private var selectedID: String?
     @State private var comparison: LibraryCompareRequest?
-    @State private var searchingOnline = true
+    @State private var searching = true
+    @State private var searchID = UUID()
+
+    private var selected: LyricsCandidate? {
+        candidates.first { $0.id == selectedID } ?? candidates.first
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("其他歌词版本").font(.headline)
-                    Text(detail.entry.title + " · " + detail.entry.artist).font(.caption).foregroundStyle(.secondary)
+                    Label("歌词版本", systemImage: "quote.bubble")
+                        .font(.headline).foregroundStyle(WorkspacePalette.ink)
+                    Text(detail.entry.title + " · " + detail.entry.artist)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
-                if search != nil && searchingOnline {
-                    ProgressView().controlSize(.small).accessibilityLabel("正在查找在线版本")
-                }
-                Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)
-            }.padding(14)
-            Divider()
-            if let search {
-                if search.isEmpty {
-                    ContentUnavailableView("没有找到可对照的版本", systemImage: "text.magnifyingglass")
+                if searching {
+                    ProgressView().controlSize(.small)
+                    Text("正在查找更多来源").font(.caption).foregroundStyle(.secondary)
                 } else {
-                    HSplitView {
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 4) {
-                                ForEach(search) { candidate in
-                                    Button { selectedID = candidate.id } label: {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(candidate.providerName ?? candidate.source.displayName).font(.headline)
-                                            Text([candidate.timingTitle,
-                                                  LyricAgentPresentationMap(lines: candidate.lines).isActive ? "有声部" : nil,
-                                                  "\(candidate.lines.count) 行"].compactMap { $0 }.joined(separator: " · "))
-                                                .font(.caption).foregroundStyle(.secondary)
-                                        }
-                                        .padding(9).frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(selectedID == candidate.id ? WorkspacePalette.selection : .clear,
-                                                    in: RoundedRectangle(cornerRadius: 8))
-                                        .contentShape(Rectangle())
-                                    }.buttonStyle(.plain)
-                                }
-                            }.padding(8)
-                        }.frame(minWidth: 205, idealWidth: 230)
-                        if let candidate = search.first(where: { $0.id == selectedID }) ?? search.first {
-                            VStack(alignment: .trailing, spacing: 0) {
-                                if !detail.lyricsVersions.isEmpty || search.count > 1 {
-                                    Button("并排对比版本", systemImage: "rectangle.split.2x1") {
-                                        comparison = library.comparison(with: candidate, alternatives: search, detail: detail)
-                                    }.padding([.top, .trailing], 12)
-                                }
-                                LyricsCandidatePreviewSheet(candidate: candidate, onAdopt: {
-                                    let result = try await library.adoptBatchCandidate(candidate, for: detail.entry)
-                                    if let id = result.versionID,
-                                       try await library.isCurrentTrack(stableKey: detail.entry.trackStableKey,
-                                                                         playbackIdentity: playback.liveTrackIdentity),
-                                       !playback.isShowingSearchPreview {
-                                        _ = try await playback.adoptCurrentLyricsVersion(versionID: id)
-                                    }
-                                    return result
-                                }, onConfirmLocked: { nil }, onCancelLocked: {}, embedded: true)
-                                .id(candidate.id)
-                            }.frame(minWidth: 490)
-                        }
+                    Button("重新搜索", systemImage: "arrow.clockwise") { restartSearch() }
+                        .labelStyle(.iconOnly).help("重新搜索")
+                }
+                Button("关闭", systemImage: "xmark") { dismiss() }
+                    .labelStyle(.iconOnly).help("关闭").keyboardShortcut(.cancelAction)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 18).padding(.vertical, 12)
+            Divider()
+
+            if let comparison {
+                LibraryVersionCompareView(request: comparison, library: library,
+                    back: { self.comparison = nil }, edit: { _ in })
+                    .id(comparison.id)
+            } else {
+                HStack(spacing: 0) {
+                    sourceList.frame(width: 192)
+                    Divider()
+                    if let selected {
+                        preview(selected).id(selected.id)
+                    } else {
+                        ContentUnavailableView(
+                            searching ? "等待第一个可预览版本" : "没有找到其他歌词版本",
+                            systemImage: "text.magnifyingglass"
+                        )
                     }
                 }
-            } else {
-                ProgressView("正在查找这首歌的版本…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(width: 790, height: 570)
-        .task {
-            let results = await playback.searchArchiveLyricsVersions(for: detail.entry.libraryTrack) { local in
-                search = [local]
-                selectedID = local.id
+        .frame(minWidth: 690, idealWidth: 740, minHeight: 440, idealHeight: 510)
+        .background(WorkspacePalette.paper)
+        .tint(WorkspacePalette.ink)
+        .task(id: searchID) {
+            let results = await playback.searchArchiveLyricsVersions(for: detail.entry.libraryTrack) { incoming in
+                let merged = Dictionary((candidates + incoming).map { ($0.id, $0) },
+                                        uniquingKeysWith: { _, newest in newest })
+                candidates = LyricsCandidate.removingDuplicateLyrics(merged.values.sorted(by: LyricsCandidate.hasPrecedence))
+                if selectedID == nil { selectedID = candidates.first?.id }
             }
             guard !Task.isCancelled else { return }
-            searchingOnline = false
-            search = results
+            candidates = results
             if !results.contains(where: { $0.id == selectedID }) { selectedID = results.first?.id }
+            searching = false
         }
-        .sheet(item: $comparison) { LibraryVersionCompareView(request: $0, library: library, edit: { _ in }) }
+    }
+
+    private var sourceList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 5) {
+                if let current = detail.lyricsVersions.first(where: \.isCurrent) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("当前采用").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                        Text(DatabaseSourceIdentifier.displayName(for: current.source)).font(.callout.weight(.medium))
+                        Text(detail.timingTitle(for: current)).font(.caption).foregroundStyle(.secondary)
+                    }.padding(9)
+                    Divider()
+                }
+                ForEach(candidates) { candidate in
+                    Button { selectedID = candidate.id } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(candidate.archiveSourceLabel).font(.callout.weight(.semibold)).lineLimit(1)
+                            Text([candidate.timingTitle,
+                                  LyricAgentPresentationMap(lines: candidate.lines).isActive ? "有声部" : nil,
+                                  "\(candidate.lines.count) 行"].compactMap { $0 }.joined(separator: " · "))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(9).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(selected?.id == candidate.id ? WorkspacePalette.selection : .clear,
+                                    in: RoundedRectangle(cornerRadius: 8))
+                        .contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                }
+            }.padding(8)
+        }
+    }
+
+    private func preview(_ candidate: LyricsCandidate) -> some View {
+        LyricsCandidatePreviewSheet(candidate: candidate, onAdopt: {
+            let result = try await library.adoptBatchCandidate(candidate, for: detail.entry)
+            if let id = result.versionID,
+               try await library.isCurrentTrack(stableKey: detail.entry.trackStableKey,
+                                                 playbackIdentity: playback.liveTrackIdentity),
+               !playback.isShowingSearchPreview {
+                _ = try await playback.adoptCurrentLyricsVersion(versionID: id)
+            }
+            return result
+        }, onConfirmLocked: { nil }, onCancelLocked: {}, embedded: true,
+           onCompare: detail.lyricsVersions.isEmpty && candidates.count < 2 ? nil : {
+               comparison = library.comparison(with: candidate, alternatives: candidates, detail: detail)
+           }, onAdopted: { dismiss() })
+    }
+
+    private func restartSearch() {
+        searching = true
+        searchID = UUID()
     }
 }
 

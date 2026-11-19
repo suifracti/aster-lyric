@@ -869,7 +869,8 @@ public final class LyricsSearchManager: @unchecked Sendable {
                 automaticAdoptions.append(agreed)
             }
 
-            if !collectCandidatesOnly, let selected = Self.bestAutomaticAdoption(in: automaticAdoptions) {
+            let eligibleAdoptions = lineTimingHeld ? automaticAdoptions.filter { $0.timingPriority == 2 } : automaticAdoptions
+            if !collectCandidatesOnly, let selected = Self.bestAutomaticAdoption(in: eligibleAdoptions) {
                 var selectedDocument = selected.document
                 // 纯文本换时间轴: the confirmed lyrics are plain text, and another source has
                 // the same words with timing (often under the Japanese title and artist,
@@ -941,7 +942,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         // Localized release titles may have no literal/reading alias at all.
         // One cross-script result from the same artist and near-identical recording
         // length is useful evidence; do not fabricate an "official" title alias.
-        if !collectCandidatesOnly, (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if !collectCandidatesOnly, !lineTimingHeld, (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let localized = rejectedForExplanation.filter { item in
                 !item.decision.hardReject && !item.decision.versionConflict
                     && item.decision.reasons.contains("titleMismatch")
@@ -981,7 +982,7 @@ public final class LyricsSearchManager: @unchecked Sendable {
         // shown instead of a review page. A different singer, another version
         // (live, remix, instrumental, sped up) or a title that only contains
         // the name stay for review.
-        if !collectCandidatesOnly, (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        if !collectCandidatesOnly, !lineTimingHeld, (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            let fallback = Self.bestAvailableFallback(in: reviewCandidates, metadata: meta) {
             let completed = await completeSelection(fallback.document)
             guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics) }

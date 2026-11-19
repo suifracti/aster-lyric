@@ -290,6 +290,25 @@ final class LibraryIdentitySearchContractTests: XCTestCase {
         XCTAssertEqual(LibraryVersionComparison.changedCharacters(in: "👩🏽‍🎨把信搁在窗边。", comparedWith: "👩🏽‍🎨把信放在窗边。"), [3])
     }
 
+    func testVersionComparisonLetsTheReaderChooseHowToAlignExtraLines() {
+        let base: [LibraryPassagePage.Line] = [
+            .init(id: 0, original: "夜的天空", startTime: 0),
+            .init(id: 1, original: "你还是会来", startTime: 2),
+            .init(id: 2, original: "下一个路口再见", startTime: 5)
+        ]
+        let peer: [LibraryPassagePage.Line] = [
+            .init(id: 0, original: "作词：某人", startTime: 0),
+            .init(id: 1, original: "你一定会来", startTime: 2.2),
+            .init(id: 2, original: "下一个路口再见", startTime: 5)
+        ]
+        let text = LibraryVersionComparison.align(base, peer, translations: false, sameOriginal: false)
+        XCTAssertEqual(text.map(\.change), [.onlyBase, .onlyReference, .text, .same])
+        let time = LibraryVersionComparison.align(base, peer, translations: false, sameOriginal: false, alignment: .time)
+        XCTAssertEqual(time.map(\.change), text.map(\.change))
+        let line = LibraryVersionComparison.align(base, peer, translations: false, sameOriginal: false, alignment: .line)
+        XCTAssertEqual(line.map(\.change), [.text, .text, .same])
+    }
+
     func testIdentityGroupingSearchExportAndCrossKeySelection() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("library-identity-search-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

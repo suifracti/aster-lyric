@@ -1107,6 +1107,8 @@ struct LyricsCandidatePreviewSheet: View {
     let onCancelLocked: () -> Void
     var embedded = false
     var adoptionRequest: UUID? = nil
+    var onCompare: (() -> Void)? = nil
+    var onAdopted: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var isSaving = false
     @State private var isLockConfirmationPresented = false
@@ -1117,22 +1119,29 @@ struct LyricsCandidatePreviewSheet: View {
     var body: some View {
         let lines = candidate.previewLines
         let voices = LyricsTimeline.VoicePresentation(in: lines, isSynchronized: showsTiming)
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: embedded ? 8 : 14) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(candidate.title)
-                        .font(.title2.weight(.semibold))
-                    Text("\(candidate.artist) · \(candidate.providerName ?? candidate.source.displayName)")
-                        .foregroundStyle(.secondary)
+                if embedded {
+                    Text(candidate.archiveSourceLabel).font(.headline)
+                } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(candidate.title)
+                            .font(.title2.weight(.semibold))
+                        Text("\(candidate.artist) · \(candidate.providerName ?? candidate.source.displayName)")
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 Text(showsTiming ? candidate.timingTitle : "纯文本")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
+                if let onCompare {
+                    Button("对读版本", systemImage: "rectangle.split.2x1", action: onCompare)
+                        .buttonStyle(.bordered).controlSize(.small)
+                }
             }
 
-            Text("候选预览")
-                .font(.headline)
+            if !embedded { Text("候选预览").font(.headline) }
             if let notice = candidate.arrangementNotice {
                 Text(notice).font(.caption).foregroundStyle(.secondary)
             }
@@ -1148,8 +1157,9 @@ struct LyricsCandidatePreviewSheet: View {
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
             }
+            .font(embedded ? .caption : .body)
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: embedded ? 2 : 10) {
                     ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
                         HStack(alignment: .top, spacing: 12) {
                             Text(showsTiming ? previewTimeLabel(line.timestamp) : "#\(index + 1)")
@@ -1171,8 +1181,10 @@ struct LyricsCandidatePreviewSheet: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .padding(10)
-                        .background(.quaternary.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
+                        .padding(embedded ? 6 : 10)
+                        .background {
+                            if !embedded { RoundedRectangle(cornerRadius: 10).fill(.quaternary.opacity(0.28)) }
+                        }
                     }
                 }
             }
@@ -1243,6 +1255,7 @@ struct LyricsCandidatePreviewSheet: View {
                         break
                     }
                     onCancelLocked()
+                    onAdopted?()
                     if !embedded { dismiss() }
                 case .lockedConflict:
                     conflictingLockedVersionIDs = result.conflictingLockedVersionIDs

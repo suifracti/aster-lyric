@@ -5,9 +5,11 @@ struct LibraryVersionCompareView: View {
     let library: PersonalLyricsLibraryService
     let edit: (LibraryTranslationRevisionDraft) -> Void
     let adopt: ((UUID) -> Void)?
+    let back: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @State private var baseID: UUID
     @State private var peerID: UUID
+    @State private var alignment: LibraryVersionComparison.Alignment = .text
     private struct Pair: Hashable { let base: UUID; let peer: UUID }
     @State private var comparison: LibraryVersionComparison?
     @State private var issue: String?
@@ -17,11 +19,13 @@ struct LibraryVersionCompareView: View {
     @State private var preparing = false
 
     init(request: LibraryCompareRequest, library: PersonalLyricsLibraryService, adopt: ((UUID) -> Void)? = nil,
+         back: (() -> Void)? = nil,
          edit: @escaping (LibraryTranslationRevisionDraft) -> Void) {
         self.request = request
         self.library = library
         self.edit = edit
         self.adopt = adopt
+        self.back = back
         _baseID = State(initialValue: request.base.id)
         _peerID = State(initialValue: request.firstReference)
     }
@@ -41,12 +45,32 @@ struct LibraryVersionCompareView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Label(translations ? "译文对读" : "原词对读", systemImage: "rectangle.split.2x1")
-                        .font(.callout.weight(.medium)).foregroundStyle(WorkspacePalette.ink)
+                    if let back {
+                        Button("返回预览", systemImage: "chevron.left", action: back)
+                            .buttonStyle(.plain).foregroundStyle(WorkspacePalette.ink)
+                    } else {
+                        Label(translations ? "译文对读" : "原词对读", systemImage: "rectangle.split.2x1")
+                            .font(.callout.weight(.medium)).foregroundStyle(WorkspacePalette.ink)
+                    }
                     Spacer()
-                    Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)
+                    if translations == false {
+                        Menu {
+                            Picker("对齐方式", selection: $alignment) {
+                                ForEach(LibraryVersionComparison.Alignment.allCases) { mode in
+                                    Text(mode.rawValue).tag(mode)
+                                }
+                            }
+                        } label: { Label(alignment.rawValue, systemImage: "line.3.horizontal") }
+                        .menuStyle(.borderlessButton).fixedSize()
+                        .accessibilityLabel("对齐方式")
+                    }
+                    if back == nil {
+                        Button("关闭") { dismiss() }.buttonStyle(.plain).keyboardShortcut(.cancelAction)
+                    }
                 }
-                Text(request.entry.title).font(.system(size: 25, weight: .semibold, design: .serif)).textSelection(.enabled)
+                if back == nil {
+                    Text(request.entry.title).font(.title2.weight(.semibold)).textSelection(.enabled)
+                }
                 HStack(alignment: .top, spacing: 14) {
                     versionPicker("底稿", version: base, selection: Binding(get: { baseID }, set: { newID in
                         if newID == peerID { peerID = baseID }
@@ -79,13 +103,15 @@ struct LibraryVersionCompareView: View {
         }
         .frame(minWidth: 450, idealWidth: 730, minHeight: 390, idealHeight: 560)
         .background(WorkspacePalette.paper)
-        .task(id: pair) {
+        .tint(WorkspacePalette.ink)
+        .task(id: CompareKey(pair: pair, alignment: alignment)) {
             comparison = nil
             issue = nil
             focusedRow = nil
             guard let reference else { return }
             do {
-                let loaded = try await library.compare(trackKey: request.entry.trackStableKey, base: base, with: reference)
+                let loaded = try await library.compare(trackKey: request.entry.trackStableKey, base: base,
+                                                       with: reference, alignment: alignment)
                 try Task.checkCancellation()
                 if let row = readingRow(in: loaded) {
                     focusedRow = row.id
@@ -95,6 +121,11 @@ struct LibraryVersionCompareView: View {
             } catch where !Task.isCancelled { issue = error.localizedDescription }
             catch { }
         }
+    }
+
+    private struct CompareKey: Hashable {
+        let pair: Pair
+        let alignment: LibraryVersionComparison.Alignment
     }
 
     private func versionPicker(_ role: String, version: LibraryCompareVersion, selection: Binding<UUID>) -> some View {
@@ -135,7 +166,7 @@ struct LibraryVersionCompareView: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(visible) { row in
-                                rowView(row, wide: bounds.size.width >= 620, canPick: comparison.canPickTranslationLines,
+                                rowView(row, wide: bounds.size.width >= 570, canPick: comparison.canPickTranslationLines,
                                         isReadingRow: row.id == reading?.id)
                                     .id(row.id)
                                 Divider()

@@ -55,6 +55,7 @@ public final class LyricsSessionController: ObservableObject {
     private let isPreload: Bool
     private let isBatch: Bool
     var localVoiceReference: (@Sendable (Track) async -> LyricsCandidate?)?
+    var localTimingReference: (@Sendable (Track) async -> LyricsCandidate?)?
     private var confirmedVoiceAnnotations: [UUID: String] = [:]
     private(set) var voiceAnnotationRevision: UInt64 = 0
     private var batchSaveDisposition: LyricsPersistenceSaveDisposition?
@@ -323,6 +324,19 @@ public final class LyricsSessionController: ObservableObject {
                 }
             }
 
+            if outcome == nil, !Task.isCancelled, automaticallySearch, !forceRefresh, !reviewOnly,
+               cachedReference?.isUserProtected != true, let lookup = self?.localTimingReference,
+               let local = await lookup(track), !Task.isCancelled, local.identity == identity {
+                let document = local.makeDocument()
+                if LyricsWordTimingUpgrade.hasWordTiming(document) {
+                    let enriched = await Task.detached(priority: .userInitiated) {
+                        document.replacingLines(LyricsLayerEnricher.enrich(lines: document.lines))
+                    }.value
+                    outcome = SearchOutcome(result: .match(enriched), diagnostics: [], alternatives: [local])
+                    cachedReference = nil
+                }
+            }
+
             if outcome == nil, !Task.isCancelled {
                 if automaticallySearch {
                     let protectsRefresh = forceRefresh && cachedReference?.isUserProtected == true
@@ -501,8 +515,9 @@ public final class LyricsSessionController: ObservableObject {
                     LyricsE2ELog.log(
                         "SESSION persistence save rev=\(requestRevision) disposition=\(String(describing: saved?.disposition)) lines=\(document.lines.count)"
                     )
-                    // This search already preferred word timing; no upgrade check this run.
-                    if let id = saved?.versionID { Self.wordTimingUpgradeAttempts.insert(id) }
+                    if let id = saved?.versionID, !LyricsWordTimingUpgrade.wantsUpgrade(document) {
+                        Self.wordTimingUpgradeAttempts.insert(id)
+                    }
                 } catch {
                     let message = error.localizedDescription
                     LyricsE2ELog.log("PERSISTENCE save failed rev=\(requestRevision) error=\(message)")
@@ -1402,17 +1417,26 @@ public final class LyricsSessionController: ObservableObject {
         LyricsE2ELog.log("SESSION word-timing upgrade search source=\(held.document.source) provider=\(held.document.providerSourceID ?? "") rev=\(expectedRevision)")
         wordTimingUpgradeTask = Task { @MainActor [weak self, searchManager] in
             let started = Date()
-            let outcome = await searchManager.search(
-                track: track,
-                identity: identity,
-                aliases: aliases,
-                lineTimingHeld: true
-            )
-            let elapsed = String(format: "%.2f", Date().timeIntervalSince(started))
+            let local = await self?.localTimingReference?(track)?.makeDocument()
             guard !Task.isCancelled, let self, self.activeIdentity == identity, self.revision == expectedRevision,
                   self.activeLyricsVersionID == heldVersionID else { return }
+            var candidate = local.flatMap {
+                LyricsWordTimingUpgrade.isCompatible(held: held.document, upgrade: $0) ? $0 : nil
+            }
+            if candidate == nil {
+                let outcome = await searchManager.search(
+                    track: track, identity: identity, aliases: aliases, lineTimingHeld: true
+                )
+                var documents = [LyricsDocument]()
+                if case .match(let selected) = outcome.result { documents.append(selected) }
+                documents += outcome.alternatives.filter { $0.timingTitle == "逐字" }.map { $0.makeDocument() }
+                candidate = documents.first { LyricsWordTimingUpgrade.isCompatible(held: held.document, upgrade: $0) }
+            }
+            let elapsed = String(format: "%.2f", Date().timeIntervalSince(started))
+            guard !Task.isCancelled, self.activeIdentity == identity, self.revision == expectedRevision,
+                  self.activeLyricsVersionID == heldVersionID else { return }
             Self.wordTimingUpgradeAttempts.insert(heldVersionID)
-            guard case .match(let candidate) = outcome.result, candidate.identity == identity else { return }
+            guard let candidate else { return }
             do {
                 guard let timed = try await repository.attachWordTiming(from: candidate, to: heldVersionID, track: track),
                       !Task.isCancelled, self.activeIdentity == identity, self.revision == expectedRevision,

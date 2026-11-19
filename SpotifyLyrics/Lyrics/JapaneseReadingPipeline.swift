@@ -396,14 +396,20 @@ struct JapaneseRubyPresentation {
         self.originalText = originalText
         self.kanaText = kanaText ?? reading?.kanaText
         self.romajiText = romajiText ?? reading?.romajiText
+        let tokens: [LyricRubyToken]?
         if let preferredRubyTokens, !preferredRubyTokens.isEmpty,
            preferredRubyTokens.map(\.surface).joined() == originalText {
-            rubyTokens = preferredRubyTokens
+            tokens = preferredRubyTokens
         } else if let reading, reading.isTokenAligned, reading.originalText == originalText {
-            let tokens = reading.tokens.flatMap { JapaneseReadingPipeline.rubyTokens(for: $0) }
-            rubyTokens = tokens.map(\.surface).joined() == originalText ? tokens : nil
+            let resolved = reading.tokens.flatMap { JapaneseReadingPipeline.rubyTokens(for: $0) }
+            tokens = resolved.map(\.surface).joined() == originalText ? resolved : nil
         } else {
-            rubyTokens = nil
+            tokens = nil
+        }
+        if originalText.unicodeScalars.contains(where: { (0x30A1...0x30FA).contains($0.value) }) {
+            rubyTokens = Self.addKatakanaRuby(to: tokens ?? [LyricRubyToken(id: 0, surface: originalText, ruby: nil)])
+        } else {
+            rubyTokens = tokens
         }
     }
 
@@ -425,10 +431,37 @@ struct JapaneseRubyPresentation {
     }
 
     var hasRuby: Bool {
-        rubyTokens?.contains { token in
-            if let ruby = token.ruby, !ruby.isEmpty { return true }
-            return token.surface.unicodeScalars.contains { (0x30A1...0x30FA).contains($0.value) }
-        } ?? false
+        rubyTokens?.contains { !($0.ruby ?? "").isEmpty } ?? false
+    }
+
+    private static func addKatakanaRuby(to tokens: [LyricRubyToken]) -> [LyricRubyToken] {
+        var result: [LyricRubyToken] = []
+        for token in tokens {
+            guard (token.ruby ?? "").isEmpty, token.surface.unicodeScalars.contains(where: {
+                (0x30A1...0x30FA).contains($0.value)
+            }) else {
+                result.append(.init(id: result.count, surface: token.surface, ruby: token.ruby,
+                    kanaSurface: token.kanaSurface, romaji: token.romaji, confidence: token.confidence))
+                continue
+            }
+            var run = ""
+            var isKatakana = false
+            func flush() {
+                guard !run.isEmpty else { return }
+                let ruby = isKatakana ? JapaneseRomanizer.displayKana(run) : nil
+                result.append(.init(id: result.count, surface: run, ruby: ruby, kanaSurface: ruby,
+                                    confidence: token.confidence))
+                run = ""
+            }
+            for character in token.surface {
+                let katakana = character.unicodeScalars.contains { (0x30A1...0x30FA).contains($0.value) }
+                    || (isKatakana && character == "ー")
+                if katakana != isKatakana { flush(); isKatakana = katakana }
+                run.append(character)
+            }
+            flush()
+        }
+        return result
     }
 
     func timedLayout(spans: [TimedTextSpan], fontSize: CGFloat, weight: CGFloat, showsRuby: Bool = true, design: String = "rounded") -> TimedRubyLayout? {

@@ -33,7 +33,7 @@ final class ProviderPositionCalibrationTests: XCTestCase {
 
     func testMissingDesktopArtworkUsesAcceptedRecordingIDForPublicFallback() async throws {
         let id = "AbCdEfGhIjKlMnOpQrStUv"
-        let scripts = CalibrationScriptFixture("spotify:track:OTHER\u{1e}https://example.invalid/wrong.jpg")
+        let scripts = CalibrationScriptFixture("\(id)\u{1e}missing value")
         let artwork = try XCTUnwrap(URL(string: "https://example.invalid/fallback.jpg"))
         var requestedIDs: [String] = []
         let provider = SpotifyDesktopProvider(scriptRunner: { script, _ in await scripts.run(script) },
@@ -44,6 +44,8 @@ final class ProviderPositionCalibrationTests: XCTestCase {
         let track = try XCTUnwrap(snapshot(source: .spotifyDesktop, id: "spotify:track:\(id)").track)
         let fallback = await provider.artworkURL(for: track, source: .spotifyDesktop)
         XCTAssertEqual(fallback, artwork)
+        let repeated = await provider.artworkURL(for: track, source: .spotifyDesktop)
+        XCTAssertEqual(repeated, artwork)
         XCTAssertEqual(requestedIDs, [id])
     }
 

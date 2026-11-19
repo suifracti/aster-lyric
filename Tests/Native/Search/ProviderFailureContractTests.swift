@@ -1195,6 +1195,27 @@ final class ProviderFailureContractTests: XCTestCase {
         XCTAssertEqual(document.source, .kugouExperimental)
     }
 
+    func testStoredLineTimingUsesTheLocalWordTimingBeforeSearchingProviders() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repo = SQLiteLyricsRepository(databaseURL: root.appendingPathComponent("lyrics.sqlite3"))
+        try await repo.prepare()
+        let (track, identity, lineTimed, wordTimed) = wordTimingFixture()
+        let saved = try await repo.save(track: track, identity: identity, document: lineTimed.makeDocument())
+        let probes = ProviderFailureCounter()
+        let provider = ProviderFailureCountingLyricsProvider(name: "酷狗（实验）", result: .noMatch, counter: probes)
+        let session = LyricsSessionController(providers: [provider], repository: repo)
+        session.localTimingReference = { _ in wordTimed }
+        await session.loadForPreloading(track: track)
+        let deadline = Date().addingTimeInterval(1)
+        while session.lyrics.first?.hasTimedSpans != true, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(session.activeLyricsVersionID, saved.versionID)
+        XCTAssertTrue(session.lyrics.allSatisfy(\.hasTimedSpans))
+        XCTAssertEqual(probes.value, 0)
+    }
+
     func testStoredWordUpgradeKeepsTheLyricsVersionAndItsTranslation() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("word-upgrade-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }

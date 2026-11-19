@@ -317,6 +317,13 @@ public struct LyricsCandidate: Identifiable, Equatable, Sendable {
         )
     }
 
+    var archiveSourceLabel: String {
+        switch source {
+        case .local, .unknown: return providerName ?? source.displayName
+        default: return source.displayName
+        }
+    }
+
     /// A text confirmation cannot certify timing from another tempo recording.
     public var requiresTextOnlyPreview: Bool {
         matchExplanation.contains { $0.hasPrefix("spedUpConflict ") }

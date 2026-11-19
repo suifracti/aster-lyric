@@ -14,6 +14,7 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
     private let applicationIsInstalled: @MainActor () -> Bool
     private let applicationIsRunning: @MainActor () -> Bool
     private let publicArtworkLookup: (@MainActor (String) async -> URL?)?
+    private var artworkURLs: [String: URL] = [:]
 
     private static let refreshScriptTimeout: TimeInterval = 3
     private static let commandScriptTimeout: TimeInterval = 5
@@ -51,21 +52,28 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
 
     /// A one-off lookup for the recording accepted by playback state.
     public func artworkURL(for track: ProviderTrack, source: PlaybackSourceIdentity) async -> URL? {
-        guard source == .spotifyDesktop, isRunning, let id = track.id else { return nil }
+        guard source == .spotifyDesktop, isRunning || publicArtworkLookup != nil,
+              let trackID = TrackIdentity.spotifyRequestTrackID(track.id)
+                ?? TrackIdentity.spotifyRequestTrackID(track.spotifyURL?.absoluteString) else { return nil }
+        if let known = artworkURLs[trackID] { return known }
         let script = """
         if application "Spotify" is not running then return ""
         tell application "Spotify"
             return (id of current track as text) & (character id 30) & (artwork url of current track as text)
         end tell
         """
-        let raw = try? await execute(script: script)
-        guard !Task.isCancelled, isRunning else { return nil }
+        let raw = isRunning ? try? await execute(script: script) : nil
+        guard !Task.isCancelled else { return nil }
         if let fields = raw?.components(separatedBy: fieldSeparator),
-           fields.count == 2, fields[0] == id, let url = Self.parseURL(fields[1]) {
+           fields.count == 2, TrackIdentity.spotifyRequestTrackID(fields[0]) == trackID,
+           let url = Self.parseArtworkURL(fields[1]) {
+            artworkURLs[trackID] = url
             return url
         }
-        guard let publicArtworkLookup, let trackID = SpotifyPublicArtwork.trackID(from: id) else { return nil }
+        guard let publicArtworkLookup else { return nil }
         let artwork = await publicArtworkLookup(trackID)
+        guard !Task.isCancelled else { return nil }
+        artworkURLs[trackID] = artwork
         LyricsE2ELog.log("ARTWORK oembed id=\(trackID) found=\(artwork != nil)")
         return artwork
     }
@@ -247,7 +255,7 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
         let artist = fields[3].trimmingCharacters(in: .whitespacesAndNewlines)
         let album = fields[4].trimmingCharacters(in: .whitespacesAndNewlines)
         let duration = Self.normalizedDuration(Self.parseNumber(fields[5]) ?? 0)
-        let artworkURL = Self.parseURL(fields[6])
+        let artworkURL = Self.parseArtworkURL(fields[6])
         let spotifyURL = Self.parseURL(fields[7])
         let id = fields[8].trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -306,6 +314,11 @@ public final class SpotifyDesktopProvider: PlaybackProvider {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return URL(string: trimmed)
+    }
+
+    private static func parseArtworkURL(_ value: String) -> URL? {
+        guard let url = parseURL(value), ["https", "http"].contains(url.scheme ?? ""), url.host != nil else { return nil }
+        return url
     }
 
     private static func appleScriptNumber(_ value: TimeInterval) -> String {

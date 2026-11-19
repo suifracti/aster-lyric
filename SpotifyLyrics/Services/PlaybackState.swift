@@ -276,6 +276,7 @@ public final class PlaybackState: ObservableObject {
         )
         if lyricsProvider == nil {
             session.localVoiceReference = { await LyrimuseLyricsCache.lookup(for: $0, voicesOnly: true) }
+            session.localTimingReference = { await LyrimuseLyricsCache.lookup(for: $0) }
         }
         let previewSession = LyricsSessionController(
             providers: lyricsProviders,
@@ -283,6 +284,7 @@ public final class PlaybackState: ObservableObject {
             spotifyArtistResolver: lyricsProvider == nil ? .shared : nil,
             sourceHealth: lyricsProvider == nil ? .shared : nil
         )
+        previewSession.localTimingReference = session.localTimingReference
         let translationRepository = (resolvedRepository as? any TranslationRepository)
             ?? UnavailableTranslationRepository()
         let translation = TranslationSessionController(
@@ -1180,12 +1182,18 @@ public final class PlaybackState: ObservableObject {
         lyricsSession.searchAdditionalVersions(track: currentTrack, identity: identity)
     }
 
-    func searchArchiveLyricsVersions(for track: Track, onLocal: (LyricsCandidate) -> Void) async -> [LyricsCandidate] {
+    func searchArchiveLyricsVersions(for track: Track,
+                                     onCandidates: @escaping @MainActor @Sendable ([LyricsCandidate]) -> Void) async -> [LyricsCandidate] {
         let identity = TrackIdentity(track: track)
         let manager = LyricsSearchManager(providers: preloadLyricsProviders, spotifyArtistResolver: .shared)
-        async let online = manager.search(track: track, identity: identity, collectCandidatesOnly: true)
+        let aliases = (try? await lyricsRepository.loadAliases(stableKey: identity.stableKey)) ?? []
+        async let online = manager.search(track: track, identity: identity, aliases: aliases, collectCandidatesOnly: true,
+            onCandidates: { candidates in
+                guard !Task.isCancelled else { return }
+                await onCandidates(candidates)
+            })
         let reference = await LyrimuseLyricsCache.lookup(for: track)
-        if let reference, !Task.isCancelled { onLocal(reference) }
+        if let reference, !Task.isCancelled { onCandidates([reference]) }
         let outcome = await online
         guard !Task.isCancelled else { return [] }
         let results = outcome.alternatives + (reference.map { [$0] } ?? [])

@@ -8,6 +8,14 @@ import XCTest
 /// tempo-timed line follow, censored words, lyric-end evidence, seek snap
 /// and seek hold.
 final class ListeningBatchOneTests: XCTestCase {
+    func testKatakanaGetsHiraganaRubyWhileKeepingTheOriginalSurface() {
+        let text = "「マジ」だよ Online"
+        let view = JapaneseRubyPresentation(originalText: text, reading: nil)
+        XCTAssertEqual(view.rubyTokens?.map(\.surface).joined(), text)
+        XCTAssertEqual(view.rubyTokens?.compactMap(\.ruby), ["まじ"])
+        XCTAssertTrue(view.hasRuby)
+    }
+
     @MainActor
     func testAppleMusicArtworkKeepsRecentCoversWithinItsBudget() async throws {
         let directory = NativeTestRuntime.root.appendingPathComponent(UUID().uuidString)

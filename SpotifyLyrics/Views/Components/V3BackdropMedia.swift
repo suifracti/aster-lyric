@@ -175,6 +175,7 @@ enum SpotifyPublicArtwork {
     }
 
     static func coverURL(trackID: String) async -> URL? {
+        guard let trackID = Self.trackID(from: trackID) else { return nil }
         var parts = URLComponents(string: "https://open.spotify.com/oembed")!
         parts.queryItems = [URLQueryItem(name: "url", value: "https://open.spotify.com/track/" + trackID)]
         guard let url = parts.url else { return nil }
