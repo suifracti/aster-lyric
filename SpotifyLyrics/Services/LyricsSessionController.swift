@@ -360,6 +360,21 @@ public final class LyricsSessionController: ObservableObject {
                     )
                     searchDuration = Date().timeIntervalSince(searchStartedAt)
                     if protectsRefresh, let cached = cachedReference {
+                        var currentDocument = cached.document
+                        if queryOverrideSnapshot == nil, !cached.isLockedOrEdited,
+                           let repository = repository as? SQLiteLyricsRepository,
+                           let versionID = cached.versionID, let hash = cached.sourceContentHash,
+                           case .match(let refreshed) = searched.result,
+                           searched.diagnostics.contains(where: { $0.provider.hasSuffix("@localized-title-translation") }),
+                           let updated = Self.copySourceTranslations(from: refreshed, to: cached.document) {
+                            do {
+                                if try await repository.storeRefreshedSourceTranslations(updated, versionID: versionID, sourceHash: hash) {
+                                    currentDocument = updated
+                                }
+                            } catch {
+                                LyricsE2ELog.log("SESSION localized subtitle save failed: \(error.localizedDescription)")
+                            }
+                        }
                         var alternatives = searched.alternatives
                         if alternatives.isEmpty, case .match(let document) = searched.result {
                             alternatives = [LyricsCandidate(id: document.providerSourceID ?? UUID().uuidString,
@@ -369,7 +384,7 @@ public final class LyricsSessionController: ObservableObject {
                                 providerSourceID: document.providerSourceID, spotifyTrackID: document.spotifyTrackID,
                                 isrc: document.isrc, explicitlyTimedLineIndices: document.explicitlyTimedLineIndices)]
                         }
-                        outcome = SearchOutcome(result: .match(cached.document), diagnostics: searched.diagnostics, alternatives: alternatives)
+                        outcome = SearchOutcome(result: .match(currentDocument), diagnostics: searched.diagnostics, alternatives: alternatives)
                     } else if reviewOnly, case .match(let document) = searched.result {
                         let candidate = LyricsCandidate(id: document.providerSourceID ?? UUID().uuidString,
                             identity: identity, title: document.title ?? track.title, artist: document.artist ?? track.artist,
@@ -525,6 +540,23 @@ public final class LyricsSessionController: ObservableObject {
                 }
             }
         }
+    }
+
+    private static func copySourceTranslations(from refreshed: LyricsDocument, to stored: LyricsDocument) -> LyricsDocument? {
+        guard refreshed.identity == stored.identity, refreshed.source == stored.source,
+              refreshed.isSynchronized == stored.isSynchronized, refreshed.lines.count == stored.lines.count,
+              !LyricSourceTranslation.languages(in: refreshed.lines).isEmpty else { return nil }
+        let pairs = zip(stored.lines, refreshed.lines)
+        // SQLite fills missing end times from the next line on save. Compare
+        // the text and starts, and keep every stored timing field.
+        guard pairs.allSatisfy({ $0.originalText == $1.originalText && $0.timestamp == $1.timestamp }) else { return nil }
+        return stored.replacingLines(pairs.map { previous, next in
+            var line = previous
+            let known = Set(line.sourceTranslations.map(\.language))
+            line.sourceTranslations += next.sourceTranslations.filter { !known.contains($0.language) }
+            if (line.translationText ?? "").isEmpty { line.translationText = next.translationText }
+            return line
+        })
     }
 
     public func beginLoadingPlaceholder(identity: TrackIdentity, message: String = "") {

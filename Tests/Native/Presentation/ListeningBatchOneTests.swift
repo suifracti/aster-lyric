@@ -1002,6 +1002,20 @@ final class ListeningBatchOneTests: XCTestCase {
         XCTAssertNotEqual(decide(track: "Again", "stb", 185.504, candidate: "もう一度", "stb", 185.904).tier, .autoMedium)
     }
 
+    func testWrittenAndSymbolicPercentageTitlesMatchWithRecordingEvidence() {
+        let matched = decide(track: "百分之零", "橙汁, 迟亦骁, 97Virus", 176.367,
+                             candidate: "0%", "橙汁", 176)
+        XCTAssertEqual(matched.tier, .autoMedium, matched.reasons.joined(separator: ","))
+        for (title, artist, duration) in [
+            ("1%", "橙汁", 176.0), ("0%", "七羽", 176.0), ("0%", "橙汁", 180.0),
+            ("0% (Live)", "橙汁", 176.0), ("0%", "橙汁, 七羽", 176.0)
+        ] {
+            let result = decide(track: "百分之零", "橙汁, 迟亦骁, 97Virus", 176.367,
+                                candidate: title, artist, duration)
+            XCTAssertFalse([.autoMedium, .autoHigh].contains(result.tier), result.reasons.joined(separator: ","))
+        }
+    }
+
     func testTitleOnlyQueryAndBilingualTitlesStillAdoptTheSameRecording() {
         // Found by title alone, but title, singer and length all agree.
         let shikiura = decide(track: "叶わぬ恋じゃ終われない！", "ハコニワリリィ", 190.96,

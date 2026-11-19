@@ -1709,6 +1709,87 @@ final class LyricsTimingAndEarlyDisplayTests: XCTestCase {
         "言えなかった言葉をそっと胸にしまう", "雨上がりの街に二人の影が伸びてゆく", "繰り返せない藍と知ったんだ"
     ]
 
+    @MainActor
+    func testJapaneseTitleCompanionFillsOnlyAlignedTranslationsOnBothSelectionPaths() async throws {
+        for playbackDuration in [217.0, 200.0] {
+            let track = Track(title: "GIJIKOI", artist: "Haruki Hamano", album: "", duration: playbackDuration)
+            let identity = TrackIdentity(track: track)
+            var timed = verses.enumerated().map {
+                LyricLine(timestamp: Double($0.offset) * 32 + 10, originalText: $0.element)
+            }
+            timed[1].translationText = "已存译文"
+            let source = LyricsCandidate(id: "lr", identity: identity, title: "ギジコイ - GIJIKOI", artist: track.artist,
+                album: "", duration: 217, lines: timed, isSynchronized: true, source: .lrclib, confidence: 0.8)
+            var donorLines = timed.enumerated().map { index, line -> LyricLine in
+                .init(timestamp: line.timestamp + 0.25, originalText: line.originalText, translationText: "候选译文 \(index)")
+            }
+            let split = donorLines.removeFirst()
+            donorLines.insert(contentsOf: [
+                .init(timestamp: split.timestamp, originalText: String(split.originalText.prefix(7)), translationText: "第一段"),
+                .init(timestamp: split.timestamp + 1, originalText: String(split.originalText.dropFirst(7)), translationText: "第二段")
+            ], at: 0)
+            donorLines[4].timestamp += 12
+            let wrongTake = LyricsCandidate(id: "live", identity: identity, title: "ギジコイ", artist: "浜野はるき",
+                album: "Live at Tokyo", duration: 217, lines: donorLines.map { line in
+                    var copy = line; copy.translationText = "现场译文"; return copy
+                }, isSynchronized: true, source: .neteaseExperimental, confidence: 1)
+            let matching = LyricsCandidate(id: "studio", identity: identity, title: "ギジコイ", artist: "浜野はるき",
+                album: "ギジコイ (Korean ver.)", duration: 216.875, lines: donorLines,
+                isSynchronized: true, source: .neteaseExperimental, confidence: 0.75)
+            let queries = CompanionQueryLog()
+            let providers: [any LyricsProvider] = [
+                ProviderFailureFixedLyricsProvider(name: "LRCLIB", result: .candidates([source])),
+                JapaneseTitleTestProvider(result: .candidates([wrongTake, matching]), log: queries)
+            ]
+            let package = LyricsSearchManager(providers: providers)
+            let outcome = await package.search(track: track, identity: identity, onProvisional: { _ in
+                await queries.showOriginal()
+            })
+            guard case .match(let document) = outcome.result else { return XCTFail("expected a match, got \(outcome.result)") }
+            XCTAssertEqual(document.source, .lrclib)
+            XCTAssertEqual(document.lines.map(\.id), timed.map(\.id))
+            XCTAssertEqual(document.lines.map(\.timestamp), timed.map(\.timestamp))
+            XCTAssertEqual(document.lines[0].translationText, "第一段 第二段")
+            XCTAssertEqual(document.lines[0].sourceTranslation(in: "und"), "第一段 第二段")
+            XCTAssertEqual(document.lines[1].translationText, "已存译文")
+            XCTAssertEqual(document.lines[2].translationText, "候选译文 2")
+            XCTAssertNil(document.lines[3].translationText)
+            let extraQueries = await queries.japaneseQueries
+            XCTAssertEqual(extraQueries, [true], "publish the chosen original before one localized lookup")
+
+            if playbackDuration == 217 {
+                let repo = SQLiteLyricsRepository(databaseURL: NativeTestRuntime.root.appendingPathComponent("companion-\(UUID()).sqlite3"))
+                try await repo.prepare()
+                let saved = try await repo.saveAutomaticallySelected(track: track, identity: identity, document: source.makeDocument(),
+                    decision: .init(identity: identity, tier: "autoHigh", hardReject: false, versionConflict: false))
+                let versionID = try XCTUnwrap(saved.versionID)
+                let hash = try XCTUnwrap(saved.sourceContentHash)
+                let before = try await repo.loadBestStored(track: track, identity: identity)
+                let held = try XCTUnwrap(before)
+                XCTAssertFalse(held.isLockedOrEdited)
+                XCTAssertEqual(held.document.lines.map(\.originalText), document.lines.map(\.originalText))
+                XCTAssertEqual(held.document.lines.map(\.timestamp), document.lines.map(\.timestamp))
+                let session = LyricsSessionController(providers: providers, repository: repo)
+                session.retry(track: track, identity: identity)
+                for _ in 0..<140 {
+                    if !session.isSearchInProgress { break }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+                XCTAssertFalse(session.isSearchInProgress)
+                XCTAssertEqual(session.activeLyricsVersionID, versionID)
+                XCTAssertEqual(session.lyrics.first?.translationText, "第一段 第二段")
+                let stored = try await repo.loadTranslationVersions(lyricsVersionID: versionID, targetLanguage: "zh-Hans", sourceContentHash: hash)
+                XCTAssertEqual(stored.first?.lines[0].translatedText, "第一段 第二段")
+                XCTAssertEqual(stored.first?.lines[1].translatedText, "已存译文")
+                XCTAssertEqual(stored.first?.lines[3].translatedText, "")
+                let reopened = try await repo.loadBestStored(track: track, identity: identity)
+                XCTAssertEqual(reopened?.versionID, versionID)
+                XCTAssertEqual(reopened?.document.lines.map(\.timestamp), timed.map(\.timestamp))
+                XCTAssertEqual(reopened?.document.lines.map(\.endTime), held.document.lines.map(\.endTime))
+            }
+        }
+    }
+
     func testPlainLyricsTakeTimingFromAnotherSourceWithTheSameWords() async {
         let track = Track(title: "Less Kiss", artist: "TakaseToya", album: "The 1st of the 13th month", duration: 180)
         let identity = TrackIdentity(track: track)
@@ -1761,6 +1842,25 @@ final class LyricsTimingAndEarlyDisplayTests: XCTestCase {
         let seconds = await shown.value
         XCTAssertNotNil(seconds)
         XCTAssertLessThan(seconds ?? 99, 1.5)
+    }
+}
+
+private actor CompanionQueryLog {
+    private var didShowOriginal = false
+    private(set) var japaneseQueries: [Bool] = []
+    func showOriginal() { didShowOriginal = true }
+    func startJapaneseQuery() { japaneseQueries.append(didShowOriginal) }
+}
+
+private struct JapaneseTitleTestProvider: LyricsProvider {
+    let name = "NetEase Experimental"
+    let result: LyricsLookupResult
+    let log: CompanionQueryLog
+
+    func lookup(track: Track, identity: TrackIdentity) async -> LyricsLookupResult {
+        guard track.title == "ギジコイ" else { return .noMatch }
+        await log.startJapaneseQuery()
+        return result
     }
 }
 

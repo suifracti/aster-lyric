@@ -181,6 +181,10 @@ public final class TranslationSessionController: ObservableObject {
                 pendingCandidate = nil
                 state = selectedVersion.map { .loaded($0.record.id) } ?? .idle
                 loadExistingOrAutoTranslate(next, allowAutomaticRequest: enabledNow)
+            } else if next.document.lines.contains(where: { !$0.sourceTranslations.isEmpty }),
+                      previous.document.lines.map(\.sourceTranslations) != next.document.lines.map(\.sourceTranslations),
+                      inFlightKey == nil {
+                loadExistingOrAutoTranslate(next, allowAutomaticRequest: false)
             }
             return
         }

@@ -193,21 +193,13 @@ public enum LyricsLayerEnricher {
             }()
             let rubyTokens = line.rubyTokens ?? generatedRubyTokens
             layers.applyAutomatic(kana: kana, romaji: romaji)
-            return LyricLine(
-                id: line.id,
-                timestamp: line.timestamp,
-                originalText: layers.originalText,
-                endTime: line.endTime,
-                translationText: layers.translationText,
-                romajiText: layers.romajiText,
-                kanaText: layers.kanaText,
-                rubyTokens: rubyTokens,
-                performerID: line.performerID,
-                timedSpans: line.timedSpans,
-                readingRepresentationID: line.readingRepresentationID,
-                readingSurfaceText: line.readingSurfaceText,
-                backgroundText: line.backgroundText
-            )
+            var enriched = line
+            enriched.originalText = layers.originalText
+            enriched.translationText = layers.translationText
+            enriched.romajiText = layers.romajiText
+            enriched.kanaText = layers.kanaText
+            enriched.rubyTokens = rubyTokens
+            return enriched
         }
     }
 }

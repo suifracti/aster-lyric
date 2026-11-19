@@ -157,14 +157,16 @@ public final class LyricsSearchManager: @unchecked Sendable {
     private static func probe(
         _ indexedProvider: IndexedProvider,
         track: Track,
-        identity: TrackIdentity
+        identity: TrackIdentity,
+        timeout: TimeInterval? = nil
     ) async -> ProviderProbeResult {
         let started = Date()
         LyricsE2ELog.log("PROBE start provider=\(indexedProvider.provider.name) queryTitle=\(track.title) queryArtist=\(track.artist)")
         let result = await lookupWithTimeout(
             provider: indexedProvider.provider,
             track: track,
-            identity: identity
+            identity: identity,
+            timeout: timeout
         )
         LyricsE2ELog.log("PROBE finish provider=\(indexedProvider.provider.name) elapsed=\(String(format: "%.3f", Date().timeIntervalSince(started)))s cancelled=\(Task.isCancelled) outcome=\(probeOutcome(result))")
         return ProviderProbeResult(
@@ -383,13 +385,14 @@ public final class LyricsSearchManager: @unchecked Sendable {
     private static func lookupWithTimeout(
         provider: any LyricsProvider,
         track: Track,
-        identity: TrackIdentity
+        identity: TrackIdentity,
+        timeout: TimeInterval? = nil
     ) async -> LyricsLookupResult {
         let race = ProviderLookupRace()
         let result = await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 race.install(continuation)
-                race.start(timeout: provider.timeoutInterval) {
+                race.start(timeout: min(timeout ?? provider.timeoutInterval, provider.timeoutInterval)) {
                     await provider.lookup(track: track, identity: identity)
                 }
             }
@@ -484,6 +487,51 @@ public final class LyricsSearchManager: @unchecked Sendable {
         func alias(for variant: LyricsQueryVariant) -> TrackAlias? {
             guard let id = variant.aliasIDs.first else { return nil }
             return meta.aliases.first { $0.id == id }
+        }
+
+        func completeSelection(_ document: LyricsDocument) async -> LyricsDocument {
+            var completed = document
+            let donors = translationDonors.values.sorted {
+                if $0.providerIndex != $1.providerIndex { return $0.providerIndex < $1.providerIndex }
+                if $0.candidateIndex != $1.candidateIndex { return $0.candidateIndex < $1.candidateIndex }
+                return $0.candidate.id < $1.candidate.id
+            }
+            for donor in donors where donor.document != document {
+                if let merged = Self.mergingTranslationCompanion(donor.candidate, into: completed, metadata: meta) {
+                    completed = merged
+                    diagnostics.append(.init(provider: donor.providerName + "@translation-companion", outcome: .match, duration: 0))
+                }
+            }
+            guard automaticQuery, !lineTimingHeld, !Task.isCancelled,
+                  ![.local, .manualImport, .manualCreate, .manualEdit, .asrMachineGenerated].contains(completed.source),
+                  !completed.isSynchronized || completed.lines.contains(where: Self.needsTranslation),
+                  let title = Self.japaneseCompanionTitle(for: completed, metadata: meta),
+                  let index = configuredProviders.firstIndex(where: { $0.name == "NetEase Experimental" }) else { return completed }
+
+            let provider = configuredProviders[index]
+            let query = title + "\u{1F}" + track.artist
+            let probe: ProviderProbeResult
+            if let cached = probeCache[query]?.first(where: { $0.index == index }) {
+                probe = cached
+            } else {
+                guard !unavailableProviders.contains(index), !sourceHealth.isResting(provider.name) else { return completed }
+                await onProvisional?(Self.finalizeDocument(completed, identity: identity))
+                let localized = Track(id: track.id, title: title, artist: track.artist, album: track.album,
+                                      duration: completed.duration ?? track.duration)
+                probe = await Self.probe(.init(index: index, provider: provider), track: localized,
+                                         identity: identity, timeout: 3)
+            }
+            guard !Task.isCancelled else { return completed }
+            diagnostics.append(.init(provider: provider.name + "@localized-title-companion",
+                                     outcome: Self.diagnosticOutcome(probe.result), duration: probe.duration))
+            for candidate in Self.companionCandidates(probe.result) {
+                if let merged = Self.mergingLocalizedCompanion(candidate, into: completed, title: title, metadata: meta) {
+                    completed = merged
+                    diagnostics.append(.init(provider: provider.name + "@localized-title-translation", outcome: .match, duration: 0))
+                    LyricsE2ELog.log("SEARCH localized-title-companion adopted provider=\(provider.name) lines=\(merged.lines.filter { $0.translationText != nil }.count)")
+                }
+            }
+            return completed
         }
 
         var variantCursor = 0
@@ -833,20 +881,8 @@ public final class LyricsSearchManager: @unchecked Sendable {
                         outcome: .match, duration: 0))
                     LyricsE2ELog.log("SEARCH timing-same-words provider=\(timed.providerName) title=\(timed.candidate.title)")
                 }
-                // Reuse translations that have already arrived. This never
-                // starts another query or delays adoption for a slower source.
-                let donors = translationDonors.values.sorted {
-                    if $0.providerIndex != $1.providerIndex { return $0.providerIndex < $1.providerIndex }
-                    if $0.candidateIndex != $1.candidateIndex { return $0.candidateIndex < $1.candidateIndex }
-                    return $0.candidate.id < $1.candidate.id
-                }
-                for donor in donors where donor.document != selected.document {
-                    if let merged = Self.mergingTranslationCompanion(donor.candidate, into: selectedDocument, metadata: meta) {
-                        selectedDocument = merged
-                        diagnostics.append(LyricsProviderDiagnostic(provider: donor.providerName + "@translation-companion",
-                            outcome: .match, duration: 0))
-                    }
-                }
+                selectedDocument = await completeSelection(selectedDocument)
+                guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics) }
                 // Show the exact recording first. A metadata-only tempo catalog
                 // may have the same words plus a translation on its base release.
                 // Consult that source once, rather than exhaust every query alias.
@@ -879,16 +915,8 @@ public final class LyricsSearchManager: @unchecked Sendable {
                         for probe in companions {
                             diagnostics.append(LyricsProviderDiagnostic(provider: probe.provider.name + "@translation-companion",
                                 outcome: Self.diagnosticOutcome(probe.result), duration: probe.duration))
-                            let candidates: [LyricsCandidate]
-                            switch probe.result {
-                            case .candidates(let list): candidates = list
-                            case .match(let d): candidates = [LyricsCandidate(id: d.providerSourceID ?? "companion",
-                                identity: d.identity, title: d.title ?? "", artist: d.artist ?? "", album: d.album ?? "",
-                                duration: d.duration ?? 0, lines: d.lines, isSynchronized: d.isSynchronized,
-                                source: d.source, confidence: d.confidence, spotifyTrackID: d.spotifyTrackID, isrc: d.isrc)]
-                            default: candidates = []
-                            }
-                            if let merged = candidates.compactMap({ Self.mergingTranslationCompanion($0, into: selectedDocument, metadata: meta) }).first {
+                            if let merged = Self.companionCandidates(probe.result).lazy
+                                .compactMap({ Self.mergingTranslationCompanion($0, into: selectedDocument, metadata: meta) }).first {
                                 selectedDocument = merged
                                 LyricsE2ELog.log("SEARCH translation-companion provider=\(probe.provider.name) matchedLines=\(merged.lines.count) timingTransferred=false")
                             }
@@ -938,7 +966,9 @@ public final class LyricsSearchManager: @unchecked Sendable {
                     queryKind: selected.decision.queryKind,
                     reasons: selected.decision.reasons + ["localizedTitleArtistDuration"],
                     evidence: selected.decision.evidence + [LyricsMatchEvidence(code: "localizedTitleArtistDuration", delta: score - selected.decision.score)])
-                let document = Self.finalizeDocument(selected.document, identity: identity)
+                let completed = await completeSelection(selected.document)
+                guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics) }
+                let document = Self.finalizeDocument(completed, identity: identity)
                 LyricsE2ELog.log("MANAGER AUTO_ADOPT localized-title provider=\(selected.providerName) durationDelta=\(abs(track.duration - selected.candidate.duration)) lines=\(document.lines.count)")
                 return SearchOutcome(result: .match(document), diagnostics: diagnostics,
                     alternatives: [selected.candidate], automaticDecision: decision)
@@ -953,7 +983,9 @@ public final class LyricsSearchManager: @unchecked Sendable {
         // the name stay for review.
         if !collectCandidatesOnly, (queryOverride ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            let fallback = Self.bestAvailableFallback(in: reviewCandidates, metadata: meta) {
-            let document = Self.finalizeDocument(fallback.document, identity: identity)
+            let completed = await completeSelection(fallback.document)
+            guard !Task.isCancelled else { return SearchOutcome(result: .failed(.cancelled), diagnostics: diagnostics) }
+            let document = Self.finalizeDocument(completed, identity: identity)
             let base = fallback.decision
             let decision = LyricsMatchDecision(tier: .autoMedium, score: base.score, versionConflict: false,
                 queryKind: base.queryKind, reasons: base.reasons + ["bestAvailableFallback"],
@@ -1106,6 +1138,146 @@ public final class LyricsSearchManager: @unchecked Sendable {
         }
     }
 
+    private static func needsTranslation(_ line: LyricLine) -> Bool {
+        !line.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (line.translationText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private static func companionCandidates(_ result: LyricsLookupResult) -> [LyricsCandidate] {
+        switch result {
+        case .candidates(let list): return list
+        case .match(let document):
+            return [.init(id: document.providerSourceID ?? "companion", identity: document.identity,
+                          title: document.title ?? "", artist: document.artist ?? "", album: document.album ?? "",
+                          duration: document.duration ?? 0, lines: document.lines, isSynchronized: document.isSynchronized,
+                          source: document.source, confidence: document.confidence, providerSourceID: document.providerSourceID,
+                          spotifyTrackID: document.spotifyTrackID, isrc: document.isrc, language: document.language)]
+        default: return []
+        }
+    }
+
+    private static func japaneseCompanionTitle(for document: LyricsDocument, metadata: TrackMetadata) -> String? {
+        let title = metadata.track.title
+        guard ScriptDetector.detect(title) == .latin else { return nil }
+        if let alternate = LyricsSafeMatcher.japaneseCompanionTitle(from: document.title ?? "", for: title) {
+            return alternate
+        }
+        return metadata.aliases.first {
+            $0.field == .title && ($0.isOfficial || $0.source == .user)
+                && ScriptDetector.detect($0.value) == .kanjiHiraganaKatakana
+        }?.value
+    }
+
+    private static func translationLineKey(_ text: String) -> String {
+        let folded = text.folding(options: [.caseInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+        return String(String.UnicodeScalarView(folded.unicodeScalars.filter {
+            CharacterSet.alphanumerics.contains($0) || CharacterSet.nonBaseCharacters.contains($0)
+        }))
+    }
+
+    /// The Japanese spelling expands discovery. Content and recording evidence
+    /// still decide which lyrics can donate timing or translation.
+    private static func mergingLocalizedCompanion(_ donor: LyricsCandidate, into document: LyricsDocument,
+                                                   title: String, metadata: TrackMetadata) -> LyricsDocument? {
+        let referenceDuration = document.duration ?? metadata.track.duration
+        let donorTags = Set(TrackTextNormalizer.extractVersionTags(fromTitle: donor.album))
+        guard donor.identity == document.identity, donor.isSynchronized, !donor.requiresTextOnlyPreview,
+              TrackTextNormalizer.normalize(donor.title) == TrackTextNormalizer.normalize(title),
+              donorTags.isDisjoint(with: [.live, .remix, .cover, .instrumental, .piano, .karaoke]),
+              !declaresExcludedVersion(donor), referenceDuration > 0, donor.duration > 0,
+              abs(donor.duration - referenceDuration) <= 2 else { return nil }
+
+        let decision = LyricsSafeMatcher.decide(candidate: donor, metadata: metadata)
+        let targetArtist = TrackTextNormalizer.artistTokens(document.artist ?? metadata.track.artist).primary
+        let donorArtist = TrackTextNormalizer.artistTokens(donor.artist).primary
+        let differentScripts = Set([ScriptDetector.detect(targetArtist), ScriptDetector.detect(donorArtist)])
+            == [.latin, .kanjiHiraganaKatakana]
+        let knownArtist = TrackTextNormalizer.normalizeArtistToken(targetArtist) == TrackTextNormalizer.normalizeArtistToken(donorArtist)
+            || !Set(decision.reasons).isDisjoint(with: fallbackArtistEvidence)
+        guard !decision.versionConflict, !targetArtist.isEmpty, !donorArtist.isEmpty,
+              knownArtist || differentScripts,
+              decision.evidence.allSatisfy({ !$0.hardReject || ($0.code == "primaryArtistConflict" && differentScripts) }) else { return nil }
+
+        let originalKeys = document.lines.map { translationLineKey($0.originalText) }
+        let donorRows = donor.lines.compactMap { line -> (line: LyricLine, key: String)? in
+            let key = translationLineKey(line.originalText)
+            return key.isEmpty ? nil : (line, key)
+        }
+        guard donorRows.count >= 3, donorRows.allSatisfy({ $0.line.timestamp.isFinite && $0.line.timestamp >= 0 }),
+              zip(donorRows, donorRows.dropFirst()).allSatisfy({ $0.line.timestamp <= $1.line.timestamp }) else { return nil }
+
+        if !document.isSynchronized {
+            // Keep the original line IDs and text. Borrow timestamps only when
+            // the entire line sequence agrees and fits the playback duration.
+            guard knownArtist, originalKeys == donorRows.map(\.key),
+                  donorRows.allSatisfy({ ($0.line.endTime ?? $0.line.timestamp) <= metadata.track.duration + 2 }) else { return nil }
+            let lines = zip(document.lines, donorRows).map { original, row in
+                var line = original
+                line.timestamp = row.line.timestamp
+                line.endTime = row.line.endTime
+                line.timedSpans = line.originalText == row.line.originalText ? row.line.timedSpans : nil
+                if needsTranslation(line), let text = row.line.translationText, !text.isEmpty {
+                    let translation = LyricSourceTranslation(language: nil, text: text)
+                    line.translationText = translation.text
+                    line.sourceTranslations.append(translation)
+                }
+                return line
+            }
+            return donor.makeDocument().replacingLines(lines)
+        }
+
+        let originals = lyricShingles(lines: document.lines), candidate = lyricShingles(donor)
+        guard min(originals.count, candidate.count) >= 40,
+              Double(originals.intersection(candidate).count) >= 0.8 * Double(max(originals.count, candidate.count)) else { return nil }
+
+        var lines = document.lines
+        var donorCursor = 0
+        var translated = false
+        for index in lines.indices where needsTranslation(lines[index]) {
+            let start = lines[index].timestamp
+            let nextStart = index + 1 < lines.count ? lines[index + 1].timestamp : .infinity
+            let lower = index > 0 ? max(start - 1, (lines[index - 1].timestamp + start) / 2) : start - 1
+            let upper = min(start + 1, (start + nextStart) / 2)
+            guard !originalKeys[index].isEmpty else { continue }
+            while donorCursor < donorRows.count, donorRows[donorCursor].line.timestamp < lower { donorCursor += 1 }
+            var matches: [(last: Int, translation: String)] = []
+            for first in donorRows.indices.dropFirst(donorCursor) {
+                guard donorRows[first].line.timestamp < upper else { break }
+                var key = ""
+                var parts: [String] = []
+                for last in first..<min(first + 3, donorRows.count) {
+                    let row = donorRows[last]
+                    guard last == first || row.line.timestamp < nextStart,
+                          let text = row.line.translationText?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !text.isEmpty else { break }
+                    key += row.key
+                    parts.append(text)
+                    if key == originalKeys[index] {
+                        matches.append((last, parts.joined(separator: " ")))
+                        break
+                    }
+                    if !originalKeys[index].hasPrefix(key) { break }
+                }
+            }
+            if matches.count == 1, let match = matches.first {
+                let translation = LyricSourceTranslation(language: nil, text: match.translation)
+                lines[index].translationText = translation.text
+                lines[index].sourceTranslations.append(translation)
+                donorCursor = match.last + 1
+                translated = true
+            }
+        }
+        guard translated else { return nil }
+        // Untagged translations already carried by the chosen body belong in the
+        // same companion version if we have not replaced them.
+        for index in lines.indices where lines[index].sourceTranslations.isEmpty {
+            if let text = lines[index].translationText, !text.isEmpty {
+                lines[index].sourceTranslations = [.init(language: nil, text: text)]
+            }
+        }
+        return document.replacingLines(lines)
+    }
+
     /// Only transfers the translation layer after every target line is found in
     /// order. Provider timestamps, spans, original text and IDs are never copied.
     static func mergingTranslationCompanion(_ donor: LyricsCandidate, into document: LyricsDocument,
@@ -1125,22 +1297,16 @@ public final class LyricsSearchManager: @unchecked Sendable {
             && decision.reasons.contains("tempoBaseTitleExact")
             && targetTags.symmetricDifference(donorTags).subtracting([.spedUp, .remaster]).isEmpty
         guard !decision.hardReject, sameRecording || tempoCompanion else { return nil }
-        func key(_ text: String) -> String {
-            let folded = text.folding(options: [.caseInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
-            return String(String.UnicodeScalarView(folded.unicodeScalars.filter {
-                CharacterSet.alphanumerics.contains($0) || CharacterSet.nonBaseCharacters.contains($0)
-            }))
-        }
-        let donorKeys = donor.lines.map { key($0.originalText) }
+        let donorKeys = donor.lines.map { translationLineKey($0.originalText) }
         if sameRecording {
-            let targetKeys = document.lines.map { key($0.originalText) }.filter { !$0.isEmpty }
+            let targetKeys = document.lines.map { translationLineKey($0.originalText) }.filter { !$0.isEmpty }
             guard targetKeys.count >= 3, targetKeys == donorKeys.filter({ !$0.isEmpty }) else { return nil }
         }
         var cursor = 0
         var translated = 0
         var merged: [LyricLine] = []
         for line in document.lines {
-            let wanted = key(line.originalText)
+            let wanted = translationLineKey(line.originalText)
             if wanted.isEmpty { merged.append(line); continue }
             guard let index = donorKeys.indices.dropFirst(cursor).first(where: { donorKeys[$0] == wanted }) else { return nil }
             cursor = index + 1

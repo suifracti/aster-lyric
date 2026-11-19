@@ -1408,6 +1408,18 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         }
     }
 
+    func storeRefreshedSourceTranslations(_ document: LyricsDocument, versionID: UUID, sourceHash: String) throws -> Bool {
+        try ensurePrepared()
+        return try withTransaction {
+            guard !Task.isCancelled, let version = try fetchLyricsVersion(versionID: versionID),
+                  !version.isLocked, !version.isManuallyEdited,
+                  let source = try fetchSourceLyrics(versionID: versionID), source.hash == sourceHash,
+                  source.lines.map(\.originalText) == document.lines.map(\.originalText) else { return false }
+            try storeSourceTranslations(document, versionID: versionID, sourceHash: sourceHash)
+            return true
+        }
+    }
+
     /// Copy complete embedded text once into independent version history. The
     /// original lyric_lines stay untouched; BEGIN IMMEDIATE serializes two
     /// controllers opening the same source concurrently.

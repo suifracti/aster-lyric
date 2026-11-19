@@ -161,6 +161,8 @@ public enum LyricsSafeMatcher {
             // Keep every word (including version labels); only a standalone
             // dash separator is equivalent to the existing bracket separators.
             add("titleTypographyExact", 0.28)
+        } else if titlesExpressSamePercentage(candidate.title, metadata.track.title) {
+            add("titlePercentageExact", 0.28)
         } else if titlesHaveCompleteParallelForm(candidate.title, metadata.track.title) {
             // Both halves must be the same full reading, never a contained substring.
             add("titleParallelExact", 0.28)
@@ -472,6 +474,22 @@ public enum LyricsSafeMatcher {
             && metadataTags.symmetricDifference(candidateTags).subtracting([.spedUp, .remaster]).isEmpty
             && candidate.lines.contains { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
+        // Some releases spell out a percent in one catalog (百分之零 / 0%).
+        // A source can omit collaborators, but the primary artist, runtime and
+        // synchronized lyrics must agree before the shorter credit is adopted.
+        func constrainPercentageTitle(_ tier: LyricsMatchTier, ceiling: LyricsMatchTier = .autoMedium) -> LyricsMatchTier {
+            guard reasons.contains("titlePercentageExact"), !hasStrongIndependentIdentity,
+                  !hardReject, !versionConflict else { return tier }
+            guard queryVariant?.queryKind != .manualOverride,
+                  metadataPrimaryMatches, !reasons.contains("extraFeaturedArtist"),
+                  metadataDuration > 0, candidateDuration > 0, abs(metadataDuration - candidateDuration) <= 1,
+                  candidate.isSynchronized, reasons.contains("lyricsEndFits"),
+                  Set(TrackTextNormalizer.extractVersionTags(fromTitle: candidate.album))
+                    .isDisjoint(with: [.live, .cover, .remix, .instrumental, .karaoke, .piano])
+                  else { return Self.minTier(tier, .candidates) }
+            return Self.minTier(.autoMedium, ceiling)
+        }
+
         func constrainSpotifyCreditedArtistReading(_ tier: LyricsMatchTier) -> LyricsMatchTier {
             guard reasons.contains("spotifyCreditedArtistReadingExact") else { return tier }
             let exactTitle = reasons.contains("titleExact") || reasons.contains("titleTypographyExact")
@@ -599,6 +617,7 @@ public enum LyricsSafeMatcher {
             if queryVariant?.queryKind != .manualOverride && queryVariant?.queryKind != .titleOnlyLoose {
                 tier = promotePublisherPage(promoteSameMaster(tier))
             }
+            tier = constrainPercentageTitle(tier, ceiling: ceiling)
             return LyricsMatchDecision(
                 tier: tier,
                 score: clamp(score),
@@ -709,6 +728,7 @@ public enum LyricsSafeMatcher {
         if queryVariant?.queryKind != .manualOverride && queryVariant?.queryKind != .titleOnlyLoose {
             tier = promotePublisherPage(promoteSameMaster(tier))
         }
+        tier = constrainPercentageTitle(tier)
         // Lines after the song ends are never adopted on their own.
         if reasons.contains("lyricsEndOvershoot") {
             tier = minTier(tier, .candidates)
@@ -740,19 +760,10 @@ public enum LyricsSafeMatcher {
         func forms(_ raw: String) -> [String]? {
             let text = raw.folding(options: [.widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            for pattern in [#"^(.+?)\s+[-–—]\s+(.+)$"#, #"^([^()]+?)\s*\(([^()]+)\)$"#] {
-                guard let regex = try? NSRegularExpression(pattern: pattern),
-                      let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-                      let a = Range(match.range(at: 1), in: text), let b = Range(match.range(at: 2), in: text) else { continue }
-                let first = String(text[a]).trimmingCharacters(in: .whitespacesAndNewlines)
-                let second = String(text[b]).trimmingCharacters(in: .whitespacesAndNewlines)
-                // One whole Japanese reading and one Latin rendering, not two
-                // arbitrary strings separated by a dash/bracket.
-                guard (latinSpacingKey(first) != nil) != (latinSpacingKey(second) != nil),
-                      titlesHaveSameReading(first, second) else { return nil }
-                return [first, second]
-            }
-            return nil
+            guard let (first, second) = parallelTitleParts(text, includesParentheses: true),
+                  (latinSpacingKey(first) != nil) != (latinSpacingKey(second) != nil),
+                  titlesHaveSameReading(first, second) else { return nil }
+            return [first, second]
         }
         let left = forms(lhs), right = forms(rhs)
         guard left != nil || right != nil else { return false }
@@ -771,10 +782,7 @@ public enum LyricsSafeMatcher {
     /// label (`曲 - Live`) is never taken for a second name.
     static func titlesAreBilingualPair(_ lhs: String, _ rhs: String) -> Bool {
         func halves(_ raw: String) -> (String, String)? {
-            guard let regex = try? NSRegularExpression(pattern: #"^(.+?)\s+[-–—]\s+(.+)$"#),
-                  let match = regex.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
-                  let a = Range(match.range(at: 1), in: raw), let b = Range(match.range(at: 2), in: raw) else { return nil }
-            let first = raw[a].trimmingCharacters(in: .whitespaces), second = raw[b].trimmingCharacters(in: .whitespaces)
+            guard let (first, second) = parallelTitleParts(raw) else { return nil }
             let scripts = [ScriptDetector.detect(first), ScriptDetector.detect(second)]
             guard scripts.contains(.latin), scripts.contains(where: { $0 == .kanjiHiraganaKatakana }),
                   TrackTextNormalizer.extractVersionTags(fromTitle: first).isEmpty,
@@ -788,6 +796,33 @@ public enum LyricsSafeMatcher {
         if let (a, b) = halves(lhs), halves(rhs) == nil, equal(a, rhs) || equal(b, rhs) { return true }
         if let (a, b) = halves(rhs), halves(lhs) == nil, equal(a, lhs) || equal(b, lhs) { return true }
         return false
+    }
+
+    private static func parallelTitleParts(_ text: String, includesParentheses: Bool = false) -> (String, String)? {
+        var patterns = [#"^(.+?)\s+[-–—]\s+(.+)$"#]
+        if includesParentheses { patterns.append(#"^([^()]+?)\s*\(([^()]+)\)$"#) }
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                  let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+                  let first = Range(match.range(at: 1), in: text),
+                  let second = Range(match.range(at: 2), in: text) else { continue }
+            return (text[first].trimmingCharacters(in: .whitespacesAndNewlines),
+                    text[second].trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+
+    static func japaneseCompanionTitle(from sourceTitle: String, for playbackTitle: String) -> String? {
+        guard ScriptDetector.detect(playbackTitle) == .latin,
+              TrackTextNormalizer.extractVersionTags(fromTitle: sourceTitle).isEmpty else { return nil }
+        if ScriptDetector.detect(sourceTitle) == .kanjiHiraganaKatakana,
+           titlesHaveSameReading(sourceTitle, playbackTitle) { return sourceTitle }
+        guard titlesHaveCompleteParallelForm(sourceTitle, playbackTitle) || titlesAreBilingualPair(sourceTitle, playbackTitle),
+              let (first, second) = parallelTitleParts(
+                sourceTitle.folding(options: .widthInsensitive, locale: Locale(identifier: "en_US_POSIX")),
+                includesParentheses: true
+              ) else { return nil }
+        return [first, second].first { ScriptDetector.detect($0) == .kanjiHiraganaKatakana }
     }
 
     static func titleOnlyAddsVersionName(track: String, candidate: String) -> Bool {
@@ -804,6 +839,23 @@ public enum LyricsSafeMatcher {
                               "慢速", "spedup", "slowed", "reverb", "钢琴", "piano", "acoustic", "cover", "翻唱", "demo",
                               "片段", "剪辑", "edit", "mix"]
         return !changesContent.contains { extra.contains($0) }
+    }
+
+    private static func titlesExpressSamePercentage(_ lhs: String, _ rhs: String) -> Bool {
+        guard lhs.hasPrefix("百分之") || rhs.hasPrefix("百分之") else { return false }
+        let pair = [lhs, rhs].map {
+            $0.folding(options: .widthInsensitive, locale: nil).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let symbolic = pair.first(where: { $0.hasSuffix("%") }),
+              let written = pair.first(where: { $0.hasPrefix("百分之") }) else { return false }
+        let digits = symbolic.dropLast()
+        guard let percent = Int(digits), (0...999).contains(percent), digits == String(percent) else { return false }
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "zh_Hans")
+        formatter.numberStyle = .spellOut
+        guard let name = formatter.string(from: NSNumber(value: percent)) else { return false }
+        return written.dropFirst(3).replacingOccurrences(of: "〇", with: "零")
+            == name.replacingOccurrences(of: "〇", with: "零")
     }
 
     private static func titlesHaveSameTypography(_ lhs: String, _ rhs: String) -> Bool {

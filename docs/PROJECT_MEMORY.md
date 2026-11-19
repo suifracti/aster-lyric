@@ -59,6 +59,7 @@
 | 来源里有词却被拒、歌手写法不同（括号别名、只对上一部分）、同名歌手误进核对 | L-014；artistGroups、parentheticalArtistNames、artistNameParts、primaryArtistPartialName |
 | 英文歌名对片假名歌名（Timeless/タイムレス）、汉字人名读不出、别人有时间轴我们只有纯文本 | L-036；LyricsSafeMatcher.loanwordKey、titleLoanwordReading、durationExact、featuredArtistExactLength |
 | 停在「核对歌词版本」：多出合作署名、双名客串、(Explicit)、翻译歌名但同母带、伴奏同长 | L-037；promoteSameMaster、sameMasterTolerance、TrackTextNormalizer 伴奏标记 |
+| 日文歌名有译文而英文歌名搜不到、百分数歌名在来源里换了写法 | L-022 2026-11-19 接续；localized-title-companion、titlePercentageExact |
 | 已存纯文本永远升级不到时间轴、只按歌名搜到的全对结果仍要核对、「原名 - 英文名」 | L-038；plainAlreadyHeld/waitsForTiming、looseQueryConfirmed、titleBilingualPair、publisherPageExact |
 | 别人有逐字我们只有逐行、已存逐行不会升级成逐字、行切换比别人慢一点 | L-041；probeNetworkProviders lineTimingHeld、LyricsWordTimingUpgrade、TimedLineBounds（QRC/KRC/YRC 行尾）、scheduleWordTimingUpgrade、PlaybackState.lineSwitchLead、scheduleLineBoundaryWake |
 | AI 译文读起来像照日文断行切开、主语缺失、太书面、和我自己的译法不像 | L-042；`personalV2Instructions` full-audit-v3-r1、Codex 合同里的跨行条款 |
@@ -397,6 +398,8 @@ Desktop 对同首歌报出不同 duration、合作歌手被误判或时长差提
   - **翻译失败**：截图里的「上次请求已发起但没有可恢复的完整结果」，是本轮做性能测试时反复重启 App、打断了正在进行的翻译。翻译慢主要因为用户选了 GPT-6.2-Sol + 超高思考强度。看不到在哪个对话：以前每次翻译都用一个新的临时目录作为工作目录、用完就删，而 Codex 按工作目录归类对话，所以找不到。现在固定为 Application Support 下的「Aster Lyric 翻译对话」（`CodexTranslationWorkspace`，空目录，只读运行）。译文面板在选 GPT/ChatGPT 时写明对话名和文件夹，可以在 Finder 中显示；思考强度为高或超高时提示会很慢。
   - **封面亮度改为直接测图**：调色板给出的亮度远低于实际图片（一张米色封面实际均值 0.65），所以亮背景判断不准。`V3BackdropBrightness.cover(url)` 改为取封面原图缩到 16×16 后的平均亮度；有视频时仍用视频亮区的值。用户把亮背景保护整体关了（`v3.brightCoverShadow.enabled.v1`=0），核对时临时打开、截图后已恢复。
   - **亮背景「只调文字」**：`v3BrightProtectionTextOnly`。画面不压暗，背景亮度超过 0.5 时歌词改用深色字（`V3LyricInk.dark`）加白色细描边；当前句的封面色用 `V3ReadableAccent.darkColor` 加深，只作用于歌词，播放卡和工具栏仍用浅色的封面色。文字面板改为三档「关 / 只调文字 / 文字和背景」。歌词行里原来写死的白色都改成从环境读取 `v3LyricInk`。
+- **2026-11-19 接续，日文标题补译文和百分数标题识别。**《GIJIKOI》采用 LRCLIB 的原词后，从可信日文并列标题「ギジコイ」补查一次网易云。先显示原词，再按时间邻域与原文对应补译文，源分行不同可合并同一句的译文片段。搜索自动采用与回退路径共用补查。隔离的真实来源测试中，1.63 秒首次显示原词，补查用 0.86 秒，52 行里补到 46 行。自动存档的同一版可用「重新搜索歌词」补存词源译文，沿用原版本与时间轴。存档会从下一行补出缺省行尾，比较原文和行首即可；读音补全应直接复制行再更新读音，避免丢掉词源译文字段。
+- **《百分之零》/ 橙汁。** QQ 音乐已回传《0%》的 QRC，原先被 `titleMismatch` 拒绝。整首标题是同一个百分数、主歌手一致、时长差 ≤1 秒且同步歌词与曲长吻合时可自动采用；来源少列合作歌手也可匹配。隔离实测用单歌手和完整署名均命中 QQ `000uSIBD3tnEOS` 的 55 行逐字稿，截图对应句的行首为 43.74 秒。
 - **播放时主线程过忙（2026-11-19，用户选择「先做性能」）。** 真实 App 播放中（原版环境光、视频背景、波形进度条、无情境）整进程 CPU 64–98%，`ps -M` 显示几乎全在主线程。用 `-O` 构建结果相同，所以不是没开优化的问题。
   - **查法**（本机关闭了开发者模式，Instruments 无法附加，下面这套可以直接复用）：临时探针构建：① 在大视图 body 里调用 `Self._printChanges()`，统计每 10 秒的重算次数；② 交换 `-[NSView setNeedsLayout:]`，按类和所在窗口统计、并抽样调用栈；③ 用环境变量开关逐块拿掉画面（歌词列、背景、播放卡、工具栏、整窗）后实测 CPU。探针代码不提交。
   - **发现**：主窗口根视图每秒被标记需要布局约 250–800 次，几乎每帧都在做一次完整的 SwiftUI 布局和渲染，而 body 重算每秒只有 2–3 次。①触发源之一：`TimelineView(.animation(minimumInterval: 0.25))` 并不会按间隔限流，它所在的宿主仍每帧请求更新；播放卡的时间标签每秒约 200 次，波形进度条也是同样写法。②开销主要来自歌词列：拿掉歌词列后 CPU 降到约 13%，整窗清空约 1%。拿掉背景、播放卡、工具栏，或关闭换行动画，都没有明显差别。
