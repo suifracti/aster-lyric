@@ -210,9 +210,14 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private var backgroundLuminance: Double {
         backdropBrightness.clipLuminance.map { $0 * 0.74 } ?? coverLuminance
     }
+    /// 亮背景保护「只调文字」: dark ink over a bright picture; the picture is left alone.
+    private var lyricInk: V3LyricInk {
+        settings.v3BrightCoverShadowEnabled && settings.v3BrightProtectionTextOnly && !isCompositionPreview
+            && backgroundLuminance > 0.5 ? .dark : .light
+    }
     /// 亮背景: a quiet darkening of a bright picture so white and coloured lyrics both read.
     private var brightBackgroundScrim: Double {
-        guard settings.v3BrightCoverShadowEnabled, !isCompositionPreview else { return 0 }
+        guard settings.v3BrightCoverShadowEnabled, !settings.v3BrightProtectionTextOnly, !isCompositionPreview else { return 0 }
         return min(0.45, max(0, (backgroundLuminance - 0.35) * 1.1))
     }
     @State private var analyzedCover: (url: URL, subject: V3ArtworkSubject.Analysis)?
@@ -1665,6 +1670,12 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
         .equatable()
         .environment(\.v3LyricWidthScale, lyricWidthScale)
         .environment(\.v3LyricStyle, presentation.lyricStyle)
+        .environment(\.v3LyricInk, lyricInk)
+        // Dark ink takes a deepened cover colour for the sung line; the player and
+        // toolbar keep the light one, since they sit on dark glass.
+        .environment(\.v3CoverAccent, lyricInk.isDark
+            ? (uiAccent.map { V3ReadableAccent.darkColor($0, background: backgroundLuminance) } ?? lyricInk.color)
+            : (uiAccent.map { V3ReadableAccent.color($0, background: backgroundLuminance * (1 - brightBackgroundScrim)) } ?? .white))
         .environmentObject(settings)
         .environment(\.v3PreviewPresentation, compositionStyle)
         .environment(\.lyricIslandScene, compositionScene)
@@ -1867,6 +1878,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
                 Text(state.translationProgressMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+            if settings.aiTranslationConfiguration.engineID == TranslationEngineID.codexChatGPT.rawValue {
+                codexConversationNote
             }
             if !compact && !allowsTranslationRequests {
                 Text("没有剩余模型请求预算；苹果系统翻译及已保存版本仍可使用。")
@@ -2358,6 +2372,27 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             case .library, .search, .playlists: EmptyView()
             }
         }
+    }
+
+    /// Where the ChatGPT translation runs, and why a deep 思考强度 takes long.
+    private var codexConversationNote: some View {
+        let effort = settings.aiTranslationConfiguration.codexReasoningEffort
+        return VStack(alignment: .leading, spacing: 4) {
+            if ["high", "xhigh", "max"].contains(effort) {
+                Label("思考强度越高越慢：整首可能要等几分钟。想快一些可以选「低」或「中」。", systemImage: "hourglass")
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Label("对话在 ChatGPT 的 Codex 里，名为「Aster · Lyric · 翻译与读音」，归在「\(CodexTranslationWorkspace.url.lastPathComponent)」文件夹下。",
+                      systemImage: "bubble.left.and.text.bubble.right")
+                Button("显示文件夹") {
+                    if let url = try? CodexTranslationWorkspace.folder() { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var visualControls: V3VisualControls { V3VisualControls(settings: settings, displayedPresentation: presentation) }

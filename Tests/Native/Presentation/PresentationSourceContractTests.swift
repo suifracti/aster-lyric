@@ -1066,3 +1066,25 @@ final class V3TickScheduleTests: XCTestCase {
         XCTAssertTrue(window.contains("V3AnimationIsland {\n        AppleMusicImmersiveV3LyricsViewport("), "the lyrics stay behind their own layout boundary")
     }
 }
+
+final class V3LyricInkTests: XCTestCase {
+    private func luminance(_ color: Color) -> Double {
+        let ns = NSColor(color).usingColorSpace(.sRGB)!
+        return 0.2126 * Double(ns.redComponent) + 0.7152 * Double(ns.greenComponent) + 0.0722 * Double(ns.blueComponent)
+    }
+
+    func testDarkInkDeepensTheCoverColourBelowTheBrightPicture() {
+        let pale = Color(red: 0.75, green: 0.85, blue: 0.95)
+        XCTAssertLessThanOrEqual(luminance(V3ReadableAccent.darkColor(pale, background: 0.7)), 0.3)
+        XCTAssertTrue(V3LyricInk.dark.isDark)
+        XCTAssertEqual(V3LyricInk.dark.outline, .white, "dark words keep a light outline for darker parts of the picture")
+        XCTAssertEqual(V3LyricInk.light.outline, .black)
+    }
+
+    func testTranslationConversationsShareOneFindableFolder() throws {
+        let first = try CodexTranslationWorkspace.folder()
+        let second = try CodexTranslationWorkspace.folder()
+        XCTAssertEqual(first, second)
+        XCTAssertFalse(first.path.hasPrefix(FileManager.default.temporaryDirectory.path))
+    }
+}

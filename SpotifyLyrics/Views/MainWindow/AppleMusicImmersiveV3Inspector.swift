@@ -844,8 +844,13 @@ struct V3VisualControls {
             V3SegmentedPicker("清晰度", selection: $settings.v3ReadingProtection,
                               options: V3ReadingProtection.allCases.map { ($0.title, $0) })
                 .help("文字阴影只作用于歌词；柔和光晕随封面明暗调整。")
-            Toggle("亮背景自动保护", isOn: $settings.v3BrightCoverShadowEnabled)
-                .help("背景亮的时候（包括封面视频），自动把背景压暗一点、给歌词加阴影，封面色的歌词也会自动调亮到看得清。前景封面不受影响。关闭后保持原样。")
+            V3SegmentedPicker("亮背景", selection: Binding(
+                get: { !settings.v3BrightCoverShadowEnabled ? "off" : settings.v3BrightProtectionTextOnly ? "text" : "full" },
+                set: { value in
+                    settings.v3BrightCoverShadowEnabled = value != "off"
+                    settings.v3BrightProtectionTextOnly = value == "text"
+                }), options: [("关", "off"), ("只调文字", "text"), ("文字和背景", "full")])
+                .help("背景亮的时候（包括封面视频）怎样保证歌词看得清。\n只调文字：画面保持原样，歌词换成深色字、带一圈浅色描边。\n文字和背景：画面稍微压暗，白字加阴影，封面色的歌词自动调亮。\n前景封面都不受影响。")
             V3DisclosureRow(title: "读音与更多", isExpanded: $settings.v3TextAdvancedExpanded) {
                 readingTypeControls
                 V3NumericSlider("当前句光", value: $settings.v3CurrentLineGlow, in: 0...1, step: 0.01, unit: "%", displayScale: 100)

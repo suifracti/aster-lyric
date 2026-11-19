@@ -1699,3 +1699,72 @@ final class LyricsSourceHealthTests: XCTestCase {
         XCTAssertFalse(health.isResting("LRCLIB"), "its answer ends the rest")
     }
 }
+
+/// 2026-11-19: Less Kiss was confirmed only as plain text while NetEase had the same
+/// words, timed and translated, under 「レスなキス / 高瀬統也」; GIJIKOI's timed
+/// lyrics arrived in a second but were shown only after every slower source.
+final class LyricsTimingAndEarlyDisplayTests: XCTestCase {
+    private let verses = [
+        "繰り返す日々の中で君を探していた", "ささやかな約束をまだ覚えているよ", "夜明けの色に染まる窓辺で笑っていた",
+        "言えなかった言葉をそっと胸にしまう", "雨上がりの街に二人の影が伸びてゆく", "繰り返せない藍と知ったんだ"
+    ]
+
+    func testPlainLyricsTakeTimingFromAnotherSourceWithTheSameWords() async {
+        let track = Track(title: "Less Kiss", artist: "TakaseToya", album: "The 1st of the 13th month", duration: 180)
+        let identity = TrackIdentity(track: track)
+        let plain = LyricsDocument(identity: identity, title: track.title, artist: track.artist, album: track.album, duration: nil,
+            lines: verses.map { LyricLine(timestamp: 0, originalText: $0) }, isSynchronized: false, source: .linkcore, confidence: 0.9)
+        let timedLines = verses.enumerated().map { LyricLine(timestamp: Double($0.offset) * 25 + 5, originalText: $0.element, translationText: "译文") }
+        let japanese = LyricsCandidate(id: "ne-1", identity: identity, title: "レスなキス", artist: "高瀬統也", album: "", duration: 192,
+            lines: timedLines, isSynchronized: true, source: .neteaseExperimental, confidence: 0.6)
+        let live = LyricsCandidate(id: "ne-2", identity: identity, title: "レスなキス (LIVE TOUR 2024)", artist: "高瀬統也", album: "", duration: 185,
+            lines: timedLines, isSynchronized: true, source: .neteaseExperimental, confidence: 0.6)
+        let outcome = await LyricsSearchManager(providers: [
+            ProviderFailureFixedLyricsProvider(name: "linkcore", result: .match(plain)),
+            ProviderFailureFixedLyricsProvider(name: "netease", result: .candidates([live, japanese]))
+        ]).search(track: track, identity: identity)
+        guard case .match(let document) = outcome.result else { return XCTFail("expected a match, got \(outcome.result)") }
+        XCTAssertTrue(document.isSynchronized)
+        XCTAssertEqual(document.source, .neteaseExperimental)
+        XCTAssertEqual(document.lines.first?.translationText, "译文")
+        XCTAssertEqual(document.lines.last?.timestamp, 130, "the studio take, not the live one")
+    }
+
+    func testTimingThatRunsPastTheTrackIsNotBorrowed() async {
+        let track = Track(title: "Less Kiss", artist: "TakaseToya", album: "", duration: 100)
+        let identity = TrackIdentity(track: track)
+        let plain = LyricsDocument(identity: identity, title: track.title, artist: track.artist, album: "", duration: nil,
+            lines: verses.map { LyricLine(timestamp: 0, originalText: $0) }, isSynchronized: false, source: .linkcore, confidence: 0.9)
+        let longer = LyricsCandidate(id: "ne-1", identity: identity, title: "レスなキス", artist: "高瀬統也", album: "", duration: 110,
+            lines: verses.enumerated().map { LyricLine(timestamp: Double($0.offset) * 25 + 5, originalText: $0.element) },
+            isSynchronized: true, source: .neteaseExperimental, confidence: 0.6)
+        let outcome = await LyricsSearchManager(providers: [
+            ProviderFailureFixedLyricsProvider(name: "linkcore", result: .match(plain)),
+            ProviderFailureFixedLyricsProvider(name: "netease", result: .candidates([longer]))
+        ]).search(track: track, identity: identity)
+        guard case .match(let document) = outcome.result else { return XCTFail("expected a match, got \(outcome.result)") }
+        XCTAssertFalse(document.isSynchronized, "a last line at 130 s cannot belong to a 100 s track")
+    }
+
+    func testTimedLyricsUnderTheExactTitleAndArtistShowBeforeSlowSourcesFinish() async {
+        let track = Track(title: "GIJIKOI", artist: "Haruki Hamano", album: "GIJIKOI", duration: 200)
+        let identity = TrackIdentity(track: track)
+        let farLength = LyricsCandidate(id: "lr-1", identity: identity, title: "GIJIKOI", artist: "Haruki Hamano", album: "", duration: 217,
+            lines: verses.enumerated().map { LyricLine(timestamp: Double($0.offset) * 30 + 10, originalText: $0.element) },
+            isSynchronized: true, source: .lrclib, confidence: 0.6)
+        let started = Date()
+        let shown = ShownAt()
+        _ = await LyricsSearchManager(providers: [
+            ProviderFailureFixedLyricsProvider(name: "lrclib", result: .candidates([farLength])),
+            ProviderFailureDelayedLyricsProvider(name: "slow", delay: 2_500_000_000, result: .failed(.serverError(500)))
+        ]).search(track: track, identity: identity, onProvisional: { _ in await shown.mark(Date().timeIntervalSince(started)) })
+        let seconds = await shown.value
+        XCTAssertNotNil(seconds)
+        XCTAssertLessThan(seconds ?? 99, 1.5)
+    }
+}
+
+private actor ShownAt {
+    var value: TimeInterval?
+    func mark(_ seconds: TimeInterval) { if value == nil { value = seconds } }
+}

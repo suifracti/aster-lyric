@@ -369,7 +369,14 @@ public final class LyricsSearchManager: @unchecked Sendable {
             guard candidate.identity == metadata.identity, !candidate.requiresTextOnlyPreview else { return false }
             if candidate.isSynchronized && timingPriority(of: candidate) == 0 { return false }
             let decision = LyricsSafeMatcher.decide(candidate: candidate, metadata: metadata, aliasUsed: metadata.aliases.first { $0.id == variant.aliasIDs.first }, queryVariant: variant)
-            return decision.tier == .autoHigh || decision.tier == .autoMedium
+            if decision.tier == .autoHigh || decision.tier == .autoMedium { return true }
+            // Shown while the search goes on (it may still be replaced): timed lyrics under
+            // the exact title and artist, held back only by evidence such as a different
+            // length. The search ends on this same best candidate anyway; showing it now
+            // saves the wait for every slower source (measured 10–12 s, 2026-11-19).
+            return decision.tier == .candidates && candidate.isSynchronized
+                && !decision.hardReject && !decision.versionConflict
+                && !declaresExcludedVersion(candidate) && agreesOnExactOrParallelTitleAndArtist(decision)
         }).map { finalizeDocument($0.makeDocument(), identity: metadata.identity) }
     }
 
@@ -816,6 +823,16 @@ public final class LyricsSearchManager: @unchecked Sendable {
 
             if !collectCandidatesOnly, let selected = Self.bestAutomaticAdoption(in: automaticAdoptions) {
                 var selectedDocument = selected.document
+                // 纯文本换时间轴: the confirmed lyrics are plain text, and another source has
+                // the same words with timing (often under the Japanese title and artist,
+                // which the metadata matcher cannot pair with Spotify's English ones).
+                if !selectedDocument.isSynchronized,
+                   let timed = Self.timedSameWords(as: selectedDocument, in: evaluatedCandidates, metadata: meta) {
+                    selectedDocument = timed.document
+                    diagnostics.append(LyricsProviderDiagnostic(provider: timed.providerName + "@timing-same-words",
+                        outcome: .match, duration: 0))
+                    LyricsE2ELog.log("SEARCH timing-same-words provider=\(timed.providerName) title=\(timed.candidate.title)")
+                }
                 // Reuse translations that have already arrived. This never
                 // starts another query or delays adoption for a slower source.
                 let donors = translationDonors.values.sorted {
@@ -1313,10 +1330,39 @@ public final class LyricsSearchManager: @unchecked Sendable {
             cameFromCandidates: best.cameFromCandidates, agreement: nil)
     }
 
+    /// A synced copy of plain lyrics already confirmed for this recording. The words
+    /// themselves are the evidence, so the candidate's title and artist may be written
+    /// differently; a different take (live, remix, cover) or a timeline that runs past
+    /// the end of the track is never used.
+    private static func timedSameWords(
+        as plain: LyricsDocument,
+        in evaluated: [EvaluatedCandidate],
+        metadata: TrackMetadata
+    ) -> EvaluatedCandidate? {
+        let words = lyricShingles(lines: plain.lines)
+        let length = metadata.track.duration
+        let usable = evaluated.filter { item in
+            let candidate = item.candidate
+            guard candidate.isSynchronized, !candidate.requiresTextOnlyPreview,
+                  !declaresExcludedVersion(candidate),
+                  item.candidate.identity == metadata.identity else { return false }
+            if length.isFinite, length > 0 {
+                if let last = candidate.lines.last?.timestamp, last > length + 2 { return false }
+                if candidate.duration > 0, abs(candidate.duration - length) > 20 { return false }
+            }
+            return sameWords(words, lyricShingles(candidate))
+        }
+        return usable.max { agreementPrefers($1, over: $0) }
+    }
+
     /// Overlapping eight-character pieces of the words alone, so different
     /// line breaks, spacing and punctuation do not matter.
     private static func lyricShingles(_ candidate: LyricsCandidate) -> Set<String> {
-        let text = candidate.lines.map(\.originalText).joined()
+        lyricShingles(lines: candidate.lines)
+    }
+
+    private static func lyricShingles(lines: [LyricLine]) -> Set<String> {
+        let text = lines.map(\.originalText).joined()
             .folding(options: [.caseInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
         let characters = Array(text.unicodeScalars.filter {
             CharacterSet.alphanumerics.contains($0) || (0x3040...0x30FF).contains($0.value) || (0x4E00...0x9FFF).contains($0.value)
@@ -1331,6 +1377,15 @@ public final class LyricsSearchManager: @unchecked Sendable {
         let smaller = min(lhs.count, rhs.count)
         guard smaller >= 40 else { return false }
         return Double(lhs.intersection(rhs).count) / Double(smaller) >= 0.6
+    }
+
+    private static func agreesOnExactOrParallelTitleAndArtist(_ decision: LyricsMatchDecision) -> Bool {
+        let reasons = Set(decision.reasons)
+        guard reasons.contains("titleExact") || reasons.contains("titleParallelExact") else { return false }
+        return reasons.contains("primaryArtistExact")
+            || reasons.contains("primaryArtistReadingExact")
+            || reasons.contains("primaryArtistAlias")
+            || reasons.contains("spotifyCreditedArtistReadingExact")
     }
 
     private static func agreesOnExactTitleAndArtist(_ decision: LyricsMatchDecision) -> Bool {

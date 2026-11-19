@@ -1300,6 +1300,7 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.v3ResolvedReadingProtection) private var resolvedReadingProtection
+    @Environment(\.v3LyricInk) private var ink
     private var showsReadingShadow: Bool {
         // The window resolves the bright-cover automatic shadow once per
         // composition; without it rows use the raw 清晰度 setting.
@@ -1446,7 +1447,7 @@ private struct AppleMusicImmersiveV3LyricRow: View, Equatable {
         .shadow(color: isActive ? .white.opacity(0.6 * settings.v3CurrentLineGlow) : .clear,
                 radius: 8, x: 0, y: 0)
         // A tight glyph outline keeps bright covers readable without a wide dark halo.
-        .shadow(color: showsReadingShadow ? .black.opacity(0.95) : .clear,
+        .shadow(color: showsReadingShadow || ink.isDark ? ink.outline.opacity(ink.isDark ? 0.85 : 0.95) : .clear,
                 radius: 2.5, x: 0, y: 1)
         .opacity(presentedOpacity)
         .animation(nil, value: isActive)
@@ -1738,7 +1739,8 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
 
     /// Reading, romaji, translation and backing voices of the sung line share its cover colour,
     /// so the whole line reads as one colour; other lines stay white.
-    private var layerTint: Color { isActive ? coverAccent : .white }
+    @Environment(\.v3LyricInk) private var ink
+    private var layerTint: Color { isActive ? coverAccent : ink.color }
 
     private func translationText(_ translation: String) -> some View {
         Text(translation)
@@ -1822,7 +1824,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                         tokens: inlineRubyTokens,
                         baseFont: .system(size: baseSize, weight: rowWeight, design: .rounded),
                         rubyFont: .system(size: rubySize, weight: .regular, design: .rounded),
-                        baseColor: isActive ? coverAccent : .white,
+                        baseColor: isActive ? coverAccent : ink.color,
                         rubyColor: layerTint.opacity(rubyOpacity),
                         rubySpacing: 1,
                         tokenVerticalSpacing: 3,
@@ -1839,7 +1841,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                     showsOriginalAnnotation: true,
                     baseFont: .system(size: baseSize, weight: rowWeight, design: .rounded),
                     annotationFont: .system(size: rubySize, weight: .regular, design: .rounded),
-                    baseColor: isActive ? coverAccent : .white,
+                    baseColor: isActive ? coverAccent : ink.color,
                     annotationColor: layerTint.opacity(rubyOpacity),
                     maxWidth: readableLineWidth
                 )
@@ -1870,7 +1872,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                     #endif
                     Text(semanticDisplayText)
                         .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
-                        .foregroundStyle(isActive ? coverAccent : .white)
+                        .foregroundStyle(isActive ? coverAccent : ink.color)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if preferences.kanaDisplayMode == .independentLine, shouldShowKana,
@@ -1885,7 +1887,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
             } else if shouldShowKana, let kana = displayKanaText {
                 Text(kana)
                     .font(.system(size: baseSize, weight: rowWeight, design: .rounded))
-                    .foregroundStyle(isActive ? coverAccent : .white)
+                    .foregroundStyle(isActive ? coverAccent : ink.color)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -1950,7 +1952,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                     currentTime: 0,
                     baseFont: baseFont,
                     rubyFont: rubyFont,
-                    baseColor: isActive ? coverAccent : .white,
+                    baseColor: isActive ? coverAccent : ink.color,
                     rubyColor: layerTint.opacity(rubyOpacity),
                     rubySpacing: 1,
                     tokenVerticalSpacing: 3,
@@ -1967,7 +1969,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
                 currentTime: 0,
                 baseFont: baseFont,
                 rubyFont: rubyFont,
-                baseColor: isActive ? coverAccent : .white,
+                baseColor: isActive ? coverAccent : ink.color,
                 rubyColor: layerTint.opacity(rubyOpacity),
                 rubySpacing: 1,
                 tokenVerticalSpacing: 3,
@@ -2065,6 +2067,7 @@ private struct AppleMusicImmersiveV3LyricRowContent: View, Equatable {
 }
 
 private struct AppleMusicImmersiveV3TimedRowView: View {
+    @Environment(\.v3LyricInk) private var ink
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.v3CoverAccent) private var coverAccent
     @Environment(\.v3LyricStyle) private var lyricStyle
@@ -2102,7 +2105,7 @@ private struct AppleMusicImmersiveV3TimedRowView: View {
         let text = visualLine.text
         let fraction = visualLine.fillFraction(at: currentTime)
         if showsFill {
-            let dim = Color.white.opacity(lyricStyle == .karaoke ? 0.26 : 0.42)
+            let dim = ink.color.opacity(lyricStyle == .karaoke ? 0.26 : 0.42)
             // 逐字上浮: with word timing the dim words are drawn by the
             // highlight too, so each word rises whole as it is sung.
             let lifting = clock != nil && !reduceMotion && !visualLine.fragments.isEmpty
@@ -2117,7 +2120,7 @@ private struct AppleMusicImmersiveV3TimedRowView: View {
                                                 liftingBase: lifting ? AnyView(Text(text).font(font).foregroundColor(dim)
                                                     .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)) : nil) {
                                 // 卡拉OK: what has been sung is lit, not only coloured.
-                                Text(text).font(font).foregroundColor(lyricStyle == .karaoke ? .white : coverAccent)
+                                Text(text).font(font).foregroundColor(lyricStyle == .karaoke ? ink.color : coverAccent)
                                     .shadow(color: lyricStyle == .karaoke ? coverAccent : .clear, radius: 6)
                                     .shadow(color: lyricStyle == .karaoke ? coverAccent.opacity(0.7) : .clear, radius: 14)
                                     .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
@@ -2141,7 +2144,7 @@ private struct AppleMusicImmersiveV3TimedRowView: View {
         } else {
             Text(text)
                 .font(font)
-                .foregroundColor(.white)
+                .foregroundColor(ink.color)
         }
     }
 
@@ -2234,8 +2237,15 @@ private struct V3TypewriterReveal: ViewModifier {
 }
 
 private struct V3LyricWidthScaleKey: EnvironmentKey { static let defaultValue: CGFloat = 1 }
+private struct V3LyricInkKey: EnvironmentKey { static let defaultValue = V3LyricInk.light }
 private struct V3LyricStyleKey: EnvironmentKey { static let defaultValue = V3LyricStyle.standard }
 extension EnvironmentValues {
+    /// The lyric text colour: white over the picture, dark ink when 亮背景保护 is set
+    /// to change only the text and the picture behind is bright.
+    var v3LyricInk: V3LyricInk {
+        get { self[V3LyricInkKey.self] }
+        set { self[V3LyricInkKey.self] = newValue }
+    }
     var v3LyricWidthScale: CGFloat {
         get { self[V3LyricWidthScaleKey.self] }
         set { self[V3LyricWidthScaleKey.self] = newValue }
@@ -2246,4 +2256,15 @@ extension EnvironmentValues {
         get { self[V3LyricStyleKey.self] }
         set { self[V3LyricStyleKey.self] = newValue }
     }
+}
+
+/// 亮背景保护「只调文字」: dark words with a light outline over a bright picture,
+/// instead of darkening the picture under white words.
+struct V3LyricInk: Equatable {
+    let color: Color
+    let isDark: Bool
+    static let light = V3LyricInk(color: .white, isDark: false)
+    static let dark = V3LyricInk(color: Color(white: 0.07), isDark: true)
+    /// The tight outline that keeps words readable where the picture changes under them.
+    var outline: Color { isDark ? .white : .black }
 }

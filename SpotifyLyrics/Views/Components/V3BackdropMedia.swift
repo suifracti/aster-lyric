@@ -349,4 +349,19 @@ enum V3ReadableAccent {
         }
         return .white
     }
+
+    /// For dark ink over a bright picture: the cover's colour, deepened towards black
+    /// until it is clearly darker than the picture behind it.
+    static func darkColor(_ accent: Color, background luminance: Double) -> Color {
+        let ns = NSColor(accent).usingColorSpace(.sRGB) ?? .black
+        func lum(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> Double { 0.2126 * Double(r) + 0.7152 * Double(g) + 0.0722 * Double(b) }
+        let ceiling = max(0.08, min(0.3, luminance - 0.42))
+        var keep: CGFloat = 1
+        while keep > 0 {
+            let r = ns.redComponent * keep, g = ns.greenComponent * keep, b = ns.blueComponent * keep
+            if lum(r, g, b) <= ceiling { return Color(red: Double(r), green: Double(g), blue: Double(b)) }
+            keep -= 0.05
+        }
+        return Color(white: 0.07)
+    }
 }

@@ -579,9 +579,7 @@ final class AIConversationStore: @unchecked Sendable {
             return session.client
         }
         releaseCodexClient()
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("lyrics-conversation-" + UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
-            attributes: [.posixPermissions: 0o700])
+        let directory = try CodexTranslationWorkspace.folder()
         do {
             let client = try CodexAppServerClient(executable: executable, cwd: directory, timeout: timeout,
                 diagnosticSink: diagnosticSink, attemptID: attemptID, conversationStore: self)
@@ -600,7 +598,8 @@ final class AIConversationStore: @unchecked Sendable {
         guard let session = codexSession else { return }
         codexSession = nil
         session.client.stop()
-        try? FileManager.default.removeItem(at: session.directory)
+        // The shared workspace folder stays: Codex lists the conversations under it.
+        if session.directory != CodexTranslationWorkspace.url { try? FileManager.default.removeItem(at: session.directory) }
     }
 
     deinit { releaseCodexClient() }
@@ -641,10 +640,7 @@ struct CodexAppServerTransport: CodexTranslationTransport {
                             throw error
                         }
                     }
-                    let job = FileManager.default.temporaryDirectory.appendingPathComponent("lyrics-translation-" + UUID().uuidString)
-                    try FileManager.default.createDirectory(at: job, withIntermediateDirectories: false,
-                        attributes: [.posixPermissions: 0o700])
-                    defer { try? FileManager.default.removeItem(at: job) }
+                    let job = try CodexTranslationWorkspace.folder()
                     let client = try CodexAppServerClient(executable: executable, cwd: job, timeout: timeout,
                         diagnosticSink: diagnosticSink, attemptID: attemptID, conversationStore: conversationStore)
                     owner.install(client)
@@ -1239,5 +1235,23 @@ private struct UnavailableProviderTranslationEngine: TranslationEngine, Sendable
 extension TranslationEngineRegistry {
     public static func wrapping(_ service: any AITranslationService) -> any TranslationEngine {
         LegacyTranslationEngineAdapter(service: service)
+    }
+}
+
+/// One stable, empty working folder for translation conversations. Codex groups
+/// conversations by folder; a fresh temporary folder per request (as before
+/// 2026-11-19) left each translation somewhere the user could not find it.
+/// Nothing is written into it; the conversation runs read-only.
+enum CodexTranslationWorkspace {
+    static var url: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("Aster Lyric 翻译对话", isDirectory: true)
+    }
+
+    static func folder() throws -> URL {
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        return url
     }
 }

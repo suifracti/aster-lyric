@@ -1184,6 +1184,11 @@ public final class AppSettingsStore: ObservableObject {
             defaults.set(v3Room.rawValue, forKey: "v3.room.v1")
         }
     }
+    /// 亮背景保护「只调文字」: keep the picture as it is and switch the lyrics to dark
+    /// ink over a bright picture, instead of darkening the picture.
+    @Published public var v3BrightProtectionTextOnly = false {
+        didSet { defaults.set(v3BrightProtectionTextOnly, forKey: "v3.brightProtectionTextOnly.v1") }
+    }
     /// 当前句译文放大: the translation of the line being sung grows to about 0.56 of the
     /// original; the other lines keep their small translation, so the page keeps its hierarchy.
     @Published public var v3ActiveTranslationLarger = true {
@@ -1773,6 +1778,7 @@ public final class AppSettingsStore: ObservableObject {
         self.v3RoomOverrides = V3RoomOverrides(rawValue: defaults.integer(forKey: "v3.roomOverrides.v1"))
         self.v3LyricWidth = defaults.object(forKey: "v3.lyricWidth.v1") as? Double ?? 1
         self.v3ActiveTranslationLarger = defaults.object(forKey: "v3.activeTranslationLarger.v1") as? Bool ?? true
+        self.v3BrightProtectionTextOnly = defaults.bool(forKey: "v3.brightProtectionTextOnly.v1")
         self.v3ChorusSwapsMaterial = defaults.object(forKey: "v3.chorusSwapsMaterial.v1") as? Bool ?? false
         self.v3SpectrumStyle = V3SpectrumStyle(rawValue: defaults.string(forKey: "v3.spectrumStyle.v1") ?? "") ?? .off
         self.floatingHiddenFromCapture = defaults.bool(forKey: "floating.hiddenFromCapture.v1")
