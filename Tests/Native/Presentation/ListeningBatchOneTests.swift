@@ -816,7 +816,8 @@ final class ListeningBatchOneTests: XCTestCase {
                                                                  isSynchronized: true, isPlaying: true)
         XCTAssertEqual(desktop.currentIndex, 2)
         XCTAssertEqual(desktop.visibleIndices, [2, 4])
-        XCTAssertEqual(desktop.voiceLabels, [2: "合唱", 4: "声部 1"])
+        // Numbered voices and the chorus print no words on listening surfaces.
+        XCTAssertEqual(desktop.voiceLabels, [:])
         let track = Track(title: "Fixture", artist: "Duet", album: "", duration: 100)
         let document = LyricsDocument(identity: TrackIdentity(track: track), title: track.title, artist: track.artist,
                                       album: track.album, duration: track.duration, lines: lines,
@@ -824,8 +825,8 @@ final class ListeningBatchOneTests: XCTestCase {
         let capsule = CapsuleLyricsPresentation.selection(lines: lines, currentIndex: 3,
                                                           isSynchronized: true, state: .loaded(document))
         XCTAssertEqual(capsule.currentIndex, 2)
-        XCTAssertEqual(capsule.currentVoiceLabel, "合唱")
-        XCTAssertEqual(capsule.followingVoiceLabel, "声部 1")
+        XCTAssertNil(capsule.currentVoiceLabel)
+        XCTAssertNil(capsule.followingVoiceLabel)
     }
 
     // MARK: 和声
@@ -1232,4 +1233,56 @@ final class ListeningBatchOneTests: XCTestCase {
         let from = decide(track: "星めぐる詩", "suis from Yorushika", 202, candidate: "星めぐる詩", "suis", 202)
         XCTAssertTrue(from.tier == .autoMedium || from.tier == .autoHigh, from.reasons.joined(separator: ","))
     }
+
+    // MARK: 对唱声部与翻译进度
+
+    func testDuetRolesSeparateVoicesAndChorus() {
+        let lines = [
+            LyricLine(timestamp: 1, originalText: "ひとり目", endTime: 2, performerID: "v1"),
+            LyricLine(timestamp: 3, originalText: "ふたり目", endTime: 4, performerID: "v2"),
+            LyricLine(timestamp: 5, originalText: "一緒に", endTime: 6, performerID: "合唱"),
+            LyricLine(timestamp: 7, originalText: "また一人", endTime: 8, performerID: "v1"),
+        ]
+        let voices = LyricsTimeline.VoicePresentation(in: lines)
+        XCTAssertEqual(voices.role(at: 0), .voice(0))
+        XCTAssertEqual(voices.role(at: 1), .voice(1))
+        XCTAssertEqual(voices.role(at: 2), .ensemble)
+        XCTAssertEqual(voices.role(at: 3), .voice(0))
+        let solo = LyricsTimeline.VoicePresentation(in: [LyricLine(timestamp: 1, originalText: "一人", performerID: "v1")])
+        XCTAssertNil(solo.role(at: 0), "a single singer is not a duet")
+        XCTAssertFalse(LyricsTimeline.VoicePresentation.isSingerName("声部 2"))
+        XCTAssertFalse(LyricsTimeline.VoicePresentation.isSingerName("合唱"))
+        XCTAssertTrue(LyricsTimeline.VoicePresentation.isSingerName("さくらみこ"))
+    }
+
+    func testDuetLayoutSetsVoicesOnTheirOwnSides() throws {
+        let source = try String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3Lyrics.swift").standardizedFileURL, encoding: .utf8)
+        XCTAssertTrue(source.contains(".environment(\\.lyricTextAlignment, side)"))
+        XCTAssertTrue(source.contains("case .voice(1): return textAlignment == .leading ? .trailing : .leading"))
+        XCTAssertTrue(source.contains("V3VoiceChip(name: name, tints: voiceTints(role)"))
+    }
+
+    func testTranslationLiveStageOnlyMovesForward() {
+        var stage = AITranslationLiveStage.preparing
+        stage = stage.advanced(to: .thinking)
+        XCTAssertEqual(stage, .thinking)
+        stage = stage.advanced(to: .sent)
+        XCTAssertEqual(stage, .thinking, "a late 已发送 does not step back")
+        stage = stage.advanced(to: .writing(done: 12, total: 40))
+        stage = stage.advanced(to: .writing(done: 9, total: 40))
+        XCTAssertEqual(stage, .writing(done: 12, total: 40))
+        stage = stage.advanced(to: .checking)
+        XCTAssertEqual(stage, .checking)
+    }
+
+    func testStreamedAnswerCountsWrittenLines() {
+        XCTAssertEqual(AITranslationLiveProgress.writtenLines(in: ""), 0)
+        let partial = #"{"lines":[{"lineID":"L0","translation":"甲"},{"lineID":"L1","translation":"乙"},{"line"#
+        XCTAssertEqual(AITranslationLiveProgress.writtenLines(in: partial), 2)
+        XCTAssertEqual(TranslationLiveCard.fraction(.writing(done: 10, total: 40)), 0.25)
+        XCTAssertNil(TranslationLiveCard.fraction(.thinking))
+        XCTAssertEqual(TranslationLiveCard.elapsed(75), "1:15")
+    }
+
 }

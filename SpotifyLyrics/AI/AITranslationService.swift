@@ -63,6 +63,7 @@ enum AITranslationRequestExecution {
         try await repository.updateTranslationRequest(request)
         try Task.checkCancellation()
         let result: AITranslationDraft
+        AITranslationLiveProgress.sink?(.sent)
         do {
             result = try await CodexRPCDiagnostic.$currentAttemptID.withValue(request.attemptID) {
                 try await engine.translate(context: context, sourceContentHash: sourceHash, configuration: configuration)
@@ -73,6 +74,7 @@ enum AITranslationRequestExecution {
             result = try await AppleSystemTranslationEngine().translate(context: context, sourceContentHash: sourceHash, configuration: configuration)
         }
         try Task.checkCancellation()
+        AITranslationLiveProgress.sink?(.checking)
         try validate(result, context: context, sourceHash: sourceHash, configuration: configuration)
         request.phase = .received; request.result = result; request.updatedAt = Date()
         try await repository.updateTranslationRequest(request)
@@ -627,6 +629,7 @@ struct CodexAppServerTransport: CodexTranslationTransport {
              timeout: TimeInterval, outputSchema: [String: Any]) async throws -> CodexTranslationResult {
         let owner = CodexProcessOwner()
         let attemptID = CodexRPCDiagnostic.currentAttemptID
+        let live = AITranslationLiveProgress.sink
         return try await withTaskCancellationHandler(operation: {
             try Task.checkCancellation()
             return try await Task.detached(priority: .userInitiated) {
@@ -637,7 +640,8 @@ struct CodexAppServerTransport: CodexTranslationTransport {
                         let client = try store.retainedCodexClient(executable: executable, timeout: timeout,
                             attemptID: attemptID, diagnosticSink: diagnosticSink)
                         owner.install(client)
-                        defer { client.endRequest() }
+                        client.liveProgress = live
+                        defer { client.liveProgress = nil; client.endRequest() }
                         do {
                             try client.ensureAuthenticated()
                             return try client.translate(prompt: prompt, model: model,
@@ -651,6 +655,7 @@ struct CodexAppServerTransport: CodexTranslationTransport {
                     let client = try CodexAppServerClient(executable: executable, cwd: job, timeout: timeout,
                         diagnosticSink: diagnosticSink, attemptID: attemptID, conversationStore: conversationStore)
                     owner.install(client)
+                    client.liveProgress = live
                     defer { client.stop() }
                     try client.initialize()
                     try client.ensureAuthenticated()
@@ -716,6 +721,8 @@ final class CodexAppServerClient: @unchecked Sendable {
     private var nextID = 1
     private var watchdog: DispatchWorkItem?
     private var deadline: Date
+    /// Set per request by the runner; reports the answer as it streams.
+    var liveProgress: AITranslationLiveProgress.Sink?
     private let diagnosticSink: CodexRPCDiagnostic.Sink
     private let diagnosticLock = NSLock()
     private let traceID = UUID()
@@ -1053,9 +1060,26 @@ final class CodexAppServerClient: @unchecked Sendable {
         diagnose("waiting_for_completion", newPhase: "turn_events")
         var text: String?
         var tokenUsage: AITranslationTokenUsage?
+        let totalLines = prompt.codexWireRequest?.sourceLines.count ?? 0
+        var streamed: [String: String] = [:]
+        var reported = -1
         while true {
             let message = try readMessage()
             guard let event = message["params"] as? [String: Any], event["threadId"] as? String == threadID else { continue }
+            if event["turnId"] as? String == turnID, let liveProgress {
+                let method = message["method"] as? String
+                if method == "item/started", (event["item"] as? [String: Any])?["type"] as? String == "reasoning", reported < 0 {
+                    liveProgress(.thinking)
+                } else if method == "item/agentMessage/delta", let item = event["itemId"] as? String,
+                          let delta = event["delta"] as? String {
+                    streamed[item, default: ""] += delta
+                    let written = min(totalLines, streamed.values.map(AITranslationLiveProgress.writtenLines).max() ?? 0)
+                    if written != reported, totalLines > 0 {
+                        reported = written
+                        liveProgress(.writing(done: written, total: totalLines))
+                    }
+                }
+            }
             if message["method"] as? String == "model/rerouted", event["turnId"] as? String == turnID {
                 abort(.codexUnavailable("翻译被重定向到其他模型；本次已停止"))
                 throw AITranslationError.codexUnavailable("翻译被重定向到其他模型；本次已停止")

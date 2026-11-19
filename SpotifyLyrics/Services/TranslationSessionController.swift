@@ -50,6 +50,9 @@ public final class TranslationSessionController: ObservableObject {
     @Published public private(set) var availableVersions: [StoredTranslationVersion] = []
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var progressMessage = ""
+    /// The running request's step and start, for the panel and toolbar.
+    @Published public private(set) var liveStage: AITranslationLiveStage = .preparing
+    @Published public private(set) var liveStartedAt: Date?
     /// Distinguishes an explicit session-level “无翻译版本” choice from a
     /// hidden translation layer or a context that has not loaded yet.
     @Published public private(set) var isNoSelection = false
@@ -857,6 +860,8 @@ public final class TranslationSessionController: ObservableObject {
         let translationGeneration = requestGeneration
         inFlightKey = context.requestKey
         pendingCandidate = nil
+        liveStage = .preparing
+        liveStartedAt = Date()
         state = .loading
         errorMessage = nil
         switch TranslationEngineID(rawValue: context.configuration.engineID) {
@@ -878,9 +883,17 @@ public final class TranslationSessionController: ObservableObject {
                 try Task.checkCancellation()
                 let durableKey = try AITranslationRequestExecution.key(identity: context.identity, versionID: context.lyricsVersionID,
                     sourceHash: context.sourceContentHash, context: aiContext, configuration: context.configuration)
-                let request = try await AITranslationRequestExecution.run(engine: engine, repository: repository, key: durableKey,
-                    explicitRetry: explicitRequest, context: aiContext, sourceHash: context.sourceContentHash,
-                    configuration: context.configuration, budget: acceptanceBudget, trackKey: context.identity.stableKey)
+                let live: AITranslationLiveProgress.Sink = { [weak self] stage in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.requestGeneration == translationGeneration, case .loading = self.state else { return }
+                        self.liveStage = self.liveStage.advanced(to: stage)
+                    }
+                }
+                let request = try await AITranslationLiveProgress.$sink.withValue(live) {
+                    try await AITranslationRequestExecution.run(engine: engine, repository: repository, key: durableKey,
+                        explicitRetry: explicitRequest, context: aiContext, sourceHash: context.sourceContentHash,
+                        configuration: context.configuration, budget: acceptanceBudget, trackKey: context.identity.stableKey)
+                }
                 guard request.result != nil else { throw AITranslationError.invalidResponse("完整结果缺失") }
                 guard !Task.isCancelled, self?.context?.requestKey == context.requestKey,
                       self?.requestGeneration == translationGeneration else { throw AITranslationError.cancelled }

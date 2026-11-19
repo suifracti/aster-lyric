@@ -555,6 +555,61 @@ struct AppleMusicImmersiveV3LyricsViewport: View, Equatable {
     }
 }
 
+/// Second and third voices take the cover colour turned round the colour wheel,
+/// kept as bright, so both read on the same picture.
+enum V3VoiceTint {
+    private static func hsb(_ color: Color) -> (h: CGFloat, s: CGFloat, b: CGFloat) {
+        let ns = NSColor(color).usingColorSpace(.deviceRGB) ?? .white
+        var h: CGFloat = 0, sat: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        ns.getHue(&h, saturation: &sat, brightness: &b, alpha: &a)
+        return (h, sat, b)
+    }
+
+    /// The first voice: the cover colour, or a soft sky blue when the cover
+    /// colour is a grey that would vanish into the picture.
+    static func lead(_ accent: Color) -> Color {
+        let c = hsb(accent)
+        guard c.s < 0.15 else { return Color(hue: Double(c.h), saturation: Double(max(0.4, c.s)), brightness: Double(max(0.8, c.b))) }
+        return Color(hue: 0.56, saturation: 0.45, brightness: 0.95)
+    }
+
+    static func partner(of accent: Color, turn: CGFloat = 0.36) -> Color {
+        let c = hsb(lead(accent))
+        return Color(hue: Double((c.h + turn).truncatingRemainder(dividingBy: 1)),
+                     saturation: Double(max(0.4, c.s)), brightness: Double(max(0.8, c.b)))
+    }
+}
+
+/// The singer's name over a duet line: a dot in their colour (two for the chorus)
+/// and the name, lit while they sing.
+struct V3VoiceChip: View {
+    let name: String
+    let tints: [Color]
+    let active: Bool
+    let compact: Bool
+    @Environment(\.v3LyricInk) private var ink
+
+    var body: some View {
+        HStack(spacing: 5) {
+            HStack(spacing: -3) {
+                ForEach(tints.indices, id: \.self) { index in
+                    Circle().fill(tints[index]).frame(width: compact ? 6 : 7, height: compact ? 6 : 7)
+                        .overlay(Circle().stroke(.black.opacity(0.25), lineWidth: 0.5))
+                }
+            }
+            Text(name)
+                .font(.system(size: compact ? 10 : 11, weight: .semibold))
+                .tracking(0.4)
+                .foregroundStyle(ink.color.opacity(active ? 0.95 : 0.66))
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 2.5)
+        .background(Capsule().fill((tints.first ?? .white).opacity(active ? 0.24 : 0.12)))
+        .overlay(Capsule().stroke((tints.last ?? .white).opacity(active ? 0.45 : 0.2), lineWidth: 0.6))
+        .animation(.easeOut(duration: 0.2), value: active)
+    }
+}
+
 private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
     @Environment(\.v3CoverAccent) private var coverAccent
     @Environment(\.lyricIslandScene) private var readingScene
@@ -653,17 +708,29 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
                     V3VocalCountdown(window: window, clock: presentationClock)
                         .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
                 }
-                // Duets: the singer's name where the voice changes.
+                let role = voices.role(at: index)
+                let side = voiceAlignment(role)
+                // Duets: a singer's real name where the voice changes, in that voice's
+                // colour. Numbered voices and the chorus carry no words; their side,
+                // colour and bar already tell them apart.
                 if let name = bigLineAvailableHeight != nil && index == currentIndex
-                    ? voices.label(at: index) : voices.labelAtChange(index) {
-                    Text(name)
-                        .font(.system(size: compact ? 10 : 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(index == currentIndex ? 0.92 : 0.62))
-                        .padding(.bottom, -rowSpacing * 0.6)
-                        .frame(maxWidth: .infinity, alignment: textAlignment.lyricFrameAlignment)
+                    ? voices.label(at: index) : voices.labelAtChange(index),
+                   LyricsTimeline.VoicePresentation.isSingerName(name) {
+                    V3VoiceChip(name: name, tints: voiceTints(role), active: index == currentIndex, compact: compact)
+                        .padding(.bottom, -rowSpacing * 0.45)
+                        .offset(x: voiceNudge(role))
+                        .frame(maxWidth: .infinity, alignment: side.lyricFrameAlignment)
                         .accessibilityLabel("演唱：\(name)")
                 }
                 row(for: line, index: index)
+                    .environment(\.lyricTextAlignment, side)
+                    // Room inside the column for the voice bar; the column clips past its edge.
+                    .padding(side == .trailing ? .trailing : .leading, voiceEdgeRoom(role, side: side))
+                    .overlay(alignment: side == .trailing ? .trailing : .leading) {
+                        voiceEdge(role, side: side, active: synchronized && currentIndex == index)
+                    }
+                    .offset(x: voiceNudge(role))
+                    .frame(maxWidth: .infinity, alignment: side.lyricFrameAlignment)
                     .modifier(V3BreathIn(window: settings.v3BreathIn && countdown?.lineIndex == index ? countdown : nil,
                                          clock: presentationClock))
                     .padding(.top, readingScene == .linerNotes && isParagraphStart(index) ? 14 : 0)
@@ -675,6 +742,58 @@ private struct AppleMusicImmersiveV3LyricsDocumentView: View, Equatable {
         .padding(.bottom, verticalPadding)
         .padding(.leading, textAlignment == .leading ? 0 : (compact ? 10 : 18) * (textAlignment == .center ? 0.5 : 1))
         .padding(.trailing, textAlignment == .trailing ? 0 : (compact ? 10 : 18) * (textAlignment == .center ? 0.5 : 1))
+    }
+
+    /// 对唱: each voice keeps its own side, as two singers would stand; the
+    /// chorus meets in the middle. A centred layout leans the voices apart instead.
+    private func voiceAlignment(_ role: LyricsTimeline.VoicePresentation.Role?) -> TextAlignment {
+        guard let role, bigLineAvailableHeight == nil, readingScene != .linerNotes, textAlignment != .center else {
+            return textAlignment
+        }
+        switch role {
+        case .ensemble, .voice(2...): return .center
+        case .voice(1): return textAlignment == .leading ? .trailing : .leading
+        case .voice: return textAlignment
+        }
+    }
+
+    private func voiceNudge(_ role: LyricsTimeline.VoicePresentation.Role?) -> CGFloat {
+        guard textAlignment == .center, bigLineAvailableHeight == nil, readingScene != .linerNotes else { return 0 }
+        switch role {
+        case .voice(0)?: return compact ? -14 : -26
+        case .voice(1)?: return compact ? 14 : 26
+        default: return 0
+        }
+    }
+
+    private func voiceTints(_ role: LyricsTimeline.VoicePresentation.Role?) -> [Color] {
+        switch role {
+        case .voice(0)?: return [V3VoiceTint.lead(coverAccent)]
+        case .voice(1)?: return [V3VoiceTint.partner(of: coverAccent)]
+        case .voice?: return [V3VoiceTint.partner(of: coverAccent, turn: 0.62)]
+        case .ensemble?: return [V3VoiceTint.lead(coverAccent), V3VoiceTint.partner(of: coverAccent)]
+        case nil: return [.white]
+        }
+    }
+
+    private func voiceEdgeRoom(_ role: LyricsTimeline.VoicePresentation.Role?, side: TextAlignment) -> CGFloat {
+        guard role != nil, side != .center, bigLineAvailableHeight == nil else { return 0 }
+        return compact ? 9 : 13
+    }
+
+    /// A thin bar at the outer edge of the sung line, in its voice's colour.
+    @ViewBuilder
+    private func voiceEdge(_ role: LyricsTimeline.VoicePresentation.Role?, side: TextAlignment, active: Bool) -> some View {
+        if let role, active, side != .center, bigLineAvailableHeight == nil {
+            let tints = voiceTints(role)
+            Capsule()
+                .fill(LinearGradient(colors: tints.count > 1 ? tints : tints + tints, startPoint: .top, endPoint: .bottom))
+                .frame(width: 3)
+                .padding(.vertical, 6)
+                .opacity(0.9)
+                .transition(.opacity)
+                .accessibilityHidden(true)
+        }
     }
 
     private func isParagraphStart(_ index: Int) -> Bool {

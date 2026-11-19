@@ -72,7 +72,7 @@ public enum FloatingLyricsPresentationHelper {
         let projection = LyricsTimeline.presentedLyrics(in: lines, currentIndex: currentIndex,
                                                         before: precedingCount, after: followingCount)
         let voiceLabels = Dictionary(uniqueKeysWithValues: projection.visible.compactMap { index in
-            projection.voices.label(at: index).map { (index, $0) }
+            projection.voices.nameLabel(at: index).map { (index, $0) }
         })
         return FloatingLyricsSelection(
             visibleIndices: projection.visible,

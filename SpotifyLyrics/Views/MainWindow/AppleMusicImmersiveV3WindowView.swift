@@ -1943,44 +1943,53 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             TranslationAutomationToggle(settings: settings)
             V3PanelSection(title: "这首歌")
             if case .loading = state.translationState {
-                V3PanelRow(title: "翻译中…") {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Button("取消") { state.cancelTranslation() }.controlSize(.small)
-                    }
-                }
+                TranslationLiveCard(state: state, accent: uiAccent)
+                    .padding(.vertical, 2)
+                    .transition(.opacity)
             } else {
-                HStack(spacing: 6) {
-                    Button("翻译整首") { state.translateCurrentLyrics() }
+                HStack(spacing: 8) {
+                    Button { state.translateCurrentLyrics() } label: {
+                        Label("翻译整首", systemImage: "character.bubble").padding(.horizontal, 2)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(uiAccent ?? .accentColor)
                     Button("重新翻译") { state.retranslateCurrentLyrics() }
-                    Spacer()
+                        .buttonStyle(.bordered)
+                    Spacer(minLength: 4)
                     compareTranslationsButton
                 }
                 .controlSize(.small)
                 .frame(minHeight: V3PanelMetrics.rowHeight)
                 .disabled(!allowsTranslationRequests || !settings.aiTranslationConfiguration.isConfigured || state.liveLyrics.isEmpty)
+                if case .failed = state.translationState {
+                    Label(state.translationState.userFacingMessage, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .textSelection(.enabled)
+                } else if !state.translationProgressMessage.isEmpty {
+                    Label(state.translationProgressMessage, systemImage: "checkmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            if case .failed = state.translationState {
-                Label(state.translationState.userFacingMessage, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .textSelection(.enabled)
-            } else if !state.translationProgressMessage.isEmpty {
-                Text(state.translationProgressMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            if state.translationBatchProgress != nil {
+                TranslationBatchStatus(state: state)
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.06)))
             }
-            HStack {
+            V3PanelSection(title: "更多")
+            HStack(spacing: 12) {
                 TranslationBatchButton(state: state, browser: state.playlistBrowser)
                     .task { state.playlistBrowser.loadQueue() }
-                Spacer()
                 Button("翻译缓存", systemImage: "tray.full") {
                     var location = SettingsLocation(.library)
                     location.opensTranslationCache = true
                     MenuBarLyricsController.shared.openSettings(at: location)
                 }.buttonStyle(.borderless)
+                Spacer(minLength: 0)
             }
-            TranslationBatchStatus(state: state)
+            .font(.caption)
+            .frame(minHeight: 24)
             TranslationConversationButtons(state: state, provider: settings.aiTranslationConfiguration.engineID)
             if !compact && !allowsTranslationRequests {
                 Text("没有剩余模型请求预算；苹果系统翻译及已保存版本仍可使用。")
@@ -2428,6 +2437,9 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
     private func toolbarPanelTrigger(_ panel: ToolbarPopover) -> some View {
         Button { clickToolbarPanel(panel) } label: {
             toolbarEntry(panel.title, symbol: panel.symbol, selected: toolbar.isSelected(panel) || librarySearch.tab?.rawValue == panel.rawValue)
+                .overlay(alignment: .topTrailing) {
+                    if panel == .translation { TranslationToolbarRing(state: state, accent: uiAccent).offset(x: -1, y: 3) }
+                }
         }
         .v3FirstClick { clickToolbarPanel(panel) }
         .help(panel == .picture ? "画面 · / 五档模糊，, / . 微调模糊" : panel == .more ? "更多 · Z / C 调整偏移，X 归零" : panel.title)

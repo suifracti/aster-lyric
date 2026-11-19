@@ -321,8 +321,8 @@ public enum CapsuleLyricsPresentation {
             isSynchronized: true,
             status: nil,
             currentIndex: currentIndex,
-            currentVoiceLabel: projection.voices.label(at: currentIndex),
-            followingVoiceLabel: projection.voices.label(at: followingIndex)
+            currentVoiceLabel: projection.voices.nameLabel(at: currentIndex),
+            followingVoiceLabel: projection.voices.nameLabel(at: followingIndex)
         )
     }
 

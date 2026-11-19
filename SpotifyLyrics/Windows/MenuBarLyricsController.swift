@@ -940,8 +940,8 @@ public final class MenuBarLyricsController: NSObject, ObservableObject {
                 if lines[currentIndex].timedSpans?.isEmpty == false {
                     snapshot.currentTimedLine = lines[currentIndex]
                 }
-                snapshot.currentVoiceLabel = projection.voices.label(at: currentIndex)
-                snapshot.nextVoiceLabel = projection.voices.label(at: nextIndex)
+                snapshot.currentVoiceLabel = projection.voices.nameLabel(at: currentIndex)
+                snapshot.nextVoiceLabel = projection.voices.nameLabel(at: nextIndex)
                 if let previousIndex = projection.visible.first(where: { $0 < currentIndex }) {
                     let previous = lines[previousIndex].originalText.trimmingCharacters(in: .whitespacesAndNewlines)
                     snapshot.previousLineText = previous.isEmpty ? nil : previous

@@ -584,9 +584,13 @@ public enum LyricsLoadState: Equatable {
 
 public enum LyricsTimeline {
     struct VoicePresentation: Equatable {
+        /// Who sings a row: one of the singers in order of entry, or all together.
+        enum Role: Equatable { case voice(Int), ensemble }
+
         let duplicates: [Int: Int]
         private let labels: [Int: String]
         private let changes: [Int: String]
+        private let roles: [Int: Role]
 
         init(in lines: [LyricLine], isSynchronized: Bool = true) {
             let voices = LyricAgentPresentationMap(lines: lines)
@@ -594,17 +598,34 @@ public enum LyricsTimeline {
             let unisons = Set(duplicates.values)
             var labels: [Int: String] = [:]
             var changes: [Int: String] = [:]
+            var roles: [Int: Role] = [:]
             var previousLabel: String?
             for index in lines.indices where duplicates[index] == nil {
                 let performer = lines[index].performerID
                 let isEnsemble = unisons.contains(index) || performer == LyricAgentPresentationMap.ensembleID
                 let label = isEnsemble ? LyricAgentPresentationMap.ensembleID : voices.singerLabel(for: performer)
                 labels[index] = label
+                if voices.isActive {
+                    if isEnsemble { roles[index] = .ensemble }
+                    else if let voice = voices.voiceIndex(for: performer) { roles[index] = .voice(voice) }
+                }
                 if label != previousLabel { changes[index] = label }
                 previousLabel = label
             }
             self.labels = labels
             self.changes = changes
+            self.roles = roles
+        }
+
+        func role(at index: Int) -> Role? { roles[duplicates[index] ?? index] }
+
+        /// The label for listening surfaces: only a real singer's name.
+        func nameLabel(at index: Int?) -> String? { label(at: index).flatMap { Self.isSingerName($0) ? $0 : nil } }
+
+        /// A name the source gave, worth printing; not 「声部 N」 or 「合唱」.
+        static func isSingerName(_ label: String) -> Bool {
+            label != LyricAgentPresentationMap.ensembleID
+                && label.range(of: #"^声部 \d+$"#, options: .regularExpression) == nil
         }
 
         func label(at index: Int?) -> String? {

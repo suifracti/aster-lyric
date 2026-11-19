@@ -869,6 +869,44 @@ public enum AITranslationError: Error, Equatable, Sendable, LocalizedError {
     }
 }
 
+/// Where a running whole-song translation is, for the panel only; never stored.
+public enum AITranslationLiveStage: Equatable, Sendable {
+    case preparing
+    case sent
+    case thinking
+    case writing(done: Int, total: Int)
+    case checking
+
+    var rank: Int {
+        switch self {
+        case .preparing: return 0
+        case .sent: return 1
+        case .thinking: return 2
+        case .writing: return 3
+        case .checking: return 4
+        }
+    }
+
+    /// Stages only move forward; written lines only grow.
+    public func advanced(to next: Self) -> Self {
+        if case .writing(let done, _) = self, case .writing(let more, let total) = next {
+            return .writing(done: max(done, more), total: total)
+        }
+        return next.rank >= rank ? next : self
+    }
+}
+
+/// The running request's progress sink, read by the engine that can report it.
+public enum AITranslationLiveProgress {
+    public typealias Sink = @Sendable (AITranslationLiveStage) -> Void
+    @TaskLocal public static var sink: Sink?
+
+    /// Rows in a streamed `{"lines":[{"lineID":…}]}` answer seen so far.
+    static func writtenLines(in partial: String) -> Int {
+        partial.components(separatedBy: "\"lineID\"").count - 1
+    }
+}
+
 public struct AITranslationProgress: Equatable, Sendable {
     public let requestID: String
     public let inputLineCount: Int

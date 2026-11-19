@@ -411,3 +411,125 @@ struct V3QueueInsertButton: View {
         }
     }
 }
+
+/// The running whole-song translation, step by step: which step it is on,
+/// how many lines are written, how long it has taken, and a way to stop it.
+struct TranslationLiveCard: View {
+    @ObservedObject var state: PlaybackState
+    var accent: Color? = nil
+
+    static let steps = ["准备", "已发送", "思考", "写译文", "校验"]
+
+    static func stepIndex(_ stage: AITranslationLiveStage) -> Int {
+        switch stage {
+        case .preparing: return 0
+        case .sent: return 1
+        case .thinking: return 2
+        case .writing: return 3
+        case .checking: return 4
+        }
+    }
+
+    static func headline(_ stage: AITranslationLiveStage) -> String {
+        switch stage {
+        case .preparing: return "正在打开翻译对话"
+        case .sent: return "已发送，等模型回应"
+        case .thinking: return "模型在理解整首歌"
+        case .writing(let done, let total): return "正在写译文 · \(done)/\(total) 行"
+        case .checking: return "逐行核对并保存"
+        }
+    }
+
+    /// 0…1 while lines are written; nil while the step has no measure.
+    static func fraction(_ stage: AITranslationLiveStage) -> Double? {
+        if case .writing(let done, let total) = stage, total > 0 { return Double(done) / Double(total) }
+        if case .checking = stage { return 1 }
+        return nil
+    }
+
+    var body: some View {
+        let stage = state.translationLiveStage
+        let tint = accent ?? .accentColor
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(Self.headline(stage))
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .contentTransition(.numericText())
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                if let started = state.translationStartedAt {
+                    TimelineView(.v3Every(1)) { context in
+                        Text(Self.elapsed(context.date.timeIntervalSince(started)))
+                            .font(.system(size: 11).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Button("取消") { state.cancelTranslation() }
+                    .buttonStyle(.borderless).font(.system(size: 11.5))
+            }
+            if let fraction = Self.fraction(stage) {
+                ProgressView(value: fraction).progressViewStyle(.linear).tint(tint)
+                    .animation(.easeOut(duration: 0.25), value: fraction)
+            } else {
+                ProgressView().progressViewStyle(.linear).tint(tint)
+            }
+            HStack(spacing: 0) {
+                ForEach(Self.steps.indices, id: \.self) { index in
+                    let current = Self.stepIndex(stage)
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(index < current ? tint : index == current ? tint.opacity(0.9) : Color.primary.opacity(0.18))
+                            .frame(width: 6, height: 6)
+                            .overlay(Circle().stroke(tint.opacity(index == current ? 0.45 : 0), lineWidth: 3).scaleEffect(1.7))
+                        Text(Self.steps[index])
+                            .font(.system(size: 10.5, weight: index == current ? .semibold : .regular))
+                            .foregroundStyle(index <= current ? Color.primary : Color.secondary)
+                    }
+                    if index < Self.steps.count - 1 { Spacer(minLength: 2) }
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("第 \(Self.stepIndex(stage) + 1) 步，共 \(Self.steps.count) 步：\(Self.headline(stage))")
+            if !state.translationProgressMessage.isEmpty {
+                Text(state.translationProgressMessage)
+                    .font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.06)))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(tint.opacity(0.25), lineWidth: 0.75))
+        .animation(.easeOut(duration: 0.2), value: Self.stepIndex(stage))
+    }
+
+    static func elapsed(_ seconds: TimeInterval) -> String {
+        let value = max(0, Int(seconds))
+        return value < 60 ? "\(value) 秒" : String(format: "%d:%02d", value / 60, value % 60)
+    }
+}
+
+/// A small ring on the 译文 tool while a translation runs, so it can be
+/// followed with the panel closed.
+struct TranslationToolbarRing: View {
+    @ObservedObject var state: PlaybackState
+    var accent: Color? = nil
+
+    // No endless spin: the toolbar stays idle on the main thread while a
+    // request runs; the arc moves only when a step or line count changes.
+    var body: some View {
+        if case .loading = state.translationState {
+            let fraction = TranslationLiveCard.fraction(state.translationLiveStage)
+            ZStack {
+                Circle().stroke(Color.primary.opacity(0.18), lineWidth: 2)
+                Circle()
+                    .trim(from: 0, to: fraction.map { max(0.06, $0) }
+                          ?? 0.08 * Double(TranslationLiveCard.stepIndex(state.translationLiveStage) + 1))
+                    .stroke(accent ?? .accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeOut(duration: 0.25), value: fraction)
+            }
+            .frame(width: 11, height: 11)
+            .help(TranslationLiveCard.headline(state.translationLiveStage))
+            .accessibilityLabel("翻译进行中：\(TranslationLiveCard.headline(state.translationLiveStage))")
+        }
+    }
+}
