@@ -123,7 +123,14 @@ final class V3FavoriteLines: ObservableObject {
         _ = update { $0.removeAll { $0.id == id } }
     }
 
-    private func update(_ change: (inout [Entry]) -> Void) -> Bool {
+    @discardableResult
+    func replaceFromGitHubSync(_ entries: [Entry]) -> Bool {
+        update(notify: false) { next in
+            next = entries
+        }
+    }
+
+    private func update(notify: Bool = true, _ change: (inout [Entry]) -> Void) -> Bool {
         do {
             var next = try storedEntries()
             change(&next)
@@ -134,7 +141,9 @@ final class V3FavoriteLines: ObservableObject {
             }
             entries = next
             errorMessage = nil
-            NotificationCenter.default.post(name: .personalFavoritesDidMutate, object: fileURL?.standardizedFileURL)
+            if notify {
+                NotificationCenter.default.post(name: .personalFavoritesDidMutate, object: fileURL?.standardizedFileURL)
+            }
             return true
         } catch {
             errorMessage = "暂时无法更新本机收藏，原来的文件已保留。"

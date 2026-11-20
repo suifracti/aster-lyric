@@ -1628,6 +1628,97 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         return StoredTranslationVersion(record: record, lines: lines)
     }
 
+    /// Saves a translation pulled from two-way GitHub sync inside a silent transaction
+    /// (does not broadcast `.personalLibraryAssetsDidMutate` to avoid auto-push loops).
+    public func saveGitHubSyncedTranslation(
+        lyricsVersionID: UUID,
+        sourceContentHash: String,
+        targetLanguage: String,
+        linesByIndex: [Int: String],
+        isConflictCandidate: Bool
+    ) throws -> StoredTranslationVersion? {
+        try ensurePrepared()
+        let resolvedLanguage = targetLanguage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "zh-Hans" : targetLanguage
+        return try withTransaction(notifiesLibraryChange: false) {
+            guard let source = try fetchSourceLyrics(versionID: lyricsVersionID) else {
+                throw TranslationRepositoryError.sourceLyricsNotFound
+            }
+            let storedStmt = try prepare("SELECT content_hash FROM lyrics_versions WHERE id = ? LIMIT 1;")
+            defer { sqlite3_finalize(storedStmt) }
+            try bindText(lyricsVersionID.uuidString, at: 1, to: storedStmt)
+            let storedColumnHash = (sqlite3_step(storedStmt) == SQLITE_ROW) ? (columnText(storedStmt, index: 0) ?? "") : ""
+            guard source.hash == sourceContentHash || (!storedColumnHash.isEmpty && storedColumnHash == sourceContentHash) else {
+                throw TranslationRepositoryError.sourceContentMismatch
+            }
+            let canonicalSourceHash = source.hash
+
+            let orderedSource = source.lines.sorted { $0.lineIndex < $1.lineIndex }
+            let draftLines: [AITranslationLine] = orderedSource.map { row in
+                let origBlank = row.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                guard !origBlank else { return AITranslationLine(index: row.lineIndex, translation: "") }
+                let raw = (linesByIndex[row.lineIndex] ?? "")
+                    .replacingOccurrences(of: "\r\n", with: " ")
+                    .replacingOccurrences(of: "\r", with: " ")
+                    .replacingOccurrences(of: "\n", with: " ")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return AITranslationLine(index: row.lineIndex, translation: raw)
+            }
+            guard draftLines.contains(where: { !$0.translation.isEmpty }) else { return nil }
+
+            let candidateTexts = draftLines.map(\.translation)
+            let existing = try loadTranslationVersions(
+                lyricsVersionID: lyricsVersionID,
+                targetLanguage: resolvedLanguage,
+                sourceContentHash: canonicalSourceHash
+            ).filter { !$0.isArchived }
+
+            if isConflictCandidate {
+                if existing.contains(where: { !$0.isEmbeddedTranslation && $0.lines.map(\.translatedText) == candidateTexts }) {
+                    return nil
+                }
+            } else {
+                if let topNonEmbedded = existing.first(where: { !$0.isEmbeddedTranslation && !$0.isDraft }),
+                   topNonEmbedded.lines.map(\.translatedText) == candidateTexts {
+                    return nil
+                }
+            }
+
+            var lockTransferredFromGitHub = false
+            if !isConflictCandidate {
+                for version in existing where version.record.isLocked && version.record.engineID == "github-two-way-sync" {
+                    try markTranslationLocked(versionID: version.record.id, locked: false)
+                    lockTransferredFromGitHub = true
+                }
+            }
+
+            let draft = AITranslationDraft(
+                lines: draftLines,
+                targetLanguage: resolvedLanguage,
+                model: isConflictCandidate ? "GitHub 冲突版本" : "GitHub 双向同步",
+                baseURLHost: "",
+                promptHash: "",
+                sourceContentHash: canonicalSourceHash,
+                sourceKind: .manualEdit,
+                isMachineGenerated: false,
+                isManuallyEdited: true,
+                engineID: "github-two-way-sync",
+                promptPresetID: "github-two-way-sync",
+                isDraft: isConflictCandidate
+            )
+            let saved = try insertValidatedTranslation(
+                versionID: UUID(),
+                lyricsVersionID: lyricsVersionID,
+                sourceContentHash: canonicalSourceHash,
+                originalLines: orderedSource.map(\.originalText),
+                draft: draft
+            )
+            if lockTransferredFromGitHub {
+                try markTranslationLocked(versionID: saved.record.id, locked: true)
+            }
+            return saved
+        }
+    }
+
     public func markTranslationLocked(versionID: UUID, locked: Bool) throws {
         try ensurePrepared()
         let statement = try prepare("UPDATE translation_versions SET is_locked = ?, updated_at = ? WHERE id = ?;")

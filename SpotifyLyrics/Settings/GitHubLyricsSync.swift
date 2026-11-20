@@ -1,9 +1,28 @@
+#if canImport(AppKit)
+import AppKit
+#endif
 import CryptoKit
 import Foundation
 
 extension Notification.Name {
     static let personalLibraryAssetsDidMutate = Notification.Name("SpotifyLyrics.PersonalLibraryAssetsDidMutate")
     static let personalFavoritesDidMutate = Notification.Name("SpotifyLyrics.PersonalFavoritesDidMutate")
+}
+
+public enum GitHubSyncTranslationScope: String, CaseIterable, Identifiable, Codable, Sendable {
+    case aiAndManual = "ai_and_manual"
+    case aiOnly = "ai_only"
+    case all = "all"
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .aiAndManual: return "仅 AI 与人工译文（排除词源自带）"
+        case .aiOnly: return "严格仅 AI 模型译文"
+        case .all: return "全部译文（含词源自带）"
+        }
+    }
 }
 
 // MARK: - Keychain Token Store
@@ -80,7 +99,38 @@ public struct GitHubSyncResult: Equatable, Sendable {
     public let branch: String
     public let trackCount: Int
     public let favoritesCount: Int
+    public let pulledCount: Int
+    public let conflictCount: Int
+    public let headCommitSHA: String?
     public let status: Status
+
+    public init(
+        repository: String,
+        branch: String,
+        trackCount: Int,
+        favoritesCount: Int,
+        pulledCount: Int = 0,
+        conflictCount: Int = 0,
+        headCommitSHA: String? = nil,
+        status: Status
+    ) {
+        self.repository = repository
+        self.branch = branch
+        self.trackCount = trackCount
+        self.favoritesCount = favoritesCount
+        self.pulledCount = pulledCount
+        self.conflictCount = conflictCount
+        self.headCommitSHA = headCommitSHA
+        self.status = status
+    }
+}
+
+public struct GitHubSyncRemoteSnapshot: Equatable, Sendable {
+    public let repository: String
+    public let branch: String
+    public let headCommitSHA: String
+    public let treeSHA: String
+    public let treeBlobSHAs: [String: String]
 }
 
 // MARK: - HTTP Transport
@@ -182,6 +232,103 @@ public struct GitHubSyncClient: Sendable {
         return (repo.owner, repo.name, repo.slug, info.default_branch ?? "main")
     }
 
+    public func fetchHeadCommitSHA(
+        repository rawRepo: String,
+        branch rawBranch: String,
+        token: String
+    ) async throws -> String? {
+        let verified = try await verifyPrivateRepository(repository: rawRepo, token: token)
+        let branch = rawBranch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? verified.defaultBranch
+            : rawBranch.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let repoPath = "repos/\(verified.owner)/\(verified.name)"
+        let escapedBranch = branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? branch
+        do {
+            return try await fetchBranchRefSHA(repoPath: repoPath, escapedBranch: escapedBranch, branch: branch, token: trimmedToken)
+        } catch GitHubLyricsSyncError.branchNotFound {
+            return nil
+        }
+    }
+
+    public func fetchRemoteBranchSnapshot(
+        repository rawRepo: String,
+        branch rawBranch: String,
+        token: String
+    ) async throws -> GitHubSyncRemoteSnapshot? {
+        let verified = try await verifyPrivateRepository(repository: rawRepo, token: token)
+        let branch = rawBranch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? verified.defaultBranch
+            : rawBranch.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let repoPath = "repos/\(verified.owner)/\(verified.name)"
+        let escapedBranch = branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? branch
+        let headSHA: String
+        do {
+            headSHA = try await fetchBranchRefSHA(repoPath: repoPath, escapedBranch: escapedBranch, branch: branch, token: trimmedToken)
+        } catch GitHubLyricsSyncError.branchNotFound {
+            return nil
+        }
+        let treeSHA = try await fetchCommitTreeSHA(repoPath: repoPath, commitSHA: headSHA, token: trimmedToken)
+        let remoteTree = try await fetchRecursiveTree(repoPath: repoPath, treeSHA: treeSHA, token: trimmedToken)
+        return GitHubSyncRemoteSnapshot(
+            repository: verified.slug,
+            branch: branch,
+            headCommitSHA: headSHA,
+            treeSHA: treeSHA,
+            treeBlobSHAs: remoteTree
+        )
+    }
+
+    public func fetchBlobsData(
+        repository rawRepo: String,
+        blobs: [(path: String, sha: String)],
+        token: String
+    ) async throws -> [String: Data] {
+        guard !blobs.isEmpty else { return [:] }
+        let verified = try await verifyPrivateRepository(repository: rawRepo, token: token)
+        let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let repoPath = "repos/\(verified.owner)/\(verified.name)"
+        let maxConcurrency = 6
+        var output: [String: Data] = [:]
+
+        try await withThrowingTaskGroup(of: (String, Data).self) { group in
+            var nextIndex = 0
+            func enqueueNext() {
+                guard nextIndex < blobs.count else { return }
+                let item = blobs[nextIndex]
+                nextIndex += 1
+                group.addTask {
+                    let (data, _) = try await self.request(
+                        method: "GET",
+                        path: "\(repoPath)/git/blobs/\(item.sha)",
+                        token: trimmedToken
+                    )
+                    struct BlobPayload: Decodable {
+                        let content: String
+                        let encoding: String?
+                    }
+                    guard let decoded = try? JSONDecoder().decode(BlobPayload.self, from: data) else {
+                        throw GitHubLyricsSyncError.invalidResponse("Blob 读取失败")
+                    }
+                    let cleaned = decoded.content.replacingOccurrences(of: "\n", with: "").replacingOccurrences(of: "\r", with: "")
+                    guard let raw = Data(base64Encoded: cleaned, options: .ignoreUnknownCharacters) else {
+                        throw GitHubLyricsSyncError.invalidResponse("Blob Base64 解码失败")
+                    }
+                    return (item.path, raw)
+                }
+            }
+            for _ in 0..<min(maxConcurrency, blobs.count) {
+                enqueueNext()
+            }
+            while let (path, raw) = try await group.next() {
+                output[path] = raw
+                enqueueNext()
+            }
+        }
+        return output
+    }
+
     public func syncFiles(
         repository rawRepo: String,
         branch rawBranch: String,
@@ -191,6 +338,9 @@ public struct GitHubSyncClient: Sendable {
         exactManagedPaths: Set<String>,
         trackCount: Int,
         favoritesCount: Int,
+        pulledCount: Int = 0,
+        conflictCount: Int = 0,
+        preloadedSnapshot: GitHubSyncRemoteSnapshot? = nil,
         commitMessage: String
     ) async throws -> GitHubSyncResult {
         let verified = try await verifyPrivateRepository(repository: rawRepo, token: token)
@@ -200,15 +350,25 @@ public struct GitHubSyncClient: Sendable {
         let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
         let repoPath = "repos/\(verified.owner)/\(verified.name)"
 
-        let headSHA = try await ensureBranchHeadSHA(
-            repoPath: repoPath,
-            branch: branch,
-            token: trimmedToken,
-            seedReadme: files["README.md"] ?? Data("# Aster · Lyric\n".utf8)
-        )
-
-        let baseTreeSHA = try await fetchCommitTreeSHA(repoPath: repoPath, commitSHA: headSHA, token: trimmedToken)
-        let remoteTree = try await fetchRecursiveTree(repoPath: repoPath, treeSHA: baseTreeSHA, token: trimmedToken)
+        let headSHA: String
+        let baseTreeSHA: String
+        let remoteTree: [String: String]
+        if let preloadedSnapshot,
+           preloadedSnapshot.repository == verified.slug,
+           preloadedSnapshot.branch == branch {
+            headSHA = preloadedSnapshot.headCommitSHA
+            baseTreeSHA = preloadedSnapshot.treeSHA
+            remoteTree = preloadedSnapshot.treeBlobSHAs
+        } else {
+            headSHA = try await ensureBranchHeadSHA(
+                repoPath: repoPath,
+                branch: branch,
+                token: trimmedToken,
+                seedReadme: files["README.md"] ?? Data("# Aster · Lyric\n".utf8)
+            )
+            baseTreeSHA = try await fetchCommitTreeSHA(repoPath: repoPath, commitSHA: headSHA, token: trimmedToken)
+            remoteTree = try await fetchRecursiveTree(repoPath: repoPath, treeSHA: baseTreeSHA, token: trimmedToken)
+        }
 
         var uploads: [(path: String, data: Data)] = []
         for (path, data) in files.sorted(by: { $0.key < $1.key }) {
@@ -231,6 +391,9 @@ public struct GitHubSyncClient: Sendable {
                 branch: branch,
                 trackCount: trackCount,
                 favoritesCount: favoritesCount,
+                pulledCount: pulledCount,
+                conflictCount: conflictCount,
+                headCommitSHA: headSHA,
                 status: .upToDate
             )
         }
@@ -276,6 +439,9 @@ public struct GitHubSyncClient: Sendable {
             branch: branch,
             trackCount: trackCount,
             favoritesCount: favoritesCount,
+            pulledCount: pulledCount,
+            conflictCount: conflictCount,
+            headCommitSHA: newCommitSHA,
             status: .committed(sha: newCommitSHA, uploadedCount: uploads.count, deletedCount: deletions.count)
         )
     }
@@ -528,7 +694,8 @@ public enum GitHubSyncSnapshotBuilder {
         package: PersonalDataPackage,
         favorites: [V3FavoriteLines.Entry],
         defaults: UserDefaults = .lyricsQ,
-        includeDataPackageBackup: Bool
+        includeDataPackageBackup: Bool,
+        translationScope: GitHubSyncTranslationScope = .aiAndManual
     ) throws -> (files: [String: Data], exactManagedPaths: Set<String>) {
         var files: [String: Data] = [:]
         var indexRows: [(artist: String, title: String, album: String, status: String, translationTag: String, spotifyID: String, path: String)] = []
@@ -543,7 +710,7 @@ public enum GitHubSyncSnapshotBuilder {
         }) {
             let path = uniqueTrackPath(for: trackPkg.track, used: &usedPaths)
             let preferredLyrics = choosePreferredLyrics(in: trackPkg)
-            let rankedTranslations = rankTranslations(for: preferredLyrics, in: trackPkg)
+            let rankedTranslations = rankTranslations(for: preferredLyrics, in: trackPkg, scope: translationScope)
             let trackFavorites = favoritesForTrack(trackPkg.track, in: favoriteLookup)
 
             let markdown = renderTrackMarkdown(
@@ -551,7 +718,8 @@ public enum GitHubSyncSnapshotBuilder {
                 preferredLyrics: preferredLyrics,
                 rankedTranslations: rankedTranslations,
                 favorites: trackFavorites,
-                defaults: defaults
+                defaults: defaults,
+                translationScope: translationScope
             )
             files[path] = Data(markdown.utf8)
 
@@ -569,8 +737,9 @@ public enum GitHubSyncSnapshotBuilder {
 
             let translationTag: String
             if let primary = rankedTranslations.first {
-                translationTag = primary.isManuallyEdited ? "人工译文" : (primary.sourceKind == "embedded" ? "词源译文" : "AI译文(\(primary.model))")
-            } else if preferredLyrics?.lines.contains(where: { !($0.translationText ?? "").isEmpty }) == true {
+                translationTag = translationIndexTag(for: primary)
+            } else if translationScope == .all,
+                      preferredLyrics?.lines.contains(where: { !($0.translationText ?? "").isEmpty }) == true {
                 translationTag = "内嵌译文"
             } else {
                 translationTag = "无译文"
@@ -647,18 +816,53 @@ public enum GitHubSyncSnapshotBuilder {
         }.first
     }
 
+    static func isProviderEmbedded(_ translation: PersonalLyricsLibraryPackage.PackageTranslationVersion) -> Bool {
+        translation.sourceKind == AITranslationSourceKind.providerEmbedded.rawValue
+            || translation.sourceKind == "embedded"
+            || (translation.sourceKind == AITranslationSourceKind.legacyImported.rawValue && translation.targetLanguage == "und")
+    }
+
+    private static func isManualTranslation(_ translation: PersonalLyricsLibraryPackage.PackageTranslationVersion) -> Bool {
+        translation.isManuallyEdited
+            || translation.sourceKind == AITranslationSourceKind.manualEdit.rawValue
+            || translation.sourceKind == AITranslationSourceKind.manualImport.rawValue
+    }
+
+    private static func translationIndexTag(for translation: PersonalLyricsLibraryPackage.PackageTranslationVersion) -> String {
+        if isProviderEmbedded(translation) { return "词源译文" }
+        if isManualTranslation(translation) { return "人工译文" }
+        return "AI译文(\(translation.model))"
+    }
+
+    private static func translationHeadingLabel(for translation: PersonalLyricsLibraryPackage.PackageTranslationVersion) -> String {
+        if isProviderEmbedded(translation) { return "词源译文" }
+        if isManualTranslation(translation) { return "人工修订 · \(translation.model)" }
+        return "AI · \(translation.model)"
+    }
+
     private static func rankTranslations(
         for lyrics: PersonalLyricsLibraryPackage.PackageLyricsVersion?,
-        in package: PersonalLyricsLibraryPackage
+        in package: PersonalLyricsLibraryPackage,
+        scope: GitHubSyncTranslationScope
     ) -> [PersonalLyricsLibraryPackage.PackageTranslationVersion] {
         guard let lyrics else { return [] }
         return package.translationVersions
-            .filter { $0.lyricsVersionID == lyrics.id && !$0.isArchived && $0.status == "complete" }
+            .filter { tv in
+                guard tv.lyricsVersionID == lyrics.id, !tv.isArchived, tv.status == "complete" else { return false }
+                switch scope {
+                case .aiOnly:
+                    return tv.sourceKind == AITranslationSourceKind.ai.rawValue && !tv.isManuallyEdited
+                case .aiAndManual:
+                    return !isProviderEmbedded(tv)
+                case .all:
+                    return true
+                }
+            }
             .sorted { lhs, rhs in
                 if lhs.isLocked != rhs.isLocked { return lhs.isLocked && !rhs.isLocked }
                 if lhs.isManuallyEdited != rhs.isManuallyEdited { return lhs.isManuallyEdited && !rhs.isManuallyEdited }
-                let lhsManualOrAI = lhs.sourceKind != "embedded"
-                let rhsManualOrAI = rhs.sourceKind != "embedded"
+                let lhsManualOrAI = !isProviderEmbedded(lhs)
+                let rhsManualOrAI = !isProviderEmbedded(rhs)
                 if lhsManualOrAI != rhsManualOrAI { return lhsManualOrAI && !rhsManualOrAI }
                 return lhs.updatedAt > rhs.updatedAt
             }
@@ -722,9 +926,11 @@ public enum GitHubSyncSnapshotBuilder {
         preferredLyrics: PersonalLyricsLibraryPackage.PackageLyricsVersion?,
         rankedTranslations: [PersonalLyricsLibraryPackage.PackageTranslationVersion],
         favorites: [V3FavoriteLines.Entry],
-        defaults: UserDefaults
+        defaults: UserDefaults,
+        translationScope: GitHubSyncTranslationScope
     ) -> String {
         let t = trackPkg.track
+        let primaryTranslation = rankedTranslations.first
         var lines: [String] = []
         lines.append("---")
         lines.append("title: \(yamlQuote(t.title))")
@@ -735,6 +941,11 @@ public enum GitHubSyncSnapshotBuilder {
         if let uri = t.spotifyURI, !uri.isEmpty { lines.append("spotify_uri: \(yamlQuote(uri))") }
         if let isrc = t.isrc, !isrc.isEmpty { lines.append("isrc: \(yamlQuote(isrc))") }
         lines.append("stable_key: \(yamlQuote(t.stableKey))")
+        if let preferredLyrics {
+            lines.append("lyrics_version_id: \(yamlQuote(preferredLyrics.id.uuidString))")
+            lines.append("source_content_hash: \(yamlQuote(preferredLyrics.contentHash))")
+        }
+        lines.append("translation_language: \(yamlQuote(primaryTranslation?.targetLanguage ?? "zh-Hans"))")
         lines.append("---")
         lines.append("")
         lines.append("# \(t.title) — \(t.artist)")
@@ -763,15 +974,13 @@ public enum GitHubSyncSnapshotBuilder {
         lines.append("- 原词版本：\(customTitle.isEmpty ? preferredLyrics.source : customTitle)（\(flags)）")
         if !customNote.isEmpty { lines.append("- 备注：\(customNote)") }
 
-        let primaryTranslation = rankedTranslations.first
         let translationByIndex: [Int: String] = Dictionary(
             (primaryTranslation?.lines ?? []).map { ($0.lineIndex, $0.translatedText) },
             uniquingKeysWith: { first, _ in first }
         )
 
         if let primaryTranslation {
-            let tKind = primaryTranslation.isManuallyEdited ? "人工修订" : (primaryTranslation.sourceKind == "embedded" ? "词源译文" : "AI · \(primaryTranslation.model)")
-            lines.append("- 主展示译文：\(tKind)（\(primaryTranslation.targetLanguage)）")
+            lines.append("- 主展示译文：\(translationHeadingLabel(for: primaryTranslation))（\(primaryTranslation.targetLanguage)）")
         }
 
         lines.append("")
@@ -787,7 +996,8 @@ public enum GitHubSyncSnapshotBuilder {
                 continue
             }
             lines.append("- \(timePrefix)\(voicePrefix)\(orig)")
-            let tr = (translationByIndex[row.lineIndex] ?? row.translationText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let fallbackEmbedded = translationScope == .all ? (row.translationText ?? "") : ""
+            let tr = (translationByIndex[row.lineIndex] ?? fallbackEmbedded).trimmingCharacters(in: .whitespacesAndNewlines)
             if !tr.isEmpty {
                 lines.append("  - 译：\(tr)")
             }
@@ -801,9 +1011,8 @@ public enum GitHubSyncSnapshotBuilder {
             lines.append("## 其他已存译文版本")
             lines.append("")
             for edition in rankedTranslations.dropFirst() {
-                let kind = edition.isManuallyEdited ? "人工编辑" : (edition.sourceKind == "embedded" ? "词源译文" : "AI · \(edition.model)")
                 let lock = edition.isLocked ? " [已锁定]" : ""
-                lines.append("### \(kind)（\(edition.targetLanguage)）\(lock)")
+                lines.append("### \(translationHeadingLabel(for: edition))（\(edition.targetLanguage)）\(lock)")
                 lines.append("")
                 for tLine in edition.lines.sorted(by: { $0.lineIndex < $1.lineIndex }) where !tLine.translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     lines.append("- \(tLine.lineIndex + 1). \(tLine.translatedText)")
@@ -900,6 +1109,256 @@ public enum GitHubSyncSnapshotBuilder {
     }
 }
 
+// MARK: - Bidirectional Markdown Parser
+
+public enum GitHubSyncMarkdownParser {
+    public struct ParsedTrackTranslation: Equatable, Sendable {
+        public let lyricsVersionID: UUID
+        public let sourceContentHash: String
+        public let targetLanguage: String
+        public let linesByIndex: [Int: String]
+    }
+
+    public struct ParsedFavorite: Equatable, Sendable {
+        public let title: String
+        public let artist: String
+        public let text: String
+        public let translation: String?
+    }
+
+    static func parseTrackMarkdown(
+        _ markdown: String,
+        knownLyricsByID: [UUID: PersonalLyricsLibraryPackage.PackageLyricsVersion]
+    ) -> ParsedTrackTranslation? {
+        let rawLines = markdown.components(separatedBy: "\n").map {
+            $0.hasSuffix("\r") ? String($0.dropLast()) : $0
+        }
+        let frontmatter = parseFrontmatter(rawLines)
+        guard let rawID = frontmatter["lyrics_version_id"],
+              let lyricsID = UUID(uuidString: rawID),
+              let rawHash = frontmatter["source_content_hash"],
+              let sourceLyrics = knownLyricsByID[lyricsID],
+              sourceLyrics.contentHash == rawHash else {
+            return nil
+        }
+
+        let targetLanguage = frontmatter["translation_language"].flatMap { $0.isEmpty ? nil : $0 } ?? "zh-Hans"
+
+        guard let sectionStart = rawLines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "## 歌词与译文对照" }) else {
+            return nil
+        }
+
+        struct BulletItem {
+            var originalText: String
+            var translation: String = ""
+        }
+
+        var bullets: [BulletItem] = []
+        for line in rawLines[(sectionStart + 1)...] {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("## ") { break }
+            if trimmed.isEmpty { continue }
+
+            if line.hasPrefix("- ") {
+                bullets.append(BulletItem(originalText: String(line.dropFirst(2))))
+            } else if (line.hasPrefix("  ") || line.hasPrefix("\t")), !bullets.isEmpty {
+                if trimmed.hasPrefix("- 译：") {
+                    bullets[bullets.count - 1].translation = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespacesAndNewlines)
+                } else if trimmed.hasPrefix("- 译:") {
+                    bullets[bullets.count - 1].translation = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+            }
+        }
+
+        let nonBlankSource = sourceLyrics.lines
+            .sorted { $0.lineIndex < $1.lineIndex }
+            .filter { !$0.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        guard bullets.count == nonBlankSource.count else { return nil }
+
+        var linesByIndex: [Int: String] = [:]
+        var hasAnyTranslation = false
+
+        for (bullet, sourceLine) in zip(bullets, nonBlankSource) {
+            var parsedOrig = stripLeadingTimestamp(from: bullet.originalText)
+            if let performer = sourceLine.performerID, !performer.isEmpty {
+                let prefix = "（\(performer)）"
+                if parsedOrig.hasPrefix(prefix) {
+                    parsedOrig = String(parsedOrig.dropFirst(prefix.count))
+                }
+            }
+            let expectedOrig = sourceLine.originalText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard parsedOrig.trimmingCharacters(in: .whitespacesAndNewlines) == expectedOrig else {
+                return nil
+            }
+            linesByIndex[sourceLine.lineIndex] = bullet.translation
+            if !bullet.translation.isEmpty {
+                hasAnyTranslation = true
+            }
+        }
+
+        guard hasAnyTranslation else { return nil }
+        return ParsedTrackTranslation(
+            lyricsVersionID: lyricsID,
+            sourceContentHash: rawHash,
+            targetLanguage: targetLanguage,
+            linesByIndex: linesByIndex
+        )
+    }
+
+    static func parseFavoritesMarkdown(_ markdown: String) -> [ParsedFavorite]? {
+        let rawLines = markdown.components(separatedBy: "\n").map {
+            $0.hasSuffix("\r") ? String($0.dropLast()) : $0
+        }
+        guard rawLines.contains(where: { $0.trimmingCharacters(in: .whitespaces) == "# 收藏金句" }) else {
+            return nil
+        }
+
+        var items: [ParsedFavorite] = []
+        for line in rawLines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("- **"),
+               let parsed = parseFavoriteBullet(line) {
+                items.append(parsed)
+            } else if (line.hasPrefix("  ") || line.hasPrefix("\t")), !items.isEmpty {
+                if trimmed.hasPrefix("- 译：") {
+                    let prev = items[items.count - 1]
+                    let tr = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespacesAndNewlines)
+                    items[items.count - 1] = ParsedFavorite(title: prev.title, artist: prev.artist, text: prev.text, translation: tr.isEmpty ? nil : tr)
+                } else if trimmed.hasPrefix("- 译:") {
+                    let prev = items[items.count - 1]
+                    let tr = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+                    items[items.count - 1] = ParsedFavorite(title: prev.title, artist: prev.artist, text: prev.text, translation: tr.isEmpty ? nil : tr)
+                }
+            }
+        }
+        return items
+    }
+
+    private static func parseFavoriteBullet(_ line: String) -> ParsedFavorite? {
+        // Format: - **Title** — Artist：「Text」
+        guard line.hasPrefix("- **"), line.hasSuffix("」") else { return nil }
+        let afterOpen = line.dropFirst(4)
+        guard let titleCloseRange = afterOpen.range(of: "** — ") else { return nil }
+        let title = String(afterOpen[..<titleCloseRange.lowerBound])
+        let afterTitle = afterOpen[titleCloseRange.upperBound...]
+        guard let quoteStartRange = afterTitle.range(of: "：「", options: .backwards) else { return nil }
+        let artist = String(afterTitle[..<quoteStartRange.lowerBound])
+        let text = String(afterTitle[quoteStartRange.upperBound...].dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, !text.isEmpty else { return nil }
+        return ParsedFavorite(title: title, artist: artist, text: text, translation: nil)
+    }
+
+    private static func parseFrontmatter(_ lines: [String]) -> [String: String] {
+        guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else { return [:] }
+        var result: [String: String] = [:]
+        for line in lines.dropFirst() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == "---" { break }
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let key = line[..<colon].trimmingCharacters(in: .whitespaces)
+            var value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            if value.hasPrefix("\""), value.hasSuffix("\""), value.count >= 2 {
+                value = String(value.dropFirst().dropLast())
+                    .replacingOccurrences(of: "\\\"", with: "\"")
+                    .replacingOccurrences(of: "\\\\", with: "\\")
+            }
+            if !key.isEmpty {
+                result[key] = value
+            }
+        }
+        return result
+    }
+
+    private static func stripLeadingTimestamp(from text: String) -> String {
+        guard text.hasPrefix("[") else { return text }
+        guard let closeBracket = text.firstIndex(of: "]") else { return text }
+        let inside = text[text.index(after: text.startIndex)..<closeBracket]
+        let isValidTimestamp = inside.contains(":") && inside.allSatisfy { $0.isNumber || $0 == ":" || $0 == "." }
+        guard isValidTimestamp else { return text }
+        let afterBracket = text.index(after: closeBracket)
+        guard afterBracket < text.endIndex else { return "" }
+        return String(text[afterBracket...]).trimmingCharacters(in: .whitespaces)
+    }
+}
+
+// MARK: - Baseline Store
+
+public final class GitHubSyncBaselineStore: @unchecked Sendable {
+    public struct RepoBaseline: Codable, Equatable, Sendable {
+        public var lastRemoteCommitSHA: String?
+        public var fileBlobSHAs: [String: String]
+
+        public init(lastRemoteCommitSHA: String? = nil, fileBlobSHAs: [String: String] = [:]) {
+            self.lastRemoteCommitSHA = lastRemoteCommitSHA
+            self.fileBlobSHAs = fileBlobSHAs
+        }
+    }
+
+    private struct Storage: Codable {
+        var repos: [String: RepoBaseline] = [:]
+    }
+
+    public static var defaultURL: URL? {
+#if DEBUG
+        if let override = ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DATABASE_PATH"],
+           !override.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return URL(fileURLWithPath: override).deletingLastPathComponent().appendingPathComponent("github-sync-baseline.json")
+        }
+#endif
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("SpotifyLyrics", isDirectory: true)
+            .appendingPathComponent("github-sync-baseline.json")
+    }
+
+    private let fileURL: URL?
+    private let lock = NSLock()
+    private var memoryStorage = Storage()
+
+    public init(fileURL: URL? = GitHubSyncBaselineStore.defaultURL) {
+        self.fileURL = fileURL
+    }
+
+    public func load(repository: String, branch: String) -> RepoBaseline {
+        lock.lock()
+        defer { lock.unlock() }
+        let key = Self.key(repository: repository, branch: branch)
+        return readStorage().repos[key] ?? RepoBaseline()
+    }
+
+    public func save(_ baseline: RepoBaseline, repository: String, branch: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        var storage = readStorage()
+        storage.repos[Self.key(repository: repository, branch: branch)] = baseline
+        writeStorage(storage)
+    }
+
+    private static func key(repository: String, branch: String) -> String {
+        "\(repository.lowercased())@\(branch)"
+    }
+
+    private func readStorage() -> Storage {
+        guard let fileURL else { return memoryStorage }
+        guard let data = try? Data(contentsOf: fileURL),
+              let decoded = try? JSONDecoder().decode(Storage.self, from: data) else {
+            return Storage()
+        }
+        return decoded
+    }
+
+    private func writeStorage(_ storage: Storage) {
+        guard let fileURL else {
+            memoryStorage = storage
+            return
+        }
+        try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let data = try? JSONEncoder().encode(storage) {
+            try? data.write(to: fileURL, options: .atomic)
+        }
+    }
+}
+
 // MARK: - Observable Service
 
 @MainActor
@@ -910,6 +1369,8 @@ final class GitHubLyricsSyncService: ObservableObject {
         static let repository = "githubSync.repository.v1"
         static let branch = "githubSync.branch.v1"
         static let autoSync = "githubSync.autoSyncEnabled.v1"
+        static let bidirectional = "githubSync.bidirectionalSyncEnabled.v1"
+        static let translationScope = "githubSync.translationScope.v1"
         static let includeBackup = "githubSync.includeDataPackageBackup.v1"
         static let hasToken = "githubSync.hasToken.v1"
         static let lastSummary = "githubSync.lastSyncSummary.v1"
@@ -924,6 +1385,12 @@ final class GitHubLyricsSyncService: ObservableObject {
     }
     @Published var autoSyncEnabled: Bool {
         didSet { defaults.set(autoSyncEnabled, forKey: Keys.autoSync) }
+    }
+    @Published var bidirectionalSyncEnabled: Bool {
+        didSet { defaults.set(bidirectionalSyncEnabled, forKey: Keys.bidirectional) }
+    }
+    @Published var translationScope: GitHubSyncTranslationScope {
+        didSet { defaults.set(translationScope.rawValue, forKey: Keys.translationScope) }
     }
     @Published var includeDataPackageBackup: Bool {
         didSet { defaults.set(includeDataPackageBackup, forKey: Keys.includeBackup) }
@@ -941,28 +1408,42 @@ final class GitHubLyricsSyncService: ObservableObject {
 
     private let repository: SQLiteLyricsRepository
     private let favoritesLoader: @MainActor () -> [V3FavoriteLines.Entry]
+    private let favoritesApplier: @MainActor ([V3FavoriteLines.Entry]) -> Void
     private let defaults: UserDefaults
     private let tokenStore: any GitHubSyncTokenStoring
+    private let baselineStore: GitHubSyncBaselineStore
     private let client: GitHubSyncClient
     private var autoSyncTask: Task<Void, Never>?
+    private var lastRemoteHeadCheckAt: Date?
     private var observers: [NSObjectProtocol] = []
 
     init(
         repository: SQLiteLyricsRepository = SQLiteLyricsRepository(),
         favoritesLoader: @escaping @MainActor () -> [V3FavoriteLines.Entry] = { V3FavoriteLines.shared.entries },
+        favoritesApplier: @escaping @MainActor ([V3FavoriteLines.Entry]) -> Void = { V3FavoriteLines.shared.replaceFromGitHubSync($0) },
         defaults: UserDefaults = .lyricsQ,
         tokenStore: any GitHubSyncTokenStoring = GitHubSyncTokenStore(),
+        baselineStore: GitHubSyncBaselineStore = GitHubSyncBaselineStore(),
         client: GitHubSyncClient = GitHubSyncClient(),
         observesMutations: Bool = true
     ) {
         self.repository = repository
         self.favoritesLoader = favoritesLoader
+        self.favoritesApplier = favoritesApplier
         self.defaults = defaults
         self.tokenStore = tokenStore
+        self.baselineStore = baselineStore
         self.client = client
         self.repositoryText = defaults.string(forKey: Keys.repository) ?? ""
         self.branchText = defaults.string(forKey: Keys.branch) ?? "main"
         self.autoSyncEnabled = defaults.bool(forKey: Keys.autoSync)
+        self.bidirectionalSyncEnabled = defaults.object(forKey: Keys.bidirectional) as? Bool ?? true
+        if let rawScope = defaults.string(forKey: Keys.translationScope),
+           let scope = GitHubSyncTranslationScope(rawValue: rawScope) {
+            self.translationScope = scope
+        } else {
+            self.translationScope = .aiAndManual
+        }
         self.includeDataPackageBackup = defaults.object(forKey: Keys.includeBackup) as? Bool ?? true
         self.hasStoredToken = defaults.bool(forKey: Keys.hasToken)
         self.lastSyncSummary = defaults.string(forKey: Keys.lastSummary)
@@ -1050,18 +1531,57 @@ final class GitHubLyricsSyncService: ObservableObject {
 
         isSyncing = true
         isErrorStatus = false
-        statusMessage = "正在打包歌词并同步到 GitHub…"
+        statusMessage = bidirectionalSyncEnabled ? "正在双向检查并同步歌词与译文…" : "正在打包歌词并同步到 GitHub…"
         defer { isSyncing = false }
 
         do {
-            let package = try await repository.exportPersonalDataPackage()
-            let favorites = favoritesLoader()
-            let built = try GitHubSyncSnapshotBuilder.buildFiles(
+            var package = try await repository.exportPersonalDataPackage()
+            var favorites = favoritesLoader()
+            var built = try GitHubSyncSnapshotBuilder.buildFiles(
                 package: package,
                 favorites: favorites,
                 defaults: defaults,
-                includeDataPackageBackup: includeDataPackageBackup
+                includeDataPackageBackup: includeDataPackageBackup,
+                translationScope: translationScope
             )
+
+            let remoteSnapshot = try await client.fetchRemoteBranchSnapshot(
+                repository: repositoryText,
+                branch: branchText,
+                token: token
+            )
+
+            let resolvedRepoSlug = remoteSnapshot?.repository ?? GitHubRepositorySlug.normalize(repositoryText)?.slug ?? repositoryText
+            let resolvedBranch = remoteSnapshot?.branch ?? branchText
+            let baseline = baselineStore.load(repository: resolvedRepoSlug, branch: resolvedBranch)
+
+            var pulledCount = 0
+            var conflictCount = 0
+
+            if bidirectionalSyncEnabled, let remoteSnapshot {
+                let pullOutcome = try await pullRemoteChanges(
+                    remoteSnapshot: remoteSnapshot,
+                    localFiles: built.files,
+                    baseline: baseline,
+                    package: package,
+                    favorites: favorites,
+                    token: token
+                )
+                pulledCount = pullOutcome.pulledCount
+                conflictCount = pullOutcome.conflictCount
+                if pullOutcome.didMutateLocal {
+                    package = try await repository.exportPersonalDataPackage()
+                    favorites = favoritesLoader()
+                    built = try GitHubSyncSnapshotBuilder.buildFiles(
+                        package: package,
+                        favorites: favorites,
+                        defaults: defaults,
+                        includeDataPackageBackup: includeDataPackageBackup,
+                        translationScope: translationScope
+                    )
+                }
+            }
+
             let commitMessage = "Aster · Lyric 同步：\(package.tracks.count) 首歌曲"
             let result = try await client.syncFiles(
                 repository: repositoryText,
@@ -1072,21 +1592,26 @@ final class GitHubLyricsSyncService: ObservableObject {
                 exactManagedPaths: built.exactManagedPaths,
                 trackCount: package.tracks.count,
                 favoritesCount: favorites.count,
+                pulledCount: pulledCount,
+                conflictCount: conflictCount,
+                preloadedSnapshot: remoteSnapshot,
                 commitMessage: commitMessage
             )
+
+            let nextBlobSHAs = Dictionary(uniqueKeysWithValues: built.files.map { ($0.key, GitHubSyncClient.gitBlobSHA(of: $0.value)) })
+            baselineStore.save(
+                GitHubSyncBaselineStore.RepoBaseline(
+                    lastRemoteCommitSHA: result.headCommitSHA ?? remoteSnapshot?.headCommitSHA,
+                    fileBlobSHAs: nextBlobSHAs
+                ),
+                repository: result.repository,
+                branch: result.branch
+            )
+
             let now = Date()
             lastSyncDate = now
             defaults.set(now, forKey: Keys.lastDate)
-            let summary: String
-            switch result.status {
-            case .upToDate:
-                summary = "已是最新（\(result.trackCount) 首歌曲 · 无需上传）"
-            case .committed(_, let uploaded, let deleted):
-                var parts = ["已同步 \(result.trackCount) 首歌曲（更新 \(uploaded) 项"]
-                if deleted > 0 { parts[0] += "，清理 \(deleted) 项" }
-                parts[0] += "）"
-                summary = parts[0]
-            }
+            let summary = Self.formatSummary(result: result)
             lastSyncSummary = summary
             defaults.set(summary, forKey: Keys.lastSummary)
             statusMessage = summary
@@ -1097,6 +1622,174 @@ final class GitHubLyricsSyncService: ObservableObject {
             isErrorStatus = true
             return nil
         }
+    }
+
+    private func pullRemoteChanges(
+        remoteSnapshot: GitHubSyncRemoteSnapshot,
+        localFiles: [String: Data],
+        baseline: GitHubSyncBaselineStore.RepoBaseline,
+        package: PersonalDataPackage,
+        favorites: [V3FavoriteLines.Entry],
+        token: String
+    ) async throws -> (pulledCount: Int, conflictCount: Int, didMutateLocal: Bool) {
+        let localBlobSHAs = Dictionary(uniqueKeysWithValues: localFiles.map { ($0.key, GitHubSyncClient.gitBlobSHA(of: $0.value)) })
+
+        var blobsToFetch: [(path: String, sha: String)] = []
+        for (path, remoteSHA) in remoteSnapshot.treeBlobSHAs where path.hasPrefix("tracks/") && path.hasSuffix(".md") {
+            if remoteSHA != baseline.fileBlobSHAs[path], remoteSHA != localBlobSHAs[path] {
+                blobsToFetch.append((path, remoteSHA))
+            }
+        }
+        if let remoteFavSHA = remoteSnapshot.treeBlobSHAs["favorites.md"],
+           remoteFavSHA != baseline.fileBlobSHAs["favorites.md"],
+           remoteFavSHA != localBlobSHAs["favorites.md"] {
+            blobsToFetch.append(("favorites.md", remoteFavSHA))
+        }
+
+        guard !blobsToFetch.isEmpty else {
+            return (0, 0, false)
+        }
+
+        let fetchedData = try await client.fetchBlobsData(
+            repository: remoteSnapshot.repository,
+            blobs: blobsToFetch.sorted { $0.path < $1.path },
+            token: token
+        )
+
+        var knownLyricsByID: [UUID: PersonalLyricsLibraryPackage.PackageLyricsVersion] = [:]
+        for trackPkg in package.tracks {
+            for lv in trackPkg.lyricsVersions {
+                knownLyricsByID[lv.id] = lv
+            }
+        }
+
+        var pulledCount = 0
+        var conflictCount = 0
+        var didMutateLocal = false
+
+        for (path, data) in fetchedData.sorted(by: { $0.key < $1.key }) where path != "favorites.md" {
+            guard let markdown = String(data: data, encoding: .utf8),
+                  let parsed = GitHubSyncMarkdownParser.parseTrackMarkdown(markdown, knownLyricsByID: knownLyricsByID) else {
+                continue
+            }
+            let localChangedSinceBase = baseline.fileBlobSHAs[path] != nil && localBlobSHAs[path] != baseline.fileBlobSHAs[path]
+            if let saved = try await repository.saveGitHubSyncedTranslation(
+                lyricsVersionID: parsed.lyricsVersionID,
+                sourceContentHash: parsed.sourceContentHash,
+                targetLanguage: parsed.targetLanguage,
+                linesByIndex: parsed.linesByIndex,
+                isConflictCandidate: localChangedSinceBase
+            ) {
+                _ = saved
+                pulledCount += 1
+                didMutateLocal = true
+                if localChangedSinceBase {
+                    conflictCount += 1
+                }
+            }
+        }
+
+        if let favData = fetchedData["favorites.md"],
+           let favMarkdown = String(data: favData, encoding: .utf8),
+           let parsedFavs = GitHubSyncMarkdownParser.parseFavoritesMarkdown(favMarkdown) {
+            let localFavChanged = baseline.fileBlobSHAs["favorites.md"] != nil
+                && localBlobSHAs["favorites.md"] != baseline.fileBlobSHAs["favorites.md"]
+            let merged = mergeFavorites(parsedRemote: parsedFavs, local: favorites, preserveLocalExtras: localFavChanged, package: package)
+            if merged != favorites {
+                favoritesApplier(merged)
+                pulledCount += 1
+                didMutateLocal = true
+            }
+        }
+
+        return (pulledCount, conflictCount, didMutateLocal)
+    }
+
+    private func mergeFavorites(
+        parsedRemote: [GitHubSyncMarkdownParser.ParsedFavorite],
+        local: [V3FavoriteLines.Entry],
+        preserveLocalExtras: Bool,
+        package: PersonalDataPackage
+    ) -> [V3FavoriteLines.Entry] {
+        struct FavoriteIdentity: Hashable {
+            let title: String
+            let artist: String
+            let text: String
+        }
+        func makeIdentity(title: String, artist: String, text: String) -> FavoriteIdentity {
+            FavoriteIdentity(
+                title: TrackTextNormalizer.normalize(title),
+                artist: TrackTextNormalizer.normalize(artist),
+                text: text.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
+
+        var localByID: [FavoriteIdentity: V3FavoriteLines.Entry] = [:]
+        for entry in local {
+            let key = makeIdentity(title: entry.title, artist: entry.artist, text: entry.text)
+            if localByID[key] == nil { localByID[key] = entry }
+        }
+
+        var trackByTitleArtist: [String: PersonalLyricsLibraryPackage.PackageTrack] = [:]
+        for pkg in package.tracks {
+            let key = "\(TrackTextNormalizer.normalize(pkg.track.title))|\(TrackTextNormalizer.normalize(pkg.track.artist))"
+            if trackByTitleArtist[key] == nil { trackByTitleArtist[key] = pkg.track }
+        }
+
+        var merged: [V3FavoriteLines.Entry] = []
+        var seen = Set<FavoriteIdentity>()
+
+        for item in parsedRemote {
+            let id = makeIdentity(title: item.title, artist: item.artist, text: item.text)
+            guard seen.insert(id).inserted else { continue }
+            if var existing = localByID[id] {
+                existing.translation = item.translation
+                merged.append(existing)
+            } else {
+                let trackKeyHint = "\(TrackTextNormalizer.normalize(item.title))|\(TrackTextNormalizer.normalize(item.artist))"
+                let matchedTrack = trackByTitleArtist[trackKeyHint]
+                merged.append(V3FavoriteLines.Entry(
+                    text: item.text,
+                    translation: item.translation,
+                    title: item.title,
+                    artist: item.artist,
+                    trackKey: matchedTrack?.stableKey ?? "metadata:\(trackKeyHint)",
+                    artworkURL: matchedTrack?.artworkURL.flatMap(URL.init(string:))
+                ))
+            }
+        }
+
+        if preserveLocalExtras {
+            for entry in local {
+                let id = makeIdentity(title: entry.title, artist: entry.artist, text: entry.text)
+                if seen.insert(id).inserted {
+                    merged.append(entry)
+                }
+            }
+        }
+
+        return merged
+    }
+
+    private static func formatSummary(result: GitHubSyncResult) -> String {
+        var segments: [String] = []
+        if result.pulledCount > 0 {
+            segments.append("拉取 \(result.pulledCount) 项")
+        }
+        switch result.status {
+        case .upToDate:
+            if segments.isEmpty {
+                return "已是最新（\(result.trackCount) 首歌曲 · 无需上传）"
+            }
+        case .committed(_, let uploaded, let deleted):
+            var pushText = "推送 \(uploaded) 项"
+            if deleted > 0 { pushText += "，清理 \(deleted) 项" }
+            segments.append(pushText)
+        }
+        if result.conflictCount > 0 {
+            segments.append("双端冲突 \(result.conflictCount) 首（已保留本地稿并存为候选）")
+        }
+        return "双向已同步（\(segments.joined(separator: " · ")) · 共 \(result.trackCount) 首）"
     }
 
     public func triggerManualSync() {
@@ -1117,6 +1810,28 @@ final class GitHubLyricsSyncService: ObservableObject {
         }
     }
 
+    private func checkRemoteChangesIfNeeded() {
+        guard autoSyncEnabled, bidirectionalSyncEnabled, isConfigured, !isSyncing else { return }
+        if ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_KEYCHAIN"] == "1" { return }
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return }
+#endif
+        if let lastCheck = lastRemoteHeadCheckAt, Date().timeIntervalSince(lastCheck) < 20 { return }
+        lastRemoteHeadCheckAt = Date()
+        guard let token = tokenStore.read(), !token.isEmpty else { return }
+        let repo = repositoryText
+        let branch = branchText
+        Task { [weak self] in
+            guard let self else { return }
+            guard let normalized = GitHubRepositorySlug.normalize(repo) else { return }
+            guard let remoteHead = try? await self.client.fetchHeadCommitSHA(repository: repo, branch: branch, token: token) else { return }
+            let baseline = self.baselineStore.load(repository: normalized.slug, branch: branch)
+            if remoteHead != baseline.lastRemoteCommitSHA {
+                _ = await self.syncNow()
+            }
+        }
+    }
+
     private func startObserving(dbURL: URL) {
         let center = NotificationCenter.default
         let dbObserver = center.addObserver(forName: .personalLibraryAssetsDidMutate, object: nil, queue: .main) { [weak self] note in
@@ -1126,6 +1841,13 @@ final class GitHubLyricsSyncService: ObservableObject {
         let favObserver = center.addObserver(forName: .personalFavoritesDidMutate, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.scheduleAutoSyncIfNeeded() }
         }
+#if canImport(AppKit)
+        let activeObserver = center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.checkRemoteChangesIfNeeded() }
+        }
+        observers = [dbObserver, favObserver, activeObserver]
+#else
         observers = [dbObserver, favObserver]
+#endif
     }
 }

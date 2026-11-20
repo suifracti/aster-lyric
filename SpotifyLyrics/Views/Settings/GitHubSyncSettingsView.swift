@@ -55,6 +55,23 @@ struct GitHubSyncSettingsView: View {
                 }
             }
 
+            Picker("译文同步范围", selection: $service.translationScope) {
+                ForEach(GitHubSyncTranslationScope.allCases) { scope in
+                    Text(scope.displayName).tag(scope)
+                }
+            }
+            .font(compact ? .caption : .callout)
+
+            Toggle("双向同步（从 GitHub 拉取修改后的译文与金句）", isOn: $service.bidirectionalSyncEnabled)
+                .font(compact ? .caption : .callout)
+
+            if service.translationScope == .aiOnly && service.bidirectionalSyncEnabled {
+                Text("提示：严格仅 AI 模式下，从云端拉回的修改保存在本机；若希望云端修订继续同步回传，建议改选「仅 AI 与人工译文」。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Toggle("查到或保存新歌词、译文、金句后自动同步", isOn: $service.autoSyncEnabled)
                 .font(compact ? .caption : .callout)
                 .disabled(!service.isConfigured)
@@ -66,7 +83,12 @@ struct GitHubSyncSettingsView: View {
                 Button {
                     service.triggerManualSync()
                 } label: {
-                    Label(service.isSyncing ? "同步中…" : "立即全部同步", systemImage: "arrow.triangle.2.circlepath")
+                    Label(
+                        service.isSyncing
+                            ? "同步中…"
+                            : (service.bidirectionalSyncEnabled ? "立即双向同步" : "立即全部同步"),
+                        systemImage: "arrow.triangle.2.circlepath"
+                    )
                 }
                 .disabled(service.isSyncing || !service.isConfigured)
 

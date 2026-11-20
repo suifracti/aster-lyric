@@ -85,6 +85,13 @@ private final class MockGitHubServer: GitHubHTTPTransport, @unchecked Sendable {
             let entries = tree.map { ["path": $0.key, "type": "blob", "sha": $0.value] }
             return respond(200, json: ["tree": entries])
         }
+        if method == "GET" && path.hasPrefix("/repos/alice/lyrics-vault/git/blobs/") {
+            let blobSHA = String(path.dropFirst("/repos/alice/lyrics-vault/git/blobs/".count))
+            guard let raw = state.blobs[blobSHA] else {
+                return respond(404, json: ["message": "Not Found"])
+            }
+            return respond(200, json: ["content": raw.base64EncodedString(), "encoding": "base64"])
+        }
         if method == "POST" && path == "/repos/alice/lyrics-vault/git/blobs" {
             blobUploadCalls += 1
             let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any] ?? [:]
@@ -266,6 +273,7 @@ final class GitHubLyricsSyncTests: XCTestCase {
             favoritesLoader: { favs },
             defaults: defaults,
             tokenStore: TestTokenStore(),
+            baselineStore: GitHubSyncBaselineStore(fileURL: root.appendingPathComponent("baseline.json")),
             client: GitHubSyncClient(transport: server),
             observesMutations: false
         )
@@ -322,5 +330,334 @@ final class GitHubLyricsSyncTests: XCTestCase {
 
         // Validate real tokenStore respects environment safety isolation without touching Keychain.
         XCTAssertNil(tokenStore.read())
+    }
+
+    @MainActor
+    func testTranslationScopeFiltersOutProviderEmbeddedTranslationsAndFixesLabels() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent("gh-scope-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let repo = SQLiteLyricsRepository(
+            databaseURL: root.appendingPathComponent("lyrics.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance")
+        )
+        try await repo.prepare()
+
+        // Track A: only provider-embedded translation (both inline translationText and providerEmbedded version row)
+        let trackA = Track(title: "Embedded Song", artist: "Artist A", album: "Single", duration: 180)
+        let idA = TrackIdentity(track: trackA)
+        let savedA = try await repo.save(
+            track: trackA,
+            identity: idA,
+            document: LyricsDocument(
+                identity: idA,
+                title: trackA.title,
+                artist: trackA.artist,
+                album: trackA.album,
+                duration: trackA.duration,
+                lines: [LyricLine(timestamp: 5, originalText: "Original line A", translationText: "词源内嵌译文A")],
+                isSynchronized: true,
+                source: .qqExperimental,
+                confidence: 0.95
+            )
+        )
+        let lvA = try XCTUnwrap(savedA.versionID)
+        let hashA = try XCTUnwrap(savedA.sourceContentHash)
+        _ = try await repo.saveTranslation(
+            lyricsVersionID: lvA,
+            sourceContentHash: hashA,
+            originalLines: ["Original line A"],
+            draft: AITranslationDraft(
+                lines: [AITranslationLine(index: 0, translation: "词源版本译文A")],
+                targetLanguage: "und",
+                model: "词源自带译文",
+                baseURLHost: "",
+                promptHash: "",
+                sourceContentHash: hashA,
+                sourceKind: .providerEmbedded,
+                isMachineGenerated: false,
+                isManuallyEdited: false,
+                engineID: "provider-embedded"
+            ),
+            forceNewVersion: true
+        )
+
+        // Track B: provider-embedded + AI translation + manual edit
+        let trackB = Track(title: "AI Song", artist: "Artist B", album: "Album", duration: 200)
+        let idB = TrackIdentity(track: trackB)
+        let docB = LyricsDocument(
+            identity: idB,
+            title: trackB.title,
+            artist: trackB.artist,
+            album: trackB.album,
+            duration: trackB.duration,
+            lines: [LyricLine(timestamp: 10, originalText: "Original line B", translationText: "词源内嵌译文B")],
+            isSynchronized: true,
+            source: .qqExperimental,
+            confidence: 0.95
+        )
+        let savedB = try await repo.save(track: trackB, identity: idB, document: docB)
+        let lvB = try XCTUnwrap(savedB.versionID)
+        let hashB = try XCTUnwrap(savedB.sourceContentHash)
+        _ = try await repo.saveTranslation(
+            lyricsVersionID: lvB,
+            sourceContentHash: hashB,
+            originalLines: ["Original line B"],
+            draft: AITranslationDraft(
+                lines: [AITranslationLine(index: 0, translation: "纯AI译文B")],
+                targetLanguage: "zh-Hans",
+                model: "gpt-6.2-sol",
+                baseURLHost: "api.example.invalid",
+                promptHash: "p1",
+                sourceContentHash: hashB,
+                sourceKind: .ai,
+                isMachineGenerated: true,
+                isManuallyEdited: false
+            ),
+            forceNewVersion: true
+        )
+        _ = try await repo.saveTranslation(
+            lyricsVersionID: lvB,
+            sourceContentHash: hashB,
+            originalLines: ["Original line B"],
+            draft: AITranslationDraft(
+                lines: [AITranslationLine(index: 0, translation: "人工润色译文B")],
+                targetLanguage: "zh-Hans",
+                model: "editor",
+                baseURLHost: "",
+                promptHash: "",
+                sourceContentHash: hashB,
+                sourceKind: .manualEdit,
+                isMachineGenerated: false,
+                isManuallyEdited: true
+            ),
+            forceNewVersion: true
+        )
+
+        let pkg = try await repo.exportPersonalDataPackage()
+
+        // 1. aiAndManual (default): excludes providerEmbedded and inline fallback, keeps AI + manualEdit
+        let aiAndManual = try GitHubSyncSnapshotBuilder.buildFiles(
+            package: pkg,
+            favorites: [],
+            includeDataPackageBackup: false,
+            translationScope: .aiAndManual
+        )
+        let indexAIAndManual = try XCTUnwrap(String(data: aiAndManual.files["INDEX.md"]!, encoding: .utf8))
+        let mdA = try XCTUnwrap(aiAndManual.files.first { $0.key.contains("Artist A") }.flatMap { String(data: $0.value, encoding: .utf8) })
+        let mdB = try XCTUnwrap(aiAndManual.files.first { $0.key.contains("Artist B") }.flatMap { String(data: $0.value, encoding: .utf8) })
+        XCTAssertFalse(mdA.contains("词源内嵌译文A"))
+        XCTAssertTrue(mdB.contains("人工润色译文B"))
+        XCTAssertTrue(mdB.contains("纯AI译文B"))
+        XCTAssertFalse(mdB.contains("词源内嵌译文B"))
+        XCTAssertFalse(indexAIAndManual.contains("AI译文(词源自带译文)"))
+
+        // 2. aiOnly: strictly sourceKind == "ai"
+        let aiOnly = try GitHubSyncSnapshotBuilder.buildFiles(
+            package: pkg,
+            favorites: [],
+            includeDataPackageBackup: false,
+            translationScope: .aiOnly
+        )
+        let mdBAIOnly = try XCTUnwrap(aiOnly.files.first { $0.key.contains("Artist B") }.flatMap { String(data: $0.value, encoding: .utf8) })
+        XCTAssertTrue(mdBAIOnly.contains("纯AI译文B"))
+        XCTAssertFalse(mdBAIOnly.contains("人工润色译文B"))
+        XCTAssertFalse(mdBAIOnly.contains("词源内嵌译文B"))
+
+        // 3. all: includes providerEmbedded and labels it 词源译文 instead of AI译文(词源自带译文)
+        let allScope = try GitHubSyncSnapshotBuilder.buildFiles(
+            package: pkg,
+            favorites: [],
+            includeDataPackageBackup: false,
+            translationScope: .all
+        )
+        let indexAll = try XCTUnwrap(String(data: allScope.files["INDEX.md"]!, encoding: .utf8))
+        XCTAssertTrue(indexAll.contains("词源译文"))
+        XCTAssertFalse(indexAll.contains("AI译文(词源自带译文)"))
+    }
+
+    @MainActor
+    func testBidirectionalSyncPullsRemoteEditsFavoritesAndPreservesConflicts() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent("gh-twoway-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let repo = SQLiteLyricsRepository(
+            databaseURL: root.appendingPathComponent("lyrics.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance")
+        )
+        try await repo.prepare()
+
+        let suiteName = "github-twoway-test-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(true, forKey: "githubSync.hasToken.v1")
+
+        let track = Track(title: "oracle", artist: "429", album: "oracle", duration: 190)
+        let identity = TrackIdentity(track: track)
+        let doc = LyricsDocument(
+            identity: identity,
+            title: track.title,
+            artist: track.artist,
+            album: track.album,
+            duration: track.duration,
+            lines: [
+                LyricLine(timestamp: 10.0, originalText: "夢みたいな毎日"),
+                LyricLine(timestamp: 15.0, originalText: "祈りだけ残して")
+            ],
+            isSynchronized: true,
+            source: .qqExperimental,
+            confidence: 0.95
+        )
+        let saved = try await repo.save(track: track, identity: identity, document: doc)
+        let lvID = try XCTUnwrap(saved.versionID)
+        let contentHash = try XCTUnwrap(saved.sourceContentHash)
+
+        _ = try await repo.saveTranslation(
+            lyricsVersionID: lvID,
+            sourceContentHash: contentHash,
+            originalLines: doc.lines.map(\.originalText),
+            draft: AITranslationDraft(
+                lines: [
+                    AITranslationLine(index: 0, translation: "如同梦境般的每一天"),
+                    AITranslationLine(index: 1, translation: "只留下祈愿")
+                ],
+                targetLanguage: "zh-Hans",
+                model: "gpt-6.2-sol",
+                baseURLHost: "api.example.invalid",
+                promptHash: "p1",
+                sourceContentHash: contentHash,
+                sourceKind: .ai,
+                isMachineGenerated: true,
+                isManuallyEdited: false
+            ),
+            forceNewVersion: true
+        )
+
+        var storedFavorites: [V3FavoriteLines.Entry] = [
+            V3FavoriteLines.Entry(
+                text: "夢みたいな毎日",
+                translation: "如同梦境般的每一天",
+                title: track.title,
+                artist: track.artist,
+                trackKey: identity.stableKey
+            )
+        ]
+
+        struct TestTokenStore: GitHubSyncTokenStoring {
+            func read() -> String? { "ghp_test_token" }
+            func save(_ token: String) throws {}
+            func delete() throws {}
+        }
+
+        let server = MockGitHubServer()
+        let service = GitHubLyricsSyncService(
+            repository: repo,
+            favoritesLoader: { storedFavorites },
+            favoritesApplier: { storedFavorites = $0 },
+            defaults: defaults,
+            tokenStore: TestTokenStore(),
+            baselineStore: GitHubSyncBaselineStore(fileURL: root.appendingPathComponent("baseline.json")),
+            client: GitHubSyncClient(transport: server),
+            observesMutations: false
+        )
+        service.repositoryText = "alice/lyrics-vault"
+        service.branchText = "main"
+        service.includeDataPackageBackup = false
+        service.bidirectionalSyncEnabled = true
+
+        // Step 1: initial push
+        let initial = await service.syncNow()
+        XCTAssertNotNil(initial)
+        let head1 = try XCTUnwrap(server.state.branchHead)
+        let tree1 = try XCTUnwrap(server.state.trees[server.state.commits[head1]!])
+        let trackPath = try XCTUnwrap(tree1.keys.first { $0.hasPrefix("tracks/") })
+
+        // Step 2: Simulate remote edits on GitHub (translation edited + new favorite line added)
+        let originalTrackMD = try XCTUnwrap(String(data: server.state.blobs[tree1[trackPath]!]!, encoding: .utf8))
+        let editedTrackMD = originalTrackMD
+            .replacingOccurrences(of: "如同梦境般的每一天", with: "像做梦一样的每天")
+            .replacingOccurrences(of: "只留下祈愿", with: "只余下心底的祈愿")
+        let editedTrackData = Data(editedTrackMD.utf8)
+        let editedTrackSHA = GitHubSyncClient.gitBlobSHA(of: editedTrackData)
+        server.state.blobs[editedTrackSHA] = editedTrackData
+
+        let originalFavMD = try XCTUnwrap(String(data: server.state.blobs[tree1["favorites.md"]!]!, encoding: .utf8))
+        let editedFavMD = originalFavMD + "- **oracle** — 429：「祈りだけ残して」\n  - 译：只余下心底的祈愿\n"
+        let editedFavData = Data(editedFavMD.utf8)
+        let editedFavSHA = GitHubSyncClient.gitBlobSHA(of: editedFavData)
+        server.state.blobs[editedFavSHA] = editedFavData
+
+        var nextTree = tree1
+        nextTree[trackPath] = editedTrackSHA
+        nextTree["favorites.md"] = editedFavSHA
+        server.state.trees["tree-remote-edit"] = nextTree
+        server.state.commits["commit-remote-edit"] = "tree-remote-edit"
+        server.state.branchHead = "commit-remote-edit"
+
+        // Pulls remote translation + favorite and updates normalized tree
+        let second = await service.syncNow()
+        XCTAssertNotNil(second, "second sync failed: \(service.statusMessage ?? "nil")")
+        XCTAssertEqual(second?.pulledCount, 2)
+        XCTAssertEqual(second?.conflictCount, 0)
+
+        let versionsAfterPull = try await repo.loadTranslationVersions(
+            lyricsVersionID: lvID,
+            targetLanguage: "zh-Hans",
+            sourceContentHash: contentHash
+        )
+        XCTAssertEqual(versionsAfterPull.count, 2, "Original AI version must be kept alongside pulled manual version")
+        XCTAssertEqual(versionsAfterPull.first?.record.sourceKind, .manualEdit)
+        XCTAssertEqual(versionsAfterPull.first?.lines.map(\.translatedText), ["像做梦一样的每天", "只余下心底的祈愿"])
+        XCTAssertEqual(storedFavorites.count, 2)
+        XCTAssertTrue(storedFavorites.contains(where: { $0.text == "祈りだけ残して" && $0.translation == "只余下心底的祈愿" }))
+
+        // Step 3: Conflict case — BOTH local and remote modify the track after baseline
+        _ = try await repo.saveTranslation(
+            lyricsVersionID: lvID,
+            sourceContentHash: contentHash,
+            originalLines: doc.lines.map(\.originalText),
+            draft: AITranslationDraft(
+                lines: [
+                    AITranslationLine(index: 0, translation: "本地新修订第一句"),
+                    AITranslationLine(index: 1, translation: "本地新修订第二句")
+                ],
+                targetLanguage: "zh-Hans",
+                model: "editor",
+                baseURLHost: "",
+                promptHash: "",
+                sourceContentHash: contentHash,
+                sourceKind: .manualEdit,
+                isMachineGenerated: false,
+                isManuallyEdited: true
+            ),
+            forceNewVersion: true
+        )
+
+        let headBeforeConflict = try XCTUnwrap(server.state.branchHead)
+        let treeBeforeConflict = try XCTUnwrap(server.state.trees[server.state.commits[headBeforeConflict]!])
+        let baseTrackMD = try XCTUnwrap(String(data: server.state.blobs[treeBeforeConflict[trackPath]!]!, encoding: .utf8))
+        let conflictRemoteMD = baseTrackMD.replacingOccurrences(of: "像做梦一样的每天", with: "远端冲突修订第一句")
+        let conflictRemoteData = Data(conflictRemoteMD.utf8)
+        let conflictRemoteSHA = GitHubSyncClient.gitBlobSHA(of: conflictRemoteData)
+        server.state.blobs[conflictRemoteSHA] = conflictRemoteData
+
+        var conflictTree = treeBeforeConflict
+        conflictTree[trackPath] = conflictRemoteSHA
+        server.state.trees["tree-remote-conflict"] = conflictTree
+        server.state.commits["commit-remote-conflict"] = "tree-remote-conflict"
+        server.state.branchHead = "commit-remote-conflict"
+
+        let third = await service.syncNow()
+        XCTAssertNotNil(third, "third sync failed: \(service.statusMessage ?? "nil")")
+        XCTAssertEqual(third?.conflictCount, 1)
+        let versionsAfterConflict = try await repo.loadTranslationVersions(
+            lyricsVersionID: lvID,
+            targetLanguage: "zh-Hans",
+            sourceContentHash: contentHash
+        )
+        XCTAssertTrue(versionsAfterConflict.contains(where: { $0.isDraft && $0.lines.first?.translatedText == "远端冲突修订第一句" }))
+        XCTAssertEqual(versionsAfterConflict.first(where: { !$0.isDraft })?.lines.first?.translatedText, "本地新修订第一句")
     }
 }
