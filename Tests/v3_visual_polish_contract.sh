@@ -3,21 +3,23 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 V3_VIEW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"
+V3_LYRICS="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3Lyrics.swift"
+V3_TRANSPORT="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3Transport.swift"
 BACKDROP="$ROOT/SpotifyLyrics/Views/Components/AppleMusicImmersiveV3BackdropView.swift"
 SETTINGS="$ROOT/SpotifyLyrics/Views/Settings/SettingsRootView.swift"
 WINDOW="$ROOT/SpotifyLyrics/Settings/WindowStatePersistence.swift"
 
-grep -q 'LyricsDesignTokens.readableLyricLineMaxWidth' "$V3_VIEW" || {
+grep -q 'LyricsDesignTokens.readableLyricLineMaxWidth' "$V3_LYRICS" || {
   echo 'FAIL: V3 lyric rows do not use a readable maximum width' >&2
   exit 1
 }
 
-grep -q 'providerKana.map { JapaneseReadingPipeline.analyze' "$V3_VIEW" || {
+grep -q 'providerKana.map { JapaneseReadingPipeline.analyze' "$V3_LYRICS" || {
   echo 'FAIL: V3 has no partial kana mapping when persisted ruby data is unavailable' >&2
   exit 1
 }
 
-if grep -q 'private var shouldRenderKanaFallback' "$V3_VIEW"; then
+if grep -q 'private var shouldRenderKanaFallback' "$V3_LYRICS"; then
   echo 'FAIL: V3 still renders an entire line of kana below the lyric' >&2
   exit 1
 fi
@@ -27,7 +29,7 @@ grep -q 'regularMaterial' "$V3_VIEW" || {
   exit 1
 }
 
-grep -q 'activeWidth = max(0, width \* progressFraction)' "$V3_VIEW" || {
+grep -q 'activeWidth = max(0, width \* progressFraction)' "$V3_TRANSPORT" || {
   echo 'FAIL: V3 progress rail still uses the old forced-width rendering' >&2
   exit 1
 }

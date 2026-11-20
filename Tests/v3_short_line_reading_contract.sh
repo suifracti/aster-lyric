@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VIEW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"
+VIEW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3Lyrics.swift"
 
 if grep -q 'effectiveOriginalText.count > 2' "$VIEW"; then
   echo 'FAIL: V3 skips automatic readings for short Japanese lyric lines' >&2

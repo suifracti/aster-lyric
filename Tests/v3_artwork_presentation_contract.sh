@@ -6,6 +6,10 @@ SETTINGS="$ROOT/SpotifyLyrics/Settings/AppSettingsStore.swift"
 BACKDROP="$ROOT/SpotifyLyrics/Views/Components/AppleMusicImmersiveV3BackdropView.swift"
 WINDOW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"
 
+INSPECTOR="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3Inspector.swift"
+EDGE="$ROOT/SpotifyLyrics/Views/MainWindow/V3WindowEdgePlaybackOverlay.swift"
+GEOMETRY="$ROOT/SpotifyLyrics/Design/V3ResponsiveGeometry.swift"
+
 for stable_id in \
   'v3ArtworkPresentation.ambient.v1' \
   'v3ArtworkPresentation.stage.v1' \
@@ -37,17 +41,19 @@ grep -q 'v3BackdropBlurFeathered' "$SETTINGS" || {
   exit 1
 }
 
-grep -q 'settings.v3ArtworkPresentation = style' "$WINDOW"
+grep -q 'settings.selectV3Scene' "$INSPECTOR"
+grep -q 'settings.selectLegacyV3Presentation' "$INSPECTOR"
 grep -q 'V3ThemeSelectorView' "$WINDOW"
-grep -q 'showsForegroundArtwork' "$WINDOW"
+grep -q 'V3ThemeSelectorView' "$INSPECTOR"
+grep -q 'v3ShowsForegroundArtwork' "$INSPECTOR"
 grep -q 'v3ShowForegroundArtwork' "$SETTINGS"
-grep -q 'Toggle("显示前景封面", isOn: \$settings.v3ShowForegroundArtwork)' "$WINDOW"
+grep -q '显示前景封面' "$INSPECTOR"
 grep -q 'lyricsOnlyLayout(in: geometry, hidesArtwork: true)' "$WINDOW"
 grep -q 'V3WindowEdgePlaybackOverlay' "$WINDOW"
-grep -q 'V3WindowEdgeProgressSettings' "$WINDOW"
+grep -q 'V3WindowEdgeProgressSettings' "$INSPECTOR"
 grep -q 'lastWindowExitPoint = pointerLocationBox.location' "$WINDOW"
-grep -q 'guard !settings.v3EdgeProgressEnabled else { return false }' "$WINDOW"
-grep -q 'topChromeInset: 44' "$WINDOW"
+grep -q 'compositionPlayback == \.windowEdge' "$WINDOW"
+grep -q 'topChromeInset: CGFloat = 0' "$GEOMETRY"
 grep -q 'blurControlTitle' "$SETTINGS" || {
   echo "V3 presentations must expose mode-specific blur semantics" >&2
   exit 1
@@ -76,7 +82,7 @@ root = Path(sys.argv[1])
 s = (root/'SpotifyLyrics/Settings/AppSettingsStore.swift').read_text()
 a = s.index('public enum V3ArtworkTheme:')
 b = s.index('public enum PlaybackSourceMode:', a)
-host = s[a:b] + '\n' + r'''
+host = 'import Foundation\n' + s[a:b] + '\n' + r'''
 @main struct ThemeCheck {
     static func main() {
         precondition(V3ArtworkPresentation.ambientVariants.count == 3)

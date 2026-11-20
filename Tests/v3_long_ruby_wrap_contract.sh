@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VIEW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"
+VIEW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3Lyrics.swift"
 LINE="$ROOT/SpotifyLyrics/Views/Components/LyricLineView.swift"
 
 grep -q 'maxWidth: readableLineWidth' "$VIEW" || {

@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SETTINGS="$ROOT/SpotifyLyrics/Settings/AppSettingsStore.swift"
 BACKDROP="$ROOT/SpotifyLyrics/Views/Components/AppleMusicImmersiveV3BackdropView.swift"
 WINDOW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"
+INSPECTOR="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3Inspector.swift"
 
 grep -q 'v3AmbientBackdropEnabled = "v3.ambientBackdropEnabled"' "$SETTINGS" || {
   echo 'FAIL: missing persistent V3 ambient backdrop key' >&2
@@ -22,15 +23,18 @@ grep -q '?? true' "$SETTINGS" || {
 }
 
 grep -q 'V3ThemeSelectorView' "$WINDOW" \
-  && grep -q 'settings.v3ArtworkPresentation = style' "$WINDOW" || {
+  && grep -q 'V3ThemeSelectorView' "$INSPECTOR" \
+  && grep -q 'settings.selectV3Scene' "$INSPECTOR" \
+  && grep -q 'settings.selectLegacyV3Presentation' "$INSPECTOR" || {
   echo 'FAIL: V3 tuning panel has no artwork presentation switch' >&2
   exit 1
 }
 
-grep -q 'settings.v3ArtworkPresentation' "$BACKDROP" \
+grep -q 'switch artworkPresentation' "$BACKDROP" \
   && grep -q 'ambientArtworkLayers' "$BACKDROP" \
-  && grep -q 'legacyArtworkLayers' "$BACKDROP" || {
-  echo 'FAIL: backdrop does not explicitly route ambient and legacy renderers' >&2
+  && grep -q 'authenticAmbientArtworkLayers' "$BACKDROP" \
+  && grep -q 'classicArtworkLayers' "$BACKDROP" || {
+  echo 'FAIL: backdrop does not explicitly route ambient and classic renderers' >&2
   exit 1
 }
 

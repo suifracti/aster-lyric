@@ -2,20 +2,23 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VIEW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"
+VIEW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3Lyrics.swift"
+WINDOW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"
 METADATA="$ROOT/SpotifyLyrics/Views/Components/TrackMetadataView.swift"
 
-grep -q 'availableWidth: max(1, width -' "$VIEW" || {
+grep -q 'availableWidth: availableWidth' "$VIEW" \
+  && grep -q 'availableWidth: max(1,' "$VIEW" || {
   echo 'FAIL: V3 lyric viewport has no readable width policy' >&2
   exit 1
 }
 
-grep -q 'availableWidth: availableWidth' "$VIEW" || {
+grep -q 'availableWidth: availableWidth' "$WINDOW" \
+  && grep -q 'availableWidth: width' "$VIEW" || {
   echo 'FAIL: V3 lyric rows do not receive the viewport width proposal' >&2
   exit 1
 }
 
-grep -q '\.frame(maxWidth: \.infinity, alignment: \.leading)' "$VIEW" || {
+grep -q 'frame(maxWidth: \.infinity, alignment: textAlignment\.lyricFrameAlignment)' "$VIEW" || {
   echo 'FAIL: V3 lyric rows are not constrained by the lyric viewport' >&2
   exit 1
 }
@@ -41,13 +44,13 @@ grep -q 'KanaReplacementLineView(' "$VIEW" || {
   exit 1
 }
 
-grep -q 'presentation: \.v3Immersive' "$VIEW" &&
+grep -q 'presentation: \.v3Immersive' "$WINDOW" &&
 grep -q 'HStack(spacing: 6)' "$METADATA" || {
   echo 'FAIL: V3 metadata still uses three stacked rows' >&2
   exit 1
 }
 
-grep -q 'baseSize \* 0\.44' "$VIEW" || {
+grep -q 'preferredBaseSize \* 0\.44' "$VIEW" || {
   echo 'FAIL: V3 ruby annotation remains too small' >&2
   exit 1
 }

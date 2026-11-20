@@ -3,9 +3,13 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WINDOW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"
+TRANSPORT="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3Transport.swift"
+TOKENS="$ROOT/SpotifyLyrics/Design/LyricsDesignTokens.swift"
+CONTROLS="$ROOT/SpotifyLyrics/Views/Components/LyricIslandControls.swift"
 METADATA="$ROOT/SpotifyLyrics/Views/Components/TrackMetadataView.swift"
 
-grep -q 'presentation: .v3Immersive' "$WINDOW" || {
+grep -q 'presentation: .v3Immersive' "$WINDOW" \
+  && grep -q 'presentation: .v3Immersive' "$TRANSPORT" || {
   echo 'FAIL: V3 does not opt into its readable metadata hierarchy' >&2
   exit 1
 }
@@ -17,27 +21,27 @@ grep -q 'case v3Immersive' "$METADATA" \
   exit 1
 }
 
-grep -q 'max(0, width \* progressFraction)' "$WINDOW" \
-  && grep -q 'hoverThumbSize' "$WINDOW" || {
+grep -q 'max(0, width \* progressFraction)' "$TRANSPORT" \
+  && grep -q 'hoverThumbSize' "$TRANSPORT" \
+  && grep -q 'hoverThumbSize' "$TOKENS" || {
   echo 'FAIL: progress rail lacks accurate fill or hover thumb' >&2
   exit 1
 }
 
-grep -q 'struct V3TransportIconButton' "$WINDOW" \
-  && grep -q '\.background(.thinMaterial, in: Circle())' "$WINDOW" \
-  && grep -q 'restingFillOpacity' "$WINDOW" \
-  && grep -q '\.help(label)' "$WINDOW" || {
-  echo 'FAIL: transport controls lack native material hierarchy or hover help' >&2
+grep -q 'struct V3TransportIconButton' "$TRANSPORT" \
+  && grep -q 'struct IslandTransportButton' "$CONTROLS" \
+  && grep -q '\.help(label)' "$CONTROLS" || {
+  echo 'FAIL: transport controls lack shared button hierarchy or hover help' >&2
   exit 1
 }
 
-grep -q 'progressActiveGradient' "$WINDOW" || {
+grep -q 'progressActiveGradient' "$TRANSPORT" || {
   echo 'FAIL: V3 progress does not expose a legible active hierarchy' >&2
   exit 1
 }
 
 for symbol in backward.fill pause.fill play.fill forward.fill; do
-  grep -q "\"$symbol\"" "$WINDOW" || {
+  grep -q "\"$symbol\"" "$TRANSPORT" || {
     echo "FAIL: missing familiar transport symbol $symbol" >&2
     exit 1
   }

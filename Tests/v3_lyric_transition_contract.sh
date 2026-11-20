@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VIEW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3WindowView.swift"
+VIEW="$ROOT/SpotifyLyrics/Views/MainWindow/AppleMusicImmersiveV3Lyrics.swift"
 TOKENS="$ROOT/SpotifyLyrics/Design/LyricsDesignTokens.swift"
 
 require_view() {
@@ -41,7 +41,7 @@ require_file "$TOKENS" 'static func followAnimation' 'V3 follow animation is pol
 require_file "$TOKENS" 'smoothRelayoutV1' 'smooth lyric transition preset'
 require_file "$TOKENS" 'lyricDuration' 'dedicated lyric transition duration'
 
-require_view 'onChange\(of: currentIndex\)' 'current-line transition trigger'
+require_view 'onChange\(of: displayedIndex\)' 'current-line transition trigger'
 require_view 'private var v3LineFollowAnimation' 'V3 uses a dedicated follow animation'
 require_view 'V3LyricMotionPolicy\.followAnimation' 'V3 follow uses the isolated motion policy'
 require_view 'DispatchQueue\.main\.async' 'scroll animation is deferred off the layout transaction'
