@@ -31,6 +31,7 @@ struct V3LibrarySearchPanel: View {
     @Environment(\.openWindow) private var openWindow
     @ObservedObject var library: PersonalLyricsLibraryService
     @ObservedObject var search: SongSearchManager
+    @ObservedObject private var gitHubSync = GitHubLyricsSyncService.shared
     let browsing: PersonalLibraryBrowsing
     @State private var batchArchiveKey: String?
     @State private var listeningTrackKey: String?
@@ -213,6 +214,14 @@ struct V3LibrarySearchPanel: View {
                     Button("立即同步", action: library.syncNow).disabled(library.syncFolderURL == nil || library.isSyncing)
                     Button("取消同步", action: library.cancelSyncFolder).disabled(library.syncFolderURL == nil || library.isSyncing)
                 }
+                Menu("GitHub 私有库同步") {
+                    Button(gitHubSync.isSyncing ? "同步中…" : "立即全部同步", action: gitHubSync.triggerManualSync)
+                        .disabled(gitHubSync.isSyncing || !gitHubSync.isConfigured)
+                    Button("同步设置…") {
+                        presentation.dismiss()
+                        MenuBarLyricsController.shared.openSettings(at: .init(.advancedAndData))
+                    }
+                }
             }
         } label: { Image(systemName: "ellipsis") }
         .menuStyle(.borderlessButton).fixedSize().help("管理歌词库")
@@ -257,6 +266,10 @@ struct V3LibrarySearchPanel: View {
                     }
                     if let notice = library.personalDataNotice {
                         Text(notice).font(.caption).foregroundStyle(.secondary).padding(8)
+                    } else if let ghNotice = gitHubSync.statusMessage, !ghNotice.isEmpty {
+                        Text(ghNotice).font(.caption)
+                            .foregroundStyle(gitHubSync.isErrorStatus ? Color.red : Color.secondary)
+                            .padding(8)
                     } else if library.statusMessage.contains("失败") {
                         Text(library.statusMessage).font(.caption).foregroundStyle(.secondary).padding(8)
                     }

@@ -6,7 +6,7 @@
 
 | 用户说法或本次触及范围 | 到哪里找 |
 |---|---|
-| 改名、换界面、旧数据/人工歌词不丢；清理缓存、备份、数据包导入 | L-001、L-047 · `SettingsDataController`、`AppleMusicArtworkCache`、`writeDatabaseSnapshot` |
+| 改名、换界面、旧数据/人工歌词不丢；清理缓存、备份、数据包导入、GitHub 私有库同步 | L-001、L-047、L-055 · `SettingsDataController`、`AppleMusicArtworkCache`、`writeDatabaseSnapshot`、`GitHubLyricsSyncService` |
 | 从其他应用选字、⌘K 找回一句、读命中句、续读位置、歌本摘段 | L-043、L-046、L-051 · `WorkspaceQuickFind`、`LibraryPassageReader`、`LyricBookExcerptPicker` |
 | 两份稿逐句对读、选这句、编辑定位、打开 TXT/LRC/TTML、写手稿 | L-048、L-049、L-050 · `LibraryVersionComparison`、`LyricFileDocument`、`LyricManuscript` |
 | 新包、截图、构建/签名、性能采样；极简折叠；找回旧环境光与参数 | L-002、L-003、L-004 · [DEVELOPMENT_WORKFLOW](DEVELOPMENT_WORKFLOW.md)、`authenticAmbientArtworkLayers` |
@@ -29,7 +29,7 @@
 - 工程与检查：`SpotifyLyrics/`、`SpotifyLyrics.xcodeproj/`、`Tests/`、`Scripts/`、`Tools/`。
 - 规格与构建：[TOOLBAR_BEHAVIOR](TOOLBAR_BEHAVIOR.md)、[DEVELOPMENT_WORKFLOW](DEVELOPMENT_WORKFLOW.md)、[STATUS](STATUS.md)；离屏图用 `Scripts/ui-snapshots.sh`（不替代真窗）。
 
-## 核心长期约束与关键经验（L-001 ～ L-054）
+## 核心长期约束与关键经验（L-001 ～ L-055）
 
 ### 数据身份、规则边界与构建取证（L-001 ～ L-004, L-033）
 
@@ -74,3 +74,7 @@
 - **多窗与预览状态收敛**：`MainLyricsWindowView` 监听 `state.isShowingSearchPreview` 切回 `.followsPlayback`，防止工作台吞掉预览；`AppleMusicImmersiveV3WindowView` 对专注/搜索预览关闭 `developsKeepsakes` 与情境层，且 `V3Keepsakes.develop` 对 15 秒内同 `(kind, trackKey)` 去重，防止主窗与全屏重复洗出拍立得/星座留念（见 `testKeepsakeDevelopDeduplicatesRepeatedWindowFinish`）。
 - **预加载不再触发重复在线逐字搜索**：`LyricsSessionController` 区分 `wordTimingOnlineSearchedVersions` 与 `wordTimingUpgradeAttempts`（入队列同步插入），预加载或首次保存后若无本地逐字稿不再二次请求在线 provider，保留 `localTimingReference` 零网络升级，修复 `testPreloadedQueueTrackPlaysFromStorageWithoutAnotherSearch`。
 - **源码合同脚本与文档收口**：修复 `Tests/capsule_*.sh`、`Tests/apple_music_immersive_v3_contract.sh` 与 `Tests/v3_toolbar_popover_event_contract.*` 对拆分文件的路径/依赖引用；按 Vault `AGENTS.md` §2.2 规范将本页与 [TOOLBAR_BEHAVIOR](TOOLBAR_BEHAVIOR.md) 历史详录无损归档至 `docs/archive/`。
+
+### 2026-11-20 GitHub 私有库全量/增量 Markdown 同步（L-055）
+
+- **L-055 私有仓库隔离、Keychain 保护与无损增量树提交**：`GitHubLyricsSyncService` / `GitHubSyncClient` 强制校验远端 `private == true` 并硬拒绝 `suifracti/aster-lyric` 等开源/公开仓库；PAT 存 Keychain `com.spotifylyrics.github-sync`（遵守 `SPOTIFYLYRICS_DISABLE_KEYCHAIN=1` 与 `DebugAcceptanceDataIsolation`）；`GitHubSyncSnapshotBuilder` 按确定性排序输出 `README.md`、`INDEX.md`、`favorites.md`、`tracks/<slug> [<hash>].md` 与固定导出时间的 `backup/LyricIslandPersonalData.json`，客户端本地计算 Git blob SHA-1 对远端 tree 增量上传（无变更跳过提交），删曲仅清理 `tracks/` 与托管路径而不碰仓库内其他用户笔记；`SQLiteLyricsRepository.withTransaction` 仅在非内部重定向的持久化写提交后广播 `.personalLibraryAssetsDidMutate` 驱动 6 秒防抖自动同步。

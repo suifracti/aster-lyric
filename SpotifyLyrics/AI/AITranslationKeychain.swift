@@ -83,6 +83,7 @@ public extension AITranslationAPIKeyStore {
 
 public final class KeychainAITranslationAPIKeyStore: AITranslationAPIKeyStore, @unchecked Sendable {
     public static let service = "com.spotifylyrics.ai-translation"
+    private let service: String
     private let account: String
     private let transport: any AITranslationKeychainTransport
     private let lock = NSLock()
@@ -90,9 +91,11 @@ public final class KeychainAITranslationAPIKeyStore: AITranslationAPIKeyStore, @
     private var hasLoadedCache = false
 
     public init(
+        service: String = KeychainAITranslationAPIKeyStore.service,
         account: String = "default",
         transport: any AITranslationKeychainTransport = SecurityAITranslationKeychainTransport()
     ) {
+        self.service = service
         self.account = account
         self.transport = transport
     }
@@ -111,7 +114,7 @@ public final class KeychainAITranslationAPIKeyStore: AITranslationAPIKeyStore, @
             return cachedKey
         }
 
-        let resolvedKey = transport.read(service: Self.service, account: account)
+        let resolvedKey = transport.read(service: service, account: account)
         self.cachedKey = resolvedKey
         self.hasLoadedCache = true
         return resolvedKey
@@ -129,7 +132,7 @@ public final class KeychainAITranslationAPIKeyStore: AITranslationAPIKeyStore, @
             return
         }
 
-        try transport.save(service: Self.service, account: account, key: key)
+        try transport.save(service: service, account: account, key: key)
 
         lock.lock()
         self.cachedKey = key
@@ -149,7 +152,7 @@ public final class KeychainAITranslationAPIKeyStore: AITranslationAPIKeyStore, @
             return
         }
 
-        try transport.delete(service: Self.service, account: account)
+        try transport.delete(service: service, account: account)
 
         lock.lock()
         self.cachedKey = nil

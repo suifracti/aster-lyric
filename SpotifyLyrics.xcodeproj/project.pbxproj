@@ -289,6 +289,8 @@
 		9E2DD2812586A48DFBABFFC5 /* LyricBookDesk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3278F5F017EFC4C01ECDB3B9 /* LyricBookDesk.swift */; };
 		E0344A1381D163C4152A2ECF /* LyricBookPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61A751E17C36770F17898D26 /* LyricBookPicker.swift */; };
 		01452928D3A88BBA3CC2BF81 /* PlaybackConnectionCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = F06373F4B54D84A5257B4FA0 /* PlaybackConnectionCards.swift */; };
+		1B4DE203AD0443478136D2AF /* GitHubLyricsSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6C6286620C6410BEABE5F06 /* GitHubLyricsSync.swift */; };
+		33F8BB5F813A3930CE054CA7 /* GitHubSyncSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0355BFEC5C81297A8E7583 /* GitHubSyncSettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -580,6 +582,8 @@
 		3278F5F017EFC4C01ECDB3B9 /* LyricBookDesk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricBookDesk.swift; sourceTree = "<group>"; };
 		61A751E17C36770F17898D26 /* LyricBookPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricBookPicker.swift; sourceTree = "<group>"; };
 		F06373F4B54D84A5257B4FA0 /* PlaybackConnectionCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackConnectionCards.swift; sourceTree = "<group>"; };
+		D6C6286620C6410BEABE5F06 /* GitHubLyricsSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubLyricsSync.swift; sourceTree = "<group>"; };
+		DD0355BFEC5C81297A8E7583 /* GitHubSyncSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubSyncSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -753,6 +757,7 @@
 				DB7897AB0B3E2046F4D44B7D /* LibraryVersionCompareView.swift */,
 				6E4E11A2DEDE70F2E0F48ECB /* LyricFileReader.swift */,
 				D878152D0CF1CEB3707B44BF /* LibraryStorageSettingsView.swift */,
+				DD0355BFEC5C81297A8E7583 /* GitHubSyncSettingsView.swift */,
 				F57414EF02B03B082F419D79 /* LyricRecallView.swift */,
 				65306960D44D11ACCB0D8792 /* SettingsWorkspace.swift */,
 				56C63E37EC5A1E94BBBE28F6 /* WorkspaceQuickFind.swift */,
@@ -990,6 +995,7 @@
 				1100005F2D83400100000000 /* WindowStatePersistence.swift */,
 				110000602D83400100000000 /* SettingsDataController.swift */,
 				110006072D83400100000000 /* PersonalDataSync.swift */,
+				D6C6286620C6410BEABE5F06 /* GitHubLyricsSync.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -1299,6 +1305,7 @@
 				C0EAD72A39DBF51001F1F0D5 /* LibraryVersionCompareView.swift in Sources */,
 				1F08C11A54AD54A4C45E749C /* LyricFileReader.swift in Sources */,
 				311E64C965DA010EA4EE0E08 /* LibraryStorageSettingsView.swift in Sources */,
+				33F8BB5F813A3930CE054CA7 /* GitHubSyncSettingsView.swift in Sources */,
 				4D7C7204CB61BC984163EAD7 /* LyricRecallView.swift in Sources */,
 				8382063FD9B58CD5BA37F60F /* SettingsWorkspace.swift in Sources */,
 				AB9EAD42EB5CC5DEAFD10F91 /* WorkspaceQuickFind.swift in Sources */,
@@ -1363,6 +1370,7 @@
 				110006062D83400100000001 /* ListeningStatisticsView.swift in Sources */,
 				8E0B70EE956F8B5F62F2BC55 /* V3RecapCard.swift in Sources */,
 				110006072D83400100000001 /* PersonalDataSync.swift in Sources */,
+				1B4DE203AD0443478136D2AF /* GitHubLyricsSync.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1518,11 +1526,17 @@
 		0DEDF4B2C22A0C6063F45CD5 /* Tests/Native/Persistence/LibraryRevisionsContractTests.swift */ = {
 			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Persistence/LibraryRevisionsContractTests.swift"; sourceTree = SOURCE_ROOT;
 		};
+		D4A7C192E8B0417A901F2001 /* Tests/Native/Persistence/GitHubLyricsSyncTests.swift */ = {
+			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Persistence/GitHubLyricsSyncTests.swift"; sourceTree = SOURCE_ROOT;
+		};
 		1167566A7520276A410E3A64 /* Tests/Native/Persistence/AITranslationContractTests.swift */ = {
 			isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Tests/Native/Persistence/AITranslationContractTests.swift"; sourceTree = SOURCE_ROOT;
 		};
 		9A757666B9EF39CCE984CE15 /* Tests/Native/Persistence/LibraryRevisionsContractTests.swift build */ = {
 			isa = PBXBuildFile; fileRef = 0DEDF4B2C22A0C6063F45CD5 /* Tests/Native/Persistence/LibraryRevisionsContractTests.swift */;
+		};
+		D4A7C192E8B0417A901F2002 /* Tests/Native/Persistence/GitHubLyricsSyncTests.swift build */ = {
+			isa = PBXBuildFile; fileRef = D4A7C192E8B0417A901F2001 /* Tests/Native/Persistence/GitHubLyricsSyncTests.swift */;
 		};
 		23DCF1DE1098441922300C62 /* Tests/Native/Persistence/AITranslationContractTests.swift build */ = {
 			isa = PBXBuildFile; fileRef = 1167566A7520276A410E3A64 /* Tests/Native/Persistence/AITranslationContractTests.swift */;
@@ -1603,6 +1617,7 @@
 			isa = PBXGroup; name = "Native Tests"; sourceTree = "<group>"; children = (
 				2849EAA14F7F1E696E303139 /* Tests/Native/Persistence/LibraryIdentitySearchContractTests.swift */,
 				0DEDF4B2C22A0C6063F45CD5 /* Tests/Native/Persistence/LibraryRevisionsContractTests.swift */,
+				D4A7C192E8B0417A901F2001 /* Tests/Native/Persistence/GitHubLyricsSyncTests.swift */,
 				1167566A7520276A410E3A64 /* Tests/Native/Persistence/AITranslationContractTests.swift */,
 				2E2DD35BE6D5A5E1C3E4B0AD /* Tests/Native/Persistence/ListeningHistoryContractTests.swift */,
 				65251B5DEF939F31DE33AE35 /* Tests/Native/Persistence/ListeningStatisticsContractTests.swift */,
@@ -1631,6 +1646,7 @@
 				45807C00F498AF9166DC55F3,
 				9E0B6FDF20BC8FBFE7E02E74 /* Tests/Native/Persistence/LibraryIdentitySearchContractTests.swift build */,
 				9A757666B9EF39CCE984CE15 /* Tests/Native/Persistence/LibraryRevisionsContractTests.swift build */,
+				D4A7C192E8B0417A901F2002 /* Tests/Native/Persistence/GitHubLyricsSyncTests.swift build */,
 				23DCF1DE1098441922300C62 /* Tests/Native/Persistence/AITranslationContractTests.swift build */,
 				857582EE352EFDC972661F00 /* Tests/Native/Persistence/ListeningHistoryContractTests.swift build */,
 				D9A29AEF6674F0635F3BE17D /* Tests/Native/Persistence/ListeningStatisticsContractTests.swift build */,

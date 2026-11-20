@@ -165,7 +165,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .lyricsAndText: return "显示翻译 显示原文 字号 字体 透明度 繁简 转换 自动搜索 提前加载 预加载 下一首 自动排轴 时间轴"
         case .appearance: return "布局 背景 模糊 环境光 封面舞台 经典放大 柔光羽化 纯净歌词 封面海报 菜单栏 置顶 悬浮 透明 颜色 窗口状态 桌面歌词 停靠 程序坞 全屏歌词 第二块屏幕 外接显示器 暂停时隐藏 全屏 截图 录屏"
         case .reading: return "日语 中文 注音 Ruby 声调 本地引擎 自动生成 人工词典 优先级 读音候选"
-        case .advancedAndData: return "数据库 存储 空间 硬盘 磁盘 备份 缓存 清理 索引 重置 日志 导出 清除"
+        case .advancedAndData: return "数据库 存储 空间 硬盘 磁盘 备份 缓存 清理 索引 重置 日志 导出 清除 GitHub 私有仓库 同步 Token PAT GPT"
         case .servicesAndSources: return "Provider 免费 实验 LRCLIB 本地 Uta-Net UtaTime AWA"
         case .aiTranslation: return "API Key Keychain Base URL Codex ChatGPT GPT 目标语言 自动翻译 提示词 Prompt 超时 Temperature 连接测试"
         case .workspace: return "首页 工作台 资料"
@@ -1988,6 +1988,10 @@ private struct AdvancedAndDataSettingsView: View {
             )
 
             LibraryStorageSettingsView(data: data)
+
+            Section("GitHub 私有库同步") {
+                GitHubSyncSettingsView(compact: false)
+            }
 
             Section("诊断") {
                 LabeledContent("应用版本", value: appVersion)

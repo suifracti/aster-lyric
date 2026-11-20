@@ -6,6 +6,7 @@ public struct PersonalLyricsLibraryView: View {
     @State private var selectedStableKey: String?
     @State private var localScope = PersonalLibraryScope.initial
     @State private var showSyncFolder = false
+    @State private var showGitHubSync = false
     private let embeddedInSettings: Bool
     private let requestedTrackKey: String?
     private let requestedScope: Binding<PersonalLibraryScope>?
@@ -281,6 +282,15 @@ public struct PersonalLyricsLibraryView: View {
 
             DisclosureGroup("私人文件夹同步", isExpanded: $showSyncFolder) {
                 syncFolderSection
+            }
+            .font(.caption)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
+
+            DisclosureGroup("GitHub 私有库同步", isExpanded: $showGitHubSync) {
+                GitHubSyncSettingsView(compact: true)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
             }
             .font(.caption)
             .padding(.horizontal, 12)

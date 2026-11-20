@@ -3037,11 +3037,14 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         }
     }
 
-    private func withTransaction<T>(_ body: () throws -> T) throws -> T {
+    private func withTransaction<T>(notifiesLibraryChange: Bool = true, _ body: () throws -> T) throws -> T {
         try execute("BEGIN IMMEDIATE TRANSACTION;")
         do {
             let value = try body()
             try execute("COMMIT;")
+            if notifiesLibraryChange {
+                NotificationCenter.default.post(name: .personalLibraryAssetsDidMutate, object: databaseURL.standardizedFileURL)
+            }
             return value
         } catch {
             _ = try? execute("ROLLBACK;")
@@ -3251,7 +3254,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             try self.bindDouble(now, at: 5, to: audit)
             try self.stepDone(audit)
         }
-        if sqlite3_get_autocommit(database) != 0 { try withTransaction(insert) }
+        if sqlite3_get_autocommit(database) != 0 { try withTransaction(notifiesLibraryChange: false, insert) }
         else { try insert() }
         try reloadRedirectResolver()
     }

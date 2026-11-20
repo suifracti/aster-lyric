@@ -134,6 +134,7 @@ final class V3FavoriteLines: ObservableObject {
             }
             entries = next
             errorMessage = nil
+            NotificationCenter.default.post(name: .personalFavoritesDidMutate, object: fileURL?.standardizedFileURL)
             return true
         } catch {
             errorMessage = "暂时无法更新本机收藏，原来的文件已保留。"
