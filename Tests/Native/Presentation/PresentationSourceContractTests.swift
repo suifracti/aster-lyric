@@ -893,6 +893,19 @@ final class V3KeepsakeTests: XCTestCase {
         XCTAssertTrue(V3Keepsakes(folder: folder).prints.isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent(print.fileName).path))
     }
+
+    @MainActor
+    func testKeepsakeDevelopDeduplicatesRepeatedWindowFinish() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("keepsakes-dedup-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = V3Keepsakes(folder: folder)
+        let song = V3RoomContext.Song(trackKey: "spotify-id:dedup", title: "曲", artist: "歌手",
+                                      artworkURL: nil, lineCount: 10, hookLine: "サビ", hookTranslation: nil)
+        await store.develop(kind: .stars, song: song)
+        await store.develop(kind: .stars, song: song)
+        XCTAssertEqual(store.prints.count, 1)
+        XCTAssertEqual(V3Keepsakes(folder: folder).prints.count, 1)
+    }
 }
 
 final class V3SceneLayerTests: XCTestCase {

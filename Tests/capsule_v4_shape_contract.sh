@@ -21,12 +21,12 @@ swiftc -parse-as-library \
 
 "$TMP_DIR/capsule-v4-shape-contract"
 
-test "$(rg -c '^final class CapsuleLyricsWindowController' "$ROOT_DIR/SpotifyLyrics/Windows/CapsuleLyricsWindowController.swift")" = "1"
-if rg -n 'class .*V4.*WindowController|struct .*V4.*WindowController' "$ROOT_DIR/SpotifyLyrics" >/dev/null; then
+test "$(grep -Ec '^final class CapsuleLyricsWindowController' "$ROOT_DIR/SpotifyLyrics/Windows/CapsuleLyricsWindowController.swift")" = "1"
+if grep -rnE 'class .*V4.*WindowController|struct .*V4.*WindowController' "$ROOT_DIR/SpotifyLyrics" >/dev/null; then
   echo "v4 must not add a second capsule window controller" >&2
   exit 1
 fi
-if rg -n 'Timer|LyricsSessionController|TranslationSessionController' \
+if grep -rnE 'Timer|LyricsSessionController|TranslationSessionController' \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/CapsuleLyricsPresentation.swift" \
   "$ROOT_DIR/SpotifyLyrics/Windows/CapsuleLyricsWindowPersistence.swift" \
   "$ROOT_DIR/SpotifyLyrics/Views/Capsule/CapsuleLyricsView.swift" >/dev/null; then

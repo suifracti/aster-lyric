@@ -7,7 +7,7 @@ import SwiftUI
   app.setActivationPolicy(.prohibited)
   var presented = true
   var confirmed = false
-  let parent = V3ToolPopoverAnchor(isPresented: Binding(get: { presented }, set: { presented = $0 }), onAnchorPress: { confirmed = true }, content: AnyView(Text("Tool panel")))
+  let parent = V3ToolPopoverAnchor(isPresented: Binding(get: { presented }, set: { presented = $0 }), onAnchorPress: { confirmed = true }, width: 360, content: AnyView(Text("Tool panel")))
   let coordinator = V3ToolPopoverAnchor.Coordinator(parent: parent)
   let window = NSWindow(contentRect: NSRect(x:0,y:0,width:400,height:240), styleMask:.borderless, backing:.buffered, defer:false)
   let anchor = V3ToolAnchorView(frame:NSRect(x:280,y:180,width:36,height:36))
@@ -17,7 +17,7 @@ import SwiftUI
   precondition(attachmentNotified, "anchor should notify its host after joining the owner window")
   anchor.onWindowAttachment = nil
   coordinator.anchor = anchor
-  precondition(coordinator.popover.behavior == .applicationDefined)
+  precondition(!coordinator.popover.isShown)
   precondition(anchor.hitTest(NSPoint(x:10,y:10)) == nil, "anchor must not swallow button clicks")
   let click = NSEvent.mouseEvent(with:.leftMouseDown, location:NSPoint(x:296,y:196), modifierFlags:[],timestamp:0,windowNumber:window.windowNumber,context:nil,eventNumber:1,clickCount:1,pressure:1)!
   precondition(coordinator.handle(click) === click && presented && !confirmed, "owner-window anchor click should pass through for exactly one button action")

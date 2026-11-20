@@ -54,7 +54,8 @@ require "$CONTROLLER" 'presentationState == \.expanded' 'expanded state is the o
 require "$VIEW" 'liveLyrics' 'capsule consumes live lyrics'
 require "$VIEW" 'liveLyricsState' 'capsule consumes live state'
 require "$VIEW" 'onEditingChanged' 'expanded progress uses an explicit drag lifecycle'
-require "$VIEW" 'state\.seek\(to: draftPosition' 'only completed slider interaction seeks'
+require "$VIEW" 'seekDraft\.finish\(for: state\.seekRecording\)' 'only completed slider interaction seeks'
+require "$VIEW" 'state\.seek\(to: min\(target, duration\)' 'slider completion commits the clamped draft target'
 ! grep -Eq 'state\.lyrics([[:space:]]|\.|\[)' "$VIEW" || {
   echo 'FAIL: capsule view reads preview-capable state.lyrics' >&2
   exit 1

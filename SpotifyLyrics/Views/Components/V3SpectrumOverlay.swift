@@ -44,22 +44,39 @@ struct V3SpectrumOverlay: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         } else if style != .off, !reduceMotion {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !running || !visible)) { context in
-                Canvas { ctx, size in
-                    let levels = V3MusicPulse.levels
-                    let fresh = running && visible && ProcessInfo.processInfo.systemUptime - levels.updatedAt < 1
-                    let target = fresh ? levels.spectrum : levels.spectrum.map { _ in 0 }
-                    let values = smoother.step(target.isEmpty ? Array(repeating: 0, count: 24) : target,
-                                               now: context.date.timeIntervalSinceReferenceDate)
-                    switch style {
-                    case .bottom: drawBottom(&ctx, size: size, values: values)
-                    case .ring: if let cover { drawRing(&ctx, cover: cover, values: values) }
-                    case .off, .flow: break
+            Group {
+                if running && visible {
+                    V3AnimationIsland {
+                        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                            spectrumCanvas(at: context.date)
+                        }
                     }
+                } else {
+                    spectrumCanvas(at: nil)
                 }
             }
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+        }
+    }
+
+    private func spectrumCanvas(at date: Date?) -> some View {
+        Canvas { ctx, size in
+            let levels = V3MusicPulse.levels
+            let fresh = date != nil && running && visible && ProcessInfo.processInfo.systemUptime - levels.updatedAt < 1
+            let target = fresh ? levels.spectrum : Array(repeating: Float(0), count: 24)
+            let values: [Float]
+            if let date {
+                values = smoother.step(target.isEmpty ? Array(repeating: 0, count: 24) : target,
+                                       now: date.timeIntervalSinceReferenceDate)
+            } else {
+                values = Array(repeating: 0, count: 24)
+            }
+            switch style {
+            case .bottom: drawBottom(&ctx, size: size, values: values)
+            case .ring: if let cover { drawRing(&ctx, cover: cover, values: values) }
+            case .off, .flow: break
+            }
         }
     }
 

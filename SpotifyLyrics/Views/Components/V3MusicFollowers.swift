@@ -36,11 +36,17 @@ struct V3CoverBreath: ViewModifier {
     @ObservedObject private var settings = AppSettingsStore.shared
     @State private var box = V3BassFollowerBox()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.v3WindowVisible) private var visible
+    @Environment(\.v3IsPlaying) private var isPlaying
 
     func body(content: Content) -> some View {
-        let active = settings.v3CoverBreath && settings.v3MusicMotionEnabled && !reduceMotion
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !active)) { _ in
-            content.scaleEffect(active ? 1 + 0.02 * box.step() : 1)
+        let active = settings.v3CoverBreath && settings.v3MusicMotionEnabled && !reduceMotion && visible && isPlaying
+        if active {
+            TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
+                content.scaleEffect(1 + 0.02 * box.step())
+            }
+        } else {
+            content
         }
     }
 }
@@ -53,16 +59,27 @@ struct V3EdgeLights: View {
     @State private var box = V3BassFollowerBox()
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !running)) { _ in
-            let level = running ? box.step() : 0
-            Rectangle()
-                .strokeBorder(accent, lineWidth: 26)
-                .blur(radius: 22)
-                .blendMode(.screen)
-                .opacity(0.06 + 0.5 * level)
+        Group {
+            if running {
+                V3AnimationIsland {
+                    TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
+                        lights(level: box.step())
+                    }
+                }
+            } else {
+                lights(level: 0)
+            }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    private func lights(level: Double) -> some View {
+        Rectangle()
+            .strokeBorder(accent, lineWidth: 26)
+            .blur(radius: 22)
+            .blendMode(.screen)
+            .opacity(0.06 + 0.5 * level)
     }
 }
 
@@ -74,19 +91,23 @@ struct V3CoverRimLight: View {
     @State private var box = V3BassFollowerBox()
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !running)) { _ in
-            let level = running ? box.step() : 0
-            let shape = RoundedRectangle(cornerRadius: cover.cornerRadius, style: .continuous)
-            ZStack {
-                shape.stroke(accent, lineWidth: 5).blur(radius: 9).opacity(0.85 * level)
-                shape.stroke(Color.white, lineWidth: 1.2).opacity(0.75 * level)
+        if running {
+            V3AnimationIsland {
+                TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
+                    let level = box.step()
+                    let shape = RoundedRectangle(cornerRadius: cover.cornerRadius, style: .continuous)
+                    ZStack {
+                        shape.stroke(accent, lineWidth: 5).blur(radius: 9).opacity(0.85 * level)
+                        shape.stroke(Color.white, lineWidth: 1.2).opacity(0.75 * level)
+                    }
+                    .frame(width: cover.frame.width, height: cover.frame.height)
+                    .position(x: cover.frame.midX, y: cover.frame.midY)
+                    .blendMode(.screen)
+                }
             }
-            .frame(width: cover.frame.width, height: cover.frame.height)
-            .position(x: cover.frame.midX, y: cover.frame.midY)
-            .blendMode(.screen)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }
 

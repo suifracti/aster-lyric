@@ -17,7 +17,8 @@ for needle in \
 done
 
 grep -F 'CapsuleDynamicIslandDarkV4.targetSize' "$VIEW" >/dev/null
-grep -F 'current.originalText' "$VIEW" >/dev/null
+grep -F 'preferredText(selection.current)' "$VIEW" >/dev/null
+grep -F 'LyricTextLayers(' "$VIEW" >/dev/null
 grep -F 'lineLimit(1)' "$VIEW" >/dev/null
 grep -F 'pause.fill' "$VIEW" >/dev/null
 grep -F 'forward.end.fill' "$VIEW" >/dev/null

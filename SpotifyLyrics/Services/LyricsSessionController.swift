@@ -72,6 +72,9 @@ public final class LyricsSessionController: ObservableObject {
     /// Songs whose stored line timing was already checked for a word-timed
     /// upgrade in this run; one bounded search per song per launch.
     private static var wordTimingUpgradeAttempts: Set<UUID> = []
+    /// Versions whose online sources were already searched word-timing-first
+    /// in this run (e.g. via queue preload or initial match save).
+    private static var wordTimingOnlineSearchedVersions: Set<UUID> = []
     private let sourceRetryDelay: TimeInterval
     private var retriedIdentity: TrackIdentity?
     private var isRecoveryAttempt = false
@@ -515,8 +518,11 @@ public final class LyricsSessionController: ObservableObject {
                     LyricsE2ELog.log(
                         "SESSION persistence save rev=\(requestRevision) disposition=\(String(describing: saved?.disposition)) lines=\(document.lines.count)"
                     )
-                    if let id = saved?.versionID, !LyricsWordTimingUpgrade.wantsUpgrade(document) {
-                        Self.wordTimingUpgradeAttempts.insert(id)
+                    if let id = saved?.versionID {
+                        Self.wordTimingOnlineSearchedVersions.insert(id)
+                        if !LyricsWordTimingUpgrade.wantsUpgrade(document) {
+                            Self.wordTimingUpgradeAttempts.insert(id)
+                        }
                     }
                 } catch {
                     let message = error.localizedDescription
@@ -1412,7 +1418,9 @@ public final class LyricsSessionController: ObservableObject {
     ) {
         guard let repository, let heldVersionID = held.versionID,
               activeIdentity == identity, revision == expectedRevision,
-              !Self.wordTimingUpgradeAttempts.contains(heldVersionID) else { return }
+              Self.wordTimingUpgradeAttempts.insert(heldVersionID).inserted else { return }
+        let skipOnlineSearch = Self.wordTimingOnlineSearchedVersions.contains(heldVersionID)
+            || Self.preloadedRecordingIDs.contains(TrackIdentity.playbackID(for: track) ?? "")
         wordTimingUpgradeTask?.cancel()
         LyricsE2ELog.log("SESSION word-timing upgrade search source=\(held.document.source) provider=\(held.document.providerSourceID ?? "") rev=\(expectedRevision)")
         wordTimingUpgradeTask = Task { @MainActor [weak self, searchManager] in
@@ -1423,7 +1431,8 @@ public final class LyricsSessionController: ObservableObject {
             var candidate = local.flatMap {
                 LyricsWordTimingUpgrade.isCompatible(held: held.document, upgrade: $0) ? $0 : nil
             }
-            if candidate == nil {
+            if candidate == nil, !skipOnlineSearch {
+                Self.wordTimingOnlineSearchedVersions.insert(heldVersionID)
                 let outcome = await searchManager.search(
                     track: track, identity: identity, aliases: aliases, lineTimingHeld: true
                 )
@@ -1435,7 +1444,6 @@ public final class LyricsSessionController: ObservableObject {
             let elapsed = String(format: "%.2f", Date().timeIntervalSince(started))
             guard !Task.isCancelled, self.activeIdentity == identity, self.revision == expectedRevision,
                   self.activeLyricsVersionID == heldVersionID else { return }
-            Self.wordTimingUpgradeAttempts.insert(heldVersionID)
             guard let candidate else { return }
             do {
                 guard let timed = try await repository.attachWordTiming(from: candidate, to: heldVersionID, track: track),

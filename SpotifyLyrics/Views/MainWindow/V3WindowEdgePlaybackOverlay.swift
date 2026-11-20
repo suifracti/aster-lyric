@@ -104,21 +104,17 @@ struct V3WindowEdgePlaybackOverlay: View {
 
                 // Keep popover/state ownership alive when hidden, without ticking its controls.
                 V3AnimationIsland {
-                    TimelineView(.animation(
-                        minimumInterval: reduceMotion ? 0.5 : 1.0 / 30.0,
-                        paused: !playerVisible || !windowVisible || (!state.isPlaying && !animatesColor)
-                    )) { context in
-                        V3WindowEdgeTransportButtons(state: state,
-                            accent: accent(at: context.date, songHue: songHue),
-                            edge: controlPosition.edge,
-                            elapsed: v3EdgeTimeText(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime)),
-                            total: v3EdgeTimeText(state.currentTrack.duration),
-                            progress: Double(progressFraction),
-                            duration: state.currentTrack.duration,
-                            canSeek: canSeek,
-                            onScrub: { setDraft($0) },
-                            onScrubEnd: { finishSeek(fraction: $0) },
-                            onScrubAdjust: { seek(toFraction: $0) })
+                    if animatesColor {
+                        TimelineView(.animation(
+                            minimumInterval: reduceMotion ? 0.5 : 1.0 / 30.0,
+                            paused: !playerVisible || !windowVisible
+                        )) { context in
+                            edgeTransportButtons(at: context.date, songHue: songHue, controlPosition: controlPosition)
+                        }
+                    } else {
+                        TimelineView(.v3Every(0.25, paused: !playerVisible || !windowVisible || !state.isPlaying)) { context in
+                            edgeTransportButtons(at: context.date, songHue: songHue, controlPosition: controlPosition)
+                        }
                     }
                 }
                 .frame(width: controlPosition.baseSize.width, height: controlPosition.baseSize.height)
@@ -281,6 +277,20 @@ struct V3WindowEdgePlaybackOverlay: View {
     private func cancelDraft() {
         if seekDraft.isTracking { interactionChanged(false) }
         seekDraft = PlaybackSeekDraft()
+    }
+
+    private func edgeTransportButtons(at date: Date, songHue: Double, controlPosition: V3WindowEdgeControlPositioner.Layout) -> some View {
+        V3WindowEdgeTransportButtons(state: state,
+            accent: accent(at: date, songHue: songHue),
+            edge: controlPosition.edge,
+            elapsed: v3EdgeTimeText(state.presentationClock.playbackTime(at: ProcessInfo.processInfo.systemUptime)),
+            total: v3EdgeTimeText(state.currentTrack.duration),
+            progress: Double(progressFraction),
+            duration: state.currentTrack.duration,
+            canSeek: canSeek,
+            onScrub: { setDraft($0) },
+            onScrubEnd: { finishSeek(fraction: $0) },
+            onScrubAdjust: { seek(toFraction: $0) })
     }
 
     private func railPresentation(at date: Date, songHue: Double, size: CGSize) -> some View {

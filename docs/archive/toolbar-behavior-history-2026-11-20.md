@@ -1,0 +1,800 @@
+# Aster · Lyric｜工具栏与产品规格历史归档（Round 6–26，2026-11-20）
+
+> 冻结归档：保留 `docs/TOOLBAR_BEHAVIOR.md` 中已交付并收口的 Round 6–26 逐轮规格与当时检查边界，不改写原文。当前有效产品规格见 [TOOLBAR_BEHAVIOR](../TOOLBAR_BEHAVIOR.md)。
+
+## Round 6: 日用体验收口与真实问题复核（2026-10-27，GPT核对后交Codex实施）
+
+**本轮定位**：用户要求把这一轮的实施规划写入 GitHub 再交 Codex。**这不是新一轮大改或新增功能。** 按本文件既有 Round 3/4/5 产品决定，修真实欠账、补齐必要验证、收口错误提示和日用手感。Claude 仍负责既定 UI 设计审查；Codex 执行代码；不让用户重复转发细节或陪跑长时间桌面自动化。
+
+### 事实基线（实施前必须刷新）
+
+- 审计时 GitHub `main = 91e1814db1b527c6513855de24f39f7dafc9c211`。**这是截点，不是固定施工基线**；Codex 启动和每次提交前先 `git fetch`，核对真正 `origin/main` 与 dirty，不 reset/clean/stash/force-push，不覆盖 `.planning/`、`.workbuddy/`、正式数据库或本机未提交代码。
+- Round 5 **代码已提交**：大字模式防裁切 `5ff0d7b4`，边缘seek内移+短拖动条 `5defd615`，歌词库双栏 `53a14735`，搜索分组 `49b2591e`，歌单与队列 `369f9616`，后续修补至 `91e1814`。**不重复开发。**
+- Round 4 **四项代码也已经提交**：按歌词语言记忆读音显示 `135e3744`、免费来源批量补词 `967e9823`、睡眠定时 `981e9ee9`、当前句发光强度 `7c27b212`。不要再作为“第10条待选功能”立项。
+- 本机执行者报告 Debug Xcode 构建和 **110 PASS、1 SKIP、0 FAIL**，以及四张 **离屏**截图；这些不等于用户真实桌面交互、真实 Spotify 控制或稳定低占用已经通过。既有截图与报告位置：`/Users/apple/backup/sptifylyrics/.local/round5-20261027/`；能访问时直接复用，不要求用户重传。
+- GitHub Actions `40478095735` 对 `91e1814` 的完整 macOS App 构建及 XCTest 步骤 **通过**，但整条 workflow 为 **FAIL**，因为额外的 Python 源码合同有 **两项旧检查失败**；不能整体宣称 CI 绿灯，也不能把这两项当成已复现的 UI Bug。
+
+### R6-1｜先清理这两项过时检查，不改回已批准的产品行为（P0）
+
+**A. 边缘轨道合同**：`Tests/v3_edge_pointer_state_contract.py` 仍硬编码期待旧 `height: 14` 的沿边输入区域。Round 5 已将可操作区域改到窗口内侧 **6–20pt**，避免与 macOS 窗口缩放重叠。改测试为验证**当前生产命中带真实几何**（至少包括离边缘3pt不能触发seek、6–20pt有效、窗口尺寸/方向变化后仍一致），不因为旧字符串不见了就报错。保留“旧歌曲拖动不能seek新歌曲”、鼠标跟踪不吞按钮、窗口边缘常驻进度等已有保护。
+
+**B. 外置工具窗合同**：`Tests/v3_redesign_contract.py` 旧断言要求 `v3ToolPanelRoot(parent.content)` 出现至少两次。当前 `AppleMusicImmersiveV3Toolbar.swift` 改成一次创建 `let content = v3ToolPanelRoot(parent.content.onPreferenceChange(...))`，再分别用于 `NSHostingController(rootView: content)` 与 `hosting.rootView = content`。合同应验证**创建和更新同一套系统外观包装、固定窗与悬停窗的外观隔离，以及固定面板保留内容**，不以调用字符串出现次数判断功能。不得为了测试重新挂两份活跃面板，也不得删除其他身份/偏好/取消预览检查。
+
+提交一个精确的测试修订，执行受影响的两个脚本及仓库现有 CI；要求 **native XCTest 与 source contracts 全部通过**。如果出现的是新行为失败而非陈旧断言，记录实因并定点修生产代码。不要以跳过脚本、修改 CI 成总是成功或大删断言来“修绿”。
+
+### R6-2｜围绕 Round 5 的真实症状做一次精简原生检查（P1）
+
+以下均为**先检查，失败才修改**；已通过就记证据，不写重复功能。
+
+1. **大字模式**：使用历史复现曲《運命のふりをして》的当前句「ずっと前から決めてたんだね」，封面、环境光各查一次：开大字模式后**句首不能被顶端裁掉**；最多两行，两行仍放不下再缩字；有假名注音时原文与读音仍对应；上下句间距不乱。关闭大字模式仍按原行为。截图只是辅助，不能以离屏静图替代字体换行的本机验收。
+2. **边缘进度/胶囊**：靠边3pt处不能seek/夺走系统窗口缩放；6–20pt能选/拖进度；横排与竖排胶囊中的短进度条都能拖动、能读时间；靠近四边唤出按钮位置不跳；轨道始终可见，拖动期间切歌不能误seek新歌。检验顶栏打开时边缘控制被压制，不抢浮层/歌词点击。
+3. **居中浮层歌词库**：默认选中当前歌；标签/过滤、左右两栏及「⋯」操作布局清晰；**预览不等于采用**；采用、锁定、人工版本与原词/译文/读音/时间轴仍对应；关闭与在新窗口打开正常，不把灰色遮罩留在主窗。
+4. **搜索**：本首「歌词版本」与「其他歌曲」分区清楚；同一录音不重复展示；不同 Spotify track ID 不被误合并；「查看歌词」不自动播放，「▶」才播放；逐字/逐行/纯文本与时长差确实取自候选证据；标签切换后各自查询与选中状态不串。
+5. **歌单/播放队列**：悬停显示队列接下来的5首；歌单双栏与收藏勾选状态清晰；模拟歌单中第3首播放时 `offset=2`，且使用该歌单 `context_uri`；Spotify 未登录、401/403、无Premium、空歌单都给正确状态，不假装“没有歌单”。**自动测试仅用可控桩，不向用户真实 Spotify 发写请求**；真实播放留用户自行试用。
+
+原生截图优先使用已存在的 Round5 四张；必要时取少量新图。屏幕接口故障（例如 ScreenCaptureKit -3811）不得阻塞实施，不用重新造截图工具或移动用户全局鼠标。
+
+### R6-3｜Round 4 的四个已实现功能，只查联动不再重造（P1）
+
+- **按歌词语言显示读音**：日语/中文/韩语/其他独立保存；首次迁移沿用旧显示偏好，不因切歌清空；同一版本语言判断缓存，无词时不猜语言。
+- **批量补缺词**：「缺歌词」筛选准确、进度可取消；顺序有界免费查询，不启动 AI 翻译、不调用付费服务、不覆盖人工或锁定歌词；来源失败和无正文不能伪装成功，不持续重复请求。
+  - 结果里的「需要核对」可直接打开本轮找到的候选。确认后将歌词存入原录音，结果更新为已存，并打开该档案。保留原来的缺词筛选和搜索词，关闭核对页后仍可回来继续。
+  - 同一 App 会话内，停止后可从「结果」选择「继续未查」。它沿用原批次名单。「仅重试失败」从同一结果里处理查询或保存失败的歌曲，单独显示重试进度。两项操作都保留其他歌曲和待核对候选。
+- **睡眠定时**：15/30/60分钟与本曲结束后按当前播放源暂停；取消后不再触发，结束后重置，不新增后台每行/每窗口计时器。
+- **当前句发光**：0% 无新增光，默认不改变既有外观，仅当前行受影响；对亮色封面、长句和减少动态效果做轻量检查，不重画所有歌词行。
+
+### R6-4｜自动歌词在真实欠缺曲目上做定点复核（P2）
+
+保留原有身份证据规则，**不能通过全局降低阈值换取“自动率”**。区分“来源查不到正文”“来源超时/500/503”“来源有纯文本但无时间轴”“当前曲目与候选不同录音”。可复用历史用例：HANABI/SACBEN 发行方有公开32行未同步文本；WAITING AT 3AM 当前发行页尚无正文；Piano Ver. 与普通编曲必须分辨。实际有可信歌词时完成 `搜索→AUTO_ADOPT→主窗显示→A→B→A缓存命中` 的日用闭环，手选/锁定版本不得被覆盖。无法获得歌词时保留诚实状态，不把没有正文推断为纯音乐。
+
+### 性能、协作与完成判据
+
+- **优先最小修改**：各子项独立一次提交，做完正常推送 `main` 并读回；提交前先 fetch/reconcile 同时发生的开发，不强推，不改前面已认可的原版环境光、羽化/柔焦/高斯、四场景分类或八个 renderer rawID。
+- **30秒快速筛查**：影响UI/动画/窗口的修改，用同一Mac、同构建优化、同曲同窗同文字层，基线与候选比较 CPU/RSS（必要时 WindowServer）。这是回归筛查，不保证长期绝对低占用；出现持续增高先定位该项，不花半小时调鼠标脚本。禁止每行 Timer、逐帧全局 State 更新、预建所有场景或高分辨率逐帧模糊。
+- **保护数据**：不覆盖正式安装版、SQLite、Keychain、手选或锁定歌词；不擅自调用付费 AI、不扩大账号权限、自动测试不直接修改真实用户歌单。
+- **提交/报告**：每项说明实际修了什么、提交 SHA、受影响的一条真实检查及结果，`NOT_RUN` 单独列明。最终只发一份简短总报告（含来源测试 PASS/FAIL、Xcode XCTest、4处重要UI状态、CPU/RSS对照、尚未实测的 Spotify 写操作）。不要求用户逐步转发或做全量回归。
+- **停止线**：Round6不再新增功能、不另造UI体系。上述问题均无真实缺陷时就收口；需要新设计的意见另记候选，不在本轮无边界扩大范围。
+
+
+## Round 7: 歌单窗口收口与歌词卡顿（2026-10-31）
+
+**Lyric rows never run the reading engine.**
+- A view `body` must not start MeCab or wait for it. Each song's readings are computed once off the main thread.
+- Lines show without readings until the result arrives, then gain them without a jump in position.
+- Find out why the existing caches miss during playback, and fix that cause.
+
+**歌单 panel, left column:**
+- 接下来播放 and 已点赞的歌曲 get a 32 pt icon tile, so their titles line up with the playlist names.
+- All rows share one selection style: rounded, inset 6 pt from the column edges.
+- Membership mark: ✓ stays visible; an empty circle shows only on row hover. 接下来播放 has none.
+
+**歌单 panel, right column:**
+- Rows get a hover highlight; ▶ shows only on hover.
+- **接下来播放 is read-only:** no ▶ and no double-click play. Spotify has no call to jump within the queue.
+- **已点赞的歌曲:** play sends the chosen song plus the loaded songs after it through `uris`, so playback continues.
+- Changing songs must not rebuild the panel or reset its scroll position.
+
+**Header:** on the 歌单 tab the 「⋯」 menu holds only 刷新. Hide 导出, 导入 and 私人文件夹同步 there.
+
+**Hover panel:** title 「接下来播放」, then the next 5 songs, then 「打开歌单」. An empty queue shows 「接下来没有待播歌曲」.
+
+The 歌词库 · 搜索 · 歌单 tabs inside the panel stay for now, because the toolbar can hide.
+
+
+## Round 8: 跟随系统外观、悬浮窗重做、插入播放、性能收口（2026-10-31）
+
+**Appearance follows macOS, live.**
+- Toolbar, hover panels, the centred panel, the add-to-playlist popover, settings and library windows follow the system light or dark setting, and change at once when it changes. There is no in-app appearance switch.
+- The lyric canvas, cover scenes and edge player stay as they are, because their colours come from the artwork.
+- Controls never take a tint from the cover. Tabs, links and icons use neutral system colours. Only the playing song may use the cover accent. Artwork colour may show through hover-panel glass (Round 10).
+
+**Hover panels (歌单, and the same header on 歌词库 and 搜索).**
+- Header: title on the left, a quiet text link on the right: 「全部」 for 歌单, 「打开歌词库」 and 「全部结果」 for the others. These replace the bottom buttons.
+- Glass follows Round 10. Hairline border, 14 pt corners.
+- 歌单 panel: 300 pt wide, 14 pt padding, five 44 pt rows with a 36 pt cover, title in primary and artist in secondary colour. Rows highlight on hover.
+- It keeps showing the last known queue while refreshing, with no spinner flash, and refreshes when the song changes. The empty text stays.
+
+**插入播放.**
+- A button (`text.line.first.and.arrowtriangle.forward`, tooltip 「插入播放」) sits left of ▶ on hover, in playlist and liked rows and in the songs of the search tab. Queue rows do not have it.
+- It calls `POST /me/player/queue`: the song plays after the current song and anything already inserted, and the playlist then continues.
+- On success the icon shows ✓ for 1.5 s, and the queue reloads about 1 s later, since Spotify reads lag. A 403 shows 「需要 Spotify Premium」.
+
+**Centred panel.**
+- The right column opens with a header: 56 pt cover, name, 「N 首」 and a 「播放」 button that starts from the first song. 接下来播放 has no 播放 button. Its rows are clicked directly (Round 10).
+- The playing song is marked in the list with the cover accent and a small level icon.
+
+**Performance target:** while playing in a cover scene, the Release build averages at most 15% CPU, with clicks answered at once. The look stays the same to the eye.
+
+**Repeat-one:** the end of a looping song must not read as paused. Playback state stays correct across each loop.
+
+
+## Round 9: 歌词库、搜索和控件细节（2026-11-01）
+
+**Version lists (centred 歌词库 panel, new-window library, hover 歌词库).**
+- Names are always Chinese, from the existing display names. Raw source values such as `MANUALIMPORT` never show.
+- Dates read 「10月31日 19:56」, with the year only when it differs from this year.
+- Each version is one row about 48 pt high: mark, name, then 「日期 · N 行」 beneath.
+- 预览 · 编辑 · 采用 show on the right on row hover. The adopted row always shows 「已采用」.
+- Adopted rows use a neutral fill and ✓, with no blue fill and no left bar.
+- Section titles (原词 / 译文 / 读音 / 时间轴) are 13 pt semibold with a grey count and a neutral icon. Remove the divider between versions.
+- Library filter chips use the same neutral selection as the panel tabs.
+
+**Song search (hover 搜索 and the search tab).**
+- A song appears once. If it is both saved and online, keep the saved result.
+- Titles get the whole row width; source and action sit on the second line.
+- 「查看歌词」 and the selected mark use neutral colours.
+
+**Edge player on bright covers:** icons and time must read clearly on a white cover. Darken the capsule backing until they do.
+
+**Compact player:** the play button is the same in every scene and in both states: a near-white filled circle with a dark icon.
+
+
+## Round 10: 更通透的悬浮窗与队列跳过（2026-11-01）
+
+**Hover glass (every toolbar hover or pinned panel, in light and dark).**
+- Clearly more see-through than now: the artwork's colours and large shapes show through, blurred, about like macOS Control Center.
+- Body text stays easy to read on bright, dark and busy covers. Adjust the backing just enough for that.
+- The add-to-playlist popover uses the same glass. The centred panel stays solid.
+- Opening a panel must not put a focus ring on its first control.
+
+**接下来播放: 跳过这首.**
+- Spotify's Web API can read the queue and add to it, but has no call to remove or reorder items. Do not show a drag handle or anything else implying reorder.
+- In the hover panel and the centred panel, row hover shows an × with tooltip 「跳过这首」.
+- The row disappears at once. Whenever that song becomes the current song, however it got there (it arrives by itself, crossfades in, or the user presses Next in the app, in Spotify or on a media key), the app skips it immediately. The mark is then used up.
+- Marks last for this app run only.
+- A song started on purpose in the app always plays: from a row, from search, or with 上一首. 插入播放 on a marked song removes its mark.
+- Spotify does not say why a song changed. If the user clicks a marked song inside Spotify, it is skipped once and the mark is used up, so clicking it again plays it. This is accepted. Do not add timing rules to tell these cases apart.
+
+**接下来播放: fast, always current, clickable (2026-11-01).**
+- The Spotify queue loads when the first Spotify song arrives, on song changes and each time a panel opens. Opening the panel shows the last list at once and then updates it. A failed load retries once after 2 s. A spinner only appears when nothing has ever loaded.
+- On a song change, the list drops the new current song and everything before it straight away, without waiting for Spotify. The song now playing never stays as a row.
+- Clicking a row, in the hover and centred panels, jumps to that song: the app calls Next as many times as it takes, in one quick run. Songs passed over use up their marks, and the jump never adds extra skips. × keeps its own click.
+- With a repeating playlist the same song can appear later in the queue. Those rows are ordinary rows: only rows at the top of the list count as already played, and × on a later row marks it as usual.
+
+**跟随播放器的歌单（2026-11-18）。** 在 Apple Music 下，歌单面板与悬停入口从 Mac 的「音乐」读取本人歌单、喜爱歌曲和当前歌单顺序。歌单顺序显示歌单名以及当前位置之后最多 25 首，点击时按该歌单的原始位置和歌曲 ID 定位，支持同一首出现两次。系统允许手改待播队列，亦可随机播放，因此窗口将这份顺序写作「歌单后续」。没有可核对的当前歌单时显示原因。Spotify 的插播和单次跳过只在 Spotify 下出现。两个来源切换时撤下原列表和待执行操作。
+
+**播放来源设置。** 可以选择自动跟随或单独使用 Spotify、Apple Music。每张卡展示本机 App 的状态，以及已观察到的播放或授权结果。「重新检测」时当前歌词仍可读。Spotify 在线曲库的账号授权折叠在播放设置中，也可以从搜索窗口直接打开。
+
+**找歌和读到某一句（2026-11-18）。** Spotify 下可以搜索在线曲库。Apple Music 下会查这台 Mac 的「音乐」资料库，结果按本机录音区分，只有明确点播放才向播放器发命令。搜索库内旧译文或读音时点「读这句」，会直接翻到命中的那一版。在没有播放歌曲时，搜索到的已存歌曲也能直接打开阅读。
+
+**Pinned panels.**
+- The glass runs to the top of the window, under the traffic lights. No separate title-bar strip, and no window title repeating the panel heading.
+
+**Scrolling panels.**
+- When the 画面 panel's content is taller than the panel, the bottom edge fades over about 16 pt instead of cutting a row in half.
+
+## Round 11: 版本弹窗与歌词源译文（2026-11-01）
+
+**Version popups (preview and the revision sheets).**
+- They always open on the main window, never on a hover panel. Clicking a version row in a hover panel closes that panel, then the sheet opens at its normal size.
+- This covers every popup a hover-panel version row can open: preview, revision, 版本名称与备注 and the 删除译文版本 confirmation.
+- From a hover panel, closing the sheet returns to the lyrics. The window never stays dimmed with nothing on it.
+- The large library panel lives inside the main window, so it stays open behind the sheet. Closing the sheet returns to the library, on the same song.
+
+**Lyric source translations (歌词源译文).**
+- When a lyric source supplies its own translation, it shows by default. The user does not have to turn it on.
+- Order: the song's manual choice, including 「不显示」, comes first. Then locked or hand-edited versions, then AI versions, then the source's translation.
+- Showing a source translation never starts an AI request and never changes existing lyrics or translations. The first play may add the source translation as a new version row.
+
+
+## Round 12: 译文选择、歌词库速度、边缘播放器（2026-11-02）
+
+**Choosing the translation.** Users could not find the choice behind the 「已保存的译文」 menu.
+- The 译文 panel's first row under 功能 is 「当前译文」 with a dropdown that always shows the current choice.
+- Options, in order: 自动（推荐）, each saved version by source name (for example 歌词源译文, AI · GPT-6.1-Sol), then 不显示.
+- Two versions with the same name also show their date. The AI settings sit below this row.
+- With no saved version, the row reads 「暂无译文」 and the dropdown is disabled.
+- This replaces 「已保存的译文」. Its 「无译文」 and 「恢复推荐」 become 不显示 and 自动（推荐）.
+- The choice is per song. The global 译文 switch in the 文字 panel stays.
+
+**Library hover panel speed.** After the first open, the panel shows the current song's versions with no visible spinner, target under 100 ms. The current song's detail is ready before the panel opens.
+
+**Edge player: reaching the rail.** The pill sits about 10 pt from the edge, so only a thin strip of the 6–20 pt hit band is free, right beside macOS's resize zone.
+- The pill keeps 26 pt of clear space from the window edge on every side. Nothing of it sits on the hit band.
+- The hit band becomes 6–26 pt.
+- When the pointer comes within 48 pt of an edge, that side of the rail moves to 14 pt from the edge and the whole rail thickens to 4 pt, over 160 ms. It returns when the pointer leaves. Reduce Motion uses a fade.
+- The pill stays visible while the pointer crosses the band.
+- Click and drag on the band work as before, with the time label following the pointer.
+
+**Edge player: look.**
+- Same glass as the toolbar (`V3PanelGlass`), keeping the darker backing on bright covers.
+- Three groups with an 8 pt gap between them: 喜欢 · 添加到歌单 | 随机 · 上一首 · 播放 · 下一首 · 循环 | time.
+- Icons 13 pt. Secondary icons at 70% white. Play is a 30 pt accent circle. Hit areas 28 pt, with the same hover circle.
+- Vertical: pill 44 pt wide, elapsed over total, centred. Horizontal: 「0:35 / 3:13」 after the buttons.
+- Time is 10 pt monospaced, elapsed at 90% and total at 55%, never truncated.
+- The pill's short progress track from Round 5 is removed. The rail does this job now.
+
+**Foreground cover and player card.** The problem is the width mismatch: the cover is narrower than the card, so no alignment looks settled, and 居右 leaves the cover on the column's left.
+- The player card is always exactly as wide as the cover, so both edges line up. The cover size slider drives both.
+- The card's minimum width is 300 pt. If the cover is smaller than that, the cover is centred over the card.
+- 居左 / 居中 / 居右 move the whole column. Title text is centred in 居中 and left-aligned in the other two.
+- The default stays as it is, and a saved position is not changed.
+
+**Segmented controls in tool panels.** The native control's highlight shifts by itself inside the glass panels.
+- All segmented pickers in the tool panels use one shared `V3SegmentedPicker`.
+- The selected capsule fills exactly its own segment. It moves only when the selection changes, with a 160 ms ease, and never follows the pointer.
+- Equal segment widths; no dividers; hover is a faint fill on that segment only. Reduce Motion cuts straight to the new position.
+
+## Round 13: seeking on the pill, one bar surface, one-screen 画面 panel (2026-11-11)
+
+**Seeking moves from the window edge to the edge player.** The user found both earlier forms awkward: a seek band at the edge sits on macOS's resize border, and a rail that slides inward on approach does not look calm.
+- The rail at the window edge only shows progress. It never moves, never thickens and takes no pointer events. A click at the edge can only resize the window.
+- The edge player carries a thin scrubber line on its inner side: under the buttons at the top edge, above them at the bottom edge, and on the canvas side of the vertical pill. Its pointer target is 10 pt thick; the line is 2.5 pt and grows to 4 pt under the pointer.
+- Click seeks. Dragging scrubs and seeks on release; the lyrics do not jump while dragging. While the pointer is on the scrubber, the elapsed time in the pill shows the time under the pointer. There is no separate floating time label.
+- The pill is 304 × 50 pt, or 54 × 248 pt when vertical.
+- This replaces the hit band, the inward-moving rail and the rail time label of the 2026-10-21 section and Round 12. Clicking a lyric line to seek is unchanged.
+
+**One surface for the bars over the canvas.** The toolbar and the edge player use the same `V3ControlBarSurface`: the same material, hairline and shadow, following the macOS light or dark setting. Glyphs and times in the pill use the primary colour, like the toolbar's labels; the play disc keeps the cover accent. The pill no longer turns black on bright covers. The pill sits 18 pt from the window edge, the toolbar's own inset, so the two line up along the top.
+
+**画面 panel fits on one screen.**
+- The four categories sit in one row of small cards: a scaled thumbnail with the name beneath. The selected card has the accent outline.
+- The selected category's styles sit in one row of equal buttons. A style's description is its tooltip.
+- 封面's 静止 / 流动 switch sits at the right of the 风格 heading while 封面 is the selected style.
+- Entries, renderers, raw IDs, saved values and hover preview are unchanged.
+
+**Edge player: showing, staying and following (user feedback 2026-11-11: it vanished too fast and too abruptly; keep the following).**
+- **Appearing** is unchanged: the pointer comes within 30 pt of a window edge.
+- **Staying:** the pill stays while the pointer is within 84 pt of that edge, which is a little deeper than the pill itself, or on the pill.
+- **Leaving:** when the pointer moves away inside the window, the pill waits 0.6 s and then fades over 0.24 s. Leaving the window waits 0.3 s. Coming back to the pill, or to the zone between it and the edge, during the wait keeps it where it is.
+- **Following:** while the pointer is level with the pill, the pill does not move. It follows, with the existing spring, only after the pointer has passed the pill's end by 20 pt along the edge. Changing edges works as before.
+- A drag on the scrubber still locks the pill in place.
+
+**Calling the pill (2026-11-11):** it appears from 44 pt of a window edge instead of 30 pt, so calling it does not mean sliding onto the resize border. The pill is always drawn at the frame the layout computed, which keeps 12 pt clear of the toolbar.
+
+**Progress position: 窗口边缘 / 封面光环 (user idea, 2026-11-11).**
+- A 「进度位置」 choice sits with the edge-progress colour controls in 画面 → 更多画面选项. The default stays 窗口边缘.
+- **封面光环:** the progress line runs around the foreground cover, 6 pt outside it and following its corners, clockwise from the top middle. The played part is 3 pt wide and glows in the progress colour; the rest is a faint ring.
+- **No foreground cover:** when the picture has no foreground cover, or only a thumbnail under 120 pt (专注, 封面 with the cover hidden, lyric-focus layouts), the line is drawn at the window edge as before. Nothing is drawn around the lyrics: a ring around the whole lyric column would be the largest thing on screen.
+- The halo only shows progress. Seeking stays on the pill.
+- The colour modes apply to both positions.
+
+## Round 14: one interface shaped by what the app does (2026-11-11)
+
+The user reviewed real screenshots of 画面, 文字, 歌单, 歌词库 and the library window and asked for one pass over all of them, plus the player bar and Settings, without supervision. Their words: the UI is made to fit our features; features are not bent to fit a template. Too many things are shown at once and they do not look like one app. Nothing is removed; things are folded (see Design principle).
+
+Work in this order. Each batch is built, tested, restarted and pushed on its own.
+
+**A. Progress line: where it is, and seeking on it.**
+- The position is automatic. There is no 「进度位置」 choice. With a foreground cover of at least 120 pt on screen, the line runs around the cover (the halo). Without one, it runs along the window edge.
+- Both can be seeked, as well as the pill's scrubber.
+- **Halo:** a band 12 pt wide centred on the ring takes the pointer. It is well inside the window.
+- **Window edge:** a band from 8 to 24 pt inside the window takes the pointer. The outer 8 pt stay free for resizing. The line itself does not move.
+- **Feedback, the same for both:** in the band the pointer becomes a pointing hand, the line thickens in place to 4 pt, and a small time label follows the pointer on the inner side. Click seeks; drag scrubs and seeks on release.
+- The toolbar's rectangle and the pill are never part of a band.
+- Fix: the toolbar's frame never reached the edge player (it read as zero), so the pill could sit on the toolbar.
+
+**B. Names.** Every visible 「Lyric Island」 becomes 「Aster · Lyric」: window titles, the menu-bar fallback text, messages and the library window's captions. Identifiers and storage keys do not change.
+
+**C. One set of controls in every tool panel (画面, 文字, 译文, 更多).**
+- A panel is a list of rows, 30 pt high, label left, control right. Section titles are 12 pt semibold in the secondary colour; there are no boxes inside boxes.
+- **Switch row:** label, then the switch at the right edge. Two or three related switches may share a row only when they are one group (原文 · 译文 · 读音).
+- **Choice row:** label, then `V3SegmentedPicker` filling the rest.
+- **Value row:** label, slider, then the value in a 52 pt field with its unit, all on one line. No separate range caption, no dotted tick line, no second row of presets; presets that matter are tick marks on the slider.
+- **Folded part:** one 「更多…」 row per panel holds what is changed rarely. It remembers whether it was open.
+- Every panel fits its content up to 520 pt, then scrolls with the bottom fade.
+- 文字 opens with 显示 and 字号, then 对齐 and 清晰度; the reading options (罗马音, 拼音, 注音排版, sizes) fold.
+- 画面 opens with the scene row, the style row and 模糊, then 前景封面, 播放呈现 and 背景动态; the rest folds.
+
+**D. Four scene cards (2026-11-12, fourth revision, from the user's review of the real window).** No scene may sit behind a 「更多」 menu: it cannot be switched from there.
+- The 画面 panel shows four cards in one row: 环境光, 封面, 舞台, 阅读. A card that holds several looks shows them in a plain row under the cards while it is in use, and returns to the look used last.
+- **环境光: 「光: 自动 / 原版 / 羽化」.** The user found that each song suits a different light and asked the app to choose. 自动 is the default: when the cover changes, a cover with luminance of 0.42 or more gets 原版 (dark and even, lyrics stay readable) and a darker one gets 羽化 (the cover as a round source of light). The boundary is a first setting from two real songs. 自动 acts only while 环境光 is in use and the cover's colours are known; picking 原版 or 羽化 turns it off (`v3.ambient.automatic.v1`).
+- **柔和光晕 has no entry.** It differs from 原版 in cover size and darkness, and both have their own controls (user, 2026-11-12).
+- **阅读: 「版式: 内页 / 唱片 / 专注」.** The user grouped the pages on a quiet background and asked to keep 唱片卡. 内页 draws the colour field as its background, and 背景动态 applies to it; 独立色场 therefore has no entry.
+- **封面's 静止 / 流动 is merged into 背景动态.** 关闭 is the still picture (纯高斯); 轻柔 and 鲜明 are the moving one (封面柔焦).
+- A saved 柔和光晕 or 独立色场 choice keeps drawing until a card is picked. The four old categories remain only for cycling scenes by gesture. Renderers, raw IDs, saved values and hover preview are unchanged.
+
+2026-11-19 补充。柔和光晕和独立色场可从「画面」的「旧版画面」折叠行切回，两个入口各自恢复原有参数。情境仍可和手选画面合用。
+
+**D3. 羽化, blur and the library panel (2026-11-12, from the user's review of the real window).**
+- **羽化 is the round light again.** A large round cover, as tall as the window, sits inside a surround that keeps a fixed heavy blur (36 pt plus the slider) at every slider position. The slider softens only the round cover, so at low values the circle is clear and the room is very blurred. 背景缩放 resizes the circle. This is the version before 2026-10-16 (`2c7c083^`), which the user remembered: on 2026-10-16 the surround's blur was tied to the slider, so at low values the circle and the room looked alike.
+- **背景模糊 grows by ratio, not by power.** Every look's largest radius is reached at 100% as before, but each quarter of the slider now multiplies the radius by the same factor: 0 · 25% · 50% · 75% · 100% draw about 0 · 5% · 17% · 43% · 100% of it. The old curve (`pow(n, 1.35)`: 15% · 39% · 68% · 100%) removed all detail by about 50%, and the upper half barely changed anything; this was measured in the real window. Saved values move once (`v3.blur.curve.v2`), so every saved picture looks as it did; the numbers shown change (old 25 → 48, 36 → 60, 58 → 78). The colour-field looks (内页, 专注, 独立色场) keep their values and response.
+- **The library panel lists 歌词库 · 最近播放 · 统计 · 搜索 · 歌单.** 最近播放 and 统计 had been reachable only in the separate library window. On these two pages the search field becomes a refresh button.
+- **Switching inside the library panel no longer redraws the main window.** The main window owned the library service as an observed object, so every list, status or selection change re-evaluated the whole window, lyrics included. It now owns the service without observing it; the panels that show library data observe it themselves. Not measured: the improvement is judged from the code path, not timed in the real window.
+
+**D4. New lights and six new playback presentations (2026-11-12; the user asked for more versions and said 「都做我看看」).**
+- **环境光's row: 光: 自动 / 原版 / 羽化 / 双色 / 窗光.**
+  - **双色** prints the cover again in two of its own colours, so no fine detail sits behind the lyrics.
+  - **窗光** darkens the room a little and lets four slanted bands of the cover's light fall from the top edge.
+  - Both are 原版环境光's scene and renderer with a light over it (`v3.ambient.treatment.v1`); no new renderer ID.
+  - **羽化** now centres its clear circle on the cover's subject (face first, else the largest salient region), never past the cover's edge.
+- **自动 looks at detail as well as brightness.** A busy cover gets 双色, a bright one 原版, a dark one 羽化; 窗光 is never automatic.
+  - The detail score is the mean neighbouring-pixel step of a 64×64 grey copy.
+  - The boundary is 0.072, set from 60 covers in the user's own cache: the busiest about 8% (lots of text, group art). Their median was 0.046.
+- **光随歌曲: 关闭 / 换行呼吸 / 随曲推移**, shown while 环境光 is in use.
+  - 换行呼吸 brightens the light briefly at each new lyric line.
+  - 随曲推移 moves a tint from the cover's main colour to its second colour over the song.
+  - Neither moves while the system asks for less motion.
+- **播放呈现 has a second row, 新呈现: 侧脊 / 封面进度 / 唱片架 / 黑胶 / 角落 / 幕间.** It is stored in `v3.playbackStyle.v1`; the switches behind 标准 / 悬停 / 边缘 are unchanged. Every new presentation hides the scene's player card.
+  - **侧脊:** a 44 pt spine at the left edge with a small cover, the title running down it and a short progress line. Coming near opens it into the full card; it closes 0.6 s after the pointer leaves.
+  - **封面进度:** the unplayed part of the cover is grey and colour fills in from the left. Click or drag on the cover to seek; the time follows the pointer.
+  - **唱片架:** a bar at the bottom with the previous cover, the current cover (click to pause or play), title and progress, the next cover and a faint one after it. The previous song is remembered for this session only.
+  - **黑胶:** a record behind the cover, sticking out to the right. It turns while playing and stops on pause, its outer ring is the progress, and clicking the visible part pauses or plays.
+  - **角落:** a small card with cover, title, the full button row and progress, in the bottom-right by default. Drag it to any corner (`v3.cornerCard.corner.v1`).
+  - **幕间:** nothing while the song plays; a title card for the first 8 s and a 「下一首」 card for the last 15 s.
+  - 侧脊, 唱片架, 角落 and 幕间 also hide the scene's own cover.
+- **Checked in the real window** (Totemo Sutekina Rokugatsu Deshita, 1116×779, paused):
+  - drawn as described: 双色, 窗光 (after three rounds of strengthening; the first two were invisible on a light cover), 侧脊 closed, 角落, 唱片架, 封面进度, 黑胶;
+  - only the tint is visible: 随曲推移, whose two colours are close on that cover;
+  - not checked: 幕间's cards (the song was mid-way and seeking was not used, so as not to change playback), 侧脊 open, dragging 角落, and 换行呼吸.
+
+**D5. Toolbar, lyric and player-bar looks as options (2026-11-12; the user asked for every proposal as a choice to try).** Each defaults to the established look; nothing existing was replaced.
+- **工具栏 (更多 panel): 标准 / 图标 / 分组 / 下拉 / 标题栏 / 环形** (`v3.toolbarStyle.v1`).
+  - 图标: icons only; each name is its tooltip.
+  - 分组: 歌词库 · 搜索 · 歌单 and 译文 · 文字 · 画面 · 更多 · 设置 in two capsules.
+  - 下拉: fully hidden until the pointer reaches the top edge, then slides down 64 pt.
+  - 标题栏: icons in a slimmer bar beside the window buttons.
+  - 环形: one round button at the top right. Coming near it fans the eight tools out along a quarter circle; the fan stays open while a panel is open and closes 0.5 s after the pointer leaves.
+- **歌词呈现 (文字 panel), in two rows: 标准 / 景深 / 卡拉OK / 单行 / 打字机 / 光色 / 译文同行** (`v3.lyricStyle.v1`).
+  - 景深: lines blur with distance (about 1 pt per line, up to 5.5 pt).
+  - 卡拉OK: in word-timed lines the sung part is white with the cover-colour glow, and the unsung part is dimmer.
+  - 单行: the current line at 1.55×, its two neighbours small and faint, all others hidden.
+  - 打字机: a line without word timing appears left to right over the time it is sung.
+  - 光色: the current line is white with a two-layer glow in the cover's colour.
+  - 译文同行: the translation follows the original on the same line only when both fit at their natural widths; otherwise the usual stacked layout.
+- **播放栏 (画面 panel, under 播放呈现 while the scene shows its card).**
+  - 进度条: 普通 / 歌词刻度 / 波形 (`v3.playerBar.progress.v1`).
+    - 歌词刻度: a tick at each line's start; hovering within 8 pt of a tick shows that line.
+    - 波形: 56 bars whose heights follow how much is sung in each part of the song (Spotify gives no audio), coloured up to the playhead.
+  - Switches:
+    - 悬停出按钮: the card is title and progress until the pointer is on it.
+    - 歌名滚动: a title wider than its room scrolls back and forth after 1.5 s.
+    - 进度贴封面: a thin glowing progress line along the cover's bottom edge; the card shows no progress of its own.
+- **Checked in the real window**:
+  - 景深, 单行, 光色, 歌词刻度, 波形, 进度贴封面 and 歌名 on one line.
+  - 环形: the user had already turned it on themselves.
+  - 悬停出按钮: the first version reserved empty room for the buttons and looked like an empty box; the room is no longer reserved.
+- **Checked offscreen only**:
+  - 图标, 分组 and 标题栏: the toolbar shows only near the pointer, so the real window cannot capture it.
+  - 译文同行: the first version pushed translations out of the window, now fixed. Every line of the test song is long, so it fell back to stacked and the same-line case has not been seen.
+- **Not seen yet**: 卡拉OK, 打字机, 下拉, and the 歌名滚动 animation.
+
+**D6. Toolbar outside the window, controls in every presentation (2026-11-12).** The user wants the playing view to be only listening: tools outside the window, appearing when the pointer goes out.
+- **工具栏 · 窗外** (now the user's choice):
+  - The bar is a small borderless window, a child of the main window, right-aligned 4 pt above its top edge. It moves with the window.
+  - It fades in while the pointer is outside the main window and within 150 pt of it, or over the bar, or while one of its panels is open. Inside the main window it is not shown at all.
+  - In this style the buttons do not open hover panels over the playing view; a click opens the panel pinned beside the window.
+  - With no room above (window at the top of the screen), the bar sits just inside the top edge.
+- **Pinned panels**: to the right of the window when there is room, else to the left, and only when neither side fits at the screen's right edge. This replaces the 2026-10 rule "never jump to the left"; the user now asks that panels not cover the playing view.
+- **Controls in the 新呈现**:
+  - 封面进度 and 黑胶: pointing at the cover shows a small bar of the playback buttons at its foot.
+  - 幕间: a short line at the bottom centre opens into that bar.
+  - 侧脊, 角落 and 唱片架 already had their controls.
+- Later (user, 2026-11-12): a side pull-out like 下拉.
+
+**D2. What the scenes show (2026-11-12, from real screenshots).**
+- **内页:** with the cover in view, the song's name, artist and album sit under the cover in the left column, and the lyrics start at the top of the page. The heading band and its rule remain only without a cover or in a small window. The fixed caption 「原文 · 译文 · 读音」 is removed: it did not follow the layers in use.
+- **唱片卡:** the card holds the cover, the name and the controls. The masthead (「ASTER · LYRIC · LISTENING EDITION」, 「SIDE A」) and the footer (「ORIGINAL · TRANSLATION · READING」) are removed.
+- **舞台:** the space beside the whole cover blurs in three steps from the seam to the window edge and darkens slightly outwards. Before, almost half of each side was a sharp mirror image. One thick blur from the seam was tried and rejected by the user as odd.
+- **封面 and 舞台:** a soft shade sits under the lyrics, deeper the brighter the cover, while 清晰度 is 关闭 and the bright-cover help is on. An explicit 清晰度 choice is drawn as chosen. The song's name on the picture carries a shadow.
+- The bright-cover help now starts at a cover luminance of 0.45 instead of 0.6. With the help switched off nothing is added: the lyrics are drawn as they are.
+- Checked in the real window on a real song (空っぽ, 1116×779, paused) by capturing the app window: 舞台's sides are blurred with no mirror image; 内页 and 唱片卡 draw as described; with the help on, the lyrics on 舞台 are readable over a bright cover.
+
+**E. Player bar.** The card, the compact bar and the edge pill show the same buttons in the same order (喜欢 · 添加到歌单 | 随机 · 上一首 · 播放 · 下一首 · 循环) and the same time format (0:22). The card and compact bar sit on the always-dark listening canvas and keep its dark tint; the pill floats over the canvas edge and uses the toolbar's surface. Only the title lines and the width differ.
+
+**F. 歌词库 · 搜索 · 歌单 (centred panel and the library window).**
+- The panel keeps its solid background (Round 10) and uses the tool panels' neutral tab selection; no black or blue filled tab, in the panel or in the library window.
+- The library window's bar only switches pages; the window title names it. Page headers are one quiet line, with the details in a tooltip.
+- Lists use one row height and one cover size; counts and badges sit at the right in the secondary colour.
+- The library window reads dates as 「11月10日 19:56」, like the panel.
+
+**G. Settings.** One sidebar of pages named by what they set up (播放来源, 歌词来源, AI 翻译, 读音, 数据, 窗口). Pages use the same rows as the tool panels. Nothing that the toolbar already controls is repeated (see Toolbar vs Settings).
+
+**H. After the interface: translation style.** Review the default prompt against the user's confirmed translations and improve it; saved translations are not rewritten.
+
+Verification for every batch: the native target and the source contracts pass; layout is checked with `Scripts/ui-snapshots.sh` for clipping and overlap only. The assistant cannot see the real window (the desktop-control tool refuses this app), so real look and feel are the user's to confirm from the running app.
+
+**Status (2026-11-12):** batches A–H are done and each was tested and pushed on its own. G went no further than headings and row forms for the translation controls; a full settings re-layout was not attempted. Look and feel in the real window await the user's review.
+
+## Round 15: listening batch one from the research pool (2026-11-12)
+
+The user picked the first batch from the research pool (Obsidian 调研笔记 section 四: A1, A4, A7, B1, B2, B7, K1, K3 and the small items E1, E2, G2, I1, I9, H2).
+
+**A. What the backdrop is made from (画面 › 背景).**
+- **背景素材: 视频 / 封面 / 歌手照片** is one choice (default 视频). The first version had a source picker and a separate video switch; the user had to turn the video off to see the artist photo, so they became one (`v3.backdrop.source.v2`, migrated from the two old keys).
+- **视频**: when a song has a Spotify Canvas, the backdrop plays it in a silent loop over the picture, under a slightly darker veil. The address is read only from the Spotify app's own cache on this Mac (`primary.ldb`, read as bytes, never opened, locked or written); the clip comes from Spotify's public CDN and is kept in Caches (400 MB, oldest dropped first). Spotify loads a Canvas a little after the song starts, so the app looks again for about three minutes. The clip stops while paused, while the window is hidden and under reduced motion. Scene cards and previews never play it.
+- **背景素材: 封面 / 歌手照片**: 歌手照片 uses the primary artist's photo, the "other cover" of Spotify's TV apps. Artist IDs come from the exact track's public embed page; the photo from Spotify's public oEmbed (the 640 px size). When there is none, the cover is used.
+- **Cover colour routes**: each cover is classed as 暗底标志色, 双色, 浅色中性 or 结构 (after Tauon). The accepted looks keep their colours; the route only steers: 自动 also picks 双色 for a two-colour cover; 双色 reprints such a cover in its own two colours; 窗光's light takes the cover's own colour on a dark cover; the accent (progress, sung text) comes from the cover's main colour family rather than one vivid pixel.
+
+**B. 随音乐律动 (画面, off by default).** The app listens to the Spotify app's sound only (no microphone, nothing saved) while the song plays in a visible window. Bass, mids and treble are measured against the song so far (MilkDrop's method); on a beat a halo around the cover (outside it, so the cover does not hide it) brightens and widens and the picture lifts slightly, drawn by Core Animation. The first version placed the light behind the cover and read no audio at all (see L-022); the user saw no difference.
+- **Tempo and beats from Spotify first.** The Spotify cache also holds the BPM and key Spotify shows (about 10,000 songs here) and, for songs prepared for mixing, every beat with its place in the bar. When present they are used: the halo lights on Spotify's beats (the bar's first beat brightest) and the status reads e.g. 「128 BPM · A# 调，来自 Spotify」. Spotify keeps them only for songs it has listed with the BPM column, so new songs usually have none; the cache is read again every 30 s for three minutes.
+- **Otherwise an estimate** from 4 s of sound, once a second, changed only when two in a row agree (on 星辰不坠落: 131 after about 10 s, 128 by 25 s; Spotify says 128.0). Between 80 and 160 BPM it is reliable; outside, a steady pulse can read as half or double (174 as 87, 70 as 140). The status says 「估算」.
+- The halo shows only on beats and is kept light; between beats nothing is drawn (on a bright video the earlier constant ring looked like a dark circle). A tempo is estimated from the onsets; with one, the lyric page's line follow takes 0.56 s at 60 BPM down to 0.32 s at 150. It needs screen and system audio recording permission and shows the system's recording mark; the row under the switch says what it is doing.
+
+**C. Lighter drawing.** Word-by-word fill was already a Core Animation mask; 打字机 is now one linear animation per line instead of a 30 fps redraw, and the 波形 progress is worked out once per song and drawn in one pass.
+
+**D. Small items.**
+- Dragging a progress bar (card, edge pill, cover progress) lands on the start of the nearest sung line within 1.5 s. Keyboard and editor seeks stay exact.
+- Opening the editor from playback selects the current saved lyric line. V3 can open any visible source line from its right-click menu. Reopening keeps the unsaved draft. The editor only sends timing and audition actions to the recording it was opened for.
+- After a seek, a position Spotify reports from before the seek is ignored for up to 2.2 s (Kaset). The line loop's own seeks are not held.
+- 设置 › 桌面歌词: **截图和录屏时隐藏** keeps desktop lyrics and the capsule out of screenshots, recordings and screen sharing.
+- Matching: the last sung line against the song's length. Ending within a quarter of the song is a little extra evidence; ending more than 5 s after the song is over keeps the lyrics from being adopted on their own.
+- 文字 › 读音与更多: **还原被星号遮住的词** (on by default) shows f**k as fuck, same length so word timing holds. Display only.
+- Hover on the outside toolbar's buttons, desktop lyrics and the capsule uses an AppKit tracking area, so it works while another app is in front.
+
+**Not checked in the real window yet:** Spotify stopped answering Apple Events during this round, so the Canvas backdrop, the artist photo and 随音乐律动 could not be seen on a playing song. Checked instead: the cache reader against the real cache (2,818 Canvas entries, 20–30 ms per lookup), a downloaded clip (8 s, 720×1280, silent) and unit tests.
+
+## Round 15b: one backdrop size, word timing from QQ and Kugou, duets (2026-11-12)
+
+**Backdrop size is the same in every scene.** The user had asked for this before.
+- 取景 and 背景缩放 are one setting for every scene, 羽化 included (`v3.backdrop.sharedComplete.v1`, `v3.backdrop.sharedScale.v1`, seeded from the scene in use).
+- 尽量完整 shows the whole cover, with a heavily blurred copy around it. 铺满 just fills the window: the extra 1.12× is gone.
+- 羽化's backdrop is centred like the others and is no longer enlarged around the subject. This follows the earlier rule that backdrops are centred with equal left and right margins.
+
+**Matching across Chinese scripts.** Titles and artists are compared with Traditional folded to Simplified (曾經你說 / 曾经你说). Identity keys are unchanged, and search still asks in both scripts.
+
+**Word timing.**
+- Kugou now asks for KRC, QQ for QRC, and each falls back to line timing.
+- Among safely matched sources, word timing already wins.
+- Songs adopted before this keep their choice until 重试查找.
+
+**Duets.**
+- A KRC/QRC line that is only `歌手：` names the singer of the lines after it; that line is not shown.
+- Voices follow the order they first sing. The second voice is set in by 12% of the column, and the singer's name appears in small type where the voice changes.
+- Current behavior (2026-11-19). Main window and full-screen themes share the same text alignment and voice labels. Matching lines sung together are shown once as 「合唱」. Different lyrics and later repetitions keep their own rows. Desktop lyrics and the expanded island and menu-bar popover use those same labels for the line they display. The narrow system menu bar keeps its text width and gives the singer in its tooltip.
+
+**Matching, later the same evening.**
+- Titles with the same characters apart from spaces, dashes and brackets are the same title (如果真爱 - ２０２４ 说唱版 / 如果真爱（2024说唱版）).
+- A Spotify title that only adds a version name to the source's title is adopted (听悲伤的情歌 - 女版 / 听悲伤的情歌). This holds when the singer is the same, the length is within a second and the extra words do not change the content (伴奏, Live, DJ, Remix, 加速… still block).
+
+**Apple Music lyrics (设置 › 歌词来源) — removed on 2026-11-13.** The user does not want features that need a pasted token. What follows is kept as a record only.
+- The user pastes their own `media-user-token`, which is kept in the Keychain. Without it nothing is asked.
+- The catalog is read with the public token in Apple's web player script. Syllable TTML gives word timing and each line's singer.
+- **Spotify's own lyrics are not offered.** Its web token endpoint refuses third parties and wants a rotating one-time code; our own OAuth token is denied (403 RBAC). Getting round that would mean defeating its access control.
+
+
+## Round 16: listening batch two — word feel, chorus, window details, menu bar, visuals (2026-11-13)
+
+**Word feel** (`bf55571`).
+- Each word of a word-timed line rises about 5% of the line height as it is sung (Core Animation spring, ω 3.65, ζ 0.9). Dim and lit copies rise together.
+- On a line change the lines below follow one after another: 50 ms later per line, at most 0.4 s.
+- Scrolling to the current line is a spring whose speed follows the song's BPM (0.56 s at 60 BPM, 0.32 s at 150).
+- The gap dots breathe.
+
+**副歌加强** (`dec800b`, on by default, 画面 › 文字).
+- A run of at least two lines (ten characters or more) that comes back later counts as chorus every time it occurs. This uses the lyrics alone.
+- The chorus shows as lighter stretches on the progress line. While it plays, the picture is a step brighter and the current line glows in the cover colour.
+
+**Desktop lyrics** (`68872ef`, 设置 › 桌面歌词, both off by default).
+- 暂停时隐藏 fades the window out 3 s after a pause, so seeks don't flicker.
+- 有全屏应用时隐藏 fades it out while another app's window covers the screen.
+- While hidden the window ignores the mouse.
+
+**Top capsule open/close (G5) is not done.** The capsule will become a Dynamic Island–style piece of its own.
+
+**Menu-bar popover** (`ba97826`).
+- The lyrics show three lines: previous (faint), current (with translation) and next. On each line change they slide up; with 减少动态效果 they fade instead.
+- A thin progress line sits in the song colour, with chorus stretches and elapsed / remaining time. Click or drag it to jump; the target snaps to a line start, and VoiceOver can adjust it in 10 s steps.
+- The top of the panel is tinted with the cover, drawn as a 12-pixel thumbnail stretched up. It needs no blur pass, so the cover's lettering can never show through.
+- 状态栏文字外观 is now the AA icon beside the 菜单栏显示歌词 switch.
+
+**Visuals** (`eab37cc`, `1c5ad38`).
+- **长音:** a word held for 1 s or more glows while sung and lets go 0.7 s after it ends.
+- **暂停时褪色** (画面, on by default): 1.5 s after pausing, the backdrop fades over 2.4 s to near black-and-white (a grey saturation-blend layer at 78%). Colour returns in 0.5 s on play. The foreground cover keeps its colour.
+- **Song change:** the previous cover stays until the new one has loaded. The new one then comes up out of a soft blur (0.75 s), so the placeholder no longer flashes between songs.
+
+**侧拉 toolbar** (`ac5ae29`, 更多 › 工具栏, user request from 2026-11-12).
+- A new toolbar style beside 下拉. It is hidden until the pointer comes within 76 pt of the right edge, then a centred column of icons slides in from outside the window.
+- Hover panels open to the left of the column.
+- Offscreen cases: `toolbar-side`, `toolbar-side-panel`.
+
+**One look for multi-option rows** (`9089b92`, the unification pass after batch two).
+- Rows of independent switches become chips on the same rounded track as the segmented controls (`V3ChipToggles`); on shows ✓ and bold.
+  - 进度条's 悬停出按钮 / 歌名滚动 / 进度贴封面: their labels used to wrap into two lines.
+  - 原文 / 译文 / 读音.
+  - 辅助读音's 罗马音 / 拼音.
+- Single on/off settings stay ordinary switches.
+
+**Checked in the real window:** 暂停时褪色, on a paused song.
+
+**Not checked in the real window:**
+- The menu-bar popover. Computer use is blocked by policy for this app, so the popover could not be opened. It was checked with the offscreen host (`Scripts/ui-snapshots.sh … menubar-light`); that host's dark popover background is white before this change too.
+- Word lift and long-note glow while playing, and the cover transition. Spotify was paused and was not started.
+
+## Round 17: the "later" batch begins — weather on the glass, lyric imagery, VU meter (2026-11-13)
+
+**窗上天气** (`ef9ada3`, 画面 › 更多画面选项, off by default).
+- A Core Animation particle layer between the picture and the lyrics, as if the window were a pane of glass.
+  - 雨: streaks, plus drops that land on the glass and slide.
+  - 雪: slow drifting flakes.
+  - 雾: drifting soft patches with a condensation veil that is heavier toward the bottom.
+- Stops while paused or hidden; absent under 减少动态效果. No per-frame SwiftUI work.
+
+**歌词意象** (`ef9ada3`, off by default).
+- While the sung line or its translation mentions rain, snow, stars or flowers, a matching set of particles plays.
+  - Plain keywords in Chinese, Japanese, Korean and English.
+  - English needs a whole word (train / brain are not rain).
+- No model and no network.
+
+**VU 表** (`69af770`, a new 新呈现).
+- A card at the bottom left with two dials, plus the song and its controls.
+- The needles follow the low and high bands of 随音乐律动. They are labelled 低 / 高, not L / R, because the sound is not split by channel.
+- Each needle is a damped spring (ζ 0.8): about 0.3 s to a new reading and about 1.5% overshoot. This is unit-tested.
+- Without 随音乐律动 the needles rest and the card says so.
+- 新呈现 is now two rows (4 + 3), so no name has to shrink.
+
+**做成分享卡** (`e38b41f`, lyric context menu).
+- Turns one line into a 1080 × 1350 picture:
+  - the cover's colours as the ground, drawn as a stretched thumbnail because `ImageRenderer` does not reliably blur;
+  - the cover;
+  - the line, sized by its length so a line of about 14 CJK characters stays on one line;
+  - its translation;
+  - the title, the artist and a small "Aster · Lyric".
+- The picture is copied to the clipboard, saved to ~/Pictures/Aster Lyric and shown in Finder. Nothing is uploaded.
+- Rendering at poster size is unit-tested.
+
+**封面墙** (`6bfc554`, 歌词库 › 最近播放 › 列表 / 封面墙).
+- Lists each song once, most recent first, as a wall of covers tilted −4° (flat under 减少动态效果) that scrolls both ways.
+- Pointing at a cover lifts it and shows the title and play count. Every cover not by the same first-named singer dims, so the singer's songs stand out.
+- Records carry no Spotify link, so a cover does not start playback.
+- The 列表 / 封面墙 choice is remembered (`listening.history.coverWall.v1`).
+
+**生成回顾卡** (`统计` page, F6).
+- The main window, settings, and the separate library each keep their own stats range. The song ranking opens the song's archive, and returning keeps the selected range.
+- If a new range fails to load, the page can still show its previous result with the previous range named. The recap card requires a result for the selected range.
+- Turns the chosen time range into a 1080 × 1350 picture:
+  - time listened;
+  - number of songs and plays;
+  - the most played singer;
+  - the top five songs with their covers, on the top song's colours.
+- The picture is copied and saved like the lyric share card. Nothing is uploaded.
+
+**声纹圈** (a new 新呈现, B12, after Plexamp's Soundprint).
+- While 随音乐律动 hears the song, its loudness is recorded into 180 bins and drawn as short bars just outside the foreground cover.
+- The loop starts at top centre and runs clockwise. The heard part is in the song colour, and a dot marks where the song is now.
+- It is a rectangle hugging the cover, not a circle: a circle around the diagonal ran off the window and under the player card.
+- Recordings are kept per song in Caches/Soundprints, so a song heard before shows its whole loop.
+- The scene's player card stays.
+- 新呈现 is now two rows of four.
+
+**频谱** (`260e0b3`, 画面 › 更多画面选项, off by default; B9 and a simplified B11).
+- 随音乐律动's analyser now also publishes 24 bands, spaced evenly in pitch from 50 Hz to 12 kHz. Each band is measured against its own long-term average.
+- Two styles, both in the cover colour:
+  - 底部细条: a thin strip of bars along the bottom of the window.
+  - 环绕封面: bars standing out from a loop just outside the cover, lows at top centre, mirrored left and right.
+- Bars rise at once and fall at 1.4 per second.
+- It draws at 30 fps only while playing and visible, and is absent under 减少动态效果.
+- A full MilkDrop or 3D visualizer is still a separate scene for later.
+
+**副歌时换素材** (`7072fbc`, 画面 › 背景素材, off by default; B13 for the backdrop).
+- During a chorus, the backdrop's clip layer flips:
+  - a still cover or artist photo gives way to the Spotify Canvas clip;
+  - a clip gives way to the still picture.
+- A 1.2 s cross-fade in each direction; the backdrop changes back when the chorus ends.
+- This is a temporary override of the clip layer only, separate from the hover preview. The saved material never changes.
+
+**情境, rebuilt** (2026-11-18, toolbar › 情境 between 画面 and 更多). Supersedes the framed version below; the view is never shrunk.
+- Cards grouped 窗 (雨夜窗边, 夜行列车, 雪夜小屋, 跟随天气) and 材质 (书页, 拍立得, 星座, 老电影). Hovering a card previews it on the real picture; clicking keeps it. The selected card's description and a 副歌时刻 switch sit below.
+- Each scene draws a back layer (behind the lyrics), a cover layer (around the foreground cover) and a glass layer (on top, no pointer). It never writes the user's other picture settings.
+- Chorus moments: heavier rain with distant lightning; the train crosses a bridge; denser snow; a shooting star; a polaroid shutter; the projector lamp; the chorus passage marked in the book.
+- 拍立得 and 星座 keep the tray for developed prints next to the cover.
+- Third batch (same day). The groups are now 窗 (雨滴玻璃, 起雾的窗, 雪夜小屋, 夜行列车, 跟随天气), 光影 (极光, 水面) and 材质.
+  - 雨滴玻璃: lens drops that each show the cover upside down; big ones slide and leave a trail.
+  - 起雾的窗: the pointer wipes the fog, which closes in again over 20 s; the lyric area stays half clear.
+  - 极光: curtains in the cover's colours behind the lyrics, brightening on each line.
+  - 水面: aqua caustic light; each line and the pointer send out ripples.
+- 整套换装 (on by default): a scene also brings its layout, lyric position and style, player and progress style, control material and line width. None of this is saved over the user's own choices, and what the user changes during a scene is kept.
+- The scene is never a sheet over the cover: glass effects thin out over the foreground cover, the scene's tints are mixed from the cover's colour, and the cover carries a light touch of the scene.
+- 文字 › 行宽: 标准, 宽, 满幅.
+- All scenes take the cover's colour and brightness and cross-fade when switched. 窗上天气 is held back while a scene is on. Motion continues while paused (only Reduce Motion stops it).
+
+(Earlier, same day) **情境** (2026-11-18, 更多 › 窗口 › 情境, off by default; replaces the 雨夜房间 switch).
+- The listening view keeps 85–92% of the window and becomes the glass; the room lives in a thin margin and on the glass, never under the pointer.
+- 雨夜窗边: a wooden casement and sill, rain on the glass, misted edges, a lamp's warmth from the lower right.
+- 夜行列车: a rounded carriage window; blurred lights stream past along the top and bottom of the pane only, and a street lamp sweeps across every 9 s.
+- 雪夜小屋: a painted frame, snow, frost grown in from the corners, firelight flickering on the log wall.
+- 老电影 (not a room): sprocket strips on both sides, grain at 12 fps, the odd scratch, flicker and a vignette.
+- Motion stops while paused or with Reduce Motion. `v3.rainRoom.v1` is read once as 雨夜窗边.
+- Second batch (same day). The menu groups 窗 (雨夜窗边, 夜行列车, 雪夜小屋, 跟随天气) and 材质 (书页, 拍立得, 星座, 老电影).
+- Windows take the local time of day on their wall. 副歌时开窗 (on by default, shown only for windows) fades the frame out and returns the view to full size during a chorus.
+- 夜行列车 runs at the song's cached tempo.
+- 跟随天气 asks for location once and sends a ~10 km position to Open-Meteo every 30 min. It picks the rain, snow or a clear-night window.
+- 书页: paper grain, a gutter shadow, a page turn at each new stanza. 拍立得: a white mount on a corkboard with the sung line handwritten below. 星座: one star per line, sung stars joined.
+- 雾窗 lyric style: a line just sung stays clear, then fogs over in 3.2 s.
+
+**雨夜房间** (`50c8de2`, 更多 › 窗口, off by default; A13).
+- The whole listening view is drawn at 62% as the screen of a monitor on a desk.
+- Around it: a dark wall, and a window of far city lights with rain (the 窗上天气 particles, running while playing). Below and beside: the desk and a lamp's warm light.
+- The view is only drawn smaller. Layout, pointer regions and clicks inside the screen are unchanged.
+- Switching it on or off zooms with a spring and does not rebuild the view.
+- Checked in the real window with Spotify paused; the setting was restored.
+
+**雾窗 lyric style** (文字 › 歌词呈现, C12 without stroke data).
+- The current line is wiped out of the fog along its sung time, with a soft fingertip edge and a faint wet streak behind the words.
+- Every other line sits behind the fog: fainter and blurred, more with distance.
+- No stroke-order data and no new licence. Writing stroke by stroke is still not done.
+
+**随音乐律动 says when it hears nothing.**
+- Spotify's own volume at 0 gives a stream of zeros, so the VU needles, 频谱 and 声纹圈 stand still.
+- After 3 s of silence, the 随音乐律动 row and the VU card say: 没有听到声音：Spotify 自己的音量是 0 吗？
+
+**Seen in the real window while playing (2026-11-13):**
+- Rain: streaks and drops on the glass.
+- Snow.
+- 雾窗: the reveal part-way through a line.
+- Not seen: the VU needles, 频谱 and 声纹圈 moving, because Spotify's volume was 0 and it was left as it was.
+- On a pale backdrop the rain is hard to see.
+
+**Not done from the "later" list, and why:**
+- **C12 stroke by stroke:** the 雾窗 style above wipes the line out of the fog; true stroke order still needs stroke data for Chinese and Japanese.
+- **D3 emphasis by meaning:** the meaning judgement is not reliable enough.
+- **D4 emphasis by singing:** held notes are covered by 长音 glow; sizing by loudness barely showed.
+- **B13 beyond the backdrop:** 副歌时换素材 above covers the backdrop. Changing the whole scene by section is still left, because it may disturb listening.
+
+**Checked:**
+- The particles were rendered in a scratch window, one per weather, because Spotify was paused.
+- The fog veil was checked in the real main window; the setting was restored afterwards.
+- The VU card and the 画面 panel were checked with the offscreen host.
+
+**Not seen playing:** the weather and imagery over a playing song, and the needles moving.
+
+## Round 18: batch four from the pool — small listening details (2026-11-13)
+
+The three recommended batches are done. This round takes small items the pool never put in a batch. All are off by default except where noted, and none adds a row of its own: they join existing chip rows.
+
+**Lyrics**
+- **只看前方 (C7):** lines already sung fade out; the current line and those ahead stay. Timed lyrics only. Key `v3.hidesSungLines.v1`.
+  - It sits in the 歌词行 chip row with 大字 and 副歌加强 (those two were separate switches before).
+- **上一句 / 下一句 (E4):** `Q` and `E`. Holding the key repeats.
+  - Back goes to the start of the line being sung once it is more than 1.5 s in; otherwise to the line before.
+  - Empty lines are skipped. A looped line stops looping.
+  - Lyrics without timing answer with a notice and do nothing.
+- **单句循环 on the progress bar (E5):** the looped line shows as a bracket in the cover's colour with a white outline, at least 6 pt wide.
+
+**Backdrop** — one chip row 背景细节: 暂停褪色, 鼠标视差, 随时段调色.
+- **鼠标视差 (A11):** the backdrop leans up to 12 pt away from the pointer and is enlarged by just that much, so no edge shows. Off in focus mode and with reduced motion. Key `v3.backdropParallax.v1`.
+- **随时段调色 (A10):** a soft-light wash by local time — cool at 5:00–8:00, warm at 16:30–19:30, deep blue at 23:00–4:30, nothing otherwise. Each band fades in and out over half an hour. Key `v3.dayTint.v1`.
+
+**Statistics**
+- **里程表 (F11):** the three summary figures count up from zero in about 0.7 s when they arrive or the range changes. Not with reduced motion.
+
+**Checked:** 182 native tests pass. 只看前方 was seen in the real window on a playing song; the backdrop sits where it did with the new wrapper around it.
+
+**Not seen:** 鼠标视差, `Q` / `E`, the loop bracket and the counting figures need a pointer or a key press in the app, which the assistant cannot give. The wash was not seen either: the check ran at 22:54, before the night band.
+
+**Left out and why:** 去年今天 (F5) — the records are a few weeks old and the history query reads the latest 100, so there is nothing to show yet.
+
+## Round 19: batch five from the pool — bass followers, grain, docking, credit-only lyrics (2026-11-13)
+
+**跟着低音** — a chip row shown only while 随音乐律动 is on. Both off by default.
+- **封面呼吸 (B3):** every foreground cover swells by up to 2% with the bass. Key `v3.coverBreath.v1`.
+- **四边灯带 (B4):** a soft band of the cover's colour along the window's four edges; nearly gone between hits (6%), up to 56% on a hit. Key `v3.edgeLights.v1`.
+- Both rise at once and fall back over about 0.22 s. With Spotify's own volume at 0, or with reduced motion, they stand still.
+
+**背景细节** gains a first chip, **颗粒 (A14):** the fine grain over the backdrop. On by default, as it always was; off removes it. Key `v3.backdropGrain.v1`.
+
+**Desktop lyrics, 停靠 (G4):** two buttons in 设置 → 桌面歌词: 屏幕顶部居中 and 程序坞上方居中.
+- The window moves to the centre of its own screen, 8 pt from the menu bar or the Dock, and keeps its size. The place is remembered; it can still be dragged away.
+- Nothing happens while the desktop lyrics are closed.
+
+**Credit-only lyrics (I3):** a result whose every line is a credit (作词 / 作曲 / 编曲 / lyrics by …, with a colon), optionally after one "Title - Artist" heading, is not adopted.
+- NetEase: treated as "found the song, no lyric body". QQ: that candidate is skipped.
+- A sung line anywhere keeps the lyrics. More than 30 lines is never treated as credits.
+
+**Checked:** 185 native tests pass. In the real window the layout is unchanged with 四边灯带, 封面呼吸 and 随时段调色 on and 颗粒 off.
+
+**Not seen:** the cover and the lights moving (Spotify's volume was 0), the 停靠 buttons (they need a click), and a real credit-only result from a source.
+
+**Looked at and left:** hiding bracketed text (I10) — it changes the line's length, and word timing, ruby and translation alignment are all keyed to character offsets.
+
+## Round 20: batch six — cover rim light and cover caption (2026-11-13)
+
+- **轮廓光 (B5):** the foreground cover's outline lights with the bass: a blurred line in the cover's colour and a thin white one, both invisible between hits. It is the middle chip of 跟着低音 (封面呼吸 / 轮廓光 / 四边灯带). Off by default. Key `v3.coverRimLight.v1`.
+- **封面题句 (E8):** the line being sung is set along the cover's lower edge, white on a short dark gradient, like the tagline on a poster. Off by default. Key `v3.coverCaption.v1`.
+  - Timed lyrics only; nothing is drawn between songs, for untimed lyrics, or on covers under 120 pt.
+  - Type is 4.8% of the cover's width, held between 11 and 22 pt, two lines at most.
+  - It is the fourth chip in the row under 进度条 (悬停出按钮 / 歌名滚动 / 进度贴封面 / 封面题句).
+
+**Checked:** 186 native tests pass. 封面题句 was seen in the real window on a playing song. The 画面 panel was rendered offscreen: the four-chip row fits.
+
+**Not seen:** 轮廓光 lighting up (Spotify's volume was 0).
+
+## Round 21: batch seven — kept lines, whole-line timing (2026-11-13)
+
+- **金句 (F8):** right-click a lyric line → 收藏这句 (取消收藏这句 once kept). A notice confirms it.
+  - Kept lines are listed in the lyric library window under a fourth tab, 金句: the line, its translation if it had one, song · artist · date, with 复制 and 移除. Newest first.
+  - Stored in `Application Support/SpotifyLyrics/favorite-lines.json`, beside the database. The database and its schema are not touched.
+  - The same words in another song are a separate entry; empty lines cannot be kept.
+- **整句亮 (H7):** a fourth chip in 歌词行. Lyrics with word timing are shown line by line, without the word-by-word fill. Off by default. Key `v3.wholeLineTiming.v1`. Display only: the stored lyrics keep their word timing.
+- **Settings search** matches pages and common appearance controls. Searches such as 「状态栏字号」「桌面歌词暂停隐藏」「灵动岛所在屏幕」 link to the named control in its existing appearance page. The page scrolls to the control and outlines it. Back returns to the previous query and result. A surface name still opens that surface's appearance page.
+
+**Checked:** 188 native tests pass, including saving and reopening the kept-lines file in a temporary folder. The app starts and plays with the build.
+
+**Not seen:** the 收藏这句 menu and the 金句 tab need a right-click and a click. 整句亮 was switched on for one capture, but the song was at its last lines and may have had no word timing, so the picture proves nothing.
+
+## Round 22: batch eight — breath in, light on the sung words, full screen on another display (2026-11-13)
+
+- **换气 (C5):** in a gap of 4 s or more (the same gaps that show the three dots), the line about to be sung comes up over the last 2 s: a white glow, a little brightness and a 2% swell. Off by default. Key `v3.breathIn.v1`. Not with reduced motion.
+  - 歌词行 is now two chip rows: 大字 / 副歌加强 / 换气, then 只看前方 / 整句亮.
+- **人声包络 (B6):** part of 随音乐律动, no switch of its own. When no sound is heard (Spotify's volume at 0) and the song has no beat grid, the light at the cover pulses at the start of each sung word of the current line, at half the strength of a beat. Needs word timing; otherwise nothing changes.
+  - Order of sources for the light: Spotify's beat grid, then the bass heard, then the sung words.
+- **全屏歌词开在另一块屏幕 (G10):** a switch in 设置 → 桌面歌词. With two or more displays, full-screen lyrics open on the display after the main window's; with one display nothing changes. Key `fullScreen.prefersOtherScreen.v1`.
+
+**Checked:** 191 native tests pass. With 换气 on, the lyric rows in the real window look as before outside a gap.
+
+**Not seen:** 换气 inside a gap, the light following words, and full screen on a second display (this Mac has one display).
+
+**Still open from the pool, and what each waits for:**
+- G8 menu-bar word lift — the menu bar draws plain text; it needs its own drawing.
+- I2 agreement between sources, I4 shifting a whole time axis, I13 borrowing another version's lyrics — these change matching; the source statistics are due to be read again on 2026-11-18 first.
+- J2 harmony on its own line — only TTML sources mark harmony.
+- C12 stroke order, full MilkDrop — need third-party data or code downloaded, which the user has not approved.
+
+## Round 23: batch nine — backing vocals on their own line, 流动 (2026-11-15)
+
+- **和声 (J2):** when an AMLL (TTML) lyric marks backing vocals (`x-bg`), they show as one small italic line under the sung line, quieter than the reading and translation layers. No switch; lines without backing vocals look as before.
+  - The sung line's own text is unchanged, so word timing, ruby and translation keep their offsets.
+  - Wrapping brackets are removed: "(ooh yeah)" shows as "ooh yeah".
+  - Stored without a database migration: an optional `backgroundText` in the word-timing JSON (`lyrics_timing_versions.spans_payload`). Schema stays v13. Earlier builds ignore the field.
+  - Limits: lyrics already saved show backing vocals only after they are fetched again; a line with backing vocals but no word timing does not keep them; editing a lyric's timing drops them for that version.
+- **流动 (B11):** a fourth 频谱 choice. MilkDrop presets fill the window behind the lyrics at half strength, driven by the sound 随音乐律动 hears; a new preset about every 28 s, blended over 2.7 s. Stops when paused. Not with reduced motion.
+  - butterchurn 2.6.7 and butterchurn-presets 2.4.7 (MIT) are bundled in `Resources/Butterchurn` with their licences. The page is local, its content policy allows no network, and it never takes the pointer or the scroll wheel.
+  - Drawn at half resolution. It runs in a WebKit process of its own (about 100 MB or more of memory while on).
+- **C12 stroke-order writing: closed without the data.** The 雾窗 lyric style already writes the line along the sung time. At singing speed (about 0.2 s a character) the order of strokes cannot be seen, and the data is tens of MB under Arphic/LGPL terms.
+
+**Checked:** 193 native tests pass. With Spotify playing at a low volume: the bottom spectrum moves, 封面呼吸 changes the cover's size, 四边灯带 shows at the window edges. The 流动 page loads and reports ready in the real app; paused, it draws nothing and the window looks as before.
+
+**Not seen:** 流动 while a song plays; 和声 on a real song (needs an AMLL lyric with backing vocals, fetched after this build); 轮廓光 could not be told apart in the captures.
+
+**Still open from the pool:** G8 menu-bar word lift; I2, I4, I13 after the source statistics are read again on 2026-11-18.
+
+## Round 24: one pass over the panels (2026-11-15)
+
+The pool is done, so the options added over nine batches are put in order. Nothing is removed and no key changes.
+
+- **播放呈现 is one group.** The label 新呈现 is gone: the eleven presentations sit in three rows under 播放呈现, like the two rows of 歌词呈现.
+- **工具栏 is two rows of four** (标准 / 图标 / 分组 / 下拉, then 侧拉 / 标题栏 / 环形 / 窗外). Eight names in one row touched each other.
+- **更多画面选项 is grouped under small headings**, in this order: 夜间柔和; **背景** (取景, 缩放, 背景素材, 副歌时换素材, 背景明暗, 背景动态, then the 背景细节 chips); **随音乐** (随音乐律动, 跟着低音, 频谱); **氛围** (窗上天气, 歌词意象); 前景封面; 播放.
+  - 频谱 moved next to 随音乐律动, which it needs.
+
+**Checked:** 193 native tests pass. Offscreen panel images of 画面 and 更多 show the new rows. The lower part of 更多画面选项 is below the fold of the offscreen image and was not seen.
+
+## Round 25: source statistics read again; artists written another way (2026-11-15)
+
+The source statistics were read on 2026-11-15 rather than 11-18: nothing was listened to after 11-13, so waiting would add no data.
+
+- **What the statistics say** (347 lookups, 11-12 to 11-13; 470 songs in all): 428 songs adopted, 38 none, 4 review.
+  - Most of the 42 were last looked up before the artist-alias (11-11) and version-name (11-12) fixes. Searched again with the current code (a temporary test, nothing saved): 10 of them are now adopted.
+  - lyrics.ovh timed out 96 times in 122 and never alone found lyrics. It is asked only after the other sources fail, in parallel and once per lookup, so it costs little. Left as it is.
+  - Nobody set a per-song offset (no scoped offset keys at all).
+- **Matching changes:**
+  - **Artist in the credits:** a candidate whose credits include the track's artist, though not first (坠落: 方言, 徐梓淳; 星星的眼泪: 超星, 傲七爷(江偌绮)), is adopted at the lower automatic tier when the title is the same and the length is within 2 s. Otherwise it stays an artist conflict.
+  - **Producer credit:** 活着 and 活着（Prod.By Red killer）are the same title (`titleProducerCreditExact`).
+  - **Singer from a band:** `suis from Yorushika` also matches `suis`.
+  - **Long o written "oh":** suisoh reads as すいそう (水槽) when compared with Spotify-credited names.
+  - Effect, searched again live: 坠落 and 星星的眼泪 adopted; 星めぐる詩 and 29時はビビッド now show a candidate instead of nothing.
+- **Closed without building:**
+  - I2 agreement between sources: already in place (`agreementAdoption`, `partialArtistLyricsAgreement`).
+  - I4 shifting a whole time axis: no per-song offset was ever set, so there is no sign of the need.
+  - I13 borrowing another song's lyrics: of the 42, only one (a cover of 星に願いを) would use it, and a namesake would be adopted wrongly.
+
+**Checked:** 196 native tests pass, including cases that must stay unadopted (artist not in the credits, another length, another title).
+
+**Left as they are:** Kiddy / ロクデナシ is found only by the title-only query, which keeps its penalty. Names that differ entirely (SherryBoss / 伊稀, Sanghee / さんひ, AYANE / 松岡みやび) stay unmatched.
+
+## Round 26: 和声 checked on a real file; the pool closed (2026-11-15)
+
+- **和声 on a real AMLL file** (One Last Kiss, public `amll-ttml-db`, 12 backing lines): AMLL nests the backing line's translation and romanization inside the `x-bg` span, and all of it went into the 和声 line ("(忘れられない人)你永远是我无法忘记的人wa su re ra re na i hi to"). Fixed: a translation or romanization span inside `x-bg` is not backing text. All 12 lines now read as sung ("忘れられない人", "Oh oh oh oh"). Word timing of the sung lines is unchanged and valid.
+- **G8 menu-bar word lift: closed.** The menu-bar lyric is one monochrome template image 22 pt high; the system tints it, so sung words cannot be told apart by colour, and a lift of 0.05 × 13 pt is about 0.65 pt, which cannot be seen there. The capsule half of G8 stays with the future Dynamic Island design, as the user decided for G5.
+- **The pool is closed.** Every item is built, already existed, or is closed with a reason (Rounds 18–26).
+
+**Checked:** 197 native tests pass, including the nested case. The real file was parsed in a temporary test that was removed afterwards.
+
+- **和声 seen offscreen:** the visual host's `--fixture-json` lines take an optional `background`. In a render at 0:19 the 和声 line first sat between the sung line and its romaji, splitting the reading from its text; it now comes after the reading and the translation.
+
+- **Seen offscreen while "playing"** (the visual host now takes `--set key=value` for any setting, repeatable):
+  - 整句亮: off, the active timed line is lit up to the sung word; on, the whole line is lit.
+  - 只看前方: the sung lines above the active one are gone; off, they are there.
+  - 四边灯带: shows at rest as a band along the edges. Offscreen it has a hard inner edge because the offscreen render skips the blur; in the real window (capture of 2026-11-15 with sound) it is a soft glow. Not a bug.
+  - 轮廓光: nothing at rest, as designed (it lights only on a bass hit); the white edge in both images is the cover's own outline.
+  - 金句 page: two fixture entries show with translation, song, time and 复制 / 移除. Debug runs now keep `favorite-lines.json` beside the test database (`SPOTIFYLYRICS_DATABASE_PATH`), so fixtures and tests never read or write the listener's file; Release is unchanged. Visual host: `--surface favorites --favorites-json path`.
+  - Loop bracket (`--loop-line N`, as from the context menu): a 5 s line on the player card's rail was about 3 pt, shown at the 6 pt minimum and covered by the hover thumb. It is now at least the thumb plus 8 pt wide, centred on the line, so both ends show beside the thumb.
+  - Bass followers on a hit (`--bass 1.6`, a Debug-only steady level; nothing is captured): 轮廓光 adds a ring in the cover's colour round the cover, 封面呼吸 makes the cover a little larger, 四边灯带 brightens. At `--bass 1.0` none of them shows.
+  - 换气: a fixture with an 8 s gap, paused 1 s before the next line (playing renders move past it). On, the coming line is a little larger with a faint white glow; off, it is plain. The three dots show in both.
+
+- **流动 rendered without Spotify** (`Scripts/flow-snapshot.swift`: the bundled page off screen, fed a synthetic beat, canvas saved): the page loads, presets draw and follow the wave. One preset filled almost the whole frame with white, which would bury white lyrics even at half strength, so the canvas now has `filter: brightness(.65)`.
+
+- 流动 checked in the real window with real sound (2026-11-15, LOVE & ROLL, playing): it follows the music, but the raw canvas laid grainy bands across the lyrics. The canvas is now blurred (14 px) and scaled 1.06 so its edges stay hidden, leaving a soft colour wash behind readable lyrics.
+
+**Still to be tried by hand:** 鼠标视差, Q/E and 收藏这句 — their logic is under unit tests; only the feel is left.
+
+

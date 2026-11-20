@@ -447,6 +447,7 @@ final class V3MusicPulseLightView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     func configure(color: NSColor, center: UnitPoint, active: Bool) {
+        let centerChanged = self.center != center
         self.center = center
         // Kept light: on a bright video a darker colour would read as a dark ring.
         let light = (color.usingColorSpace(.sRGB) ?? color).blended(withFraction: 0.7, of: .white) ?? color
@@ -455,7 +456,7 @@ final class V3MusicPulseLightView: NSView {
                        light.withAlphaComponent(0.28).cgColor, light.withAlphaComponent(0.08).cgColor, NSColor.clear.cgColor]
         halo.locations = [0, 0.24, 0.40, 0.62, 0.82, 1]
         wash.backgroundColor = light.cgColor
-        needsLayout = true
+        if centerChanged { needsLayout = true }
         if active, link == nil {
             let next = displayLink(target: self, selector: #selector(step(_:)))
             next.add(to: .main, forMode: .common)

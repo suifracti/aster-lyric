@@ -774,8 +774,10 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
             }
             .modifier(V3SceneDriver(scene: settings.v3Room, context: roomContext,
                                     weatherVisible: windowVisible && !isFocusMode && !isCompositionPreview,
+                                    developsKeepsakes: !liveOnly && !isCompositionPreview,
                                     bpm: $sceneBPM))
             .environment(\.v3WindowVisible, windowVisible)
+            .environment(\.v3IsPlaying, state.isPlaying)
             .environment(\.v3SceneChrome, presentation.chrome)
             .onChange(of: liveVocalOnsets, initial: true) { _, onsets in
                 if !liveOnly { V3VocalOnsets.current = onsets }
@@ -2153,7 +2155,7 @@ struct AppleMusicImmersiveV3WindowView: View, Equatable {
 
     /// What the 情境 scene needs from the song; built only while one is chosen.
     private var roomContext: V3RoomContext {
-        guard settings.v3Room != .off || scenePreview != nil else { return V3RoomContext() }
+        guard !isFocusMode, !isCompositionPreview, settings.v3Room != .off || scenePreview != nil else { return V3RoomContext() }
         let index = compositionSynchronized ? compositionIndex : nil
         let text = index.flatMap { compositionLyrics.indices.contains($0) ? compositionLyrics[$0].originalText : nil } ?? ""
         return V3RoomContext(chorus: chorusNow, lineIndex: index, lineCount: compositionLyrics.count,

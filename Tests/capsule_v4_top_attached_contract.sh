@@ -20,26 +20,26 @@ swiftc -parse-as-library \
 
 "$TMP_DIR/capsule-v4-top-attached-contract"
 
-if ! rg -n 'debugEnvelopeSize|topAttachedEnvelopeFrame|topAttachedIslandFrame' \
+if ! grep -En 'debugEnvelopeSize|topAttachedEnvelopeFrame|topAttachedIslandFrame' \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/CapsuleLyricsPresentation.swift" >/dev/null; then
   echo "v4 must expose fixed top-attached geometry" >&2
   exit 1
 fi
 
-if ! rg -n 'screen\.frame|maxY.*envelope|envelopeHeight' \
+if ! grep -En 'screen\.frame|maxY.*envelope|envelopeHeight' \
   "$ROOT_DIR/SpotifyLyrics/Windows/CapsuleLyricsWindowController.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/CapsuleLyricsPresentation.swift" >/dev/null; then
   echo "top-attached debug path must use the physical screen frame" >&2
   exit 1
 fi
 
-if ! rg -n 'hasShadow\s*=\s*false|ignoresMouseEvents|hitTest|addGlobalMonitorForEvents' \
+if ! grep -En 'hasShadow[[:space:]]*=[[:space:]]*false|ignoresMouseEvents|hitTest|addGlobalMonitorForEvents' \
   "$ROOT_DIR/SpotifyLyrics/Windows/CapsuleLyricsWindowController.swift" >/dev/null; then
   echo "top-attached debug path must provide transparent hit testing and pass-through" >&2
   exit 1
 fi
 
-if ! rg -n 'CapsuleV4TopAttachedShape|topAttached' \
+if ! grep -En 'CapsuleV4TopAttachedShape|topAttached' \
   "$ROOT_DIR/SpotifyLyrics/Views/Capsule/CapsuleLyricsView.swift" >/dev/null; then
   echo "v4 top-attached path must use a dedicated one-sided shell shape" >&2
   exit 1

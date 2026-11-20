@@ -566,6 +566,10 @@ final class V3Keepsakes: ObservableObject {
 
     /// Renders and keeps the print for a song that just finished.
     func develop(kind: Print.Kind, song: V3RoomContext.Song) async {
+        if let latest = prints.first, latest.kind == kind, latest.trackKey == song.trackKey,
+           Date().timeIntervalSince(latest.createdAt) < 15 {
+            return
+        }
         let artwork: NSImage? = kind == .polaroid ? await song.artworkURL.asyncMap { await ArtworkImageLoader.shared.image(for: $0) } ?? nil : nil
         let print = Print(kind: kind, title: song.title, artist: song.artist, trackKey: song.trackKey,
                           line: song.hookLine, translation: song.hookTranslation, artworkURL: song.artworkURL)
@@ -977,6 +981,7 @@ struct V3SceneDriver: ViewModifier {
     let scene: V3Room
     let context: V3RoomContext
     let weatherVisible: Bool
+    var developsKeepsakes = true
     @Binding var bpm: Double?
     @State private var reached = (key: "", line: -1)
     @State private var weatherOwner = UUID()
@@ -994,15 +999,18 @@ struct V3SceneDriver: ViewModifier {
                 if !Task.isCancelled { bpm = found.map { min(180, max(60, $0)) } }
             }
             .onChange(of: context.lineIndex) { _, index in
-                guard let song = context.song, let index else { return }
+                guard developsKeepsakes, let song = context.song, let index else { return }
                 if reached.key != song.trackKey { reached = (song.trackKey, index) } else { reached.line = max(reached.line, index) }
             }
             .onChange(of: context.song) { previous, _ in
-                guard let previous, scene == .polaroid || scene == .stars, reached.key == previous.trackKey,
+                guard developsKeepsakes, let previous, scene == .polaroid || scene == .stars, reached.key == previous.trackKey,
                       previous.lineCount > 0, Double(reached.line + 1) / Double(previous.lineCount) >= 0.6 else { return }
                 let kind: V3Keepsakes.Print.Kind = scene == .polaroid ? .polaroid : .stars
                 reached = ("", -1)
                 Task { await V3Keepsakes.shared.develop(kind: kind, song: previous) }
+            }
+            .onChange(of: developsKeepsakes) { _, allowed in
+                if !allowed { reached = ("", -1) }
             }
     }
 }

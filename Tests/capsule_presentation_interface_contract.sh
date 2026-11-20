@@ -7,6 +7,10 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 swiftc -parse-as-library \
   "$ROOT_DIR/SpotifyLyrics/Models/Models.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/TrackAlias.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/ReadingModels.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/ReadingScriptConversion.swift" \
+  "$ROOT_DIR/SpotifyLyrics/Lyrics/TrackTextNormalizer.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/TrackIdentity.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/AlignmentModels.swift" \
   "$ROOT_DIR/SpotifyLyrics/Lyrics/LyricsModels.swift" \

@@ -152,6 +152,9 @@ struct MainLyricsWindowView: View {
         .onChange(of: state.hasLiveTrack) { _, active in
             if active, workspaceMode.destination == .lyrics { workspaceMode.show(.followsPlayback) }
         }
+        .onChange(of: state.isShowingSearchPreview) { _, previewing in
+            if previewing, workspaceMode.destination != .followsPlayback { workspaceMode.show(.followsPlayback) }
+        }
         .task {
             state.startProvider(connectSpotify: settings.connectSpotifyOnLaunch)
             WindowManager.shared.restoreFloatingWindowIfConfigured(state: state)

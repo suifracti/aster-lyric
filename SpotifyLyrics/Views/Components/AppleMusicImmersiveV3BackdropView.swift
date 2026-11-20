@@ -1388,10 +1388,19 @@ private struct V3WindowVisibleKey: EnvironmentKey {
     static let defaultValue = true
 }
 
+private struct V3IsPlayingKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
     var v3WindowVisible: Bool {
         get { self[V3WindowVisibleKey.self] }
         set { self[V3WindowVisibleKey.self] = newValue }
+    }
+
+    var v3IsPlaying: Bool {
+        get { self[V3IsPlayingKey.self] }
+        set { self[V3IsPlayingKey.self] = newValue }
     }
 }
 

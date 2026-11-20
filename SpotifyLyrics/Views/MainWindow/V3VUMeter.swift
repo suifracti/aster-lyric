@@ -84,23 +84,41 @@ struct V3VUMeterFace: View {
     }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !running || reduceMotion)) { context in
-            Canvas { ctx, size in
-                let levels = V3MusicPulse.levels
-                let fresh = running && ProcessInfo.processInfo.systemUptime - levels.updatedAt < 1
-                let targets = fresh ? [Self.reading((levels.bass + levels.mid) / 2),
-                                       Self.reading((levels.mid + levels.treble) / 2)] : [0, 0]
-                needles.step(targets: targets, now: context.date.timeIntervalSinceReferenceDate)
-                let half = CGSize(width: (size.width - 10) / 2, height: size.height)
-                for i in 0..<2 {
-                    let origin = CGPoint(x: CGFloat(i) * (half.width + 10), y: 0)
-                    drawDial(&ctx, in: CGRect(origin: origin, size: half), value: needles.position[i], label: i == 0 ? "低" : "高")
+        Group {
+            if running && !reduceMotion {
+                V3AnimationIsland {
+                    TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                        dialCanvas(at: context.date)
+                    }
                 }
+            } else {
+                dialCanvas(at: nil)
             }
         }
         .accessibilityElement()
         .accessibilityLabel("VU 表")
         .accessibilityValue(running ? "随音乐摆动" : "静止")
+    }
+
+    private func dialCanvas(at date: Date?) -> some View {
+        Canvas { ctx, size in
+            let levels = V3MusicPulse.levels
+            let fresh = date != nil && running && ProcessInfo.processInfo.systemUptime - levels.updatedAt < 1
+            let targets = fresh ? [Self.reading((levels.bass + levels.mid) / 2),
+                                   Self.reading((levels.mid + levels.treble) / 2)] : [0, 0]
+            if let date {
+                needles.step(targets: targets, now: date.timeIntervalSinceReferenceDate)
+            } else {
+                needles.position = [0, 0]
+                needles.velocity = [0, 0]
+                needles.lastTime = nil
+            }
+            let half = CGSize(width: (size.width - 10) / 2, height: size.height)
+            for i in 0..<2 {
+                let origin = CGPoint(x: CGFloat(i) * (half.width + 10), y: 0)
+                drawDial(&ctx, in: CGRect(origin: origin, size: half), value: needles.position[i], label: i == 0 ? "低" : "高")
+            }
+        }
     }
 
     private func drawDial(_ ctx: inout GraphicsContext, in rect: CGRect, value: Double, label: String) {

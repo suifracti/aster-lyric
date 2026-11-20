@@ -537,40 +537,52 @@ struct V3VinylDiscLayer: View {
 
     var body: some View {
         let disc = Self.discFrame(for: cover)
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !state.isPlaying || reduceMotion || !visible)) { context in
-            let angle = Angle.degrees((context.date.timeIntervalSinceReferenceDate * 48).truncatingRemainder(dividingBy: 360))
-            ZStack {
-                Circle().fill(RadialGradient(colors: [Color(white: 0.16), Color(white: 0.05)],
-                                             center: .center, startRadius: 0, endRadius: disc.width / 2))
-                ForEach(0..<9, id: \.self) { ring in
-                    Circle()
-                        .stroke(Color.white.opacity(ring % 2 == 0 ? 0.05 : 0.025), lineWidth: 1)
-                        .padding(disc.width * (0.06 + Double(ring) * 0.035))
+        Group {
+            if state.isPlaying && !reduceMotion && visible {
+                V3AnimationIsland {
+                    TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                        discStack(disc: disc, angle: Angle.degrees((context.date.timeIntervalSinceReferenceDate * 48).truncatingRemainder(dividingBy: 360)))
+                    }
                 }
-                // A soft sheen that stays still while the record turns.
-                Circle().fill(AngularGradient(colors: [.clear, .white.opacity(0.10), .clear, .white.opacity(0.06), .clear],
-                                              center: .center))
-                    .rotationEffect(-angle)
-                ArtworkView(track: state.currentTrack, size: disc.width * 0.36, showsAlbumLabel: false,
-                            cornerRadiusRatio: 0.5, preservesCompleteArtwork: false)
-                    .clipShape(Circle())
-                Circle().fill(Color.black).frame(width: disc.width * 0.035, height: disc.width * 0.035)
+            } else {
+                discStack(disc: disc, angle: .zero)
             }
-            .rotationEffect(angle)
-            .frame(width: disc.width, height: disc.height)
-            .overlay {
-                V3PlaybackFractionReader(state: state, interval: 1) { fraction in
-                    Circle()
-                        .trim(from: 0, to: fraction)
-                        .stroke(accent.opacity(0.9), style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .padding(-5)
-                }
-            }
-            .shadow(color: .black.opacity(0.35), radius: 16, x: 6, y: 8)
-            .position(x: disc.midX, y: disc.midY)
         }
+        .frame(width: disc.width, height: disc.height)
+        .overlay {
+            V3PlaybackFractionReader(state: state, interval: 1) { fraction in
+                Circle()
+                    .trim(from: 0, to: fraction)
+                    .stroke(accent.opacity(0.9), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .padding(-5)
+            }
+        }
+        .shadow(color: .black.opacity(0.35), radius: 16, x: 6, y: 8)
+        .position(x: disc.midX, y: disc.midY)
         .allowsHitTesting(false)
+    }
+
+    private func discStack(disc: CGRect, angle: Angle) -> some View {
+        ZStack {
+            Circle().fill(RadialGradient(colors: [Color(white: 0.16), Color(white: 0.05)],
+                                         center: .center, startRadius: 0, endRadius: disc.width / 2))
+            ForEach(0..<9, id: \.self) { ring in
+                Circle()
+                    .stroke(Color.white.opacity(ring % 2 == 0 ? 0.05 : 0.025), lineWidth: 1)
+                    .padding(disc.width * (0.06 + Double(ring) * 0.035))
+            }
+            // A soft sheen that stays still while the record turns.
+            Circle().fill(AngularGradient(colors: [.clear, .white.opacity(0.10), .clear, .white.opacity(0.06), .clear],
+                                          center: .center))
+                .rotationEffect(-angle)
+            ArtworkView(track: state.currentTrack, size: disc.width * 0.36, showsAlbumLabel: false,
+                        cornerRadiusRatio: 0.5, preservesCompleteArtwork: false)
+                .clipShape(Circle())
+            Circle().fill(Color.black).frame(width: disc.width * 0.035, height: disc.width * 0.035)
+        }
+        .rotationEffect(angle)
+        .frame(width: disc.width, height: disc.height)
     }
 }
 
