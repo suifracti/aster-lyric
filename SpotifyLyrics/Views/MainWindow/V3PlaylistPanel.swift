@@ -24,6 +24,7 @@ struct PlaylistBrowserWindow: View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 PlaylistFilterField(browser: state.playlistBrowser)
+                PlaylistLyricsBatchButton(state: state, browser: state.playlistBrowser)
                 TranslationBatchButton(state: state, browser: state.playlistBrowser)
                 Button { state.playlistBrowser.refresh() } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.borderless)
@@ -31,6 +32,10 @@ struct PlaylistBrowserWindow: View {
                     .accessibilityLabel("刷新歌单与队列")
             }
             .padding(12)
+            if state.lyricsBatch.total > 0 || state.isPreparingPlaylistLyricsBatch {
+                PlaylistLyricsBatchStatus(state: state, batch: state.lyricsBatch)
+                    .padding([.horizontal, .bottom], 12)
+            }
             if state.translationBatchProgress != nil {
                 TranslationBatchStatus(state: state).padding([.horizontal, .bottom], 12)
             }
@@ -286,6 +291,99 @@ struct V3PlaylistQueuePreview: View {
         }
         .onAppear { browser.loadQueue() }
         .onChange(of: browser.source) { _, _ in browser.loadQueue() }
+    }
+}
+
+struct PlaylistLyricsBatchButton: View {
+    @ObservedObject var state: PlaybackState
+    @ObservedObject var browser: PlaylistBrowserModel
+    @ObservedObject private var batch: LyricsBatchCompletion
+    @State private var pending: Request?
+    @State private var showsConfirmation = false
+
+    private struct Request {
+        let title: String
+        let tracks: [Track]
+    }
+
+    init(state: PlaybackState, browser: PlaylistBrowserModel) {
+        self.state = state
+        self.browser = browser
+        self.batch = state.lyricsBatch
+    }
+
+    var body: some View {
+        Menu("批量查原词", systemImage: "text.magnifyingglass") {
+            let queue = browser.queueItems.map(\.track)
+            Button("补全播放队列原词") { offer("补全队列原词", queue) }.disabled(queue.isEmpty)
+            Button("补全所选歌单原词") {
+                let name = browser.picker.playlists.first { $0.id == browser.selectedID }?.name ?? "所选歌单"
+                offer("补全「\(name)」原词", browser.tracks.map(\.track))
+            }.disabled(browser.selectedID == PlaylistBrowserModel.queueID || browser.selectedTracksAreLoading || browser.tracks.isEmpty)
+        }
+        .disabled(state.isPreparingPlaylistLyricsBatch || batch.isRunning)
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .confirmationDialog(pending?.title ?? "批量查原词", isPresented: $showsConfirmation, titleVisibility: .visible) {
+            Button("开始免费查词") {
+                if let pending { state.startPlaylistLyricsBatch(tracks: pending.tracks) }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("列表共 \(pending?.tracks.count ?? 0) 首。会自动跳过已有本地原词的歌曲，仅查缺失原词（不消耗 AI 翻译额度），整轮结束后自动同步到 GitHub。")
+        }
+    }
+
+    private func offer(_ title: String, _ tracks: [Track]) {
+        pending = .init(title: title, tracks: TranslationSessionController.uniqueBatchTracks(tracks))
+        showsConfirmation = true
+    }
+}
+
+struct PlaylistLyricsBatchStatus: View {
+    @ObservedObject var state: PlaybackState
+    @ObservedObject var batch: LyricsBatchCompletion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if state.isPreparingPlaylistLyricsBatch {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("正在筛选未缓存原词的歌曲…").foregroundStyle(.secondary)
+                }
+            } else if batch.total > 0 {
+                HStack {
+                    Text(batch.isRunning ? "批量查原词中" : (batch.wasStopped ? "批量查原词已停止" : "批量查原词完成"))
+                        .font(.caption.weight(.semibold))
+                    Spacer()
+                    let current = batch.retryProgress?.completed ?? batch.completed
+                    let total = batch.retryProgress?.total ?? batch.total
+                    Text("\(current)/\(total)").monospacedDigit()
+                    if batch.isRunning {
+                        Button(batch.wasStopped ? "停止中" : "停止") { batch.stop() }
+                            .buttonStyle(.borderless)
+                            .disabled(batch.wasStopped)
+                    } else if batch.pendingCount > 0 {
+                        Button("继续未查(\(batch.pendingCount))") {
+                            batch.resume { [weak state] track in await state?.completeMissingLyrics(track: track) }
+                        }
+                        .buttonStyle(.borderless)
+                    } else if batch.failedCount > 0 {
+                        Button("重试失败(\(batch.failedCount))") {
+                            batch.retryFailures { [weak state] track in await state?.completeMissingLyrics(track: track) }
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+                if batch.isRunning {
+                    ProgressView(value: Double(batch.completed), total: Double(max(1, batch.total)))
+                    if let title = batch.currentTitle {
+                        Text(title).lineLimit(1).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .font(.caption)
     }
 }
 

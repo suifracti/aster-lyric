@@ -82,8 +82,10 @@ public final class LyricsBatchCompletion: ObservableObject {
         wasStopped = false
         retryProgress = retrying ? RetryProgress(total: pending.count) : nil
         isRunning = true
+        GitHubLyricsSyncService.shared.beginBatchSuppression()
         task = Task { [weak self] in
             defer {
+                GitHubLyricsSyncService.shared.endBatchSuppression()
                 self?.currentTitle = nil
                 self?.retryProgress = nil
                 self?.task = nil

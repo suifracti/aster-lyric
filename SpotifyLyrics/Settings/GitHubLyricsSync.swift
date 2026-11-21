@@ -687,18 +687,22 @@ public struct GitHubSyncClient: Sendable {
 // MARK: - Snapshot Builder (GPT-Readable Markdown + Optional Machine Backup)
 
 public enum GitHubSyncSnapshotBuilder {
-    public static let managedPrefixes = ["tracks/"]
+    public static let managedPrefixes = ["tracks/", "playlists/"]
     public static let backupPath = "backup/LyricIslandPersonalData.json"
 
     static func buildFiles(
         package: PersonalDataPackage,
         favorites: [V3FavoriteLines.Entry],
+        playlists: [GitHubSyncPlaylistSnapshot] = [],
         defaults: UserDefaults = .lyricsQ,
         includeDataPackageBackup: Bool,
         translationScope: GitHubSyncTranslationScope = .aiAndManual
     ) throws -> (files: [String: Data], exactManagedPaths: Set<String>) {
         var files: [String: Data] = [:]
         var indexRows: [(artist: String, title: String, album: String, status: String, translationTag: String, spotifyID: String, path: String)] = []
+        var pathByStableKey: [String: String] = [:]
+        var pathBySpotifyID: [String: String] = [:]
+        var pathByTitleArtist: [String: String] = [:]
 
         let favoriteLookup = groupFavorites(favorites)
         var usedPaths = Set<String>()
@@ -722,6 +726,15 @@ public enum GitHubSyncSnapshotBuilder {
                 translationScope: translationScope
             )
             files[path] = Data(markdown.utf8)
+
+            pathByStableKey[trackPkg.track.stableKey] = path
+            if let sid = trackPkg.track.spotifyID, !sid.isEmpty {
+                pathBySpotifyID[sid.lowercased()] = path
+            }
+            let normTA = "\(TrackTextNormalizer.normalize(trackPkg.track.title))|\(TrackTextNormalizer.normalize(trackPkg.track.artist))"
+            if pathByTitleArtist[normTA] == nil {
+                pathByTitleArtist[normTA] = path
+            }
 
             let lyricsStatus: String
             if let preferredLyrics {
@@ -757,9 +770,28 @@ public enum GitHubSyncSnapshotBuilder {
             ))
         }
 
+        var usedPlaylistPaths = Set<String>()
+        var exportedPlaylistCount = 0
+        for playlist in playlists.sorted(by: { ($0.name.lowercased(), $0.id) < ($1.name.lowercased(), $1.id) }) where !playlist.tracks.isEmpty {
+            let pPath = uniquePlaylistPath(for: playlist, used: &usedPlaylistPaths)
+            let pMarkdown = renderPlaylistMarkdown(
+                playlist: playlist,
+                pathByStableKey: pathByStableKey,
+                pathBySpotifyID: pathBySpotifyID,
+                pathByTitleArtist: pathByTitleArtist
+            )
+            files[pPath] = Data(pMarkdown.utf8)
+            exportedPlaylistCount += 1
+        }
+
         files["INDEX.md"] = Data(renderIndexMarkdown(rows: indexRows, favoritesCount: favorites.count).utf8)
         files["favorites.md"] = Data(renderFavoritesMarkdown(favorites: favorites).utf8)
-        files["README.md"] = Data(renderReadmeMarkdown(trackCount: package.tracks.count, favoritesCount: favorites.count, includeBackup: includeDataPackageBackup).utf8)
+        files["README.md"] = Data(renderReadmeMarkdown(
+            trackCount: package.tracks.count,
+            favoritesCount: favorites.count,
+            playlistCount: exportedPlaylistCount,
+            includeBackup: includeDataPackageBackup
+        ).utf8)
 
         if includeDataPackageBackup {
             let stablePackage = stabilizedBackupPackage(from: package)
@@ -1072,7 +1104,56 @@ public enum GitHubSyncSnapshotBuilder {
         return lines.joined(separator: "\n") + "\n"
     }
 
-    private static func renderReadmeMarkdown(trackCount: Int, favoritesCount: Int, includeBackup: Bool) -> String {
+    private static func uniquePlaylistPath(for playlist: GitHubSyncPlaylistSnapshot, used: inout Set<String>) -> String {
+        let baseSlug = sanitizePathComponent(playlist.name, maxLength: 56)
+        let hash = shortSHA256Hex(playlist.id, length: 8)
+        var candidate = "playlists/\(baseSlug) [\(hash)].md"
+        var counter = 2
+        while !used.insert(candidate).inserted {
+            candidate = "playlists/\(baseSlug) [\(hash)-\(counter)].md"
+            counter += 1
+        }
+        return candidate
+    }
+
+    private static func renderPlaylistMarkdown(
+        playlist: GitHubSyncPlaylistSnapshot,
+        pathByStableKey: [String: String],
+        pathBySpotifyID: [String: String],
+        pathByTitleArtist: [String: String]
+    ) -> String {
+        var lines = [
+            "---",
+            "playlist_id: \(yamlQuote(playlist.id))",
+            "playlist_name: \(yamlQuote(playlist.name))",
+            "source: \(yamlQuote(playlist.source))",
+            "track_count: \(playlist.tracks.count)",
+            "---",
+            "",
+            "# 歌单：\(playlist.name)",
+            "",
+            "- 来源：\(playlist.source) · 共 **\(playlist.tracks.count)** 首",
+            "",
+            "| # | 歌名 | 歌手 | 专辑 | 歌词文件 |",
+            "|---|---|---|---|---|"
+        ]
+        for (idx, item) in playlist.tracks.enumerated() {
+            let matchedPath = pathByStableKey[item.stableKey]
+                ?? item.spotifyID.flatMap { pathBySpotifyID[$0.lowercased()] }
+                ?? pathByTitleArtist["\(TrackTextNormalizer.normalize(item.title))|\(TrackTextNormalizer.normalize(item.artist))"]
+            let linkCell: String
+            if let matchedPath {
+                let encoded = ("../" + matchedPath).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ("../" + matchedPath)
+                linkCell = "[查看](\(encoded))"
+            } else {
+                linkCell = "暂未查词"
+            }
+            lines.append("| \(idx + 1) | \(escapePipe(item.title)) | \(escapePipe(item.artist)) | \(escapePipe(item.album)) | \(linkCell) |")
+        }
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    private static func renderReadmeMarkdown(trackCount: Int, favoritesCount: Int, playlistCount: Int, includeBackup: Bool) -> String {
         var lines = [
             "# Aster · Lyric 个人歌词库（私有同步）",
             "",
@@ -1082,6 +1163,9 @@ public enum GitHubSyncSnapshotBuilder {
             "- `tracks/`：每首歌独立 Markdown（原词、译文对照、其他译稿、收藏金句）",
             "- [favorites.md](favorites.md)：收藏金句汇总（**\(favoritesCount)** 句）"
         ]
+        if playlistCount > 0 {
+            lines.append("- `playlists/`：已浏览歌单目录（**\(playlistCount)** 份，含顺序曲目与单曲歌词跳转）")
+        }
         if includeBackup {
             lines.append("- `\(backupPath)`：Aster · Lyric 标准个人数据包备份，可用于跨 Mac 导入恢复")
         }
@@ -1359,6 +1443,106 @@ public final class GitHubSyncBaselineStore: @unchecked Sendable {
     }
 }
 
+// MARK: - Playlist Snapshot Store
+
+public struct GitHubSyncPlaylistTrack: Codable, Equatable, Sendable {
+    public let title: String
+    public let artist: String
+    public let album: String
+    public let stableKey: String
+    public let spotifyID: String?
+}
+
+public struct GitHubSyncPlaylistSnapshot: Codable, Equatable, Sendable {
+    public let id: String
+    public let name: String
+    public let source: String
+    public let updatedAt: Date
+    public let tracks: [GitHubSyncPlaylistTrack]
+}
+
+public final class GitHubSyncPlaylistStore: @unchecked Sendable {
+    public static let shared = GitHubSyncPlaylistStore()
+
+    private struct Storage: Codable {
+        var playlists: [String: GitHubSyncPlaylistSnapshot] = [:]
+    }
+
+    public static var defaultURL: URL? {
+#if DEBUG
+        if let override = ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DATABASE_PATH"],
+           !override.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return URL(fileURLWithPath: override).deletingLastPathComponent().appendingPathComponent("github-sync-playlists.json")
+        }
+#endif
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("SpotifyLyrics", isDirectory: true)
+            .appendingPathComponent("github-sync-playlists.json")
+    }
+
+    private let fileURL: URL?
+    private let lock = NSLock()
+    private var memoryStorage = Storage()
+
+    public init(fileURL: URL? = GitHubSyncPlaylistStore.defaultURL) {
+        self.fileURL = fileURL
+    }
+
+    public func savePlaylist(id: String, name: String, source: String, tracks: [Track]) {
+        guard !id.isEmpty, !tracks.isEmpty else { return }
+#if DEBUG
+        if DebugAcceptanceDataIsolation.isRequested { return }
+        if ProcessInfo.processInfo.environment["LYRICSQ_NATIVE_TESTS"] == "1" && fileURL == Self.defaultURL { return }
+#endif
+        let mapped = tracks.map { track in
+            GitHubSyncPlaylistTrack(
+                title: track.title,
+                artist: track.artist,
+                album: track.album,
+                stableKey: TrackIdentity(track: track).stableKey,
+                spotifyID: track.spotifyId
+            )
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        var storage = readStorage()
+        storage.playlists[id] = GitHubSyncPlaylistSnapshot(
+            id: id,
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? id : name,
+            source: source,
+            updatedAt: Date(),
+            tracks: mapped
+        )
+        writeStorage(storage)
+    }
+
+    public func loadAll() -> [GitHubSyncPlaylistSnapshot] {
+        lock.lock()
+        defer { lock.unlock() }
+        return Array(readStorage().playlists.values)
+    }
+
+    private func readStorage() -> Storage {
+        guard let fileURL else { return memoryStorage }
+        guard let data = try? Data(contentsOf: fileURL),
+              let decoded = try? JSONDecoder().decode(Storage.self, from: data) else {
+            return Storage()
+        }
+        return decoded
+    }
+
+    private func writeStorage(_ storage: Storage) {
+        guard let fileURL else {
+            memoryStorage = storage
+            return
+        }
+        try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let data = try? JSONEncoder().encode(storage) {
+            try? data.write(to: fileURL, options: .atomic)
+        }
+    }
+}
+
 // MARK: - Observable Service
 
 @MainActor
@@ -1409,18 +1593,22 @@ final class GitHubLyricsSyncService: ObservableObject {
     private let repository: SQLiteLyricsRepository
     private let favoritesLoader: @MainActor () -> [V3FavoriteLines.Entry]
     private let favoritesApplier: @MainActor ([V3FavoriteLines.Entry]) -> Void
+    private let playlistsLoader: @MainActor () -> [GitHubSyncPlaylistSnapshot]
     private let defaults: UserDefaults
     private let tokenStore: any GitHubSyncTokenStoring
     private let baselineStore: GitHubSyncBaselineStore
     private let client: GitHubSyncClient
     private var autoSyncTask: Task<Void, Never>?
     private var lastRemoteHeadCheckAt: Date?
+    private var batchSuppressionCount = 0
+    private var pendingBatchSync = false
     private var observers: [NSObjectProtocol] = []
 
     init(
         repository: SQLiteLyricsRepository = SQLiteLyricsRepository(),
         favoritesLoader: @escaping @MainActor () -> [V3FavoriteLines.Entry] = { V3FavoriteLines.shared.entries },
         favoritesApplier: @escaping @MainActor ([V3FavoriteLines.Entry]) -> Void = { V3FavoriteLines.shared.replaceFromGitHubSync($0) },
+        playlistsLoader: @escaping @MainActor () -> [GitHubSyncPlaylistSnapshot] = { GitHubSyncPlaylistStore.shared.loadAll() },
         defaults: UserDefaults = .lyricsQ,
         tokenStore: any GitHubSyncTokenStoring = GitHubSyncTokenStore(),
         baselineStore: GitHubSyncBaselineStore = GitHubSyncBaselineStore(),
@@ -1430,6 +1618,7 @@ final class GitHubLyricsSyncService: ObservableObject {
         self.repository = repository
         self.favoritesLoader = favoritesLoader
         self.favoritesApplier = favoritesApplier
+        self.playlistsLoader = playlistsLoader
         self.defaults = defaults
         self.tokenStore = tokenStore
         self.baselineStore = baselineStore
@@ -1537,9 +1726,11 @@ final class GitHubLyricsSyncService: ObservableObject {
         do {
             var package = try await repository.exportPersonalDataPackage()
             var favorites = favoritesLoader()
+            let playlists = playlistsLoader()
             var built = try GitHubSyncSnapshotBuilder.buildFiles(
                 package: package,
                 favorites: favorites,
+                playlists: playlists,
                 defaults: defaults,
                 includeDataPackageBackup: includeDataPackageBackup,
                 translationScope: translationScope
@@ -1575,6 +1766,7 @@ final class GitHubLyricsSyncService: ObservableObject {
                     built = try GitHubSyncSnapshotBuilder.buildFiles(
                         package: package,
                         favorites: favorites,
+                        playlists: playlists,
                         defaults: defaults,
                         includeDataPackageBackup: includeDataPackageBackup,
                         translationScope: translationScope
@@ -1796,23 +1988,46 @@ final class GitHubLyricsSyncService: ObservableObject {
         Task { await syncNow() }
     }
 
+    public func beginBatchSuppression() {
+        batchSuppressionCount += 1
+        autoSyncTask?.cancel()
+        autoSyncTask = nil
+    }
+
+    public func endBatchSuppression() {
+        guard batchSuppressionCount > 0 else { return }
+        batchSuppressionCount -= 1
+        if batchSuppressionCount == 0 && pendingBatchSync {
+            pendingBatchSync = false
+            scheduleAutoSyncIfNeeded()
+        }
+    }
+
     public func scheduleAutoSyncIfNeeded() {
         guard autoSyncEnabled, isConfigured else { return }
         if ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_KEYCHAIN"] == "1" { return }
+        if ProcessInfo.processInfo.environment["LYRICSQ_NATIVE_TESTS"] == "1" { return }
 #if DEBUG
         if DebugAcceptanceDataIsolation.isRequested { return }
 #endif
+        if batchSuppressionCount > 0 {
+            pendingBatchSync = true
+            autoSyncTask?.cancel()
+            autoSyncTask = nil
+            return
+        }
         autoSyncTask?.cancel()
         autoSyncTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(6))
-            guard !Task.isCancelled, let self, self.autoSyncEnabled, self.isConfigured else { return }
+            guard !Task.isCancelled, let self, self.autoSyncEnabled, self.isConfigured, self.batchSuppressionCount == 0 else { return }
             _ = await self.syncNow()
         }
     }
 
     private func checkRemoteChangesIfNeeded() {
-        guard autoSyncEnabled, bidirectionalSyncEnabled, isConfigured, !isSyncing else { return }
+        guard autoSyncEnabled, bidirectionalSyncEnabled, isConfigured, !isSyncing, batchSuppressionCount == 0 else { return }
         if ProcessInfo.processInfo.environment["SPOTIFYLYRICS_DISABLE_KEYCHAIN"] == "1" { return }
+        if ProcessInfo.processInfo.environment["LYRICSQ_NATIVE_TESTS"] == "1" { return }
 #if DEBUG
         if DebugAcceptanceDataIsolation.isRequested { return }
 #endif

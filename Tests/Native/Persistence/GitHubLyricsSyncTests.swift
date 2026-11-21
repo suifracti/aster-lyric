@@ -660,4 +660,118 @@ final class GitHubLyricsSyncTests: XCTestCase {
         XCTAssertTrue(versionsAfterConflict.contains(where: { $0.isDraft && $0.lines.first?.translatedText == "远端冲突修订第一句" }))
         XCTAssertEqual(versionsAfterConflict.first(where: { !$0.isDraft })?.lines.first?.translatedText, "本地新修订第一句")
     }
+
+    @MainActor
+    func testPlaylistSnapshotExportAndMissingAITranslationFilter() async throws {
+        let root = NativeTestRuntime.root.appendingPathComponent("gh-playlist-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let repo = SQLiteLyricsRepository(
+            databaseURL: root.appendingPathComponent("lyrics.sqlite3"),
+            alignmentProvenanceDirectory: root.appendingPathComponent("provenance")
+        )
+        try await repo.prepare()
+
+        // Track 1: cached lyrics + providerEmbedded ONLY (should appear in .missingAITranslation)
+        let track1 = Track(title: "EmbeddedOnly", artist: "429", album: "EP", duration: 180, spotifyId: "spotify:track:1111111111111111111111")
+        let id1 = TrackIdentity(track: track1)
+        let s1 = try await repo.save(
+            track: track1,
+            identity: id1,
+            document: LyricsDocument(
+                identity: id1,
+                title: track1.title,
+                artist: track1.artist,
+                album: track1.album,
+                duration: track1.duration,
+                lines: [LyricLine(timestamp: 4, originalText: "Line 1")],
+                isSynchronized: true,
+                source: .qqExperimental,
+                confidence: 0.95
+            )
+        )
+        let lv1 = try XCTUnwrap(s1.versionID)
+        let hash1 = try XCTUnwrap(s1.sourceContentHash)
+        _ = try await repo.saveTranslation(
+            lyricsVersionID: lv1,
+            sourceContentHash: hash1,
+            originalLines: ["Line 1"],
+            draft: AITranslationDraft(
+                lines: [AITranslationLine(index: 0, translation: "词源译文")],
+                targetLanguage: "und",
+                model: "词源自带译文",
+                baseURLHost: "",
+                promptHash: "",
+                sourceContentHash: hash1,
+                sourceKind: .providerEmbedded,
+                isMachineGenerated: false,
+                isManuallyEdited: false,
+                engineID: "provider-embedded"
+            ),
+            forceNewVersion: true
+        )
+
+        // Track 2: cached lyrics + AI translation (should NOT appear in .missingAITranslation)
+        let track2 = Track(title: "HasAI", artist: "tuki.", album: "Single", duration: 200, spotifyId: "spotify:track:2222222222222222222222")
+        let id2 = TrackIdentity(track: track2)
+        let s2 = try await repo.save(
+            track: track2,
+            identity: id2,
+            document: LyricsDocument(
+                identity: id2,
+                title: track2.title,
+                artist: track2.artist,
+                album: track2.album,
+                duration: track2.duration,
+                lines: [LyricLine(timestamp: 5, originalText: "Line 2")],
+                isSynchronized: true,
+                source: .qqExperimental,
+                confidence: 0.95
+            )
+        )
+        let lv2 = try XCTUnwrap(s2.versionID)
+        let hash2 = try XCTUnwrap(s2.sourceContentHash)
+        _ = try await repo.saveTranslation(
+            lyricsVersionID: lv2,
+            sourceContentHash: hash2,
+            originalLines: ["Line 2"],
+            draft: AITranslationDraft(
+                lines: [AITranslationLine(index: 0, translation: "AI译文")],
+                targetLanguage: "zh-Hans",
+                model: "gpt-6.2-sol",
+                baseURLHost: "api.example.invalid",
+                promptHash: "p1",
+                sourceContentHash: hash2,
+                sourceKind: .ai,
+                isMachineGenerated: true,
+                isManuallyEdited: false
+            ),
+            forceNewVersion: true
+        )
+
+        let entries = try await repo.loadPersonalLibraryEntries()
+        let missingAI = entries.filter { PersonalLibraryFilter.missingAITranslation.includes($0, currentTrackKey: nil) }
+        XCTAssertEqual(missingAI.map(\.title), ["EmbeddedOnly"])
+
+        // Export playlist with 2 cached + 1 uncached track
+        let uncached = Track(title: "UncachedSong", artist: "KOTORI", album: "LP", duration: 210, spotifyId: "spotify:track:3333333333333333333333")
+        let playlistStore = GitHubSyncPlaylistStore(fileURL: root.appendingPathComponent("playlists.json"))
+        playlistStore.savePlaylist(id: "pl-01", name: "01 · J-Pop", source: "Spotify", tracks: [track1, uncached, track2])
+
+        let pkg = try await repo.exportPersonalDataPackage()
+        let built = try GitHubSyncSnapshotBuilder.buildFiles(
+            package: pkg,
+            favorites: [],
+            playlists: playlistStore.loadAll(),
+            includeDataPackageBackup: false,
+            translationScope: .aiAndManual
+        )
+        let playlistKey = try XCTUnwrap(built.files.keys.first { $0.hasPrefix("playlists/") })
+        let playlistMD = try XCTUnwrap(String(data: built.files[playlistKey]!, encoding: .utf8))
+        XCTAssertTrue(playlistMD.contains("# 歌单：01 · J-Pop"))
+        XCTAssertTrue(playlistMD.contains("../tracks/"))
+        XCTAssertTrue(playlistMD.contains("UncachedSong"))
+        XCTAssertTrue(playlistMD.contains("暂未查词"))
+    }
 }

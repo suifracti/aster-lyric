@@ -344,6 +344,16 @@ public final class PlaylistBrowserModel: ObservableObject {
                 }
                 try Task.checkCancellation()
                 tracks = songs
+                let playlistTitle = id == Self.likedID
+                    ? picker.likedRowTitle
+                    : (picker.playlists.first { $0.id == id }?.name ?? id)
+                let sourceTitle = source == .appleMusic ? "Apple Music" : "Spotify"
+                GitHubSyncPlaylistStore.shared.savePlaylist(
+                    id: id,
+                    name: playlistTitle,
+                    source: sourceTitle,
+                    tracks: songs.map(\.track)
+                )
             } catch { if !Task.isCancelled { selectionNotice = error.localizedDescription } }
         }
     }

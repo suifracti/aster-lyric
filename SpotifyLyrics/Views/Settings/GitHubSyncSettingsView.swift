@@ -110,7 +110,7 @@ struct GitHubSyncSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Text("仅允许同步到你自己的 GitHub 私有仓库；每首歌曲导出为独立 Markdown（原词、译文对照与金句），便于跨端与 GPT 检索；Token 仅存 Keychain。")
+            Text("仅允许同步到你自己的 GitHub 私有仓库；每首歌曲及已浏览歌单导出为独立 Markdown，便于跨端与 GPT 检索；可在歌单窗口「批量查原词」或个人歌词库筛选「缺 AI 译文」批量补全。Token 仅存 Keychain。")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)

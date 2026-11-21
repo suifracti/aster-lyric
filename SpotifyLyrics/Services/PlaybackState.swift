@@ -1875,6 +1875,57 @@ public final class PlaybackState: ObservableObject {
         }
     }
 
+    @Published var isPreparingPlaylistLyricsBatch = false
+    func startPlaylistLyricsBatch(tracks: [Track]) {
+        guard !isPreparingPlaylistLyricsBatch, !lyricsBatch.isRunning else { return }
+        let unique = TranslationSessionController.uniqueBatchTracks(tracks)
+        guard !unique.isEmpty else { return }
+        isPreparingPlaylistLyricsBatch = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.isPreparingPlaylistLyricsBatch = false }
+            try? await self.lyricsRepository.prepare()
+            var missingEntries: [PersonalLyricsLibraryEntry] = []
+            for track in unique {
+                let identity = TrackIdentity(track: track)
+                if let stored = try? await self.lyricsRepository.loadBestStored(track: track, identity: identity),
+                   stored.versionID != nil, !stored.document.lines.isEmpty {
+                    continue
+                }
+                missingEntries.append(PersonalLyricsLibraryEntry(
+                    trackStableKey: identity.stableKey,
+                    spotifyTrackID: track.spotifyId,
+                    spotifyURI: track.spotifyURL?.absoluteString,
+                    isrc: track.isrc,
+                    title: track.title,
+                    artist: track.artist,
+                    album: track.album,
+                    duration: track.duration,
+                    artworkURL: track.artworkURL,
+                    lyricsVersionCount: 0,
+                    translationVersionCount: 0,
+                    readingVersionCount: 0,
+                    timingVersionCount: 0,
+                    hasLockedLyrics: false,
+                    hasLockedTranslation: false,
+                    hasManualLyrics: false,
+                    hasManualTranslation: false,
+                    hasNonEmbeddedTranslation: false,
+                    hasReading: false,
+                    hasFineTiming: false,
+                    lastModifiedAt: Date(),
+                    activeLyricsVersionID: nil,
+                    activeTranslationVersionID: nil,
+                    hasSyncedLyrics: false
+                ))
+            }
+            guard !missingEntries.isEmpty else { return }
+            self.lyricsBatch.start(entries: missingEntries) { [weak self] track in
+                await self?.completeMissingLyrics(track: track)
+            }
+        }
+    }
+
     func completeMissingLyrics(track: Track) async -> LyricsBatchCompletion.Outcome? {
         let session = LyricsSessionController(providers: preloadLyricsProviders,
             repository: lyricsRepository, spotifyArtistResolver: .shared, sourceHealth: .shared, isBatch: true)

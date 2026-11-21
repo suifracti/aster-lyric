@@ -4560,6 +4560,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
         var translationVersionCount = 0
         var hasLockedTranslation = false
         var hasManualTranslation = false
+        var hasNonEmbeddedTranslation = false
         var activeTranslationVersionID: UUID?
 
         var readingVersionCount = 0
@@ -4574,7 +4575,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             let idPlaceholders = lyricsVersionIDs.map { _ in "?" }.joined(separator: ",")
 
             let transStmt = try prepare("""
-                SELECT id, is_locked, is_manually_edited, is_archived, status, updated_at, lyrics_version_id, is_draft
+                SELECT id, is_locked, is_manually_edited, is_archived, status, updated_at, lyrics_version_id, is_draft, source_kind, target_language
                 FROM translation_versions
                 WHERE lyrics_version_id IN (\(idPlaceholders))
                 ORDER BY is_locked DESC, is_archived ASC, updated_at DESC;
@@ -4596,9 +4597,17 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
                 let lvidText = columnText(transStmt, index: 6)
                 let lvid = lvidText.flatMap { UUID(uuidString: $0) }
                 let isDraft = sqlite3_column_int(transStmt, 7) == 1
+                let sourceKind = columnText(transStmt, index: 8) ?? ""
+                let targetLanguage = columnText(transStmt, index: 9) ?? ""
 
                 if isLocked { hasLockedTranslation = true }
                 if isManual { hasManualTranslation = true }
+                if !isArchived, status == "complete" {
+                    let isEmbedded = sourceKind == AITranslationSourceKind.providerEmbedded.rawValue
+                        || sourceKind == "embedded"
+                        || (sourceKind == AITranslationSourceKind.legacyImported.rawValue && targetLanguage == "und")
+                    if !isEmbedded { hasNonEmbeddedTranslation = true }
+                }
                 if activeTranslationVersionID == nil && !isArchived && !isDraft && (status == "complete" || isLocked) {
                     if lvid == activeLyricsVersionID || activeLyricsVersionID == nil {
                         activeTranslationVersionID = id
@@ -4684,6 +4693,7 @@ public actor SQLiteLyricsRepository: LyricsRepository, TranslationRepository, Ly
             hasLockedTranslation: hasLockedTranslation,
             hasManualLyrics: hasManualLyrics,
             hasManualTranslation: hasManualTranslation,
+            hasNonEmbeddedTranslation: hasNonEmbeddedTranslation,
             hasReading: hasReading,
             hasFineTiming: hasFineTiming,
             lastModifiedAt: maxDate,

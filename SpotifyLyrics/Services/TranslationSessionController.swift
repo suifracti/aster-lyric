@@ -251,9 +251,14 @@ public final class TranslationSessionController: ObservableObject {
         let tracks = Self.uniqueBatchTracks(tracks)
         guard batchTask == nil, !tracks.isEmpty, configuration.isConfigured, let engine else { return }
         batchProgress = BatchProgress(title: title, total: tracks.count)
+        GitHubLyricsSyncService.shared.beginBatchSuppression()
         batchTask = Task { [weak self] in
-            guard let self else { return }
+            guard let self else {
+                GitHubLyricsSyncService.shared.endBatchSuppression()
+                return
+            }
             defer {
+                GitHubLyricsSyncService.shared.endBatchSuppression()
                 self.batchProgress?.running = false
                 self.batchProgress?.cancelled = Task.isCancelled
                 self.batchProgress?.currentTrack = ""

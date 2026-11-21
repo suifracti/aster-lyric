@@ -259,6 +259,11 @@ public struct PersonalLyricsLibraryView: View {
                 .fixedSize()
                 LyricsBatchControls(playback: playback, entries: libraryFilter == .missing && !service.isLoading ? visibleEntries : [],
                                     library: service, openTrack: { selectedStableKey = $0 })
+                LibraryTranslationBatchControls(
+                    playback: playback,
+                    entries: libraryFilter == .missingAITranslation && !service.isLoading ? visibleEntries : [],
+                    library: service
+                )
                 Spacer()
                 Text("\(visibleEntries.count) 首")
                     .font(.caption)
@@ -1408,6 +1413,50 @@ struct LyricsBatchControls: View {
             }
         }
         .frame(width: 305).padding(13)
+    }
+}
+
+private struct LibraryTranslationBatchControls: View {
+    @ObservedObject var playback: PlaybackState
+    let entries: [PersonalLyricsLibraryEntry]
+    let library: PersonalLyricsLibraryService
+    @State private var showsConfirmation = false
+
+    private var eligibleTracks: [Track] {
+        TranslationSessionController.uniqueBatchTracks(
+            entries.filter { !$0.coveredByAnotherRecording && !$0.needsLyrics }.map(\.libraryTrack)
+        )
+    }
+
+    var body: some View {
+        let batch = playback.translationBatchProgress
+        let targets = eligibleTracks
+        HStack(spacing: 7) {
+            if let batch, batch.running {
+                Text("\(batch.finished)/\(batch.total)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Button("停止") { playback.cancelTranslationBatch() }
+            } else if !targets.isEmpty {
+                Button("补全缺 AI 译文（\(targets.count)）") {
+                    showsConfirmation = true
+                }
+                .disabled(!playback.canStartTranslationBatch)
+                .help("为当前列表中已有原词但缺 AI/人工译文的歌曲批量生成 AI 译文，可随时停止")
+            }
+        }
+        .controlSize(.small)
+        .onChange(of: playback.translationBatchProgress?.running ?? false) { _, running in
+            if !running { library.refresh() }
+        }
+        .confirmationDialog("批量补全缺 AI 译文", isPresented: $showsConfirmation, titleVisibility: .visible) {
+            Button("开始批量翻译（\(targets.count) 首）") {
+                playback.translateBatch(title: "补全缺 AI 译文", tracks: targets)
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("将为 \(targets.count) 首已保存原词但尚无 AI/人工译文的歌曲依次发起翻译（不重复翻译已缓存歌曲）；执行中可随时点击停止，结束后自动汇总同步至 GitHub。")
+        }
     }
 }
 

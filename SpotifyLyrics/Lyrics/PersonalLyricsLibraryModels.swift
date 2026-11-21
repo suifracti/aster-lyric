@@ -5,6 +5,7 @@ enum PersonalLibraryFilter: String, CaseIterable, Identifiable {
     case all = "全部"
     case current = "当前歌曲"
     case missing = "缺歌词"
+    case missingAITranslation = "缺 AI 译文"
     case translations = "有译文"
     case manual = "手动编辑"
     case locked = "已锁定"
@@ -16,6 +17,7 @@ enum PersonalLibraryFilter: String, CaseIterable, Identifiable {
         case .all: return true
         case .current: return entry.trackStableKey == currentTrackKey
         case .missing: return entry.needsLyrics
+        case .missingAITranslation: return !entry.needsLyrics && !entry.hasNonEmbeddedTranslation
         case .translations: return entry.translationVersionCount > 0
         case .manual: return entry.hasManualLyrics || entry.hasManualTranslation
         case .locked: return entry.hasLockedLyrics || entry.hasLockedTranslation
@@ -74,6 +76,7 @@ public struct PersonalLyricsLibraryEntry: Identifiable, Equatable, Sendable, Cod
     public let hasLockedTranslation: Bool
     public let hasManualLyrics: Bool
     public let hasManualTranslation: Bool
+    public let hasNonEmbeddedTranslation: Bool
     public let hasReading: Bool
     public let hasFineTiming: Bool
 
@@ -156,6 +159,7 @@ public struct PersonalLyricsLibraryEntry: Identifiable, Equatable, Sendable, Cod
         hasLockedTranslation: Bool,
         hasManualLyrics: Bool,
         hasManualTranslation: Bool,
+        hasNonEmbeddedTranslation: Bool = false,
         hasReading: Bool,
         hasFineTiming: Bool,
         lastModifiedAt: Date,
@@ -183,6 +187,7 @@ public struct PersonalLyricsLibraryEntry: Identifiable, Equatable, Sendable, Cod
         self.hasLockedTranslation = hasLockedTranslation
         self.hasManualLyrics = hasManualLyrics
         self.hasManualTranslation = hasManualTranslation
+        self.hasNonEmbeddedTranslation = hasNonEmbeddedTranslation
         self.hasReading = hasReading
         self.hasFineTiming = hasFineTiming
         self.lastModifiedAt = lastModifiedAt
