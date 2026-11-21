@@ -32,7 +32,7 @@ struct PlaylistBrowserWindow: View {
                     .accessibilityLabel("刷新歌单与队列")
             }
             .padding(12)
-            if state.lyricsBatch.total > 0 || state.isPreparingPlaylistLyricsBatch {
+            if state.lyricsBatch.total > 0 || state.isPreparingPlaylistLyricsBatch || state.playlistLyricsBatchNotice != nil {
                 PlaylistLyricsBatchStatus(state: state, batch: state.lyricsBatch)
                     .padding([.horizontal, .bottom], 12)
             }
@@ -380,6 +380,20 @@ struct PlaylistLyricsBatchStatus: View {
                     if let title = batch.currentTitle {
                         Text(title).lineLimit(1).foregroundStyle(.secondary)
                     }
+                } else {
+                    let saved = batch.results.count(where: { $0.outcome == .timedSaved || $0.outcome == .plainSaved })
+                    let unchanged = batch.results.count(where: { $0.outcome == .unchanged })
+                    let review = batch.results.count(where: { !$0.candidates.isEmpty })
+                    let missing = batch.results.count(where: { $0.outcome == .noMatch || $0.outcome == .failed })
+                    Text("已存 \(saved) · 原有 \(unchanged) · 需核对 \(review) · 未找到 \(missing)")
+                        .foregroundStyle(.secondary)
+                }
+            } else if let notice = state.playlistLyricsBatchNotice {
+                HStack {
+                    Text(notice).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("关闭") { state.playlistLyricsBatchNotice = nil }
+                        .buttonStyle(.borderless)
                 }
             }
         }

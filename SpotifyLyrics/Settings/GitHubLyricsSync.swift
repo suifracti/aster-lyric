@@ -7,6 +7,7 @@ import Foundation
 extension Notification.Name {
     static let personalLibraryAssetsDidMutate = Notification.Name("SpotifyLyrics.PersonalLibraryAssetsDidMutate")
     static let personalFavoritesDidMutate = Notification.Name("SpotifyLyrics.PersonalFavoritesDidMutate")
+    static let personalPlaylistsDidMutate = Notification.Name("SpotifyLyrics.PersonalPlaylistsDidMutate")
 }
 
 public enum GitHubSyncTranslationScope: String, CaseIterable, Identifiable, Codable, Sendable {
@@ -1503,17 +1504,26 @@ public final class GitHubSyncPlaylistStore: @unchecked Sendable {
                 spotifyID: track.spotifyId
             )
         }
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? id : name
+        var didChange = false
         lock.lock()
-        defer { lock.unlock() }
         var storage = readStorage()
-        storage.playlists[id] = GitHubSyncPlaylistSnapshot(
-            id: id,
-            name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? id : name,
-            source: source,
-            updatedAt: Date(),
-            tracks: mapped
-        )
-        writeStorage(storage)
+        let existing = storage.playlists[id]
+        if existing?.name != cleanName || existing?.source != source || existing?.tracks != mapped {
+            storage.playlists[id] = GitHubSyncPlaylistSnapshot(
+                id: id,
+                name: cleanName,
+                source: source,
+                updatedAt: Date(),
+                tracks: mapped
+            )
+            writeStorage(storage)
+            didChange = true
+        }
+        lock.unlock()
+        if didChange {
+            NotificationCenter.default.post(name: .personalPlaylistsDidMutate, object: fileURL?.standardizedFileURL)
+        }
     }
 
     public func loadAll() -> [GitHubSyncPlaylistSnapshot] {
@@ -2056,13 +2066,16 @@ final class GitHubLyricsSyncService: ObservableObject {
         let favObserver = center.addObserver(forName: .personalFavoritesDidMutate, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.scheduleAutoSyncIfNeeded() }
         }
+        let playlistObserver = center.addObserver(forName: .personalPlaylistsDidMutate, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.scheduleAutoSyncIfNeeded() }
+        }
 #if canImport(AppKit)
         let activeObserver = center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.checkRemoteChangesIfNeeded() }
         }
-        observers = [dbObserver, favObserver, activeObserver]
+        observers = [dbObserver, favObserver, playlistObserver, activeObserver]
 #else
-        observers = [dbObserver, favObserver]
+        observers = [dbObserver, favObserver, playlistObserver]
 #endif
     }
 }

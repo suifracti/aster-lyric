@@ -754,10 +754,21 @@ final class GitHubLyricsSyncTests: XCTestCase {
         let missingAI = entries.filter { PersonalLibraryFilter.missingAITranslation.includes($0, currentTrackKey: nil) }
         XCTAssertEqual(missingAI.map(\.title), ["EmbeddedOnly"])
 
-        // Export playlist with 2 cached + 1 uncached track
+        // Export playlist with 2 cached + 1 uncached track and verify mutation deduplication
         let uncached = Track(title: "UncachedSong", artist: "KOTORI", album: "LP", duration: 210, spotifyId: "spotify:track:3333333333333333333333")
-        let playlistStore = GitHubSyncPlaylistStore(fileURL: root.appendingPathComponent("playlists.json"))
+        let playlistURL = root.appendingPathComponent("playlists.json")
+        let playlistStore = GitHubSyncPlaylistStore(fileURL: playlistURL)
+        var playlistNotificationCount = 0
+        let token = NotificationCenter.default.addObserver(forName: .personalPlaylistsDidMutate, object: nil, queue: nil) { note in
+            if (note.object as? URL)?.standardizedFileURL == playlistURL.standardizedFileURL {
+                playlistNotificationCount += 1
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
         playlistStore.savePlaylist(id: "pl-01", name: "01 · J-Pop", source: "Spotify", tracks: [track1, uncached, track2])
+        playlistStore.savePlaylist(id: "pl-01", name: "01 · J-Pop", source: "Spotify", tracks: [track1, uncached, track2])
+        XCTAssertEqual(playlistNotificationCount, 1, "Identical playlist saves must not spam auto-sync")
 
         let pkg = try await repo.exportPersonalDataPackage()
         let built = try GitHubSyncSnapshotBuilder.buildFiles(

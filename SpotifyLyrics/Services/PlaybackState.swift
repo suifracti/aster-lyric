@@ -1876,10 +1876,12 @@ public final class PlaybackState: ObservableObject {
     }
 
     @Published var isPreparingPlaylistLyricsBatch = false
+    @Published var playlistLyricsBatchNotice: String?
     func startPlaylistLyricsBatch(tracks: [Track]) {
         guard !isPreparingPlaylistLyricsBatch, !lyricsBatch.isRunning else { return }
         let unique = TranslationSessionController.uniqueBatchTracks(tracks)
         guard !unique.isEmpty else { return }
+        playlistLyricsBatchNotice = nil
         isPreparingPlaylistLyricsBatch = true
         Task { [weak self] in
             guard let self else { return }
@@ -1919,7 +1921,10 @@ public final class PlaybackState: ObservableObject {
                     hasSyncedLyrics: false
                 ))
             }
-            guard !missingEntries.isEmpty else { return }
+            guard !missingEntries.isEmpty else {
+                self.playlistLyricsBatchNotice = "当前列表中 \(unique.count) 首歌曲本地均已有原词，无需查词"
+                return
+            }
             self.lyricsBatch.start(entries: missingEntries) { [weak self] track in
                 await self?.completeMissingLyrics(track: track)
             }
